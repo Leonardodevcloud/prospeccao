@@ -1,5 +1,6 @@
 import {
   type AvaliacaoIa,
+  contatosDosDiretorios,
   instagramNosResultados,
   interpretarLinkedin,
   normalizarSite,
@@ -12,7 +13,7 @@ import {
   type ResultadoSite,
 } from '@prospeccao/integrations/enriquecimento';
 import { ErroDefinitivo } from '@prospeccao/queue';
-import { normalizarTelefone } from '@prospeccao/shared';
+import { formatarTelefone, normalizarTelefone } from '@prospeccao/shared';
 import { Coletor, notaPorRegras, papelPeloCargo } from './coletor.js';
 import type { Deps } from './dependencias.js';
 import * as repo from './repositorio.js';
@@ -149,11 +150,12 @@ export async function enriquecerEmpresa(
     // 2. Google Maps: já coletado na descoberta. Quem veio da base de CNPJ e não apareceu nas
     // buscas da campanha é procurado no Google pelo nome e endereço (1 pedido ao Places).
     let achadaPorNome = false;
+    let achadaVia: 'serper' | 'places' = 'places';
     let semMaps = 'Não apareceu nas buscas do Maps.';
     let falhaMaps = false;
-    if (!empresa.place_id && fontes.places?.achar && ajustes.acharNoGoogle) {
+    if (!empresa.place_id && fontes.lugar && ajustes.acharNoGoogle) {
       try {
-        const r = await fontes.places.achar({
+        const r = await fontes.lugar.achar({
           nome: empresa.nome,
           razaoSocial: empresa.razao_social,
           logradouro: empresa.logradouro,
@@ -165,6 +167,7 @@ export async function enriquecerEmpresa(
         });
         if (r.lugar) {
           achadaPorNome = true;
+          achadaVia = r.fonte ?? 'places';
           empresa.place_id = r.lugar.placeId;
           empresa.maps_url = r.lugar.url;
           empresa.maps_telefone = r.lugar.telefone;
@@ -182,8 +185,9 @@ export async function enriquecerEmpresa(
         falhaMaps = true;
         semMaps = explicarFalhaPlaces(erro);
       }
-    } else if (!empresa.place_id && !fontes.places) {
-      semMaps += ' Com a GOOGLE_PLACES_KEY no worker-enriquecimento, o sistema procura pelo nome e endereço.';
+    } else if (!empresa.place_id && !fontes.lugar) {
+      semMaps +=
+        ' Com SERPER_API_KEY ou GOOGLE_PLACES_KEY no worker-enriquecimento, o sistema procura pelo nome e endereço.';
     }
     const telMaps = normalizarTelefone(empresa.maps_telefone);
     c.contato({
@@ -208,7 +212,7 @@ export async function enriquecerEmpresa(
       empresa.place_id ? 'encontrado' : falhaMaps ? 'erro' : 'sem_resultado',
       empresa.place_id
         ? achadaPorNome
-          ? `Achada no Google pelo nome e endereço: ${achadosMaps}.`
+          ? `Achada no Google Maps pelo nome e endereço${achadaVia === 'serper' ? ' (via Serper)' : ''}: ${achadosMaps}.`
           : `Encontrada nas buscas da campanha: ${achadosMaps}.`
         : semMaps,
       empresa.maps_url,
@@ -300,11 +304,69 @@ export async function enriquecerEmpresa(
       );
     }
 
-    // 4. Instagram: pelo site; se não, procura no Google.
+    // 3b. Razão social no Google: diretórios de empresas (AutoGuiaBR, Lavrale, Econodata…) citam
+    // telefone e e-mail no próprio trecho do resultado; o painel do Google traz o telefone da loja.
+    // A mesma busca costuma trazer o Instagram, o que poupa a busca separada.
+    let consultaDiretorios: string | null = null;
+    if (fontes.diretorios) {
+      try {
+        const d = await fontes.diretorios.buscar({
+          nome: empresa.nome,
+          razaoSocial: empresa.razao_social,
+          cidade: empresa.cidade,
+        });
+        consultaDiretorios = d.consulta;
+        const achados = contatosDosDiretorios(
+          d.resultados,
+          palavrasDaEmpresa(empresa.nome, empresa.razao_social),
+        );
+        for (const a of achados) {
+          c.contato({
+            canal: a.canal,
+            valor: a.valor,
+            fonte: 'google',
+            confianca: a.canal === 'email' ? 55 : 50,
+            rotulo: `Em ${a.dominio}`,
+            urlOrigem: a.url,
+          });
+        }
+        if (d.painel?.telefone)
+          c.contato({
+            canal: 'telefone',
+            valor: d.painel.telefone,
+            fonte: 'google',
+            confianca: 70,
+            rotulo: 'Painel do Google',
+          });
+        if (!instagram) instagram = instagramNosResultados(d.resultados, empresa.nome);
+        const partes = [
+          d.painel?.telefone ? `telefone ${formatarTelefone(d.painel.telefone)} no painel do Google` : null,
+          ...achados
+            .slice(0, 4)
+            .map((a) =>
+              a.canal === 'telefone'
+                ? `telefone ${formatarTelefone(a.valor)} em ${a.dominio}`
+                : `e-mail ${a.valor} em ${a.dominio}`,
+            ),
+        ].filter(Boolean);
+        await etapa(
+          'google',
+          partes.length ? 'encontrado' : 'sem_resultado',
+          partes.length
+            ? `${partes.join('; ')}${achados.length > 4 ? ` e mais ${achados.length - 4}` : ''}.`
+            : `${d.resultados.length} resultado(s) para a razão social, sem telefone ou e-mail desta empresa nos trechos.`,
+          linkGoogle(d.consulta),
+        );
+      } catch (erro) {
+        await etapa('google', 'erro', explicarFalhaBusca(erro, 'Serper'));
+      }
+    }
+
+    // 4. Instagram: pelo site, pela busca da razão social; se não, procura no Google.
     let perfil: PerfilInstagram | null = null;
     let falhaBuscaInstagram: string | null = null;
     const consultaInstagram = `"${empresa.nome}" ${empresa.cidade.toLowerCase()} instagram`;
-    if (!instagram && fontes.google && ajustes.buscarInstagram) {
+    if (!instagram && fontes.google && ajustes.buscarInstagram && !consultaDiretorios) {
       try {
         const r = await fontes.google.buscar([consultaInstagram]);
         instagram = instagramNosResultados(r.get(consultaInstagram) ?? [], empresa.nome);
@@ -383,6 +445,13 @@ export async function enriquecerEmpresa(
     } else if (falhaBuscaInstagram) {
       // Não é "não tem Instagram": a busca nem rodou.
       await etapa('instagram', 'erro', falhaBuscaInstagram, linkGoogle(consultaInstagram));
+    } else if (consultaDiretorios) {
+      await etapa(
+        'instagram',
+        'sem_resultado',
+        'O site não indica e a busca da razão social no Google não trouxe um perfil desta empresa.',
+        linkGoogle(consultaInstagram),
+      );
     } else {
       const buscou = !!fontes.google && ajustes.buscarInstagram;
       await etapa(
@@ -575,7 +644,15 @@ export async function enriquecerEmpresa(
 
     // 7. Google Places: a loja segue aberta? Telefone atualizado?
     let mapsAberto: boolean | null = empresa.maps_fechada == null ? null : !empresa.maps_fechada;
-    if (achadaPorNome) {
+    if (achadaPorNome && achadaVia === 'serper' && !empresa.place_id?.startsWith('ChIJ')) {
+      // O Serper não diz se a loja fechou; o resto (telefone, nota) já veio na busca.
+      await etapa(
+        'places',
+        'encontrado',
+        'Achada no Google Maps (via Serper); o Serper não informa se a loja está fechada.',
+        empresa.maps_url,
+      );
+    } else if (achadaPorNome && achadaVia === 'places') {
       // A busca por nome e endereço já trouxe os dados atuais: não precisa de outra consulta.
       mapsAberto = !empresa.maps_fechada;
       if (empresa.maps_fechada) {
@@ -633,11 +710,61 @@ export async function enriquecerEmpresa(
       try {
         const r = await fontes.whatsapp.verificar(numeros);
         c.aplicarWhatsapp(r);
-        const com = [...r.values()].filter(Boolean).length;
+        const comConta = [...r.entries()].filter(([, tem]) => tem).map(([n]) => n);
+        // Perfil comercial (WhatsApp Business): e-mail e site que a própria loja cadastrou, e a
+        // confirmação de que o número é da loja (a descrição cita o nome da empresa).
+        const notas: string[] = [];
+        if (fontes.whatsapp.perfil) {
+          const palavrasLoja = palavrasDaEmpresa(empresa.nome, empresa.razao_social);
+          for (const numero of comConta.slice(0, 2)) {
+            try {
+              const p = await fontes.whatsapp.perfil(numero);
+              if (!p) continue;
+              const texto = `${p.descricao ?? ''} ${p.site ?? ''} ${p.email ?? ''}`
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase();
+              const daLoja = palavrasLoja.some((w) => texto.includes(w));
+              const url = `https://wa.me/55${numero}`;
+              if (daLoja)
+                c.contato({
+                  canal: 'whatsapp',
+                  valor: numero,
+                  fonte: 'whatsapp',
+                  confianca: 95,
+                  rotulo: 'WhatsApp Business da loja',
+                  urlOrigem: url,
+                });
+              c.contato({
+                canal: 'email',
+                valor: p.email,
+                fonte: 'whatsapp',
+                confianca: daLoja ? 80 : 60,
+                rotulo: 'No WhatsApp Business',
+                urlOrigem: url,
+              });
+              c.contato({
+                canal: 'site',
+                valor: normalizarSite(p.site),
+                fonte: 'whatsapp',
+                confianca: daLoja ? 80 : 55,
+                urlOrigem: url,
+              });
+              const extra = [p.email ? `e-mail ${p.email}` : null, p.site ? `site ${p.site}` : null]
+                .filter(Boolean)
+                .join(', ');
+              notas.push(
+                `${formatarTelefone(numero)} é WhatsApp Business${daLoja ? ' desta empresa' : ''}${p.descricao ? ` ("${p.descricao.slice(0, 60)}${p.descricao.length > 60 ? '…' : ''}")` : ''}${extra ? `, com ${extra}` : ''}`,
+              );
+            } catch (erro) {
+              log.debug({ err: erro, numero }, 'perfil comercial do WhatsApp indisponível');
+            }
+          }
+        }
         await etapa(
           'whatsapp',
-          com ? 'encontrado' : 'sem_resultado',
-          `${com} de ${numeros.length} número(s) com WhatsApp.`,
+          comConta.length ? 'encontrado' : 'sem_resultado',
+          `${comConta.length} de ${numeros.length} número(s) com WhatsApp.${notas.length ? ` ${notas.join('. ')}.` : ''}`,
         );
       } catch (erro) {
         await etapa('whatsapp', 'erro', mensagemDe(erro));

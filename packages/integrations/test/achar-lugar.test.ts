@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ItemMaps } from '../src/apify/index.js';
-import { resultadosSerper } from '../src/enriquecimento/serper.js';
+import {
+  contatosDosDiretorios,
+  converterLugarSerper,
+  partesDoEndereco,
+  resultadosSerper,
+} from '../src/enriquecimento/serper.js';
+import { converterPerfilWhatsapp } from '../src/enriquecimento/servicos.js';
 import { mesmoLugar, textoParaAchar } from '../src/places/index.js';
 
 const lugar = (p: Partial<ItemMaps>): ItemMaps => ({
@@ -78,5 +84,62 @@ describe('Serper', () => {
         descricao: 'Experiência: Ceavê Norte Diesel',
       },
     ]);
+  });
+});
+
+describe('Serper: lugares e diretórios', () => {
+  it('lê cidade, UF e CEP do endereço do Maps', () => {
+    expect(partesDoEndereco('Av. Barros Reis, 312 - Pau Miúdo, Salvador - BA, 40310-005')).toEqual({
+      cidade: 'Salvador',
+      uf: 'BA',
+      cep: '40310005',
+    });
+  });
+
+  it('converte o lugar do Serper e casa com a empresa da Receita', () => {
+    const l = converterLugarSerper({
+      title: 'Ceavê Norte Diesel',
+      address: 'Av. Barros Reis, 312 - Pau Miúdo, Salvador - BA, 40310-005',
+      phoneNumber: '(71) 3244-9744',
+      rating: 4.3,
+      ratingCount: 28,
+      cid: '987',
+    });
+    expect(l).toMatchObject({
+      telefone: '7132449744',
+      url: 'https://maps.google.com/?cid=987',
+      cep: '40310005',
+    });
+    expect(l && mesmoLugar(l, ceave)).toBe(true);
+  });
+
+  it('pega telefone e e-mail só de trechos que falam desta empresa, sem o e-mail do diretório', () => {
+    const r = contatosDosDiretorios(
+      [
+        {
+          titulo: 'Loja - LavraleCEAVE NORTE DIESEL LTDA',
+          url: 'https://www.lavrale.com.br/loja',
+          descricao:
+            'CEAVE NORTE DIESEL LTDA · (71)3244-9327 · vendas@ceavenortediesel.com.br · contato@lavrale.com.br',
+        },
+        { titulo: 'Outra empresa', url: 'https://x.com.br', descricao: 'Ligue (71) 3333-0000' },
+      ],
+      ['ceave', 'norte', 'diesel'],
+    );
+    expect(r.map((c) => `${c.canal}:${c.valor}@${c.dominio}`)).toEqual([
+      'telefone:7132449327@lavrale.com.br',
+      'email:vendas@ceavenortediesel.com.br@lavrale.com.br',
+    ]);
+  });
+
+  it('perfil do WhatsApp Business em formatos diferentes da Evolution', () => {
+    expect(
+      converterPerfilWhatsapp({
+        description: 'Peças diesel',
+        email: 'Vendas@X.com',
+        website: ['https://x.com'],
+      }),
+    ).toMatchObject({ descricao: 'Peças diesel', email: 'vendas@x.com', site: 'https://x.com' });
+    expect(converterPerfilWhatsapp({ wid: '55...' })).toBeNull();
   });
 });

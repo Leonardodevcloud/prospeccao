@@ -12,7 +12,9 @@ export type Fonte =
   | 'linkedin'
   | 'ifood'
   | 'manual'
-  | 'ia';
+  | 'ia'
+  | 'google'
+  | 'whatsapp';
 export type StatusContato = 'verificado' | 'nao_verificado' | 'atencao' | 'invalido';
 export type Faixa = 'A' | 'B' | 'C';
 

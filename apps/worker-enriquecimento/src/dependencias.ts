@@ -1,11 +1,13 @@
 import type { Pool } from '@prospeccao/db';
 import type {
   AvaliacaoIa,
+  BuscaDiretorios,
   DetalhesPlaces,
   EmpresaParaAchar,
   EntradaAvaliacao,
   LugarAchado,
   PerfilInstagram,
+  PerfilWhatsapp,
   ResultadoGoogle,
   ResultadoSite,
 } from '@prospeccao/integrations/enriquecimento';
@@ -24,12 +26,18 @@ export interface Fontes {
   } | null;
   instagram: { ler(usuario: string): Promise<PerfilInstagram | null> } | null;
   ia: { avaliar(entrada: EntradaAvaliacao): Promise<AvaliacaoIa> } | null;
-  places: {
-    detalhes(placeId: string): Promise<DetalhesPlaces>;
-    /** Procura a empresa no Google pelo nome e endereço (quem não apareceu nas buscas). */
-    achar?(empresa: EmpresaParaAchar): Promise<LugarAchado>;
+  places: { detalhes(placeId: string): Promise<DetalhesPlaces> } | null;
+  /** Procura a empresa no Google Maps pelo nome e endereço (Serper, com o Places de reserva). */
+  lugar?: { achar(empresa: EmpresaParaAchar): Promise<LugarAchado> } | null;
+  /** Busca a razão social no Google e lê telefone/e-mail citados em diretórios (Serper). */
+  diretorios?: {
+    buscar(empresa: { nome: string; razaoSocial: string | null; cidade: string }): Promise<BuscaDiretorios>;
   } | null;
-  whatsapp: { verificar(numeros: string[]): Promise<Map<string, boolean>> } | null;
+  whatsapp: {
+    verificar(numeros: string[]): Promise<Map<string, boolean>>;
+    /** Perfil comercial (WhatsApp Business) do número. */
+    perfil?(numero: string): Promise<PerfilWhatsapp | null>;
+  } | null;
 }
 
 export interface Ajustes {

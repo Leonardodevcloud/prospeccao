@@ -428,11 +428,14 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
             detalhes++;
             return { aberto: true, telefone: null, site: null, nota: null, avaliacoes: null };
           },
+        },
+        lugar: {
           async achar(e) {
             pedidos.push(`${e.nome}|${e.numero}|${e.cep}`);
             return {
               texto: 'CEAVE NORTE DIESEL LTDA, AVENIDA BARROS REIS 312, SALVADOR - BA',
               candidatos: 1,
+              fonte: 'places',
               lugar: {
                 placeId: 'pceave',
                 nome: 'Ceavê Norte Diesel',
@@ -467,7 +470,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     const de = (nome: string) => etapas.find((e) => e.etapa === nome);
     expect(de('maps')).toMatchObject({
       status: 'encontrado',
-      detalhe: 'Achada no Google pelo nome e endereço: telefone, nota 4.3, 28 avaliações.',
+      detalhe: 'Achada no Google Maps pelo nome e endereço: telefone, nota 4.3, 28 avaliações.',
       url: 'https://maps.google.com/?cid=1',
     });
     expect(de('instagram')).toMatchObject({
@@ -485,5 +488,131 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       `SELECT fontes FROM enriquecimento.contatos WHERE empresa_id = 3 AND valor = '7132449744'`,
     );
     expect(tel[0].fontes).toContain('places');
+  });
+
+  it('diretórios no Google, Maps pelo Serper e WhatsApp Business: telefone e e-mail que só estavam fora do site', async () => {
+    const f = fontesCompletas();
+    const buscasSeparadas: string[] = [];
+    await enriquecerEmpresa(
+      deps({
+        ...f,
+        google: {
+          nome: 'Serper',
+          async buscar(qs) {
+            buscasSeparadas.push(...qs);
+            return new Map();
+          },
+        },
+        ia: {
+          async avaliar() {
+            return { faixa: 'B', score: 60, motivo: 'Médio', resumo: 'Diesel', entrega: null, pessoas: [] };
+          },
+        },
+        places: null,
+        lugar: {
+          async achar() {
+            return {
+              texto: 'x',
+              candidatos: 1,
+              fonte: 'serper',
+              lugar: {
+                placeId: 'cid:123',
+                nome: 'Ceavê Norte Diesel',
+                categoria: 'Loja de autopeças',
+                telefone: '7132449744',
+                endereco: 'Av. Barros Reis, 312 - Pau Miúdo, Salvador - BA, 40310-005',
+                cep: '40310005',
+                cidade: 'Salvador',
+                uf: 'BA',
+                lat: null,
+                lng: null,
+                nota: 4.3,
+                avaliacoes: 28,
+                site: null,
+                url: 'https://maps.google.com/?cid=123',
+                fechada: false,
+                entrega: null,
+                dados: {},
+              },
+            };
+          },
+        },
+        diretorios: {
+          async buscar(e) {
+            expect(e.razaoSocial).toBe('CEAVE NORTE DIESEL LTDA');
+            return {
+              consulta: '"CEAVE NORTE DIESEL LTDA" salvador',
+              painel: null,
+              resultados: [
+                resultado(
+                  'Ceavê Norte Diesel (@ceavenortediesel) · Salvador, BA',
+                  'https://www.instagram.com/ceavenortediesel/',
+                  '46 Anos de Tradição',
+                ),
+                resultado(
+                  'CEAVÊ NORTE DIESEL LTDA.',
+                  'https://autoguiabr.com.br/index.php/empresa/ceave',
+                  'CEAVÊ NORTE DIESEL LTDA. Telefone: (71) 3244 9744. Endereço: Principal Salvador - Bahia.',
+                ),
+                resultado(
+                  'Loja - LavraleCEAVE NORTE DIESEL LTDA',
+                  'https://www.lavrale.com.br/loja',
+                  'CEAVE NORTE DIESEL LTDA · AVENIDA BARROS REIS, 312 · (71)3244-9327 · vendas@ceavenortediesel.com.br. Fale com contato@lavrale.com.br',
+                ),
+                resultado('Outra Loja Qualquer', 'https://x.com.br', 'Telefone (71) 3333-0000'),
+              ],
+            };
+          },
+        },
+        whatsapp: {
+          async verificar(numeros) {
+            return new Map(numeros.map((n) => [n, n === '7132449744']));
+          },
+          async perfil(numero) {
+            return numero === '7132449744'
+              ? {
+                  descricao: 'Ceavê Norte Diesel: peças para motores diesel',
+                  email: 'compras@ceavenortediesel.com.br',
+                  site: null,
+                  categoria: null,
+                  endereco: null,
+                }
+              : null;
+          },
+        },
+      }),
+      { empresaId: 3, campanhaId: 1, forcar: true },
+    );
+    // O Instagram veio da busca da razão social: só o LinkedIn fez busca própria.
+    expect(buscasSeparadas.some((q) => q.includes('instagram'))).toBe(false);
+
+    const { rows: contatos } = await pool.query(
+      `SELECT canal, valor, fontes, status, confianca, principal FROM enriquecimento.contatos WHERE empresa_id = 3 ORDER BY canal, valor`,
+    );
+    const valores = contatos.map((x) => x.valor);
+    expect(valores).toEqual(
+      expect.arrayContaining([
+        'vendas@ceavenortediesel.com.br',
+        'compras@ceavenortediesel.com.br',
+        '7132449327',
+        '7132449744',
+      ]),
+    );
+    expect(valores).not.toContain('contato@lavrale.com.br');
+    expect(valores).not.toContain('7133330000');
+    const wpp = contatos.find((x) => x.valor === '7132449744');
+    expect(wpp).toMatchObject({ canal: 'whatsapp', status: 'verificado', principal: true });
+    expect([...wpp.fontes].sort()).toEqual(expect.arrayContaining(['google', 'places', 'whatsapp']));
+
+    const { rows: etapas } = await pool.query(
+      `SELECT etapa, status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 3 ORDER BY ordem`,
+    );
+    const de = (nome: string) => etapas.find((x) => x.etapa === nome);
+    expect(de('maps')?.detalhe).toMatch(/^Achada no Google Maps pelo nome e endereço \(via Serper\)/);
+    expect(de('google')).toMatchObject({ status: 'encontrado' });
+    expect(de('google')?.detalhe).toContain('e-mail vendas@ceavenortediesel.com.br em lavrale.com.br');
+    expect(de('instagram')).toMatchObject({ status: 'encontrado' });
+    expect(de('places')?.detalhe).toMatch(/via Serper/);
+    expect(de('whatsapp')?.detalhe).toMatch(/WhatsApp Business desta empresa/);
   });
 });

@@ -15,7 +15,8 @@ export type FonteContato =
   | 'linkedin'
   | 'google'
   | 'ia'
-  | 'places';
+  | 'places'
+  | 'whatsapp';
 export type Papel = 'socio' | 'compras' | 'gestao' | 'outro';
 export type StatusContato = 'verificado' | 'nao_verificado' | 'atencao' | 'invalido';
 

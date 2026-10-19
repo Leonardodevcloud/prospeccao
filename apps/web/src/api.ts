@@ -396,7 +396,8 @@ export type FonteEnriq =
   | 'google'
   | 'ia'
   | 'places'
-  | 'manual';
+  | 'manual'
+  | 'whatsapp';
 
 export interface PessoaEnriq {
   id: number;
@@ -428,7 +429,7 @@ export interface ContatoEnriq {
 }
 
 export interface EtapaEnriq {
-  etapa: 'receita' | 'maps' | 'site' | 'instagram' | 'ia' | 'linkedin' | 'places' | 'whatsapp';
+  etapa: 'receita' | 'maps' | 'site' | 'google' | 'instagram' | 'ia' | 'linkedin' | 'places' | 'whatsapp';
   status: 'encontrado' | 'sem_resultado' | 'pulada' | 'erro';
   detalhe: string | null;
   url: string | null;

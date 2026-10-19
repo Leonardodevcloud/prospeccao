@@ -108,7 +108,16 @@ export async function iniciar(db: Executor, empresaId: number, campanhaId: numbe
   await db.query('DELETE FROM enriquecimento.etapas WHERE empresa_id = $1', [empresaId]);
 }
 
-export type NomeEtapa = 'receita' | 'maps' | 'site' | 'instagram' | 'ia' | 'linkedin' | 'places' | 'whatsapp';
+export type NomeEtapa =
+  | 'receita'
+  | 'maps'
+  | 'site'
+  | 'google'
+  | 'instagram'
+  | 'ia'
+  | 'linkedin'
+  | 'places'
+  | 'whatsapp';
 export type StatusEtapa = 'encontrado' | 'sem_resultado' | 'pulada' | 'erro';
 
 export async function registrarEtapa(

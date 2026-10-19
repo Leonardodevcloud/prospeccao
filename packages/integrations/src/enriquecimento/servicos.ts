@@ -38,6 +38,54 @@ export async function verificarWhatsapp(
   return saida;
 }
 
+export interface PerfilWhatsapp {
+  descricao: string | null;
+  email: string | null;
+  site: string | null;
+  categoria: string | null;
+  endereco: string | null;
+}
+
+/**
+ * Perfil comercial (WhatsApp Business) de um número: descrição, e-mail e site que a própria loja
+ * cadastrou. Só consulta. null quando o número não é comercial ou não tem nada preenchido.
+ */
+export async function perfilComercialWhatsapp(
+  cfg: ConfigEvolution,
+  numero: string,
+): Promise<PerfilWhatsapp | null> {
+  const r = await requisitarJson<Record<string, unknown> | Record<string, unknown>[]>(
+    `${cfg.url.replace(/\/$/, '')}/chat/fetchBusinessProfile/${encodeURIComponent(cfg.instancia)}`,
+    {
+      servico: 'Evolution API',
+      method: 'POST',
+      headers: { apikey: cfg.apiKey },
+      body: { number: `55${numero}` },
+      timeoutMs: 20_000,
+    },
+  );
+  return converterPerfilWhatsapp(Array.isArray(r) ? r[0] : r);
+}
+
+/** A Evolution muda o formato entre versões: aceita os nomes de campo conhecidos. */
+export function converterPerfilWhatsapp(bruto: unknown): PerfilWhatsapp | null {
+  if (!bruto || typeof bruto !== 'object') return null;
+  const o = bruto as Record<string, unknown>;
+  const texto = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const site = Array.isArray(o.website) ? texto(o.website[0]) : texto(o.website ?? o.websites);
+  const categoria = Array.isArray(o.categories)
+    ? texto((o.categories[0] as { localized_display_name?: string } | undefined)?.localized_display_name)
+    : texto(o.category);
+  const perfil = {
+    descricao: texto(o.description),
+    email: texto(o.email)?.toLowerCase() ?? null,
+    site,
+    categoria,
+    endereco: texto(o.address),
+  };
+  return Object.values(perfil).some(Boolean) ? perfil : null;
+}
+
 /* ---------------- Google Places (validação) ---------------- */
 
 export interface ConfigPlaces {

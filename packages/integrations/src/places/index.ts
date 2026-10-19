@@ -240,6 +240,8 @@ export interface LugarAchado {
   /** Quantos lugares o Google devolveu (para explicar quando nenhum bate). */
   candidatos: number;
   texto: string;
+  /** Quem achou: o Serper (barato) ou o Google Places oficial. */
+  fonte?: 'serper' | 'places';
 }
 
 /**
@@ -257,5 +259,5 @@ export async function acharLugar(cfg: ConfigPlaces, e: EmpresaParaAchar): Promis
     lugar = r2.itens.find((l) => mesmoLugar(l, e)) ?? null;
     candidatos += r2.itens.length;
   }
-  return { lugar, candidatos, texto };
+  return { lugar, candidatos, texto, fonte: 'places' };
 }

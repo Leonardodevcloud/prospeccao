@@ -55,6 +55,7 @@ const evolution =
     ? { url: env.EVOLUTION_URL, apiKey: env.EVOLUTION_API_KEY, instancia: env.EVOLUTION_INSTANCIA }
     : null;
 const espera = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+const serper = env.SERPER_API_KEY ? { apiKey: env.SERPER_API_KEY } : null;
 
 const fontes: Fontes = {
   site: { ler: (url) => enriq.lerSite(url) },
@@ -74,17 +75,39 @@ const fontes: Fontes = {
       }
     : null,
   places: env.GOOGLE_PLACES_KEY
-    ? {
-        detalhes: (id) => enriq.detalhesDoLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, id),
-        achar: (e) => enriq.acharLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, e),
-      }
+    ? { detalhes: (id) => enriq.detalhesDoLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, id) }
     : null,
+  // Achar no Maps pelo nome e endereço: Serper primeiro (centavos); o Places oficial só se o
+  // Serper não achar ou falhar.
+  lugar:
+    serper || env.GOOGLE_PLACES_KEY
+      ? {
+          async achar(e) {
+            if (serper) {
+              try {
+                const r = await enriq.acharLugarSerper(serper, e);
+                if (r.lugar || !env.GOOGLE_PLACES_KEY) return r;
+              } catch (erro) {
+                if (!env.GOOGLE_PLACES_KEY) throw erro;
+                log.warn({ err: erro }, 'Serper falhou ao achar o lugar; tentando o Google Places');
+              }
+            }
+            return enriq.acharLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, e);
+          },
+        }
+      : null,
+  diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
   whatsapp: evolution
     ? {
         async verificar(numeros) {
           const r = await enriq.verificarWhatsapp(evolution, numeros);
           await espera(env.EVOLUTION_INTERVALO_MS);
           return r;
+        },
+        async perfil(numero) {
+          const p = await enriq.perfilComercialWhatsapp(evolution, numero);
+          await espera(env.EVOLUTION_INTERVALO_MS);
+          return p;
         },
       }
     : null,
@@ -135,6 +158,8 @@ log.info(
     ia: env.GEMINI_API_KEY ? env.GEMINI_MODELO : 'desligada (nota por regras)',
     whatsapp: ligado(evolution),
     places: ligado(env.GOOGLE_PLACES_KEY),
+    achar_no_maps: serper ? 'Serper (Places de reserva)' : env.GOOGLE_PLACES_KEY ? 'Places' : 'desligado',
+    diretorios: ligado(serper),
   },
   'worker-enriquecimento pronto',
 );

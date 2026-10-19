@@ -48,10 +48,11 @@ const FONTE: Record<FonteEnriq, Fonte> = {
   site: 'site',
   instagram: 'instagram',
   linkedin: 'linkedin',
-  google: 'site',
+  google: 'google',
   ia: 'ia',
   places: 'places',
   manual: 'manual',
+  whatsapp: 'whatsapp',
 };
 
 const NOME_FONTE: Record<FonteEnriq, string> = {
@@ -64,12 +65,14 @@ const NOME_FONTE: Record<FonteEnriq, string> = {
   ia: 'IA',
   places: 'Google',
   manual: 'cadastro manual',
+  whatsapp: 'WhatsApp Business',
 };
 
 const NOME_ETAPA: Record<EtapaEnriq['etapa'], string> = {
   receita: 'Quadro de sócios (Receita)',
   maps: 'Google Maps',
   site: 'Site da empresa',
+  google: 'Diretórios no Google',
   instagram: 'Instagram',
   ia: 'Nota da IA',
   linkedin: 'LinkedIn',
@@ -165,6 +168,7 @@ const ROTULO_LINK: Partial<Record<EtapaEnriq['etapa'], string>> = {
   maps: 'Abrir no Google Maps',
   instagram: 'Instagram',
   linkedin: 'Ver a busca do LinkedIn no Google',
+  google: 'Ver a busca da razão social no Google',
   places: 'Abrir no Google Maps',
   site: 'Site',
 };

@@ -295,6 +295,8 @@ var FONTES = {
   ifood: 'iFood',
   manual: 'Manual',
   ia: 'IA',
+  google: 'Google',
+  whatsapp: 'WhatsApp',
 };
 var FONTES_LONGAS = {
   cnpj: 'Base de CNPJ da Receita',
@@ -308,6 +310,8 @@ var FONTES_LONGAS = {
   ifood: 'iFood',
   manual: 'Cadastro manual',
   ia: 'Inferido pela IA',
+  google: 'Busca no Google (diretórios de empresas)',
+  whatsapp: 'Perfil comercial do WhatsApp',
 };
 
 var STATUS = {
