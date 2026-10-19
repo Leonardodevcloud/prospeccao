@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/:caminho*", "destination": "https://SUA-API.up.railway.app/:caminho*" },
+    { "source": "/api/:caminho*", "destination": "https://prospeccaoapi-production.up.railway.app/:caminho*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
