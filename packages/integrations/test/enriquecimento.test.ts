@@ -10,6 +10,7 @@ import {
   lerSite,
   normalizarSite,
   usuarioInstagram,
+  variacoesDoSite,
   verificarWhatsapp,
 } from '../src/enriquecimento/index.js';
 
@@ -93,6 +94,38 @@ describe('Google, LinkedIn e Instagram', () => {
         descricao: '',
       }),
     ).toBeNull();
+  });
+
+  it('ignora páginas de tópico do Instagram e perfis de outra empresa', () => {
+    const resultados = [
+      {
+        titulo: 'Auto peças em Salvador',
+        url: 'https://www.instagram.com/popular/auto-pecas-salvador/',
+        descricao: '',
+      },
+      {
+        titulo: 'Casa das Peças (@casadaspecas)',
+        url: 'https://www.instagram.com/casadaspecas/',
+        descricao: '',
+      },
+      {
+        titulo: 'Lojão Auto Peças (@lojaoautopecas)',
+        url: 'https://www.instagram.com/lojaoautopecas/',
+        descricao: '',
+      },
+    ];
+    expect(instagramNosResultados(resultados, 'Lojão Auto Peças - Baixa de Quintas')).toBe('lojaoautopecas');
+    expect(instagramNosResultados(resultados.slice(0, 2), 'Lojão Auto Peças')).toBeNull();
+    expect(usuarioInstagram('https://www.instagram.com/popular/x/')).toBeNull();
+  });
+
+  it('tenta o site com e sem www e sem https', () => {
+    expect(variacoesDoSite('https://lojao.com.br')).toEqual([
+      'https://lojao.com.br',
+      'https://www.lojao.com.br',
+      'http://lojao.com.br',
+      'http://www.lojao.com.br',
+    ]);
   });
 
   it('acha o perfil de Instagram nos resultados', () => {

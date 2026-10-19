@@ -74,6 +74,28 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
     res.json(await repo.obter(pool, id));
   });
 
+  /**
+   * Refaz o enriquecimento de todas as empresas da campanha (ex.: depois de ligar uma fonte nova).
+   * Custa de novo no Apify e no Gemini; a tela pede confirmação antes.
+   */
+  r.post('/:id/reenriquecer', async (req, res) => {
+    const id = idDaRota(req);
+    const { rows } = await pool.query<{ empresa_id: number }>(
+      'SELECT empresa_id FROM descoberta.campanha_empresas WHERE campanha_id = $1 ORDER BY empresa_id',
+      [id],
+    );
+    if (!rows.length) throw AppError.invalido('A campanha ainda não tem empresas.');
+    for (const r of rows) {
+      await filas.publicar('enriquecimento.solicitar', {
+        empresaId: r.empresa_id,
+        campanhaId: id,
+        forcar: true,
+      });
+    }
+    log.info({ campanhaId: id, empresas: rows.length }, 'enriquecimento refeito para a campanha');
+    res.status(202).json({ quantidade: rows.length });
+  });
+
   r.post('/:id/encerrar', async (req, res) => {
     const id = idDaRota(req);
     await transicionar(id, 'encerrada');

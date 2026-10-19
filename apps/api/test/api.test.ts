@@ -278,6 +278,14 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
     expect(d.body.etapas).toEqual([expect.objectContaining({ etapa: 'receita', status: 'encontrado' })]);
 
+    const todos = await enviar('post', '/campanhas/2/reenriquecer');
+    expect(todos.status).toBe(202);
+    expect(todos.body).toEqual({ quantidade: 2 });
+    expect(publicados).toContainEqual({
+      nome: 'enriquecimento.solicitar',
+      payload: { empresaId: 2, campanhaId: 2, forcar: true },
+    });
+
     const r = await enviar('post', '/empresas/1/enriquecer');
     expect(r.status).toBe(202);
     expect(publicados).toContainEqual({

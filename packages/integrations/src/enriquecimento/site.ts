@@ -46,6 +46,7 @@ const EMAIL_LIXO =
   /\.(png|jpe?g|gif|webp|svg)$|@(example|exemplo|sentry|wixpress|domain|email)\.|^(nome|seu|your)@/i;
 const TELEFONE = /(?:\+?55[\s.-]?)?\(?\b([1-9]{2})\)?[\s.-]?(9?\d{4})[\s.-]?(\d{4})\b/g;
 const CNPJ = /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g;
+/** Caminhos do próprio Instagram que não são perfis (páginas de tópico, posts, ajuda...). */
 const RESERVADOS_INSTAGRAM = new Set([
   'p',
   'reel',
@@ -55,6 +56,24 @@ const RESERVADOS_INSTAGRAM = new Set([
   'tv',
   'accounts',
   'direct',
+  'popular',
+  'about',
+  'legal',
+  'developer',
+  'web',
+  'locations',
+  'tags',
+  'directory',
+  'privacy',
+  'help',
+  'sessions',
+  'emails',
+  'challenge',
+  'oauth',
+  'press',
+  'blog',
+  'instagram',
+  'share',
 ]);
 
 export function normalizarSite(url: string | null | undefined): string | null {
@@ -183,7 +202,12 @@ export async function lerSite(
   const timeoutMs = opcoes.timeoutMs ?? 12_000;
   const url = normalizarSite(site);
   if (!url) return null;
-  const home = await baixarHtml(url, timeoutMs);
+  // Muitos sites pequenos só respondem sem https ou só com "www.": tenta as variações.
+  let home: { html: string; urlFinal: string } | null = null;
+  for (const tentativa of variacoesDoSite(url)) {
+    home = await baixarHtml(tentativa, timeoutMs);
+    if (home) break;
+  }
   if (!home) return null;
 
   const htmls = [home.html];
@@ -202,6 +226,20 @@ export async function lerSite(
     .join('\n---\n')
     .slice(0, LIMITE_TEXTO);
   return { urlFinal: home.urlFinal, paginas, texto, ...contatos };
+}
+
+export function variacoesDoSite(url: string): string[] {
+  const u = new URL(url);
+  const semWww = u.host.replace(/^www\./, '');
+  const caminho = u.pathname === '/' ? '' : u.pathname;
+  return [
+    ...new Set([
+      url,
+      `https://www.${semWww}${caminho}`,
+      `http://${u.host}${caminho}`,
+      `http://www.${semWww}${caminho}`,
+    ]),
+  ];
 }
 
 function tituloDe(html: string): string | null {

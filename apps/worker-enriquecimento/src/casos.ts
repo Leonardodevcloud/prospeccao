@@ -234,7 +234,9 @@ export async function enriquecerEmpresa(
       await etapa(
         'site',
         siteMaps ? 'erro' : 'pulada',
-        siteMaps ? 'O site não respondeu.' : 'Sem site no Google.',
+        siteMaps
+          ? 'O site não respondeu (fora do ar ou bloqueia leitura automática).'
+          : 'Sem site no Google.',
         siteMaps,
       );
     }
@@ -245,7 +247,7 @@ export async function enriquecerEmpresa(
       const consulta = `"${empresa.nome}" ${empresa.cidade.toLowerCase()} instagram`;
       try {
         const r = await fontes.google.buscar([consulta]);
-        instagram = instagramNosResultados(r.get(consulta) ?? []);
+        instagram = instagramNosResultados(r.get(consulta) ?? [], empresa.nome);
       } catch (erro) {
         log.warn({ err: erro }, 'falha ao procurar o Instagram no Google');
       }

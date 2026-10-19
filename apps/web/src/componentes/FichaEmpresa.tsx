@@ -170,9 +170,12 @@ function trilha(e: EmpresaDetalhe): Camada[] {
           nome: 'Google Maps',
           status: 'encontrado',
           fonte: 'maps',
-          detalhe: e.cruzamento
-            ? `Ligado à base por ${ROTULO_CRUZAMENTO[e.cruzamento.tipo] ?? e.cruzamento.tipo}${e.cruzamento.similaridade ? ` (semelhança ${Math.round(e.cruzamento.similaridade * 100)}%)` : ''}.`
-            : 'Encontrado nas buscas da campanha.',
+          detalhe:
+            e.cruzamento?.tipo === 'novo'
+              ? 'Encontrado no Maps; ainda não ligado a um CNPJ da base.'
+              : e.cruzamento
+                ? `Ligado à base por ${ROTULO_CRUZAMENTO[e.cruzamento.tipo] ?? e.cruzamento.tipo}${e.cruzamento.similaridade ? ` (semelhança ${Math.round(e.cruzamento.similaridade * 100)}%)` : ''}.`
+                : 'Encontrado nas buscas da campanha.',
         }
       : {
           nome: 'Google Maps',

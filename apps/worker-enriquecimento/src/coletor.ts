@@ -135,6 +135,22 @@ export class Coletor {
     });
   }
 
+  /**
+   * O mesmo número achado como WhatsApp (botão do site, bio) e como telefone (Google, Receita)
+   * vira um contato só, de WhatsApp, com todas as fontes.
+   */
+  juntarTelefonesDeWhatsapp(): void {
+    for (const [chave, tel] of [...this.contatos]) {
+      if (tel.canal !== 'telefone') continue;
+      const wpp = this.contatos.get(`whatsapp:${tel.valor}`);
+      if (!wpp) continue;
+      for (const f of tel.fontes) wpp.fontes.add(f);
+      wpp.confianca = Math.min(100, Math.max(wpp.confianca, tel.confianca) + 10);
+      if (tel.whatsapp === false) wpp.whatsapp = false;
+      this.contatos.delete(chave);
+    }
+  }
+
   /** Telefones a conferir no WhatsApp: os mais confiáveis primeiro, celulares antes de fixos. */
   telefonesParaConferir(limite = 6): string[] {
     return [...this.contatos.values()]
@@ -208,6 +224,7 @@ export class Coletor {
 
   /** Melhor contato da empresa para a primeira abordagem. */
   escolherPrincipal(): Contato | null {
+    this.juntarTelefonesDeWhatsapp();
     const peso = (c: Contato): number => {
       if (c.status === 'invalido') return -1;
       const base =

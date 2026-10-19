@@ -38,6 +38,15 @@ describe('coletor', () => {
     expect(c.escolherPrincipal()?.valor).toBe('71998124410');
   });
 
+  it('mesmo número como WhatsApp do site e telefone do Google vira um contato só', () => {
+    const c = new Coletor();
+    c.contato({ canal: 'whatsapp', valor: '7132487608', fonte: 'site', confianca: 80 });
+    c.contato({ canal: 'telefone', valor: '7132487608', fonte: 'maps', confianca: 70 });
+    c.escolherPrincipal();
+    expect([...c.contatos.keys()]).toEqual(['whatsapp:7132487608']);
+    expect([...(c.contatos.get('whatsapp:7132487608')?.fontes ?? [])]).toEqual(['site', 'maps']);
+  });
+
   it('decisor: compras primeiro, depois quem administra na Receita', () => {
     const c = new Coletor();
     c.pessoa({

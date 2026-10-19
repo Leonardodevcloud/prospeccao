@@ -93,12 +93,59 @@ export function interpretarLinkedin(r: ResultadoGoogle): PessoaLinkedin | null {
   };
 }
 
-/** Primeiro perfil de Instagram nos resultados (ignora posts e reels). */
-export function instagramNosResultados(resultados: ResultadoGoogle[]): string | null {
+const GENERICAS = new Set([
+  'auto',
+  'pecas',
+  'peca',
+  'autopecas',
+  'comercio',
+  'loja',
+  'lojas',
+  'distribuidora',
+  'pet',
+  'shop',
+  'farmacia',
+  'drogaria',
+  'moto',
+  'motos',
+  'ltda',
+  'store',
+  'salvador',
+  'bahia',
+  'oficial',
+  'baixa',
+  'centro',
+]);
+
+/** Palavras do nome que identificam a empresa ("Lojão Auto Peças" → ["lojao"]). */
+export function palavrasDoNome(nome: string): string[] {
+  return nome
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((p) => p.length >= 3 && !GENERICAS.has(p));
+}
+
+/**
+ * Perfil de Instagram nos resultados do Google que é mesmo da empresa: ignora posts, páginas
+ * de tópico (instagram.com/popular/...) e perfis cujo nome não tem nenhuma palavra da empresa.
+ */
+export function instagramNosResultados(resultados: ResultadoGoogle[], nomeEmpresa?: string): string | null {
+  const palavras = nomeEmpresa ? palavrasDoNome(nomeEmpresa) : [];
   for (const r of resultados) {
     if (!/instagram\.com\//i.test(r.url)) continue;
     const u = usuarioInstagram(r.url);
-    if (u) return u;
+    if (!u) continue;
+    if (palavras.length) {
+      const texto = `${u.replace(/[._]/g, ' ')} ${r.titulo} ${r.descricao}`
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+      const juntos = texto.replace(/\s+/g, '');
+      if (!palavras.some((p) => texto.includes(p) || juntos.includes(p))) continue;
+    }
+    return u;
   }
   return null;
 }

@@ -181,6 +181,14 @@ function CardCampanha({ c }: { c: Campanha }) {
       cliente.invalidateQueries({ queryKey: ['campanhas'] });
     },
   });
+  const [confirmarRefazer, setConfirmarRefazer] = useState(false);
+  const refazer = useMutation({
+    mutationFn: () => api<{ quantidade: number }>(`/campanhas/${c.id}/reenriquecer`, { metodo: 'POST' }),
+    onSuccess: (r) => {
+      setConfirmarRefazer(false);
+      setAvisos([`${r.quantidade} leads voltaram para a fila do enriquecimento. Acompanhe em Atividade.`]);
+    },
+  });
   const p = c.progresso;
   const buscando = c.status === 'ativa' && p.buscasPendentes > 0;
 
@@ -227,7 +235,22 @@ function CardCampanha({ c }: { c: Campanha }) {
           {a}
         </Mensagem>
       ))}
-      <ErroDaApi erro={acao.error} />
+      <ErroDaApi erro={acao.error ?? refazer.error} />
+      {confirmarRefazer && (
+        <div className="confirmar">
+          <span>
+            Refazer o enriquecimento dos {fmtNumero(p.empresas)} leads? Gasta de novo no Apify e no Gemini.
+          </span>
+          <div className="acoes">
+            <Button size="sm" variant="primary" disabled={refazer.isPending} onClick={() => refazer.mutate()}>
+              {refazer.isPending ? 'Enviando…' : `Refazer ${fmtNumero(p.empresas)} leads`}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmarRefazer(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="acoes">
         {(c.status === 'rascunho' || c.status === 'pausada') && (
@@ -249,6 +272,11 @@ function CardCampanha({ c }: { c: Campanha }) {
         {p.empresas > 0 && (
           <Button size="sm" icon="users" onClick={() => navegar(`/?campanhaId=${c.id}`)}>
             Ver leads
+          </Button>
+        )}
+        {p.empresas > 0 && !confirmarRefazer && (
+          <Button size="sm" variant="ghost" icon="loader" onClick={() => setConfirmarRefazer(true)}>
+            Refazer enriquecimento
           </Button>
         )}
         {c.status !== 'encerrada' && (
