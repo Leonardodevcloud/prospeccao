@@ -1,10 +1,14 @@
+import type { Executor } from '@prospeccao/db';
 import { interpretarWebhook } from '@prospeccao/integrations/whatsapp';
 import { AppError, aprovarRascunho, configAgenteEntrada } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
+import { exigirAdmin } from '../../middlewares/seguranca.js';
+import { guardarMidia } from '../conversas/repositorio.js';
 import * as funil from '../funil/repositorio.js';
+import { notificarDono } from '../notificacoes/repositorio.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -41,7 +45,7 @@ export function rotasAgente({ pool, log, whatsapp, ia }: DepsApi): Router {
     });
   });
 
-  r.put('/config', async (req, res) => {
+  r.put('/config', exigirAdmin, async (req, res) => {
     const dados = corpo(req, configAgenteEntrada);
     await repo.salvarConfig(pool, dados);
     log.info({ ligado: dados.ligado, revisarAntes: dados.revisarAntes }, 'agente: configuração salva');
@@ -64,7 +68,7 @@ export function rotasAgente({ pool, log, whatsapp, ia }: DepsApi): Router {
   });
 
   /** Liga a IA em todos os leads abertos das etapas escolhidas. */
-  r.post('/ligar-em-massa', async (req, res) => {
+  r.post('/ligar-em-massa', exigirAdmin, async (req, res) => {
     const { etapas } = corpo(
       req,
       z.object({ etapas: z.array(z.enum(['a_abordar', 'abordado', 'respondeu', 'proposta'])).min(1) }),
@@ -80,7 +84,7 @@ export function rotasAgente({ pool, log, whatsapp, ia }: DepsApi): Router {
  * registra no funil (o lead vai para "Respondeu"); quem responde é o motor do agente, alguns
  * segundos depois, para juntar mensagens em sequência.
  */
-export function rotasWebhook({ pool, log }: DepsApi): Router {
+export function rotasWebhook({ pool, log, whatsapp }: DepsApi): Router {
   const r = Router();
   r.post('/evolution/:token', async (req, res) => {
     const cfg = await repo.obterConfig(pool);
@@ -94,7 +98,39 @@ export function rotasWebhook({ pool, log }: DepsApi): Router {
     res.json({ ok: true });
   });
 
-  async function registrarRecebida(m: NonNullable<ReturnType<typeof interpretarWebhook>>) {
+  type Recebida = NonNullable<ReturnType<typeof interpretarWebhook>>;
+
+  /** Guarda o arquivo da mensagem: o que veio no webhook, ou baixa da Evolution (em segundo plano). */
+  async function anexar(db: Executor, mensagemId: number, m: Recebida) {
+    if (!m.midia) return;
+    const salvar = async (base64: string, mime: string | null) => {
+      const id = await guardarMidia(db, {
+        mime: (mime ?? m.midia?.mime ?? 'application/octet-stream').split(';')[0]!.trim(),
+        nome: m.midia?.nome,
+        base64,
+      });
+      await db.query('UPDATE comercial.mensagens SET midia_tipo = $2, midia_id = $3 WHERE id = $1', [
+        mensagemId,
+        m.midia?.tipo,
+        id,
+      ]);
+    };
+    if (m.midia.base64) return salvar(m.midia.base64, m.midia.mime);
+    await db.query('UPDATE comercial.mensagens SET midia_tipo = $2 WHERE id = $1', [
+      mensagemId,
+      m.midia.tipo,
+    ]);
+    if (!whatsapp?.baixarMidia || !m.idExterno) return;
+    const id = m.idExterno;
+    void whatsapp
+      .baixarMidia(id)
+      .then((r) => (r ? salvar(r.base64, r.mime) : undefined))
+      .catch((erro) =>
+        log.warn({ err: erro, mensagem: mensagemId }, 'webhook: não consegui baixar o arquivo'),
+      );
+  }
+
+  async function registrarRecebida(m: Recebida) {
     const empresaId = await repo.leadPorTelefone(pool, m.telefone);
     if (!empresaId) return;
     if (m.deMim) {
@@ -114,6 +150,7 @@ export function rotasWebhook({ pool, log }: DepsApi): Router {
         origem: 'humano',
         idExterno: m.idExterno,
       });
+      if (id) await anexar(pool, id, m);
       if (id)
         await funil.registrarAtividade(
           pool,
@@ -133,12 +170,23 @@ export function rotasWebhook({ pool, log }: DepsApi): Router {
       idExterno: m.idExterno,
     });
     if (!id) return; // a Evolution mandou a mesma mensagem duas vezes
+    await anexar(pool, id, m);
     await funil.registrarAtividade(
       pool,
       empresaId,
       { tipo: 'whatsapp', direcao: 'recebida', texto: m.texto, contato: m.telefone },
       m.nome ?? 'lead',
     );
+    const { rows } = await pool.query<{ nome: string; ia: boolean }>(
+      `SELECT e.nome, (o.agente AND o.agente_pausa IS NULL) AS ia
+         FROM descoberta.empresas e JOIN comercial.oportunidades o ON o.empresa_id = e.id WHERE e.id = $1`,
+      [empresaId],
+    );
+    await notificarDono(pool, empresaId, {
+      tipo: 'mensagem',
+      titulo: `${rows[0]?.nome ?? 'Lead'} mandou mensagem${rows[0]?.ia ? ' (a IA está respondendo)' : ''}`,
+      texto: m.texto,
+    });
     log.info({ empresaId }, 'agente: lead respondeu no WhatsApp');
   }
   return r;

@@ -4,16 +4,20 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import type { DepsApi } from './dependencias.js';
 import { rotaNaoEncontrada, tratarErros } from './middlewares/erros.js';
-import { exigirOrigemConhecida, exigirSessao } from './middlewares/seguranca.js';
+import { adminParaAlterar, exigirOrigemConhecida, exigirSessao } from './middlewares/seguranca.js';
+import { rotasAgenda, rotasCalendario } from './modulos/agenda/rotas.js';
 import { rotasAgente, rotasWebhook } from './modulos/agente/rotas.js';
 import { rotasAtividade } from './modulos/atividade/rotas.js';
 import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
 import { rotasCampanhas } from './modulos/campanhas/rotas.js';
+import { rotasConversas } from './modulos/conversas/rotas.js';
 import { rotasEmpresas } from './modulos/empresas/rotas.js';
+import { rotasEquipe } from './modulos/equipe/rotas.js';
 import { rotasFunil } from './modulos/funil/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
+import { rotasNotificacoes } from './modulos/notificacoes/rotas.js';
 import { rotasPlaces } from './modulos/places/rotas.js';
 import { rotasRelatorios } from './modulos/relatorios/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
@@ -28,7 +32,12 @@ export function criarApp(deps: DepsApi): Express {
   // Webhook do WhatsApp: vem da Evolution (sem origem do navegador, sem sessão); protegido por token.
   // Antes do limite de 200 kb: mensagem com mídia chega grande.
   app.use('/webhooks', express.json({ limit: '10mb' }), rotasWebhook(deps));
-  app.use(express.json({ limit: '200kb' }));
+  // Anexo da conversa (até 10 MB em base64) é o único corpo grande; o resto fica em 200 kb.
+  const jsonGrande = express.json({ limit: '15mb' });
+  const jsonPequeno = express.json({ limit: '200kb' });
+  app.use((req, res, next) =>
+    /^\/conversas\/\d+\/midia$/.test(req.path) ? jsonGrande(req, res, next) : jsonPequeno(req, res, next),
+  );
   app.use(cookieParser());
   app.use(
     pinoHttp({
@@ -48,19 +57,26 @@ export function criarApp(deps: DepsApi): Express {
   );
 
   app.use('/saude', rotasSaudePublica(deps));
+  // Agenda por link secreto, para o Google Agenda assinar (sem login).
+  app.use('/calendario', rotasCalendario(deps));
   app.use(exigirOrigemConhecida(deps.origens));
   app.use('/auth', rotasAuth(deps));
 
   const protegidas = Router();
-  protegidas.use(exigirSessao(deps.auth.jwtSegredo));
-  protegidas.use('/nichos', rotasNichos(deps));
-  protegidas.use('/campanhas', rotasCampanhas(deps));
-  protegidas.use('/bases', rotasBases(deps));
+  protegidas.use(exigirSessao(deps.auth.jwtSegredo, deps.pool));
+  // Configuração que gasta dinheiro ou muda a operação: todos veem, só o administrador altera.
+  protegidas.use('/nichos', adminParaAlterar, rotasNichos(deps));
+  protegidas.use('/campanhas', adminParaAlterar, rotasCampanhas(deps));
+  protegidas.use('/bases', adminParaAlterar, rotasBases(deps));
   protegidas.use('/empresas', rotasEmpresas(deps));
   protegidas.use('/funil', rotasFunil(deps));
   protegidas.use('/agente', rotasAgente(deps));
   protegidas.use('/relatorios', rotasRelatorios(deps));
-  protegidas.use('/importacoes', rotasImportacoes(deps));
+  protegidas.use('/importacoes', adminParaAlterar, rotasImportacoes(deps));
+  protegidas.use('/equipe', rotasEquipe(deps));
+  protegidas.use('/notificacoes', rotasNotificacoes(deps));
+  protegidas.use('/conversas', rotasConversas(deps));
+  protegidas.use('/agenda', rotasAgenda(deps));
   protegidas.use('/atividade', rotasAtividade(deps));
   protegidas.use('/places', rotasPlaces(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));

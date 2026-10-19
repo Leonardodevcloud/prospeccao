@@ -12,11 +12,12 @@ import {
 import { type Request, Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
+import { exigirAdmin } from '../../middlewares/seguranca.js';
 import * as cadencia from './cadencia.js';
 import * as pipelines from './pipelines.js';
 import * as repo from './repositorio.js';
 
-const autor = (req: Request) => req.usuario?.email ?? 'sistema';
+const autor = (req: Request) => req.usuario?.nome ?? 'sistema';
 
 export function rotasFunil({ pool, log }: DepsApi): Router {
   const r = Router();
@@ -31,8 +32,9 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
     res.json(await repo.adicionar(pool, corpo(req, funilAdicionar), autor(req)));
   });
 
-  r.get('/resumo', async (_req, res) => {
-    res.json(await repo.resumo(pool));
+  /** Para o menu: os seus follow-ups (o administrador vê os de todos). */
+  r.get('/resumo', async (req, res) => {
+    res.json(await repo.resumo(pool, req.usuario?.papel === 'admin' ? null : (req.usuario?.id ?? null)));
   });
 
   r.get('/etiquetas', async (_req, res) => {
@@ -46,27 +48,27 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
   r.get('/pipelines', async (_req, res) => {
     res.json(await pipelines.listar(pool));
   });
-  r.post('/pipelines', async (req, res) => {
+  r.post('/pipelines', exigirAdmin, async (req, res) => {
     const id = await pipelines.criarPipeline(pool, corpo(req, pipelineEntrada).nome);
     res.status(201).json({ id });
   });
-  r.patch('/pipelines/:id', async (req, res) => {
+  r.patch('/pipelines/:id', exigirAdmin, async (req, res) => {
     await pipelines.renomearPipeline(pool, idDaRota(req), corpo(req, pipelineEntrada).nome);
     res.json(await pipelines.listar(pool));
   });
-  r.delete('/pipelines/:id', async (req, res) => {
+  r.delete('/pipelines/:id', exigirAdmin, async (req, res) => {
     await pipelines.apagarPipeline(pool, idDaRota(req));
     res.status(204).end();
   });
-  r.post('/pipelines/:id/etapas', async (req, res) => {
+  r.post('/pipelines/:id/etapas', exigirAdmin, async (req, res) => {
     const id = await pipelines.criarEtapa(pool, idDaRota(req), corpo(req, etapaEntrada));
     res.status(201).json({ id });
   });
-  r.patch('/etapas/:id', async (req, res) => {
+  r.patch('/etapas/:id', exigirAdmin, async (req, res) => {
     await pipelines.atualizarEtapa(pool, idDaRota(req), corpo(req, etapaAtualizar));
     res.json(await pipelines.listar(pool));
   });
-  r.delete('/etapas/:id', async (req, res) => {
+  r.delete('/etapas/:id', exigirAdmin, async (req, res) => {
     await pipelines.apagarEtapa(pool, idDaRota(req));
     res.status(204).end();
   });
@@ -76,7 +78,7 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
     res.json(await cadencia.obterConfig(pool));
   });
 
-  r.put('/cadencia', async (req, res) => {
+  r.put('/cadencia', exigirAdmin, async (req, res) => {
     const dados = corpo(req, configCadenciaEntrada);
     await cadencia.salvarConfig(pool, dados);
     log.info({ diasFollowup: dados.diasFollowup, diasEncerrar: dados.diasEncerrar }, 'cadência atualizada');
@@ -107,7 +109,7 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
   });
 
   /** Tira do funil (apaga o histórico): o lead volta a ser "novo". */
-  r.delete('/:empresaId', async (req, res) => {
+  r.delete('/:empresaId', exigirAdmin, async (req, res) => {
     if (!(await repo.remover(pool, idDaRota(req, 'empresaId'))))
       throw AppError.naoEncontrado('Lead no funil');
     res.status(204).end();

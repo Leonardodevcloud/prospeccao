@@ -30,7 +30,7 @@ export function Login() {
         <div>
           <h1>Entrar na Prospecção</h1>
           <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-            Use o e-mail e a senha configurados no servidor.
+            Use seu e-mail e senha. Primeiro acesso? Abra o link do convite que você recebeu.
           </p>
         </div>
         <TextField

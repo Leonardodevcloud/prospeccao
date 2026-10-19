@@ -31,6 +31,10 @@ export class AppError extends Error {
     return new AppError(422, 'dados_invalidos', mensagem, { detalhes });
   }
 
+  static proibido(mensagem = 'Só administradores podem fazer isso.') {
+    return new AppError(403, 'proibido', mensagem);
+  }
+
   static conflito(mensagem: string) {
     return new AppError(409, 'conflito', mensagem);
   }

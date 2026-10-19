@@ -15,6 +15,8 @@ import { diaDaqui, diaDoInput, fmtHora, fmtNome, fmtPrazo, formatarTelefone } fr
 import { ProximaMensagem } from './Cadencia';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { usePipelines } from './Pipelines';
+import { useEquipe } from './Sessao';
+import { AgendaDoLead } from './Tarefas';
 
 const TIPOS: { id: Exclude<TipoAtividade, 'etapa'>; rotulo: string }[] = [
   { id: 'whatsapp', rotulo: 'WhatsApp' },
@@ -200,6 +202,8 @@ export function SecaoFunil(props: {
   /** Contato principal (para pré-preencher o registro e abrir o WhatsApp). */
   contatoPrincipal: { canal: string; valor: string } | null;
   aoAbrirEmpresa?: (id: number) => void;
+  /** Nome da empresa (para a agenda). */
+  empresaNome?: string;
 }) {
   const { empresaId } = props;
   const cliente = useQueryClient();
@@ -252,6 +256,7 @@ export function SecaoFunil(props: {
   /** Etapa do pipeline escolhida enquanto pede o motivo da perda. */
   const [motivoEtapaId, setMotivoEtapaId] = useState<number | null>(null);
   const pipelines = usePipelines();
+  const equipe = useEquipe();
   const [confirmarRemover, setConfirmarRemover] = useState(false);
   const [tipo, setTipo] = useState<Exclude<TipoAtividade, 'etapa'>>('whatsapp');
   const [direcao, setDirecao] = useState<'enviada' | 'recebida'>('enviada');
@@ -459,6 +464,26 @@ export function SecaoFunil(props: {
                 }}
               />
             </div>
+            <div className="campo">
+              <label htmlFor="funil-responsavel">Responsável</label>
+              <select
+                id="funil-responsavel"
+                value={op.responsavelId ?? ''}
+                disabled={atualizar.isPending || equipe.isPending}
+                onChange={(e) =>
+                  atualizar.mutate({ responsavelId: e.target.value ? Number(e.target.value) : null })
+                }
+              >
+                <option value="">Sem responsável</option>
+                {equipe.data?.usuarios
+                  .filter((u) => u.ativo || u.id === op.responsavelId)
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.nome}
+                    </option>
+                  ))}
+              </select>
+            </div>
           </div>
           {!['ganho', 'perdido', 'descartado'].includes(op.etapa) && (
             <label className="opcao" style={{ marginTop: 12 }}>
@@ -552,6 +577,17 @@ export function SecaoFunil(props: {
             </div>
           </div>
           <ErroDaApi erro={atualizar.error} />
+        </Panel>
+
+        <Panel
+          titulo="Agenda"
+          acoes={
+            <Button size="sm" variant="ghost" icon="message-circle" href={`/conversas?lead=${empresaId}`}>
+              Abrir conversa
+            </Button>
+          }
+        >
+          <AgendaDoLead empresaId={empresaId} empresaNome={props.empresaNome ?? 'o lead'} />
         </Panel>
 
         {['a_abordar', 'abordado', 'respondeu', 'proposta'].includes(op.etapa) && !op.encerrarEm && (

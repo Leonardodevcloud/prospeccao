@@ -570,6 +570,7 @@ export function FichaEmpresa({
             <SecaoFunil
               key={e.id}
               empresaId={e.id}
+              empresaNome={e.nome}
               aoAbrirEmpresa={aoAbrir}
               contatoPrincipal={
                 e.contatos.find((c) => c.principal) ??

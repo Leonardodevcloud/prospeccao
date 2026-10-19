@@ -116,14 +116,35 @@ export async function criarMensagem(
     origem: 'agente' | 'cadencia' | 'humano' | 'lead';
     idExterno?: string | null;
     nota?: string | null;
+    usuarioId?: number | null;
+    midiaTipo?: 'imagem' | 'audio' | 'video' | 'documento' | null;
+    midiaId?: number | null;
+    /** Mensagem do lead já lida (ex.: você mesmo mandou pelo celular). */
+    lida?: boolean;
   },
 ): Promise<number | null> {
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO comercial.mensagens (empresa_id, direcao, texto, telefone, status, origem, id_externo, nota, enviado_em)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'enviada' THEN now() END)
+    `INSERT INTO comercial.mensagens
+       (empresa_id, direcao, texto, telefone, status, origem, id_externo, nota, enviado_em,
+        usuario_id, midia_tipo, midia_id, lida_em)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'enviada' THEN now() END,
+             $9, $10, $11, CASE WHEN $2 = 'enviada' OR $12 THEN now() END)
      ON CONFLICT (id_externo) WHERE id_externo IS NOT NULL DO NOTHING
      RETURNING id`,
-    [m.empresaId, m.direcao, m.texto, m.telefone, m.status, m.origem, m.idExterno ?? null, m.nota ?? null],
+    [
+      m.empresaId,
+      m.direcao,
+      m.texto,
+      m.telefone,
+      m.status,
+      m.origem,
+      m.idExterno ?? null,
+      m.nota ?? null,
+      m.usuarioId ?? null,
+      m.midiaTipo ?? null,
+      m.midiaId ?? null,
+      m.lida ?? false,
+    ],
   );
   return rows[0]?.id ?? null;
 }

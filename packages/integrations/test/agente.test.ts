@@ -37,6 +37,27 @@ describe('WhatsApp (Evolution)', () => {
         },
       }),
     ).toMatchObject({ texto: '[áudio]', deMim: true });
+    expect(
+      interpretarWebhook({
+        event: 'messages.upsert',
+        data: {
+          key: { remoteJid: '5571988776655@s.whatsapp.net', fromMe: false, id: 'IMG1' },
+          message: { imageMessage: { caption: 'nossa fachada', mimetype: 'image/jpeg' }, base64: 'AAAA' },
+        },
+      }),
+    ).toMatchObject({
+      texto: 'nossa fachada',
+      midia: { tipo: 'imagem', mime: 'image/jpeg', base64: 'AAAA' },
+    });
+    expect(
+      interpretarWebhook({
+        event: 'messages.upsert',
+        data: {
+          key: { remoteJid: '5571988776655@s.whatsapp.net', id: 'DOC1' },
+          message: { documentMessage: { fileName: 'tabela.pdf', mimetype: 'application/pdf' } },
+        },
+      }),
+    ).toMatchObject({ texto: '[documento]', midia: { tipo: 'documento', nome: 'tabela.pdf', base64: null } });
     expect(numeroWhatsapp('(71) 98877-6655')).toBe('5571988776655');
   });
 });

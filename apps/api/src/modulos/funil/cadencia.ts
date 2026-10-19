@@ -103,8 +103,8 @@ export interface MensagemPronta {
   totalTentativas: number;
 }
 
-/** Mensagem do próximo envio, já com nome do decisor, empresa e cidade. */
-export async function mensagemDoLead(db: Executor, empresaId: number): Promise<MensagemPronta> {
+/** Dados do lead para montar mensagens: primeiro nome do decisor, empresa, cidade e o melhor WhatsApp. */
+export async function dadosDoLead(db: Executor, empresaId: number) {
   const { rows } = await db.query<{
     etapa: EtapaFunil;
     tentativas: number;
@@ -136,23 +136,32 @@ export async function mensagemDoLead(db: Executor, empresaId: number): Promise<M
   const l = rows[0];
   if (!l) throw AppError.naoEncontrado('Lead no funil');
   const cfg = await obterConfig(db);
-  const modelo = modeloDoPasso(l.etapa, l.tentativas, cfg);
   const titulo = (s: string) => s.toLowerCase().replace(/(^|\s)\p{L}/gu, (x) => x.toUpperCase());
-  const primeiroNome = l.decisor ? titulo(l.decisor.trim().split(/\s+/)[0] ?? '') : null;
+  return {
+    etapa: l.etapa,
+    tentativas: l.tentativas,
+    telefone: l.telefone,
+    cfg,
+    variaveis: {
+      nome: l.decisor ? titulo(l.decisor.trim().split(/\s+/)[0] ?? '') : null,
+      empresa: titulo(l.nome),
+      cidade: l.cidade ? titulo(l.cidade) : null,
+      remetente: cfg.remetente,
+    },
+  };
+}
+
+/** Mensagem do próximo envio, já com nome do decisor, empresa e cidade. */
+export async function mensagemDoLead(db: Executor, empresaId: number): Promise<MensagemPronta> {
+  const l = await dadosDoLead(db, empresaId);
+  const modelo = modeloDoPasso(l.etapa, l.tentativas, l.cfg);
   return {
     modelo,
     rotulo: modelo ? ROTULOS[modelo] : null,
-    texto: modelo
-      ? montarMensagem(cfg.modelos[modelo], {
-          nome: primeiroNome,
-          empresa: titulo(l.nome),
-          cidade: l.cidade ? titulo(l.cidade) : null,
-          remetente: cfg.remetente,
-        })
-      : '',
+    texto: modelo ? montarMensagem(l.cfg.modelos[modelo], l.variaveis) : '',
     telefone: l.telefone,
     tentativa: l.etapa === 'abordado' ? l.tentativas + 1 : l.etapa === 'a_abordar' ? 1 : 0,
-    totalTentativas: totalTentativas(cfg),
+    totalTentativas: totalTentativas(l.cfg),
   };
 }
 

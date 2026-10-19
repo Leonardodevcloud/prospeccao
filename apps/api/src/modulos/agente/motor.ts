@@ -2,6 +2,7 @@ import type { Pool } from '@prospeccao/db';
 import { pediuParaParar } from '@prospeccao/integrations/agente';
 import type { Logger } from '@prospeccao/shared';
 import type { DepsApi } from '../../dependencias.js';
+import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { obterConfig as configCadencia, mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
 import * as repo from './repositorio.js';
@@ -216,6 +217,11 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
         },
         AUTOR,
       );
+      // Entra na agenda do dono do lead (o closer, se a reunião passou o lead para ele).
+      if (decisao.reuniaoEm)
+        await criarReuniaoDoLead(pool, empresaId, decisao.reuniaoEm, null).catch((erro) =>
+          deps.log.warn({ err: erro, empresaId }, 'agente: não consegui pôr a reunião na agenda'),
+        );
       if (decisao.resposta) await nova(decisao.resposta);
       break;
     case 'encerrar_sem_interesse':

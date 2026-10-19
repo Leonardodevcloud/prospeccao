@@ -249,6 +249,8 @@ export interface DetalheFunil {
     etapaCor?: string | null;
     pipelineNome?: string | null;
     etiquetas?: string[];
+    responsavelId?: number | null;
+    responsavelNome?: string | null;
   } | null;
   atividades: AtividadeFunil[];
   duplicada: Duplicada | null;
@@ -290,6 +292,12 @@ export interface CardFunil {
   /** Última mensagem do lead e quando chegou. */
   ultimaDoLead: string | null;
   ultimaDoLeadEm: string | null;
+  responsavelId: number | null;
+  responsavelNome: string | null;
+  /** Mensagens do lead ainda não lidas na caixa de entrada. */
+  naoLidas: number;
+  /** Próxima reunião/visita marcada na agenda. */
+  reuniaoEm: string | null;
 }
 
 export interface Quadro {
@@ -740,4 +748,202 @@ export interface TelaAgente {
     etapa: EtapaFunil;
     em: string;
   }[];
+}
+
+/* ───────────────────────────── Equipe ───────────────────────────── */
+
+export type PapelUsuario = 'admin' | 'sdr' | 'closer';
+export const ROTULO_PAPEL_USUARIO: Record<PapelUsuario, string> = {
+  admin: 'Administrador',
+  sdr: 'SDR',
+  closer: 'Closer',
+};
+
+export interface Sessao {
+  id: number;
+  nome: string;
+  email: string;
+  papel: PapelUsuario;
+  telefone: string | null;
+  agendaToken: string;
+}
+
+export interface Metas {
+  abordagensDia: number;
+  reunioesMes: number;
+  ganhosMes: number;
+}
+
+export interface UsuarioEquipe {
+  id: number;
+  nome: string;
+  email: string;
+  papel: PapelUsuario;
+  ativo: boolean;
+  recebeLeads: boolean;
+  telefone: string | null;
+  convitePendente: boolean;
+  ultimoAcesso: string | null;
+  leadsAbertos: number;
+  metas: Metas;
+}
+
+export interface Equipe {
+  usuarios: UsuarioEquipe[];
+  distribuicao: { sdr: 'rodizio' | 'manual'; closer: 'rodizio' | 'mesmo' | 'manual' };
+  semDono: number;
+}
+
+export interface DesempenhoUsuario {
+  id: number;
+  nome: string;
+  papel: PapelUsuario;
+  contatosHoje: number;
+  contatos: number;
+  pelaIa: number;
+  respostas: number;
+  reunioes: number;
+  reunioesMes: number;
+  ganhos: number;
+  ganhosMes: number;
+  valorGanho: number;
+  abertos: number;
+  atrasados: number;
+  metas: Metas;
+}
+
+export interface Notificacao {
+  id: number;
+  tipo: 'mensagem' | 'atribuido' | 'reuniao' | 'tarefa' | 'sistema';
+  titulo: string;
+  texto: string | null;
+  empresaId: number | null;
+  link: string | null;
+  lidaEm: string | null;
+  criadoEm: string;
+}
+
+/* ───────────────────────────── Conversas ───────────────────────────── */
+
+export type TipoMidia = 'imagem' | 'audio' | 'video' | 'documento';
+
+export interface ConversaResumo {
+  empresaId: number;
+  nome: string;
+  cidade: string | null;
+  etapa: EtapaFunil;
+  etapaNome: string | null;
+  etapaCor: string | null;
+  responsavelId: number | null;
+  responsavelNome: string | null;
+  agente: boolean;
+  agentePausa: string | null;
+  ultima: string | null;
+  ultimaDirecao: 'enviada' | 'recebida' | null;
+  ultimaEm: string;
+  ultimaMidia: TipoMidia | null;
+  ultimaOrigem: string | null;
+  naoLidas: number;
+}
+
+export interface MensagemConversa {
+  id: string;
+  direcao: 'enviada' | 'recebida';
+  texto: string;
+  status: 'rascunho' | 'aprovada' | 'enviada' | 'erro' | 'recebida' | 'registrada';
+  origem: 'agente' | 'cadencia' | 'humano' | 'lead' | 'registro';
+  erro: string | null;
+  nota: string | null;
+  midiaTipo: TipoMidia | null;
+  midiaId: number | null;
+  em: string;
+  autor: string | null;
+}
+
+export interface ConversaAberta {
+  empresaId: number;
+  nome: string;
+  cidade: string | null;
+  etapa: EtapaFunil;
+  etapaNome: string | null;
+  etapaCor: string | null;
+  responsavelId: number | null;
+  responsavelNome: string | null;
+  agente: boolean;
+  agentePausa: string | null;
+  telefone: string | null;
+  variaveis: { nome: string | null; empresa: string; cidade: string | null; remetente: string };
+  mensagens: MensagemConversa[];
+}
+
+export interface RespostaRapida {
+  id: number;
+  atalho: string;
+  texto: string;
+}
+
+/* ───────────────────────────── Agenda ───────────────────────────── */
+
+export type TipoTarefa = 'tarefa' | 'ligacao' | 'reuniao' | 'visita';
+export const ROTULO_TAREFA: Record<TipoTarefa, string> = {
+  tarefa: 'Tarefa',
+  ligacao: 'Ligação',
+  reuniao: 'Reunião',
+  visita: 'Visita',
+};
+export const ICONE_TAREFA: Record<TipoTarefa, string> = {
+  tarefa: 'check',
+  ligacao: 'phone',
+  reuniao: 'users',
+  visita: 'map-pin',
+};
+
+export interface Tarefa {
+  id: number;
+  empresaId: number | null;
+  empresaNome: string | null;
+  empresaCidade: string | null;
+  usuarioId: number | null;
+  usuarioNome: string | null;
+  tipo: TipoTarefa;
+  titulo: string;
+  descricao: string | null;
+  inicio: string;
+  fim: string | null;
+  local: string | null;
+  concluidaEm: string | null;
+  lembreteLeadEm: string | null;
+  atrasada: boolean;
+}
+
+export interface FollowupDoDia {
+  empresaId: number;
+  nome: string;
+  cidade: string | null;
+  etapa: EtapaFunil;
+  etapaNome: string | null;
+  etapaCor: string | null;
+  proximaAcao: string | null;
+  proximaAcaoEm: string;
+  atrasado: boolean;
+  tentativas: number;
+  agente: boolean;
+  agentePausa: string | null;
+  responsavelNome: string | null;
+}
+
+export interface MeuDia {
+  tarefas: Tarefa[];
+  followups: FollowupDoDia[];
+  conversas: { empresaId: number; nome: string; naoLidas: number; ultimaEm: string; ultima: string }[];
+  proximas: Tarefa[];
+}
+
+export interface ConfigAgenda {
+  lembreteLead: boolean;
+  lembreteLeadMinutos: number;
+  textoLembreteLead: string;
+  lembreteUsuarioMinutos: number;
+  lembreteUsuarioWhatsapp: boolean;
+  duracaoReuniaoMin: number;
 }

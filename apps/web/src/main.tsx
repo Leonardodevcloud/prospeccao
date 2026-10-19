@@ -11,9 +11,13 @@ import { Agente } from './paginas/Agente';
 import { Atividade } from './paginas/Atividade';
 import { BaseCnpj } from './paginas/BaseCnpj';
 import { Campanhas } from './paginas/Campanhas';
+import { Conversas } from './paginas/Conversas';
+import { Convite } from './paginas/Convite';
+import { Equipe } from './paginas/Equipe';
 import { Funil } from './paginas/Funil';
 import { Leads } from './paginas/Leads';
 import { Login } from './paginas/Login';
+import { MeuDia } from './paginas/MeuDia';
 import { Nichos } from './paginas/Nichos';
 import { Relatorios } from './paginas/Relatorios';
 
@@ -22,12 +26,16 @@ document.documentElement.setAttribute('data-theme', 'light');
 
 const roteador = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/convite/:token', element: <Convite /> },
   {
     path: '/',
     element: <Shell />,
     errorElement: <ErroDaTela />,
     children: [
       { index: true, element: <Leads /> },
+      { path: 'hoje', element: <MeuDia /> },
+      { path: 'conversas', element: <Conversas /> },
+      { path: 'equipe', element: <Equipe /> },
       { path: 'funil', element: <Funil /> },
       { path: 'relatorios', element: <Relatorios /> },
       { path: 'agente', element: <Agente /> },

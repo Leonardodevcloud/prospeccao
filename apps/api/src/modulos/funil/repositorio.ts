@@ -8,7 +8,10 @@ import {
   type FunilAtualizar,
   ORDEM_ETAPA,
 } from '@prospeccao/shared';
+import { usuarioAtual } from '../../contexto.js';
+import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { JUNCOES_ENRIQ } from '../empresas/repositorio.js';
+import { atribuirNaEntrada, atribuirNaReuniao, definirResponsavel } from '../equipe/repositorio.js';
 import { aplicarCadencia, obterConfig } from './cadencia.js';
 
 /**
@@ -126,10 +129,13 @@ async function registrarEtapa(
   texto: string | null = null,
   nomes: { de?: string | null; para?: string | null } = {},
 ) {
+  // Quem moveu; se foi o sistema (IA, cadência), conta para o dono do lead naquele momento.
   await db.query(
-    `INSERT INTO comercial.atividades (empresa_id, tipo, de_etapa, para_etapa, texto, autor, de_nome, para_nome)
-     VALUES ($1, 'etapa', $2, $3, $4, $5, $6, $7)`,
-    [empresaId, de, para, texto, autor, nomes.de ?? null, nomes.para ?? null],
+    `INSERT INTO comercial.atividades
+       (empresa_id, tipo, de_etapa, para_etapa, texto, autor, de_nome, para_nome, usuario_id)
+     VALUES ($1, 'etapa', $2, $3, $4, $5, $6, $7,
+             coalesce($8, (SELECT responsavel_id FROM comercial.oportunidades WHERE empresa_id = $1)))`,
+    [empresaId, de, para, texto, autor, nomes.de ?? null, nomes.para ?? null, usuarioAtual()?.id ?? null],
   );
 }
 
@@ -159,6 +165,7 @@ async function criarOportunidade(
   if (rowCount) {
     await registrarEtapa(db, empresaId, null, etapa, autor, motivo, { para: alvo?.nome });
     await aplicarCadencia(db, empresaId, 'etapa');
+    if (etapa !== 'descartado') await atribuirNaEntrada(db, empresaId);
   }
   return (rowCount ?? 0) > 0;
 }
@@ -256,6 +263,16 @@ async function mover(
     ],
   );
   await registrarEtapa(db, empresaId, de, para, autor, motivo, { de: deNome, para: alvo?.nome });
+  // Dono: reunião marcada passa para o closer; quem volta do descarte entra no rodízio de novo.
+  if ((para === 'reuniao' || para === 'proposta') && ORDEM_ETAPA[de] < ORDEM_ETAPA.reuniao)
+    await atribuirNaReuniao(db, empresaId);
+  else if (de === 'descartado' && para === 'a_abordar') {
+    const { rows } = await db.query<{ r: number | null }>(
+      'SELECT responsavel_id AS r FROM comercial.oportunidades WHERE empresa_id = $1',
+      [empresaId],
+    );
+    if (!rows[0]?.r) await atribuirNaEntrada(db, empresaId);
+  }
 }
 
 /** Troca de etapa com o mesmo papel (ex.: Proposta enviada → Negociação): a cadência continua. */
@@ -348,6 +365,8 @@ export async function atualizar(pool: Pool, empresaId: number, d: FunilAtualizar
     if (d.etiquetas !== undefined) set('etiquetas', [...new Set(d.etiquetas)]);
     if (sets.length)
       await tx.query(`UPDATE comercial.oportunidades SET ${sets.join(', ')} WHERE empresa_id = $1`, valores);
+    if (d.responsavelId !== undefined) await definirResponsavel(tx, empresaId, d.responsavelId);
+    if (d.reuniao) await criarReuniaoDoLead(tx, empresaId, d.reuniao.inicio, d.reuniao.local ?? null);
   });
 }
 
@@ -370,9 +389,17 @@ export async function registrarAtividade(
       atual = 'a_abordar';
     }
     await tx.query(
-      `INSERT INTO comercial.atividades (empresa_id, tipo, direcao, texto, contato, autor)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [empresaId, d.tipo, d.tipo === 'nota' ? null : d.direcao, d.texto ?? null, d.contato ?? null, autor],
+      `INSERT INTO comercial.atividades (empresa_id, tipo, direcao, texto, contato, autor, usuario_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        empresaId,
+        d.tipo,
+        d.tipo === 'nota' ? null : d.direcao,
+        d.texto ?? null,
+        d.contato ?? null,
+        autor,
+        usuarioAtual()?.id ?? null,
+      ],
     );
 
     let para: EtapaFunil = atual;
@@ -424,17 +451,21 @@ export async function detalhe(db: Executor, empresaId: number) {
               o.campanha_id AS "campanhaId", (o.proxima_acao_em < ${FIM_DE_HOJE}) AS pendente,
               o.tentativas, o.encerrar_em AS "encerrarEm", o.agente, o.agente_pausa AS "agentePausa",
               o.etapa_id AS "etapaId", et.nome AS "etapaNome", et.cor AS "etapaCor", p.nome AS "pipelineNome",
-              o.etiquetas
+              o.etiquetas, o.responsavel_id AS "responsavelId", u.nome AS "responsavelNome"
          FROM comercial.oportunidades o
+         LEFT JOIN cadastro.usuarios u ON u.id = o.responsavel_id
          LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
          LEFT JOIN comercial.pipelines p ON p.id = et.pipeline_id
         WHERE o.empresa_id = $1`,
       [empresaId],
     ),
     db.query(
-      `SELECT id, tipo, direcao, texto, contato, de_etapa AS "deEtapa", para_etapa AS "paraEtapa", autor,
-              de_nome AS "deNome", para_nome AS "paraNome", criado_em AS "em"
-         FROM comercial.atividades WHERE empresa_id = $1 ORDER BY criado_em DESC, id DESC LIMIT 200`,
+      `SELECT a.id, a.tipo, a.direcao, a.texto, a.contato, a.de_etapa AS "deEtapa", a.para_etapa AS "paraEtapa",
+              CASE WHEN a.tipo = 'etapa' AND a.autor IN ('agente', 'sistema') THEN a.autor
+                   ELSE coalesce(u.nome, a.autor) END AS autor,
+              a.de_nome AS "deNome", a.para_nome AS "paraNome", a.criado_em AS "em"
+         FROM comercial.atividades a LEFT JOIN cadastro.usuarios u ON u.id = a.usuario_id
+        WHERE a.empresa_id = $1 ORDER BY a.criado_em DESC, a.id DESC LIMIT 200`,
       [empresaId],
     ),
     duplicadas(db, [empresaId]),
@@ -469,6 +500,8 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
     `o.etapa_id IN (SELECT id FROM comercial.etapas WHERE pipeline_id = ${p(pipelineId)})`,
   ];
   if (f.etiqueta) where.push(`${p(f.etiqueta)} = ANY(o.etiquetas)`);
+  if (f.responsavel === 'sem') where.push('o.responsavel_id IS NULL');
+  else if (f.responsavel) where.push(`o.responsavel_id = ${p(Number(f.responsavel))}`);
   if (f.dias) where.push(`o.criado_em >= now() - make_interval(days => ${p(f.dias)})`);
   if (f.campanhaId)
     where.push(
@@ -487,13 +520,18 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
             o.ultimo_contato_em AS "ultimoContatoEm", o.etapa_desde AS "etapaDesde",
             o.valor_mensal::float8 AS "valorMensal", o.motivo, o.tentativas, o.encerrar_em AS "encerrarEm",
             o.agente, o.agente_pausa AS "agentePausa", o.etapa_id AS "etapaId", o.etiquetas,
-            o.criado_em AS "criadoEm",
+            o.criado_em AS "criadoEm", o.responsavel_id AS "responsavelId", resp.nome AS "responsavelNome",
+            (SELECT count(*)::int FROM comercial.mensagens m
+              WHERE m.empresa_id = o.empresa_id AND m.direcao = 'recebida' AND m.lida_em IS NULL) AS "naoLidas",
+            (SELECT min(t.inicio) FROM comercial.tarefas t
+              WHERE t.empresa_id = o.empresa_id AND t.tipo IN ('reuniao', 'visita') AND t.concluida_em IS NULL
+                AND t.inicio > now() - interval '2 hours') AS "reuniaoEm",
             e.nome, e.cidade, e.uf, coalesce(e.maps_categoria, l.maps_categoria) AS "categoria",
             l.faixa, l.score, dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
             pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
             coalesce(pc.valor, e.maps_telefone) AS "telefone",
             (SELECT count(*)::int FROM comercial.atividades a
-              WHERE a.empresa_id = o.empresa_id AND a.tipo <> 'etapa') AS contatos,
+              WHERE a.empresa_id = o.empresa_id AND a.tipo NOT IN ('etapa', 'nota')) AS contatos,
             ult.texto AS "ultimaDoLead", ult.criado_em AS "ultimaDoLeadEm"
        FROM comercial.oportunidades o
        LEFT JOIN LATERAL (
@@ -502,6 +540,7 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
           ORDER BY a.criado_em DESC LIMIT 1
        ) ult ON true
        JOIN descoberta.empresas e ON e.id = o.empresa_id
+       LEFT JOIN cadastro.usuarios resp ON resp.id = o.responsavel_id
        ${JUNCOES_ENRIQ}
       WHERE ${where.join(' AND ')}
       ORDER BY ${ORDEM_QUADRO[f.ordem]}
@@ -527,11 +566,13 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
   };
 }
 
-/** Contagem leve para o menu: follow-ups vencidos ou para hoje. */
-export async function resumo(db: Executor): Promise<{ pendentes: number }> {
+/** Contagem leve para o menu: follow-ups vencidos ou para hoje (só os seus, se informado). */
+export async function resumo(db: Executor, usuarioId: number | null = null): Promise<{ pendentes: number }> {
   const { rows } = await db.query<{ pendentes: number }>(
     `SELECT count(*)::int AS pendentes FROM comercial.oportunidades
-      WHERE proxima_acao_em < ${FIM_DE_HOJE} AND etapa NOT IN ('ganho', 'perdido', 'descartado')`,
+      WHERE proxima_acao_em < ${FIM_DE_HOJE} AND etapa NOT IN ('ganho', 'perdido', 'descartado')
+        AND ($1::int IS NULL OR responsavel_id = $1)`,
+    [usuarioId],
   );
   return rows[0] ?? { pendentes: 0 };
 }

@@ -101,7 +101,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     cookie = setCookie[0]!.split(';')[0]!;
 
     const eu = await ler('/auth/eu');
-    expect(eu.body).toEqual({ email: 'ops@exemplo.com' });
+    // O login do ambiente vira o primeiro administrador.
+    expect(eu.body).toMatchObject({ email: 'ops@exemplo.com', papel: 'admin' });
   });
 
   it('recusa escrita de origem desconhecida (CSRF)', async () => {
@@ -798,7 +799,12 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
     await motor.gerarRespostas(deps, cfg);
     const op = (await ler('/funil/77')).body.oportunidade;
-    expect(op).toMatchObject({ etapa: 'reuniao', proximaAcao: 'Reunião com o lead' });
+    // A reunião entra na agenda e vira o próximo passo do card, com data e hora.
+    expect(op).toMatchObject({ etapa: 'reuniao', proximaAcao: 'Reunião' });
+    expect(new Date(op.proximaAcaoEm).toISOString()).toBe(amanha);
+    const agendaLead = (await ler('/agenda/lead/77')).body;
+    expect(agendaLead).toHaveLength(1);
+    expect(agendaLead[0]).toMatchObject({ tipo: 'reuniao', titulo: expect.stringMatching(/^Reunião com /) });
 
     // 5) "Pare de mandar": sai do funil como descartado, sem passar pela IA.
     await pool.query(
@@ -899,6 +905,352 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     const r = await ler('/nao-existe');
     expect(r.status).toBe(404);
     expect(r.body.erro.codigo).toBe('rota_inexistente');
+  });
+
+  it('equipe: convite, papéis, rodízio SDR → closer, autor no histórico, desempenho e acesso cortado', async () => {
+    // Admin convida um SDR e um closer; cada um cria a senha pelo link.
+    const sdr = await enviar('post', '/equipe', { nome: 'Ana SDR', email: 'ana@exemplo.com', papel: 'sdr' });
+    expect(sdr.status).toBe(201);
+    expect(sdr.body.convite).toMatch(/^http:\/\/localhost:5173\/convite\/[\w-]{20,}$/);
+    const closer = await enviar('post', '/equipe', {
+      nome: 'Caio Closer',
+      email: 'caio@exemplo.com',
+      papel: 'closer',
+    });
+    expect(
+      (await enviar('post', '/equipe', { nome: 'Xis', email: 'ANA@exemplo.com', papel: 'sdr' })).status,
+    ).toBe(409);
+
+    const entrar = async (convite: string, senha: string) => {
+      const token = convite.split('/').at(-1)!;
+      expect((await request(app).get(`/auth/convite/${token}`)).body).toHaveProperty('email');
+      expect(
+        (await request(app).post(`/auth/convite/${token}`).set('Origin', ORIGEM).send({ senha: '123' }))
+          .status,
+      ).toBe(422);
+      const r = await request(app).post(`/auth/convite/${token}`).set('Origin', ORIGEM).send({ senha });
+      expect(r.status).toBe(200);
+      // Link usado não vale de novo.
+      expect((await request(app).get(`/auth/convite/${token}`)).status).toBe(404);
+      return (r.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    };
+    const cookieAna = await entrar(sdr.body.convite, 'senha-da-ana-1');
+    const cookieCaio = await entrar(closer.body.convite, 'senha-do-caio-1');
+    const como = (c: string) => ({
+      ler: (rota: string) => request(app).get(rota).set('Cookie', c),
+      enviar: (metodo: 'post' | 'put' | 'patch' | 'delete', rota: string, corpo?: object) =>
+        request(app)[metodo](rota).set('Origin', ORIGEM).set('Cookie', c).send(corpo),
+    });
+    const ana = como(cookieAna);
+    const caio = como(cookieCaio);
+    expect((await ana.ler('/auth/eu')).body).toMatchObject({ nome: 'Ana SDR', papel: 'sdr' });
+    // Login normal com a senha criada.
+    expect(
+      (
+        await request(app)
+          .post('/auth/login')
+          .set('Origin', ORIGEM)
+          .send({ email: 'ana@exemplo.com', senha: 'senha-da-ana-1' })
+      ).status,
+    ).toBe(200);
+
+    // SDR não mexe em configuração.
+    expect((await ana.enviar('put', '/funil/cadencia', {})).status).toBe(403);
+    expect((await ana.enviar('post', '/nichos', {})).status).toBe(403);
+    expect(
+      (await ana.enviar('post', '/equipe', { nome: 'Y', email: 'y@exemplo.com', papel: 'sdr' })).status,
+    ).toBe(403);
+    expect((await ana.ler('/nichos')).status).toBe(200);
+
+    // Rodízio: lead novo vai para a SDR (única que recebe), com aviso para ela.
+    await pool.query(
+      `INSERT INTO descoberta.empresas (id, nome, cidade, uf, maps_telefone) VALUES
+         (91, 'Auto Peças Rodízio', 'SALVADOR', 'BA', '7130001111'),
+         (92, 'Peças Agenda', 'SALVADOR', 'BA', '7130002222')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    expect((await enviar('post', '/funil', { empresaIds: [91, 92], forcar: true })).body.adicionadas).toBe(2);
+    const d91 = (await ler('/funil/91')).body;
+    expect(d91.oportunidade).toMatchObject({ responsavelId: sdr.body.id, responsavelNome: 'Ana SDR' });
+    expect((await ana.ler('/notificacoes')).body.naoLidas).toBe(2);
+    expect(
+      (
+        await ler(`/funil?responsavel=${sdr.body.id}&pipelineId=${(await ler('/funil')).body.pipelineId}`)
+      ).body.cards.map((c: { empresaId: number }) => c.empresaId),
+    ).toEqual(expect.arrayContaining([91, 92]));
+
+    // A SDR registra contato (autor = ela) e marca a reunião pela tela: vai para o closer e para a agenda.
+    await ana.enviar('post', '/funil/91/atividades', {
+      tipo: 'ligacao',
+      direcao: 'enviada',
+      texto: 'Liguei',
+    });
+    const quando = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const reuniao = await ana.enviar('patch', '/funil/91', {
+      etapa: 'reuniao',
+      reuniao: { inicio: quando, local: 'https://meet.google.com/abc' },
+    });
+    expect(reuniao.status).toBe(200);
+    expect(reuniao.body.oportunidade).toMatchObject({
+      etapa: 'reuniao',
+      responsavelNome: 'Caio Closer',
+      proximaAcao: 'Reunião',
+    });
+    const hist = reuniao.body.atividades as { tipo: string; autor: string; texto: string | null }[];
+    expect(hist.find((a) => a.tipo === 'ligacao')?.autor).toBe('Ana SDR');
+    expect(hist.some((a) => a.tipo === 'nota' && a.texto?.startsWith('Responsável: Caio Closer'))).toBe(true);
+    const agendaCaio = (
+      await caio.ler(
+        `/agenda?de=${new Date().toISOString()}&ate=${new Date(Date.now() + 7 * 86_400_000).toISOString()}`,
+      )
+    ).body;
+    expect(agendaCaio).toHaveLength(1);
+    expect(agendaCaio[0]).toMatchObject({
+      tipo: 'reuniao',
+      empresaId: 91,
+      local: 'https://meet.google.com/abc',
+    });
+    expect((await caio.ler('/notificacoes')).body.itens[0].titulo).toMatch(/Auto Peças Rodízio/);
+
+    // Desempenho: a reunião conta para quem marcou (a SDR); metas por pessoa.
+    const desempenho = (await ler('/equipe/desempenho?dias=30')).body as {
+      nome: string;
+      contatos: number;
+      reunioes: number;
+    }[];
+    expect(desempenho.find((u) => u.nome === 'Ana SDR')).toMatchObject({ contatos: 1, reunioes: 1 });
+    const metas = await enviar('patch', `/equipe/${sdr.body.id}`, {
+      metas: { abordagensDia: 50, reunioesMes: 8, ganhosMes: 0 },
+    });
+    expect(metas.body.usuarios.find((u: { id: number }) => u.id === sdr.body.id).metas).toEqual({
+      abordagensDia: 50,
+      reunioesMes: 8,
+      ganhosMes: 0,
+    });
+
+    // Trocar o dono à mão; filtro "sem dono"; distribuir os sem dono.
+    await enviar('patch', '/funil/92', { responsavelId: null });
+    expect((await ler('/equipe')).body.semDono).toBe(1);
+    expect((await enviar('post', '/equipe/distribuir')).body.distribuidos).toBe(1);
+    expect((await ler('/funil/92')).body.oportunidade.responsavelId).toBe(sdr.body.id);
+
+    // Último administrador não perde o papel; desativar corta a sessão na hora e libera os leads.
+    const eu = (await ler('/auth/eu')).body;
+    expect((await enviar('patch', `/equipe/${eu.id}`, { papel: 'sdr' })).status).toBe(422);
+    await enviar('patch', `/equipe/${sdr.body.id}`, { ativo: false });
+    expect((await ana.ler('/funil')).status).toBe(401);
+    expect((await ler('/funil/92')).body.oportunidade.responsavelId).toBeNull();
+    // Novo link (senha esquecida) reativa o acesso.
+    await enviar('patch', `/equipe/${sdr.body.id}`, { ativo: true });
+    const novo = await enviar('post', `/equipe/${sdr.body.id}/convite`);
+    expect(novo.body.convite).toMatch(/\/convite\//);
+    expect(
+      (
+        await request(app)
+          .post('/auth/login')
+          .set('Origin', ORIGEM)
+          .send({ email: 'ana@exemplo.com', senha: 'senha-da-ana-1' })
+      ).status,
+    ).toBe(401);
+  });
+
+  it('conversas: webhook com foto, não lidas, aviso para o dono, responder pela tela e arquivo seguro', async () => {
+    const enviados: { tel: string; texto?: string; tipo?: string }[] = [];
+    const appZap = criarApp({
+      pool,
+      log: criarLogger('teste', 'silent'),
+      filas: {
+        publicar: async () => 'x',
+        publicarVarios: async () => 0,
+        cancelarPendentes: async () => 0,
+        tamanhos: async () => ({}),
+      },
+      auth: {
+        jwtSegredo: 'x'.repeat(40),
+        adminEmail: 'ops@exemplo.com',
+        adminSenhaHash: 'x',
+        sessaoHoras: 1,
+        cookieSeguro: false,
+      },
+      origens: [ORIGEM],
+      whatsapp: {
+        async enviar(tel, texto) {
+          enviados.push({ tel, texto });
+          return { idExterno: `z-${enviados.length}` };
+        },
+        async enviarMidia(tel, m) {
+          enviados.push({ tel, tipo: m.tipo });
+          return { idExterno: `zm-${enviados.length}` };
+        },
+      },
+    });
+    const z = {
+      ler: (rota: string) => request(appZap).get(rota).set('Cookie', cookie),
+      enviar: (metodo: 'post' | 'patch', rota: string, corpo?: object) =>
+        request(appZap)[metodo](rota).set('Origin', ORIGEM).set('Cookie', cookie).send(corpo),
+    };
+    const token = (await ler('/agente')).body.webhook.split('/').at(-1);
+    const png = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4c40000000049454e44ae426082',
+      'hex',
+    ).toString('base64');
+    const r = await request(appZap)
+      .post(`/webhooks/evolution/${token}`)
+      .send({
+        event: 'messages.upsert',
+        data: {
+          key: { remoteJid: '557130002222@s.whatsapp.net', fromMe: false, id: 'foto-1' },
+          message: { imageMessage: { caption: 'Olha nossa loja', mimetype: 'image/png' }, base64: png },
+        },
+      });
+    expect(r.status).toBe(200);
+
+    const lista = (await z.ler('/conversas')).body as {
+      empresaId: number;
+      naoLidas: number;
+      ultima: string;
+    }[];
+    expect(lista[0]).toMatchObject({ empresaId: 92, naoLidas: 1, ultima: 'Olha nossa loja' });
+    expect((await z.ler('/conversas/resumo')).body.naoLidas).toBeGreaterThanOrEqual(1);
+    expect(
+      (await z.ler('/conversas?filtro=nao_lidas')).body.map((c: { empresaId: number }) => c.empresaId),
+    ).toContain(92);
+    // Sem dono (a SDR foi desativada no teste anterior): avisa os administradores.
+    const avisos = (await z.ler('/notificacoes')).body.itens as { tipo: string; empresaId: number }[];
+    expect(avisos.some((a) => a.tipo === 'mensagem' && a.empresaId === 92)).toBe(true);
+
+    // Abrir a conversa: mensagem com a foto, lida, aviso some.
+    const conversa = (await z.ler('/conversas/92')).body;
+    const foto = conversa.mensagens.find((m: { midiaTipo: string | null }) => m.midiaTipo === 'imagem');
+    expect(foto).toMatchObject({ direcao: 'recebida', texto: 'Olha nossa loja' });
+    const arquivo = await z.ler(`/conversas/midia/${foto.midiaId}`);
+    expect(arquivo.headers['content-type']).toBe('image/png');
+    expect(
+      (await z.ler('/conversas?filtro=nao_lidas')).body.map((c: { empresaId: number }) => c.empresaId),
+    ).not.toContain(92);
+
+    // Responder pela tela: vai pelo WhatsApp, entra no histórico com o seu nome e a etapa avança.
+    const resposta = await z.enviar('post', '/conversas/92/mensagens', {
+      texto: 'Que loja bonita! Posso te ligar?',
+    });
+    expect(resposta.status).toBe(201);
+    expect(enviados.at(-1)).toEqual({ tel: '7130002222', texto: 'Que loja bonita! Posso te ligar?' });
+    expect(resposta.body.mensagens.at(-1)).toMatchObject({
+      direcao: 'enviada',
+      autor: 'ops',
+      status: 'enviada',
+    });
+    expect(
+      resposta.body.mensagens.filter(
+        (m: { texto: string }) => m.texto === 'Que loja bonita! Posso te ligar?',
+      ),
+    ).toHaveLength(1);
+
+    // Anexo: PDF abre na tela; HTML vira download (não roda com a origem do sistema).
+    const pdf = await z.enviar('post', '/conversas/92/midia', {
+      tipo: 'documento',
+      mime: 'application/pdf',
+      nome: 'proposta.pdf',
+      base64: Buffer.from('%PDF-1.4').toString('base64'),
+    });
+    expect(pdf.status).toBe(201);
+    expect(enviados.at(-1)).toEqual({ tel: '7130002222', tipo: 'documento' });
+    const html = await z.enviar('post', '/conversas/92/midia', {
+      tipo: 'documento',
+      mime: 'text/html',
+      nome: 'x.html',
+      base64: Buffer.from('<script>alert(1)</script>').toString('base64'),
+    });
+    const idHtml = html.body.mensagens.at(-1).midiaId;
+    const baixado = await z.ler(`/conversas/midia/${idHtml}`);
+    expect(baixado.headers['content-type']).toBe('application/octet-stream');
+    expect(baixado.headers['content-disposition']).toMatch(/^attachment/);
+
+    // Respostas rápidas.
+    expect((await z.ler('/conversas/respostas')).body.length).toBeGreaterThanOrEqual(4);
+    expect(
+      (await z.enviar('post', '/conversas/respostas', { atalho: 'tabela', texto: 'Segue a tabela, {nome}.' }))
+        .status,
+    ).toBe(201);
+    expect(
+      (await z.enviar('post', '/conversas/respostas', { atalho: 'com espaço', texto: 'x' })).status,
+    ).toBe(422);
+
+    // Sem WhatsApp configurado, a tela explica.
+    expect((await enviar('post', '/conversas/92/mensagens', { texto: 'oi' })).body.erro.mensagem).toMatch(
+      /Evolution/,
+    );
+  });
+
+  it('agenda: tarefas, meu dia, calendário para o Google e lembretes da reunião', async () => {
+    const amanha10 = new Date(Date.now() + 86_400_000);
+    amanha10.setUTCHours(13, 0, 0, 0); // 10h em São Paulo
+    const tarefa = await enviar('post', '/agenda', {
+      tipo: 'ligacao',
+      titulo: 'Ligar para o gerente',
+      empresaId: 92,
+      inicio: new Date(Date.now() - 3600_000).toISOString(),
+    });
+    expect(tarefa.status).toBe(201);
+    const dia = (await ler('/agenda/meu-dia?usuario=todos')).body;
+    expect(dia.tarefas.some((t: { titulo: string }) => t.titulo === 'Ligar para o gerente')).toBe(true);
+    expect(dia.proximas.some((t: { empresaId: number }) => t.empresaId === 91)).toBe(true);
+    // Concluir tira do dia.
+    await enviar('patch', `/agenda/${tarefa.body.id}`, { concluida: true });
+    expect(
+      (await ler('/agenda/meu-dia?usuario=todos')).body.tarefas.some(
+        (t: { id: number }) => t.id === tarefa.body.id,
+      ),
+    ).toBe(false);
+    expect((await enviar('post', '/agenda', { titulo: '', inicio: 'ontem' })).status).toBe(422);
+
+    // Calendário por link secreto (sem login).
+    const { rows: caio } = await pool.query<{ agenda_token: string }>(
+      `SELECT agenda_token FROM cadastro.usuarios WHERE email = 'caio@exemplo.com'`,
+    );
+    const ics = await request(app).get(`/calendario/${caio[0]!.agenda_token}.ics`);
+    expect(ics.headers['content-type']).toMatch(/text\/calendar/);
+    expect(ics.text).toMatch(/BEGIN:VCALENDAR/);
+    expect(ics.text).toMatch(/SUMMARY:Reunião com Auto Peças Rodízio/);
+    expect(ics.text).toMatch(/LOCATION:https:\/\/meet.google.com\/abc/);
+    expect((await request(app).get('/calendario/token-errado.ics')).status).toBe(404);
+
+    // Lembrete: reunião marcada com antecedência, dentro da janela → WhatsApp para o lead e aviso para o dono.
+    const { rodarLembretes, quando } = await import('../src/modulos/agenda/lembretes.js');
+    expect(quando(amanha10)).toBe('amanhã às 10h');
+    await pool.query(
+      `UPDATE comercial.tarefas SET inicio = now() + interval '20 minutes', criado_em = now() - interval '1 day'
+        WHERE empresa_id = 91 AND tipo = 'reuniao'`,
+    );
+    const enviados: { tel: string; texto: string }[] = [];
+    const deps = {
+      pool,
+      log: criarLogger('teste', 'silent'),
+      whatsapp: {
+        async enviar(tel: string, texto: string) {
+          enviados.push({ tel, texto });
+          return { idExterno: `l-${enviados.length}` };
+        },
+      },
+    };
+    await rodarLembretes(deps);
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]?.tel).toBe('7130001111');
+    expect(enviados[0]?.texto).toMatch(/confirmar nossa conversa (hoje|amanhã) às/);
+    await rodarLembretes(deps); // não repete
+    expect(enviados).toHaveLength(1);
+    const { rows: aviso } = await pool.query(
+      `SELECT n.titulo FROM comercial.notificacoes n JOIN cadastro.usuarios u ON u.id = n.usuario_id
+        WHERE u.email = 'caio@exemplo.com' AND n.tipo = 'reuniao'`,
+    );
+    expect(aviso).toHaveLength(1);
+
+    // Limpa para o próximo teste (que conta o funil).
+    await pool.query('DELETE FROM comercial.oportunidades WHERE empresa_id IN (91, 92)');
+    await pool.query('DELETE FROM descoberta.empresas WHERE id IN (91, 92)');
+    await pool.query(
+      `UPDATE cadastro.usuarios SET ativo = false WHERE email IN ('ana@exemplo.com', 'caio@exemplo.com')`,
+    );
   });
 
   it('para o enriquecimento e apaga a campanha com os leads só dela (base de CNPJ fica)', async () => {

@@ -16,15 +16,19 @@ import { ConfigurarCadencia, EnvioRapido } from '../componentes/Cadencia';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { EditarPipelines, usePipelines } from '../componentes/Pipelines';
+import { Dono, useEquipe, useSessao } from '../componentes/Sessao';
 import {
+  diaDaqui,
   diasDesde,
   fmtCidade,
+  fmtCompromisso,
   fmtNome,
   fmtNumero,
   fmtPrazo,
   fmtQuando,
   fmtReais,
   formatarTelefone,
+  instanteDoInput,
 } from '../formatar';
 
 /** Etapas em que a cadência tem uma mensagem pronta para mandar. */
@@ -93,8 +97,26 @@ function Card(props: {
         <button type="button" className="cartao__abrir" onClick={props.aoAbrir}>
           <span className="cartao__topo">
             <b>{fmtNome(c.nome)}</b>
-            {c.faixa && <ScoreBadge faixa={c.faixa} score={c.score ?? undefined} />}
+            <span className="cartao__cantos">
+              {c.faixa && <ScoreBadge faixa={c.faixa} score={c.score ?? undefined} />}
+              <Dono id={c.responsavelId} nome={c.responsavelNome} />
+            </span>
           </span>
+          {(c.naoLidas > 0 || c.reuniaoEm) && (
+            <span className="cartao__alertas">
+              {c.naoLidas > 0 && (
+                <span className="etiqueta etiqueta--nova">
+                  <Icon name="message-circle" size={12} /> {c.naoLidas}{' '}
+                  {c.naoLidas === 1 ? 'mensagem nova' : 'mensagens novas'}
+                </span>
+              )}
+              {c.reuniaoEm && (
+                <span className="etiqueta etiqueta--reuniao">
+                  <Icon name="calendar-clock" size={12} /> {fmtCompromisso(c.reuniaoEm)}
+                </span>
+              )}
+            </span>
+          )}
 
           {/* Etiquetas: o que é, onde fica, quem está cuidando e as suas. */}
           <span className="etiquetas">
@@ -210,11 +232,18 @@ export function Funil() {
   const ordem = params.get('ordem') ?? 'manual';
   const dias = params.get('dias') ?? '';
   const etiqueta = params.get('etiqueta') ?? '';
+  const responsavel = params.get('responsavel') ?? '';
+  const sessao = useSessao();
+  const equipe = useEquipe();
   const empresaAberta = params.get('empresa');
   const [busca, setBusca] = useState(params.get('busca') ?? '');
   const [arrastado, setArrastado] = useState<CardFunil | null>(null);
   const [alvo, setAlvo] = useState<Alvo | null>(null);
   const [perda, setPerda] = useState<{ card: CardFunil; alvo: Alvo } | null>(null);
+  const [reuniao, setReuniao] = useState<{ card: CardFunil; alvo: Alvo } | null>(null);
+  const [reuniaoDia, setReuniaoDia] = useState('');
+  const [reuniaoHora, setReuniaoHora] = useState('10:00');
+  const [reuniaoLocal, setReuniaoLocal] = useState('');
   const [motivo, setMotivo] = useState('');
   const [verTodas, setVerTodas] = useState<Set<number>>(new Set());
   const [mensagemPara, setMensagemPara] = useState<CardFunil | null>(null);
@@ -248,6 +277,7 @@ export function Funil() {
     ordem: ordem !== 'manual' ? ordem : undefined,
     dias: dias || undefined,
     etiqueta: etiqueta || undefined,
+    responsavel: responsavel === 'eu' ? sessao.data?.id : responsavel || undefined,
   };
   const chave = ['quadro', filtros];
   const quadro = useQuery({
@@ -260,10 +290,21 @@ export function Funil() {
   const campanhas = useQuery({ queryKey: ['campanhas'], queryFn: () => api<Campanha[]>('/campanhas') });
 
   const mover = useMutation({
-    mutationFn: (d: { empresaId: number; etapaId: number; antesDe: number | null; motivo?: string }) =>
+    mutationFn: (d: {
+      empresaId: number;
+      etapaId: number;
+      antesDe: number | null;
+      motivo?: string;
+      reuniao?: { inicio: string; local?: string };
+    }) =>
       api(`/funil/${d.empresaId}`, {
         metodo: 'PATCH',
-        corpo: { etapaId: d.etapaId, antesDe: d.antesDe, ...(d.motivo ? { motivo: d.motivo } : {}) },
+        corpo: {
+          etapaId: d.etapaId,
+          antesDe: d.antesDe,
+          ...(d.motivo ? { motivo: d.motivo } : {}),
+          ...(d.reuniao ? { reuniao: d.reuniao } : {}),
+        },
       }),
     // Move na tela na hora; se a API recusar, volta ao que estava.
     onMutate: async (d) => {
@@ -295,6 +336,10 @@ export function Funil() {
       cliente.invalidateQueries({ queryKey: ['quadro'] });
       cliente.invalidateQueries({ queryKey: ['pipelines'] });
       cliente.invalidateQueries({ queryKey: ['funil', d.empresaId] });
+      if (d.reuniao) {
+        cliente.invalidateQueries({ queryKey: ['agenda'] });
+        cliente.invalidateQueries({ queryKey: ['meu-dia'] });
+      }
     },
   });
 
@@ -326,7 +371,32 @@ export function Funil() {
       setMotivo('');
       return;
     }
+    // Entrou em reunião agora: pergunta dia e hora (vai para a agenda e o lembrete sai sozinho).
+    if (etapa.papel === 'reuniao' && card.etapa !== 'reuniao' && !card.reuniaoEm) {
+      setReuniao({ card, alvo: { etapaId: etapa.id, antesDe: destino } });
+      setReuniaoDia(diaDaqui(1));
+      setReuniaoLocal('');
+      return;
+    }
     mover.mutate({ empresaId: card.empresaId, etapaId: etapa.id, antesDe: destino });
+  };
+
+  const confirmarReuniao = (comData: boolean) => {
+    if (!reuniao) return;
+    mover.mutate({
+      empresaId: reuniao.card.empresaId,
+      etapaId: reuniao.alvo.etapaId,
+      antesDe: reuniao.alvo.antesDe,
+      ...(comData && reuniaoDia
+        ? {
+            reuniao: {
+              inicio: instanteDoInput(reuniaoDia, reuniaoHora),
+              local: reuniaoLocal.trim() || undefined,
+            },
+          }
+        : {}),
+    });
+    setReuniao(null);
   };
 
   const confirmarPerda = () => {
@@ -349,7 +419,8 @@ export function Funil() {
     filtros.busca ||
     filtros.pendentes ||
     filtros.dias ||
-    filtros.etiqueta
+    filtros.etiqueta ||
+    filtros.responsavel
   );
   const funilVazio = (pipelines.data ?? []).every((p) => p.abertos === 0) && cards.length === 0;
   const todasEtiquetas = quadro.data?.etiquetas ?? [];
@@ -366,14 +437,16 @@ export function Funil() {
             {quadro.data?.descartados ? ` · ${fmtNumero(quadro.data.descartados)} descartados` : ''}
           </p>
         </div>
-        <div className="acoes">
-          <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
-            Cadência e mensagens
-          </Button>
-          <Button icon="layers" variant="secondary" onClick={() => setEditando(true)}>
-            Editar etapas
-          </Button>
-        </div>
+        {sessao.data?.papel === 'admin' && (
+          <div className="acoes">
+            <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
+              Cadência e mensagens
+            </Button>
+            <Button icon="layers" variant="secondary" onClick={() => setEditando(true)}>
+              Editar etapas
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Pipelines (SDR, Closer…) */}
@@ -490,7 +563,86 @@ export function Funil() {
           <option value="B">Nota B</option>
           <option value="C">Nota C</option>
         </select>
+        {(equipe.data?.usuarios.filter((u) => u.ativo).length ?? 0) > 1 && (
+          <>
+            <label className="pp-sr" htmlFor="funil-responsavel">
+              Responsável
+            </label>
+            <select
+              id="funil-responsavel"
+              className="filtro"
+              value={responsavel}
+              onChange={(e) => mudar({ responsavel: e.target.value || null })}
+            >
+              <option value="">Todos os responsáveis</option>
+              <option value="eu">Meus leads</option>
+              <option value="sem">Sem responsável</option>
+              {equipe.data?.usuarios
+                .filter((u) => u.ativo && u.id !== sessao.data?.id)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+            </select>
+          </>
+        )}
       </div>
+
+      {reuniao && (
+        <div className="confirmar" role="dialog" aria-label="Quando é a reunião">
+          <span style={{ fontWeight: 500 }}>Quando é a reunião com {fmtNome(reuniao.card.nome)}?</span>
+          <div className="barra">
+            <label className="pp-sr" htmlFor="reuniao-dia">
+              Dia
+            </label>
+            <input
+              id="reuniao-dia"
+              className="filtro"
+              type="date"
+              value={reuniaoDia}
+              onChange={(e) => setReuniaoDia(e.target.value)}
+            />
+            <label className="pp-sr" htmlFor="reuniao-hora">
+              Hora
+            </label>
+            <input
+              id="reuniao-hora"
+              className="filtro"
+              type="time"
+              value={reuniaoHora}
+              onChange={(e) => setReuniaoHora(e.target.value)}
+            />
+            <label className="pp-sr" htmlFor="reuniao-local">
+              Link ou local
+            </label>
+            <input
+              id="reuniao-local"
+              className="filtro"
+              style={{ flex: '1 1 220px' }}
+              placeholder="Link do Meet ou endereço (opcional)"
+              value={reuniaoLocal}
+              onChange={(e) => setReuniaoLocal(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmarReuniao(true)}
+            />
+            <Button
+              size="sm"
+              variant="primary"
+              icon="calendar-plus"
+              disabled={!reuniaoDia}
+              onClick={() => confirmarReuniao(true)}
+            >
+              Marcar reunião
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => confirmarReuniao(false)}>
+              Mover sem data
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setReuniao(null)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
 
       {perda && (
         <div className="confirmar" role="dialog" aria-label="Motivo da perda">
@@ -562,6 +714,7 @@ export function Funil() {
                     pendentes: null,
                     dias: null,
                     etiqueta: null,
+                    responsavel: null,
                   });
                 }}
               >

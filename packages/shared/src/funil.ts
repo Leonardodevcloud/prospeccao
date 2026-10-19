@@ -80,6 +80,15 @@ export const funilAtualizar = z
     agente: z.boolean().optional(),
     /** Devolve para a IA o lead que ela tinha passado para você. */
     devolverParaIa: z.literal(true).optional(),
+    /** Dono do lead (null = sem dono). */
+    responsavelId: z.number().int().positive().nullable().optional(),
+    /** Ao mover para reunião pela tela: já cria a reunião na agenda. */
+    reuniao: z
+      .object({
+        inicio: z.string().datetime({ offset: true }),
+        local: z.string().trim().max(300).optional(),
+      })
+      .optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
 export type FunilAtualizar = z.infer<typeof funilAtualizar>;
@@ -102,6 +111,11 @@ export const filtrosFunil = z.object({
   /** Entraram no funil nos últimos N dias. */
   dias: z.coerce.number().int().min(1).max(3650).optional(),
   ordem: z.enum(['manual', 'recentes', 'proximo', 'nota', 'contato', 'valor']).default('manual'),
+  /** Dono: id de alguém ou "sem" (sem dono). */
+  responsavel: z
+    .string()
+    .regex(/^(sem|\d+)$/)
+    .optional(),
   campanhaId: z.coerce.number().int().positive().optional(),
   faixa: z.enum(['A', 'B', 'C']).optional(),
   busca: z.string().trim().max(120).optional(),
