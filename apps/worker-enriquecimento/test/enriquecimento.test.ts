@@ -236,6 +236,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       acharNoGoogle: true,
       faixasBasePaga: new Set(['A']),
       refazerDias: 30,
+      limiteContador: 5,
     },
   });
 
@@ -763,5 +764,73 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       `SELECT status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 3 AND etapa = 'base_paga'`,
     );
     expect(pulada[0]).toMatchObject({ status: 'pulada' });
+  });
+
+  it('telefone repetido em muitos CNPJs vira "contador" e seu retorno vale na rodada seguinte', async () => {
+    // O mesmo número da Receita em 6 empresas da base: é do escritório de contabilidade.
+    await pool.query('DELETE FROM base_cnpj.estabelecimentos WHERE cnpj LIKE $1', ['9900000%']);
+    for (let i = 0; i < 6; i++)
+      await pool.query(
+        `INSERT INTO base_cnpj.estabelecimentos (cnpj, cnpj_basico, matriz, situacao, cnae_principal, uf, municipio_codigo, telefones)
+         VALUES ($1, $2, true, '02', '4530703', 'BA', '3849', '{7133330000}')`,
+        [`9900000${i}000100`, `9900000${i}`],
+      );
+    await pool.query(
+      `UPDATE descoberta.empresas SET telefones_receita = '{7133330000}', data_abertura = '2024-01-01' WHERE id = 3`,
+    );
+    await pool.query('DELETE FROM comercial.feedback WHERE empresa_id = 3');
+    await pool.query(
+      `INSERT INTO comercial.feedback (empresa_id, tipo, valor) VALUES (3, 'numero_errado', '71988776655'),
+              (3, 'nao_decisor', 'Marcos Lima')`,
+    );
+    const f = fontesCompletas();
+    await enriquecerEmpresa(
+      deps({
+        site: f.site,
+        google: null,
+        instagram: null,
+        places: null,
+        ia: {
+          async avaliar() {
+            return { faixa: 'B', score: 55, motivo: 'Médio', resumo: 'Diesel', entrega: null, pessoas: [] };
+          },
+        },
+        diretorios: {
+          async buscar() {
+            return {
+              consulta: 'x',
+              painel: null,
+              resultados: [
+                {
+                  titulo: 'CEAVE NORTE DIESEL - contato',
+                  url: 'https://x.com.br/ceave',
+                  descricao: 'Ceave Norte Diesel. Comprador: Marcos Lima. WhatsApp (71) 98877-6655',
+                },
+              ],
+            };
+          },
+        },
+        whatsapp: {
+          async verificar(numeros) {
+            return new Map(numeros.map((n) => [n, n === '71988776655']));
+          },
+        },
+      }),
+      { empresaId: 3, campanhaId: 1, forcar: true },
+    );
+    const { rows: contatos } = await pool.query(
+      `SELECT valor, status, rotulo, principal FROM enriquecimento.contatos WHERE empresa_id = 3`,
+    );
+    expect(contatos.find((x) => x.valor === '7133330000')).toMatchObject({
+      status: 'atencao',
+      rotulo: 'Repetido em 6 empresas da base: provável contador',
+      principal: false,
+    });
+    expect(contatos.find((x) => x.valor === '71988776655')).toMatchObject({
+      status: 'invalido',
+      rotulo: 'Marcado como errado por você',
+      principal: false,
+    });
+    await pool.query('DELETE FROM comercial.feedback WHERE empresa_id = 3');
   });
 });

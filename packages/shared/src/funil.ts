@@ -268,3 +268,12 @@ export function montarMensagem(
     .replace(/ ([,.!?])/g, '$1')
     .trim();
 }
+
+/** Seu retorno sobre um contato ou pessoa do lead. */
+export const feedbackEntrada = z.object({
+  tipo: z.enum(['numero_errado', 'nao_decisor']),
+  /** numero_errado: o valor do contato como está no cadastro; nao_decisor: o nome da pessoa. */
+  valor: z.string().trim().min(1).max(200),
+  canal: z.string().trim().max(20).optional(),
+});
+export type FeedbackEntrada = z.infer<typeof feedbackEntrada>;

@@ -383,6 +383,10 @@ export interface Relatorio {
   }[];
   motivos: { etapa: 'perdido' | 'descartado'; motivo: string; quantidade: number }[];
   diario: { dia: string; contatos: number; respostas: number; novosNoFunil: number }[];
+  /** Contatos que você marcou como errados, por fonte de origem. */
+  errosPorFonte?: { fonte: string; erros: number; contatos: number }[];
+  naoDecisores?: number;
+  custos?: { basePagaBrl: number; basePagaConsultas: number; placesEnriquecimento: number };
 }
 
 export type CanalContato = 'whatsapp' | 'telefone' | 'email' | 'instagram' | 'linkedin' | 'site' | 'facebook';
@@ -412,6 +416,8 @@ export interface PessoaEnriq {
   fontes: FonteEnriq[];
   /** Trecho do site/bio que mostra a pessoa com o cargo. */
   evidencia?: string | null;
+  /** Você marcou que esta pessoa não é quem decide. */
+  naoDecisor?: boolean;
 }
 
 export interface ContatoEnriq {
@@ -427,6 +433,8 @@ export interface ContatoEnriq {
   status: StatusContato;
   whatsapp: boolean | null;
   principal: boolean;
+  /** Você marcou este contato como errado. */
+  marcadoErrado?: boolean;
 }
 
 export interface EtapaEnriq {

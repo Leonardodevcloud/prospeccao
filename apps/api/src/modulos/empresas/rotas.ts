@@ -1,7 +1,7 @@
-import { AppError, filtrosEmpresas } from '@prospeccao/shared';
-import { Router } from 'express';
+import { AppError, feedbackEntrada, filtrosEmpresas } from '@prospeccao/shared';
+import { type Request, Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
-import { consulta, idDaRota } from '../../middlewares/http.js';
+import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import * as repo from './repositorio.js';
 
 export function rotasEmpresas({ pool, filas }: DepsApi): Router {
@@ -24,6 +24,20 @@ export function rotasEmpresas({ pool, filas }: DepsApi): Router {
     if (!campanhaId) throw AppError.naoEncontrado('Empresa');
     await filas.publicar('enriquecimento.solicitar', { empresaId: id, campanhaId, forcar: true });
     res.status(202).json({ mensagem: 'Enriquecimento pedido. A ficha atualiza sozinha em alguns minutos.' });
+  });
+
+  /** Seu retorno: "número errado" ou "não é quem decide". Vale na hora e na próxima rodada. */
+  r.post('/:id/feedback', async (req: Request, res) => {
+    const id = idDaRota(req);
+    await repo.registrarFeedback(pool, id, corpo(req, feedbackEntrada), req.usuario?.email ?? 'sistema');
+    res.json(await repo.obter(pool, id));
+  });
+
+  /** Desfaz o retorno (marcou errado sem querer). */
+  r.delete('/:id/feedback', async (req: Request, res) => {
+    const id = idDaRota(req);
+    await repo.desfazerFeedback(pool, id, corpo(req, feedbackEntrada));
+    res.json(await repo.obter(pool, id));
   });
 
   return r;

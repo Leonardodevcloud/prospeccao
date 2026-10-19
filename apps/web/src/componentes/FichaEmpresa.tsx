@@ -111,7 +111,10 @@ function paraContactRow(c: ContatoEnriq): ContactRowProps {
         : c.canal === 'linkedin'
           ? c.valor.replace(/^https?:\/\/([a-z]{2}\.)?(www\.)?/, '')
           : c.valor;
-  const vistoEm = c.fontes.length > 1 ? `Visto em: ${c.fontes.map((f) => NOME_FONTE[f]).join(', ')}` : null;
+  const vistoEm =
+    c.fontes.length > 1
+      ? `Confirmado em ${c.fontes.length} fontes: ${c.fontes.map((f) => NOME_FONTE[f]).join(', ')}`
+      : null;
   return {
     canal: c.canal === 'facebook' ? 'site' : c.canal,
     valor,
@@ -310,14 +313,50 @@ function dados(e: EmpresaDetalhe): DataFieldItem[] {
   ];
 }
 
+type Retorno = { tipo: 'numero_errado' | 'nao_decisor'; valor: string; desfazer?: boolean };
+
+/** Seu retorno sobre contato ou pessoa: vale na hora e o enriquecimento respeita na próxima rodada. */
+function useRetorno(empresaId: number) {
+  const cliente = useQueryClient();
+  return useMutation({
+    mutationFn: ({ desfazer, ...corpo }: Retorno) =>
+      api<EmpresaDetalhe>(`/empresas/${empresaId}/feedback`, { metodo: desfazer ? 'DELETE' : 'POST', corpo }),
+    onSuccess: (d) => {
+      cliente.setQueryData(['empresa', empresaId], d);
+      cliente.invalidateQueries({ queryKey: ['empresas'] });
+      cliente.invalidateQueries({ queryKey: ['quadro'] });
+      cliente.invalidateQueries({ queryKey: ['funil', empresaId] });
+    },
+  });
+}
+
+/** Botão "número errado" (ou "desfazer") de um contato. */
+function BotaoNumeroErrado(props: { c: ContatoEnriq; empresaId: number }) {
+  const retorno = useRetorno(props.empresaId);
+  const { c } = props;
+  if (c.canal !== 'whatsapp' && c.canal !== 'telefone' && c.canal !== 'email') return null;
+  const nome = c.canal === 'email' ? 'e-mail' : 'número';
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={c.marcadoErrado ? 'check' : 'circle-x'}
+      aria-label={c.marcadoErrado ? `Desfazer: o ${nome} está certo` : `Marcar ${nome} como errado`}
+      disabled={retorno.isPending}
+      onClick={() => retorno.mutate({ tipo: 'numero_errado', valor: c.valor, desfazer: !!c.marcadoErrado })}
+    />
+  );
+}
+
 function QuemDecide({ e }: { e: EmpresaDetalhe }) {
   const [todos, setTodos] = useState(false);
+  const retorno = useRetorno(e.id);
   const daEmpresa = e.contatos.filter((c) => c.pessoaId == null);
   // Contatos que valem para falar com o decisor: o principal e os WhatsApp confirmados da empresa.
   const melhores = daEmpresa
     .filter((c) => c.principal || (c.canal === 'whatsapp' && c.status === 'verificado'))
     .slice(0, 2)
-    .map(paraContactRow);
+    .map((c) => ({ ...paraContactRow(c), acoes: <BotaoNumeroErrado c={c} empresaId={e.id} /> }));
 
   if (e.pessoas.length) {
     const visiveis = todos ? e.pessoas : e.pessoas.slice(0, 3);
@@ -326,7 +365,7 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
         {visiveis.map((p) => {
           const proprios = e.contatos
             .filter((c) => c.pessoaId === p.id && c.canal !== 'linkedin')
-            .map(paraContactRow);
+            .map((c) => ({ ...paraContactRow(c), acoes: <BotaoNumeroErrado c={c} empresaId={e.id} /> }));
           return (
             <DecisorCard
               key={p.id}
@@ -342,8 +381,24 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
               principal={p.decisor}
               fontes={[...new Set(p.fontes.map((f) => FONTE[f]))]}
               linkedin={p.linkedin}
-              evidencia={p.evidencia ?? provaDaPessoa(p)}
+              evidencia={
+                p.naoDecisor
+                  ? 'Você marcou que esta pessoa não é quem decide.'
+                  : (p.evidencia ?? provaDaPessoa(p))
+              }
               contatos={p.decisor ? [...proprios, ...melhores] : proprios}
+              acoes={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={retorno.isPending}
+                  onClick={() =>
+                    retorno.mutate({ tipo: 'nao_decisor', valor: p.nome, desfazer: !!p.naoDecisor })
+                  }
+                >
+                  {p.naoDecisor ? 'Desfazer' : 'Não é quem decide'}
+                </Button>
+              }
             />
           );
         })}
@@ -416,7 +471,9 @@ export function FichaEmpresa({
   const en = e?.enriquecimento;
   const contatos = e
     ? e.contatos.length
-      ? e.contatos.filter((c) => c.pessoaId == null).map(paraContactRow)
+      ? e.contatos
+          .filter((c) => c.pessoaId == null)
+          .map((c) => ({ ...paraContactRow(c), acoes: <BotaoNumeroErrado c={c} empresaId={e.id} /> }))
       : contatosDaDescoberta(e)
     : [];
 

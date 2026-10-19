@@ -60,6 +60,8 @@ export interface Ajustes {
   faixasBasePaga?: Set<string>;
   /** Procurar o Instagram no Google quando o site não indica. */
   buscarInstagram: boolean;
+  /** Telefone em pelo menos N CNPJs da base é tratado como do contador. */
+  limiteContador: number;
   /** Não refaz empresa enriquecida há menos de N dias (a não ser que peçam). */
   refazerDias: number;
 }

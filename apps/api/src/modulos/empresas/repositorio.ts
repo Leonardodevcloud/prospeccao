@@ -8,11 +8,12 @@ import type { FiltrosEmpresas } from '@prospeccao/shared';
 
 const CAMPOS_LISTA = `
   e.id, e.nome, e.razao_social AS "razaoSocial", e.cnpj, e.cidade, e.uf, e.bairro,
-  e.cnae_principal AS "cnaePrincipal", e.porte, e.maps_nota AS "mapsNota", e.maps_avaliacoes AS "mapsAvaliacoes",
-  e.maps_categoria AS "mapsCategoria", e.maps_site AS "mapsSite", e.maps_telefone AS "mapsTelefone",
+  e.cnae_principal AS "cnaePrincipal", e.porte,
+  coalesce(e.maps_nota, l.maps_nota)::float8 AS "mapsNota", coalesce(e.maps_avaliacoes, l.maps_avaliacoes) AS "mapsAvaliacoes",
+  coalesce(e.maps_categoria, l.maps_categoria) AS "mapsCategoria", e.maps_site AS "mapsSite", e.maps_telefone AS "mapsTelefone",
   e.telefones_receita AS "telefonesReceita", e.sinal_entrega AS "sinalEntrega",
   e.distancia_base_km AS "distanciaBaseKm", e.maps_fechada AS "mapsFechada",
-  (e.place_id IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm", e.mei,
+  (e.place_id IS NOT NULL OR l.maps_url IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm", e.mei,
   l.status AS "enriqStatus", l.faixa, l.score, l.motivo,
   dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
   pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
@@ -22,10 +23,20 @@ const CAMPOS_LISTA = `
 export const JUNCOES_ENRIQ = `
   LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
   LEFT JOIN LATERAL (
-    SELECT nome, cargo FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor LIMIT 1
+    SELECT nome, cargo FROM enriquecimento.pessoas p
+     WHERE p.empresa_id = e.id AND p.decisor
+       AND NOT EXISTS (SELECT 1 FROM comercial.feedback f
+                        WHERE f.empresa_id = e.id AND f.tipo = 'nao_decisor' AND f.valor = p.nome)
+     LIMIT 1
   ) dec ON true
   LEFT JOIN LATERAL (
-    SELECT canal, valor, status FROM enriquecimento.contatos c WHERE c.empresa_id = e.id AND c.principal LIMIT 1
+    -- Melhor contato que você não marcou como errado (o principal, se ainda vale).
+    SELECT canal, valor, status FROM enriquecimento.contatos c
+     WHERE c.empresa_id = e.id AND c.canal IN ('whatsapp', 'telefone', 'email') AND c.status <> 'invalido'
+       AND NOT EXISTS (SELECT 1 FROM comercial.feedback f
+                        WHERE f.empresa_id = e.id AND f.tipo = 'numero_errado' AND f.valor = c.valor)
+     ORDER BY c.principal DESC, (c.status = 'verificado') DESC, c.confianca DESC
+     LIMIT 1
   ) pc ON true
   LEFT JOIN comercial.oportunidades op ON op.empresa_id = e.id`;
 
@@ -106,7 +117,7 @@ export async function obter(db: Executor, id: number) {
     `SELECT ${CAMPOS_LISTA}, e.cnpj_basico AS "cnpjBasico", e.situacao, e.data_abertura AS "dataAbertura",
             e.logradouro, e.numero, e.cep, e.email_receita AS "emailReceita",
             e.lat, e.lng, e.geo_fonte AS "geoFonte", e.place_id AS "placeId", e.maps_nome AS "mapsNome",
-            e.maps_endereco AS "mapsEndereco", e.maps_url AS "mapsUrl", e.maps_em AS "mapsEm",
+            e.maps_endereco AS "mapsEndereco", coalesce(e.maps_url, l.maps_url) AS "mapsUrl", e.maps_em AS "mapsEm",
             e.sinal_entrega_fonte AS "sinalEntregaFonte",
             b.nome AS "baseNome"
        FROM descoberta.empresas e
@@ -148,16 +159,25 @@ export async function obter(db: Executor, id: number) {
       [id],
     ),
     db.query(
-      `SELECT id, nome, cargo, papel, decisor, prioridade, desde, linkedin_url AS "linkedin", fontes,
-              evidencia
-         FROM enriquecimento.pessoas WHERE empresa_id = $1 ORDER BY prioridade, nome`,
+      `SELECT p.id, p.nome, p.cargo, p.papel, p.prioridade, p.desde, p.linkedin_url AS "linkedin", p.fontes,
+              p.evidencia, (f.id IS NOT NULL) AS "naoDecisor", (p.decisor AND f.id IS NULL) AS decisor
+         FROM enriquecimento.pessoas p
+         LEFT JOIN comercial.feedback f
+           ON f.empresa_id = p.empresa_id AND f.tipo = 'nao_decisor' AND f.valor = p.nome
+        WHERE p.empresa_id = $1 ORDER BY (f.id IS NOT NULL), p.prioridade, p.nome`,
       [id],
     ),
     db.query(
-      `SELECT id, pessoa_id AS "pessoaId", canal, valor, rotulo, fonte, fontes, url_origem AS "urlOrigem",
-              confianca, status, whatsapp, principal
-         FROM enriquecimento.contatos WHERE empresa_id = $1
-        ORDER BY principal DESC, (status = 'verificado') DESC, confianca DESC, canal`,
+      `SELECT c.id, c.pessoa_id AS "pessoaId", c.canal, c.valor,
+              CASE WHEN f.id IS NOT NULL THEN 'Marcado como errado por você' ELSE c.rotulo END AS rotulo,
+              c.fonte, c.fontes, c.url_origem AS "urlOrigem", c.confianca,
+              CASE WHEN f.id IS NOT NULL THEN 'invalido' ELSE c.status END AS status,
+              c.whatsapp, c.principal, (f.id IS NOT NULL) AS "marcadoErrado"
+         FROM enriquecimento.contatos c
+         LEFT JOIN comercial.feedback f
+           ON f.empresa_id = c.empresa_id AND f.tipo = 'numero_errado' AND f.valor = c.valor
+        WHERE c.empresa_id = $1
+        ORDER BY (f.id IS NOT NULL), c.principal DESC, (c.status = 'verificado') DESC, c.confianca DESC, c.canal`,
       [id],
     ),
     db.query(
@@ -166,6 +186,23 @@ export async function obter(db: Executor, id: number) {
       [id],
     ),
   ]);
+
+  // Contato principal marcado como errado: o próximo melhor assume na tela.
+  const lista = contatos.rows as {
+    principal: boolean;
+    marcadoErrado: boolean;
+    status: string;
+    canal: string;
+  }[];
+  const principal = lista.find((c) => c.principal);
+  if (principal?.marcadoErrado) {
+    principal.principal = false;
+    const proximo = lista.find(
+      (c) =>
+        !c.marcadoErrado && c.status !== 'invalido' && ['whatsapp', 'telefone', 'email'].includes(c.canal),
+    );
+    if (proximo) proximo.principal = true;
+  }
 
   return {
     ...empresa,
@@ -186,4 +223,48 @@ export async function campanhaDaEmpresa(db: Executor, id: number): Promise<numbe
     [id],
   );
   return rows[0]?.campanha_id ?? null;
+}
+
+/** Guarda seu retorno ("número errado", "não é quem decide") com as fontes de onde o dado veio. */
+export async function registrarFeedback(
+  db: Executor,
+  empresaId: number,
+  d: { tipo: 'numero_errado' | 'nao_decisor'; valor: string; canal?: string },
+  autor: string,
+): Promise<void> {
+  const origem =
+    d.tipo === 'numero_errado'
+      ? await db.query<{ fontes: string[]; canal: string }>(
+          'SELECT fontes, canal FROM enriquecimento.contatos WHERE empresa_id = $1 AND valor = $2 LIMIT 1',
+          [empresaId, d.valor],
+        )
+      : await db.query<{ fontes: string[]; canal: string }>(
+          `SELECT fontes, 'pessoa' AS canal FROM enriquecimento.pessoas WHERE empresa_id = $1 AND nome = $2 LIMIT 1`,
+          [empresaId, d.valor],
+        );
+  await db.query(
+    `INSERT INTO comercial.feedback (empresa_id, tipo, valor, canal, fontes, autor)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (empresa_id, tipo, valor) DO NOTHING`,
+    [
+      empresaId,
+      d.tipo,
+      d.valor,
+      d.canal ?? origem.rows[0]?.canal ?? null,
+      origem.rows[0]?.fontes ?? [],
+      autor,
+    ],
+  );
+}
+
+export async function desfazerFeedback(
+  db: Executor,
+  empresaId: number,
+  d: { tipo: 'numero_errado' | 'nao_decisor'; valor: string },
+): Promise<void> {
+  await db.query('DELETE FROM comercial.feedback WHERE empresa_id = $1 AND tipo = $2 AND valor = $3', [
+    empresaId,
+    d.tipo,
+    d.valor,
+  ]);
 }

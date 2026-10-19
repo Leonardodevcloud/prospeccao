@@ -968,6 +968,16 @@ export async function enriquecerEmpresa(
     }
 
     c.marcarReceitaAntiga(anosDesde(empresa.data_abertura));
+    // Número de contador: o mesmo telefone em muitos CNPJs da base.
+    try {
+      const repetidos = await repo.empresasPorTelefone(pool, c.telefonesDeCadastro());
+      for (const [numero, n] of repetidos) if (n >= ajustes.limiteContador) c.marcarContador(numero, n);
+    } catch (erro) {
+      log.warn({ err: erro }, 'não consegui conferir telefones repetidos na base');
+    }
+    // Seu retorno (número errado, não é quem decide) vale mais que qualquer fonte.
+    const fb = await repo.feedbackDaEmpresa(pool, empresaId);
+    c.aplicarFeedback(fb.invalidos, fb.naoDecisores);
     c.escolherDecisor();
     c.escolherPrincipal();
     await repo.concluir(pool, empresaId, c, {
@@ -982,6 +992,14 @@ export async function enriquecerEmpresa(
       facebook,
       linkedinEmpresa,
       mapsAberto,
+      maps: achadaPorNome
+        ? {
+            nota: empresa.maps_nota,
+            avaliacoes: empresa.maps_avaliacoes,
+            categoria: empresa.maps_categoria,
+            url: empresa.maps_url,
+          }
+        : null,
     });
     log.info({ faixa, score, contatos: c.contatos.size, pessoas: c.pessoas.size }, 'empresa enriquecida');
     return 'feito';

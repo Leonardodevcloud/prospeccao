@@ -33,6 +33,8 @@ export interface Contato {
   whatsapp: boolean | null;
   pessoa: string | null; // nome da pessoa dona do contato (ex.: LinkedIn pessoal)
   principal: boolean;
+  /** Número do contador (repetido em muitos CNPJs): nunca vira o contato principal. */
+  deContador?: boolean;
 }
 
 export interface Pessoa {
@@ -226,10 +228,11 @@ export class Coletor {
     // Decide quem administra a empresa na Receita (sócio-administrador) ou quem tem cargo de
     // compras/gestão/dono comprovado. Sócio sem poder de administração, só na Receita, não decide.
     const podeDecidir = (p: Pessoa) =>
-      p.prioridadeReceita === 1 ||
-      p.papel === 'compras' ||
-      p.papel === 'gestao' ||
-      (p.papel === 'socio' && p.prioridadeReceita == null);
+      !this.naoDecisores.has(normalizarNome(p.nome)) &&
+      (p.prioridadeReceita === 1 ||
+        p.papel === 'compras' ||
+        p.papel === 'gestao' ||
+        (p.papel === 'socio' && p.prioridadeReceita == null));
     const decisor = ordenadas.find(podeDecidir) ?? null;
     ordenadas.forEach((p, i) => {
       p.prioridade = i + 1;
@@ -257,11 +260,53 @@ export class Coletor {
     }
   }
 
+  /**
+   * Seu retorno vale mais que qualquer fonte: número marcado como errado fica inválido e nunca
+   * vira principal; pessoa marcada como "não é quem decide" deixa de poder ser decisor.
+   */
+  aplicarFeedback(invalidos: Set<string>, naoDecisores: Set<string>): void {
+    for (const c of this.contatos.values()) {
+      if (!invalidos.has(c.valor)) continue;
+      c.status = 'invalido';
+      c.confianca = 0;
+      c.rotulo = 'Marcado como errado por você';
+    }
+    this.naoDecisores = new Set([...naoDecisores].map((n) => normalizarNome(n)));
+  }
+
+  private naoDecisores = new Set<string>();
+
+  /**
+   * Telefone repetido em muitos CNPJs da base é do escritório de contabilidade, não da loja.
+   * Só vale para número que veio da Receita (ou de diretório, que copia a Receita).
+   */
+  marcarContador(numero: string, empresas: number): void {
+    for (const canal of ['telefone', 'whatsapp'] as const) {
+      const c = this.contatos.get(`${canal}:${numero}`);
+      if (!c) continue;
+      c.status = 'atencao';
+      c.confianca = Math.min(c.confianca, 5);
+      c.deContador = true;
+      c.rotulo = `Repetido em ${empresas} empresas da base: provável contador`;
+    }
+  }
+
+  /** Telefones que só vieram da Receita ou de diretórios (candidatos a número de contador). */
+  telefonesDeCadastro(): string[] {
+    return [...this.contatos.values()]
+      .filter(
+        (c) =>
+          (c.canal === 'telefone' || c.canal === 'whatsapp') &&
+          [...c.fontes].every((f) => f === 'receita' || f === 'google'),
+      )
+      .map((c) => c.valor);
+  }
+
   /** Melhor contato da empresa para a primeira abordagem. */
   escolherPrincipal(): Contato | null {
     this.juntarTelefonesDeWhatsapp();
     const peso = (c: Contato): number => {
-      if (c.status === 'invalido') return -1;
+      if (c.status === 'invalido' || c.deContador) return -1;
       const base =
         c.canal === 'whatsapp'
           ? c.status === 'verificado'
@@ -278,7 +323,8 @@ export class Coletor {
                 ? 55
                 : 45
               : 0;
-      return base + c.confianca / 100;
+      // Visto em mais de uma fonte independente vale mais (até +6).
+      return base + Math.min(6, (c.fontes.size - 1) * 3) + c.confianca / 100;
     };
     let melhor: Contato | null = null;
     for (const c of this.contatos.values()) {

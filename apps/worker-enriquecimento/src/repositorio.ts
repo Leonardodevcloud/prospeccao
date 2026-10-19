@@ -149,6 +149,13 @@ export interface Conclusao {
   facebook: string | null;
   linkedinEmpresa: string | null;
   mapsAberto: boolean | null;
+  /** Dados do Google achados pelo enriquecimento (busca por nome e endereço). */
+  maps?: {
+    nota: number | null;
+    avaliacoes: number | null;
+    categoria: string | null;
+    url: string | null;
+  } | null;
 }
 
 /**
@@ -226,7 +233,8 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
       `UPDATE enriquecimento.leads
           SET status = 'concluido', concluido_em = now(), erro = NULL,
               faixa = $2, score = $3, motivo = $4, resumo = $5, entrega = $6, cnpj_achado = $7,
-              site_url = $8, instagram = $9, facebook = $10, linkedin_empresa = $11, maps_aberto = $12
+              site_url = $8, instagram = $9, facebook = $10, linkedin_empresa = $11, maps_aberto = $12,
+              maps_nota = $13, maps_avaliacoes = $14, maps_categoria = $15, maps_url = $16
         WHERE empresa_id = $1`,
       [
         empresaId,
@@ -241,6 +249,10 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
         c.facebook,
         c.linkedinEmpresa,
         c.mapsAberto,
+        c.maps?.nota ?? null,
+        c.maps?.avaliacoes ?? null,
+        c.maps?.categoria ?? null,
+        c.maps?.url ?? null,
       ],
     );
   });
@@ -301,4 +313,35 @@ export async function registrarUsoBasePaga(
     `INSERT INTO enriquecimento.uso_base_paga (empresa_id, provedor, custo_brl, achados) VALUES ($1, $2, $3, $4)`,
     [empresaId, provedor, custoBrl, achados],
   );
+}
+
+/** Seu retorno sobre esta empresa (view publicada pelo comercial). */
+export async function feedbackDaEmpresa(
+  db: Executor,
+  empresaId: number,
+): Promise<{ invalidos: Set<string>; naoDecisores: Set<string> }> {
+  const { rows } = await db
+    .query<{ tipo: string; valor: string }>(
+      'SELECT tipo, valor FROM comercial.v_feedback WHERE empresa_id = $1',
+      [empresaId],
+    )
+    .catch(() => ({ rows: [] as { tipo: string; valor: string }[] }));
+  return {
+    invalidos: new Set(rows.filter((r) => r.tipo === 'numero_errado').map((r) => r.valor)),
+    naoDecisores: new Set(rows.filter((r) => r.tipo === 'nao_decisor').map((r) => r.valor)),
+  };
+}
+
+/** Em quantas empresas (CNPJ básico) da base cada telefone aparece. */
+export async function empresasPorTelefone(db: Executor, numeros: string[]): Promise<Map<string, number>> {
+  const saida = new Map<string, number>();
+  for (const n of numeros.slice(0, 6)) {
+    const { rows } = await db.query<{ n: number }>(
+      `SELECT count(DISTINCT cnpj_basico)::int AS n
+         FROM (SELECT cnpj_basico FROM base_cnpj.v_estabelecimentos WHERE telefones @> ARRAY[$1]::text[] LIMIT 200) x`,
+      [n],
+    );
+    saida.set(n, rows[0]?.n ?? 0);
+  }
+  return saida;
 }

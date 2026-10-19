@@ -120,9 +120,13 @@ export async function mensagemDoLead(db: Executor, empresaId: number): Promise<M
               (SELECT c.valor FROM enriquecimento.contatos c
                 WHERE c.empresa_id = e.id AND c.status <> 'invalido'
                   AND (c.canal = 'whatsapp' OR (c.canal = 'telefone' AND c.whatsapp))
+                  AND NOT EXISTS (SELECT 1 FROM comercial.feedback f WHERE f.empresa_id = e.id
+                                   AND f.tipo = 'numero_errado' AND f.valor = c.valor)
                 ORDER BY c.principal DESC, c.confianca DESC LIMIT 1),
               (SELECT c.valor FROM enriquecimento.contatos c
-                WHERE c.empresa_id = e.id AND c.principal AND c.canal IN ('telefone', 'whatsapp') LIMIT 1),
+                WHERE c.empresa_id = e.id AND c.principal AND c.canal IN ('telefone', 'whatsapp')
+                  AND NOT EXISTS (SELECT 1 FROM comercial.feedback f WHERE f.empresa_id = e.id
+                                   AND f.tipo = 'numero_errado' AND f.valor = c.valor) LIMIT 1),
               e.maps_telefone) AS telefone
        FROM comercial.oportunidades o
        JOIN descoberta.empresas e ON e.id = o.empresa_id

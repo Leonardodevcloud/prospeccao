@@ -308,6 +308,50 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
   });
 
+  it('seu retorno: número errado sai de principal, "não é quem decide" tira o decisor, e dá para desfazer', async () => {
+    const errado = await enviar('post', '/empresas/1/feedback', {
+      tipo: 'numero_errado',
+      valor: '71998124410',
+    });
+    expect(errado.status).toBe(200);
+    const zap = errado.body.contatos.find((c: { valor: string }) => c.valor === '71998124410');
+    expect(zap).toMatchObject({ status: 'invalido', principal: false, marcadoErrado: true });
+    expect(errado.body.contatos.find((c: { principal: boolean }) => c.principal)?.valor).toBe(
+      'compras@ladeira.com.br',
+    );
+    // A lista e o funil já usam o próximo contato.
+    expect((await ler('/empresas?campanhaId=2')).body.itens[0]).toMatchObject({
+      contatoValor: 'compras@ladeira.com.br',
+    });
+
+    const naoDecide = await enviar('post', '/empresas/1/feedback', {
+      tipo: 'nao_decisor',
+      valor: 'Maria Souza',
+    });
+    expect(naoDecide.body.pessoas.find((p: { nome: string }) => p.nome === 'Maria Souza')).toMatchObject({
+      decisor: false,
+      naoDecisor: true,
+    });
+    expect((await ler('/empresas?campanhaId=2')).body.itens[0].decisorNome).toBeNull();
+
+    const rel = await ler('/relatorios?dias=0');
+    expect(rel.body.errosPorFonte).toEqual(
+      expect.arrayContaining([expect.objectContaining({ fonte: 'site', erros: 1 })]),
+    );
+    expect(rel.body.naoDecisores).toBe(1);
+    expect(rel.body.custos).toMatchObject({ basePagaBrl: 0, basePagaConsultas: 0 });
+
+    // Desfaz os dois: tudo volta como estava.
+    await enviar('delete', '/empresas/1/feedback', { tipo: 'numero_errado', valor: '71998124410' });
+    const volta = await enviar('delete', '/empresas/1/feedback', {
+      tipo: 'nao_decisor',
+      valor: 'Maria Souza',
+    });
+    expect(volta.body.contatos.find((c: { principal: boolean }) => c.principal)?.valor).toBe('71998124410');
+    expect(volta.body.pessoas[0]).toMatchObject({ nome: 'Maria Souza', decisor: true });
+    expect((await enviar('post', '/empresas/1/feedback', { tipo: 'outro', valor: 'x' })).status).toBe(422);
+  });
+
   it('funil: entra sem duplicar, barra telefone repetido, avança etapas e alimenta os relatórios', async () => {
     const add = await enviar('post', '/funil', { empresaIds: [1] });
     expect(add.status).toBe(200);

@@ -157,7 +157,45 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
     ),
   ]);
 
+  // Quais fontes erram mais: contatos que você marcou como errados, por fonte de origem.
+  const erros = await db.query(
+    `WITH marcados AS (
+       SELECT unnest(CASE WHEN cardinality(f.fontes) = 0 THEN ARRAY['desconhecida'] ELSE f.fontes END) AS fonte
+         FROM comercial.feedback f
+        WHERE f.tipo = 'numero_errado' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}
+     ),
+     total AS (
+       SELECT unnest(c.fontes) AS fonte, count(*)::int AS n
+         FROM enriquecimento.contatos c WHERE c.canal IN ('whatsapp', 'telefone', 'email')
+        GROUP BY 1
+     )
+     SELECT m.fonte, count(*)::int AS erros, coalesce(max(t.n), 0)::int AS contatos
+       FROM marcados m LEFT JOIN total t ON t.fonte = m.fonte
+      GROUP BY m.fonte ORDER BY erros DESC`,
+    v,
+  );
+  const naoDecisores = await db.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM comercial.feedback f
+      WHERE f.tipo = 'nao_decisor' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}`,
+    v,
+  );
+  // Custos do mês corrente (horário do Google para o Places; calendário para a base paga).
+  const custos = await db
+    .query<{ basePagaBrl: number; basePagaConsultas: number; placesEnriquecimento: number }>(
+      `SELECT coalesce((SELECT sum(custo_brl) FROM enriquecimento.uso_base_paga
+                         WHERE criado_em >= date_trunc('month', now())), 0)::float8 AS "basePagaBrl",
+              (SELECT count(*) FROM enriquecimento.uso_base_paga
+                WHERE criado_em >= date_trunc('month', now()))::int AS "basePagaConsultas",
+              coalesce((SELECT pedidos FROM enriquecimento.uso_places WHERE mes = descoberta.mes_places()), 0)::int
+                AS "placesEnriquecimento"`,
+    )
+    .then((r) => r.rows[0])
+    .catch(() => ({ basePagaBrl: 0, basePagaConsultas: 0, placesEnriquecimento: 0 }));
+
   return {
+    errosPorFonte: erros.rows,
+    naoDecisores: naoDecisores.rows[0]?.n ?? 0,
+    custos,
     kpis: kpis.rows[0],
     funil: funil.rows[0],
     campanhas: campanhas.rows,

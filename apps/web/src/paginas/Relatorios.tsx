@@ -5,6 +5,21 @@ import { api, type Campanha, qs, type Relatorio } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtNumero, fmtPct, fmtReais } from '../formatar';
 
+const NOME_FONTE_ERRO: Record<string, string> = {
+  receita: 'Cadastro da Receita',
+  maps: 'Google Maps',
+  places: 'Google (busca por nome)',
+  site: 'Site da empresa',
+  instagram: 'Instagram',
+  linkedin: 'LinkedIn',
+  google: 'Diretórios no Google',
+  ia: 'IA',
+  whatsapp: 'WhatsApp Business',
+  base_paga: 'Base paga',
+  manual: 'Cadastro manual',
+  desconhecida: 'Fonte desconhecida',
+};
+
 const PERIODOS = [
   { id: '7', rotulo: 'Últimos 7 dias' },
   { id: '30', rotulo: 'Últimos 30 dias' },
@@ -390,6 +405,68 @@ export function Relatorios() {
               </table>
             </div>
           </Panel>
+
+          <Panel titulo="Quais fontes erram mais" semPadding>
+            <div className="pp-tablewrap">
+              <table className="pp-table">
+                <thead>
+                  <tr>
+                    <th>Fonte</th>
+                    <th className="num">Marcados como errados</th>
+                    <th className="num">Contatos dessa fonte</th>
+                    <th className="num">Taxa de erro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.errosPorFonte?.length ? (
+                    r.errosPorFonte.map((x) => (
+                      <tr key={x.fonte}>
+                        <td>{NOME_FONTE_ERRO[x.fonte] ?? x.fonte}</td>
+                        <td className="num mono">{fmtNumero(x.erros)}</td>
+                        <td className="num mono">{fmtNumero(x.contatos)}</td>
+                        <td className="num mono">{x.contatos ? fmtPct(x.erros, x.contatos) : '—'}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="quieto">
+                        Nenhum contato marcado como errado no período. Use o botão de "número errado" na ficha
+                        do lead quando um telefone não for da loja.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <p className="quieto nota-rodape" style={{ padding: '0 16px 16px' }}>
+              {r.naoDecisores
+                ? `${fmtNumero(r.naoDecisores)} pessoa(s) marcada(s) como "não é quem decide". `
+                : ''}
+              Fonte com taxa de erro alta deve pesar menos: me avise que eu ajusto a confiança dela.
+            </p>
+          </Panel>
+
+          {r.custos && (
+            <Panel titulo="Custos do mês">
+              <dl className="pp-fields" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                <div className="pp-field">
+                  <dt className="pp-field__rotulo">Base paga (Direct Data)</dt>
+                  <dd className="pp-field__valor">
+                    {fmtReais(r.custos.basePagaBrl)} · {fmtNumero(r.custos.basePagaConsultas)} consulta(s)
+                  </dd>
+                </div>
+                <div className="pp-field">
+                  <dt className="pp-field__rotulo">Google Places no enriquecimento</dt>
+                  <dd className="pp-field__valor">
+                    {fmtNumero(r.custos.placesEnriquecimento)} pedido(s) da cota grátis
+                  </dd>
+                </div>
+              </dl>
+              <p className="quieto" style={{ margin: '12px 0 0', fontSize: 12 }}>
+                O uso do Places pelas campanhas aparece no painel do Google Places, em Campanhas.
+              </p>
+            </Panel>
+          )}
 
           <Panel titulo="Por que perdemos ou descartamos">
             {r.motivos.length ? (

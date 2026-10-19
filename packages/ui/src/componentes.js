@@ -584,6 +584,7 @@ function ContactRow(props) {
             'aria-label': props.canal === 'whatsapp' ? 'Abrir conversa no WhatsApp' : 'Abrir ' + canal.rotulo,
           })
         : null,
+      props.acoes || null,
     ),
   );
 }
@@ -637,6 +638,7 @@ function DecisorCard(props) {
             'LinkedIn',
           )
         : null,
+      props.acoes || null,
     ),
     contatos.length
       ? h(

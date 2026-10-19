@@ -40,6 +40,8 @@ const env = carregarEnv(
     /** Interruptor de emergência: com "true", o serviço sobe mas não processa nada (a fila espera). */
     ENRIQ_PAUSADO: booleano.default(false),
     ENRIQ_REFAZER_DIAS: z.coerce.number().int().min(0).default(30),
+    /** Telefone repetido em N ou mais CNPJs da base = número do contador. */
+    ENRIQ_LIMITE_CONTADOR: z.coerce.number().int().min(2).default(5),
     ENRIQ_CONCORRENCIA: z.coerce.number().int().min(1).max(10).default(2),
   }),
 );
@@ -143,6 +145,7 @@ const deps: Deps = {
     acharNoGoogle: env.ENRIQ_ACHAR_NO_GOOGLE,
     faixasBasePaga: new Set(env.ENRIQ_FAIXAS_BASE_PAGA),
     refazerDias: env.ENRIQ_REFAZER_DIAS,
+    limiteContador: env.ENRIQ_LIMITE_CONTADOR,
   },
 };
 

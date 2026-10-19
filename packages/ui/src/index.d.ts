@@ -93,6 +93,8 @@ export interface ContactRowProps {
   fonte?: Fonte;
   principal?: boolean;
   onCopy?: (valor: string) => void;
+  /** Botões extras no fim da linha (ex.: "número errado"). */
+  acoes?: React.ReactNode;
 }
 export declare function ContactRow(props: ContactRowProps): React.ReactElement;
 
@@ -106,6 +108,8 @@ export interface DecisorCardProps {
   /** Trecho da fonte que comprova o cargo (ex.: frase do site). */
   evidencia?: string;
   contatos?: ContactRowProps[];
+  /** Botões extras no cabeçalho (ex.: "não é quem decide"). */
+  acoes?: React.ReactNode;
 }
 export declare function DecisorCard(props: DecisorCardProps): React.ReactElement;
 
