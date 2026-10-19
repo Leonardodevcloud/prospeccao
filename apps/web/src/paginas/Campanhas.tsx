@@ -98,7 +98,7 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
             inputMode="numeric"
             value={f.maxPorBusca}
             onChange={mudar('maxPorBusca')}
-            dica="Por cidade e termo. Mais lugares, mais custo no Apify."
+            dica="Limite de lugares que cada busca no Google Maps traz (uma busca por cidade × termo do nicho). Não limita os leads da base de CNPJ. Mais lugares, mais custo no Apify."
           />
           <TextField
             rotulo="Meta de leads por dia"
@@ -182,13 +182,39 @@ function CardCampanha({ c }: { c: Campanha }) {
     },
   });
   const [confirmarRefazer, setConfirmarRefazer] = useState(false);
+  const [escopo, setEscopo] = useState<'ab' | 'sem_decisor' | 'todos'>('ab');
+  const previa = useQuery({
+    queryKey: ['reenriquecer', c.id],
+    queryFn: () => api<{ ab: number; semDecisor: number; todos: number }>(`/campanhas/${c.id}/reenriquecer`),
+    enabled: confirmarRefazer,
+  });
   const refazer = useMutation({
-    mutationFn: () => api<{ quantidade: number }>(`/campanhas/${c.id}/reenriquecer`, { metodo: 'POST' }),
+    mutationFn: () =>
+      api<{ quantidade: number }>(`/campanhas/${c.id}/reenriquecer`, { metodo: 'POST', corpo: { escopo } }),
     onSuccess: (r) => {
       setConfirmarRefazer(false);
-      setAvisos([`${r.quantidade} leads voltaram para a fila do enriquecimento. Acompanhe em Atividade.`]);
+      setAvisos([
+        `${fmtNumero(r.quantidade)} leads entraram na fila do enriquecimento (notas mais altas primeiro). O andamento aparece aqui no card e em Atividade.`,
+      ]);
+      cliente.invalidateQueries({ queryKey: ['campanhas'] });
     },
   });
+  const OPCOES_REFAZER = [
+    {
+      id: 'ab' as const,
+      rotulo: 'Só notas A e B',
+      dica: 'Recomendado: refaz decisor e LinkedIn de quem vale abordar.',
+      n: previa.data?.ab,
+    },
+    {
+      id: 'sem_decisor' as const,
+      rotulo: 'Só quem está sem decisor',
+      dica: 'Útil depois que a base de CNPJ trouxe os sócios.',
+      n: previa.data?.semDecisor,
+    },
+    { id: 'todos' as const, rotulo: 'Todos', dica: 'O mais caro.', n: previa.data?.todos },
+  ];
+  const escolhida = OPCOES_REFAZER.find((o) => o.id === escopo);
   const p = c.progresso;
   const buscando = c.status === 'ativa' && p.buscasPendentes > 0;
 
@@ -245,15 +271,54 @@ function CardCampanha({ c }: { c: Campanha }) {
         </Mensagem>
       ))}
       <ErroDaApi erro={acao.error ?? refazer.error} />
+      {p.naFilaEnriquecimento > 0 && (
+        <div className="linha-status" style={{ fontSize: 13 }}>
+          <Badge tone="warning">
+            <span className="vivo" aria-hidden="true" /> Enriquecendo
+          </Badge>
+          <span>{fmtNumero(p.naFilaEnriquecimento)} leads na fila ou rodando agora</span>
+        </div>
+      )}
       {confirmarRefazer && (
         <div className="confirmar">
           <span>
-            Refazer o enriquecimento dos {fmtNumero(p.empresas - p.descartados)} leads (descartados ficam de
-            fora)? Gasta de novo no Apify e no Gemini.
+            Refazer o enriquecimento de quais leads? MEI e descartados ficam de fora. Gasta de novo no Apify e
+            no Gemini.
           </span>
+          <fieldset className="campo" style={{ gap: 6 }}>
+            <legend className="pp-sr">Quais leads</legend>
+            {OPCOES_REFAZER.map((o) => (
+              <label key={o.id} className="opcao">
+                <input
+                  type="radio"
+                  name={`escopo-${c.id}`}
+                  checked={escopo === o.id}
+                  onChange={() => setEscopo(o.id)}
+                />
+                <span>
+                  <b style={{ fontWeight: 500 }}>
+                    {o.rotulo} {o.n != null && <span className="mono">({fmtNumero(o.n)})</span>}
+                  </b>
+                  <span className="campo__dica" style={{ display: 'block' }}>
+                    {o.dica}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <ErroDaApi erro={previa.error} />
           <div className="acoes">
-            <Button size="sm" variant="primary" disabled={refazer.isPending} onClick={() => refazer.mutate()}>
-              {refazer.isPending ? 'Enviando…' : `Refazer ${fmtNumero(p.empresas - p.descartados)} leads`}
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={refazer.isPending || !escolhida?.n}
+              onClick={() => refazer.mutate()}
+            >
+              {refazer.isPending
+                ? 'Enviando…'
+                : escolhida?.n != null
+                  ? `Refazer ${fmtNumero(escolhida.n)} leads`
+                  : 'Contando…'}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirmarRefazer(false)}>
               Cancelar
@@ -318,7 +383,12 @@ export function Campanhas() {
     queryFn: () => api<Campanha[]>('/campanhas'),
     // Atualiza sozinho enquanto alguma busca estiver rodando.
     refetchInterval: (q) =>
-      q.state.data?.some((c) => c.status === 'ativa' && c.progresso.buscasPendentes > 0) ? 10_000 : false,
+      q.state.data?.some(
+        (c) =>
+          (c.status === 'ativa' && c.progresso.buscasPendentes > 0) || c.progresso.naFilaEnriquecimento > 0,
+      )
+        ? 10_000
+        : false,
   });
 
   return (

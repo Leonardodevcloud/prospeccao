@@ -13,7 +13,8 @@ const filas = await conectarFilas({
   url: env.DATABASE_URL,
   aplicacao: 'api',
   log,
-  filas: ['campanha.iniciar', 'cnpj.importar'],
+  // Filas que a API publica: criadas aqui também, para não depender da ordem de subida dos serviços.
+  filas: ['campanha.iniciar', 'cnpj.importar', 'enriquecimento.solicitar'],
 });
 
 const app = criarApp({

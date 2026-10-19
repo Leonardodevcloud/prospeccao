@@ -84,6 +84,8 @@ export interface ProgressoCampanha {
   descartados: number;
   /** MEI ignorados (não contratam o serviço). */
   mei: number;
+  /** Pedidos de enriquecimento desta campanha ainda na fila ou rodando. */
+  naFilaEnriquecimento: number;
 }
 
 export interface Campanha {

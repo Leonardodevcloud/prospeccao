@@ -1,4 +1,10 @@
-import { AppError, campanhaAtualizacao, campanhaEntrada, type StatusCampanha } from '@prospeccao/shared';
+import {
+  AppError,
+  campanhaAtualizacao,
+  campanhaEntrada,
+  reenriquecerEntrada,
+  type StatusCampanha,
+} from '@prospeccao/shared';
 import { Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
@@ -74,35 +80,26 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
     res.json(await repo.obter(pool, id));
   });
 
+  /** Quantos leads cada opção de "refazer enriquecimento" mandaria para a fila (para confirmar). */
+  r.get('/:id/reenriquecer', async (req, res) => {
+    res.json(await repo.previaReenriquecer(pool, idDaRota(req)));
+  });
+
   /**
-   * Refaz o enriquecimento de todas as empresas da campanha (ex.: depois de ligar uma fonte nova).
-   * Custa de novo no Apify e no Gemini; a tela pede confirmação antes.
+   * Refaz o enriquecimento de uma parte da campanha: "ab" (notas A e B), "sem_decisor" ou "todos".
+   * MEI e descartados ficam sempre de fora. Custa de novo no Apify e no Gemini; a tela confirma antes.
    */
   r.post('/:id/reenriquecer', async (req, res) => {
     const id = idDaRota(req);
-    const { rows } = await pool.query<{ empresa_id: number }>(
-      // Descartados (fora do perfil) não gastam Apify/Gemini de novo.
-      `SELECT ce.empresa_id FROM descoberta.campanha_empresas ce
-        WHERE ce.campanha_id = $1
-          AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = ce.empresa_id)
-          -- MEI (quando o nicho exclui) também não gasta enriquecimento.
-          AND NOT EXISTS (SELECT 1 FROM descoberta.empresas m
-                           JOIN cadastro.campanhas cp ON cp.id = ce.campanha_id
-                           JOIN cadastro.nichos n ON n.id = cp.nicho_id
-                          WHERE m.id = ce.empresa_id AND m.mei AND n.excluir_mei)
-        ORDER BY ce.empresa_id`,
-      [id],
+    const { escopo } = corpo(req, reenriquecerEntrada);
+    const empresas = await repo.empresasParaReenriquecer(pool, id, escopo);
+    if (!empresas.length) throw AppError.invalido('Nenhum lead nessa opção para enriquecer de novo.');
+    const quantidade = await filas.publicarVarios(
+      'enriquecimento.solicitar',
+      empresas.map((empresaId) => ({ empresaId, campanhaId: id, forcar: true })),
     );
-    if (!rows.length) throw AppError.invalido('A campanha ainda não tem empresas.');
-    for (const r of rows) {
-      await filas.publicar('enriquecimento.solicitar', {
-        empresaId: r.empresa_id,
-        campanhaId: id,
-        forcar: true,
-      });
-    }
-    log.info({ campanhaId: id, empresas: rows.length }, 'enriquecimento refeito para a campanha');
-    res.status(202).json({ quantidade: rows.length });
+    log.info({ campanhaId: id, escopo, empresas: empresas.length, quantidade }, 'enriquecimento refeito');
+    res.status(202).json({ quantidade });
   });
 
   r.post('/:id/encerrar', async (req, res) => {

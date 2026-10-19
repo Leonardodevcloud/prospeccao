@@ -4,7 +4,7 @@ import type { Logger } from '@prospeccao/shared';
 
 export interface DepsApi {
   pool: Pool;
-  filas: Pick<Filas, 'publicar' | 'tamanhos'>;
+  filas: Pick<Filas, 'publicar' | 'publicarVarios' | 'tamanhos'>;
   log: Logger;
   auth: {
     jwtSegredo: string;

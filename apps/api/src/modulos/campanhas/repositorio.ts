@@ -1,5 +1,5 @@
 import type { Executor } from '@prospeccao/db';
-import type { CampanhaEntrada, StatusCampanha } from '@prospeccao/shared';
+import type { CampanhaEntrada, EscopoReenriquecer, StatusCampanha } from '@prospeccao/shared';
 
 /** Campanha com o progresso da descoberta (lido das views publicadas pelo domínio descoberta). */
 const SELECT = `
@@ -40,16 +40,41 @@ const SELECT = `
        WHERE ce.campanha_id = c.id
     ) f ON true`;
 
+/**
+ * Pedidos de enriquecimento ainda abertos por campanha, lidos da fila (só leitura). Sem a fila
+ * criada (banco novo), devolve vazio em vez de quebrar a tela.
+ */
+async function naFilaDoEnriquecimento(db: Executor): Promise<Map<number, number>> {
+  try {
+    const { rows } = await db.query<{ campanha_id: string; n: number }>(
+      `SELECT j.data ->> 'campanhaId' AS campanha_id, count(*)::int AS n FROM fila.job j
+        WHERE j.name = 'enriquecimento.solicitar' AND j.state IN ('created', 'retry', 'active')
+        GROUP BY 1`,
+    );
+    return new Map(rows.map((r) => [Number(r.campanha_id), r.n]));
+  } catch {
+    return new Map();
+  }
+}
+
+type ComProgresso = { id: number; progresso: Record<string, unknown> };
+
+async function comFila<T extends ComProgresso>(db: Executor, campanhas: T[]): Promise<T[]> {
+  const fila = await naFilaDoEnriquecimento(db);
+  for (const c of campanhas) c.progresso.naFilaEnriquecimento = fila.get(Number(c.id)) ?? 0;
+  return campanhas;
+}
+
 export async function listar(db: Executor) {
-  const { rows } = await db.query(
+  const { rows } = await db.query<ComProgresso>(
     `${SELECT} ORDER BY CASE c.status WHEN 'ativa' THEN 0 WHEN 'pausada' THEN 1 WHEN 'rascunho' THEN 2 ELSE 3 END, c.criado_em DESC`,
   );
-  return rows;
+  return comFila(db, rows);
 }
 
 export async function obter(db: Executor, id: number) {
-  const { rows } = await db.query(`${SELECT} WHERE c.id = $1`, [id]);
-  return rows[0] ?? null;
+  const { rows } = await db.query<ComProgresso>(`${SELECT} WHERE c.id = $1`, [id]);
+  return (await comFila(db, rows))[0] ?? null;
 }
 
 export async function nichoAtivo(db: Executor, nichoId: number): Promise<boolean> {
@@ -120,4 +145,48 @@ export async function mudarStatus(db: Executor, id: number, status: StatusCampan
 export async function baseCnpjImportada(db: Executor): Promise<boolean> {
   const { rows } = await db.query(`SELECT 1 FROM base_cnpj.v_ultima_importacao WHERE status = 'concluida'`);
   return rows.length > 0;
+}
+
+/** Leads da campanha que podem voltar ao enriquecimento: sem MEI (se o nicho exclui) e sem descartados. */
+const ELEGIVEIS = `
+  FROM descoberta.campanha_empresas ce
+  JOIN descoberta.empresas e ON e.id = ce.empresa_id
+  JOIN cadastro.campanhas cp ON cp.id = ce.campanha_id
+  JOIN cadastro.nichos n ON n.id = cp.nicho_id
+  LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
+ WHERE ce.campanha_id = $1
+   AND NOT (e.mei AND n.excluir_mei)
+   AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = e.id)`;
+
+const SEM_DECISOR = `NOT EXISTS (SELECT 1 FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor)`;
+
+const FILTRO_ESCOPO: Record<EscopoReenriquecer, string> = {
+  ab: `l.faixa IN ('A', 'B')`,
+  sem_decisor: SEM_DECISOR,
+  todos: 'true',
+};
+
+export async function previaReenriquecer(db: Executor, campanhaId: number) {
+  const { rows } = await db.query<{ ab: number; semDecisor: number; todos: number }>(
+    `SELECT count(*) FILTER (WHERE ${FILTRO_ESCOPO.ab})::int AS ab,
+            count(*) FILTER (WHERE ${SEM_DECISOR})::int AS "semDecisor",
+            count(*)::int AS todos
+       ${ELEGIVEIS}`,
+    [campanhaId],
+  );
+  return rows[0] ?? { ab: 0, semDecisor: 0, todos: 0 };
+}
+
+export async function empresasParaReenriquecer(
+  db: Executor,
+  campanhaId: number,
+  escopo: EscopoReenriquecer,
+): Promise<number[]> {
+  // Notas A primeiro: o que mais importa fica pronto antes.
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT e.id::int ${ELEGIVEIS} AND ${FILTRO_ESCOPO[escopo]}
+      ORDER BY l.score DESC NULLS LAST, e.id`,
+    [campanhaId],
+  );
+  return rows.map((r) => r.id);
 }

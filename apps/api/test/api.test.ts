@@ -42,6 +42,10 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
           publicados.push({ nome, payload });
           return 'job-1';
         },
+        async publicarVarios(nome, payloads) {
+          for (const payload of payloads) publicados.push({ nome, payload });
+          return payloads.length;
+        },
         async tamanhos() {
           return { 'maps.coletar': 1 };
         },
@@ -279,7 +283,11 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
     expect(d.body.etapas).toEqual([expect.objectContaining({ etapa: 'receita', status: 'encontrado' })]);
 
-    const todos = await enviar('post', '/campanhas/2/reenriquecer');
+    expect((await ler('/campanhas/2/reenriquecer')).body).toEqual({ ab: 1, semDecisor: 1, todos: 2 });
+    expect((await enviar('post', '/campanhas/2/reenriquecer', { escopo: 'ab' })).body).toEqual({
+      quantidade: 1,
+    });
+    const todos = await enviar('post', '/campanhas/2/reenriquecer', { escopo: 'todos' });
     expect(todos.status).toBe(202);
     expect(todos.body).toEqual({ quantidade: 2 });
     expect(publicados).toContainEqual({
@@ -379,7 +387,9 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(desc.body.adicionadas).toBe(1);
     expect((await ler('/empresas?situacao=descartados')).body.total).toBe(1);
     expect((await ler('/empresas?situacao=novos')).body.total).toBe(0);
-    expect((await enviar('post', '/campanhas/2/reenriquecer')).body).toEqual({ quantidade: 1 });
+    expect((await enviar('post', '/campanhas/2/reenriquecer', { escopo: 'todos' })).body).toEqual({
+      quantidade: 1,
+    });
     const camp = await ler('/campanhas/2');
     expect(camp.body.progresso).toMatchObject({ novos: 0, noFunil: 1, descartados: 1 });
 

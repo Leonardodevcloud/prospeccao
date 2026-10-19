@@ -13,7 +13,12 @@ describe.skipIf(!URL_TESTE)('filas (pg-boss de verdade)', () => {
   let db: Pool;
   const abertas: Filas[] = [];
   const conectar = async () => {
-    const f = await conectarFilas({ url, aplicacao: 'teste', log, filas: ['cnpj.importar'] });
+    const f = await conectarFilas({
+      url,
+      aplicacao: 'teste',
+      log,
+      filas: ['cnpj.importar', 'enriquecimento.solicitar'],
+    });
     abertas.push(f);
     return f;
   };
@@ -64,5 +69,22 @@ describe.skipIf(!URL_TESTE)('filas (pg-boss de verdade)', () => {
     expect(job).toMatchObject({ estado: 'nova_tentativa', falhas: 1, limiteTentativas: 6 });
     // A hora mostrada é a da próxima tentativa, não a do começo da que falhou.
     expect(new Date(job!.quando).getTime()).toBeGreaterThan(Date.now() - 5_000);
+  });
+
+  it('publica em massa, em lotes, sem duplicar o que já está na fila', async () => {
+    const f = await conectarFilas({ url, aplicacao: 'teste', log, filas: ['enriquecimento.solicitar'] });
+    abertas.push(f);
+    const pedidos = Array.from({ length: 1200 }, (_, i) => ({
+      empresaId: i + 1,
+      campanhaId: 9,
+      forcar: true,
+    }));
+    expect(await f.publicarVarios('enriquecimento.solicitar', pedidos)).toBe(1200);
+    // Mesmo pedido de novo: os que já estão na fila não entram duas vezes.
+    await f.publicarVarios('enriquecimento.solicitar', pedidos.slice(0, 10));
+    const { rows } = await db.query(
+      `SELECT count(*)::int AS n FROM fila.job WHERE name = 'enriquecimento.solicitar' AND state = 'created'`,
+    );
+    expect(rows[0].n).toBe(1200);
   });
 });

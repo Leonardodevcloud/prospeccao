@@ -174,3 +174,9 @@ export const importacaoEntrada = z.object({
     .regex(/^\d{4}-\d{2}$/, 'Mês no formato AAAA-MM.')
     .optional(),
 });
+
+/** Que parte da campanha volta para o enriquecimento. */
+export const reenriquecerEntrada = z.object({
+  escopo: z.enum(['ab', 'sem_decisor', 'todos']).default('ab'),
+});
+export type EscopoReenriquecer = z.infer<typeof reenriquecerEntrada>['escopo'];

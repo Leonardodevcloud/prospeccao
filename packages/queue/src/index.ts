@@ -25,6 +25,15 @@ export interface Filas {
     payload: PayloadJob<N>,
     opcoes?: OpcoesPublicar,
   ): Promise<string | null>;
+  /**
+   * Publica muitos jobs de uma vez (em lotes), para pedidos em massa como "refazer o enriquecimento
+   * da campanha". Repetidos (mesma chave já na fila) são ignorados. Devolve quantos entraram.
+   */
+  publicarVarios<N extends NomeJob>(
+    nome: N,
+    payloads: PayloadJob<N>[],
+    opcoes?: { prioridade?: number },
+  ): Promise<number>;
   consumir<N extends NomeJob>(
     nome: N,
     tratar: (payload: PayloadJob<N>, contexto: { jobId: string; tentativa: number }) => Promise<void>,
@@ -143,6 +152,23 @@ export async function conectarFilas(opcoes: {
         ...(chave ? { singletonKey: chave } : {}),
         ...(op.prioridade != null ? { priority: op.prioridade } : {}),
       });
+    },
+
+    async publicarVarios(nome, payloads, op = {}) {
+      let inseridos = 0;
+      for (let i = 0; i < payloads.length; i += 500) {
+        const jobs = payloads.slice(i, i + 500).map((payload) => {
+          const dados = JOBS[nome].parse(payload);
+          return {
+            data: dados,
+            ...(POLITICA_FILAS[nome].policy === 'short' ? { singletonKey: chavePayload(dados) } : {}),
+            ...(op.prioridade != null ? { priority: op.prioridade } : {}),
+          };
+        });
+        const ids = await boss.insert(nome, jobs);
+        inseridos += ids?.length ?? jobs.length;
+      }
+      return inseridos;
     },
 
     async consumir(nome, tratar, op = {}) {
