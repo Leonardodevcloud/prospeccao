@@ -1,9 +1,11 @@
 import { Badge, Button, Panel, TextField } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
+import { Link } from 'react-router';
 import { api, type Base, type Importacao } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { fmtNumero, fmtQuando } from '../formatar';
+import { fmtHora, fmtHoraCompleta, fmtMes, fmtNumero } from '../formatar';
+import { useAtividade } from './Atividade';
 
 const STATUS_IMPORTACAO: Record<
   Importacao['status'],
@@ -136,6 +138,7 @@ function BaseCnpj() {
     },
   });
   const ultima = importacoes.data?.[0];
+  const agendada = useAtividade(15_000).data?.importacaoAgendada;
 
   return (
     <Panel
@@ -154,7 +157,7 @@ function BaseCnpj() {
         <div style={{ maxWidth: 260 }}>
           <TextField
             rotulo="Mês da publicação (opcional)"
-            placeholder="AAAA-MM"
+            placeholder="Ex.: 2026-09"
             value={mes}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMes(e.target.value)}
             dica="Vazio usa a publicação mais recente."
@@ -165,6 +168,15 @@ function BaseCnpj() {
         {ultima?.status === 'erro' && (
           <Mensagem tipo="erro">A última importação falhou: {ultima.erro}</Mensagem>
         )}
+        {agendada?.estado === 'nova_tentativa' && (
+          <Mensagem tipo="aviso">
+            Nova tentativa automática {fmtHora(agendada.quando)} (tentativa {agendada.falhas + 1} de{' '}
+            {agendada.limiteTentativas + 1}). Não precisa clicar de novo.
+          </Mensagem>
+        )}
+        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+          Acompanhe o andamento ao vivo em <Link to="/atividade">Atividade</Link>.
+        </p>
         {importacoes.data?.length ? (
           <div style={{ overflowX: 'auto' }}>
             <table className="pp-table">
@@ -181,7 +193,7 @@ function BaseCnpj() {
               <tbody>
                 {importacoes.data.map((i) => (
                   <tr key={i.id} style={{ cursor: 'default' }}>
-                    <td className="mono">{i.mes}</td>
+                    <td>{fmtMes(i.mes)}</td>
                     <td>
                       <Badge tone={STATUS_IMPORTACAO[i.status].tom}>
                         {STATUS_IMPORTACAO[i.status].rotulo}
@@ -196,7 +208,14 @@ function BaseCnpj() {
                     <td className="mono">{i.ufs.join(', ') || '—'}</td>
                     <td className="mono">{fmtNumero(i.estabelecimentos)}</td>
                     <td className="mono">{fmtNumero(i.socios)}</td>
-                    <td className="mono quieto">{fmtQuando(i.concluidoEm ?? i.criadoEm)}</td>
+                    <td className="quieto" style={{ whiteSpace: 'nowrap' }}>
+                      <time
+                        dateTime={i.concluidoEm ?? i.criadoEm}
+                        title={fmtHoraCompleta(i.concluidoEm ?? i.criadoEm)}
+                      >
+                        {fmtHora(i.concluidoEm ?? i.criadoEm)}
+                      </time>
+                    </td>
                   </tr>
                 ))}
               </tbody>

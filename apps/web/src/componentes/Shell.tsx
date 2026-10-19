@@ -2,10 +2,12 @@ import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api, ErroApi } from '../api';
+import { temAtividade, useAtividade } from '../paginas/Atividade';
 
 const ITENS = [
   { para: '/', rotulo: 'Leads', icone: 'users', fim: true },
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
+  { para: '/atividade', rotulo: 'Atividade', icone: 'clock' },
   { para: '/nichos', rotulo: 'Nichos', icone: 'store' },
   { para: '/configuracoes', rotulo: 'Configurações', icone: 'building-2' },
 ];
@@ -16,6 +18,8 @@ export function Shell() {
   const navegar = useNavigate();
   const cliente = useQueryClient();
   const sessao = useQuery({ queryKey: ['sessao'], queryFn: () => api<{ email: string }>('/auth/eu') });
+  // Ponto pulsando em "Atividade" enquanto o motor trabalha, em qualquer tela.
+  const ativo = temAtividade(useAtividade(60_000).data);
   const sair = useMutation({
     mutationFn: () => api('/auth/logout', { metodo: 'POST' }),
     onSettled: () => {
@@ -42,6 +46,9 @@ export function Shell() {
           <NavLink key={i.para} to={i.para} end={i.fim} className="nav__link">
             <Icon name={i.icone} size={16} />
             {i.rotulo}
+            {i.para === '/atividade' && ativo && (
+              <span className="vivo nav__vivo" role="img" aria-label="trabalhando agora" />
+            )}
           </NavLink>
         ))}
         <div className="nav__rodape">

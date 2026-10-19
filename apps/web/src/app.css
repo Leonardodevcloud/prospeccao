@@ -500,3 +500,129 @@ fieldset.campo {
     animation: none;
   }
 }
+
+/* Atividade */
+.vivo {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  animation: pulsar 1.6s ease-in-out infinite;
+}
+@keyframes pulsar {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vivo {
+    animation: none;
+  }
+}
+.nav__vivo {
+  margin-left: auto;
+  color: var(--warning);
+}
+.resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+.resumo > div {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.resumo span {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+.resumo b {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.linha-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 14px;
+  line-height: 20px;
+}
+.erro-texto {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.lista-filas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: 14px;
+  line-height: 20px;
+}
+.lista-filas li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.aviso-texto {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--warning);
+}
+.pp-table .num {
+  text-align: right;
+}
+/* Tabela que vira cartões no celular: cada linha empilha "rótulo: valor". */
+@media (max-width: 640px) {
+  .tabela-cartoes thead {
+    display: none;
+  }
+  .tabela-cartoes,
+  .tabela-cartoes tbody,
+  .tabela-cartoes tr,
+  .tabela-cartoes td {
+    display: block;
+    width: 100%;
+  }
+  .tabela-cartoes tr {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--line);
+  }
+  .tabela-cartoes td {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: var(--space-2);
+    height: auto;
+    min-height: 0;
+    padding: 3px 0;
+    border: 0;
+    text-align: left;
+  }
+  .tabela-cartoes td.num {
+    text-align: left;
+  }
+  .tabela-cartoes td::before {
+    content: attr(data-rotulo);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--ink-muted);
+  }
+}

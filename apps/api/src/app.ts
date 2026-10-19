@@ -5,6 +5,7 @@ import { pinoHttp } from 'pino-http';
 import type { DepsApi } from './dependencias.js';
 import { rotaNaoEncontrada, tratarErros } from './middlewares/erros.js';
 import { exigirOrigemConhecida, exigirSessao } from './middlewares/seguranca.js';
+import { rotasAtividade } from './modulos/atividade/rotas.js';
 import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
 import { rotasCampanhas } from './modulos/campanhas/rotas.js';
@@ -26,6 +27,14 @@ export function criarApp(deps: DepsApi): Express {
     pinoHttp({
       logger: deps.log,
       autoLogging: { ignore: (req) => req.url === '/saude' },
+      // Uma linha curta por requisição: "GET /campanhas → 200 (12 ms)", sem os cabeçalhos todos.
+      serializers: {
+        req: (req: { method: string; url: string }) => ({ metodo: req.method, url: req.url }),
+        res: (res: { statusCode: number }) => ({ status: res.statusCode }),
+      },
+      customSuccessMessage: (req, res, ms) =>
+        `${req.method} ${req.url} → ${res.statusCode} (${Math.round(ms)} ms)`,
+      customErrorMessage: (req, res, erro) => `${req.method} ${req.url} → ${res.statusCode}: ${erro.message}`,
       customLogLevel: (_req, res, erro) =>
         erro || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
     }),
@@ -42,6 +51,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/bases', rotasBases(deps));
   protegidas.use('/empresas', rotasEmpresas(deps));
   protegidas.use('/importacoes', rotasImportacoes(deps));
+  protegidas.use('/atividade', rotasAtividade(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
   app.use(protegidas);
 

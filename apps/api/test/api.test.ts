@@ -15,6 +15,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
   let app: ReturnType<typeof criarApp>;
   let cookie = '';
   const publicados: { nome: NomeJob; payload: unknown }[] = [];
+  /** Simula a fila exclusiva ocupada: o pg-boss devolve null ao publicar. */
+  let filaOcupada = false;
 
   const enviar = (metodo: 'post' | 'patch' | 'delete', rota: string, corpo?: object) =>
     request(app)[metodo](rota).set('Origin', ORIGEM).set('Cookie', cookie).send(corpo);
@@ -32,11 +34,12 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       log,
       filas: {
         async publicar(nome, payload) {
+          if (filaOcupada) return null;
           publicados.push({ nome, payload });
           return 'job-1';
         },
         async tamanhos() {
-          return {};
+          return { 'maps.coletar': 1 };
         },
       },
       auth: {
@@ -231,6 +234,50 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM base_cnpj.importacoes');
     expect(rows[0].n).toBe(0);
+  });
+
+  it('importação com nova tentativa agendada explica quando roda', async () => {
+    // Tabela do pg-boss com as colunas que a leitura usa (a real tem mais).
+    await pool.query(`CREATE SCHEMA IF NOT EXISTS fila`);
+    await pool.query(`DROP TABLE IF EXISTS fila.job`);
+    await pool.query(
+      `CREATE TABLE fila.job (name text, state text, retry_count int, retry_limit int,
+         start_after timestamptz, started_on timestamptz, created_on timestamptz DEFAULT now(), data jsonb)`,
+    );
+    await pool.query(
+      `INSERT INTO fila.job (name, state, retry_count, retry_limit, start_after)
+       VALUES ('cnpj.importar', 'retry', 0, 2, '2026-10-19T02:56:00Z')`,
+    );
+    filaOcupada = true;
+    try {
+      const r = await enviar('post', '/importacoes/cnpj', {});
+      expect(r.status).toBe(409);
+      // 02:56 UTC = 23:56 em São Paulo
+      expect(r.body.erro.mensagem).toMatch(/tenta de novo sozinha às 23:56 \(tentativa 2 de 3\)/);
+    } finally {
+      filaOcupada = false;
+    }
+
+    const atividade = await ler('/atividade');
+    expect(atividade.body.importacaoAgendada).toMatchObject({ estado: 'nova_tentativa', falhas: 1 });
+  });
+
+  it('atividade mostra buscas em andamento primeiro, com o nome da campanha', async () => {
+    await pool.query(
+      `INSERT INTO descoberta.buscas_maps (campanha_id, cidade, uf, termo, status, itens, concluido_em)
+       VALUES (1, 'Salvador', 'BA', 'autopeças', 'concluida', 87, now() - interval '1 hour'),
+              (1, 'Feira de Santana', 'BA', 'autopeças', 'rodando', NULL, NULL)`,
+    );
+    const r = await ler('/atividade');
+    expect(r.status).toBe(200);
+    expect(r.body.buscasEmAndamento).toBe(1);
+    expect(r.body.buscas[0]).toMatchObject({
+      cidade: 'Feira de Santana',
+      status: 'rodando',
+      campanha: 'Autopeças RMS',
+    });
+    expect(r.body.buscas[1]).toMatchObject({ cidade: 'Salvador', itens: 87 });
+    expect(r.body.filas).toEqual({ 'maps.coletar': 1 });
   });
 
   it('rota inexistente devolve 404 no formato padrão', async () => {

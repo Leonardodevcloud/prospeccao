@@ -192,3 +192,34 @@ export interface Importacao {
   criadoEm: string;
   concluidoEm: string | null;
 }
+
+export interface BuscaAtividade {
+  id: number;
+  campanhaId: number;
+  campanha: string | null;
+  cidade: string;
+  uf: string;
+  termo: string;
+  status: 'pendente' | 'rodando' | 'concluida' | 'erro';
+  itens: number | null;
+  erro: string | null;
+  verificacoes: number;
+  criadoEm: string;
+  iniciadoEm: string | null;
+  concluidoEm: string | null;
+}
+
+export interface Atividade {
+  agora: string;
+  importacao: (Importacao & { iniciadoEm: string | null }) | null;
+  importacaoAgendada: {
+    estado: 'na_fila' | 'rodando' | 'nova_tentativa';
+    falhas: number;
+    limiteTentativas: number;
+    quando: string;
+    criadoEm: string;
+  } | null;
+  buscas: BuscaAtividade[];
+  buscasEmAndamento: number;
+  filas: Record<string, number>;
+}

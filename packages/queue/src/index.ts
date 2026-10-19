@@ -45,6 +45,55 @@ export class ErroDefinitivo extends Error {
   override name = 'ErroDefinitivo';
 }
 
+/** Schema do pg-boss no Postgres. */
+export const SCHEMA_FILAS = 'fila';
+
+/** Job ainda não terminado: esperando, rodando ou aguardando nova tentativa depois de uma falha. */
+export interface JobAberto {
+  estado: 'na_fila' | 'rodando' | 'nova_tentativa';
+  /** Tentativas já falhas (0 na primeira execução). */
+  falhas: number;
+  limiteTentativas: number;
+  /** Quando roda (na fila / nova tentativa) ou quando começou (rodando). */
+  quando: string;
+  criadoEm: string;
+  dados: unknown;
+}
+
+const ESTADO_JOB: Record<string, JobAberto['estado']> = {
+  created: 'na_fila',
+  retry: 'nova_tentativa',
+  active: 'rodando',
+};
+
+/**
+ * Jobs abertos de uma fila, lidos direto da tabela do pg-boss (só leitura). Serve para a tela de
+ * atividade mostrar "nova tentativa às 23:56" sem depender do serviço que consome a fila.
+ */
+export async function jobsAbertos(
+  db: { query: (sql: string, valores?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+  nome: NomeJob,
+  limite = 20,
+): Promise<JobAberto[]> {
+  const { rows } = await db.query(
+    `SELECT state, retry_count, retry_limit, coalesce(started_on, start_after) AS quando, created_on, data
+       FROM ${SCHEMA_FILAS}.job
+      WHERE name = $1 AND state IN ('created', 'retry', 'active')
+      ORDER BY created_on DESC
+      LIMIT $2`,
+    [nome, limite],
+  );
+  return rows.map((r) => ({
+    estado: ESTADO_JOB[String(r.state)] ?? 'na_fila',
+    // O pg-boss só soma retry_count quando a nova tentativa começa: em 'retry', já houve uma falha a mais.
+    falhas: Number(r.retry_count) + (r.state === 'retry' ? 1 : 0),
+    limiteTentativas: Number(r.retry_limit),
+    quando: new Date(r.quando as string).toISOString(),
+    criadoEm: new Date(r.created_on as string).toISOString(),
+    dados: r.data,
+  }));
+}
+
 /**
  * Filas sobre o Postgres (pg-boss, schema "fila"). Valida o payload ao publicar
  * e ao consumir, cria as filas com a política de cada uma e registra erros
@@ -61,7 +110,7 @@ export async function conectarFilas(opcoes: {
   const boss = new PgBoss({
     connectionString: semSslmode(url),
     application_name: `${aplicacao}-fila`,
-    schema: 'fila',
+    schema: SCHEMA_FILAS,
     max: 5,
     ssl: sslDoPostgres(url),
   });

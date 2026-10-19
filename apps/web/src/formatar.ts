@@ -32,6 +32,74 @@ export function fmtQuando(iso: string | null | undefined): string {
   return data.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
 }
 
+const FUSO = 'America/Sao_Paulo';
+const diaSP = new Intl.DateTimeFormat('en-CA', {
+  timeZone: FUSO,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+const horaSP = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: FUSO,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+const diaMesSP = new Intl.DateTimeFormat('pt-BR', { timeZone: FUSO, day: '2-digit', month: '2-digit' });
+const completoSP = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: FUSO,
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
+/**
+ * Momento no horário de São Paulo, sempre no mesmo formato: "hoje 23:46", "ontem 18:02" ou
+ * "16/10 09:15". Use com `fmtHoraCompleta` no title para o detalhe.
+ */
+export function fmtHora(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const data = new Date(iso);
+  const dia = diaSP.format(data);
+  const hoje = diaSP.format(new Date());
+  const ontem = diaSP.format(new Date(Date.now() - 86_400_000));
+  const hora = horaSP.format(data);
+  if (dia === hoje) return `hoje ${hora}`;
+  if (dia === ontem) return `ontem ${hora}`;
+  return `${diaMesSP.format(data)} ${hora}`;
+}
+
+/** "18/10/2026 23:46:05" (São Paulo). */
+export function fmtHoraCompleta(iso: string | null | undefined): string {
+  if (!iso) return '';
+  return completoSP.format(new Date(iso)).replace(',', '');
+}
+
+/** "agora", "45 s", "3 min", "1 h 05 min". */
+export function fmtDuracao(ms: number | null | undefined): string {
+  if (ms == null || ms < 0) return '—';
+  const s = Math.round(ms / 1000);
+  if (s < 5) return 'agora';
+  if (s < 60) return `${s} s`;
+  const min = Math.floor(s / 60);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min`;
+}
+
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+/** "2026-09" → "set/2026"; "auto" (ainda não resolvido) → "mais recente". */
+export function fmtMes(mes: string | null | undefined): string {
+  if (!mes || mes === 'auto') return 'mais recente';
+  const [a, m] = mes.split('-');
+  const nome = MESES.at(Number(m) - 1);
+  return nome && a ? `${nome}/${a}` : mes;
+}
+
 export function fmtData(iso: string | null | undefined): string {
   if (!iso) return '—';
   const [a, m, d] = iso.slice(0, 10).split('-');

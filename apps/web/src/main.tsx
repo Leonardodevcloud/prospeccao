@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 import { ErroApi } from './api';
 import { Shell } from './componentes/Shell';
+import { Atividade } from './paginas/Atividade';
 import { Campanhas } from './paginas/Campanhas';
 import { Configuracoes } from './paginas/Configuracoes';
 import { Leads } from './paginas/Leads';
@@ -27,6 +28,7 @@ const roteador = createBrowserRouter([
     children: [
       { index: true, element: <Leads /> },
       { path: 'campanhas', element: <Campanhas /> },
+      { path: 'atividade', element: <Atividade /> },
       { path: 'nichos', element: <Nichos /> },
       { path: 'configuracoes', element: <Configuracoes /> },
     ],
