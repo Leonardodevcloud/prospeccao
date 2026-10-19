@@ -207,10 +207,12 @@ function Andamento(props: {
     naFilaEnriquecimento: c.progresso.naFilaEnriquecimento ?? 0,
     servicoEnriquecimento: c.progresso.servicoEnriquecimento ?? 'desconhecido',
     erroBusca: c.progresso.erroBusca ?? null,
+    buscasParadas: c.progresso.buscasParadas ?? 0,
   };
   const ativa = c.status === 'ativa';
   const buscasTotal = p.buscasPendentes + p.buscasConcluidas + p.buscasComErro;
-  const buscando = ativa && p.buscasPendentes > 0;
+  const paradas = ativa ? p.buscasParadas : 0;
+  const buscando = ativa && p.buscasPendentes > paradas;
   const enriquecendo = p.naFilaEnriquecimento > 0;
   const servico = p.servicoEnriquecimento;
 
@@ -241,9 +243,12 @@ function Andamento(props: {
           </span>
         </div>
         {buscasTotal > 0 && <Barra feito={p.buscasConcluidas} total={buscasTotal} rotulo="Buscas no Maps" />}
-        {p.erroBusca ? (
+        {p.erroBusca || paradas > 0 ? (
           <div className="etapa-campanha__erro">
-            <p className="erro-texto">{p.erroBusca}</p>
+            <p className="erro-texto">
+              {paradas > 0 && `${fmtNumero(paradas)} ${paradas === 1 ? 'busca parada' : 'buscas paradas'}. `}
+              {p.erroBusca ?? 'Ela não está mais na fila: clique em "Tentar de novo".'}
+            </p>
             {ativa && (
               <Button size="sm" disabled={props.ocupado} onClick={props.aoTentarDeNovo}>
                 Tentar de novo
@@ -255,7 +260,7 @@ function Andamento(props: {
             {!ativa && p.buscasPendentes > 0
               ? 'Campanha pausada: as buscas esperam ela voltar.'
               : buscando
-                ? `${fmtNumero(p.buscasPendentes)} em andamento · cada busca leva alguns minutos no Apify.`
+                ? `${fmtNumero(p.buscasPendentes - paradas)} em andamento · cada busca leva alguns minutos no Apify.`
                 : buscasTotal
                   ? `Concluídas · última ${fmtQuando(p.ultimaBusca)} · ${fmtNumero(p.noMaps)} lugares ligados`
                   : ativa

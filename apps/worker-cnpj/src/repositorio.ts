@@ -234,7 +234,8 @@ export async function salvarEmpresas(db: Executor, importacaoId: number, itens: 
        capital_social = EXCLUDED.capital_social, porte = EXCLUDED.porte,
        importacao_id = EXCLUDED.importacao_id, atualizado_em = now(),
        -- a marca do Simples (oficial) vale mais que a dedução pelo nome
-       mei = CASE WHEN base_cnpj.empresas.mei_fonte = 'simples' THEN base_cnpj.empresas.mei ELSE EXCLUDED.mei END,
+       -- MEI pelo Simples OU pelo nome no formato do MEI (ex-MEI também fica de fora)
+       mei = coalesce(base_cnpj.empresas.mei_fonte = 'simples' AND base_cnpj.empresas.mei, false) OR EXCLUDED.mei,
        mei_fonte = CASE WHEN base_cnpj.empresas.mei_fonte = 'simples' THEN 'simples' ELSE EXCLUDED.mei_fonte END`,
     valores,
   );
@@ -284,7 +285,10 @@ export async function salvarSimples(db: Executor, itens: receita.OpcaoSimples[])
   if (!itens.length) return 0;
   const { rowCount } = await db.query(
     `UPDATE base_cnpj.empresas e
-        SET simples = x.simples, mei = x.mei, mei_fonte = 'simples'
+        SET simples = x.simples, mei_fonte = 'simples',
+            -- MEI hoje (Simples) ou ex-MEI (nome no formato do MEI): os dois ficam de fora
+            mei = x.mei OR e.razao_social ~ '^d{2}.d{3}.d{3}s'
+                  OR (e.natureza_juridica = '2135' AND e.razao_social ~ 'd{11}s*$')
        FROM unnest($1::text[], $2::boolean[], $3::boolean[]) AS x(cnpj_basico, simples, mei)
       WHERE e.cnpj_basico = x.cnpj_basico`,
     [itens.map((i) => i.cnpjBasico), itens.map((i) => i.simples), itens.map((i) => i.mei)],

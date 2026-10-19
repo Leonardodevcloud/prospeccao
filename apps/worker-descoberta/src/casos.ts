@@ -176,6 +176,20 @@ export async function localizarEmpresa(deps: Deps, empresaId: number) {
   }
 }
 
+/**
+ * Ao subir o serviço: campanha ativa com busca pendente volta a disparar (uma busca pode ter ficado
+ * sem tarefa na fila depois de falhar todas as tentativas ou de um deploy no meio).
+ */
+export async function retomarBuscasParadas(deps: Deps) {
+  const { rows } = await deps.pool.query<{ campanha_id: number }>(
+    `SELECT DISTINCT b.campanha_id::int FROM descoberta.buscas_maps b
+       JOIN cadastro.v_campanhas_descoberta c ON c.id = b.campanha_id AND c.status = 'ativa'
+      WHERE b.status = 'pendente'`,
+  );
+  for (const r of rows) await deps.filas.publicar('campanha.iniciar', { campanhaId: r.campanha_id });
+  if (rows.length) deps.log.info({ campanhas: rows.length }, 'buscas pendentes retomadas');
+}
+
 /** Base de CNPJ atualizada: campanhas ativas buscam de novo na base. */
 export async function aoAtualizarBaseCnpj(deps: Deps) {
   for (const campanhaId of await repo.campanhasAtivas(deps.pool)) {

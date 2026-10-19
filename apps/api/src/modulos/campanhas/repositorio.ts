@@ -120,6 +120,20 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
   const ufsNaBase = base.rows[0]?.ufs ?? null;
   const porCampanha = new Map(enriq.rows.map((r) => [Number(r.campanha_id), r]));
   const erroPorCampanha = new Map(erros.rows.map((r) => [Number(r.campanha_id), r.erro]));
+  // Busca pendente/rodando sem tarefa na fila não anda sozinha: a tela mostra "Parada" com "Tentar de novo".
+  const paradas = await db
+    .query<{ campanha_id: string; n: number }>(
+      `SELECT b.campanha_id, count(*)::int AS n FROM descoberta.buscas_maps b
+        WHERE b.campanha_id = ANY($1::bigint[]) AND b.status IN ('pendente', 'rodando')
+          AND b.criado_em < now() - interval '1 minute'
+          AND NOT EXISTS (SELECT 1 FROM fila.job j
+                           WHERE j.name IN ('maps.buscar', 'maps.coletar') AND j.state IN ('created', 'retry', 'active')
+                             AND (j.data ->> 'buscaId')::bigint = b.id)
+        GROUP BY 1`,
+      [ids],
+    )
+    .then((r) => new Map(r.rows.map((x) => [Number(x.campanha_id), x.n])))
+    .catch(() => new Map<number, number>());
   for (const c of campanhas) {
     const ufs = [...new Set(c.cidades.map((x) => x.uf.toUpperCase()))];
     const e = porCampanha.get(Number(c.id));
@@ -131,6 +145,7 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
       // Estados da campanha que a última importação da Receita não trouxe.
       ufsForaDaBase: ufsNaBase ? ufs.filter((u) => !ufsNaBase.includes(u)) : ufs,
       erroBusca: erroPorCampanha.get(Number(c.id)) ?? null,
+      buscasParadas: paradas.get(Number(c.id)) ?? 0,
     });
   }
   return campanhas;

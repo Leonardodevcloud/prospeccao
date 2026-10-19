@@ -47,8 +47,12 @@ export function rotasAtividade({ pool, filas }: DepsApi): Router {
       .then((r) => new Set(r.rows.map((x) => Number(x.id))))
       .catch(() => null);
     for (const b of buscas.rows) {
+      const recente = Date.now() - new Date(b.criadoEm).getTime() < 60_000;
       b.parada =
-        comTarefa != null && (b.status === 'pendente' || b.status === 'rodando') && !comTarefa.has(b.id);
+        comTarefa != null &&
+        !recente &&
+        (b.status === 'pendente' || b.status === 'rodando') &&
+        !comTarefa.has(b.id);
     }
     const emAndamento = buscas.rows.filter((b) => b.status === 'rodando' || b.status === 'pendente').length;
     res.json({

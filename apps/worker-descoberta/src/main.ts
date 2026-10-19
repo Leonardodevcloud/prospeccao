@@ -115,6 +115,9 @@ await filas.consumir('empresa.localizar', (p) => casos.localizarEmpresa(deps, p.
 });
 await filas.consumir('cnpj.importacao_concluida', () => casos.aoAtualizarBaseCnpj(deps));
 
+await casos
+  .retomarBuscasParadas(deps)
+  .catch((erro) => log.warn({ err: erro }, 'não consegui retomar buscas'));
 log.info({ geocodificacao: deps.geo ? 'ligada' : 'desligada (sem ORS_API_KEY)' }, 'worker-descoberta pronto');
 
 encerrarAoReceberSinal(log, async () => {

@@ -95,6 +95,8 @@ export interface ProgressoCampanha {
   ufsForaDaBase: string[];
   /** Último erro das buscas no Maps (recente). */
   erroBusca: string | null;
+  /** Buscas pendentes/rodando sem tarefa na fila (não andam sozinhas). */
+  buscasParadas?: number;
 }
 
 export interface Campanha {

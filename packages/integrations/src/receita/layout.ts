@@ -182,8 +182,7 @@ export function lerSimples(c: string[]): OpcaoSimples | null {
  * social no formato do MEI: "NOME 12345678901" (CPF no fim) ou "12.345.678 NOME" (raiz do CNPJ no começo).
  */
 export function pareceMei(naturezaJuridica: string | null, razaoSocial: string): boolean {
-  return (
-    naturezaJuridica === '2135' &&
-    (/\d{11}\s*$/.test(razaoSocial) || /^\d{2}\.\d{3}\.\d{3}\s/.test(razaoSocial))
-  );
+  // "12.345.678 NOME": formato que a Receita só usa para MEI (vale também para quem já saiu do MEI).
+  if (/^\d{2}\.\d{3}\.\d{3}\s/.test(razaoSocial)) return true;
+  return naturezaJuridica === '2135' && /\d{11}\s*$/.test(razaoSocial);
 }

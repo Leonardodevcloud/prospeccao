@@ -95,6 +95,8 @@ describe('MEI', () => {
     const { pareceMei, lerSimples } = await import('../src/receita/layout.js');
     expect(pareceMei('2135', 'JOAO DA SILVA 12345678901')).toBe(true);
     expect(pareceMei('2135', '12.666.833 ALVARO SANTOS SOUZA')).toBe(true);
+    // Ex-MEI (saiu do regime, mas o nome continua no formato do MEI) também fica de fora.
+    expect(pareceMei('2062', '11.995.409 ARNOBIO ULISSES GONCALVES FILHO')).toBe(true);
     expect(pareceMei('2135', 'JOAO DA SILVA')).toBe(false);
     expect(pareceMei('2062', 'PECAS LTDA 12345678901')).toBe(false);
     expect(lerSimples(['123', 'S', '', '', 'S', '', ''])).toEqual({
