@@ -197,7 +197,17 @@ function Andamento(props: {
   ocupado: boolean;
 }) {
   const { c } = props;
-  const p = c.progresso;
+  // A tela pode chegar antes da API nova (o Vercel publica mais rápido que o Railway): campos que
+  // ainda não vieram entram com valor neutro em vez de derrubar a página.
+  const p = {
+    ...c.progresso,
+    ufsForaDaBase: c.progresso.ufsForaDaBase ?? [],
+    enriquecidos: c.progresso.enriquecidos ?? 0,
+    elegiveis: c.progresso.elegiveis ?? 0,
+    naFilaEnriquecimento: c.progresso.naFilaEnriquecimento ?? 0,
+    servicoEnriquecimento: c.progresso.servicoEnriquecimento ?? 'desconhecido',
+    erroBusca: c.progresso.erroBusca ?? null,
+  };
   const ativa = c.status === 'ativa';
   const buscasTotal = p.buscasPendentes + p.buscasConcluidas + p.buscasComErro;
   const buscando = ativa && p.buscasPendentes > 0;

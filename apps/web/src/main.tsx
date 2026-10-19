@@ -5,6 +5,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
 import { ErroApi } from './api';
+import { ErroDaTela } from './componentes/ErroDaTela';
 import { Shell } from './componentes/Shell';
 import { Atividade } from './paginas/Atividade';
 import { BaseCnpj } from './paginas/BaseCnpj';
@@ -23,6 +24,7 @@ const roteador = createBrowserRouter([
   {
     path: '/',
     element: <Shell />,
+    errorElement: <ErroDaTela />,
     children: [
       { index: true, element: <Leads /> },
       { path: 'funil', element: <Funil /> },
