@@ -218,15 +218,145 @@ export async function enriquecerEmpresa(
       empresa.maps_url,
     );
 
-    // 3. Site da empresa.
+    // 3. Razão social no Google, lida como uma pessoa leria: diretórios de empresas (AutoGuiaBR,
+    // Lavrale, Econodata…) citam telefone e e-mail no próprio trecho; o painel traz o telefone da
+    // loja; e a IA lê a página inteira atrás do Instagram, do site e de quem é dono ou comprador.
+    // A mesma busca poupa a busca separada do Instagram e dá o site quando o Maps não tem.
+    let consultaDiretorios: string | null = null;
+    let instagramBusca: string | null = null;
+    let siteBusca: string | null = null;
+    if (fontes.diretorios) {
+      try {
+        const d = await fontes.diretorios.buscar({
+          nome: empresa.nome,
+          razaoSocial: empresa.razao_social,
+          cidade: empresa.cidade,
+        });
+        consultaDiretorios = d.consulta;
+        const achados = contatosDosDiretorios(
+          d.resultados,
+          palavrasDaEmpresa(empresa.nome, empresa.razao_social),
+        );
+        for (const a of achados) {
+          c.contato({
+            canal: a.canal,
+            valor: a.valor,
+            fonte: 'google',
+            confianca: a.canal === 'email' ? 55 : 50,
+            rotulo: `Em ${a.dominio}`,
+            urlOrigem: a.url,
+          });
+        }
+        if (d.painel?.telefone)
+          c.contato({
+            canal: 'telefone',
+            valor: d.painel.telefone,
+            fonte: 'google',
+            confianca: 70,
+            rotulo: 'Painel do Google',
+          });
+        instagramBusca = instagramNosResultados(d.resultados, empresa.nome);
+
+        // A IA lê os resultados; o que ela devolve só vale se estiver escrito na busca.
+        const daIa: string[] = [];
+        if (fontes.ia?.lerBusca && d.resultados.length) {
+          try {
+            const l = await fontes.ia.lerBusca({
+              empresa: {
+                nome: empresa.nome,
+                razaoSocial: empresa.razao_social,
+                cidade: empresa.cidade,
+                uf: empresa.uf,
+                endereco:
+                  [empresa.logradouro, empresa.numero, empresa.bairro].filter(Boolean).join(', ') || null,
+              },
+              resultados: d.resultados,
+            });
+            if (!l.mesmaEmpresa) {
+              daIa.push('a IA viu que os resultados são de outra empresa');
+            } else {
+              if (!instagramBusca && l.instagram) {
+                instagramBusca = l.instagram;
+                daIa.push(`Instagram @${l.instagram}`);
+              }
+              if (l.site) {
+                siteBusca = l.site;
+                daIa.push(`site ${l.site}`);
+              }
+              for (const t of l.telefones) {
+                c.contato({
+                  canal: 'telefone',
+                  valor: t,
+                  fonte: 'google',
+                  confianca: 55,
+                  rotulo: 'Na busca do Google',
+                  urlOrigem: linkGoogle(d.consulta),
+                });
+              }
+              for (const em of l.emails) {
+                c.contato({
+                  canal: 'email',
+                  valor: em,
+                  fonte: 'google',
+                  confianca: 55,
+                  rotulo: 'Na busca do Google',
+                  urlOrigem: linkGoogle(d.consulta),
+                });
+              }
+              for (const p of l.pessoas) {
+                c.pessoa({
+                  nome: p.nome,
+                  cargo: p.cargo,
+                  papel: papelPeloCargo(p.cargo),
+                  fonte: 'google',
+                  urlOrigem: linkGoogle(d.consulta),
+                  evidencia: p.evidencia,
+                });
+                daIa.push(`${p.nome} (${p.cargo})`);
+              }
+            }
+          } catch (erro) {
+            log.warn({ err: erro }, 'a IA não conseguiu ler a busca do Google');
+          }
+        }
+        const partes = [
+          instagramBusca && !daIa.includes(`Instagram @${instagramBusca}`)
+            ? `Instagram @${instagramBusca}`
+            : null,
+          d.painel?.telefone ? `telefone ${formatarTelefone(d.painel.telefone)} no painel do Google` : null,
+          ...achados
+            .slice(0, 4)
+            .map((a) =>
+              a.canal === 'telefone'
+                ? `telefone ${formatarTelefone(a.valor)} em ${a.dominio}`
+                : `e-mail ${a.valor} em ${a.dominio}`,
+            ),
+        ].filter(Boolean);
+        const leuIa = daIa.length ? ` A IA leu a busca: ${daIa.join(', ')}.` : '';
+        await etapa(
+          'google',
+          partes.length || daIa.some((x) => !x.startsWith('a IA viu')) ? 'encontrado' : 'sem_resultado',
+          (partes.length
+            ? `${partes.join('; ')}${achados.length > 4 ? ` e mais ${achados.length - 4}` : ''}.`
+            : `${d.resultados.length} resultado(s) para a razão social, sem telefone ou e-mail desta empresa nos trechos.`) +
+            leuIa,
+          linkGoogle(d.consulta),
+        );
+      } catch (erro) {
+        await etapa('google', 'erro', explicarFalhaBusca(erro, 'Serper'));
+      }
+    }
+
+    // 3b. Site da empresa (do Maps; se não tiver, o que a busca da razão social mostrou).
+    const siteParaLer = siteMaps ?? siteBusca;
     let site: ResultadoSite | null = null;
     let instagram: string | null = null;
     let facebook: string | null = null;
     let linkedinEmpresa: string | null = null;
     let cnpjAchado: string | null = null;
-    if (siteMaps) {
+    if (siteParaLer) {
       try {
-        site = await fontes.site.ler(siteMaps);
+        site = await fontes.site.ler(siteParaLer);
       } catch (erro) {
         log.warn({ err: erro }, 'falha ao ler o site');
       }
@@ -296,71 +426,14 @@ export async function enriquecerEmpresa(
     } else {
       await etapa(
         'site',
-        siteMaps ? 'erro' : 'pulada',
-        siteMaps
+        siteParaLer ? 'erro' : 'pulada',
+        siteParaLer
           ? 'O site não respondeu (fora do ar ou bloqueia leitura automática).'
           : 'Sem site no Google.',
-        siteMaps,
+        siteParaLer,
       );
     }
-
-    // 3b. Razão social no Google: diretórios de empresas (AutoGuiaBR, Lavrale, Econodata…) citam
-    // telefone e e-mail no próprio trecho do resultado; o painel do Google traz o telefone da loja.
-    // A mesma busca costuma trazer o Instagram, o que poupa a busca separada.
-    let consultaDiretorios: string | null = null;
-    if (fontes.diretorios) {
-      try {
-        const d = await fontes.diretorios.buscar({
-          nome: empresa.nome,
-          razaoSocial: empresa.razao_social,
-          cidade: empresa.cidade,
-        });
-        consultaDiretorios = d.consulta;
-        const achados = contatosDosDiretorios(
-          d.resultados,
-          palavrasDaEmpresa(empresa.nome, empresa.razao_social),
-        );
-        for (const a of achados) {
-          c.contato({
-            canal: a.canal,
-            valor: a.valor,
-            fonte: 'google',
-            confianca: a.canal === 'email' ? 55 : 50,
-            rotulo: `Em ${a.dominio}`,
-            urlOrigem: a.url,
-          });
-        }
-        if (d.painel?.telefone)
-          c.contato({
-            canal: 'telefone',
-            valor: d.painel.telefone,
-            fonte: 'google',
-            confianca: 70,
-            rotulo: 'Painel do Google',
-          });
-        if (!instagram) instagram = instagramNosResultados(d.resultados, empresa.nome);
-        const partes = [
-          d.painel?.telefone ? `telefone ${formatarTelefone(d.painel.telefone)} no painel do Google` : null,
-          ...achados
-            .slice(0, 4)
-            .map((a) =>
-              a.canal === 'telefone'
-                ? `telefone ${formatarTelefone(a.valor)} em ${a.dominio}`
-                : `e-mail ${a.valor} em ${a.dominio}`,
-            ),
-        ].filter(Boolean);
-        await etapa(
-          'google',
-          partes.length ? 'encontrado' : 'sem_resultado',
-          partes.length
-            ? `${partes.join('; ')}${achados.length > 4 ? ` e mais ${achados.length - 4}` : ''}.`
-            : `${d.resultados.length} resultado(s) para a razão social, sem telefone ou e-mail desta empresa nos trechos.`,
-          linkGoogle(d.consulta),
-        );
-      } catch (erro) {
-        await etapa('google', 'erro', explicarFalhaBusca(erro, 'Serper'));
-      }
-    }
+    if (!instagram) instagram = instagramBusca;
 
     // 4. Instagram: pelo site, pela busca da razão social; se não, procura no Google.
     let perfil: PerfilInstagram | null = null;
@@ -786,7 +859,7 @@ export async function enriquecerEmpresa(
       resumo: avaliacao?.resumo ?? null,
       entrega: avaliacao?.entrega ?? empresa.sinal_entrega,
       cnpjAchado,
-      site: site?.urlFinal ?? siteMaps,
+      site: site?.urlFinal ?? siteParaLer,
       instagram,
       facebook,
       linkedinEmpresa,

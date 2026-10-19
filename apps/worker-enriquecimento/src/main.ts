@@ -6,6 +6,7 @@ import { criarLogger } from '@prospeccao/shared';
 import { z } from 'zod';
 import { enriquecerEmpresa } from './casos.js';
 import type { Deps, Fontes } from './dependencias.js';
+import * as repo from './repositorio.js';
 
 const env = carregarEnv(
   envBase.extend({
@@ -72,27 +73,32 @@ const fontes: Fontes = {
   ia: env.GEMINI_API_KEY
     ? {
         avaliar: (e) => enriq.avaliarComGemini({ apiKey: env.GEMINI_API_KEY!, modelo: env.GEMINI_MODELO }, e),
+        lerBusca: (e) =>
+          enriq.lerBuscaComGemini({ apiKey: env.GEMINI_API_KEY!, modelo: env.GEMINI_MODELO }, e),
       }
     : null,
   places: env.GOOGLE_PLACES_KEY
     ? { detalhes: (id) => enriq.detalhesDoLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, id) }
     : null,
-  // Achar no Maps pelo nome e endereço: Serper primeiro (centavos); o Places oficial só se o
-  // Serper não achar ou falhar.
+  // Achar no Maps pelo nome e endereço: Google Places enquanto houver cota GRÁTIS no mês
+  // (somando o que as campanhas já usaram); acabou a cota, Serper (centavos). Sem Serper, o
+  // Places segue e passa a cobrar.
   lugar:
     serper || env.GOOGLE_PLACES_KEY
       ? {
           async achar(e) {
-            if (serper) {
+            const pedidos = e.razaoSocial && e.razaoSocial !== e.nome ? 2 : 1;
+            const places = env.GOOGLE_PLACES_KEY ? { apiKey: env.GOOGLE_PLACES_KEY } : null;
+            if (places && (!serper || (await repo.reservarPlacesGratis(pool, pedidos)))) {
               try {
-                const r = await enriq.acharLugarSerper(serper, e);
-                if (r.lugar || !env.GOOGLE_PLACES_KEY) return r;
+                const r = await enriq.acharLugar(places, e);
+                if (r.lugar || !serper) return r;
               } catch (erro) {
-                if (!env.GOOGLE_PLACES_KEY) throw erro;
-                log.warn({ err: erro }, 'Serper falhou ao achar o lugar; tentando o Google Places');
+                if (!serper) throw erro;
+                log.warn({ err: erro }, 'Google Places falhou ao achar o lugar; tentando o Serper');
               }
             }
-            return enriq.acharLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, e);
+            return enriq.acharLugarSerper(serper!, e);
           },
         }
       : null,
@@ -158,7 +164,14 @@ log.info(
     ia: env.GEMINI_API_KEY ? env.GEMINI_MODELO : 'desligada (nota por regras)',
     whatsapp: ligado(evolution),
     places: ligado(env.GOOGLE_PLACES_KEY),
-    achar_no_maps: serper ? 'Serper (Places de reserva)' : env.GOOGLE_PLACES_KEY ? 'Places' : 'desligado',
+    achar_no_maps:
+      env.GOOGLE_PLACES_KEY && serper
+        ? 'Places na cota grátis, depois Serper'
+        : env.GOOGLE_PLACES_KEY
+          ? 'Places'
+          : serper
+            ? 'Serper'
+            : 'desligado',
     diretorios: ligado(serper),
   },
   'worker-enriquecimento pronto',

@@ -507,6 +507,24 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
           async avaliar() {
             return { faixa: 'B', score: 60, motivo: 'Médio', resumo: 'Diesel', entrega: null, pessoas: [] };
           },
+          async lerBusca(e) {
+            expect(e.empresa.endereco).toBe('AVENIDA BARROS REIS, 312, PAU MIUDO');
+            return {
+              mesmaEmpresa: true,
+              instagram: null,
+              site: null,
+              telefones: [],
+              emails: [],
+              pessoas: [
+                {
+                  nome: 'Marcos Lima',
+                  cargo: 'Gerente de compras',
+                  trecho: 'Marcos Lima, gerente de compras',
+                  evidencia: 'Marcos Lima, gerente de compras',
+                },
+              ],
+            };
+          },
         },
         places: null,
         lugar: {
@@ -611,8 +629,28 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(de('maps')?.detalhe).toMatch(/^Achada no Google Maps pelo nome e endereço \(via Serper\)/);
     expect(de('google')).toMatchObject({ status: 'encontrado' });
     expect(de('google')?.detalhe).toContain('e-mail vendas@ceavenortediesel.com.br em lavrale.com.br');
+    expect(de('google')?.detalhe).toContain('A IA leu a busca: Marcos Lima (Gerente de compras).');
+    // A busca da razão social vem antes do site (pode dar o site quando o Maps não tem).
+    expect(etapas.map((x) => x.etapa).indexOf('google')).toBeLessThan(
+      etapas.map((x) => x.etapa).indexOf('site'),
+    );
+    const { rows: pessoas } = await pool.query(
+      `SELECT nome, papel, decisor FROM enriquecimento.pessoas WHERE empresa_id = 3 AND nome = 'Marcos Lima'`,
+    );
+    expect(pessoas[0]).toMatchObject({ papel: 'compras', decisor: true });
     expect(de('instagram')).toMatchObject({ status: 'encontrado' });
     expect(de('places')?.detalhe).toMatch(/via Serper/);
     expect(de('whatsapp')?.detalhe).toMatch(/WhatsApp Business desta empresa/);
+  });
+
+  it('Google Places só enquanto a cota grátis do mês não acabou (campanhas + enriquecimento)', async () => {
+    const { reservarPlacesGratis } = await import('../src/repositorio.js');
+    await pool.query('UPDATE cadastro.config_places SET franquia_mensal = 3 WHERE id = 1');
+    await pool.query('TRUNCATE enriquecimento.uso_places');
+    expect(await reservarPlacesGratis(pool, 2)).toBe(true);
+    expect(await reservarPlacesGratis(pool, 2)).toBe(false); // passaria de 3: vai para o Serper
+    expect(await reservarPlacesGratis(pool, 1)).toBe(true);
+    expect(await reservarPlacesGratis(pool, 1)).toBe(false);
+    await pool.query('UPDATE cadastro.config_places SET franquia_mensal = 1000 WHERE id = 1');
   });
 });

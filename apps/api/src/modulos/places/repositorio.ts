@@ -68,9 +68,12 @@ export async function resumoDoMes(db: Executor) {
             to_char((t.mes + interval '1 month')::date, 'YYYY-MM-DD') AS renova_em,
             ((t.mes + interval '1 month')::date - t.mes)::int AS dias_no_mes,
             (t.hoje - t.mes + 1)::int AS decorridos,
-            coalesce(u.pedidos, 0) AS pedidos, coalesce(u.pagos, 0) AS pagos,
+            -- Pedidos da descoberta + os do enriquecimento (achar a empresa pelo nome): a cota é uma só.
+            (coalesce(u.pedidos, 0) + coalesce(eu.pedidos, 0))::int AS pedidos, coalesce(u.pagos, 0) AS pagos,
             coalesce(u.gasto_usd, 0) AS gasto_usd, coalesce(u.lugares, 0) AS lugares
-       FROM t LEFT JOIN descoberta.v_uso_places_mes u ON u.mes = t.mes`,
+       FROM t
+       LEFT JOIN descoberta.v_uso_places_mes u ON u.mes = t.mes
+       LEFT JOIN enriquecimento.v_uso_places_mes eu ON eu.mes = t.mes`,
   );
   const r = rows[0]!;
   const precoPorPedido = cfg.precoMilUsd / 1000;

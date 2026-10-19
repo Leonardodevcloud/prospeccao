@@ -1,4 +1,5 @@
 export * from './apify.js';
+export * from './leitura-busca.js';
 export * from './linkedin.js';
 export * from './pessoas.js';
 export * from './serper.js';

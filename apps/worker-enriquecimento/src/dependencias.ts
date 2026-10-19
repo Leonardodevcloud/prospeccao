@@ -5,6 +5,8 @@ import type {
   DetalhesPlaces,
   EmpresaParaAchar,
   EntradaAvaliacao,
+  EntradaLeituraBusca,
+  LeituraBusca,
   LugarAchado,
   PerfilInstagram,
   PerfilWhatsapp,
@@ -25,9 +27,13 @@ export interface Fontes {
     buscar(consultas: string[]): Promise<Map<string, ResultadoGoogle[]>>;
   } | null;
   instagram: { ler(usuario: string): Promise<PerfilInstagram | null> } | null;
-  ia: { avaliar(entrada: EntradaAvaliacao): Promise<AvaliacaoIa> } | null;
+  ia: {
+    avaliar(entrada: EntradaAvaliacao): Promise<AvaliacaoIa>;
+    /** Lê a página de resultados do Google e tira Instagram, site, contatos e pessoas. */
+    lerBusca?(entrada: EntradaLeituraBusca): Promise<LeituraBusca>;
+  } | null;
   places: { detalhes(placeId: string): Promise<DetalhesPlaces> } | null;
-  /** Procura a empresa no Google Maps pelo nome e endereço (Serper, com o Places de reserva). */
+  /** Procura a empresa no Google Maps pelo nome e endereço (Places na cota grátis, depois Serper). */
   lugar?: { achar(empresa: EmpresaParaAchar): Promise<LugarAchado> } | null;
   /** Busca a razão social no Google e lê telefone/e-mail citados em diretórios (Serper). */
   diretorios?: {

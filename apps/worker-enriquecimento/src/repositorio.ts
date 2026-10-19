@@ -251,3 +251,39 @@ export async function marcarErro(db: Executor, empresaId: number, erro: string) 
     [empresaId, erro.slice(0, 500)],
   );
 }
+
+/**
+ * Reserva `n` pedidos do Google Places dentro da cota GRÁTIS do mês (somando o que a descoberta
+ * já usou). Devolve false quando não cabe: aí o enriquecimento usa o Serper e não paga o Google.
+ * Conta para mais quando a segunda tentativa (razão social) não acontece: nunca para menos.
+ */
+export async function reservarPlacesGratis(pool: Pool, n: number): Promise<boolean> {
+  const cliente = await pool.connect();
+  try {
+    await cliente.query('BEGIN');
+    await cliente.query("SELECT pg_advisory_xact_lock(hashtext('enriquecimento.uso_places'))");
+    const { rows } = await cliente.query<{ franquia: number; usados: number }>(
+      `SELECT coalesce((SELECT franquia_mensal FROM cadastro.v_config_places), 1000)::int AS franquia,
+              (coalesce((SELECT pedidos FROM descoberta.v_uso_places_mes WHERE mes = descoberta.mes_places()), 0)
+               + coalesce((SELECT pedidos FROM enriquecimento.uso_places WHERE mes = descoberta.mes_places()), 0))::int
+                AS usados`,
+    );
+    const { franquia = 1000, usados = 0 } = rows[0] ?? {};
+    if (usados + n > franquia) {
+      await cliente.query('ROLLBACK');
+      return false;
+    }
+    await cliente.query(
+      `INSERT INTO enriquecimento.uso_places (mes, pedidos) VALUES (descoberta.mes_places(), $1)
+       ON CONFLICT (mes) DO UPDATE SET pedidos = enriquecimento.uso_places.pedidos + EXCLUDED.pedidos`,
+      [n],
+    );
+    await cliente.query('COMMIT');
+    return true;
+  } catch (erro) {
+    await cliente.query('ROLLBACK').catch(() => undefined);
+    throw erro;
+  } finally {
+    cliente.release();
+  }
+}
