@@ -7,6 +7,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
 import { ErroApi } from './api';
 import { ErroDaTela } from './componentes/ErroDaTela';
 import { Shell } from './componentes/Shell';
+import { Agente } from './paginas/Agente';
 import { Atividade } from './paginas/Atividade';
 import { BaseCnpj } from './paginas/BaseCnpj';
 import { Campanhas } from './paginas/Campanhas';
@@ -29,6 +30,7 @@ const roteador = createBrowserRouter([
       { index: true, element: <Leads /> },
       { path: 'funil', element: <Funil /> },
       { path: 'relatorios', element: <Relatorios /> },
+      { path: 'agente', element: <Agente /> },
       { path: 'campanhas', element: <Campanhas /> },
       { path: 'atividade', element: <Atividade /> },
       { path: 'nichos', element: <Nichos /> },

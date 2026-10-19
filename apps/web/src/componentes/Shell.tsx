@@ -2,12 +2,14 @@ import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api, ErroApi } from '../api';
+import { useAgentePendente } from '../paginas/Agente';
 import { temAtividade, useAtividade } from '../paginas/Atividade';
 import { useFollowupsPendentes } from '../paginas/Funil';
 
 const ITENS = [
   { para: '/', rotulo: 'Leads', icone: 'users', fim: true },
   { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
+  { para: '/agente', rotulo: 'Agente', icone: 'bot' },
   { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up' },
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
   { para: '/atividade', rotulo: 'Atividade', icone: 'clock' },
@@ -24,6 +26,7 @@ export function Shell() {
   // Ponto pulsando em "Atividade" enquanto o motor trabalha, em qualquer tela.
   const ativo = temAtividade(useAtividade(60_000).data);
   const pendentes = useFollowupsPendentes().data?.pendentes ?? 0;
+  const doAgente = useAgentePendente().data ?? 0;
   const sair = useMutation({
     mutationFn: () => api('/auth/logout', { metodo: 'POST' }),
     onSettled: () => {
@@ -53,6 +56,11 @@ export function Shell() {
             {i.para === '/funil' && pendentes > 0 && (
               <span className="nav__conta" title="Follow-ups vencidos ou para hoje">
                 {pendentes}
+              </span>
+            )}
+            {i.para === '/agente' && doAgente > 0 && (
+              <span className="nav__conta" title="Mensagens para revisar e leads que a IA passou para você">
+                {doAgente}
               </span>
             )}
             {i.para === '/atividade' && ativo && (

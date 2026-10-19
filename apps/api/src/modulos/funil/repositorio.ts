@@ -252,6 +252,11 @@ export async function atualizar(pool: Pool, empresaId: number, d: FunilAtualizar
       sets.push('encerrar_em = NULL');
     }
     if (d.motivo !== undefined && para === atual) set('motivo', d.motivo);
+    if (d.agente !== undefined) {
+      set('agente', d.agente);
+      sets.push('agente_pausa = NULL');
+    }
+    if (d.devolverParaIa) sets.push('agente_pausa = NULL');
     if (sets.length)
       await tx.query(`UPDATE comercial.oportunidades SET ${sets.join(', ')} WHERE empresa_id = $1`, valores);
   });
@@ -328,7 +333,7 @@ export async function detalhe(db: Executor, empresaId: number) {
               o.proxima_acao_em AS "proximaAcaoEm", o.ultimo_contato_em AS "ultimoContatoEm",
               o.etapa_desde AS "etapaDesde", o.criado_em AS "criadoEm", o.faixa_entrada AS "faixaEntrada",
               o.campanha_id AS "campanhaId", (o.proxima_acao_em < ${FIM_DE_HOJE}) AS pendente,
-              o.tentativas, o.encerrar_em AS "encerrarEm"
+              o.tentativas, o.encerrar_em AS "encerrarEm", o.agente, o.agente_pausa AS "agentePausa"
          FROM comercial.oportunidades o WHERE o.empresa_id = $1`,
       [empresaId],
     ),
@@ -367,6 +372,7 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
             o.proxima_acao_em AS "proximaAcaoEm", (o.proxima_acao_em < ${FIM_DE_HOJE}) AS pendente,
             o.ultimo_contato_em AS "ultimoContatoEm", o.etapa_desde AS "etapaDesde",
             o.valor_mensal::float8 AS "valorMensal", o.motivo, o.tentativas, o.encerrar_em AS "encerrarEm",
+            o.agente, o.agente_pausa AS "agentePausa",
             e.nome, e.cidade, e.uf, e.maps_categoria AS "categoria",
             l.faixa, l.score, dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
             pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",

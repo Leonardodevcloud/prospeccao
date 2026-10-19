@@ -239,6 +239,8 @@ export interface DetalheFunil {
     tentativas: number;
     /** Última tentativa feita: vai para "Perdido" nesta data se não responder. */
     encerrarEm: string | null;
+    agente?: boolean;
+    agentePausa?: string | null;
   } | null;
   atividades: AtividadeFunil[];
   duplicada: Duplicada | null;
@@ -270,6 +272,10 @@ export interface CardFunil {
   contatos: number;
   tentativas: number;
   encerrarEm: string | null;
+  /** A IA conduz a conversa com este lead. */
+  agente?: boolean;
+  /** Por que a IA passou o lead para você (null = está com a IA). */
+  agentePausa?: string | null;
 }
 
 export interface Quadro {
@@ -639,4 +645,54 @@ export interface EstimativaPlaces {
   tetoMensalUsd: number | null;
   gastoMesUsd: number;
   renovaEm: string;
+}
+
+export interface ConfigAgente {
+  ligado: boolean;
+  revisarAntes: boolean;
+  horaInicio: number;
+  horaFim: number;
+  diasSemana: number[];
+  limiteDia: number;
+  intervaloSeg: number;
+  respostasDiaLead: number;
+  sobreEmpresa: string;
+  regras: string;
+  horariosReuniao: string;
+}
+
+export interface RascunhoAgente {
+  id: number;
+  empresaId: number;
+  nome: string;
+  cidade: string | null;
+  texto: string;
+  telefone: string | null;
+  origem: 'agente' | 'cadencia';
+  nota: string | null;
+  criadoEm: string;
+  etapa: EtapaFunil | null;
+  ultimaDoLead: string | null;
+}
+
+export interface TelaAgente {
+  config: ConfigAgente;
+  webhook: string;
+  status: { whatsapp: boolean; ia: boolean };
+  resumo: {
+    rascunhos: number;
+    enviadasHoje: number;
+    recebidasHoje: number;
+    leadsComIa: number;
+    pausados: number;
+  };
+  rascunhos: RascunhoAgente[];
+  pausados: {
+    empresaId: number;
+    nome: string;
+    cidade: string | null;
+    motivo: string;
+    etapa: EtapaFunil;
+    em: string;
+  }[];
 }

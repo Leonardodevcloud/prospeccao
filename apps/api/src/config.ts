@@ -25,6 +25,12 @@ export const esquemaEnvApi = envBase.extend({
   SESSAO_HORAS: z.coerce.number().int().min(1).max(720).default(12),
   /** Opcional: geocodifica o endereço das bases de operação. */
   ORS_API_KEY: opcional(z.string().min(10)),
+  /** Agente de abordagem: envio pelo chip (Evolution) e IA (Gemini). Sem eles, o agente não envia/responde. */
+  EVOLUTION_URL: opcional(z.string().url()),
+  EVOLUTION_API_KEY: opcional(z.string().min(4)),
+  EVOLUTION_INSTANCIA: opcional(z.string().min(1)),
+  GEMINI_API_KEY: opcional(z.string().min(10)),
+  GEMINI_MODELO: z.string().default('gemini-3.5-flash-lite'),
 });
 
 export type EnvApi = z.infer<typeof esquemaEnvApi>;

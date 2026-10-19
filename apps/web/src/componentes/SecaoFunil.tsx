@@ -312,6 +312,18 @@ export function SecaoFunil(props: {
       </h2>
       <div className="pilha">
         {aviso}
+        {op.agente && op.agentePausa && (
+          <Mensagem tipo="aviso">
+            A IA passou este lead para você: {op.agentePausa}{' '}
+            <button
+              type="button"
+              className="link-botao"
+              onClick={() => atualizar.mutate({ devolverParaIa: true })}
+            >
+              Devolver para a IA
+            </button>
+          </Mensagem>
+        )}
         {op.encerrarEm && op.etapa === 'abordado' && (
           <Mensagem tipo="aviso">
             Todas as mensagens da cadência foram enviadas. Se não responder até {fmtHora(op.encerrarEm)}, o
@@ -358,6 +370,18 @@ export function SecaoFunil(props: {
               />
             </div>
           </div>
+          {!['ganho', 'perdido', 'descartado'].includes(op.etapa) && (
+            <label className="opcao" style={{ marginTop: 12 }}>
+              <input
+                type="checkbox"
+                checked={!!op.agente}
+                disabled={atualizar.isPending}
+                onChange={(e) => atualizar.mutate({ agente: e.target.checked })}
+              />
+              A IA conduz este lead (aborda, responde e marca reunião pelo WhatsApp; ligue o agente na tela
+              Agente)
+            </label>
+          )}
           {motivoPara && (
             <div style={{ marginTop: 12 }}>
               <PedirMotivo

@@ -78,6 +78,13 @@ function Card(props: {
             <b>{fmtNome(c.nome)}</b>
             {c.faixa && <ScoreBadge faixa={c.faixa} score={c.score ?? undefined} />}
           </span>
+          {c.agente && (
+            <span className="cartao__linha">
+              <Badge tone={c.agentePausa ? 'warning' : 'brand'}>
+                <Icon name="bot" size={12} /> {c.agentePausa ? 'IA passou para você' : 'Com a IA'}
+              </Badge>
+            </span>
+          )}
           <span className="cartao__sub">
             {[fmtCidade(c.cidade), c.categoria].filter(Boolean).join(' · ')}
           </span>

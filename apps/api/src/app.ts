@@ -5,6 +5,7 @@ import { pinoHttp } from 'pino-http';
 import type { DepsApi } from './dependencias.js';
 import { rotaNaoEncontrada, tratarErros } from './middlewares/erros.js';
 import { exigirOrigemConhecida, exigirSessao } from './middlewares/seguranca.js';
+import { rotasAgente, rotasWebhook } from './modulos/agente/rotas.js';
 import { rotasAtividade } from './modulos/atividade/rotas.js';
 import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
@@ -24,6 +25,9 @@ export function criarApp(deps: DepsApi): Express {
   app.set('trust proxy', 1); // atrás do proxy do Railway/Vercel: IP real para o rate limit
 
   app.use(helmet());
+  // Webhook do WhatsApp: vem da Evolution (sem origem do navegador, sem sessão); protegido por token.
+  // Antes do limite de 200 kb: mensagem com mídia chega grande.
+  app.use('/webhooks', express.json({ limit: '10mb' }), rotasWebhook(deps));
   app.use(express.json({ limit: '200kb' }));
   app.use(cookieParser());
   app.use(
@@ -54,6 +58,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/bases', rotasBases(deps));
   protegidas.use('/empresas', rotasEmpresas(deps));
   protegidas.use('/funil', rotasFunil(deps));
+  protegidas.use('/agente', rotasAgente(deps));
   protegidas.use('/relatorios', rotasRelatorios(deps));
   protegidas.use('/importacoes', rotasImportacoes(deps));
   protegidas.use('/atividade', rotasAtividade(deps));

@@ -1,10 +1,13 @@
 import { createServer } from 'node:http';
 import { criarPool } from '@prospeccao/db';
+import { decidirComGemini } from '@prospeccao/integrations/agente';
 import * as ors from '@prospeccao/integrations/ors';
+import { enviarTexto } from '@prospeccao/integrations/whatsapp';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { criarApp } from './app.js';
 import { carregarEnvApi } from './config.js';
+import { iniciarAgente } from './modulos/agente/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 
 const env = carregarEnvApi();
@@ -18,7 +21,23 @@ const filas = await conectarFilas({
   filas: ['campanha.iniciar', 'cnpj.importar', 'enriquecimento.solicitar', 'maps.importar_planilha'],
 });
 
+const evolution =
+  env.EVOLUTION_URL && env.EVOLUTION_API_KEY && env.EVOLUTION_INSTANCIA
+    ? { url: env.EVOLUTION_URL, apiKey: env.EVOLUTION_API_KEY, instancia: env.EVOLUTION_INSTANCIA }
+    : null;
+const whatsapp = evolution
+  ? { enviar: (tel: string, texto: string) => enviarTexto(evolution, tel, texto) }
+  : null;
+const ia = env.GEMINI_API_KEY
+  ? {
+      decidir: (c: Parameters<typeof decidirComGemini>[1]) =>
+        decidirComGemini({ apiKey: env.GEMINI_API_KEY!, modelo: env.GEMINI_MODELO }, c),
+    }
+  : null;
+
 const app = criarApp({
+  whatsapp,
+  ia,
   pool,
   filas,
   log,
@@ -42,9 +61,12 @@ const servidor = createServer(app);
 servidor.listen(env.PORT, () => log.info({ porta: env.PORT }, 'api pronta'));
 // Follow-up: encerra sozinho quem esgotou a cadência sem responder.
 const pararAutomacao = iniciarAutomacaoFunil(pool, log);
+// Agente de abordagem: envia, lê respostas e responde (só faz algo se estiver ligado na tela).
+const pararAgente = iniciarAgente({ pool, log, whatsapp, ia }, log);
 
 encerrarAoReceberSinal(log, async () => {
   pararAutomacao();
+  pararAgente();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
   await filas.parar();
   await pool.end();

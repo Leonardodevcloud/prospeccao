@@ -72,6 +72,10 @@ export const funilAtualizar = z
     valorMensal: z.number().min(0).max(10_000_000).nullable().optional(),
     proximaAcao: texto(200).optional(),
     proximaAcaoEm: dataOpcional.optional(),
+    /** A IA conduz a conversa com este lead. */
+    agente: z.boolean().optional(),
+    /** Devolve para a IA o lead que ela tinha passado para você. */
+    devolverParaIa: z.literal(true).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
 export type FunilAtualizar = z.infer<typeof funilAtualizar>;
@@ -277,3 +281,27 @@ export const feedbackEntrada = z.object({
   canal: z.string().trim().max(20).optional(),
 });
 export type FeedbackEntrada = z.infer<typeof feedbackEntrada>;
+
+/* ───────────────────────────── Agente de abordagem ───────────────────────────── */
+
+export const configAgenteEntrada = z
+  .object({
+    ligado: z.boolean(),
+    revisarAntes: z.boolean(),
+    horaInicio: z.number().int().min(0).max(23),
+    horaFim: z.number().int().min(1).max(24),
+    diasSemana: z.array(z.number().int().min(0).max(6)).min(1, 'Escolha ao menos um dia.').max(7),
+    limiteDia: z.number().int().min(1).max(500),
+    intervaloSeg: z.number().int().min(20).max(3600),
+    respostasDiaLead: z.number().int().min(1).max(30),
+    sobreEmpresa: z.string().trim().min(20, 'Conte um pouco da Tutts para a IA.').max(6000),
+    regras: z.string().trim().max(3000),
+    horariosReuniao: z.string().trim().min(3).max(300),
+  })
+  .refine((v) => v.horaFim > v.horaInicio, {
+    message: 'O fim do horário precisa ser depois do início.',
+    path: ['horaFim'],
+  });
+export type ConfigAgenteEntrada = z.infer<typeof configAgenteEntrada>;
+
+export const aprovarRascunho = z.object({ texto: z.string().trim().min(1).max(1500).optional() });

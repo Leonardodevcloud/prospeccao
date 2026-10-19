@@ -686,6 +686,136 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await enviar('post', `/campanhas/${id}/encerrar`);
   });
 
+  it('agente: aborda, recebe a resposta pelo webhook, responde com IA, marca reunião e respeita "pare"', async () => {
+    const motor = await import('../src/modulos/agente/motor.js');
+    const repoAgente = await import('../src/modulos/agente/repositorio.js');
+    await pool.query(
+      `INSERT INTO descoberta.empresas (id, nome, cidade, uf, maps_telefone) VALUES (77, 'Diesel Norte', 'SALVADOR', 'BA', '7132449744')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, whatsapp, principal)
+       VALUES (77, 'whatsapp', '71988776655', 'site', '{site}', 'verificado', true, true)`,
+    );
+    expect((await enviar('post', '/funil', { empresaIds: [77], forcar: true })).body.adicionadas).toBe(1);
+    expect((await enviar('patch', '/funil/77', { agente: true })).body.oportunidade).toMatchObject({
+      agente: true,
+    });
+
+    const tela = await ler('/agente');
+    expect(tela.body.status).toEqual({ whatsapp: false, ia: false });
+    expect(tela.body.webhook).toMatch(/\/webhooks\/evolution\/[0-9a-f]{32}$/);
+    const token = tela.body.webhook.split('/').at(-1);
+    const salvo = await enviar('put', '/agente/config', {
+      ...tela.body.config,
+      ligado: true,
+      revisarAntes: true,
+      horaInicio: 0,
+      horaFim: 24,
+      diasSemana: [0, 1, 2, 3, 4, 5, 6],
+      intervaloSeg: 20,
+    });
+    expect(salvo.status).toBe(200);
+    const cfg = await repoAgente.obterConfig(pool);
+
+    const enviados: { tel: string; texto: string }[] = [];
+    const decisoes: object[] = [];
+    const deps = {
+      pool,
+      log: criarLogger('teste', 'silent'),
+      whatsapp: {
+        async enviar(tel: string, texto: string) {
+          enviados.push({ tel, texto });
+          return { idExterno: `ext-${enviados.length}` };
+        },
+      },
+      ia: {
+        async decidir() {
+          return decisoes.shift() as never;
+        },
+      },
+    };
+
+    // 1) Abordagem da cadência vira rascunho; você aprova; o motor envia e o lead vai para "Abordado".
+    expect(await motor.gerarAbordagens(deps, cfg)).toBe(1);
+    expect(await motor.gerarAbordagens(deps, cfg)).toBe(0); // não duplica enquanto há rascunho
+    const [rascunho] = (await ler('/agente')).body.rascunhos;
+    expect(rascunho).toMatchObject({ empresaId: 77, origem: 'cadencia' });
+    expect((await enviar('post', `/agente/rascunhos/${rascunho.id}/aprovar`, {})).status).toBe(200);
+    expect(await motor.enviarProxima(deps, cfg)).toBe(true);
+    expect(enviados[0]?.tel).toBe('71988776655');
+    expect((await ler('/funil/77')).body.oportunidade.etapa).toBe('abordado');
+    expect(await motor.enviarProxima(deps, cfg)).toBe(false); // nada aprovado (e respeita o intervalo)
+
+    // 2) O lead responde (sem o 9 no número): webhook acha o lead, registra e move para "Respondeu".
+    const webhook = (texto: string, id: string) =>
+      request(app)
+        .post(`/webhooks/evolution/${token}`)
+        .send({
+          event: 'messages.upsert',
+          data: {
+            key: { remoteJid: '557188776655@s.whatsapp.net', fromMe: false, id },
+            message: { conversation: texto },
+            pushName: 'Marcos',
+          },
+        });
+    expect((await webhook('Quanto custa?', 'in-1')).status).toBe(200);
+    expect((await webhook('Quanto custa?', 'in-1')).status).toBe(200); // repetido não duplica
+    expect((await ler('/funil/77')).body.oportunidade.etapa).toBe('respondeu');
+    expect((await request(app).post('/webhooks/evolution/errado').send({})).status).toBe(404);
+
+    // 3) A IA responde depois que o lead para de digitar (40 s).
+    const envelhecer = () =>
+      pool.query(
+        `UPDATE comercial.atividades SET criado_em = criado_em - interval '2 minutes' WHERE empresa_id = 77`,
+      );
+    expect(await motor.gerarRespostas(deps, cfg)).toBe(0);
+    await envelhecer();
+    decisoes.push({
+      acao: 'responder',
+      resposta: 'Depende do volume. Podemos falar 15 min amanhã às 10h?',
+      reuniaoEm: null,
+      motivo: 'Pediu preço',
+    });
+    expect(await motor.gerarRespostas(deps, cfg)).toBe(1);
+    const resp = (await ler('/agente')).body.rascunhos[0];
+    expect(resp).toMatchObject({ origem: 'agente', nota: 'Pediu preço', ultimaDoLead: 'Quanto custa?' });
+
+    // Descartar a resposta da IA passa o lead para você; "devolver" volta para a IA.
+    await enviar('post', `/agente/rascunhos/${resp.id}/descartar`, {});
+    expect((await ler('/agente')).body.pausados).toEqual([expect.objectContaining({ empresaId: 77 })]);
+    await enviar('patch', '/funil/77', { devolverParaIa: true });
+
+    // 4) Lead confirma horário: reunião marcada no funil e confirmação na fila.
+    await webhook('Pode ser amanhã às 10h', 'in-2');
+    await envelhecer();
+    const amanha = new Date(Date.now() + 86_400_000).toISOString();
+    decisoes.push({
+      acao: 'marcar_reuniao',
+      resposta: 'Combinado, amanhã às 10h!',
+      reuniaoEm: amanha,
+      motivo: 'Confirmou horário',
+    });
+    await motor.gerarRespostas(deps, cfg);
+    const op = (await ler('/funil/77')).body.oportunidade;
+    expect(op).toMatchObject({ etapa: 'reuniao', proximaAcao: 'Reunião com o lead' });
+
+    // 5) "Pare de mandar": sai do funil como descartado, sem passar pela IA.
+    await pool.query(
+      `UPDATE comercial.mensagens SET status = 'descartada' WHERE empresa_id = 77 AND status = 'rascunho'`,
+    );
+    await webhook('Por favor pare de mandar mensagem', 'in-3');
+    await envelhecer();
+    await motor.gerarRespostas(deps, cfg);
+    expect((await ler('/funil/77')).body.oportunidade).toMatchObject({ etapa: 'descartado', agente: false });
+    expect(decisoes).toHaveLength(0);
+    await enviar('put', '/agente/config', { ...tela.body.config, ligado: false });
+    await pool.query('DELETE FROM comercial.oportunidades WHERE empresa_id = 77');
+    await pool.query('DELETE FROM comercial.mensagens WHERE empresa_id = 77');
+    await pool.query('DELETE FROM enriquecimento.contatos WHERE empresa_id = 77');
+    await pool.query('DELETE FROM descoberta.empresas WHERE id = 77');
+  });
+
   it('rota inexistente devolve 404 no formato padrão', async () => {
     const r = await ler('/nao-existe');
     expect(r.status).toBe(404);
