@@ -41,9 +41,21 @@ function criarFonte(): FonteArquivos {
   return new FonteHttp(env.RECEITA_CNPJ_URL, env.CNPJ_PASTA_TEMP, log);
 }
 
+// Sobras de um processo anterior que morreu no meio (deploy): fecha o registro e libera o job.
+const interrompidas = await repo.encerrarInterrompidas(
+  pool,
+  'Interrompida: o serviço reiniciou (deploy) no meio da importação. Uma nova tentativa começa sozinha em instantes.',
+);
+const liberados = await filas.liberarTravados('cnpj.importar');
+if (interrompidas || liberados)
+  log.warn({ interrompidas, liberados }, 'importação interrompida será refeita');
+
+let emAndamento: number | null = null;
+
 await filas.consumir('cnpj.importar', async (payload) => {
   const importacaoId =
     payload.importacaoId ?? (await repo.criarImportacao(pool, payload.motivo, payload.mes ?? null));
+  emAndamento = importacaoId;
   try {
     await importarBaseCnpj({ pool, log, fonte: criarFonte(), importacaoId, ufsExtras: env.CNPJ_UFS_EXTRAS });
     await repo.marcarFim(pool, importacaoId, null);
@@ -51,6 +63,8 @@ await filas.consumir('cnpj.importar', async (payload) => {
   } catch (erro) {
     await repo.marcarFim(pool, importacaoId, (erro as Error).message);
     throw erro;
+  } finally {
+    emAndamento = null;
   }
 });
 
@@ -58,6 +72,16 @@ await filas.agendar('cnpj.importar', env.CNPJ_AGENDA, { motivo: 'agendada' });
 log.info({ agenda: env.CNPJ_AGENDA }, 'worker-cnpj pronto');
 
 encerrarAoReceberSinal(log, async () => {
+  // Deploy no meio da importação: a tela mostra na hora o que houve, e a fila retoma no serviço novo.
+  if (emAndamento != null) {
+    await repo
+      .marcarFim(
+        pool,
+        emAndamento,
+        'Interrompida pelo deploy. Uma nova tentativa começa sozinha em instantes.',
+      )
+      .catch(() => {});
+  }
   await filas.parar();
   await pool.end();
 });

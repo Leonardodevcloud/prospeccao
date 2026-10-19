@@ -32,6 +32,8 @@ export interface Filas {
   ): Promise<void>;
   agendar<N extends NomeJob>(nome: N, cron: string, payload: PayloadJob<N>, fuso?: string): Promise<void>;
   tamanhos(nomes?: NomeJob[]): Promise<Record<string, number>>;
+  /** Libera jobs que ficaram "ativos" porque o processo anterior morreu. Devolve quantos. */
+  liberarTravados(nome: NomeJob): Promise<number>;
   parar(): Promise<void>;
 }
 
@@ -118,8 +120,12 @@ export async function conectarFilas(opcoes: {
   await boss.start();
 
   for (const nome of opcoes.filas) {
+    const { policy, ...ajustaveis } = POLITICA_FILAS[nome];
     if (!(await boss.getQueue(nome))) {
-      await boss.createQueue(nome, { ...POLITICA_FILAS[nome] });
+      await boss.createQueue(nome, { policy, ...ajustaveis });
+    } else {
+      // Fila já existe: aplica tentativas, tempos e heartbeat novos (a política não muda depois de criada).
+      await boss.updateQueue(nome, { ...ajustaveis, heartbeatSeconds: ajustaveis.heartbeatSeconds ?? null });
     }
   }
 
@@ -183,6 +189,20 @@ export async function conectarFilas(opcoes: {
     async tamanhos(nomes) {
       const filas = await boss.getQueues(nomes);
       return Object.fromEntries(filas.map((f) => [f.name, f.queuedCount + f.activeCount]));
+    },
+
+    async liberarTravados(nome) {
+      // Chamado no início do serviço que é o único consumidor da fila: nada pode estar rodando aqui,
+      // então job "ativo" é sobra de um processo que morreu (deploy). Falhar libera nova tentativa.
+      const ativos = (await boss.findJobs(nome)).filter((j) => j.state === 'active').map((j) => j.id);
+      if (ativos.length) {
+        await boss.fail(nome, ativos, { motivo: 'serviço reiniciou no meio do job' });
+        log.warn(
+          { fila: nome, jobs: ativos.length },
+          'jobs interrompidos por reinício liberados para nova tentativa',
+        );
+      }
+      return ativos.length;
     },
 
     async parar() {

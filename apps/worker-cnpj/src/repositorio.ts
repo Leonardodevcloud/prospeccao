@@ -178,3 +178,13 @@ export async function salvarSocios(db: Executor, importacaoId: number, itens: re
     valores,
   );
 }
+
+/** Importação que estava rodando quando o serviço caiu: fecha como interrompida (a fila tenta de novo). */
+export async function encerrarInterrompidas(db: Executor, motivo: string): Promise<number> {
+  const { rowCount } = await db.query(
+    `UPDATE base_cnpj.importacoes SET status = 'erro', erro = $1, concluido_em = now()
+      WHERE status IN ('rodando', 'na_fila')`,
+    [motivo],
+  );
+  return rowCount ?? 0;
+}

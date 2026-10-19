@@ -36,6 +36,18 @@ export function fmtBytes(bytes: number): string {
   return bytes >= 1e9 ? `${gb.format(bytes / 1e9)} GB` : `${mb.format(bytes / 1e6)} MB`;
 }
 
+/** "baixando 412 MB de 1,1 GB · 2,3 MB/s · faltam ~5 min" */
+export function textoDownload(feito: number, tamanho: number | null, ms: number): string {
+  const porSegundo = ms > 0 ? feito / (ms / 1000) : 0;
+  const partes = [`baixando ${fmtBytes(feito)}${tamanho ? ` de ${fmtBytes(tamanho)}` : ''}`];
+  if (porSegundo > 0) partes.push(`${gb.format(porSegundo / 1e6)} MB/s`);
+  if (tamanho && porSegundo > 0) {
+    const min = Math.ceil((tamanho - feito) / porSegundo / 60);
+    partes.push(min <= 1 ? 'falta ~1 min' : `faltam ~${min} min`);
+  }
+  return partes.join(' · ');
+}
+
 /**
  * Grava o andamento na tabela de importações sem martelar o banco: `agora` grava na hora
  * (troca de etapa), `talvez` só se passou o intervalo (download, leitura). As gravações vão
@@ -158,8 +170,9 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     const total = receita.ARQUIVOS.estabelecimentos.length;
     const etapa = `Etapa 2 de 4 · Estabelecimentos · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
+    const inicioDownload = Date.now();
     const caminho = await fonte.obter(nome, (feito, tamanho) =>
-      andamento.talvez(`${etapa} · baixando ${fmtBytes(feito)}${tamanho ? ` de ${fmtBytes(tamanho)}` : ''}`),
+      andamento.talvez(`${etapa} · ${textoDownload(feito, tamanho, Date.now() - inicioDownload)}`),
     );
     await progresso(`${etapa} · lendo`);
     for await (const linha of receita.lerZipReceita(caminho)) {
@@ -188,8 +201,9 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     const total = receita.ARQUIVOS.empresas.length;
     const etapa = `Etapa 3 de 4 · Empresas (razão social e porte) · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
+    const inicioDownload = Date.now();
     const caminho = await fonte.obter(nome, (feito, tamanho) =>
-      andamento.talvez(`${etapa} · baixando ${fmtBytes(feito)}${tamanho ? ` de ${fmtBytes(tamanho)}` : ''}`),
+      andamento.talvez(`${etapa} · ${textoDownload(feito, tamanho, Date.now() - inicioDownload)}`),
     );
     await progresso(`${etapa} · lendo`);
     for await (const linha of receita.lerZipReceita(caminho)) {
@@ -212,8 +226,9 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     const total = receita.ARQUIVOS.socios.length;
     const etapa = `Etapa 4 de 4 · Sócios · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
+    const inicioDownload = Date.now();
     const caminho = await fonte.obter(nome, (feito, tamanho) =>
-      andamento.talvez(`${etapa} · baixando ${fmtBytes(feito)}${tamanho ? ` de ${fmtBytes(tamanho)}` : ''}`),
+      andamento.talvez(`${etapa} · ${textoDownload(feito, tamanho, Date.now() - inicioDownload)}`),
     );
     await progresso(`${etapa} · lendo`);
     for await (const linha of receita.lerZipReceita(caminho)) {

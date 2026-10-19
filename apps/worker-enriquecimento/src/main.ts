@@ -85,6 +85,10 @@ const deps: Deps = {
   },
 };
 
+// Sobras de um processo anterior que morreu no meio (deploy): voltam para a fila.
+await pool.query(`UPDATE enriquecimento.leads SET status = 'na_fila' WHERE status = 'rodando'`);
+await filas.liberarTravados('enriquecimento.solicitar');
+
 await filas.consumir('enriquecimento.solicitar', (p) => enriquecerEmpresa(deps, p).then(() => undefined), {
   concorrencia: env.ENRIQ_CONCORRENCIA,
 });

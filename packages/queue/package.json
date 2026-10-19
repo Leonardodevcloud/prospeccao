@@ -14,5 +14,8 @@
     "@prospeccao/shared": "workspace:*",
     "pg-boss": "12.36.0",
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@prospeccao/db": "workspace:*"
   }
 }

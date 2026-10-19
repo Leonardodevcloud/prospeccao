@@ -75,15 +75,22 @@ export interface PoliticaFila {
    * vira a chave), evita duplicados. exclusive: 1 job por vez, no total.
    */
   policy: 'standard' | 'short' | 'exclusive';
+  /**
+   * Jobs longos: o worker avisa "estou vivo" a cada meio intervalo. Se o serviço morrer (deploy,
+   * queda), o job é liberado para nova tentativa em ~1 intervalo, em vez de esperar o expire.
+   */
+  heartbeatSeconds?: number;
 }
 
 export const POLITICA_FILAS: Record<NomeJob, PoliticaFila> = {
   'cnpj.importar': {
-    retryLimit: 2,
-    retryDelay: 600,
+    // Cada deploy do worker-cnpj interrompe a importação: tentativas sobrando e retomada rápida.
+    retryLimit: 6,
+    retryDelay: 60,
     retryBackoff: false,
-    expireInSeconds: 6 * 3600,
+    expireInSeconds: 8 * 3600,
     policy: 'exclusive',
+    heartbeatSeconds: 60,
   },
   'cnpj.importacao_concluida': {
     retryLimit: 3,
@@ -133,5 +140,6 @@ export const POLITICA_FILAS: Record<NomeJob, PoliticaFila> = {
     retryBackoff: true,
     expireInSeconds: 900,
     policy: 'short',
+    heartbeatSeconds: 60,
   },
 };
