@@ -15,7 +15,12 @@ export interface EmpresaEnriquecer {
   uf: string;
   telefones_receita: string[];
   email_receita: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  bairro: string | null;
+  cep: string | null;
   place_id: string | null;
+  maps_url: string | null;
   maps_categoria: string | null;
   maps_nota: number | null;
   maps_avaliacoes: number | null;
@@ -48,7 +53,7 @@ export async function obterEmpresa(
 ): Promise<EmpresaEnriquecer | null> {
   const { rows } = await db.query<EmpresaEnriquecer>(
     `SELECT id, nome, razao_social, cnpj, cnpj_basico, porte, data_abertura, cidade, uf, telefones_receita,
-            email_receita, place_id, maps_categoria, maps_nota::float8 AS maps_nota, maps_avaliacoes, maps_site,
+            email_receita, logradouro, numero, bairro, cep, place_id, maps_url, maps_categoria, maps_nota::float8 AS maps_nota, maps_avaliacoes, maps_site,
             maps_telefone, maps_fechada, sinal_entrega
        FROM descoberta.v_empresas_campanha
       WHERE id = $1 AND campanha_id = $2`,

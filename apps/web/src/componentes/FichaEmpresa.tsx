@@ -161,7 +161,47 @@ function contatosDaDescoberta(e: EmpresaDetalhe): ContactRowProps[] {
   return contatos;
 }
 
+const ROTULO_LINK: Partial<Record<EtapaEnriq['etapa'], string>> = {
+  maps: 'Abrir no Google Maps',
+  instagram: 'Instagram',
+  linkedin: 'Ver a busca do LinkedIn no Google',
+  places: 'Abrir no Google Maps',
+  site: 'Site',
+};
+
+/** Links para conferir na mão o que cada etapa viu (a busca do LinkedIn, o lugar no Maps…). */
+function LinksDaTrilha({ etapas }: { etapas: EtapaEnriq[] }) {
+  const vistos = new Set<string>();
+  const links = etapas.filter((et) => {
+    if (!et.url || !ROTULO_LINK[et.etapa] || vistos.has(et.url)) return false;
+    vistos.add(et.url);
+    return true;
+  });
+  if (!links.length) return null;
+  return (
+    <div className="acoes" style={{ marginTop: 12 }}>
+      {links.map((et) => (
+        <Button
+          key={et.etapa + et.url}
+          size="sm"
+          variant="ghost"
+          iconRight="external-link"
+          href={et.url ?? undefined}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {et.etapa === 'instagram' && /google\.com\/search/.test(et.url ?? '')
+            ? 'Ver a busca do Instagram no Google'
+            : ROTULO_LINK[et.etapa]}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 function trilha(e: EmpresaDetalhe): Camada[] {
+  // Sem place_id da campanha, vale o que o enriquecimento achou (busca por nome e endereço).
+  const mapsEnriq = e.etapas.find((et) => et.etapa === 'maps');
   const camadas: Camada[] = [
     e.cnpj
       ? {
@@ -188,12 +228,19 @@ function trilha(e: EmpresaDetalhe): Camada[] {
                 ? `Ligado à base por ${ROTULO_CRUZAMENTO[e.cruzamento.tipo] ?? e.cruzamento.tipo}${e.cruzamento.similaridade ? ` (semelhança ${Math.round(e.cruzamento.similaridade * 100)}%)` : ''}.`
                 : 'Encontrado nas buscas da campanha.',
         }
-      : {
-          nome: 'Google Maps',
-          status: 'sem_resultado',
-          fonte: 'maps',
-          detalhe: 'Não apareceu nas buscas do Maps.',
-        },
+      : mapsEnriq && mapsEnriq.status !== 'pulada'
+        ? {
+            nome: 'Google Maps',
+            status: mapsEnriq.status,
+            fonte: 'maps',
+            detalhe: mapsEnriq.detalhe ?? undefined,
+          }
+        : {
+            nome: 'Google Maps',
+            status: 'sem_resultado',
+            fonte: 'maps',
+            detalhe: mapsEnriq?.detalhe ?? 'Não apareceu nas buscas do Maps.',
+          },
   ];
   for (const et of e.etapas) {
     if (et.etapa === 'maps') continue;
@@ -500,6 +547,7 @@ export function FichaEmpresa({
 
             <Panel titulo="Como encontramos">
               <EnrichmentTrail camadas={trilha(e)} />
+              <LinksDaTrilha etapas={e.etapas} />
               {en?.concluidoEm && (
                 <p className="quieto" style={{ margin: '12px 0 0', fontSize: 12 }}>
                   Enriquecido {fmtHora(en.concluidoEm)}.

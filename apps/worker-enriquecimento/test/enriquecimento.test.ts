@@ -233,6 +233,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       faixasLinkedin: new Set(['A', 'B']),
       faixasPlaces: new Set(['A', 'B']),
       buscarInstagram: true,
+      acharNoGoogle: true,
       refazerDias: 30,
     },
   });
@@ -267,7 +268,13 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
               (NULL, NULL, 'Nova Era Moto Peças', NULL, NULL, NULL, 'SALVADOR', 'BA', '{}', NULL, 'p3', NULL, NULL, 12, 4.1, NULL)`,
     );
     await pool.query(
-      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (1, 1, 'ambos'), (1, 2, 'maps')`,
+      `INSERT INTO descoberta.empresas (cnpj, cnpj_basico, nome, razao_social, cidade, uf, logradouro, numero, bairro, cep)
+       VALUES ('14312706000101', '14312706', 'CEAVE NORTE DIESEL LTDA', 'CEAVE NORTE DIESEL LTDA', 'SALVADOR', 'BA',
+               'AVENIDA BARROS REIS', '312', 'PAU MIUDO', '40310010')`,
+    );
+    await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem)
+       VALUES (1, 1, 'ambos'), (1, 2, 'maps'), (1, 3, 'cnpj')`,
     );
   });
 
@@ -389,5 +396,94 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       `SELECT canal, valor FROM enriquecimento.contatos WHERE empresa_id = 1 AND principal`,
     );
     expect(principal[0]).toEqual({ canal: 'whatsapp', valor: '71998124410' }); // botão do site, ainda não verificado
+  });
+
+  it('lead só da base de CNPJ: acha no Google pelo nome e endereço; sem crédito na busca vira erro, não "não achou"', async () => {
+    const f = fontesCompletas();
+    const pedidos: string[] = [];
+    let detalhes = 0;
+    await enriquecerEmpresa(
+      deps({
+        ...f,
+        google: {
+          nome: 'Serper',
+          async buscar() {
+            throw new Error('Serper: HTTP 400 {"message":"Not enough credits"}');
+          },
+        },
+        ia: {
+          async avaliar() {
+            return {
+              faixa: 'A',
+              score: 80,
+              motivo: 'Tradicional',
+              resumo: 'Diesel',
+              entrega: null,
+              pessoas: [],
+            };
+          },
+        },
+        places: {
+          async detalhes() {
+            detalhes++;
+            return { aberto: true, telefone: null, site: null, nota: null, avaliacoes: null };
+          },
+          async achar(e) {
+            pedidos.push(`${e.nome}|${e.numero}|${e.cep}`);
+            return {
+              texto: 'CEAVE NORTE DIESEL LTDA, AVENIDA BARROS REIS 312, SALVADOR - BA',
+              candidatos: 1,
+              lugar: {
+                placeId: 'pceave',
+                nome: 'Ceavê Norte Diesel',
+                categoria: 'Loja de autopeças',
+                telefone: '7132449744',
+                endereco: 'Av. Barros Reis, 312 - Pau Miúdo, Salvador - BA',
+                cep: '40310005',
+                cidade: 'Salvador',
+                uf: 'BA',
+                lat: null,
+                lng: null,
+                nota: 4.3,
+                avaliacoes: 28,
+                site: null,
+                url: 'https://maps.google.com/?cid=1',
+                fechada: false,
+                entrega: null,
+                dados: {},
+              },
+            };
+          },
+        },
+      }),
+      { empresaId: 3, campanhaId: 1 },
+    );
+    expect(pedidos).toEqual(['CEAVE NORTE DIESEL LTDA|312|40310010']);
+    expect(detalhes).toBe(0); // a busca por nome já trouxe tudo: não paga outra consulta
+
+    const { rows: etapas } = await pool.query(
+      `SELECT etapa, status, detalhe, url FROM enriquecimento.etapas WHERE empresa_id = 3 ORDER BY ordem`,
+    );
+    const de = (nome: string) => etapas.find((e) => e.etapa === nome);
+    expect(de('maps')).toMatchObject({
+      status: 'encontrado',
+      detalhe: 'Achada no Google pelo nome e endereço: telefone, nota 4.3, 28 avaliações.',
+      url: 'https://maps.google.com/?cid=1',
+    });
+    expect(de('instagram')).toMatchObject({
+      status: 'erro',
+      detalhe: 'Sem crédito no Serper para a busca no Google.',
+    });
+    expect(de('linkedin')).toMatchObject({
+      status: 'erro',
+      detalhe: 'Sem crédito no Serper para a busca no Google.',
+    });
+    expect(de('linkedin')?.url).toMatch(/^https:\/\/www\.google\.com\/search\?q=site%3Alinkedin\.com/);
+    expect(de('places')).toMatchObject({ status: 'encontrado' });
+
+    const { rows: tel } = await pool.query(
+      `SELECT fontes FROM enriquecimento.contatos WHERE empresa_id = 3 AND valor = '7132449744'`,
+    );
+    expect(tel[0].fontes).toContain('places');
   });
 });

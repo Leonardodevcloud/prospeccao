@@ -13,6 +13,8 @@ const env = carregarEnv(
     APIFY_TOKEN: opcional(z.string().min(10)),
     APIFY_ATOR_GOOGLE: z.string().default('apify~google-search-scraper'),
     APIFY_ATOR_INSTAGRAM: z.string().default('apify~instagram-profile-scraper'),
+    /** Busca no Google pelo Serper (LinkedIn e Instagram). Com ela, o Apify só lê perfis do Instagram. */
+    SERPER_API_KEY: opcional(z.string().min(10)),
     /** Nota de ICP e leitura do site. Sem ela, a nota sai por regras. */
     GEMINI_API_KEY: opcional(z.string().min(10)),
     GEMINI_MODELO: z.string().default('gemini-3.5-flash-lite'),
@@ -27,6 +29,8 @@ const env = carregarEnv(
     ENRIQ_FAIXAS_LINKEDIN: listaCsv.default(['A', 'B']),
     ENRIQ_FAIXAS_PLACES: listaCsv.default(['A', 'B']),
     ENRIQ_BUSCAR_INSTAGRAM: booleano.default(true),
+    /** Procura no Google (nome + endereço) quem veio da base de CNPJ e não apareceu nas buscas. */
+    ENRIQ_ACHAR_NO_GOOGLE: booleano.default(true),
     /** Interruptor de emergência: com "true", o serviço sobe mas não processa nada (a fila espera). */
     ENRIQ_PAUSADO: booleano.default(false),
     ENRIQ_REFAZER_DIAS: z.coerce.number().int().min(0).default(30),
@@ -54,7 +58,15 @@ const espera = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 const fontes: Fontes = {
   site: { ler: (url) => enriq.lerSite(url) },
-  google: apify ? { buscar: (consultas) => enriq.buscarNoGoogle(apify, consultas) } : null,
+  // Serper é mais barato e rápido; o Apify fica de reserva quando não há a chave do Serper.
+  google: env.SERPER_API_KEY
+    ? {
+        nome: 'Serper',
+        buscar: (consultas) => enriq.buscarNoGoogleSerper({ apiKey: env.SERPER_API_KEY! }, consultas),
+      }
+    : apify
+      ? { nome: 'Apify', buscar: (consultas) => enriq.buscarNoGoogle(apify, consultas) }
+      : null,
   instagram: apify ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) } : null,
   ia: env.GEMINI_API_KEY
     ? {
@@ -62,7 +74,10 @@ const fontes: Fontes = {
       }
     : null,
   places: env.GOOGLE_PLACES_KEY
-    ? { detalhes: (id) => enriq.detalhesDoLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, id) }
+    ? {
+        detalhes: (id) => enriq.detalhesDoLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, id),
+        achar: (e) => enriq.acharLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, e),
+      }
     : null,
   whatsapp: evolution
     ? {
@@ -83,6 +98,7 @@ const deps: Deps = {
     faixasLinkedin: new Set(env.ENRIQ_FAIXAS_LINKEDIN),
     faixasPlaces: new Set(env.ENRIQ_FAIXAS_PLACES),
     buscarInstagram: env.ENRIQ_BUSCAR_INSTAGRAM,
+    acharNoGoogle: env.ENRIQ_ACHAR_NO_GOOGLE,
     refazerDias: env.ENRIQ_REFAZER_DIAS,
   },
 };
@@ -114,7 +130,8 @@ if (env.ENRIQ_PAUSADO) {
 const ligado = (v: unknown) => (v ? 'ligado' : 'desligado');
 log.info(
   {
-    google_e_instagram: ligado(apify),
+    busca_no_google: env.SERPER_API_KEY ? 'Serper' : apify ? 'Apify' : 'desligada',
+    perfis_instagram: ligado(apify),
     ia: env.GEMINI_API_KEY ? env.GEMINI_MODELO : 'desligada (nota por regras)',
     whatsapp: ligado(evolution),
     places: ligado(env.GOOGLE_PLACES_KEY),

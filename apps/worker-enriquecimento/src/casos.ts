@@ -1,6 +1,7 @@
 import {
   type AvaliacaoIa,
   instagramNosResultados,
+  interpretarLinkedin,
   normalizarSite,
   type PerfilInstagram,
   palavrasDaEmpresa,
@@ -43,15 +44,28 @@ async function buscarComRetentativa(
   }
 }
 
-/** Erro do Apify em português curto, sem o JSON bruto. */
-function explicarFalhaApify(erro: unknown): string {
+/** Erro da busca no Google (Serper ou Apify) em português curto, sem o JSON bruto. */
+function explicarFalhaBusca(erro: unknown, provedor = 'Apify'): string {
   const msg = mensagemDe(erro);
   if (/TIMED-OUT|timeout|tempo esgotado/i.test(msg))
-    return 'A busca no Google (Apify) demorou demais duas vezes. Use "Enriquecer de novo" mais tarde.';
-  if (/HTTP 402|usage|credit|limit/i.test(msg)) return 'Sem crédito no Apify para a busca no Google.';
-  if (/HTTP 401|HTTP 403|token/i.test(msg)) return 'APIFY_TOKEN recusado pelo Apify.';
+    return `A busca no Google (${provedor}) demorou demais duas vezes. Use "Enriquecer de novo" mais tarde.`;
+  if (/HTTP 402|usage|credit|limit/i.test(msg)) return `Sem crédito no ${provedor} para a busca no Google.`;
+  if (/HTTP 401|HTTP 403|token|api key|unauthorized/i.test(msg))
+    return `Chave recusada pelo ${provedor} (${provedor === 'Serper' ? 'SERPER_API_KEY' : 'APIFY_TOKEN'}).`;
   return `Busca no Google falhou: ${msg.slice(0, 160)}`;
 }
+
+/** Erro do Google Places em português curto. */
+function explicarFalhaPlaces(erro: unknown): string {
+  const msg = mensagemDe(erro);
+  if (/HTTP 403|PERMISSION_DENIED|API key/i.test(msg))
+    return 'Google recusou a GOOGLE_PLACES_KEY (ative a "Places API (New)" e o faturamento no projeto).';
+  if (/HTTP 429|RESOURCE_EXHAUSTED|quota/i.test(msg)) return 'Cota do Google Places esgotada por agora.';
+  return `Google Places falhou: ${msg.slice(0, 160)}`;
+}
+
+/** Link de uma busca no Google, para conferir na mão o que o robô viu. */
+const linkGoogle = (consulta: string) => `https://www.google.com/search?q=${encodeURIComponent(consulta)}`;
 
 /**
  * Cascata de enriquecimento de uma empresa, das fontes grátis para as que custam:
@@ -132,28 +146,72 @@ export async function enriquecerEmpresa(
       await etapa('receita', 'pulada', 'Lead veio só do Google Maps, sem CNPJ: sem quadro de sócios.');
     }
 
-    // 2. Google Maps (já coletado na descoberta).
+    // 2. Google Maps: já coletado na descoberta. Quem veio da base de CNPJ e não apareceu nas
+    // buscas da campanha é procurado no Google pelo nome e endereço (1 pedido ao Places).
+    let achadaPorNome = false;
+    let semMaps = 'Não apareceu nas buscas do Maps.';
+    let falhaMaps = false;
+    if (!empresa.place_id && fontes.places?.achar && ajustes.acharNoGoogle) {
+      try {
+        const r = await fontes.places.achar({
+          nome: empresa.nome,
+          razaoSocial: empresa.razao_social,
+          logradouro: empresa.logradouro,
+          numero: empresa.numero,
+          bairro: empresa.bairro,
+          cep: empresa.cep,
+          cidade: empresa.cidade,
+          uf: empresa.uf,
+        });
+        if (r.lugar) {
+          achadaPorNome = true;
+          empresa.place_id = r.lugar.placeId;
+          empresa.maps_url = r.lugar.url;
+          empresa.maps_telefone = r.lugar.telefone;
+          empresa.maps_site = r.lugar.site;
+          empresa.maps_nota = r.lugar.nota;
+          empresa.maps_avaliacoes = r.lugar.avaliacoes;
+          empresa.maps_categoria = r.lugar.categoria;
+          empresa.maps_fechada = r.lugar.fechada;
+        } else {
+          semMaps = r.candidatos
+            ? `O Google trouxe ${r.candidatos} lugar(es) para "${r.texto}", mas nenhum com o nome e o endereço desta empresa.`
+            : `Nada no Google para "${r.texto}".`;
+        }
+      } catch (erro) {
+        falhaMaps = true;
+        semMaps = explicarFalhaPlaces(erro);
+      }
+    } else if (!empresa.place_id && !fontes.places) {
+      semMaps += ' Com a GOOGLE_PLACES_KEY no worker-enriquecimento, o sistema procura pelo nome e endereço.';
+    }
     const telMaps = normalizarTelefone(empresa.maps_telefone);
     c.contato({
       canal: 'telefone',
       valor: telMaps,
-      fonte: 'maps',
+      fonte: achadaPorNome ? 'places' : 'maps',
       confianca: 70,
       rotulo: 'Telefone no Google',
     });
     const siteMaps = normalizarSite(empresa.maps_site);
+    const achadosMaps =
+      [
+        telMaps ? 'telefone' : null,
+        siteMaps ? 'site' : null,
+        empresa.maps_nota ? `nota ${empresa.maps_nota}` : null,
+        empresa.maps_avaliacoes ? `${empresa.maps_avaliacoes} avaliações` : null,
+      ]
+        .filter(Boolean)
+        .join(', ') || 'sem telefone nem site no Google';
     await etapa(
       'maps',
-      empresa.place_id ? 'encontrado' : 'pulada',
+      empresa.place_id ? 'encontrado' : falhaMaps ? 'erro' : 'sem_resultado',
       empresa.place_id
-        ? [
-            telMaps ? 'telefone' : null,
-            siteMaps ? 'site' : null,
-            empresa.maps_avaliacoes ? `${empresa.maps_avaliacoes} avaliações` : null,
-          ]
-            .filter(Boolean)
-            .join(', ') || 'Sem telefone nem site no Google.'
-        : 'Não apareceu nas buscas do Maps.',
+        ? achadaPorNome
+          ? `Achada no Google pelo nome e endereço: ${achadosMaps}.`
+          : `Encontrada nas buscas da campanha: ${achadosMaps}.`
+        : semMaps,
+      empresa.maps_url,
     );
 
     // 3. Site da empresa.
@@ -244,13 +302,15 @@ export async function enriquecerEmpresa(
 
     // 4. Instagram: pelo site; se não, procura no Google.
     let perfil: PerfilInstagram | null = null;
+    let falhaBuscaInstagram: string | null = null;
+    const consultaInstagram = `"${empresa.nome}" ${empresa.cidade.toLowerCase()} instagram`;
     if (!instagram && fontes.google && ajustes.buscarInstagram) {
-      const consulta = `"${empresa.nome}" ${empresa.cidade.toLowerCase()} instagram`;
       try {
-        const r = await fontes.google.buscar([consulta]);
-        instagram = instagramNosResultados(r.get(consulta) ?? [], empresa.nome);
+        const r = await fontes.google.buscar([consultaInstagram]);
+        instagram = instagramNosResultados(r.get(consultaInstagram) ?? [], empresa.nome);
       } catch (erro) {
         log.warn({ err: erro }, 'falha ao procurar o Instagram no Google');
+        falhaBuscaInstagram = explicarFalhaBusca(erro, fontes.google.nome);
       }
     }
     if (instagram && fontes.instagram) {
@@ -313,14 +373,25 @@ export async function enriquecerEmpresa(
           url,
         );
       }
-    } else {
+    } else if (instagram) {
       await etapa(
         'instagram',
-        instagram ? 'pulada' : 'sem_resultado',
-        instagram
-          ? `@${instagram} encontrado, mas sem APIFY_TOKEN para ler o perfil.`
-          : 'Instagram não encontrado.',
-        instagram ? `https://www.instagram.com/${instagram}/` : null,
+        'pulada',
+        `@${instagram} encontrado, mas sem APIFY_TOKEN para ler o perfil.`,
+        `https://www.instagram.com/${instagram}/`,
+      );
+    } else if (falhaBuscaInstagram) {
+      // Não é "não tem Instagram": a busca nem rodou.
+      await etapa('instagram', 'erro', falhaBuscaInstagram, linkGoogle(consultaInstagram));
+    } else {
+      const buscou = !!fontes.google && ajustes.buscarInstagram;
+      await etapa(
+        'instagram',
+        buscou ? 'sem_resultado' : 'pulada',
+        buscou
+          ? 'O site não indica e o Google não trouxe um perfil com o nome desta empresa.'
+          : 'Sem busca no Google configurada (SERPER_API_KEY ou APIFY_TOKEN).',
+        buscou ? linkGoogle(consultaInstagram) : null,
       );
     }
 
@@ -416,7 +487,11 @@ export async function enriquecerEmpresa(
         } else {
           const r = await buscarComRetentativa(fontes.google, [consultaEmpresa, ...consultasSocios]);
           let achadas = 0;
+          const aceitos: string[] = [];
+          const urlsAceitas = new Set<string>();
           for (const p of pessoasDaEmpresa(r.get(consultaEmpresa) ?? [], palavras)) {
+            urlsAceitas.add(p.url);
+            aceitos.push(p.cargo ? `${p.nome} (${p.cargo})` : p.nome);
             const papel = papelPeloCargo(p.cargo);
             c.pessoa({
               nome: p.nome,
@@ -436,14 +511,11 @@ export async function enriquecerEmpresa(
             });
             achadas++;
           }
-          const homonimos: string[] = [];
           admins.forEach((s, i) => {
             const resultados = r.get(consultasSocios[i] ?? '') ?? [];
             const perfil = perfilDoSocio(s.nome, resultados, palavras);
-            if (!perfil) {
-              if (resultados.some((x) => /linkedin\.com\/in\//.test(x.url))) homonimos.push(s.nome);
-              return;
-            }
+            if (!perfil) return;
+            if (!urlsAceitas.has(perfil.url)) aceitos.push(`${s.nome} (sócio)`);
             c.pessoa({
               nome: s.nome,
               cargo: perfil.cargo,
@@ -460,35 +532,66 @@ export async function enriquecerEmpresa(
               pessoa: s.nome,
               urlOrigem: perfil.url,
             });
-            achadas++;
+            urlsAceitas.add(perfil.url);
           });
-          const aviso = homonimos.length
-            ? ` Perfis com o nome de ${homonimos.map((n) => n.split(' ')[0]).join(' e ')} não citam esta empresa: ignorados (podem ser homônimos).`
-            : '';
+          achadas = urlsAceitas.size;
+          // Quantos perfis o Google trouxe no total: o que não entrou foi descartado de propósito.
+          const vistos = new Set<string>();
+          for (const lista of r.values())
+            for (const x of lista) {
+              const p = interpretarLinkedin(x);
+              if (p) vistos.add(p.url);
+            }
+          const ignorados = Math.max(0, vistos.size - achadas);
+          const motivoIgnorados = `não citam "${palavras.join(' ')}" no emprego atual (outra empresa ou homônimo)`;
           await etapa(
             'linkedin',
             achadas ? 'encontrado' : 'sem_resultado',
-            (achadas
-              ? `${achadas} perfil(is) de quem trabalha nesta empresa.`
-              : 'Nenhum perfil que cite esta empresa no emprego atual.') + aviso,
+            achadas
+              ? `${achadas} de ${vistos.size} perfil(is) trabalham nesta empresa: ${aceitos.join(', ')}.${ignorados ? ` ${ignorados} ignorado(s): ${motivoIgnorados}.` : ''}`
+              : vistos.size
+                ? `O Google trouxe ${vistos.size} perfil(is), nenhum desta empresa: ${motivoIgnorados}.`
+                : 'Nenhum perfil do LinkedIn no Google para esta empresa e estes cargos.',
+            linkGoogle(consultaEmpresa),
           );
         }
       } catch (erro) {
-        await etapa('linkedin', 'erro', explicarFalhaApify(erro));
+        await etapa(
+          'linkedin',
+          'erro',
+          explicarFalhaBusca(erro, fontes.google.nome),
+          linkGoogle(consultaEmpresa),
+        );
       }
     } else {
       await etapa(
         'linkedin',
         'pulada',
         !fontes.google
-          ? 'Sem APIFY_TOKEN para buscar no Google.'
+          ? 'Sem busca no Google configurada (SERPER_API_KEY ou APIFY_TOKEN).'
           : `Só para leads ${[...ajustes.faixasLinkedin].join(' e ')}.`,
       );
     }
 
     // 7. Google Places: a loja segue aberta? Telefone atualizado?
     let mapsAberto: boolean | null = empresa.maps_fechada == null ? null : !empresa.maps_fechada;
-    if (ajustes.faixasPlaces.has(faixa) && fontes.places && empresa.place_id) {
+    if (achadaPorNome) {
+      // A busca por nome e endereço já trouxe os dados atuais: não precisa de outra consulta.
+      mapsAberto = !empresa.maps_fechada;
+      if (empresa.maps_fechada) {
+        faixa = 'C';
+        score = Math.min(score, 20);
+        motivo = `Fechada no Google. ${motivo}`;
+      }
+      await etapa(
+        'places',
+        'encontrado',
+        empresa.maps_fechada
+          ? 'Marcada como fechada no Google.'
+          : 'Aberta no Google (conferido na busca por nome e endereço).',
+        empresa.maps_url,
+      );
+    } else if (ajustes.faixasPlaces.has(faixa) && fontes.places && empresa.place_id) {
       try {
         const d = await fontes.places.detalhes(empresa.place_id);
         mapsAberto = d.aberto;
@@ -510,7 +613,7 @@ export async function enriquecerEmpresa(
           d.aberto === false ? 'Marcada como fechada no Google.' : 'Aberta no Google, dados conferidos.',
         );
       } catch (erro) {
-        await etapa('places', 'erro', mensagemDe(erro));
+        await etapa('places', 'erro', explicarFalhaPlaces(erro));
       }
     } else {
       await etapa(
@@ -519,7 +622,7 @@ export async function enriquecerEmpresa(
         !fontes.places
           ? 'Sem GOOGLE_PLACES_KEY.'
           : !empresa.place_id
-            ? 'Lead fora do Maps.'
+            ? 'Empresa não achada no Google.'
             : `Só para leads ${[...ajustes.faixasPlaces].join(' e ')}.`,
       );
     }

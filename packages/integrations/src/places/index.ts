@@ -57,7 +57,7 @@ export function textoDaBusca(b: { termo: string; cidade: string; uf: string; bai
 /** Uma página do Text Search. Sem `pagina`, é a primeira. */
 export async function buscarTexto(
   cfg: ConfigPlaces,
-  busca: { texto: string; pagina?: string | null },
+  busca: { texto: string; pagina?: string | null; porPagina?: number },
 ): Promise<PaginaPlaces> {
   const r = await requisitarJson<{ places?: unknown[]; nextPageToken?: string }>(URL, {
     servico: 'Google Places',
@@ -67,7 +67,7 @@ export async function buscarTexto(
       textQuery: busca.texto,
       languageCode: 'pt-BR',
       regionCode: 'BR',
-      pageSize: POR_PAGINA,
+      pageSize: busca.porPagina ?? POR_PAGINA,
       ...(busca.pagina ? { pageToken: busca.pagina } : {}),
     },
     timeoutMs: 20_000,
@@ -143,4 +143,119 @@ export function converterLugar(bruto: unknown): ItemMaps | null {
     entrega: null,
     dados: bruto as Record<string, unknown>,
   };
+}
+
+/* ───────────── Achar UMA empresa pelo nome e endereço (enriquecimento) ───────────── */
+
+export interface EmpresaParaAchar {
+  nome: string;
+  razaoSocial?: string | null;
+  logradouro?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
+  cep?: string | null;
+  cidade: string;
+  uf: string;
+}
+
+const semAcento = (t: string) =>
+  t
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+/** Palavras que não identificam a empresa ("auto", "peças", "ltda"…). */
+const COMUNS = new Set([
+  'auto',
+  'autos',
+  'pecas',
+  'peca',
+  'autopecas',
+  'comercio',
+  'loja',
+  'lojas',
+  'distribuidora',
+  'ltda',
+  'eireli',
+  'epp',
+  'me',
+  'sa',
+  'cia',
+  'com',
+  'de',
+  'da',
+  'do',
+  'das',
+  'dos',
+  'e',
+  'and',
+  'acessorios',
+  'servicos',
+  'industria',
+  'importacao',
+  'exportacao',
+  'materiais',
+  'filial',
+  'matriz',
+  'veiculos',
+]);
+
+function palavras(nome: string | null | undefined): string[] {
+  return semAcento(nome ?? '')
+    .split(/[^a-z0-9]+/)
+    .filter((p) => p.length >= 3 && !COMUNS.has(p) && !/^\d+$/.test(p));
+}
+
+/**
+ * Este lugar do Google é esta empresa? Precisa de nome parecido (uma palavra própria em comum)
+ * e de endereço que bata (CEP, número na rua ou, no mínimo, a cidade). Nome genérico demais
+ * ("Auto Peças Salvador") só passa com CEP e número batendo.
+ */
+export function mesmoLugar(lugar: ItemMaps, e: EmpresaParaAchar): boolean {
+  const doLugar = new Set(palavras(lugar.nome));
+  const juntoLugar = semAcento(lugar.nome).replace(/[^a-z0-9]/g, '');
+  const proprias = [...new Set([...palavras(e.nome), ...palavras(e.razaoSocial)])];
+  const nomeBate = proprias.some((p) => doLugar.has(p) || (p.length > 4 && juntoLugar.includes(p)));
+
+  const endereco = semAcento(lugar.endereco ?? '');
+  const cep = (e.cep ?? '').replace(/\D/g, '');
+  const cepBate = cep.length === 8 && !!lugar.cep && lugar.cep.slice(0, 5) === cep.slice(0, 5);
+  const numero = (e.numero ?? '').replace(/\D/g, '');
+  const numeroBate = !!numero && new RegExp(`\\b${numero}\\b`).test(endereco);
+  const cidadeBate = !!lugar.cidade && semAcento(lugar.cidade) === semAcento(e.cidade);
+
+  // Nome genérico: só com o CEP inteiro e o número batendo.
+  if (!proprias.length) return cep.length === 8 && lugar.cep === cep && numeroBate;
+  return nomeBate && (cepBate || numeroBate || cidadeBate);
+}
+
+/** Texto para achar a empresa: nome + rua e número + cidade. */
+export function textoParaAchar(e: EmpresaParaAchar): string {
+  const rua = [e.logradouro, e.numero].filter(Boolean).join(' ');
+  return [e.nome, rua, `${e.cidade} - ${e.uf}`].filter(Boolean).join(', ');
+}
+
+export interface LugarAchado {
+  lugar: ItemMaps | null;
+  /** Quantos lugares o Google devolveu (para explicar quando nenhum bate). */
+  candidatos: number;
+  texto: string;
+}
+
+/**
+ * Procura a empresa no Google pelo nome e endereço (1 pedido de Text Search, até 5 lugares).
+ * Serve para quem veio da base de CNPJ e não apareceu nas buscas da campanha.
+ */
+export async function acharLugar(cfg: ConfigPlaces, e: EmpresaParaAchar): Promise<LugarAchado> {
+  const texto = textoParaAchar(e);
+  const r = await buscarTexto(cfg, { texto, porPagina: 5 });
+  let lugar = r.itens.find((l) => mesmoLugar(l, e)) ?? null;
+  // Pelo nome fantasia não achou: tenta a razão social (uma vez só).
+  let candidatos = r.itens.length;
+  if (!lugar && e.razaoSocial && semAcento(e.razaoSocial) !== semAcento(e.nome)) {
+    const r2 = await buscarTexto(cfg, { texto: textoParaAchar({ ...e, nome: e.razaoSocial }), porPagina: 5 });
+    lugar = r2.itens.find((l) => mesmoLugar(l, e)) ?? null;
+    candidatos += r2.itens.length;
+  }
+  return { lugar, candidatos, texto };
 }

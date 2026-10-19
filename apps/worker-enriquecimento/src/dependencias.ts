@@ -2,7 +2,9 @@ import type { Pool } from '@prospeccao/db';
 import type {
   AvaliacaoIa,
   DetalhesPlaces,
+  EmpresaParaAchar,
   EntradaAvaliacao,
+  LugarAchado,
   PerfilInstagram,
   ResultadoGoogle,
   ResultadoSite,
@@ -15,10 +17,18 @@ import type { Logger } from '@prospeccao/shared';
  */
 export interface Fontes {
   site: { ler(url: string): Promise<ResultadoSite | null> };
-  google: { buscar(consultas: string[]): Promise<Map<string, ResultadoGoogle[]>> } | null;
+  google: {
+    /** Quem faz a busca ("Serper" ou "Apify"), para as mensagens de erro. */
+    nome?: string;
+    buscar(consultas: string[]): Promise<Map<string, ResultadoGoogle[]>>;
+  } | null;
   instagram: { ler(usuario: string): Promise<PerfilInstagram | null> } | null;
   ia: { avaliar(entrada: EntradaAvaliacao): Promise<AvaliacaoIa> } | null;
-  places: { detalhes(placeId: string): Promise<DetalhesPlaces> } | null;
+  places: {
+    detalhes(placeId: string): Promise<DetalhesPlaces>;
+    /** Procura a empresa no Google pelo nome e endereço (quem não apareceu nas buscas). */
+    achar?(empresa: EmpresaParaAchar): Promise<LugarAchado>;
+  } | null;
   whatsapp: { verificar(numeros: string[]): Promise<Map<string, boolean>> } | null;
 }
 
@@ -27,6 +37,8 @@ export interface Ajustes {
   faixasLinkedin: Set<string>;
   /** Faixas validadas no Google Places (custa uma consulta). */
   faixasPlaces: Set<string>;
+  /** Procurar no Google (nome + endereço) quem veio da base de CNPJ e não apareceu nas buscas. */
+  acharNoGoogle?: boolean;
   /** Procurar o Instagram no Google quando o site não indica. */
   buscarInstagram: boolean;
   /** Não refaz empresa enriquecida há menos de N dias (a não ser que peçam). */

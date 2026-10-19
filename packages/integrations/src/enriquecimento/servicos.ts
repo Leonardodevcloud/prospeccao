@@ -1,5 +1,7 @@
 import { requisitarJson } from '../http.js';
 
+export { acharLugar, type EmpresaParaAchar, type LugarAchado, mesmoLugar } from '../places/index.js';
+
 /* ---------------- WhatsApp (Evolution API) ---------------- */
 
 export interface ConfigEvolution {
