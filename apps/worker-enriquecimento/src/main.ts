@@ -2,7 +2,7 @@ import { booleano, carregarEnv, envBase, listaCsv, opcional } from '@prospeccao/
 import { criarPool } from '@prospeccao/db';
 import * as enriq from '@prospeccao/integrations/enriquecimento';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
-import { criarLogger } from '@prospeccao/shared';
+import { criarLogger, normalizarTelefone } from '@prospeccao/shared';
 import { z } from 'zod';
 import { enriquecerEmpresa } from './casos.js';
 import type { Deps, Fontes } from './dependencias.js';
@@ -32,6 +32,11 @@ const env = carregarEnv(
     ENRIQ_BUSCAR_INSTAGRAM: booleano.default(true),
     /** Procura no Google (nome + endereço) quem veio da base de CNPJ e não apareceu nas buscas. */
     ENRIQ_ACHAR_NO_GOOGLE: booleano.default(true),
+    /** Base paga Direct Data (telefones atualizados). Sem o token, a etapa não roda. */
+    DIRECTD_TOKEN: opcional(z.string().min(8)),
+    DIRECTD_PRECO_BRL: z.coerce.number().min(0).default(0.16),
+    /** Faixas que podem gastar a consulta paga (só quando não há WhatsApp atual). */
+    ENRIQ_FAIXAS_BASE_PAGA: listaCsv.default(['A']),
     /** Interruptor de emergência: com "true", o serviço sobe mas não processa nada (a fila espera). */
     ENRIQ_PAUSADO: booleano.default(false),
     ENRIQ_REFAZER_DIAS: z.coerce.number().int().min(0).default(30),
@@ -103,6 +108,14 @@ const fontes: Fontes = {
         }
       : null,
   diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
+  basePaga: env.DIRECTD_TOKEN
+    ? {
+        nome: 'Direct Data',
+        precoBrl: env.DIRECTD_PRECO_BRL,
+        consultar: (cnpj) =>
+          enriq.consultarDirectData({ token: env.DIRECTD_TOKEN! }, cnpj, normalizarTelefone),
+      }
+    : null,
   whatsapp: evolution
     ? {
         async verificar(numeros) {
@@ -128,6 +141,7 @@ const deps: Deps = {
     faixasPlaces: new Set(env.ENRIQ_FAIXAS_PLACES),
     buscarInstagram: env.ENRIQ_BUSCAR_INSTAGRAM,
     acharNoGoogle: env.ENRIQ_ACHAR_NO_GOOGLE,
+    faixasBasePaga: new Set(env.ENRIQ_FAIXAS_BASE_PAGA),
     refazerDias: env.ENRIQ_REFAZER_DIAS,
   },
 };
@@ -173,6 +187,9 @@ log.info(
             ? 'Serper'
             : 'desligado',
     diretorios: ligado(serper),
+    base_paga: env.DIRECTD_TOKEN
+      ? `Direct Data (faixas ${env.ENRIQ_FAIXAS_BASE_PAGA.join(', ')})`
+      : 'desligada',
   },
   'worker-enriquecimento pronto',
 );

@@ -143,3 +143,43 @@ describe('Serper: lugares e diretórios', () => {
     expect(converterPerfilWhatsapp({ wid: '55...' })).toBeNull();
   });
 });
+
+describe('Direct Data', () => {
+  it('lê telefones com tipo, operadora e WhatsApp, e os e-mails', async () => {
+    const { converterDirectData } = await import('../src/enriquecimento/servicos.js');
+    const { normalizarTelefone } = await import('@prospeccao/shared');
+    const r = converterDirectData(
+      {
+        metaDados: { resultado: 'Sucesso' },
+        retorno: {
+          telefones: [
+            {
+              telefoneComDDD: '(71) 98877-6655',
+              tipoTelefone: 'CELULAR',
+              operadora: 'VIVO',
+              whatsApp: true,
+              telemarketingBloqueado: false,
+            },
+            {
+              telefoneComDDD: '(71) 3244-9744',
+              tipoTelefone: 'FIXO',
+              operadora: 'OI',
+              whatsApp: 'Não',
+              telemarketingBloqueado: 'Sim',
+            },
+          ],
+          emails: [{ enderecoEmail: 'Compras@Ceave.com.br' }, { enderecoEmail: 'invalido' }],
+        },
+      },
+      normalizarTelefone,
+    );
+    expect(r).toEqual({
+      telefones: [
+        { numero: '71988776655', tipo: 'celular', operadora: 'VIVO', whatsapp: true, bloqueado: false },
+        { numero: '7132449744', tipo: 'fixo', operadora: 'OI', whatsapp: false, bloqueado: true },
+      ],
+      emails: ['compras@ceave.com.br'],
+    });
+    expect(converterDirectData({ retorno: null }, normalizarTelefone)).toEqual({ telefones: [], emails: [] });
+  });
+});

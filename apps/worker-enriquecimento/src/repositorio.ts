@@ -109,6 +109,7 @@ export async function iniciar(db: Executor, empresaId: number, campanhaId: numbe
 }
 
 export type NomeEtapa =
+  | 'base_paga'
   | 'receita'
   | 'maps'
   | 'site'
@@ -286,4 +287,18 @@ export async function reservarPlacesGratis(pool: Pool, n: number): Promise<boole
   } finally {
     cliente.release();
   }
+}
+
+/** Uma consulta à base paga (para o custo aparecer no relatório). */
+export async function registrarUsoBasePaga(
+  db: Executor,
+  empresaId: number,
+  provedor: string,
+  custoBrl: number,
+  achados: number,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO enriquecimento.uso_base_paga (empresa_id, provedor, custo_brl, achados) VALUES ($1, $2, $3, $4)`,
+    [empresaId, provedor, custoBrl, achados],
+  );
 }

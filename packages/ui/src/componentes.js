@@ -297,6 +297,7 @@ var FONTES = {
   ia: 'IA',
   google: 'Google',
   whatsapp: 'WhatsApp',
+  base_paga: 'Base paga',
 };
 var FONTES_LONGAS = {
   cnpj: 'Base de CNPJ da Receita',
@@ -312,6 +313,7 @@ var FONTES_LONGAS = {
   ia: 'Inferido pela IA',
   google: 'Busca no Google (diretórios de empresas)',
   whatsapp: 'Perfil comercial do WhatsApp',
+  base_paga: 'Base de dados paga (Direct Data), atualizada',
 };
 
 var STATUS = {

@@ -14,7 +14,8 @@ export type Fonte =
   | 'manual'
   | 'ia'
   | 'google'
-  | 'whatsapp';
+  | 'whatsapp'
+  | 'base_paga';
 export type StatusContato = 'verificado' | 'nao_verificado' | 'atencao' | 'invalido';
 export type Faixa = 'A' | 'B' | 'C';
 

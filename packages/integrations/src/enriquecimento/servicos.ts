@@ -261,3 +261,79 @@ export function lerAvaliacao(texto: string): AvaliacaoIa {
       })),
   };
 }
+
+/* ---------------- Base paga: Direct Data (Cadastro Pessoa Jurídica) ---------------- */
+
+export interface ConfigDirectData {
+  token: string;
+}
+
+export interface TelefoneBasePaga {
+  numero: string;
+  tipo: 'celular' | 'fixo' | null;
+  operadora: string | null;
+  whatsapp: boolean | null;
+  /** No cadastro de "não perturbe" (telemarketing bloqueado). */
+  bloqueado: boolean;
+}
+
+export interface ConsultaBasePaga {
+  telefones: TelefoneBasePaga[];
+  emails: string[];
+}
+
+const simNao = (v: unknown): boolean | null =>
+  v === true || /^(sim|s|true|1)$/i.test(String(v ?? ''))
+    ? true
+    : v === false || /^(n[aã]o|n|false|0)$/i.test(String(v ?? ''))
+      ? false
+      : null;
+
+/** Converte a resposta da Direct Data (aceita variações de maiúsculas nos nomes). */
+export function converterDirectData(
+  bruto: unknown,
+  normalizar: (t: string) => string | null,
+): ConsultaBasePaga {
+  const r = (bruto as { retorno?: Record<string, unknown> } | null)?.retorno ?? {};
+  const campo = (o: Record<string, unknown>, nome: string) =>
+    o[nome] ?? o[nome[0]?.toUpperCase() + nome.slice(1)];
+  const lista = (nome: string) => {
+    const v = campo(r, nome);
+    return Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
+  };
+  const telefones: TelefoneBasePaga[] = [];
+  for (const t of lista('telefones')) {
+    const numero = normalizar(String(campo(t, 'telefoneComDDD') ?? ''));
+    if (!numero || telefones.some((x) => x.numero === numero)) continue;
+    const tipo = String(campo(t, 'tipoTelefone') ?? '').toLowerCase();
+    telefones.push({
+      numero,
+      tipo: /cel|m[oó]vel/.test(tipo) ? 'celular' : /fixo/.test(tipo) ? 'fixo' : null,
+      operadora: (campo(t, 'operadora') as string) || null,
+      whatsapp: simNao(campo(t, 'whatsApp') ?? campo(t, 'whatsapp')),
+      bloqueado: simNao(campo(t, 'telemarketingBloqueado')) === true,
+    });
+  }
+  const emails = [
+    ...new Set(
+      lista('emails')
+        .map((e) =>
+          String(campo(e, 'enderecoEmail') ?? '')
+            .trim()
+            .toLowerCase(),
+        )
+        .filter((e) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)),
+    ),
+  ];
+  return { telefones, emails };
+}
+
+export async function consultarDirectData(
+  cfg: ConfigDirectData,
+  cnpj: string,
+  normalizar: (t: string) => string | null,
+): Promise<ConsultaBasePaga> {
+  const url = `https://apiv3.directd.com.br/api/CadastroPessoaJuridica?CNPJ=${encodeURIComponent(cnpj)}&TOKEN=${encodeURIComponent(cfg.token)}`;
+  const r = await requisitarJson<unknown>(url, { servico: 'Direct Data', timeoutMs: 40_000 });
+  return converterDirectData(r, normalizar);
+}

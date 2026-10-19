@@ -2,6 +2,7 @@ import type { Pool } from '@prospeccao/db';
 import type {
   AvaliacaoIa,
   BuscaDiretorios,
+  ConsultaBasePaga,
   DetalhesPlaces,
   EmpresaParaAchar,
   EntradaAvaliacao,
@@ -39,6 +40,8 @@ export interface Fontes {
   diretorios?: {
     buscar(empresa: { nome: string; razaoSocial: string | null; cidade: string }): Promise<BuscaDiretorios>;
   } | null;
+  /** Base paga (Direct Data): telefones atualizados por CNPJ. Custa por consulta. */
+  basePaga?: { nome: string; precoBrl: number; consultar(cnpj: string): Promise<ConsultaBasePaga> } | null;
   whatsapp: {
     verificar(numeros: string[]): Promise<Map<string, boolean>>;
     /** Perfil comercial (WhatsApp Business) do número. */
@@ -53,6 +56,8 @@ export interface Ajustes {
   faixasPlaces: Set<string>;
   /** Procurar no Google (nome + endereço) quem veio da base de CNPJ e não apareceu nas buscas. */
   acharNoGoogle?: boolean;
+  /** Faixas que podem gastar uma consulta na base paga (só quando não há WhatsApp atual). */
+  faixasBasePaga?: Set<string>;
   /** Procurar o Instagram no Google quando o site não indica. */
   buscarInstagram: boolean;
   /** Não refaz empresa enriquecida há menos de N dias (a não ser que peçam). */

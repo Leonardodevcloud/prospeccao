@@ -53,6 +53,7 @@ const FONTE: Record<FonteEnriq, Fonte> = {
   places: 'places',
   manual: 'manual',
   whatsapp: 'whatsapp',
+  base_paga: 'base_paga',
 };
 
 const NOME_FONTE: Record<FonteEnriq, string> = {
@@ -66,6 +67,7 @@ const NOME_FONTE: Record<FonteEnriq, string> = {
   places: 'Google',
   manual: 'cadastro manual',
   whatsapp: 'WhatsApp Business',
+  base_paga: 'base paga',
 };
 
 const NOME_ETAPA: Record<EtapaEnriq['etapa'], string> = {
@@ -78,6 +80,7 @@ const NOME_ETAPA: Record<EtapaEnriq['etapa'], string> = {
   linkedin: 'LinkedIn',
   places: 'Validação no Google',
   whatsapp: 'WhatsApp',
+  base_paga: 'Base paga (telefones atualizados)',
 };
 
 const PAPEL: Record<PessoaEnriq['papel'], string> = {

@@ -115,13 +115,18 @@ export async function enriquecerEmpresa(
           desde: s.data_entrada,
         });
       }
+      // Telefone da Receita é o da abertura do CNPJ: quanto mais velha a empresa, menos vale.
+      const anosCnpj = anosDesde(empresa.data_abertura);
+      const antigo = anosCnpj != null && anosCnpj >= 5;
       for (const t of empresa.telefones_receita) {
         c.contato({
           canal: 'telefone',
           valor: t,
           fonte: 'receita',
-          confianca: 35,
-          rotulo: 'Cadastro na Receita',
+          confianca: antigo ? 20 : 35,
+          rotulo: antigo
+            ? `Cadastro na Receita (CNPJ de ${anosCnpj} anos, pode estar desatualizado)`
+            : 'Cadastro na Receita',
         });
       }
       const email = empresa.email_receita?.toLowerCase();
@@ -850,6 +855,91 @@ export async function enriquecerEmpresa(
       );
     }
 
+    // 9. Base paga (Direct Data): telefones atualizados, com tipo, operadora e WhatsApp. Só para as
+    // faixas escolhidas e só quando nenhuma fonte trouxe um WhatsApp atual: não paga à toa.
+    const whatsappAtual = [...c.contatos.values()].some(
+      (x) =>
+        x.canal === 'whatsapp' &&
+        x.status === 'verificado' &&
+        !(x.fontes.size === 1 && x.fontes.has('receita')),
+    );
+    if (fontes.basePaga && empresa.cnpj) {
+      const faixasPagas = ajustes.faixasBasePaga ?? new Set<string>();
+      if (!faixasPagas.has(faixa)) {
+        await etapa(
+          'base_paga',
+          'pulada',
+          `Só para leads ${[...faixasPagas].join(' e ') || '(nenhuma faixa)'}.`,
+        );
+      } else if (whatsappAtual) {
+        await etapa(
+          'base_paga',
+          'pulada',
+          'Já tem WhatsApp atual confirmado: não precisou consultar (economia).',
+        );
+      } else {
+        try {
+          const r = await fontes.basePaga.consultar(empresa.cnpj);
+          for (const t of r.telefones) {
+            c.contato({
+              canal: t.whatsapp ? 'whatsapp' : 'telefone',
+              valor: t.numero,
+              fonte: 'base_paga',
+              confianca: t.whatsapp ? 85 : 75,
+              rotulo:
+                [t.tipo, t.operadora, t.bloqueado ? 'no "Não Perturbe"' : null].filter(Boolean).join(' · ') ||
+                'Base paga',
+              status: t.bloqueado ? 'atencao' : undefined,
+            });
+          }
+          for (const em of r.emails) {
+            c.contato({ canal: 'email', valor: em, fonte: 'base_paga', confianca: 65, rotulo: 'Base paga' });
+          }
+          // Os números novos também passam pelo chip.
+          const novos = r.telefones
+            .map((t) => t.numero)
+            .filter((n) => !numeros.includes(n))
+            .slice(0, 6);
+          if (fontes.whatsapp && novos.length) {
+            try {
+              c.aplicarWhatsapp(await fontes.whatsapp.verificar(novos));
+            } catch (erro) {
+              log.warn({ err: erro }, 'falha ao conferir no WhatsApp os números da base paga');
+            }
+          }
+          await repo.registrarUsoBasePaga(
+            pool,
+            empresaId,
+            fontes.basePaga.nome,
+            fontes.basePaga.precoBrl,
+            r.telefones.length + r.emails.length,
+          );
+          const celulares = r.telefones.filter((t) => t.tipo === 'celular').length;
+          const comWhatsapp = r.telefones.filter((t) => t.whatsapp).length;
+          const custo = fontes.basePaga.precoBrl.toFixed(2).replace('.', ',');
+          await etapa(
+            'base_paga',
+            r.telefones.length || r.emails.length ? 'encontrado' : 'sem_resultado',
+            r.telefones.length || r.emails.length
+              ? `${r.telefones.length} telefone(s) (${celulares} celular, ${comWhatsapp} com WhatsApp) e ${r.emails.length} e-mail(s) na ${fontes.basePaga.nome}. Consulta: R$ ${custo}.`
+              : `Nada na ${fontes.basePaga.nome} para este CNPJ. Consulta: R$ ${custo}.`,
+          );
+        } catch (erro) {
+          const msg = mensagemDe(erro);
+          await etapa(
+            'base_paga',
+            'erro',
+            /HTTP 401|HTTP 403|token/i.test(msg)
+              ? `${fontes.basePaga.nome} recusou o token (DIRECTD_TOKEN).`
+              : /HTTP 402|saldo|cr[eé]dito/i.test(msg)
+                ? `Sem saldo na ${fontes.basePaga.nome}.`
+                : `${fontes.basePaga.nome} falhou: ${msg.slice(0, 160)}`,
+          );
+        }
+      }
+    }
+
+    c.marcarReceitaAntiga(anosDesde(empresa.data_abertura));
     c.escolherDecisor();
     c.escolherPrincipal();
     await repo.concluir(pool, empresaId, c, {

@@ -234,6 +234,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       faixasPlaces: new Set(['A', 'B']),
       buscarInstagram: true,
       acharNoGoogle: true,
+      faixasBasePaga: new Set(['A']),
       refazerDias: 30,
     },
   });
@@ -652,5 +653,113 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(await reservarPlacesGratis(pool, 1)).toBe(true);
     expect(await reservarPlacesGratis(pool, 1)).toBe(false);
     await pool.query('UPDATE cadastro.config_places SET franquia_mensal = 1000 WHERE id = 1');
+  });
+
+  it('CNPJ antigo: telefone só da Receita sem WhatsApp vira "desativado"; base paga só quando falta WhatsApp atual', async () => {
+    await pool.query(
+      `UPDATE descoberta.empresas SET data_abertura = '1977-02-08', telefones_receita = '{7132449327}' WHERE id = 3`,
+    );
+    await pool.query('TRUNCATE enriquecimento.uso_base_paga');
+    const consultas: string[] = [];
+    const f = fontesCompletas();
+    const fontesBase = (comWhatsappNoMaps: boolean): Fontes => ({
+      site: f.site,
+      google: null,
+      instagram: null,
+      places: null,
+      lugar: comWhatsappNoMaps
+        ? {
+            async achar() {
+              return {
+                texto: 'x',
+                candidatos: 1,
+                fonte: 'places',
+                lugar: {
+                  placeId: 'p9',
+                  nome: 'Ceavê Norte Diesel',
+                  categoria: null,
+                  telefone: '71999990000',
+                  endereco: null,
+                  cep: null,
+                  cidade: 'Salvador',
+                  uf: 'BA',
+                  lat: null,
+                  lng: null,
+                  nota: null,
+                  avaliacoes: null,
+                  site: null,
+                  url: null,
+                  fechada: false,
+                  entrega: null,
+                  dados: {},
+                },
+              };
+            },
+          }
+        : null,
+      ia: {
+        async avaliar() {
+          return {
+            faixa: 'A',
+            score: 80,
+            motivo: 'Tradicional',
+            resumo: 'Diesel',
+            entrega: null,
+            pessoas: [],
+          };
+        },
+      },
+      basePaga: {
+        nome: 'Direct Data',
+        precoBrl: 0.16,
+        async consultar(cnpj) {
+          consultas.push(cnpj);
+          return {
+            telefones: [
+              { numero: '71988776655', tipo: 'celular', operadora: 'VIVO', whatsapp: true, bloqueado: false },
+              { numero: '7132449744', tipo: 'fixo', operadora: 'OI', whatsapp: false, bloqueado: false },
+            ],
+            emails: ['compras@ceavenortediesel.com.br'],
+          };
+        },
+      },
+      whatsapp: {
+        async verificar(numeros) {
+          return new Map(numeros.map((n) => [n, n === '71988776655' || n === '71999990000']));
+        },
+      },
+    });
+
+    // Sem WhatsApp atual em nenhuma fonte: consulta a base paga.
+    await enriquecerEmpresa(deps(fontesBase(false)), { empresaId: 3, campanhaId: 1, forcar: true });
+    expect(consultas).toEqual(['14312706000101']);
+    const { rows: contatos } = await pool.query(
+      `SELECT canal, valor, status, principal, rotulo FROM enriquecimento.contatos WHERE empresa_id = 3`,
+    );
+    expect(contatos.find((x) => x.principal)).toMatchObject({
+      canal: 'whatsapp',
+      valor: '71988776655',
+      status: 'verificado',
+    });
+    expect(contatos.find((x) => x.valor === '7132449327')).toMatchObject({
+      status: 'atencao',
+      rotulo: expect.stringMatching(/^Provavelmente desativado \(sem WhatsApp; CNPJ de \d+ anos\)$/),
+    });
+    const { rows: etapa } = await pool.query(
+      `SELECT status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 3 AND etapa = 'base_paga'`,
+    );
+    expect(etapa[0]).toMatchObject({ status: 'encontrado' });
+    expect(etapa[0].detalhe).toContain('1 celular, 1 com WhatsApp');
+    expect((await pool.query('SELECT count(*)::int AS n FROM enriquecimento.uso_base_paga')).rows[0].n).toBe(
+      1,
+    );
+
+    // O Maps já trouxe um WhatsApp atual: não gasta a consulta.
+    await enriquecerEmpresa(deps(fontesBase(true)), { empresaId: 3, campanhaId: 1, forcar: true });
+    expect(consultas).toHaveLength(1);
+    const { rows: pulada } = await pool.query(
+      `SELECT status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 3 AND etapa = 'base_paga'`,
+    );
+    expect(pulada[0]).toMatchObject({ status: 'pulada' });
   });
 });

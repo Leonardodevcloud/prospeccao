@@ -16,7 +16,8 @@ export type FonteContato =
   | 'google'
   | 'ia'
   | 'places'
-  | 'whatsapp';
+  | 'whatsapp'
+  | 'base_paga';
 export type Papel = 'socio' | 'compras' | 'gestao' | 'outro';
 export type StatusContato = 'verificado' | 'nao_verificado' | 'atencao' | 'invalido';
 
@@ -237,6 +238,25 @@ export class Coletor {
     return decisor;
   }
 
+  /**
+   * Telefone que só existe no cadastro da Receita, numa empresa aberta há anos, quase sempre está
+   * desatualizado (ninguém atualiza o CNPJ). Sem WhatsApp, é tratado como desativado; nunca vira
+   * o contato principal se houver outro.
+   */
+  marcarReceitaAntiga(anos: number | null): void {
+    if (anos == null || anos < 5) return;
+    for (const c of this.contatos.values()) {
+      if (c.canal !== 'telefone' || c.fontes.size !== 1 || !c.fontes.has('receita')) continue;
+      if (c.whatsapp === true) continue;
+      c.status = 'atencao';
+      c.confianca = Math.min(c.confianca, 10);
+      c.rotulo =
+        c.whatsapp === false
+          ? `Provavelmente desativado (sem WhatsApp; CNPJ de ${anos} anos)`
+          : `Cadastro antigo da Receita (CNPJ de ${anos} anos)`;
+    }
+  }
+
   /** Melhor contato da empresa para a primeira abordagem. */
   escolherPrincipal(): Contato | null {
     this.juntarTelefonesDeWhatsapp();
@@ -249,7 +269,9 @@ export class Coletor {
             : 75
           : c.canal === 'telefone'
             ? c.fonte === 'receita' && c.fontes.size === 1
-              ? 30
+              ? c.status === 'atencao'
+                ? 5
+                : 30
               : 60
             : c.canal === 'email'
               ? /^(compras|comercial|vendas|contato)@/.test(c.valor)
