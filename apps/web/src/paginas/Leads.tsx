@@ -9,7 +9,7 @@ import { fmtCidade, fmtKm, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO
 
 const ABAS = [
   { id: 'todos', rotulo: 'Todos' },
-  { id: 'raio', rotulo: 'Dentro do raio' },
+  { id: 'raio', rotulo: 'Na área' },
   { id: 'entrega', rotulo: 'Com entrega' },
   { id: 'maps', rotulo: 'Só no Maps' },
 ];

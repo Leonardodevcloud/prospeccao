@@ -220,4 +220,26 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM descoberta.buscas_maps');
     expect(rows[0].n).toBe(1);
   });
+
+  it('campanha nacional (sem raio) libera tudo e não geocodifica', async () => {
+    await pool.query(
+      `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, status)
+       VALUES ('Autopeças nacional', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa')`,
+    );
+    const d = { ...deps(), geo: null };
+    const localizar = () => publicados.filter((p) => p.nome === 'empresa.localizar').length;
+    const antesLocalizar = localizar();
+
+    await casos.iniciarCampanha(d, 2);
+    await drenar(d);
+
+    const { rows } = await pool.query(
+      `SELECT nome, dentro_do_raio FROM descoberta.v_empresas_campanha WHERE campanha_id = 2 ORDER BY nome`,
+    );
+    // Inclusive a que fica a ~80 km da base: no nacional, distância não exclui ninguém.
+    expect(rows.map((r) => r.nome)).toContain('PECAS LONGE');
+    expect(rows.every((r) => r.dentro_do_raio === true)).toBe(true);
+    expect(enriquecer.filter((e) => e.campanhaId === 2)).toHaveLength(rows.length);
+    expect(localizar()).toBe(antesLocalizar);
+  });
 });

@@ -49,8 +49,8 @@ function Bases() {
     <Panel titulo="Bases de operação" contagem={ativas.length}>
       <div className="pilha">
         <p className="quieto" style={{ margin: 0, fontSize: 13, lineHeight: '18px' }}>
-          A distância de cada lead é medida até a base mais próxima. Sem base cadastrada, nenhum lead fica
-          fora do raio.
+          Opcional. Só campanhas com raio usam as bases: a distância de cada lead é medida até a mais próxima.
+          Campanhas nacionais ignoram a distância.
         </p>
         {ativas.length > 0 && (
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: '24px' }}>

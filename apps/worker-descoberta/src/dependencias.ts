@@ -31,6 +31,7 @@ export interface Deps {
   filas: Pick<Filas, 'publicar'>;
   log: Logger;
   maps: BuscadorMaps;
-  geo: Geocodificador;
+  /** null sem ORS_API_KEY: só campanhas com raio precisam localizar quem não veio do Maps. */
+  geo: Geocodificador | null;
   ajustes: Ajustes;
 }

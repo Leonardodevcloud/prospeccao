@@ -8,7 +8,8 @@ export interface CampanhaDescoberta {
   nome: string;
   status: string;
   cidades: { cidade: string; uf: string }[];
-  raio_km: number;
+  /** null = abrangência nacional. */
+  raio_km: number | null;
   max_por_busca: number;
   nicho_id: number;
   cnaes: string[];
@@ -232,7 +233,8 @@ export async function gravarLocalizacao(db: Executor, id: number, geo: { lat: nu
 
 /**
  * Recalcula a base mais próxima, a distância e o "dentro do raio" de cada
- * campanha. Sem bases cadastradas, ninguém fica de fora por distância.
+ * campanha. Campanha nacional (sem raio) ou sem bases cadastradas: ninguém
+ * fica de fora por distância.
  */
 export async function recalcularDistancias(
   db: Executor,
@@ -259,6 +261,7 @@ export async function recalcularDistancias(
   await db.query(
     `UPDATE descoberta.campanha_empresas ce
         SET dentro_do_raio = CASE
+              WHEN c.raio_km IS NULL THEN true
               WHEN NOT EXISTS (SELECT 1 FROM cadastro.v_bases_ativas) THEN true
               WHEN e.distancia_base_km IS NULL THEN NULL
               ELSE e.distancia_base_km <= c.raio_km END
@@ -278,7 +281,9 @@ export async function empresasSemLocalizacao(
   const { rows } = await db.query<{ id: number }>(
     `SELECT e.id FROM descoberta.empresas e
        JOIN descoberta.campanha_empresas ce ON ce.empresa_id = e.id
-      WHERE ce.campanha_id = $1 AND e.lat IS NULL AND e.geo_tentativas < $2
+       JOIN cadastro.v_campanhas_descoberta c ON c.id = ce.campanha_id
+      WHERE ce.campanha_id = $1 AND c.raio_km IS NOT NULL
+        AND e.lat IS NULL AND e.geo_tentativas < $2
         AND coalesce(e.maps_fechada, false) = false`,
     [campanhaId, maxTentativas],
   );

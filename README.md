@@ -67,8 +67,8 @@ de produção leva só o `dist` e as dependências de terceiros daquele serviço
 2. `worker-descoberta` traz da base de CNPJ os estabelecimentos **ativos** do nicho nas cidades da campanha (CNAE principal ou secundário, porte, idade mínima) e cria uma busca no Maps por **cidade × termo**.
 3. Cada busca dispara um run no Apify e é conferida a cada 60 s até terminar.
 4. Cada lugar do Maps é **cruzado** com a base, nesta ordem de confiança: mesmo `place_id`, mesmo telefone, nome parecido no mesmo CEP, nome muito parecido na mesma cidade. Sem par, vira empresa nova (sem CNPJ). Nome ou categoria com palavra negativa do nicho é descartado.
-5. Quando as buscas da campanha terminam, quem ainda não tem coordenada é geocodificado no ORS (com pausa para respeitar o limite gratuito), e a distância até a base mais próxima define se está **dentro do raio**.
-6. Leads dentro do raio, abertos, de campanha ativa vão para `enriquecimento.solicitar`, uma vez cada. Essa fila é consumida pelo `worker-enriquecimento` na Fase 2; até lá os jobs ficam guardados.
+5. **Abrangência.** Por padrão a campanha é **nacional**: ninguém fica de fora por distância e nada é geocodificado. Se a campanha tiver **raio**, quem ainda não tem coordenada é geocodificado no ORS (com pausa para respeitar o limite gratuito) e a distância até a base mais próxima define se está na área.
+6. Leads na área, abertos, de campanha ativa vão para `enriquecimento.solicitar`, uma vez cada. Essa fila é consumida pelo `worker-enriquecimento` na Fase 2; até lá os jobs ficam guardados.
 
 ## Rodar localmente
 
@@ -82,12 +82,12 @@ pnpm db:migrate
 pnpm dev                          # api :3000, web :5173 e os dois workers
 ```
 
-Abra http://localhost:5173. O worker-descoberta precisa de `APIFY_TOKEN` e `ORS_API_KEY`
-para subir; sem eles, rode só `pnpm --filter @prospeccao/api dev` e
-`pnpm --filter @prospeccao/web dev`.
+Abra http://localhost:5173. O worker-descoberta precisa de `APIFY_TOKEN` para subir; sem ele,
+rode só `pnpm --filter @prospeccao/api dev` e `pnpm --filter @prospeccao/web dev`.
+`ORS_API_KEY` é opcional: só campanhas com raio usam.
 
-Primeiro uso: crie um **nicho**, cadastre uma **base de operação** (Configurações), crie a
-**campanha** e clique em **Importar agora** na base de CNPJ (a primeira importação baixa
+Primeiro uso: crie um **nicho**, crie a **campanha** (nacional por padrão; bases de operação
+só são necessárias para campanhas com raio) e clique em **Importar agora** na base de CNPJ (a primeira importação baixa
 alguns GB e leva de 20 a 60 minutos). Depois, **Iniciar busca** na campanha.
 
 ## Testes
@@ -120,7 +120,7 @@ A variável `SERVICO` escolhe o que a imagem empacota.
 | Serviço | `SERVICO` | Pre-deploy | Healthcheck | Variáveis além de `DATABASE_URL` |
 | --- | --- | --- | --- | --- |
 | api | `api` | `node dist/migrar.js` | `/saude` | `APP_ORIGENS`, `JWT_SEGREDO`, `ADMIN_EMAIL`, `ADMIN_SENHA_HASH`, `ORS_API_KEY` (opcional) |
-| worker-descoberta | `worker-descoberta` | — | — | `APIFY_TOKEN`, `ORS_API_KEY`, ajustes opcionais (ver `.env.example`) |
+| worker-descoberta | `worker-descoberta` | — | — | `APIFY_TOKEN`; opcionais: `ORS_API_KEY` (campanhas com raio) e ajustes (ver `.env.example`) |
 | worker-cnpj | `worker-cnpj` | — | — | opcionais: `CNPJ_UFS_EXTRAS`, `CNPJ_AGENDA` |
 
 - As migrations rodam só no pre-deploy da `api`, antes da nova versão subir. Os workers não migram.

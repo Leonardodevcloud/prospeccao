@@ -1,5 +1,5 @@
 import { setTimeout as esperar } from 'node:timers/promises';
-import { carregarEnv, envBase } from '@prospeccao/config';
+import { carregarEnv, envBase, opcional } from '@prospeccao/config';
 import { criarPool } from '@prospeccao/db';
 import * as apify from '@prospeccao/integrations/apify';
 import * as ors from '@prospeccao/integrations/ors';
@@ -25,7 +25,8 @@ const env = carregarEnv(
           return z.NEVER;
         }
       }),
-    ORS_API_KEY: z.string().min(10, 'ORS_API_KEY é obrigatório'),
+    /** Opcional: só campanhas com raio usam, para localizar empresas que vieram só da Receita. */
+    ORS_API_KEY: opcional(z.string().min(10)),
     /** Pausa entre geocodificações: o plano gratuito do ORS aceita 100/min e 1.000/dia. */
     ORS_INTERVALO_MS: z.coerce.number().int().min(0).default(700),
     MAPS_REBUSCA_DIAS: z.coerce.number().int().min(0).default(30),
@@ -67,13 +68,15 @@ const deps: Deps = {
     obter: (runId) => apify.obterRun(cfgApify, runId),
     itens: (datasetId) => apify.listarItensMaps(cfgApify, datasetId),
   },
-  geo: {
-    async geocodificar(endereco) {
-      const r = await ors.geocodificar({ apiKey: env.ORS_API_KEY }, endereco);
-      await esperar(env.ORS_INTERVALO_MS);
-      return r;
-    },
-  },
+  geo: env.ORS_API_KEY
+    ? {
+        async geocodificar(endereco) {
+          const r = await ors.geocodificar({ apiKey: env.ORS_API_KEY! }, endereco);
+          await esperar(env.ORS_INTERVALO_MS);
+          return r;
+        },
+      }
+    : null,
   ajustes: {
     rebuscaDias: env.MAPS_REBUSCA_DIAS,
     esperaColetaSegundos: env.MAPS_ESPERA_SEGUNDOS,
@@ -92,7 +95,7 @@ await filas.consumir('empresa.localizar', (p) => casos.localizarEmpresa(deps, p.
 });
 await filas.consumir('cnpj.importacao_concluida', () => casos.aoAtualizarBaseCnpj(deps));
 
-log.info('worker-descoberta pronto');
+log.info({ geocodificacao: deps.geo ? 'ligada' : 'desligada (sem ORS_API_KEY)' }, 'worker-descoberta pronto');
 
 encerrarAoReceberSinal(log, async () => {
   await filas.parar();

@@ -119,7 +119,10 @@ async function aoConcluirBusca(deps: Deps, campanhaId: number) {
  */
 export async function finalizarDescoberta(deps: Deps, campanhaId: number) {
   await repo.recalcularDistancias(deps.pool, { campanhaId });
-  const semLocal = await repo.empresasSemLocalizacao(deps.pool, campanhaId, MAX_TENTATIVAS_GEO);
+  // Só campanhas com raio precisam de coordenada; sem geocodificador, fica com o que veio do Maps.
+  const semLocal = deps.geo
+    ? await repo.empresasSemLocalizacao(deps.pool, campanhaId, MAX_TENTATIVAS_GEO)
+    : [];
   for (const empresaId of semLocal) await deps.filas.publicar('empresa.localizar', { empresaId });
   const prontas = await repo.reservarParaEnriquecimento(deps.pool, { campanhaId });
   for (const p of prontas) {
@@ -150,7 +153,7 @@ export async function localizarEmpresa(deps: Deps, empresaId: number) {
   const e = await repo.obterEmpresaLocalizar(deps.pool, empresaId);
   if (!e) return;
 
-  if (e.lat == null && e.geo_tentativas < MAX_TENTATIVAS_GEO) {
+  if (deps.geo && e.lat == null && e.geo_tentativas < MAX_TENTATIVAS_GEO) {
     let achado: { lat: number; lng: number } | null = null;
     for (const endereco of montarEndereco(e)) {
       const r = await deps.geo.geocodificar(endereco);

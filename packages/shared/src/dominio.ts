@@ -50,6 +50,18 @@ export const cnaeSchema = z
     return n;
   });
 
+/**
+ * Versão "atualização" de um contrato de criação: todos os campos opcionais e SEM os valores
+ * padrão. Com `.partial()` puro, o zod aplicaria os padrões e um PATCH só com o nome
+ * reescreveria o resto (meta, cadência, raio...) com os valores de fábrica.
+ */
+function parcialSemPadroes<T extends z.ZodRawShape>(esquema: z.ZodObject<T>) {
+  const campos = Object.fromEntries(
+    Object.entries(esquema.shape).map(([k, v]) => [k, v instanceof z.ZodDefault ? v.unwrap() : v]),
+  );
+  return z.object(campos).partial() as unknown as ReturnType<z.ZodObject<T>['partial']>;
+}
+
 export const nichoEntrada = z.object({
   nome: texto(2, 80, 'Nome'),
   cnaes: z
@@ -68,7 +80,7 @@ export const nichoEntrada = z.object({
   idadeMinimaAnos: z.coerce.number().int().min(0).max(50).default(0),
 });
 export type NichoEntrada = z.infer<typeof nichoEntrada>;
-export const nichoAtualizacao = nichoEntrada.partial().extend({ ativo: z.boolean().optional() });
+export const nichoAtualizacao = parcialSemPadroes(nichoEntrada).extend({ ativo: z.boolean().optional() });
 
 export const ufSchema = z
   .string()
@@ -86,7 +98,13 @@ export const campanhaEntrada = z.object({
   nome: texto(3, 120, 'Nome'),
   nichoId: z.coerce.number().int().positive('Escolha um nicho.'),
   cidades: z.array(cidadeSchema).min(1, 'Adicione pelo menos uma cidade.').max(40),
-  raioKm: z.coerce.number().min(1).max(300).default(12),
+  /** null = abrangência nacional, sem limite de distância. */
+  raioKm: z
+    .preprocess(
+      (v) => (v === '' ? null : v),
+      z.coerce.number().min(1, 'Raio mínimo de 1 km.').max(300, 'Raio máximo de 300 km.').nullable(),
+    )
+    .default(null),
   metaDiaria: z.coerce.number().int().min(1).max(2000).default(40),
   limiteEnviosDia: z.coerce.number().int().min(1).max(500).default(25),
   cadencia: z.enum(CADENCIAS).default('padrao'),
@@ -94,7 +112,7 @@ export const campanhaEntrada = z.object({
   maxPorBusca: z.coerce.number().int().min(20).max(500).default(120),
 });
 export type CampanhaEntrada = z.infer<typeof campanhaEntrada>;
-export const campanhaAtualizacao = campanhaEntrada.partial();
+export const campanhaAtualizacao = parcialSemPadroes(campanhaEntrada);
 
 export const baseEntrada = z
   .object({

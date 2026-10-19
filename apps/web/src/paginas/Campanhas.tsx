@@ -26,7 +26,8 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
     nome: '',
     nichoId: '',
     cidades: [] as string[],
-    raioKm: '12',
+    abrangencia: 'nacional',
+    raioKm: '30',
     metaDiaria: '40',
     limiteEnviosDia: '25',
     maxPorBusca: '120',
@@ -50,7 +51,12 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
     const cidades = lerCidades(f.cidades);
     const semUf = cidades.find((c) => !c.uf);
     if (semUf) return setErroLocal(`Informe a UF de "${semUf.cidade}", ex.: ${semUf.cidade}/BA.`);
-    const r = campanhaEntrada.safeParse({ ...f, cidades });
+    const { abrangencia, ...resto } = f;
+    const r = campanhaEntrada.safeParse({
+      ...resto,
+      cidades,
+      raioKm: abrangencia === 'nacional' ? null : f.raioKm,
+    });
     if (!r.success) return setErroLocal(r.error.issues[0]?.message ?? 'Confira os campos.');
     setErroLocal(null);
     criar.mutate(r.data);
@@ -91,16 +97,25 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
           valor={f.cidades}
           aoMudar={(cidades) => setF({ ...f, cidades })}
           exemplo={'Salvador/BA\nLauro de Freitas/BA'}
-          dica="Uma por linha, no formato Cidade/UF."
+          dica="Uma por linha, no formato Cidade/UF. Pode misturar estados."
         />
         <div className="form__duas">
-          <TextField
-            rotulo="Raio da base (km)"
-            inputMode="decimal"
-            value={f.raioKm}
-            onChange={mudar('raioKm')}
-            dica="Leads mais longe ficam fora do enriquecimento."
-          />
+          <div className="campo">
+            <label htmlFor="abrangencia">Abrangência</label>
+            <select id="abrangencia" value={f.abrangencia} onChange={mudar('abrangencia')}>
+              <option value="nacional">Nacional · sem limite de distância</option>
+              <option value="raio">Raio a partir das bases</option>
+            </select>
+          </div>
+          {f.abrangencia === 'raio' && (
+            <TextField
+              rotulo="Raio (km)"
+              inputMode="decimal"
+              value={f.raioKm}
+              onChange={mudar('raioKm')}
+              dica="Leads mais longe da base mais próxima não são enriquecidos."
+            />
+          )}
           <TextField
             rotulo="Lugares por busca no Maps"
             inputMode="numeric"
@@ -198,7 +213,8 @@ function CardCampanha({ c }: { c: Campanha }) {
         <div style={{ minWidth: 0 }}>
           <h3>{c.nome}</h3>
           <p className="quieto" style={{ margin: '2px 0 0', fontSize: 13, lineHeight: '18px' }}>
-            {c.nichoNome} · {c.cidades.map((x) => `${x.cidade}/${x.uf}`).join(', ')} · raio {c.raioKm} km
+            {c.nichoNome} · {c.cidades.map((x) => `${x.cidade}/${x.uf}`).join(', ')} ·{' '}
+            {c.raioKm == null ? 'nacional' : `raio ${c.raioKm} km`}
           </p>
         </div>
         <Badge tone={TOM_STATUS_CAMPANHA[c.status]}>{ROTULO_STATUS_CAMPANHA[c.status]}</Badge>
@@ -211,7 +227,7 @@ function CardCampanha({ c }: { c: Campanha }) {
         </div>
         <div>
           <b>{fmtNumero(p.dentroDoRaio)}</b>
-          <span>dentro do raio</span>
+          <span>na área</span>
         </div>
         <div>
           <b>{fmtNumero(p.comSinalEntrega)}</b>
@@ -316,7 +332,7 @@ export function Campanhas() {
           <EmptyState
             icone="layers"
             titulo="Nenhuma campanha ainda"
-            texto="Crie a primeira: escolha um nicho, as cidades e o raio a partir da sua base."
+            texto="Crie a primeira: escolha um nicho e as cidades onde buscar."
             acao={
               <Button size="sm" variant="primary" icon="plus" onClick={() => setCriando(true)}>
                 Nova campanha

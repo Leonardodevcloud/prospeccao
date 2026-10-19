@@ -148,9 +148,16 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       id: 1,
       status: 'rascunho',
       nichoNome: 'Autopeças varejo',
-      raioKm: 12,
+      raioKm: null, // nacional por padrão
+      metaDiaria: 40,
     });
     expect(criada.body.progresso).toMatchObject({ empresas: 0, buscasPendentes: 0 });
+
+    // Edição parcial mexe só no que veio: renomear não volta raio nem meta ao padrão.
+    const comRaio = await enviar('patch', '/campanhas/1', { raioKm: 20, metaDiaria: 60 });
+    expect(comRaio.body).toMatchObject({ raioKm: 20, metaDiaria: 60 });
+    const renomeada = await enviar('patch', '/campanhas/1', { nome: 'Autopeças RMS' });
+    expect(renomeada.body).toMatchObject({ nome: 'Autopeças RMS', raioKm: 20, metaDiaria: 60 });
 
     const iniciada = await enviar('post', '/campanhas/1/iniciar');
     expect(iniciada.status).toBe(202);

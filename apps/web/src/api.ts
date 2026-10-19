@@ -85,7 +85,8 @@ export interface Campanha {
   nichoId: number;
   nichoNome: string;
   cidades: { cidade: string; uf: string }[];
-  raioKm: number;
+  /** null = nacional. */
+  raioKm: number | null;
   metaDiaria: number;
   limiteEnviosDia: number;
   cadencia: 'padrao' | 'curta';

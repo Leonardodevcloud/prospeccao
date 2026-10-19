@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { campanhaEntrada, nichoEntrada } from '../src/dominio.js';
+import { campanhaAtualizacao, campanhaEntrada, nichoEntrada } from '../src/dominio.js';
 import { baseMaisProxima, haversineKm } from '../src/geo.js';
 import {
   cnpjCompleto,
@@ -119,7 +119,16 @@ describe('contratos de entrada', () => {
     });
     expect(c.nichoId).toBe(3);
     expect(c.cidades[0]?.uf).toBe('BA');
-    expect(c.raioKm).toBe(12);
+    expect(c.raioKm).toBeNull(); // nacional por padrão
     expect(c.modo).toBe('semi');
+  });
+
+  it('campanha com raio: número válido; vazio vira nacional', () => {
+    const base = { nome: 'Teste', nichoId: 1, cidades: [{ cidade: 'Salvador', uf: 'BA' }] };
+    expect(campanhaEntrada.parse({ ...base, raioKm: '25' }).raioKm).toBe(25);
+    expect(campanhaEntrada.parse({ ...base, raioKm: '' }).raioKm).toBeNull();
+    expect(campanhaEntrada.safeParse({ ...base, raioKm: 0 }).success).toBe(false);
+    // Atualização parcial sem raioKm não mexe no raio
+    expect(campanhaAtualizacao.parse({ nome: 'Outro' })).not.toHaveProperty('raioKm');
   });
 });
