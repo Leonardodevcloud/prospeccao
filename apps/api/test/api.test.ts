@@ -544,6 +544,31 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await enviar('put', '/funil/cadencia', cfg.body);
   });
 
+  it('planilha do Maps vai para o worker-descoberta em lotes, sem escrever no schema dele', async () => {
+    const itens = Array.from({ length: 501 }, (_, i) => ({ nome: `Loja ${i}`, telefone: '(71) 3333-0000' }));
+    const r = await enviar('post', '/importacoes/planilha-maps', {
+      campanhaId: 2,
+      cidade: 'Salvador',
+      uf: 'ba',
+      itens,
+    });
+    expect(r.status).toBe(202);
+    expect(r.body).toEqual({ linhas: 501, lotes: 2 });
+    const lotes = publicados.filter((p) => p.nome === 'maps.importar_planilha');
+    expect(lotes.map((l) => (l.payload as { itens: unknown[] }).itens.length)).toEqual([500, 1]);
+    expect(lotes[0]?.payload).toMatchObject({ campanhaId: 2, uf: 'BA' });
+    expect(
+      (
+        await enviar('post', '/importacoes/planilha-maps', {
+          campanhaId: 2,
+          cidade: 'Salvador',
+          uf: 'BA',
+          itens: [],
+        })
+      ).status,
+    ).toBe(422);
+  });
+
   it('pede importação da base de CNPJ pela fila, sem escrever no schema do worker', async () => {
     const r = await enviar('post', '/importacoes/cnpj', { mes: '2026-09' });
     expect(r.status).toBe(202);

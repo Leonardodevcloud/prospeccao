@@ -4,4 +4,5 @@ export * from './funil.js';
 export * from './geo.js';
 export * from './logger.js';
 export * from './normalizar.js';
+export * from './planilha.js';
 export * from './postgres.js';

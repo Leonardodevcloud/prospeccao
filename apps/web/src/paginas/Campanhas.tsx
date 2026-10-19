@@ -7,6 +7,7 @@ import { api, type Campanha, type Nicho } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { CampoLista, ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { EstimativaBusca, PainelPlaces, ResumoPlacesCampanha } from '../componentes/GooglePlaces';
+import { ImportarPlanilha } from '../componentes/ImportarPlanilha';
 import { fmtNumero, fmtQuando, ROTULO_STATUS_CAMPANHA, TOM_STATUS_CAMPANHA } from '../formatar';
 
 /** "Salvador/BA" ou "Salvador - BA" → { cidade, uf } */
@@ -357,6 +358,7 @@ function CardCampanha({ c }: { c: Campanha }) {
     },
   });
   const [confirmarRefazer, setConfirmarRefazer] = useState(false);
+  const [importando, setImportando] = useState(false);
   const [apagando, setApagando] = useState(false);
   const [nomeDigitado, setNomeDigitado] = useState('');
   const parar = useMutation({
@@ -583,6 +585,11 @@ function CardCampanha({ c }: { c: Campanha }) {
             {p.novos ? `Ver ${fmtNumero(p.novos)} novos` : 'Ver leads'}
           </Button>
         )}
+        {c.status !== 'encerrada' && (
+          <Button size="sm" variant="ghost" icon="file-text" onClick={() => setImportando(true)}>
+            Importar planilha do Maps
+          </Button>
+        )}
         {p.empresas > 0 && !confirmarRefazer && (
           <Button size="sm" variant="ghost" icon="loader" onClick={() => setConfirmarRefazer(true)}>
             Refazer enriquecimento
@@ -607,6 +614,7 @@ function CardCampanha({ c }: { c: Campanha }) {
           </Button>
         )}
       </div>
+      {importando && <ImportarPlanilha campanha={c} aoFechar={() => setImportando(false)} />}
     </article>
   );
 }

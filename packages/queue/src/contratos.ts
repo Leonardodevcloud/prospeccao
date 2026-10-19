@@ -1,3 +1,4 @@
+import { itemPlanilhaMaps } from '@prospeccao/shared';
 import { z } from 'zod';
 
 /**
@@ -45,6 +46,14 @@ export const JOBS = {
   /** worker-descoberta (interno): conferir se o run do Apify terminou e coletar. */
   'maps.coletar': z.object({
     buscaId: z.number().int().positive(),
+  }),
+
+  /** api → worker-descoberta: linhas de uma planilha do Maps para cruzar com a base de CNPJ. */
+  'maps.importar_planilha': z.object({
+    campanhaId: z.number().int().positive(),
+    cidade: z.string(),
+    uf: z.string(),
+    itens: z.array(itemPlanilhaMaps).max(500),
   }),
 
   /** worker-descoberta (interno): achar coordenadas e distância até a base. */
@@ -128,6 +137,13 @@ export const POLITICA_FILAS: Record<NomeJob, PoliticaFila> = {
     retryBackoff: true,
     expireInSeconds: 900,
     policy: 'short',
+  },
+  'maps.importar_planilha': {
+    retryLimit: 3,
+    retryDelay: 60,
+    retryBackoff: true,
+    expireInSeconds: 1800,
+    policy: 'standard',
   },
   'empresa.localizar': {
     retryLimit: 4,

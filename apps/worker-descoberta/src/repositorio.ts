@@ -215,7 +215,7 @@ export interface Busca {
   verificacoes: number;
   /** null = cidade inteira. */
   bairro: string | null;
-  fonte: 'apify' | 'places';
+  fonte: 'apify' | 'places' | 'planilha';
   paginas: number;
   proxima_pagina: string | null;
 }
@@ -553,4 +553,19 @@ export async function reservarParaEnriquecimento(
     [filtro.campanhaId ?? null, filtro.empresaId ?? null],
   );
   return rows;
+}
+
+/** Busca do tipo planilha: já nasce "rodando" (as linhas chegam junto) e fecha no fim da importação. */
+export async function criarBuscaPlanilha(
+  db: Executor,
+  campanhaId: number,
+  cidade: string,
+  uf: string,
+): Promise<number> {
+  const { rows } = await db.query<{ id: number }>(
+    `INSERT INTO descoberta.buscas_maps (campanha_id, cidade, uf, termo, status, fonte, iniciado_em)
+     VALUES ($1, $2, $3, 'planilha do Maps', 'rodando', 'planilha', now()) RETURNING id`,
+    [campanhaId, cidade, uf],
+  );
+  return rows[0]!.id;
 }

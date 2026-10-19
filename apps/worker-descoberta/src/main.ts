@@ -57,6 +57,7 @@ const filas = await conectarFilas({
     'campanha.iniciar',
     'campanha.buscar_cnpj',
     'maps.buscar',
+    'maps.importar_planilha',
     'maps.coletar',
     'empresa.localizar',
     'enriquecimento.solicitar',
@@ -127,6 +128,7 @@ await filas.consumir('empresa.localizar', (p) => casos.localizarEmpresa(deps, p.
   concorrencia: 1,
 });
 await filas.consumir('cnpj.importacao_concluida', () => casos.aoAtualizarBaseCnpj(deps));
+await filas.consumir('maps.importar_planilha', (p) => casos.importarPlanilha(deps, p));
 
 await casos
   .retomarBuscasParadas(deps)

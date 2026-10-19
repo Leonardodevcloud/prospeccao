@@ -251,4 +251,44 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
     expect(enriquecer.filter((e) => e.campanhaId === 2)).toHaveLength(rows.length);
     expect(localizar()).toBe(antesLocalizar);
   });
+
+  it('planilha do Maps: cruza com a base pelo nome e CEP, cria os novos e manda enriquecer', async () => {
+    const d = { ...deps(), geo: null };
+    const antes = enriquecer.length;
+    await casos.importarPlanilha(d, {
+      campanhaId: 2,
+      cidade: 'Salvador',
+      uf: 'BA',
+      itens: [
+        {
+          nome: 'Peças Longe',
+          telefone: '(71) 3555-1234',
+          endereco: 'Rua das Flores, 10 - Centro, Salvador - BA, 48000-000',
+          nota: 4.5,
+          avaliacoes: 87,
+        },
+        { nome: 'Loja Nova da Planilha', telefone: '71 98888-7777', categoria: 'Loja de autopeças' },
+        { nome: 'Oficina do Beto', categoria: 'Oficina mecânica' },
+      ],
+    });
+    await drenar(d);
+    const { rows } = await pool.query(
+      `SELECT nome, cruzamento, telefone FROM descoberta.maps_resultados r
+         JOIN descoberta.buscas_maps b ON b.id = r.busca_id WHERE b.fonte = 'planilha' ORDER BY nome`,
+    );
+    expect(rows).toEqual([
+      { nome: 'Loja Nova da Planilha', cruzamento: 'novo', telefone: '71988887777' },
+      { nome: 'Oficina do Beto', cruzamento: 'descartado', telefone: null },
+      { nome: 'Peças Longe', cruzamento: 'nome_cep', telefone: '7135551234' },
+    ]);
+    const { rows: longe } = await pool.query(
+      `SELECT maps_telefone, maps_avaliacoes FROM descoberta.empresas WHERE cnpj = '33444555000100'`,
+    );
+    expect(longe[0]).toMatchObject({ maps_telefone: '7135551234', maps_avaliacoes: 87 });
+    const { rows: busca } = await pool.query(
+      `SELECT status, itens FROM descoberta.buscas_maps WHERE fonte = 'planilha'`,
+    );
+    expect(busca).toEqual([{ status: 'concluida', itens: 3 }]);
+    expect(enriquecer.length).toBeGreaterThan(antes);
+  });
 });

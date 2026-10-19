@@ -211,3 +211,24 @@ export const configPlacesEntrada = z.object({
   maxBairros: z.coerce.number().int().min(0).max(1000),
 });
 export type ConfigPlacesEntrada = z.infer<typeof configPlacesEntrada>;
+
+/** Uma linha da planilha do Google Maps (Instant Data Scraper), já com as colunas escolhidas. */
+export const itemPlanilhaMaps = z.object({
+  nome: z.string().trim().min(1).max(200),
+  telefone: z.string().trim().max(40).nullish(),
+  endereco: z.string().trim().max(300).nullish(),
+  categoria: z.string().trim().max(120).nullish(),
+  nota: z.number().min(0).max(5).nullish(),
+  avaliacoes: z.number().int().min(0).max(10_000_000).nullish(),
+  url: z.string().trim().max(1000).nullish(),
+  site: z.string().trim().max(300).nullish(),
+});
+export type ItemPlanilhaMaps = z.infer<typeof itemPlanilhaMaps>;
+
+export const planilhaMapsEntrada = z.object({
+  campanhaId: z.number().int().positive(),
+  cidade: z.string().trim().min(2).max(80),
+  uf: z.string().trim().length(2),
+  itens: z.array(itemPlanilhaMaps).min(1, 'A planilha não tem linhas com nome.').max(5000),
+});
+export type PlanilhaMapsEntrada = z.infer<typeof planilhaMapsEntrada>;

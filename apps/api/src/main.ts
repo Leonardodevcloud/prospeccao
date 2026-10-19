@@ -15,7 +15,7 @@ const filas = await conectarFilas({
   aplicacao: 'api',
   log,
   // Filas que a API publica: criadas aqui também, para não depender da ordem de subida dos serviços.
-  filas: ['campanha.iniciar', 'cnpj.importar', 'enriquecimento.solicitar'],
+  filas: ['campanha.iniciar', 'cnpj.importar', 'enriquecimento.solicitar', 'maps.importar_planilha'],
 });
 
 const app = criarApp({

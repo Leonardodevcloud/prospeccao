@@ -1,5 +1,5 @@
 import { jobsAbertos } from '@prospeccao/queue';
-import { AppError, importacaoEntrada } from '@prospeccao/shared';
+import { AppError, importacaoEntrada, planilhaMapsEntrada } from '@prospeccao/shared';
 import { Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo } from '../../middlewares/http.js';
@@ -27,6 +27,29 @@ async function motivoDaFilaOcupada(pool: DepsApi['pool']): Promise<string> {
 
 export function rotasImportacoes({ pool, filas, log }: DepsApi): Router {
   const r = Router();
+
+  /**
+   * Planilha do Google Maps (Instant Data Scraper): a tela já leu o CSV e escolheu as colunas. Vai
+   * para o worker-descoberta em lotes de 500, que cruza com a base de CNPJ e manda enriquecer.
+   */
+  r.post('/planilha-maps', async (req, res) => {
+    const d = corpo(req, planilhaMapsEntrada);
+    const { rows } = await pool.query<{ id: number }>('SELECT id FROM cadastro.campanhas WHERE id = $1', [
+      d.campanhaId,
+    ]);
+    if (!rows[0]) throw AppError.naoEncontrado('Campanha');
+    const lotes = [];
+    for (let i = 0; i < d.itens.length; i += 500)
+      lotes.push({
+        campanhaId: d.campanhaId,
+        cidade: d.cidade,
+        uf: d.uf.toUpperCase(),
+        itens: d.itens.slice(i, i + 500),
+      });
+    const n = await filas.publicarVarios('maps.importar_planilha', lotes);
+    log.info({ campanhaId: d.campanhaId, linhas: d.itens.length, lotes: n }, 'planilha do Maps enviada');
+    res.status(202).json({ linhas: d.itens.length, lotes: lotes.length });
+  });
 
   r.get('/', async (_req, res) => {
     const { rows } = await pool.query(

@@ -7,7 +7,7 @@ import {
   textoDaBusca,
 } from '@prospeccao/integrations/places';
 import { ErroDefinitivo } from '@prospeccao/queue';
-import { AppError } from '@prospeccao/shared';
+import { AppError, type ItemPlanilhaMaps, normalizarTelefone } from '@prospeccao/shared';
 import { cruzarResultado } from './cruzamento.js';
 import type { Deps } from './dependencias.js';
 import * as repo from './repositorio.js';
@@ -42,6 +42,8 @@ export async function buscarNaBaseCnpj(deps: Deps, campanhaId: number) {
 
 /** O item guardado em `dados` pode ter vindo do Places ou do Apify. */
 function converterDados(dados: unknown): ItemMaps | null {
+  const d = dados as { origem?: string; item?: ItemMaps } | null;
+  if (d?.origem === 'planilha' && d.item) return d.item;
   return ehLugarPlaces(dados) ? converterLugar(dados) : converterItem(dados);
 }
 
@@ -351,4 +353,71 @@ export async function registrarFalhaBusca(deps: Deps, buscaId: number, erro: unk
   } else {
     await repo.anotarFalhaBusca(deps.pool, buscaId, motivo);
   }
+}
+
+/**
+ * Planilha do Google Maps (Instant Data Scraper, exportada e subida na tela): cada linha vira um
+ * resultado de uma "busca" do tipo planilha e passa pelo mesmo cruzamento com a base de CNPJ
+ * (telefone, nome + CEP, nome + cidade). Quem casa ganha telefone e nota do Google; quem não casa
+ * entra como lead só do Maps. No fim, vai para o enriquecimento como qualquer busca.
+ */
+export async function importarPlanilha(
+  deps: Deps,
+  p: { campanhaId: number; cidade: string; uf: string; itens: ItemPlanilhaMaps[] },
+) {
+  const campanha = await repo.obterCampanha(deps.pool, p.campanhaId);
+  if (!campanha) throw new ErroDefinitivo(`Campanha ${p.campanhaId} não existe`);
+  const buscaId = await repo.criarBuscaPlanilha(deps.pool, p.campanhaId, p.cidade, p.uf);
+  let salvos = 0;
+  let contagem: Record<string, number> = {};
+  try {
+    for (const linha of p.itens) {
+      const item = itemDaPlanilha(linha, p.cidade, p.uf);
+      const id = await repo.salvarResultado(deps.pool, buscaId, {
+        ...item,
+        dados: { origem: 'planilha', item },
+      });
+      if (id != null) salvos++;
+    }
+    const busca = await repo.obterBusca(deps.pool, buscaId);
+    if (busca) contagem = await cruzarPendentes(deps, campanha, busca);
+  } catch (erro) {
+    // Fecha esta busca com o erro (a nova tentativa cria outra): nada fica "rodando" para sempre.
+    await repo.concluirBusca(deps.pool, buscaId, erro instanceof Error ? erro.message : String(erro), salvos);
+    throw erro;
+  }
+  await repo.concluirBusca(deps.pool, buscaId, null, salvos);
+  deps.log.info(
+    { buscaId, linhas: p.itens.length, salvos, cruzamento: contagem },
+    'planilha do Maps importada',
+  );
+  await aoConcluirBusca(deps, p.campanhaId);
+}
+
+/** Linha da planilha no formato de um lugar do Maps (id estável a partir de nome + telefone/endereço). */
+export function itemDaPlanilha(l: ItemPlanilhaMaps, cidade: string, uf: string): ItemMaps {
+  const telefone = normalizarTelefone(l.telefone);
+  const cep = l.endereco?.match(/\b(\d{5})-?(\d{3})\b/);
+  const chave = `${l.nome}|${telefone ?? ''}|${l.endereco ?? ''}`.toLowerCase();
+  let h = 0;
+  for (let i = 0; i < chave.length; i++) h = (Math.imul(31, h) + chave.charCodeAt(i)) | 0;
+  return {
+    placeId: `planilha:${(h >>> 0).toString(36)}`,
+    nome: l.nome,
+    categoria: l.categoria ?? null,
+    telefone,
+    endereco: l.endereco ?? null,
+    cep: cep ? `${cep[1]}${cep[2]}` : null,
+    cidade,
+    uf,
+    lat: null,
+    lng: null,
+    nota: l.nota ?? null,
+    avaliacoes: l.avaliacoes ?? null,
+    site: l.site ?? null,
+    url: l.url ?? null,
+    fechada: false,
+    entrega: null,
+    dados: {},
+  };
 }
