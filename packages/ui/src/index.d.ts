@@ -100,6 +100,8 @@ export interface DecisorCardProps {
   principal?: boolean;
   fontes?: Fonte[];
   linkedin?: string | null;
+  /** Trecho da fonte que comprova o cargo (ex.: frase do site). */
+  evidencia?: string;
   contatos?: ContactRowProps[];
 }
 export declare function DecisorCard(props: DecisorCardProps): React.ReactElement;

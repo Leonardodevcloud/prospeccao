@@ -598,6 +598,9 @@ function DecisorCard(props) {
           props.cargo,
           props.desde ? ' · desde ' + props.desde : null,
         ),
+        props.evidencia
+          ? h('p', { className: 'pp-decisor__evidencia' }, '“' + props.evidencia + '”')
+          : null,
         props.fontes && props.fontes.length
           ? h(
               'div',

@@ -138,7 +138,8 @@ export async function obter(db: Executor, id: number) {
       [id],
     ),
     db.query(
-      `SELECT id, nome, cargo, papel, decisor, prioridade, desde, linkedin_url AS "linkedin", fontes
+      `SELECT id, nome, cargo, papel, decisor, prioridade, desde, linkedin_url AS "linkedin", fontes,
+              evidencia
          FROM enriquecimento.pessoas WHERE empresa_id = $1 ORDER BY prioridade, nome`,
       [id],
     ),

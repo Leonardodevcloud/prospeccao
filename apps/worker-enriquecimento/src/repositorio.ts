@@ -155,14 +155,16 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
     for (const p of coletor.pessoas.values()) {
       const { rows } = await tx.query<{ id: number }>(
         `INSERT INTO enriquecimento.pessoas
-           (empresa_id, nome, cargo, papel, decisor, prioridade, desde, linkedin_url, fontes, url_origem)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           (empresa_id, nome, cargo, papel, decisor, prioridade, desde, linkedin_url, fontes, url_origem,
+            evidencia)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (empresa_id, nome_chave) DO UPDATE
             SET cargo = coalesce(EXCLUDED.cargo, enriquecimento.pessoas.cargo),
                 papel = EXCLUDED.papel, decisor = EXCLUDED.decisor, prioridade = EXCLUDED.prioridade,
                 desde = coalesce(EXCLUDED.desde, enriquecimento.pessoas.desde),
                 linkedin_url = coalesce(EXCLUDED.linkedin_url, enriquecimento.pessoas.linkedin_url),
-                fontes = EXCLUDED.fontes, url_origem = EXCLUDED.url_origem
+                fontes = EXCLUDED.fontes, url_origem = EXCLUDED.url_origem,
+                evidencia = coalesce(EXCLUDED.evidencia, enriquecimento.pessoas.evidencia)
          RETURNING id`,
         [
           empresaId,
@@ -175,6 +177,7 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
           p.linkedin,
           [...p.fontes],
           p.urlOrigem,
+          p.evidencia,
         ],
       );
       if (rows[0]) ids.set(p.nome, rows[0].id);

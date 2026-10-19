@@ -43,6 +43,8 @@ export interface Pessoa {
   linkedin: string | null;
   fontes: Set<FonteContato>;
   urlOrigem: string | null;
+  /** Trecho do site/bio que mostra a pessoa com o cargo. */
+  evidencia: string | null;
   decisor: boolean;
   prioridade: number;
 }
@@ -106,6 +108,7 @@ export class Coletor {
     desde?: string | null;
     linkedin?: string | null;
     urlOrigem?: string | null;
+    evidencia?: string | null;
   }): void {
     const chave = normalizarNome(p.nome);
     if (!chave || chave.split(' ').length < 2) return;
@@ -117,6 +120,7 @@ export class Coletor {
       atual.linkedin ??= p.linkedin ?? null;
       atual.desde ??= p.desde ?? null;
       atual.prioridadeReceita ??= p.prioridadeReceita ?? null;
+      atual.evidencia ??= p.evidencia ?? null;
       // "compras" é o papel mais útil para a abordagem; sócio vence "outro".
       if (papel === 'compras' || (atual.papel === 'outro' && papel !== 'outro')) atual.papel = papel;
       return;
@@ -130,6 +134,7 @@ export class Coletor {
       linkedin: p.linkedin ?? null,
       fontes: new Set([p.fonte]),
       urlOrigem: p.urlOrigem ?? null,
+      evidencia: p.evidencia ?? null,
       decisor: false,
       prioridade: 9,
     });
@@ -215,11 +220,15 @@ export class Coletor {
         Number(!!b.linkedin) - Number(!!a.linkedin) ||
         (a.desde ?? '9').localeCompare(b.desde ?? '9'),
     );
+    // Só vira "decisor" quem tem prova de que decide: está no quadro societário da Receita ou
+    // tem cargo de compras/gestão/sócio comprovado (LinkedIn, site com cargo ao lado do nome).
+    const podeDecidir = (p: Pessoa) => p.prioridadeReceita != null || p.papel !== 'outro';
+    const decisor = ordenadas.find(podeDecidir) ?? null;
     ordenadas.forEach((p, i) => {
       p.prioridade = i + 1;
-      p.decisor = i === 0;
+      p.decisor = p === decisor;
     });
-    return ordenadas[0] ?? null;
+    return decisor;
   }
 
   /** Melhor contato da empresa para a primeira abordagem. */

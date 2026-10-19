@@ -109,7 +109,13 @@ export interface AvaliacaoIa {
   motivo: string;
   resumo: string;
   entrega: boolean | null;
-  pessoas: { nome: string; cargo: string | null; papel: 'socio' | 'compras' | 'gestao' | 'outro' }[];
+  pessoas: {
+    nome: string;
+    cargo: string | null;
+    papel: 'socio' | 'compras' | 'gestao' | 'outro';
+    /** Trecho literal do texto com o nome e o cargo (conferido depois em provarPessoa). */
+    trecho: string | null;
+  }[];
 }
 
 const ESQUEMA = {
@@ -126,10 +132,11 @@ const ESQUEMA = {
         type: 'OBJECT',
         properties: {
           nome: { type: 'STRING' },
-          cargo: { type: 'STRING', nullable: true },
+          cargo: { type: 'STRING' },
           papel: { type: 'STRING', enum: ['socio', 'compras', 'gestao', 'outro'] },
+          trecho: { type: 'STRING' },
         },
-        required: ['nome', 'papel'],
+        required: ['nome', 'cargo', 'papel', 'trecho'],
       },
     },
   },
@@ -146,7 +153,8 @@ export function montarPrompt(e: EntradaAvaliacao): string {
     '- motivo: uma frase objetiva com os sinais que pesaram (ex.: "faz entrega pelo WhatsApp, 380 avaliações, 12 anos");',
     '- resumo: uma frase dizendo o que a empresa faz;',
     '- entrega: true se o site/Instagram indicar que entrega, false se indicar que não, null se não der para saber;',
-    '- pessoas: só nomes de pessoas citadas no site/Instagram com o cargo (não invente; não repita os sócios).',
+    '- pessoas: SOMENTE quem o texto apresenta como da equipe da empresa, com o cargo escrito no texto (ex.: "Carlos Lima – gerente de compras", "fundada por Ana Souza"). Para cada uma, "trecho" é a frase copiada do texto que mostra nome e cargo juntos.',
+    '  NÃO inclua: clientes, autores de depoimentos ou avaliações ("o que dizem nossos clientes", estrelas, "recomendo"), quem comentou ou marcou o perfil, fornecedores, marcas, nomes sem cargo no texto. Na dúvida, deixe de fora: lista vazia é melhor que nome errado. Não repita os sócios.',
     `Cargos que mais interessam: ${e.cargosAlvo.join(', ') || 'dono, sócio, gerente, comprador'}.`,
     '',
     'DADOS DA EMPRESA',
@@ -199,6 +207,7 @@ export function lerAvaliacao(texto: string): AvaliacaoIa {
         nome: p.nome.trim(),
         cargo: p.cargo?.trim() || null,
         papel: papeis.has(p.papel) ? p.papel : 'outro',
+        trecho: typeof p.trecho === 'string' ? p.trecho.trim() || null : null,
       })),
   };
 }

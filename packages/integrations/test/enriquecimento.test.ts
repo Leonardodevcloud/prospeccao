@@ -176,7 +176,7 @@ describe('IA e WhatsApp', () => {
     );
     expect(a.faixa).toBe('C');
     expect(a.score).toBe(100);
-    expect(a.pessoas).toEqual([{ nome: 'Carlos Mendes', cargo: 'Gerente', papel: 'gestao' }]);
+    expect(a.pessoas).toEqual([{ nome: 'Carlos Mendes', cargo: 'Gerente', papel: 'gestao', trecho: null }]);
   });
 
   it('confere WhatsApp pela Evolution API', async () => {

@@ -156,6 +156,8 @@ export interface PessoaEnriq {
   desde: string | null;
   linkedin: string | null;
   fontes: FonteEnriq[];
+  /** Trecho do site/bio que mostra a pessoa com o cargo. */
+  evidencia?: string | null;
 }
 
 export interface ContatoEnriq {

@@ -68,6 +68,14 @@ describe('coletor', () => {
     );
   });
 
+  it('nome do site sem cargo de quem decide nunca vira decisor', () => {
+    const c = new Coletor();
+    c.pessoa({ nome: 'Emmanuel Junior', fonte: 'site', papel: 'outro' });
+    c.pessoa({ nome: 'Vanderlei Gomes', fonte: 'site', papel: 'outro' });
+    expect(c.escolherDecisor()).toBeNull();
+    expect([...c.pessoas.values()].some((p) => p.decisor)).toBe(false);
+  });
+
   it('nota por regras usa a mesma escala da IA', () => {
     const forte = notaPorRegras({
       avaliacoes: 380,
@@ -113,7 +121,8 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
         return {
           urlFinal: `${url}/`,
           paginas: [{ url, titulo: 'Ladeira' }],
-          texto: 'Entregamos em Salvador. Gerente: Carlos Mendes',
+          texto:
+            'Entregamos em Salvador. Gerente: Carlos Mendes. O que dizem nossos clientes: ★★★★★ "Ótimo atendimento, recomendo!" Emmanuel Junior, Salvador',
           emails: ['compras@ladeira.com.br'],
           telefones: ['7132410098'],
           whatsapps: ['71998124410'],
@@ -183,7 +192,18 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
           motivo: ladeira ? 'Entrega em Salvador, 380 avaliações' : 'Poucos sinais',
           resumo: 'Loja de autopeças',
           entrega: ladeira,
-          pessoas: ladeira ? [{ nome: 'Carlos Mendes', cargo: 'Gerente', papel: 'gestao' }] : [],
+          pessoas: ladeira
+            ? [
+                {
+                  nome: 'Carlos Mendes',
+                  cargo: 'Gerente',
+                  papel: 'gestao',
+                  trecho: 'Gerente: Carlos Mendes',
+                },
+                // Autor de depoimento que a IA confundiu com equipe: não pode entrar.
+                { nome: 'Emmanuel Junior', cargo: 'Gerente', papel: 'gestao', trecho: null },
+              ]
+            : [],
         };
       },
     },
@@ -276,6 +296,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     // Sócio achado no LinkedIn ganha o perfil; empresa de nome parecido fica de fora.
     expect(pessoas[1]).toMatchObject({ linkedin_url: 'https://br.linkedin.com/in/joaodasilva' });
     expect(pessoas.some((p) => p.nome === 'Pedro Alves')).toBe(false);
+    expect(pessoas.some((p) => p.nome === 'Emmanuel Junior')).toBe(false);
 
     const { rows: contatos } = await pool.query(
       `SELECT canal, valor, status, principal, fontes, rotulo FROM enriquecimento.contatos WHERE empresa_id = 1 ORDER BY principal DESC, canal, valor`,

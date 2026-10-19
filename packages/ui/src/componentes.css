@@ -445,6 +445,13 @@ body {
   line-height: 18px;
   color: var(--ink-muted);
 }
+.pp-decisor__evidencia {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-style: italic;
+  color: var(--ink-muted);
+}
 .pp-decisor__fontes {
   display: flex;
   flex-wrap: wrap;

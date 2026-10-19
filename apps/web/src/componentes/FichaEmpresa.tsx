@@ -277,6 +277,7 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
               principal={p.decisor}
               fontes={[...new Set(p.fontes.map((f) => FONTE[f]))]}
               linkedin={p.linkedin}
+              evidencia={p.evidencia ?? undefined}
               contatos={p.decisor ? [...proprios, ...melhores] : proprios}
             />
           );

@@ -4,6 +4,7 @@ import {
   interpretarLinkedin,
   normalizarSite,
   type PerfilInstagram,
+  provarPessoa,
   type ResultadoSite,
 } from '@prospeccao/integrations/enriquecimento';
 import { ErroDefinitivo } from '@prospeccao/queue';
@@ -368,16 +369,28 @@ export async function enriquecerEmpresa(
     let score = avaliacao?.score ?? regras.score;
     let motivo = avaliacao?.motivo ?? regras.motivo;
     if (avaliacao) {
+      // Nome citado no site só entra com prova: cargo ao lado do nome e fora de depoimentos.
+      const recusadas: string[] = [];
       for (const p of avaliacao.pessoas) {
+        const prova = provarPessoa(p, [site?.texto, perfil?.bio]);
+        if (!prova.aceita) {
+          recusadas.push(p.nome);
+          log.debug({ nome: p.nome, motivo: prova.motivo }, 'pessoa citada descartada');
+          continue;
+        }
         c.pessoa({
           nome: p.nome,
           cargo: p.cargo,
           papel: p.papel,
           fonte: 'site',
           urlOrigem: site?.urlFinal ?? null,
+          evidencia: prova.evidencia,
         });
       }
-      await etapa('ia', 'encontrado', `Nota ${faixa} (${score}): ${motivo}`);
+      const descarte = recusadas.length
+        ? ` Ignorei ${recusadas.length} nome(s) do site sem cargo comprovado (ex.: depoimentos de clientes).`
+        : '';
+      await etapa('ia', 'encontrado', `Nota ${faixa} (${score}): ${motivo.replace(/\.$/, '')}.${descarte}`);
     } else if (!fontes.ia) {
       await etapa('ia', 'pulada', `Sem GEMINI_API_KEY. ${motivo}`);
     }
