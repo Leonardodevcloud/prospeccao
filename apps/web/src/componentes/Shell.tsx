@@ -1,0 +1,61 @@
+import { Button, Icon } from '@prospeccao/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
+import { api, ErroApi } from '../api';
+
+const ITENS = [
+  { para: '/', rotulo: 'Leads', icone: 'users', fim: true },
+  { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
+  { para: '/nichos', rotulo: 'Nichos', icone: 'store' },
+  { para: '/configuracoes', rotulo: 'Configurações', icone: 'building-2' },
+];
+
+/** Estrutura das telas logadas: navegação + conteúdo. Sem sessão, manda para o login. */
+export function Shell() {
+  const local = useLocation();
+  const navegar = useNavigate();
+  const cliente = useQueryClient();
+  const sessao = useQuery({ queryKey: ['sessao'], queryFn: () => api<{ email: string }>('/auth/eu') });
+  const sair = useMutation({
+    mutationFn: () => api('/auth/logout', { metodo: 'POST' }),
+    onSettled: () => {
+      cliente.clear();
+      navegar('/login');
+    },
+  });
+
+  if (sessao.error instanceof ErroApi && sessao.error.status === 401) {
+    return <Navigate to={`/login?voltar=${encodeURIComponent(local.pathname + local.search)}`} replace />;
+  }
+  if (sessao.isPending) return null;
+
+  return (
+    <div className="app">
+      <nav className="nav" aria-label="Navegação principal">
+        <div className="nav__marca">
+          <span className="nav__logo" aria-hidden="true">
+            P
+          </span>
+          Prospecção
+        </div>
+        {ITENS.map((i) => (
+          <NavLink key={i.para} to={i.para} end={i.fim} className="nav__link">
+            <Icon name={i.icone} size={16} />
+            {i.rotulo}
+          </NavLink>
+        ))}
+        <div className="nav__rodape">
+          <span className="nav__usuario" title={sessao.data?.email}>
+            {sessao.data?.email}
+          </span>
+          <Button variant="ghost" size="sm" icon="arrow-right" onClick={() => sair.mutate()}>
+            Sair
+          </Button>
+        </div>
+      </nav>
+      <main className="conteudo">
+        <Outlet />
+      </main>
+    </div>
+  );
+}

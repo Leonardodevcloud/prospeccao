@@ -1,0 +1,26 @@
+{
+  "name": "@prospeccao/integrations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./apify": "./src/apify/index.ts",
+    "./ors": "./src/ors/index.ts",
+    "./receita": "./src/receita/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prospeccao/shared": "workspace:*",
+    "csv-parse": "7.0.3",
+    "iconv-lite": "0.7.3",
+    "yauzl": "3.4.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/yauzl": "3.4.0"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@prospeccao/worker-cnpj",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Importa e mantém a cópia filtrada da base de CNPJ da Receita (schema base_cnpj).",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prospeccao/config": "workspace:*",
+    "@prospeccao/db": "workspace:*",
+    "@prospeccao/integrations": "workspace:*",
+    "@prospeccao/queue": "workspace:*",
+    "@prospeccao/shared": "workspace:*",
+    "csv-parse": "7.0.3",
+    "iconv-lite": "0.7.3",
+    "pg": "8.23.1",
+    "pg-boss": "12.36.0",
+    "pino": "10.4.0",
+    "yauzl": "3.4.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/yazl": "3.3.0",
+    "yazl": "3.3.1"
+  },
+  "files": [
+    "dist"
+  ]
+}

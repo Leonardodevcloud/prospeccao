@@ -1,0 +1,44 @@
+{
+  "name": "@prospeccao/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "API HTTP: login, cadastro (nichos, campanhas, bases) e leitura das empresas descobertas.",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "migrate": "node dist/migrar.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "hash-senha": "tsx src/hash-senha.ts"
+  },
+  "dependencies": {
+    "@prospeccao/config": "workspace:*",
+    "@prospeccao/db": "workspace:*",
+    "@prospeccao/integrations": "workspace:*",
+    "@prospeccao/queue": "workspace:*",
+    "@prospeccao/shared": "workspace:*",
+    "bcryptjs": "3.0.3",
+    "cookie-parser": "1.4.7",
+    "express": "5.2.1",
+    "express-rate-limit": "8.7.0",
+    "helmet": "8.3.0",
+    "jsonwebtoken": "9.0.3",
+    "pg": "8.23.1",
+    "pg-boss": "12.36.0",
+    "pino": "10.4.0",
+    "pino-http": "11.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "1.4.10",
+    "@types/express": "5.0.6",
+    "@types/jsonwebtoken": "9.0.10",
+    "@types/supertest": "7.2.1",
+    "supertest": "7.3.1"
+  },
+  "files": [
+    "dist"
+  ]
+}

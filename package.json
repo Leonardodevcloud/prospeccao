@@ -1,0 +1,33 @@
+{
+  "name": "prospeccao",
+  "private": true,
+  "description": "Motor de prospecção por nicho + CRM. Monorepo com um serviço por domínio.",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "db:migrate": "pnpm --filter @prospeccao/db migrate",
+    "db:status": "pnpm --filter @prospeccao/db status"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "25.9.9",
+    "tsup": "8.5.1",
+    "tsx": "4.23.15",
+    "turbo": "2.11.7",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

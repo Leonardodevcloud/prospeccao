@@ -1,0 +1,3 @@
+/* Tokens (cores, tipografia, espaço) e estilos dos componentes do design system. */
+@import "./tokens.css";
+@import "./componentes.css";

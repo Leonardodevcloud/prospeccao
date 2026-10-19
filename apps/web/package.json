@@ -1,0 +1,29 @@
+{
+  "name": "@prospeccao/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Interface (React + Vite) do CRM de Prospecção.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prospeccao/shared": "workspace:*",
+    "@prospeccao/ui": "workspace:*",
+    "@tanstack/react-query": "5.104.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router": "7.18.4",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "8.3.2",
+    "@types/node": "25.9.9"
+  }
+}

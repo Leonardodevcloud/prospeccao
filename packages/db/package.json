@@ -1,0 +1,28 @@
+{
+  "name": "@prospeccao/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./teste": "./src/teste.ts"
+  },
+  "files": [
+    "src",
+    "migrations"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "migrate": "tsx src/cli.ts migrate",
+    "status": "tsx src/cli.ts status",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@prospeccao/config": "workspace:*",
+    "@prospeccao/shared": "workspace:*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

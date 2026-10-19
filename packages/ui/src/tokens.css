@@ -1,0 +1,107 @@
+/* Tokens do design system "CRM de Prospecção" (cores claro/escuro, espaço, raios, fontes). */
+:root,
+[data-theme="light"] {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-sunken: #f0f0ec;
+  --neutral-soft: #ecece8;
+  --line: #e4e4df;
+  --line-strong: #8a8a83;
+  --ink: #18181b;
+  --ink-muted: #5b5b56;
+  --brand: #0b6b63;
+  --brand-hover: #085a53;
+  --brand-soft: #e2f1ee;
+  --on-brand: #ffffff;
+  --warning: #8f5300;
+  --warning-soft: #fcefd6;
+  --on-warning: #ffffff;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --on-danger: #ffffff;
+  --success: var(--brand);
+  --focus: var(--brand);
+  --link: var(--brand);
+  --score-a: var(--brand);
+  --score-a-soft: var(--brand-soft);
+  --score-b: var(--warning);
+  --score-b-soft: var(--warning-soft);
+  --score-c: var(--neutral-soft);
+  --scrim: #18181b66;
+  --shadow-sm: 0 1px 2px #18181b0f;
+  --shadow-md: 0 4px 12px #18181b14, 0 1px 3px #18181b0f;
+  --shadow-lg: 0 24px 48px -12px #18181b2e;
+  --focus-ring: 0 0 0 2px #f7f7f5, 0 0 0 4px #0b6b63;
+}
+[data-theme="dark"] {
+  --bg: #111110;
+  --surface: #1a1a18;
+  --surface-sunken: #242422;
+  --neutral-soft: #2a2a27;
+  --line: #2f2f2c;
+  --line-strong: #75756f;
+  --ink: #ededea;
+  --ink-muted: #a8a8a1;
+  --brand: #3cc4b3;
+  --brand-hover: #62d3c4;
+  --brand-soft: #12302c;
+  --on-brand: #0a1f1c;
+  --warning: #eaa441;
+  --warning-soft: #33240b;
+  --on-warning: #1f1505;
+  --danger: #f97066;
+  --danger-soft: #3b1714;
+  --on-danger: #1f0907;
+  --success: var(--brand);
+  --focus: var(--brand);
+  --link: var(--brand);
+  --score-a: var(--brand);
+  --score-a-soft: var(--brand-soft);
+  --score-b: var(--warning);
+  --score-b-soft: var(--warning-soft);
+  --score-c: var(--neutral-soft);
+  --scrim: #000000a3;
+  --shadow-sm: 0 1px 2px #00000066;
+  --shadow-md: 0 8px 24px #000000b3;
+  --shadow-lg: 0 24px 48px -12px #000000cc;
+  --focus-ring: 0 0 0 2px #111110, 0 0 0 4px #3cc4b3;
+  color-scheme: dark;
+}
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+  --size-control-sm: 28px;
+  --size-control-md: 36px;
+  --size-control-lg: 44px;
+  --size-row: 56px;
+  --size-sidebar: 232px;
+  --size-drawer: 600px;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("./fonts/geist-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./fonts/geist-mono-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
