@@ -130,6 +130,8 @@ export function interpretarWebhook(corpo: unknown): MensagemRecebida | null {
     ['video', msg.videoMessage],
     ['documento', msg.documentMessage ?? docComLegenda],
     ['audio', msg.audioMessage ?? msg.pttMessage],
+    // Figurinha é uma imagem (webp).
+    ['imagem', msg.stickerMessage],
   ];
   const achada = tipos.find(([, v]) => v && typeof v === 'object');
   const info = (achada?.[1] ?? {}) as Record<string, unknown>;
@@ -146,7 +148,7 @@ export function interpretarWebhook(corpo: unknown): MensagemRecebida | null {
   const ts = Number(d.messageTimestamp);
   return {
     telefone: digitos.startsWith('55') ? digitos.slice(2) : digitos,
-    texto: texto || (achada ? rotulo[achada[0]] : ''),
+    texto: texto || (achada?.[1] === msg.stickerMessage ? '[figurinha]' : achada ? rotulo[achada[0]] : ''),
     idExterno: chave.id ? String(chave.id) : null,
     deMim: chave.fromMe === true,
     nome: d.pushName ? String(d.pushName) : null,

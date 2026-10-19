@@ -147,6 +147,31 @@ function Midia(props: { m: MensagemConversa }) {
   );
 }
 
+/** Links (http, https, www.) viram clicáveis e abrem em outra aba; o resto fica como texto. */
+const LINK = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+export function TextoComLinks(props: { texto: string }) {
+  const partes = props.texto.split(LINK);
+  return (
+    <>
+      {partes.map((parte, i) => {
+        if (i % 2 === 0) return parte;
+        // Pontuação colada no fim ("veja www.site.com.") fica fora do link.
+        const [, url = parte, sobra = ''] = parte.match(/^(.*?)([.,;:!?)\]]*)$/) ?? [];
+        const href = url.startsWith('http') ? url : `https://${url}`;
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: as partes não mudam de ordem
+          <span key={i}>
+            <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="bolha__link">
+              {url}
+            </a>
+            {sobra}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 const diaSP = new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Sao_Paulo',
   weekday: 'long',
@@ -168,13 +193,17 @@ function Bolhas(props: { mensagens: MensagemConversa[] }) {
         const dia = diaSP.format(new Date(m.em));
         const separador = dia !== diaAnterior;
         diaAnterior = dia;
-        const soRotulo = m.midiaTipo && /^\[(foto|áudio|vídeo|documento)\]/.test(m.texto);
+        const soRotulo = m.midiaTipo && /^\[(foto|figurinha|áudio|vídeo|documento)\]/.test(m.texto);
         return (
           <div key={m.id} className="bolhas__grupo">
             {separador && <div className="bolhas__dia">{dia}</div>}
             <div className="bolha" data-lado={m.direcao} data-status={m.status} data-origem={m.origem}>
               <Midia m={m} />
-              {!soRotulo && <p className="bolha__texto">{m.texto}</p>}
+              {!soRotulo && (
+                <p className="bolha__texto">
+                  <TextoComLinks texto={m.texto} />
+                </p>
+              )}
               <span className="bolha__meta">
                 {m.autor && <span>{m.autor}</span>}
                 {m.status === 'rascunho' && (
