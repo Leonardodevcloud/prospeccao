@@ -1,39 +1,54 @@
 import { Badge, Button, EmptyState, Icon, ScoreBadge, TextField } from '@prospeccao/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type DragEvent, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, type DragEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
   api,
   type Campanha,
   type CardFunil,
-  COLUNAS_FUNIL,
   type EtapaFunil,
+  type EtapaPipeline,
   type Quadro,
   qs,
-  ROTULO_ETAPA,
+  ROTULO_PAPEL,
 } from '../api';
 import { ConfigurarCadencia, EnvioRapido } from '../componentes/Cadencia';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { diasDesde, fmtCidade, fmtNome, fmtNumero, fmtPrazo, fmtReais, formatarTelefone } from '../formatar';
+import { EditarPipelines, usePipelines } from '../componentes/Pipelines';
+import {
+  diasDesde,
+  fmtCidade,
+  fmtNome,
+  fmtNumero,
+  fmtPrazo,
+  fmtQuando,
+  fmtReais,
+  formatarTelefone,
+} from '../formatar';
 
 /** Etapas em que a cadência tem uma mensagem pronta para mandar. */
 const COM_MENSAGEM = new Set<EtapaFunil>(['a_abordar', 'abordado', 'respondeu', 'proposta']);
 
-/** Colunas de fechamento mostram só os mais recentes, para o quadro não crescer sem fim. */
+/** Etapas de fechamento mostram só os mais recentes, para a coluna não crescer sem fim. */
 const FECHADAS = new Set<EtapaFunil>(['ganho', 'perdido']);
 const LIMITE_FECHADAS = 20;
 
-const DICA_COLUNA: Record<EtapaFunil, string> = {
-  a_abordar: 'Ainda não falamos com eles',
-  abordado: 'Mandamos mensagem, sem resposta',
-  respondeu: 'Responderam: conversa em andamento',
-  reuniao: 'Reunião ou visita marcada',
-  proposta: 'Proposta enviada',
-  ganho: 'Viraram clientes',
-  perdido: 'Não fecharam',
-  descartado: '',
-};
+const ORDENS = [
+  { id: 'manual', rotulo: 'Ordem do quadro' },
+  { id: 'proximo', rotulo: 'Ordenar: próximo passo' },
+  { id: 'recentes', rotulo: 'Ordenar: entraram por último' },
+  { id: 'contato', rotulo: 'Ordenar: último contato' },
+  { id: 'nota', rotulo: 'Ordenar: maior nota' },
+  { id: 'valor', rotulo: 'Ordenar: maior valor' },
+] as const;
+
+const PERIODOS = [
+  { id: '', rotulo: 'Qualquer data' },
+  { id: '7', rotulo: 'Entraram em 7 dias' },
+  { id: '30', rotulo: 'Entraram em 30 dias' },
+  { id: '90', rotulo: 'Entraram em 90 dias' },
+] as const;
 
 /** Contagem de follow-ups vencidos para o menu lateral (consulta leve). */
 export function useFollowupsPendentes() {
@@ -59,6 +74,8 @@ function Card(props: {
   const fechado = FECHADAS.has(c.etapa);
   const dias = diasDesde(c.etapaDesde);
   const fone = c.telefone ? formatarTelefone(c.telefone) : null;
+  const cidade = c.cidade ? fmtCidade(c.cidade) : null;
+  const comIa = c.agente && !c.agentePausa;
   return (
     <>
       {props.marcadorAntes && <div className="quadro__marcador" aria-hidden="true" />}
@@ -78,31 +95,64 @@ function Card(props: {
             <b>{fmtNome(c.nome)}</b>
             {c.faixa && <ScoreBadge faixa={c.faixa} score={c.score ?? undefined} />}
           </span>
-          {c.agente && (
-            <span className="cartao__linha">
-              <Badge tone={c.agentePausa ? 'warning' : 'brand'}>
+
+          {/* Etiquetas: o que é, onde fica, quem está cuidando e as suas. */}
+          <span className="etiquetas">
+            {c.agente && (
+              <span className={`etiqueta ${c.agentePausa ? 'etiqueta--aviso' : 'etiqueta--marca'}`}>
                 <Icon name="bot" size={12} /> {c.agentePausa ? 'IA passou para você' : 'Com a IA'}
-              </Badge>
+              </span>
+            )}
+            {c.etiquetas.map((t) => (
+              <span key={t} className="etiqueta etiqueta--sua">
+                {t}
+              </span>
+            ))}
+            {c.categoria && <span className="etiqueta">{c.categoria}</span>}
+            {cidade && (
+              <span className="etiqueta">
+                <Icon name="map-pin" size={12} /> {cidade}
+              </span>
+            )}
+          </span>
+
+          {/* Contato e decisor */}
+          {(c.decisorNome || fone) && (
+            <span className="cartao__contato">
+              {c.decisorNome && (
+                <span className="cartao__linha">
+                  <Icon name="user-round" size={14} />
+                  <span>
+                    {fmtNome(c.decisorNome)}
+                    {c.decisorCargo && <span className="quieto"> · {c.decisorCargo}</span>}
+                  </span>
+                </span>
+              )}
+              {fone && (
+                <span className="cartao__linha mono">
+                  <Icon name={c.contatoCanal === 'whatsapp' ? 'message-circle' : 'phone'} size={14} />
+                  {fone}
+                </span>
+              )}
             </span>
           )}
-          <span className="cartao__sub">
-            {[fmtCidade(c.cidade), c.categoria].filter(Boolean).join(' · ')}
-          </span>
-          {c.decisorNome && (
-            <span className="cartao__linha">
-              <Icon name="user-round" size={14} />
+
+          {/* Atividade: a última fala do lead vale mais que qualquer data. */}
+          {c.ultimaDoLead && c.ultimaDoLeadEm ? (
+            <span className="cartao__fala">
+              <span className="cartao__fala-texto">“{c.ultimaDoLead}”</span>
+              <span className="quieto">respondeu {fmtQuando(c.ultimaDoLeadEm)}</span>
+            </span>
+          ) : c.ultimoContatoEm ? (
+            <span className="cartao__linha quieto">
+              <Icon name="clock" size={14} />
               <span>
-                {fmtNome(c.decisorNome)}
-                {c.decisorCargo && <span className="quieto"> · {c.decisorCargo}</span>}
+                Último contato {fmtQuando(c.ultimoContatoEm)}
+                {c.contatos > 0 && ` · ${c.contatos} ${c.contatos === 1 ? 'contato' : 'contatos'}`}
               </span>
             </span>
-          )}
-          {fone && (
-            <span className="cartao__linha mono">
-              <Icon name={c.contatoCanal === 'whatsapp' ? 'message-circle' : 'phone'} size={14} />
-              {fone}
-            </span>
-          )}
+          ) : null}
+
           {fechado ? (
             c.etapa === 'perdido' && c.motivo ? (
               <span className="cartao__motivo">{c.motivo}</span>
@@ -121,19 +171,17 @@ function Card(props: {
               ) : (
                 <span className="quieto">Sem próximo passo</span>
               )}
-              <span className="quieto" title="Tempo nesta etapa">
+              <span className="quieto" title="Mensagens da cadência, valor e tempo nesta etapa">
                 {c.etapa === 'abordado' && c.tentativas > 0
                   ? `msg ${Math.min(c.tentativas, props.totalTentativas)}/${props.totalTentativas} · `
                   : ''}
+                {c.valorMensal ? `${fmtReais(c.valorMensal)} · ` : ''}
                 {dias === 0 ? 'hoje' : `${dias} d`}
-                {c.etapa !== 'abordado' &&
-                  c.contatos > 0 &&
-                  ` · ${c.contatos} contato${c.contatos === 1 ? '' : 's'}`}
               </span>
             </span>
           )}
         </button>
-        {COM_MENSAGEM.has(c.etapa) && c.telefone && !c.encerrarEm && (
+        {COM_MENSAGEM.has(c.etapa) && c.telefone && !c.encerrarEm && !comIa && (
           <div className="cartao__acoes">
             <Button
               size="sm"
@@ -150,6 +198,8 @@ function Card(props: {
   );
 }
 
+type Alvo = { etapaId: number; antesDe: number | null };
+
 export function Funil() {
   const [params, setParams] = useSearchParams();
   const navegar = useNavigate();
@@ -157,15 +207,24 @@ export function Funil() {
   const campanhaId = params.get('campanhaId') ?? '';
   const faixa = params.get('faixa') ?? '';
   const pendentes = params.get('pendentes') === '1';
+  const ordem = params.get('ordem') ?? 'manual';
+  const dias = params.get('dias') ?? '';
+  const etiqueta = params.get('etiqueta') ?? '';
   const empresaAberta = params.get('empresa');
   const [busca, setBusca] = useState(params.get('busca') ?? '');
   const [arrastado, setArrastado] = useState<CardFunil | null>(null);
-  const [alvo, setAlvo] = useState<{ etapa: EtapaFunil; antesDe: number | null } | null>(null);
-  const [perda, setPerda] = useState<{ card: CardFunil; antesDe: number | null } | null>(null);
+  const [alvo, setAlvo] = useState<Alvo | null>(null);
+  const [perda, setPerda] = useState<{ card: CardFunil; alvo: Alvo } | null>(null);
   const [motivo, setMotivo] = useState('');
-  const [verTodas, setVerTodas] = useState<Set<EtapaFunil>>(new Set());
+  const [verTodas, setVerTodas] = useState<Set<number>>(new Set());
   const [mensagemPara, setMensagemPara] = useState<CardFunil | null>(null);
   const [configurando, setConfigurando] = useState(false);
+  const [editando, setEditando] = useState(false);
+
+  const pipelines = usePipelines();
+  const pedido = Number(params.get('pipeline')) || null;
+  const pipeline = pipelines.data?.find((p) => p.id === pedido) ?? pipelines.data?.[0];
+  const etapas = useMemo(() => pipeline?.etapas ?? [], [pipeline]);
 
   const mudar = (novos: Record<string, string | null>) => {
     const p = new URLSearchParams(params);
@@ -181,25 +240,30 @@ export function Funil() {
   }, [busca]);
 
   const filtros = {
+    pipelineId: pipeline?.id,
     campanhaId: campanhaId || undefined,
     faixa: faixa || undefined,
     busca: params.get('busca') || undefined,
     pendentes: pendentes || undefined,
+    ordem: ordem !== 'manual' ? ordem : undefined,
+    dias: dias || undefined,
+    etiqueta: etiqueta || undefined,
   };
   const chave = ['quadro', filtros];
   const quadro = useQuery({
     queryKey: chave,
     queryFn: () => api<Quadro>(`/funil${qs(filtros)}`),
+    enabled: !!pipeline,
     placeholderData: keepPreviousData,
     refetchInterval: 60_000,
   });
   const campanhas = useQuery({ queryKey: ['campanhas'], queryFn: () => api<Campanha[]>('/campanhas') });
 
   const mover = useMutation({
-    mutationFn: (d: { empresaId: number; etapa: EtapaFunil; antesDe: number | null; motivo?: string }) =>
+    mutationFn: (d: { empresaId: number; etapaId: number; antesDe: number | null; motivo?: string }) =>
       api(`/funil/${d.empresaId}`, {
         metodo: 'PATCH',
-        corpo: { etapa: d.etapa, antesDe: d.antesDe, ...(d.motivo ? { motivo: d.motivo } : {}) },
+        corpo: { etapaId: d.etapaId, antesDe: d.antesDe, ...(d.motivo ? { motivo: d.motivo } : {}) },
       }),
     // Move na tela na hora; se a API recusar, volta ao que estava.
     onMutate: async (d) => {
@@ -209,11 +273,12 @@ export function Funil() {
         const cards = antes.cards.filter((c) => c.empresaId !== d.empresaId);
         const card = antes.cards.find((c) => c.empresaId === d.empresaId);
         if (card) {
-          const novo = {
+          const novo: CardFunil = {
             ...card,
-            etapa: d.etapa,
+            etapaId: d.etapaId,
+            etapa: etapas.find((e) => e.id === d.etapaId)?.papel ?? card.etapa,
             motivo: d.motivo ?? card.motivo,
-            etapaDesde: card.etapa === d.etapa ? card.etapaDesde : new Date().toISOString(),
+            etapaDesde: card.etapaId === d.etapaId ? card.etapaDesde : new Date().toISOString(),
           };
           const i = d.antesDe != null ? cards.findIndex((c) => c.empresaId === d.antesDe) : -1;
           if (i >= 0) cards.splice(i, 0, novo);
@@ -228,39 +293,66 @@ export function Funil() {
     },
     onSettled: (_r, _e, d) => {
       cliente.invalidateQueries({ queryKey: ['quadro'] });
+      cliente.invalidateQueries({ queryKey: ['pipelines'] });
       cliente.invalidateQueries({ queryKey: ['funil', d.empresaId] });
     },
   });
 
   const colunas = useMemo(() => {
-    const grupos = new Map<EtapaFunil, CardFunil[]>(COLUNAS_FUNIL.map((e) => [e, []]));
-    for (const c of quadro.data?.cards ?? []) grupos.get(c.etapa)?.push(c);
-    // Fechados: os mais recentes primeiro.
-    for (const e of FECHADAS) grupos.get(e)?.sort((a, b) => b.etapaDesde.localeCompare(a.etapaDesde));
+    const grupos = new Map<number, CardFunil[]>(etapas.map((e) => [e.id, []]));
+    for (const c of quadro.data?.cards ?? []) if (c.etapaId != null) grupos.get(c.etapaId)?.push(c);
+    // Fechados, na ordem do quadro: os mais recentes primeiro.
+    if (ordem === 'manual')
+      for (const e of etapas)
+        if (FECHADAS.has(e.papel)) grupos.get(e.id)?.sort((a, b) => b.etapaDesde.localeCompare(a.etapaDesde));
     return grupos;
-  }, [quadro.data]);
+  }, [quadro.data, etapas, ordem]);
 
-  const soltar = (etapa: EtapaFunil) => {
+  const soltar = (etapa: EtapaPipeline) => {
     const card = arrastado;
-    const destino = alvo?.etapa === etapa ? alvo.antesDe : null;
+    const destino = alvo?.etapaId === etapa.id ? alvo.antesDe : null;
     setArrastado(null);
     setAlvo(null);
     if (!card) return;
-    if (card.etapa === etapa && destino === null && colunas.get(etapa)?.at(-1)?.empresaId === card.empresaId)
+    if (
+      card.etapaId === etapa.id &&
+      destino === null &&
+      colunas.get(etapa.id)?.at(-1)?.empresaId === card.empresaId
+    )
       return;
     if (destino === card.empresaId) return;
-    if (etapa === 'perdido' && card.etapa !== 'perdido') {
-      setPerda({ card, antesDe: destino });
+    if (etapa.papel === 'perdido' && card.etapa !== 'perdido') {
+      setPerda({ card, alvo: { etapaId: etapa.id, antesDe: destino } });
       setMotivo('');
       return;
     }
-    mover.mutate({ empresaId: card.empresaId, etapa, antesDe: destino });
+    mover.mutate({ empresaId: card.empresaId, etapaId: etapa.id, antesDe: destino });
+  };
+
+  const confirmarPerda = () => {
+    if (!perda || !motivo.trim()) return;
+    mover.mutate({
+      empresaId: perda.card.empresaId,
+      etapaId: perda.alvo.etapaId,
+      antesDe: perda.alvo.antesDe,
+      motivo: motivo.trim(),
+    });
+    setPerda(null);
   };
 
   const cards = quadro.data?.cards ?? [];
   const ativos = cards.filter((c) => !FECHADAS.has(c.etapa));
   const potencial = ativos.reduce((s, c) => s + (c.valorMensal ?? 0), 0);
-  const filtrando = !!(filtros.campanhaId || filtros.faixa || filtros.busca || filtros.pendentes);
+  const filtrando = !!(
+    filtros.campanhaId ||
+    filtros.faixa ||
+    filtros.busca ||
+    filtros.pendentes ||
+    filtros.dias ||
+    filtros.etiqueta
+  );
+  const funilVazio = (pipelines.data ?? []).every((p) => p.abertos === 0) && cards.length === 0;
+  const todasEtiquetas = quadro.data?.etiquetas ?? [];
 
   return (
     <>
@@ -269,42 +361,36 @@ export function Funil() {
           <h1>Funil</h1>
           <p>
             {fmtNumero(ativos.length)} {ativos.length === 1 ? 'lead em andamento' : 'leads em andamento'}
+            {pipeline ? ` no ${pipeline.nome}` : ''}
             {potencial > 0 && ` · ${fmtReais(potencial)}/mês em potencial`}
             {quadro.data?.descartados ? ` · ${fmtNumero(quadro.data.descartados)} descartados` : ''}
           </p>
         </div>
         <div className="acoes">
-          <label className="pp-sr" htmlFor="funil-campanha">
-            Campanha
-          </label>
-          <select
-            id="funil-campanha"
-            className="filtro"
-            value={campanhaId}
-            onChange={(e) => mudar({ campanhaId: e.target.value || null })}
-          >
-            <option value="">Todas as campanhas</option>
-            {campanhas.data?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
-          <label className="pp-sr" htmlFor="funil-faixa">
-            Nota
-          </label>
-          <select
-            id="funil-faixa"
-            className="filtro"
-            value={faixa}
-            onChange={(e) => mudar({ faixa: e.target.value || null })}
-          >
-            <option value="">Todas as notas</option>
-            <option value="A">Nota A</option>
-            <option value="B">Nota B</option>
-            <option value="C">Nota C</option>
-          </select>
+          <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
+            Cadência e mensagens
+          </Button>
+          <Button icon="layers" variant="secondary" onClick={() => setEditando(true)}>
+            Editar etapas
+          </Button>
         </div>
+      </div>
+
+      {/* Pipelines (SDR, Closer…) */}
+      <div className="pipelines" role="tablist" aria-label="Pipeline">
+        {pipelines.data?.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            aria-selected={p.id === pipeline?.id}
+            className="pipelines__aba"
+            onClick={() => mudar({ pipeline: String(p.id), empresa: null })}
+          >
+            {p.nome}
+            <span className="pipelines__conta">{fmtNumero(p.abertos)}</span>
+          </button>
+        ))}
       </div>
 
       <div className="barra">
@@ -324,9 +410,86 @@ export function Funil() {
         >
           Follow-ups de hoje{quadro.data ? ` (${fmtNumero(quadro.data.pendentes)})` : ''}
         </Button>
-        <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
-          Cadência e mensagens
-        </Button>
+        <label className="pp-sr" htmlFor="funil-ordem">
+          Ordenar
+        </label>
+        <select
+          id="funil-ordem"
+          className="filtro"
+          value={ordem}
+          onChange={(e) => mudar({ ordem: e.target.value === 'manual' ? null : e.target.value })}
+        >
+          {ORDENS.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.rotulo}
+            </option>
+          ))}
+        </select>
+        <label className="pp-sr" htmlFor="funil-periodo">
+          Entrou no funil
+        </label>
+        <select
+          id="funil-periodo"
+          className="filtro"
+          value={dias}
+          onChange={(e) => mudar({ dias: e.target.value || null })}
+        >
+          {PERIODOS.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.rotulo}
+            </option>
+          ))}
+        </select>
+        {todasEtiquetas.length > 0 && (
+          <>
+            <label className="pp-sr" htmlFor="funil-etiqueta">
+              Etiqueta
+            </label>
+            <select
+              id="funil-etiqueta"
+              className="filtro"
+              value={etiqueta}
+              onChange={(e) => mudar({ etiqueta: e.target.value || null })}
+            >
+              <option value="">Todas as etiquetas</option>
+              {todasEtiquetas.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+        <label className="pp-sr" htmlFor="funil-campanha">
+          Campanha
+        </label>
+        <select
+          id="funil-campanha"
+          className="filtro"
+          value={campanhaId}
+          onChange={(e) => mudar({ campanhaId: e.target.value || null })}
+        >
+          <option value="">Todas as campanhas</option>
+          {campanhas.data?.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nome}
+            </option>
+          ))}
+        </select>
+        <label className="pp-sr" htmlFor="funil-faixa">
+          Nota
+        </label>
+        <select
+          id="funil-faixa"
+          className="filtro"
+          value={faixa}
+          onChange={(e) => mudar({ faixa: e.target.value || null })}
+        >
+          <option value="">Todas as notas</option>
+          <option value="A">Nota A</option>
+          <option value="B">Nota B</option>
+          <option value="C">Nota C</option>
+        </select>
       </div>
 
       {perda && (
@@ -345,32 +508,11 @@ export function Funil() {
               autoFocus
               onChange={(e) => setMotivo(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && motivo.trim()) {
-                  mover.mutate({
-                    empresaId: perda.card.empresaId,
-                    etapa: 'perdido',
-                    antesDe: perda.antesDe,
-                    motivo: motivo.trim(),
-                  });
-                  setPerda(null);
-                }
+                if (e.key === 'Enter') confirmarPerda();
                 if (e.key === 'Escape') setPerda(null);
               }}
             />
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={!motivo.trim()}
-              onClick={() => {
-                mover.mutate({
-                  empresaId: perda.card.empresaId,
-                  etapa: 'perdido',
-                  antesDe: perda.antesDe,
-                  motivo: motivo.trim(),
-                });
-                setPerda(null);
-              }}
-            >
+            <Button size="sm" variant="danger" disabled={!motivo.trim()} onClick={confirmarPerda}>
               Marcar como perdido
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setPerda(null)}>
@@ -380,17 +522,17 @@ export function Funil() {
         </div>
       )}
 
-      <ErroDaApi erro={quadro.error ?? mover.error} />
+      <ErroDaApi erro={pipelines.error ?? quadro.error ?? mover.error} />
 
-      {quadro.isPending ? (
+      {pipelines.isPending || (quadro.isPending && !!pipeline) ? (
         <div className="quadro" aria-busy="true">
-          {COLUNAS_FUNIL.slice(0, 4).map((e) => (
+          {[1, 2, 3, 4].map((e) => (
             <div key={e} className="coluna">
               <div className="esqueleto" />
             </div>
           ))}
         </div>
-      ) : cards.length === 0 && !filtrando ? (
+      ) : funilVazio && !filtrando ? (
         <div className="pp-panel">
           <EmptyState
             icone="kanban"
@@ -405,7 +547,7 @@ export function Funil() {
         </div>
       ) : (
         <>
-          {cards.length === 0 && (
+          {cards.length === 0 && filtrando && (
             <Mensagem tipo="aviso">
               Nenhum card com esses filtros.{' '}
               <button
@@ -413,7 +555,14 @@ export function Funil() {
                 className="link-botao"
                 onClick={() => {
                   setBusca('');
-                  mudar({ campanhaId: null, faixa: null, busca: null, pendentes: null });
+                  mudar({
+                    campanhaId: null,
+                    faixa: null,
+                    busca: null,
+                    pendentes: null,
+                    dias: null,
+                    etiqueta: null,
+                  });
                 }}
               >
                 Limpar filtros
@@ -421,25 +570,28 @@ export function Funil() {
             </Mensagem>
           )}
           <div className="quadro">
-            {COLUNAS_FUNIL.map((etapa) => {
-              const lista = colunas.get(etapa) ?? [];
-              const limitar = FECHADAS.has(etapa) && !verTodas.has(etapa);
+            {etapas.map((etapa) => {
+              const lista = colunas.get(etapa.id) ?? [];
+              const limitar = FECHADAS.has(etapa.papel) && !verTodas.has(etapa.id);
               const visiveis = limitar ? lista.slice(0, LIMITE_FECHADAS) : lista;
               const soma = lista.reduce((s, c) => s + (c.valorMensal ?? 0), 0);
-              const recebendo = !!arrastado && alvo?.etapa === etapa;
+              const recebendo = !!arrastado && alvo?.etapaId === etapa.id;
               return (
                 <section
-                  key={etapa}
+                  key={etapa.id}
                   className="coluna"
-                  data-etapa={etapa}
+                  style={{ '--cor-etapa': etapa.cor } as CSSProperties}
                   data-recebendo={recebendo || undefined}
-                  aria-label={`${ROTULO_ETAPA[etapa]}: ${lista.length}`}
+                  aria-label={`${etapa.nome}: ${lista.length}`}
                   onDragOver={(e) => {
                     if (!arrastado) return;
                     e.preventDefault();
                     // Sobre a área vazia da coluna: vai para o fim.
-                    if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.coluna__fim'))
-                      setAlvo({ etapa, antesDe: null });
+                    if (
+                      e.target === e.currentTarget ||
+                      (e.target as HTMLElement).closest('.coluna__fim, .coluna__vazia')
+                    )
+                      setAlvo({ etapaId: etapa.id, antesDe: null });
                   }}
                   onDragLeave={(e) => {
                     if (!e.currentTarget.contains(e.relatedTarget as Node)) setAlvo(null);
@@ -450,13 +602,12 @@ export function Funil() {
                   }}
                 >
                   <header className="coluna__topo">
-                    <span>
-                      <b>{ROTULO_ETAPA[etapa]}</b>{' '}
+                    <span className="coluna__nome" title={`Funciona como: ${ROTULO_PAPEL[etapa.papel]}`}>
+                      <b>{etapa.nome}</b>
                       <span className="coluna__conta">{fmtNumero(lista.length)}</span>
                     </span>
-                    {soma > 0 && <span className="quieto mono">{fmtReais(soma)}</span>}
+                    {soma > 0 && <span className="coluna__soma mono">{fmtReais(soma)}</span>}
                   </header>
-                  <p className="coluna__dica">{DICA_COLUNA[etapa]}</p>
                   <div className="coluna__cards">
                     {visiveis.map((c, i) => (
                       <Card
@@ -474,12 +625,13 @@ export function Funil() {
                         }}
                         aoSoltarSobre={(_e, depois) =>
                           setAlvo({
-                            etapa,
+                            etapaId: etapa.id,
                             antesDe: depois ? (visiveis[i + 1]?.empresaId ?? null) : c.empresaId,
                           })
                         }
                       />
                     ))}
+                    {lista.length === 0 && !recebendo && <p className="coluna__vazia">Nenhum lead aqui</p>}
                     {recebendo && alvo?.antesDe === null && (
                       <div className="quadro__marcador" aria-hidden="true" />
                     )}
@@ -489,7 +641,7 @@ export function Funil() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => setVerTodas((s) => new Set([...s, etapa]))}
+                      onClick={() => setVerTodas((s) => new Set([...s, etapa.id]))}
                     >
                       Ver todos os {fmtNumero(lista.length)}
                     </Button>
@@ -500,7 +652,8 @@ export function Funil() {
           </div>
           <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
             O próximo passo é marcado sozinho: cada mensagem sem resposta agenda o follow-up seguinte, e quem
-            não responde a nenhuma vai para Perdido. Use "Follow-ups de hoje" para ver o que mandar agora.
+            não responde vai para Perdido. Quando a reunião é marcada, o lead passa sozinho do SDR para o
+            Closer.
           </p>
         </>
       )}
@@ -513,6 +666,13 @@ export function Funil() {
         />
       )}
       {configurando && <ConfigurarCadencia aoFechar={() => setConfigurando(false)} />}
+      {editando && (
+        <EditarPipelines
+          pipelineId={pipeline?.id ?? null}
+          aoFechar={() => setEditando(false)}
+          aoTrocar={(id) => mudar({ pipeline: String(id) })}
+        />
+      )}
 
       {empresaAberta && (
         <FichaEmpresa

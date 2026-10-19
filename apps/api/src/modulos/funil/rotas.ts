@@ -2,14 +2,18 @@ import {
   AppError,
   atividadeEntrada,
   configCadenciaEntrada,
+  etapaAtualizar,
+  etapaEntrada,
   filtrosFunil,
   funilAdicionar,
   funilAtualizar,
+  pipelineEntrada,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import * as cadencia from './cadencia.js';
+import * as pipelines from './pipelines.js';
 import * as repo from './repositorio.js';
 
 const autor = (req: Request) => req.usuario?.email ?? 'sistema';
@@ -29,6 +33,42 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
 
   r.get('/resumo', async (_req, res) => {
     res.json(await repo.resumo(pool));
+  });
+
+  r.get('/etiquetas', async (_req, res) => {
+    const { rows } = await pool.query<{ e: string }>(
+      'SELECT DISTINCT unnest(etiquetas) AS e FROM comercial.oportunidades ORDER BY 1 LIMIT 200',
+    );
+    res.json(rows.map((x) => x.e));
+  });
+
+  /** Pipelines e etapas (SDR, Closer…), editáveis. */
+  r.get('/pipelines', async (_req, res) => {
+    res.json(await pipelines.listar(pool));
+  });
+  r.post('/pipelines', async (req, res) => {
+    const id = await pipelines.criarPipeline(pool, corpo(req, pipelineEntrada).nome);
+    res.status(201).json({ id });
+  });
+  r.patch('/pipelines/:id', async (req, res) => {
+    await pipelines.renomearPipeline(pool, idDaRota(req), corpo(req, pipelineEntrada).nome);
+    res.json(await pipelines.listar(pool));
+  });
+  r.delete('/pipelines/:id', async (req, res) => {
+    await pipelines.apagarPipeline(pool, idDaRota(req));
+    res.status(204).end();
+  });
+  r.post('/pipelines/:id/etapas', async (req, res) => {
+    const id = await pipelines.criarEtapa(pool, idDaRota(req), corpo(req, etapaEntrada));
+    res.status(201).json({ id });
+  });
+  r.patch('/etapas/:id', async (req, res) => {
+    await pipelines.atualizarEtapa(pool, idDaRota(req), corpo(req, etapaAtualizar));
+    res.json(await pipelines.listar(pool));
+  });
+  r.delete('/etapas/:id', async (req, res) => {
+    await pipelines.apagarEtapa(pool, idDaRota(req));
+    res.status(204).end();
   });
 
   /** Cadência de follow-up e modelos de mensagem. */

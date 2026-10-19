@@ -209,6 +209,9 @@ export interface AtividadeFunil {
   contato: string | null;
   deEtapa: EtapaFunil | null;
   paraEtapa: EtapaFunil | null;
+  /** Nome da etapa no pipeline (várias etapas podem ter o mesmo papel). */
+  deNome?: string | null;
+  paraNome?: string | null;
   autor: string | null;
   em: string;
 }
@@ -241,6 +244,11 @@ export interface DetalheFunil {
     encerrarEm: string | null;
     agente?: boolean;
     agentePausa?: string | null;
+    etapaId?: number | null;
+    etapaNome?: string | null;
+    etapaCor?: string | null;
+    pipelineNome?: string | null;
+    etiquetas?: string[];
   } | null;
   atividades: AtividadeFunil[];
   duplicada: Duplicada | null;
@@ -276,6 +284,12 @@ export interface CardFunil {
   agente?: boolean;
   /** Por que a IA passou o lead para você (null = está com a IA). */
   agentePausa?: string | null;
+  etapaId: number | null;
+  etiquetas: string[];
+  criadoEm: string;
+  /** Última mensagem do lead e quando chegou. */
+  ultimaDoLead: string | null;
+  ultimaDoLeadEm: string | null;
 }
 
 export interface Quadro {
@@ -284,6 +298,37 @@ export interface Quadro {
   descartados: number;
   /** Mensagens que a cadência manda antes de desistir. */
   totalTentativas: number;
+  pipelineId: number | null;
+  /** Todas as etiquetas em uso (para sugerir e filtrar). */
+  etiquetas: string[];
+}
+
+/** Comportamento da etapa no sistema (cadência, IA e relatórios usam isto). */
+export type PapelEtapa = Exclude<EtapaFunil, 'descartado'>;
+export const ROTULO_PAPEL: Record<PapelEtapa, string> = {
+  a_abordar: 'Primeiro contato',
+  abordado: 'Aguardando resposta',
+  respondeu: 'Conversa em andamento',
+  reuniao: 'Reunião',
+  proposta: 'Proposta',
+  ganho: 'Ganho',
+  perdido: 'Perdido',
+};
+
+export interface EtapaPipeline {
+  id: number;
+  nome: string;
+  cor: string;
+  ordem: number;
+  papel: PapelEtapa;
+}
+
+export interface Pipeline {
+  id: number;
+  nome: string;
+  ordem: number;
+  abertos: number;
+  etapas: EtapaPipeline[];
 }
 
 export type ModeloMensagem =

@@ -816,6 +816,85 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await pool.query('DELETE FROM descoberta.empresas WHERE id = 77');
   });
 
+  it('pipelines: SDR passa para o Closer na reunião, etapas com o mesmo papel, etiquetas e edição', async () => {
+    const pips = (await ler('/funil/pipelines')).body;
+    expect(pips.map((x: { nome: string }) => x.nome)).toEqual(['SDR', 'Closer']);
+    const [sdr, closer] = pips;
+    const etapa = (pip: { etapas: { id: number; nome: string }[] }, nome: string) =>
+      pip.etapas.find((x) => x.nome === nome)!.id;
+
+    await pool.query(
+      `INSERT INTO descoberta.empresas (id, nome, cidade, uf) VALUES (88, 'Pipe Peças', 'SALVADOR', 'BA') ON CONFLICT (id) DO NOTHING`,
+    );
+    await enviar('post', '/funil', { empresaIds: [88], forcar: true });
+    let q = (await ler(`/funil?pipelineId=${sdr.id}`)).body;
+    expect(q.cards.find((c: { empresaId: number }) => c.empresaId === 88)).toMatchObject({
+      etapaId: etapa(sdr, 'A abordar'),
+    });
+
+    // Reunião marcada: o lead sai do SDR e entra no Closer, em "Reunião agendada".
+    await enviar('post', '/funil/88/atividades', { tipo: 'reuniao', texto: 'Amanhã 10h' });
+    let d = (await ler('/funil/88')).body;
+    expect(d.oportunidade).toMatchObject({
+      etapa: 'reuniao',
+      etapaNome: 'Reunião agendada',
+      pipelineNome: 'Closer',
+    });
+    expect(
+      (await ler(`/funil?pipelineId=${sdr.id}`)).body.cards.some(
+        (c: { empresaId: number }) => c.empresaId === 88,
+      ),
+    ).toBe(false);
+
+    // Arrastar para "Negociação" (papel proposta) e depois "Contrato enviado" (mesmo papel: cadência segue).
+    d = (await enviar('patch', '/funil/88', { etapaId: etapa(closer, 'Negociação') })).body;
+    expect(d.oportunidade).toMatchObject({ etapa: 'proposta', etapaNome: 'Negociação' });
+    const passo = d.oportunidade.proximaAcao;
+    d = (
+      await enviar('patch', '/funil/88', {
+        etapaId: etapa(closer, 'Contrato enviado'),
+        etiquetas: ['Indicação', 'Farma', 'Farma'],
+      })
+    ).body;
+    expect(d.oportunidade).toMatchObject({
+      etapa: 'proposta',
+      etapaNome: 'Contrato enviado',
+      etiquetas: ['Indicação', 'Farma'],
+      proximaAcao: passo,
+    });
+    expect(d.atividades[0]).toMatchObject({
+      tipo: 'etapa',
+      deNome: 'Negociação',
+      paraNome: 'Contrato enviado',
+    });
+
+    q = (await ler(`/funil?pipelineId=${closer.id}&etiqueta=Farma&ordem=recentes`)).body;
+    expect(q.cards.map((c: { empresaId: number }) => c.empresaId)).toEqual([88]);
+    expect(q.etiquetas).toEqual(expect.arrayContaining(['Farma', 'Indicação']));
+
+    // Editar etapas: renomear, recolorir, reordenar; não apaga etapa com lead nem o último papel.
+    const editado = (
+      await enviar('patch', `/funil/etapas/${etapa(closer, 'Diagnóstico')}`, {
+        nome: 'Diagnóstico técnico',
+        cor: '#123456',
+        ordem: 1,
+      })
+    ).body;
+    expect(editado[1].etapas[0]).toMatchObject({ nome: 'Diagnóstico técnico', cor: '#123456' });
+    expect((await enviar('delete', `/funil/etapas/${etapa(closer, 'Contrato enviado')}`)).status).toBe(422);
+    expect((await enviar('delete', `/funil/etapas/${etapa(closer, 'Ganho')}`)).status).toBe(422);
+    const nova = await enviar('post', `/funil/pipelines/${closer.id}/etapas`, {
+      nome: 'Teste',
+      cor: '#000000',
+      papel: 'proposta',
+    });
+    expect(nova.status).toBe(201);
+    expect((await enviar('delete', `/funil/etapas/${nova.body.id}`)).status).toBe(204);
+
+    await pool.query('DELETE FROM comercial.oportunidades WHERE empresa_id = 88');
+    await pool.query('DELETE FROM descoberta.empresas WHERE id = 88');
+  });
+
   it('rota inexistente devolve 404 no formato padrão', async () => {
     const r = await ler('/nao-existe');
     expect(r.status).toBe(404);

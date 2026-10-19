@@ -706,7 +706,7 @@ fieldset.campo {
   scroll-snap-type: x proximity;
 }
 .coluna {
-  flex: 0 0 272px;
+  flex: 0 0 280px;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -714,6 +714,8 @@ fieldset.campo {
   max-height: calc(100vh - 220px);
   padding: var(--space-3);
   border: 1px solid var(--line);
+  /* Faixa com a cor da etapa, como nos CRMs de pipeline. */
+  border-top: 3px solid var(--cor-etapa, var(--line-strong));
   border-radius: var(--radius-md);
   background: var(--surface-sunken);
   scroll-snap-align: start;
@@ -732,6 +734,30 @@ fieldset.campo {
 }
 .coluna__topo b {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coluna__nome {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.coluna__soma {
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.coluna__vazia {
+  margin: 0;
+  padding: var(--space-4) var(--space-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
 }
 .coluna__conta {
   font-family: var(--font-mono);
@@ -1340,4 +1366,249 @@ fieldset.campo {
   display: grid;
   gap: 6px;
   font-size: 14px;
+}
+
+/* ---------- Pipelines (SDR, Closer…) ---------- */
+.pipelines {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.pipelines__aba {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pipelines__aba:hover {
+  color: var(--ink);
+}
+.pipelines__aba:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+.pipelines__aba[aria-selected="true"] {
+  border-bottom-color: var(--brand);
+  color: var(--ink);
+  font-weight: 600;
+}
+.pipelines__conta {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+/* Etiquetas do card */
+.etiquetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.etiquetas:empty {
+  display: none;
+}
+.etiqueta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.etiqueta--sua {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 500;
+}
+.etiqueta--marca {
+  background: var(--brand);
+  color: #fff;
+}
+.etiqueta--aviso {
+  background: var(--warning-soft);
+  color: var(--ink);
+}
+.cartao__contato {
+  display: grid;
+  gap: 4px;
+}
+.cartao__fala {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--brand);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-sunken);
+  font-size: 12px;
+  line-height: 16px;
+}
+.cartao__fala-texto {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* Editor de etapas */
+.etapas-edit {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.etapa-edit {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.etapa-edit__linha {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.etapa-edit__nome {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.etapa-edit__cor input {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+.etapa-edit__botoes {
+  display: flex;
+  gap: 2px;
+}
+.botao-icone {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.botao-icone:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+.botao-icone:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.botao-icone:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.girar-180 {
+  transform: rotate(180deg);
+}
+.segmento[data-ativo] {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 500;
+}
+.cores {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.cores__item {
+  all: unset;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+}
+.cores__item[aria-checked="true"] {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--ink);
+}
+.cores__item:has(input:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+.etiquetas-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--size-control-md, 36px);
+  padding: 4px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.etiquetas-edit:focus-within {
+  box-shadow: var(--focus-ring);
+}
+.etiquetas-edit .etiqueta {
+  font-size: 12px;
+  line-height: 22px;
+}
+.etiqueta__tirar {
+  all: unset;
+  margin-left: 2px;
+  padding: 0 2px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.etiqueta__tirar:hover,
+.etiqueta__tirar:focus-visible {
+  opacity: 1;
+}
+.etiqueta__tirar:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-radius: 2px;
+}
+.etiquetas-edit__campo {
+  flex: 1 1 120px;
+  min-width: 100px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
 }

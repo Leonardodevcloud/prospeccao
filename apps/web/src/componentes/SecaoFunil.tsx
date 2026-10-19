@@ -14,17 +14,7 @@ import {
 import { diaDaqui, diaDoInput, fmtHora, fmtNome, fmtPrazo, formatarTelefone } from '../formatar';
 import { ProximaMensagem } from './Cadencia';
 import { ErroDaApi, Mensagem } from './Formulario';
-
-const ETAPAS: EtapaFunil[] = [
-  'a_abordar',
-  'abordado',
-  'respondeu',
-  'reuniao',
-  'proposta',
-  'ganho',
-  'perdido',
-  'descartado',
-];
+import { usePipelines } from './Pipelines';
 
 const TIPOS: { id: Exclude<TipoAtividade, 'etapa'>; rotulo: string }[] = [
   { id: 'whatsapp', rotulo: 'WhatsApp' },
@@ -60,8 +50,8 @@ function itemDaTimeline(a: AtividadeFunil): TimelineItem {
     return {
       tipo: 'etapa',
       titulo: a.deEtapa
-        ? `${ROTULO_ETAPA[a.deEtapa]} → ${ROTULO_ETAPA[a.paraEtapa ?? 'a_abordar']}`
-        : `Entrou no funil em ${ROTULO_ETAPA[a.paraEtapa ?? 'a_abordar']}`,
+        ? `${a.deNome ?? ROTULO_ETAPA[a.deEtapa]} → ${a.paraNome ?? ROTULO_ETAPA[a.paraEtapa ?? 'a_abordar']}`
+        : `Entrou no funil em ${a.paraNome ?? ROTULO_ETAPA[a.paraEtapa ?? 'a_abordar']}`,
       quando: fmtHora(a.em),
       texto: a.texto ?? undefined,
     };
@@ -87,6 +77,67 @@ function itemDaTimeline(a: AtividadeFunil): TimelineItem {
     quando: fmtHora(a.em),
     texto: a.texto ?? undefined,
   };
+}
+
+/** Suas etiquetas no lead (Indicação, Farma, +50 entregas…). Enter adiciona; × tira. */
+function Etiquetas(props: { atuais: string[]; salvando: boolean; aoSalvar: (e: string[]) => void }) {
+  const [nova, setNova] = useState('');
+  const sugestoes = useQuery({
+    queryKey: ['etiquetas'],
+    queryFn: () => api<string[]>('/funil/etiquetas'),
+    staleTime: 60_000,
+  });
+  const adicionar = () => {
+    const t = nova.trim().slice(0, 30);
+    setNova('');
+    if (!t || props.atuais.some((a) => a.toLowerCase() === t.toLowerCase()) || props.atuais.length >= 12)
+      return;
+    props.aoSalvar([...props.atuais, t]);
+  };
+  return (
+    <div className="campo" style={{ marginTop: 12 }}>
+      <label htmlFor="funil-etiqueta-nova">Etiquetas</label>
+      <div className="etiquetas-edit">
+        {props.atuais.map((t) => (
+          <span key={t} className="etiqueta etiqueta--sua">
+            {t}
+            <button
+              type="button"
+              className="etiqueta__tirar"
+              aria-label={`Tirar a etiqueta ${t}`}
+              disabled={props.salvando}
+              onClick={() => props.aoSalvar(props.atuais.filter((a) => a !== t))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          id="funil-etiqueta-nova"
+          className="etiquetas-edit__campo"
+          list="funil-etiquetas-sugestoes"
+          placeholder={props.atuais.length ? 'Adicionar' : 'Ex.: Indicação, Farma, Prioridade'}
+          maxLength={30}
+          value={nova}
+          onChange={(e) => setNova(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              adicionar();
+            }
+          }}
+          onBlur={adicionar}
+        />
+        <datalist id="funil-etiquetas-sugestoes">
+          {(sugestoes.data ?? [])
+            .filter((t) => !props.atuais.includes(t))
+            .map((t) => (
+              <option key={t} value={t} />
+            ))}
+        </datalist>
+      </div>
+    </div>
+  );
 }
 
 /** Campo de motivo + confirmação para perdido/descartado. */
@@ -160,6 +211,8 @@ export function SecaoFunil(props: {
     cliente.setQueryData(['funil', empresaId], d);
     cliente.invalidateQueries({ queryKey: ['funil', empresaId, 'mensagem'] });
     cliente.invalidateQueries({ queryKey: ['quadro'] });
+    cliente.invalidateQueries({ queryKey: ['pipelines'] });
+    cliente.invalidateQueries({ queryKey: ['etiquetas'] });
     cliente.invalidateQueries({ queryKey: ['empresas'] });
   };
 
@@ -196,6 +249,9 @@ export function SecaoFunil(props: {
   });
 
   const [motivoPara, setMotivoPara] = useState<EtapaFunil | null>(null);
+  /** Etapa do pipeline escolhida enquanto pede o motivo da perda. */
+  const [motivoEtapaId, setMotivoEtapaId] = useState<number | null>(null);
+  const pipelines = usePipelines();
   const [confirmarRemover, setConfirmarRemover] = useState(false);
   const [tipo, setTipo] = useState<Exclude<TipoAtividade, 'etapa'>>('whatsapp');
   const [direcao, setDirecao] = useState<'enviada' | 'recebida'>('enviada');
@@ -293,10 +349,35 @@ export function SecaoFunil(props: {
     );
   }
 
-  const mudarEtapa = (etapa: EtapaFunil) => {
-    if (etapa === op.etapa) return;
-    if (PEDE_MOTIVO.has(etapa)) setMotivoPara(etapa);
-    else atualizar.mutate({ etapa });
+  // Valor do select: "e:<id>" para etapas do pipeline, "descartado" para tirar do funil.
+  const etapasTodas = (pipelines.data ?? []).flatMap((p) => p.etapas);
+  const valorEtapa =
+    motivoPara === 'descartado'
+      ? 'descartado'
+      : motivoEtapaId
+        ? `e:${motivoEtapaId}`
+        : op.etapa === 'descartado'
+          ? 'descartado'
+          : op.etapaId
+            ? `e:${op.etapaId}`
+            : '';
+  const mudarEtapa = (v: string) => {
+    if (v === valorEtapa) return;
+    if (v === 'descartado') {
+      setMotivoEtapaId(null);
+      setMotivoPara('descartado');
+      return;
+    }
+    const et = etapasTodas.find((e) => `e:${e.id}` === v);
+    if (!et) return;
+    if (et.papel === 'perdido' && op.etapa !== 'perdido') {
+      setMotivoEtapaId(et.id);
+      setMotivoPara('perdido');
+    } else atualizar.mutate({ etapaId: et.id });
+  };
+  const cancelarMotivo = () => {
+    setMotivoPara(null);
+    setMotivoEtapaId(null);
   };
 
   const salvarProximo = (dia: string, acao = proximaAcao) =>
@@ -307,7 +388,8 @@ export function SecaoFunil(props: {
       <h2>
         Funil{' '}
         <small>
-          {ROTULO_ETAPA[op.etapa]} desde {fmtHora(op.etapaDesde)}
+          {op.pipelineNome ? `${op.pipelineNome} · ` : ''}
+          {op.etapaNome ?? ROTULO_ETAPA[op.etapa]} desde {fmtHora(op.etapaDesde)}
         </small>
       </h2>
       <div className="pilha">
@@ -342,15 +424,23 @@ export function SecaoFunil(props: {
               <label htmlFor="funil-etapa">Etapa</label>
               <select
                 id="funil-etapa"
-                value={motivoPara ?? op.etapa}
-                disabled={atualizar.isPending}
-                onChange={(e) => mudarEtapa(e.target.value as EtapaFunil)}
+                value={valorEtapa}
+                disabled={atualizar.isPending || pipelines.isPending}
+                onChange={(e) => mudarEtapa(e.target.value)}
               >
-                {ETAPAS.map((et) => (
-                  <option key={et} value={et}>
-                    {ROTULO_ETAPA[et]}
-                  </option>
+                {!valorEtapa && <option value="">{ROTULO_ETAPA[op.etapa]}</option>}
+                {pipelines.data?.map((p) => (
+                  <optgroup key={p.id} label={p.nome}>
+                    {p.etapas.map((et) => (
+                      <option key={et.id} value={`e:${et.id}`}>
+                        {et.nome}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
+                <optgroup label="Fora do funil">
+                  <option value="descartado">Descartado</option>
+                </optgroup>
               </select>
             </div>
             <div className="campo">
@@ -382,14 +472,22 @@ export function SecaoFunil(props: {
               Agente)
             </label>
           )}
+          <Etiquetas
+            atuais={op.etiquetas ?? []}
+            salvando={atualizar.isPending}
+            aoSalvar={(etiquetas) => atualizar.mutate({ etiquetas })}
+          />
           {motivoPara && (
             <div style={{ marginTop: 12 }}>
               <PedirMotivo
                 etapa={motivoPara}
                 enviando={atualizar.isPending}
-                aoCancelar={() => setMotivoPara(null)}
+                aoCancelar={cancelarMotivo}
                 aoConfirmar={(motivo) =>
-                  atualizar.mutate({ etapa: motivoPara, motivo }, { onSuccess: () => setMotivoPara(null) })
+                  atualizar.mutate(
+                    motivoEtapaId ? { etapaId: motivoEtapaId, motivo } : { etapa: motivoPara, motivo },
+                    { onSuccess: cancelarMotivo },
+                  )
                 }
               />
             </div>

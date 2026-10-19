@@ -72,6 +72,10 @@ export const funilAtualizar = z
     valorMensal: z.number().min(0).max(10_000_000).nullable().optional(),
     proximaAcao: texto(200).optional(),
     proximaAcaoEm: dataOpcional.optional(),
+    /** Etapa do pipeline (a tela usa esta; o papel dela decide a cadência). */
+    etapaId: z.number().int().positive().optional(),
+    /** Suas etiquetas (Indicação, Farma…). */
+    etiquetas: z.array(z.string().trim().min(1).max(30)).max(12).optional(),
     /** A IA conduz a conversa com este lead. */
     agente: z.boolean().optional(),
     /** Devolve para a IA o lead que ela tinha passado para você. */
@@ -92,6 +96,12 @@ export const atividadeEntrada = z.object({
 export type AtividadeEntrada = z.infer<typeof atividadeEntrada>;
 
 export const filtrosFunil = z.object({
+  /** Pipeline do quadro (padrão: o primeiro). */
+  pipelineId: z.coerce.number().int().positive().optional(),
+  etiqueta: z.string().trim().max(30).optional(),
+  /** Entraram no funil nos últimos N dias. */
+  dias: z.coerce.number().int().min(1).max(3650).optional(),
+  ordem: z.enum(['manual', 'recentes', 'proximo', 'nota', 'contato', 'valor']).default('manual'),
   campanhaId: z.coerce.number().int().positive().optional(),
   faixa: z.enum(['A', 'B', 'C']).optional(),
   busca: z.string().trim().max(120).optional(),
@@ -305,3 +315,47 @@ export const configAgenteEntrada = z
 export type ConfigAgenteEntrada = z.infer<typeof configAgenteEntrada>;
 
 export const aprovarRascunho = z.object({ texto: z.string().trim().min(1).max(1500).optional() });
+
+/* ───────────────────────────── Pipelines ───────────────────────────── */
+
+/** O que cada etapa faz no sistema (a cadência, a IA e os relatórios usam o papel). */
+export const PAPEIS_ETAPA = [
+  'a_abordar',
+  'abordado',
+  'respondeu',
+  'reuniao',
+  'proposta',
+  'ganho',
+  'perdido',
+] as const;
+export type PapelEtapa = (typeof PAPEIS_ETAPA)[number];
+
+export const ROTULO_PAPEL: Record<PapelEtapa, string> = {
+  a_abordar: 'Primeiro contato',
+  abordado: 'Aguardando resposta',
+  respondeu: 'Conversa em andamento',
+  reuniao: 'Reunião',
+  proposta: 'Proposta',
+  ganho: 'Ganho',
+  perdido: 'Perdido',
+};
+
+const cor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Cor no formato #rrggbb.');
+
+export const pipelineEntrada = z.object({ nome: z.string().trim().min(1).max(40) });
+
+export const etapaEntrada = z.object({
+  nome: z.string().trim().min(1).max(40),
+  cor: cor.default('#64748b'),
+  papel: z.enum(PAPEIS_ETAPA),
+});
+
+export const etapaAtualizar = z
+  .object({
+    nome: z.string().trim().min(1).max(40).optional(),
+    cor: cor.optional(),
+    papel: z.enum(PAPEIS_ETAPA).optional(),
+    /** Nova posição (1 = primeira). */
+    ordem: z.number().int().min(1).max(50).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');

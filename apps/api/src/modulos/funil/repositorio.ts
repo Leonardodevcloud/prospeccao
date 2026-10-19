@@ -59,12 +59,62 @@ export async function duplicadas(db: Executor, empresaIds: number[]): Promise<Du
   return rows;
 }
 
-async function proximaPosicao(db: Executor, etapa: EtapaFunil): Promise<number> {
+async function proximaPosicao(db: Executor, etapaId: number | null, papel: EtapaFunil): Promise<number> {
   const { rows } = await db.query<{ p: number }>(
-    'SELECT coalesce(max(posicao), 0) + 1 AS p FROM comercial.oportunidades WHERE etapa = $1',
-    [etapa],
+    `SELECT coalesce(max(posicao), 0) + 1 AS p FROM comercial.oportunidades
+      WHERE ($1::int IS NOT NULL AND etapa_id = $1) OR ($1::int IS NULL AND etapa = $2)`,
+    [etapaId, papel],
   );
   return Number(rows[0]?.p ?? 1);
+}
+
+export interface EtapaResolvida {
+  id: number;
+  nome: string;
+  papel: EtapaFunil;
+  pipelineId: number;
+}
+
+export async function obterEtapa(db: Executor, etapaId: number): Promise<EtapaResolvida | null> {
+  const { rows } = await db.query<EtapaResolvida>(
+    'SELECT id, nome, papel, pipeline_id AS "pipelineId" FROM comercial.etapas WHERE id = $1',
+    [etapaId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Etapa para um papel: a primeira com esse papel no pipeline em que o lead está; se o pipeline
+ * não tem (ex.: reunião no SDR), a do primeiro pipeline que tem (o lead passa para o Closer).
+ * Descartado não tem etapa (sai do quadro).
+ */
+export async function resolverEtapa(
+  db: Executor,
+  empresaId: number,
+  papel: EtapaFunil,
+): Promise<EtapaResolvida | null> {
+  if (papel === 'descartado') return null;
+  const { rows } = await db.query<EtapaResolvida>(
+    `SELECT et.id, et.nome, et.papel, et.pipeline_id AS "pipelineId"
+       FROM comercial.etapas et JOIN comercial.pipelines p ON p.id = et.pipeline_id
+      WHERE et.papel = $2
+      ORDER BY (et.pipeline_id = (SELECT e2.pipeline_id FROM comercial.oportunidades o
+                                   JOIN comercial.etapas e2 ON e2.id = o.etapa_id
+                                  WHERE o.empresa_id = $1)) IS NOT TRUE,
+               p.ordem, et.ordem
+      LIMIT 1`,
+    [empresaId, papel],
+  );
+  return rows[0] ?? null;
+}
+
+async function nomeEtapaAtual(db: Executor, empresaId: number): Promise<string | null> {
+  const { rows } = await db.query<{ nome: string }>(
+    `SELECT et.nome FROM comercial.oportunidades o JOIN comercial.etapas et ON et.id = o.etapa_id
+      WHERE o.empresa_id = $1`,
+    [empresaId],
+  );
+  return rows[0]?.nome ?? null;
 }
 
 async function registrarEtapa(
@@ -74,11 +124,12 @@ async function registrarEtapa(
   para: EtapaFunil,
   autor: string,
   texto: string | null = null,
+  nomes: { de?: string | null; para?: string | null } = {},
 ) {
   await db.query(
-    `INSERT INTO comercial.atividades (empresa_id, tipo, de_etapa, para_etapa, texto, autor)
-     VALUES ($1, 'etapa', $2, $3, $4, $5)`,
-    [empresaId, de, para, texto, autor],
+    `INSERT INTO comercial.atividades (empresa_id, tipo, de_etapa, para_etapa, texto, autor, de_nome, para_nome)
+     VALUES ($1, 'etapa', $2, $3, $4, $5, $6, $7)`,
+    [empresaId, de, para, texto, autor, nomes.de ?? null, nomes.para ?? null],
   );
 }
 
@@ -90,21 +141,23 @@ async function criarOportunidade(
   motivo: string | null,
   autor: string,
 ) {
-  const posicao = await proximaPosicao(db, etapa);
+  const alvo = await resolverEtapa(db, empresaId, etapa);
+  const posicao = await proximaPosicao(db, alvo?.id ?? null, etapa);
   const { rowCount } = await db.query(
-    `INSERT INTO comercial.oportunidades (empresa_id, campanha_id, etapa, posicao, motivo, faixa_entrada, score_entrada)
+    `INSERT INTO comercial.oportunidades
+       (empresa_id, campanha_id, etapa, etapa_id, posicao, motivo, faixa_entrada, score_entrada)
      SELECT e.id,
             (SELECT ce.campanha_id FROM descoberta.campanha_empresas ce WHERE ce.empresa_id = e.id
               ORDER BY ce.adicionada_em LIMIT 1),
-            $2, $3, $4, l.faixa, l.score
+            $2, $5, $3, $4, l.faixa, l.score
        FROM descoberta.empresas e
        LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
       WHERE e.id = $1
      ON CONFLICT (empresa_id) DO NOTHING`,
-    [empresaId, etapa, posicao, motivo],
+    [empresaId, etapa, posicao, motivo, alvo?.id ?? null],
   );
   if (rowCount) {
-    await registrarEtapa(db, empresaId, null, etapa, autor, motivo);
+    await registrarEtapa(db, empresaId, null, etapa, autor, motivo, { para: alvo?.nome });
     await aplicarCadencia(db, empresaId, 'etapa');
   }
   return (rowCount ?? 0) > 0;
@@ -180,19 +233,46 @@ async function mover(
   motivo: string | null,
   autor: string,
   posicao?: number,
+  etapaId?: number,
 ) {
   const fechando = para === 'ganho' || para === 'perdido' || para === 'descartado';
+  const alvo = etapaId ? await obterEtapa(db, etapaId) : await resolverEtapa(db, empresaId, para);
+  const deNome = await nomeEtapaAtual(db, empresaId);
   await db.query(
     `UPDATE comercial.oportunidades
-        SET etapa = $2, etapa_desde = now(), posicao = $3,
+        SET etapa = $2, etapa_id = $6, etapa_desde = now(), posicao = $3,
             motivo = CASE WHEN $2 IN ('perdido', 'descartado') THEN $4 ELSE motivo END,
             proxima_acao = CASE WHEN $5 THEN NULL ELSE proxima_acao END,
             proxima_acao_em = CASE WHEN $5 THEN NULL ELSE proxima_acao_em END,
             tentativas = 0, encerrar_em = NULL
       WHERE empresa_id = $1`,
-    [empresaId, para, posicao ?? (await proximaPosicao(db, para)), motivo, fechando],
+    [
+      empresaId,
+      para,
+      posicao ?? (await proximaPosicao(db, alvo?.id ?? null, para)),
+      motivo,
+      fechando,
+      alvo?.id ?? null,
+    ],
   );
-  await registrarEtapa(db, empresaId, de, para, autor, motivo);
+  await registrarEtapa(db, empresaId, de, para, autor, motivo, { de: deNome, para: alvo?.nome });
+}
+
+/** Troca de etapa com o mesmo papel (ex.: Proposta enviada → Negociação): a cadência continua. */
+async function trocarEtapa(
+  db: Executor,
+  empresaId: number,
+  papel: EtapaFunil,
+  alvo: EtapaResolvida,
+  autor: string,
+  posicao?: number,
+) {
+  const deNome = await nomeEtapaAtual(db, empresaId);
+  await db.query(
+    'UPDATE comercial.oportunidades SET etapa_id = $2, etapa_desde = now(), posicao = $3 WHERE empresa_id = $1',
+    [empresaId, alvo.id, posicao ?? (await proximaPosicao(db, alvo.id, papel))],
+  );
+  await registrarEtapa(db, empresaId, papel, papel, autor, null, { de: deNome, para: alvo.nome });
 }
 
 async function etapaAtual(db: Executor, empresaId: number): Promise<EtapaFunil | null> {
@@ -204,13 +284,13 @@ async function etapaAtual(db: Executor, empresaId: number): Promise<EtapaFunil |
 }
 
 /** Posição para soltar o card antes de outro (meio do caminho entre ele e o de cima). */
-async function posicaoAntesDe(db: Executor, etapa: EtapaFunil, antesDe: number, empresaId: number) {
+async function posicaoAntesDe(db: Executor, antesDe: number, empresaId: number) {
   const { rows } = await db.query<{ alvo: number | null; anterior: number | null }>(
     `SELECT a.posicao AS alvo,
             (SELECT max(o.posicao) FROM comercial.oportunidades o
-              WHERE o.etapa = $1 AND o.posicao < a.posicao AND o.empresa_id <> $3) AS anterior
-       FROM comercial.oportunidades a WHERE a.empresa_id = $2 AND a.etapa = $1`,
-    [etapa, antesDe, empresaId],
+              WHERE o.etapa_id IS NOT DISTINCT FROM a.etapa_id AND o.posicao < a.posicao AND o.empresa_id <> $2) AS anterior
+       FROM comercial.oportunidades a WHERE a.empresa_id = $1`,
+    [antesDe, empresaId],
   );
   const alvo = rows[0]?.alvo;
   if (alvo == null) return undefined;
@@ -222,13 +302,21 @@ export async function atualizar(pool: Pool, empresaId: number, d: FunilAtualizar
   await comTransacao(pool, async (tx) => {
     const atual = await etapaAtual(tx, empresaId);
     if (!atual) throw AppError.naoEncontrado('Lead no funil');
-    const para = d.etapa ?? atual;
+    const destino = d.etapaId ? await obterEtapa(tx, d.etapaId) : null;
+    if (d.etapaId && !destino) throw AppError.naoEncontrado('Etapa');
+    const para = destino?.papel ?? d.etapa ?? atual;
     if (para === 'perdido' && atual !== 'perdido' && !d.motivo)
       throw AppError.invalido('Diga o motivo da perda: ajuda a entender o que não funcionou.');
 
-    const posicao = d.antesDe != null ? await posicaoAntesDe(tx, para, d.antesDe, empresaId) : undefined;
-    if (para !== atual) {
-      await mover(tx, empresaId, atual, para, d.motivo ?? null, autor, posicao);
+    const posicao = d.antesDe != null ? await posicaoAntesDe(tx, d.antesDe, empresaId) : undefined;
+    const { rows: atualId } = await tx.query<{ etapa_id: number | null }>(
+      'SELECT etapa_id FROM comercial.oportunidades WHERE empresa_id = $1',
+      [empresaId],
+    );
+    if (destino && para === atual && destino.id !== atualId[0]?.etapa_id) {
+      await trocarEtapa(tx, empresaId, para, destino, autor, posicao);
+    } else if (para !== atual) {
+      await mover(tx, empresaId, atual, para, d.motivo ?? null, autor, posicao, destino?.id);
       // Arrastou de etapa: o próximo passo segue a cadência (a não ser que já venha um junto).
       if (d.proximaAcao === undefined && d.proximaAcaoEm === undefined)
         await aplicarCadencia(tx, empresaId, 'etapa');
@@ -257,6 +345,7 @@ export async function atualizar(pool: Pool, empresaId: number, d: FunilAtualizar
       sets.push('agente_pausa = NULL');
     }
     if (d.devolverParaIa) sets.push('agente_pausa = NULL');
+    if (d.etiquetas !== undefined) set('etiquetas', [...new Set(d.etiquetas)]);
     if (sets.length)
       await tx.query(`UPDATE comercial.oportunidades SET ${sets.join(', ')} WHERE empresa_id = $1`, valores);
   });
@@ -333,13 +422,18 @@ export async function detalhe(db: Executor, empresaId: number) {
               o.proxima_acao_em AS "proximaAcaoEm", o.ultimo_contato_em AS "ultimoContatoEm",
               o.etapa_desde AS "etapaDesde", o.criado_em AS "criadoEm", o.faixa_entrada AS "faixaEntrada",
               o.campanha_id AS "campanhaId", (o.proxima_acao_em < ${FIM_DE_HOJE}) AS pendente,
-              o.tentativas, o.encerrar_em AS "encerrarEm", o.agente, o.agente_pausa AS "agentePausa"
-         FROM comercial.oportunidades o WHERE o.empresa_id = $1`,
+              o.tentativas, o.encerrar_em AS "encerrarEm", o.agente, o.agente_pausa AS "agentePausa",
+              o.etapa_id AS "etapaId", et.nome AS "etapaNome", et.cor AS "etapaCor", p.nome AS "pipelineNome",
+              o.etiquetas
+         FROM comercial.oportunidades o
+         LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
+         LEFT JOIN comercial.pipelines p ON p.id = et.pipeline_id
+        WHERE o.empresa_id = $1`,
       [empresaId],
     ),
     db.query(
       `SELECT id, tipo, direcao, texto, contato, de_etapa AS "deEtapa", para_etapa AS "paraEtapa", autor,
-              criado_em AS "em"
+              de_nome AS "deNome", para_nome AS "paraNome", criado_em AS "em"
          FROM comercial.atividades WHERE empresa_id = $1 ORDER BY criado_em DESC, id DESC LIMIT 200`,
       [empresaId],
     ),
@@ -349,13 +443,33 @@ export async function detalhe(db: Executor, empresaId: number) {
 }
 
 /** Cards do quadro (sem os descartados), com o que precisa para decidir o próximo passo. */
+const ORDEM_QUADRO: Record<FiltrosFunil['ordem'], string> = {
+  manual: 'o.posicao, o.empresa_id',
+  recentes: 'o.criado_em DESC, o.empresa_id',
+  proximo: 'o.proxima_acao_em ASC NULLS LAST, o.posicao',
+  nota: 'l.score DESC NULLS LAST, o.posicao',
+  contato: 'o.ultimo_contato_em DESC NULLS LAST, o.posicao',
+  valor: 'o.valor_mensal DESC NULLS LAST, o.posicao',
+};
+
 export async function quadro(db: Executor, f: FiltrosFunil) {
-  const where = [`o.etapa <> 'descartado'`];
   const valores: unknown[] = [];
   const p = (v: unknown) => {
     valores.push(v);
     return `$${valores.length}`;
   };
+  // Pipeline do quadro: o pedido ou o primeiro.
+  const { rows: pip } = await db.query<{ id: number }>(
+    'SELECT id FROM comercial.pipelines WHERE ($1::int IS NULL OR id = $1) ORDER BY ordem, id LIMIT 1',
+    [f.pipelineId ?? null],
+  );
+  const pipelineId = pip[0]?.id ?? null;
+  const where = [
+    `o.etapa <> 'descartado'`,
+    `o.etapa_id IN (SELECT id FROM comercial.etapas WHERE pipeline_id = ${p(pipelineId)})`,
+  ];
+  if (f.etiqueta) where.push(`${p(f.etiqueta)} = ANY(o.etiquetas)`);
+  if (f.dias) where.push(`o.criado_em >= now() - make_interval(days => ${p(f.dias)})`);
   if (f.campanhaId)
     where.push(
       `EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce WHERE ce.empresa_id = o.empresa_id AND ce.campanha_id = ${p(f.campanhaId)})`,
@@ -372,18 +486,25 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
             o.proxima_acao_em AS "proximaAcaoEm", (o.proxima_acao_em < ${FIM_DE_HOJE}) AS pendente,
             o.ultimo_contato_em AS "ultimoContatoEm", o.etapa_desde AS "etapaDesde",
             o.valor_mensal::float8 AS "valorMensal", o.motivo, o.tentativas, o.encerrar_em AS "encerrarEm",
-            o.agente, o.agente_pausa AS "agentePausa",
-            e.nome, e.cidade, e.uf, e.maps_categoria AS "categoria",
+            o.agente, o.agente_pausa AS "agentePausa", o.etapa_id AS "etapaId", o.etiquetas,
+            o.criado_em AS "criadoEm",
+            e.nome, e.cidade, e.uf, coalesce(e.maps_categoria, l.maps_categoria) AS "categoria",
             l.faixa, l.score, dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
             pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
             coalesce(pc.valor, e.maps_telefone) AS "telefone",
             (SELECT count(*)::int FROM comercial.atividades a
-              WHERE a.empresa_id = o.empresa_id AND a.tipo <> 'etapa') AS contatos
+              WHERE a.empresa_id = o.empresa_id AND a.tipo <> 'etapa') AS contatos,
+            ult.texto AS "ultimaDoLead", ult.criado_em AS "ultimaDoLeadEm"
        FROM comercial.oportunidades o
+       LEFT JOIN LATERAL (
+         SELECT a.texto, a.criado_em FROM comercial.atividades a
+          WHERE a.empresa_id = o.empresa_id AND a.direcao = 'recebida'
+          ORDER BY a.criado_em DESC LIMIT 1
+       ) ult ON true
        JOIN descoberta.empresas e ON e.id = o.empresa_id
        ${JUNCOES_ENRIQ}
       WHERE ${where.join(' AND ')}
-      ORDER BY o.posicao, o.empresa_id
+      ORDER BY ${ORDEM_QUADRO[f.ordem]}
       LIMIT 2000`,
     valores,
   );
@@ -394,7 +515,16 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
        FROM comercial.oportunidades`,
   );
   const cfg = await obterConfig(db);
-  return { cards: rows, ...resumo.rows[0], totalTentativas: cfg.diasFollowup.length + 1 };
+  const { rows: etiquetas } = await db.query<{ e: string }>(
+    'SELECT DISTINCT unnest(etiquetas) AS e FROM comercial.oportunidades ORDER BY 1 LIMIT 100',
+  );
+  return {
+    pipelineId,
+    cards: rows,
+    ...resumo.rows[0],
+    totalTentativas: cfg.diasFollowup.length + 1,
+    etiquetas: etiquetas.map((x) => x.e),
+  };
 }
 
 /** Contagem leve para o menu: follow-ups vencidos ou para hoje. */
