@@ -5,11 +5,10 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { api, type Campanha, type EmpresaLista, type Pagina, qs } from '../api';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi } from '../componentes/Formulario';
-import { fmtCidade, fmtKm, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO_ORIGEM } from '../formatar';
+import { fmtCidade, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO_ORIGEM } from '../formatar';
 
 const ABAS = [
   { id: 'todos', rotulo: 'Todos' },
-  { id: 'raio', rotulo: 'Na área' },
   { id: 'entrega', rotulo: 'Com entrega' },
   { id: 'maps', rotulo: 'Só no Maps' },
 ];
@@ -55,7 +54,6 @@ export function Leads() {
     ordem,
     pagina,
     porPagina: POR_PAGINA,
-    dentroDoRaio: aba === 'raio' ? true : undefined,
     entrega: aba === 'entrega' ? true : undefined,
     origem: aba === 'maps' ? 'maps' : undefined,
   };
@@ -107,7 +105,6 @@ export function Leads() {
             onChange={(e) => mudar({ ordem: e.target.value })}
           >
             <option value="avaliacoes">Mais avaliados no Google</option>
-            <option value="distancia">Mais perto da base</option>
             <option value="recentes">Encontrados por último</option>
             <option value="nome">Nome</option>
           </select>
@@ -184,7 +181,6 @@ export function Leads() {
                   <th>Google</th>
                   <th>Telefone</th>
                   <th>Entrega</th>
-                  <th>Distância</th>
                 </tr>
               </thead>
               <tbody>
@@ -251,10 +247,6 @@ export function Leads() {
                         ) : (
                           <span className="quieto">—</span>
                         )}
-                      </td>
-                      <td>
-                        <span className="mono">{fmtKm(e.distanciaBaseKm)}</span>{' '}
-                        {e.dentroDoRaio === false && <Badge tone="warning">Fora do raio</Badge>}
                       </td>
                     </tr>
                   );

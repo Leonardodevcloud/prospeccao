@@ -117,7 +117,7 @@ function trilha(e: EmpresaDetalhe): Camada[] {
       : {
           nome: 'Localização',
           status: 'sem_resultado',
-          detalhe: 'Sem coordenada. Só faz diferença em campanhas com raio.',
+          detalhe: 'Sem coordenada no mapa.',
         },
   );
   const solicitado = e.campanhas.find((c) => c.enriquecimentoSolicitadoEm);
@@ -134,7 +134,7 @@ function trilha(e: EmpresaDetalhe): Camada[] {
           status: 'pulada',
           detalhe: foraDoRaio
             ? 'Fora do raio da campanha: não será enriquecido.'
-            : 'Ainda não enviado: a campanha precisa estar ativa (com raio, o lead também precisa estar localizado).',
+            : 'Ainda não enviado: a campanha precisa estar ativa.',
         },
   );
   return camadas;

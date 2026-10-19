@@ -23,6 +23,57 @@ interface Contexto {
   ufsExtras: string[];
 }
 
+const NOME_DOMINIO: Record<string, string> = {
+  municipios: 'municípios',
+  qualificacoes: 'qualificações dos sócios',
+  cnaes: 'CNAEs',
+};
+
+const mb = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
+const gb = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+/** "350 MB", "1,1 GB". */
+export function fmtBytes(bytes: number): string {
+  return bytes >= 1e9 ? `${gb.format(bytes / 1e9)} GB` : `${mb.format(bytes / 1e6)} MB`;
+}
+
+/**
+ * Grava o andamento na tabela de importações sem martelar o banco: `agora` grava na hora
+ * (troca de etapa), `talvez` só se passou o intervalo (download, leitura). As gravações vão
+ * em fila, uma depois da outra, então a última etapa sempre prevalece.
+ */
+export class Andamento {
+  private ultimaGravacao = 0;
+  private etapa = '';
+  private fila: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly gravar: (etapa: string) => Promise<void>,
+    private readonly intervaloMs = 4_000,
+  ) {}
+
+  agora(etapa: string): Promise<void> {
+    this.etapa = etapa;
+    this.ultimaGravacao = Date.now();
+    this.fila = this.fila.then(() => this.gravar(etapa)).catch(() => {});
+    return this.fila;
+  }
+
+  /** Chamado em callbacks síncronos (download): não espera a gravação. */
+  talvez(etapa: string): void {
+    this.etapa = etapa;
+    if (Date.now() - this.ultimaGravacao >= this.intervaloMs) void this.agora(etapa);
+  }
+
+  /** Durante a leitura: regrava a etapa atual com os contadores novos, se passou o intervalo. */
+  async talvezAgora(): Promise<void> {
+    if (Date.now() - this.ultimaGravacao >= this.intervaloMs) await this.agora(this.etapa);
+  }
+
+  terminar(): Promise<void> {
+    return this.fila;
+  }
+}
+
 /** Acumula itens e grava em lotes, sem duplicar chave dentro do mesmo lote. */
 class Lote<T> {
   private itens = new Map<string, T>();
@@ -69,7 +120,10 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   log_.info({ ufs, cnaes: cnaes.size }, 'importação iniciada');
 
   const placar: ResultadoImportacao = { mes, linhasLidas: 0, estabelecimentos: 0, empresas: 0, socios: 0 };
-  const progresso = (etapa: string) => repo.registrarProgresso(pool, importacaoId, { etapa, ...placar });
+  const andamento = new Andamento((etapa) =>
+    repo.registrarProgresso(pool, importacaoId, { etapa, ...placar }),
+  );
+  const progresso = (etapa: string) => andamento.agora(etapa);
 
   // 1. Tabelas de domínio (pequenas).
   const dominios = [
@@ -78,7 +132,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     ['cnaes', receita.ARQUIVOS.cnaes, (c: string) => c.padStart(7, '0')],
   ] as const;
   for (const [tabela, arquivos, normalizarCodigo] of dominios) {
-    await progresso(tabela);
+    await progresso(`Etapa 1 de 4 · Tabelas de apoio (${NOME_DOMINIO[tabela]})`);
     for (const nome of arquivos) {
       const caminho = await fonte.obter(nome);
       const lote = new Lote<{ codigo: string; descricao: string }>(
@@ -101,10 +155,16 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     (itens) => repo.salvarEstabelecimentos(pool, importacaoId, itens),
   );
   for (const [i, nome] of receita.ARQUIVOS.estabelecimentos.entries()) {
-    await progresso(`estabelecimentos ${i + 1}/${receita.ARQUIVOS.estabelecimentos.length}`);
-    const caminho = await fonte.obter(nome);
+    const total = receita.ARQUIVOS.estabelecimentos.length;
+    const etapa = `Etapa 2 de 4 · Estabelecimentos · arquivo ${i + 1} de ${total}`;
+    await progresso(`${etapa} · baixando`);
+    const caminho = await fonte.obter(nome, (feito, tamanho) =>
+      andamento.talvez(`${etapa} · baixando ${fmtBytes(feito)}${tamanho ? ` de ${fmtBytes(tamanho)}` : ''}`),
+    );
+    await progresso(`${etapa} · lendo`);
     for await (const linha of receita.lerZipReceita(caminho)) {
       placar.linhasLidas++;
+      if (placar.linhasLidas % 50_000 === 0) await andamento.talvezAgora();
       // Filtro barato antes do parse completo: UF fica na coluna 19.
       if (!ufsAlvo.has(linha[19] ?? '')) continue;
       const e = receita.lerEstabelecimento(linha);
@@ -125,10 +185,16 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     (itens) => repo.salvarEmpresas(pool, importacaoId, itens),
   );
   for (const [i, nome] of receita.ARQUIVOS.empresas.entries()) {
-    await progresso(`empresas ${i + 1}/${receita.ARQUIVOS.empresas.length}`);
-    const caminho = await fonte.obter(nome);
+    const total = receita.ARQUIVOS.empresas.length;
+    const etapa = `Etapa 3 de 4 · Empresas (razão social e porte) · arquivo ${i + 1} de ${total}`;
+    await progresso(`${etapa} · baixando`);
+    const caminho = await fonte.obter(nome, (feito, tamanho) =>
+      andamento.talvez(`${etapa} · baixando ${fmtBytes(feito)}${tamanho ? ` de ${fmtBytes(tamanho)}` : ''}`),
+    );
+    await progresso(`${etapa} · lendo`);
     for await (const linha of receita.lerZipReceita(caminho)) {
       placar.linhasLidas++;
+      if (placar.linhasLidas % 50_000 === 0) await andamento.talvezAgora();
       if (!basicos.has((linha[0] ?? '').padStart(8, '0'))) continue;
       const e = receita.lerEmpresa(linha);
       if (!e) continue;
@@ -143,10 +209,16 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   await repo.limparSocios(pool, [...basicos]);
   let loteSocios: receita.Socio[] = [];
   for (const [i, nome] of receita.ARQUIVOS.socios.entries()) {
-    await progresso(`socios ${i + 1}/${receita.ARQUIVOS.socios.length}`);
-    const caminho = await fonte.obter(nome);
+    const total = receita.ARQUIVOS.socios.length;
+    const etapa = `Etapa 4 de 4 · Sócios · arquivo ${i + 1} de ${total}`;
+    await progresso(`${etapa} · baixando`);
+    const caminho = await fonte.obter(nome, (feito, tamanho) =>
+      andamento.talvez(`${etapa} · baixando ${fmtBytes(feito)}${tamanho ? ` de ${fmtBytes(tamanho)}` : ''}`),
+    );
+    await progresso(`${etapa} · lendo`);
     for await (const linha of receita.lerZipReceita(caminho)) {
       placar.linhasLidas++;
+      if (placar.linhasLidas % 50_000 === 0) await andamento.talvezAgora();
       if (!basicos.has((linha[0] ?? '').padStart(8, '0'))) continue;
       const s = receita.lerSocio(linha);
       if (!s) continue;
@@ -162,7 +234,8 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     await fonte.liberar(caminho);
   }
 
-  await progresso('finalizando');
+  await progresso('Finalizando');
+  await andamento.terminar();
   log_.info(placar, 'importação concluída');
   return placar;
 }

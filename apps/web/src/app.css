@@ -626,3 +626,36 @@ fieldset.campo {
     color: var(--ink-muted);
   }
 }
+
+/* Base CNPJ: importação em andamento */
+.andamento {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.andamento__numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+.andamento__numeros div {
+  display: grid;
+}
+.andamento__numeros b {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+}
+.andamento__numeros span {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+.opcoes summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-muted);
+}

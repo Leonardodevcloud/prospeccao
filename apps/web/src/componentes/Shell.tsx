@@ -9,7 +9,7 @@ const ITENS = [
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
   { para: '/atividade', rotulo: 'Atividade', icone: 'clock' },
   { para: '/nichos', rotulo: 'Nichos', icone: 'store' },
-  { para: '/configuracoes', rotulo: 'Configurações', icone: 'building-2' },
+  { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark' },
 ];
 
 /** Estrutura das telas logadas: navegação + conteúdo. Sem sessão, manda para o login. */

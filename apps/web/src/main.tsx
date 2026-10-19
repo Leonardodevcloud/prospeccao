@@ -3,22 +3,18 @@ import './app.css';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
 import { ErroApi } from './api';
 import { Shell } from './componentes/Shell';
 import { Atividade } from './paginas/Atividade';
+import { BaseCnpj } from './paginas/BaseCnpj';
 import { Campanhas } from './paginas/Campanhas';
-import { Configuracoes } from './paginas/Configuracoes';
 import { Leads } from './paginas/Leads';
 import { Login } from './paginas/Login';
 import { Nichos } from './paginas/Nichos';
 
-// Tema claro/escuro acompanha o sistema operacional (os tokens escuros ficam em [data-theme="dark"]).
-const escuro = window.matchMedia('(prefers-color-scheme: dark)');
-const aplicarTema = () =>
-  document.documentElement.setAttribute('data-theme', escuro.matches ? 'dark' : 'light');
-aplicarTema();
-escuro.addEventListener('change', aplicarTema);
+// Tema claro sempre (preferência da operação).
+document.documentElement.setAttribute('data-theme', 'light');
 
 const roteador = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -30,7 +26,8 @@ const roteador = createBrowserRouter([
       { path: 'campanhas', element: <Campanhas /> },
       { path: 'atividade', element: <Atividade /> },
       { path: 'nichos', element: <Nichos /> },
-      { path: 'configuracoes', element: <Configuracoes /> },
+      { path: 'base-cnpj', element: <BaseCnpj /> },
+      { path: 'configuracoes', element: <Navigate to="/base-cnpj" replace /> },
     ],
   },
 ]);

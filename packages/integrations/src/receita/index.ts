@@ -1,7 +1,7 @@
 import { createWriteStream } from 'node:fs';
 import { mkdir, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { AppError } from '@prospeccao/shared';
@@ -109,8 +109,15 @@ export function urlArquivo(baseUrl: string, mes: string, nome: string): string {
   return `${baseUrl.replace(/\/$/, '')}/${mes}/${nome}`;
 }
 
-/** Baixa um arquivo grande direto para o disco, sem passar pela memória. */
-export async function baixarArquivo(url: string, destino: string, baseUrl = url): Promise<number> {
+export type AoBaixar = (baixados: number, total: number | null) => void;
+
+/** Baixa um arquivo grande direto para o disco, sem passar pela memória, avisando o andamento. */
+export async function baixarArquivo(
+  url: string,
+  destino: string,
+  baseUrl = url,
+  aoBaixar?: AoBaixar,
+): Promise<number> {
   await mkdir(dirname(destino), { recursive: true });
   let resposta: Response;
   try {
@@ -124,7 +131,20 @@ export async function baixarArquivo(url: string, destino: string, baseUrl = url)
       repetivel: resposta.status >= 500 || resposta.status === 429,
     });
   }
-  await pipeline(Readable.fromWeb(resposta.body as unknown as WebReadableStream), createWriteStream(destino));
+  const total = Number(resposta.headers.get('content-length')) || null;
+  let baixados = 0;
+  const contador = new Transform({
+    transform(pedaco: Buffer, _codificacao, pronto) {
+      baixados += pedaco.length;
+      aoBaixar?.(baixados, total);
+      pronto(null, pedaco);
+    },
+  });
+  await pipeline(
+    Readable.fromWeb(resposta.body as unknown as WebReadableStream),
+    contador,
+    createWriteStream(destino),
+  );
   return (await stat(destino)).size;
 }
 

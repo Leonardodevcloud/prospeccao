@@ -64,7 +64,7 @@ function ImportacaoCnpj({ d }: { d: DadosAtividade }) {
   if (!i && !ag) {
     return (
       <p style={{ margin: 0, fontSize: 14 }}>
-        Nenhuma importação ainda. Peça uma em <Link to="/configuracoes">Configurações</Link>.
+        Nenhuma importação ainda. Peça uma em <Link to="/base-cnpj">Base CNPJ</Link>.
       </p>
     );
   }
