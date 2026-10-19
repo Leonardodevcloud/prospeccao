@@ -5,7 +5,7 @@ import type { CampanhaEntrada, EscopoReenriquecer, StatusCampanha } from '@prosp
 const SELECT = `
   SELECT c.id, c.nome, c.nicho_id AS "nichoId", n.nome AS "nichoNome", c.cidades, c.raio_km::float8 AS "raioKm",
          c.meta_diaria AS "metaDiaria", c.limite_envios_dia AS "limiteEnviosDia", c.cadencia, c.modo,
-         c.max_por_busca AS "maxPorBusca", c.status, c.iniciada_em AS "iniciadaEm",
+         c.max_por_busca AS "maxPorBusca", c.teto_places_usd::float8 AS "tetoPlacesUsd", c.status, c.iniciada_em AS "iniciadaEm",
          c.criado_em AS "criadoEm", c.atualizado_em AS "atualizadoEm",
          json_build_object(
            'empresas', coalesce(p.empresas, 0),
@@ -22,12 +22,18 @@ const SELECT = `
            'novos', coalesce(f.novos, 0),
            'noFunil', coalesce(f.no_funil, 0),
            'descartados', coalesce(f.descartados, 0),
-           'mei', coalesce(f.mei, 0)
+           'mei', coalesce(f.mei, 0),
+           'buscasBloqueadas', coalesce(b.bloqueadas, 0),
+           'buscasPorBairro', coalesce(b.por_bairro, 0),
+           'pedidosPlaces', coalesce(u.pedidos, 0),
+           'pagosPlaces', coalesce(u.pagos, 0),
+           'gastoPlacesUsd', coalesce(u.gasto_usd, 0)
          ) AS progresso
     FROM cadastro.campanhas c
     JOIN cadastro.nichos n ON n.id = c.nicho_id
     LEFT JOIN descoberta.v_progresso_campanha p ON p.campanha_id = c.id
     LEFT JOIN descoberta.v_buscas_campanha b ON b.campanha_id = c.id
+    LEFT JOIN descoberta.v_uso_places_campanha u ON u.campanha_id = c.id
     LEFT JOIN LATERAL (
       -- Situação comercial dos leads da campanha: novos = nunca trabalhados.
       SELECT count(*) FILTER (WHERE o.empresa_id IS NULL AND NOT e.mei)::int AS novos,
@@ -112,7 +118,7 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
               count(*) OVER (PARTITION BY campanha_id)::int AS total
          FROM descoberta.buscas_maps
         WHERE campanha_id = ANY($1::bigint[]) AND erro IS NOT NULL
-          AND (status IN ('pendente', 'rodando') OR concluido_em > now() - interval '1 day')
+          AND (status IN ('pendente', 'rodando', 'bloqueada') OR concluido_em > now() - interval '1 day')
         ORDER BY campanha_id, coalesce(concluido_em, criado_em) DESC`,
       [ids],
     ),
@@ -317,4 +323,9 @@ export async function apagarComLeads(pool: Pool, campanhaId: number) {
     await tx.query('DELETE FROM cadastro.campanhas WHERE id = $1', [campanhaId]);
     return { leadsApagados: ids.length };
   });
+}
+
+/** Teto de gasto da campanha em buscas pagas no Google. null = sem teto; 0 = só a franquia grátis. */
+export async function mudarTetoPlaces(db: Executor, id: number, teto: number | null) {
+  await db.query('UPDATE cadastro.campanhas SET teto_places_usd = $2 WHERE id = $1', [id, teto]);
 }

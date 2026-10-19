@@ -3,12 +3,15 @@ import {
   apagarCampanhaEntrada,
   campanhaAtualizacao,
   campanhaEntrada,
+  iniciarCampanhaEntrada,
   reenriquecerEntrada,
   type StatusCampanha,
+  tetoPlacesEntrada,
 } from '@prospeccao/shared';
 import { Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
+import { estimativaCampanha } from '../places/repositorio.js';
 import * as repo from './repositorio.js';
 
 /** De onde cada status pode ir. */
@@ -63,9 +66,33 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
     res.json(await repo.obter(pool, id));
   });
 
-  /** Ativa (ou retoma) e dispara a descoberta. */
+  /** Quanto a campanha vai gastar no Google Places se rodar agora (a tela confirma antes). */
+  r.get('/:id/estimativa-places', async (req, res) => {
+    const estimativa = await estimativaCampanha(pool, idDaRota(req));
+    if (!estimativa) throw AppError.naoEncontrado('Campanha');
+    res.json(estimativa);
+  });
+
+  /** Troca o teto de gasto da campanha no Google (null = sem teto; 0 = só a franquia grátis). */
+  r.put('/:id/teto-places', async (req, res) => {
+    const id = idDaRota(req);
+    const { tetoPlacesUsd } = corpo(req, tetoPlacesEntrada);
+    if (!(await repo.statusAtual(pool, id))) throw AppError.naoEncontrado('Campanha');
+    await repo.mudarTetoPlaces(pool, id, tetoPlacesUsd);
+    res.json(await repo.obter(pool, id));
+  });
+
+  /**
+   * Ativa (ou retoma) e dispara a descoberta. Buscas paradas no teto voltam para a fila.
+   * Opcional: `tetoPlacesUsd` troca o teto da campanha junto (escolha feita na estimativa).
+   */
   r.post('/:id/iniciar', async (req, res) => {
     const id = idDaRota(req);
+    const { tetoPlacesUsd } = corpo(req, iniciarCampanhaEntrada);
+    if (tetoPlacesUsd !== undefined) {
+      if (!(await repo.statusAtual(pool, id))) throw AppError.naoEncontrado('Campanha');
+      await repo.mudarTetoPlaces(pool, id, tetoPlacesUsd);
+    }
     await transicionar(id, 'ativa');
     await filas.publicar('campanha.iniciar', { campanhaId: id });
     log.info({ campanhaId: id }, 'campanha iniciada');

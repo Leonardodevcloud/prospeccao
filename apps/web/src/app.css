@@ -1109,3 +1109,151 @@ fieldset.campo {
     transition: none;
   }
 }
+
+/* ---------- Google Places: uso do mês e estimativa ---------- */
+/* Card que cresce (estimativa aberta) não estica os vizinhos por dentro nem estoura a coluna. */
+.card-campanha {
+  align-content: start;
+  min-width: 0;
+}
+.card-campanha > * {
+  min-width: 0;
+}
+.painel-places {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  max-width: 640px;
+}
+.painel-places__topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.painel-places__topo b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.painel-places__topo p {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+.painel-places__acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.painel-places__bloco {
+  display: grid;
+  gap: 8px;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.painel-places__bloco p,
+.painel-places__nota {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+.painel-places__linha {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.painel-places__linha > b {
+  font-weight: 600;
+}
+.painel-places__kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.painel-places__kpis div > small {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.painel-places__kpis b {
+  font-size: 17px;
+  font-weight: 600;
+}
+.barra-franquia {
+  display: flex;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--line);
+  overflow: hidden;
+}
+.barra-franquia span {
+  display: block;
+  height: 100%;
+}
+.barra-franquia__gratis {
+  background: var(--brand);
+}
+.barra-franquia__paga {
+  background: var(--danger);
+}
+.alerta-places {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 19px;
+}
+.alerta-places > b:first-child {
+  display: block;
+  margin-bottom: 2px;
+}
+.alerta-places--erro {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+}
+.alerta-places--aviso {
+  background: var(--warning-soft);
+  border: 1px solid var(--warning);
+}
+.alerta-places--ok {
+  background: var(--surface);
+  border: 1px solid var(--brand);
+}
+.estimativa-places {
+  background: var(--surface);
+  border-color: var(--line);
+}
+.tabela-estimativa {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.tabela-estimativa th,
+.tabela-estimativa td {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.tabela-estimativa th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.tabela-estimativa .num {
+  text-align: right;
+}
+@media (max-width: 520px) {
+  .painel-places__kpis b {
+    font-size: 15px;
+  }
+}

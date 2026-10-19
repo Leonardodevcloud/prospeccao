@@ -8,7 +8,8 @@
     "./apify": "./src/apify/index.ts",
     "./ors": "./src/ors/index.ts",
     "./receita": "./src/receita/index.ts",
-    "./enriquecimento": "./src/enriquecimento/index.ts"
+    "./enriquecimento": "./src/enriquecimento/index.ts",
+    "./places": "./src/places/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

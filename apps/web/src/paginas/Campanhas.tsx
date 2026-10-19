@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router';
 import { api, type Campanha, type Nicho } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { CampoLista, ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { EstimativaBusca, PainelPlaces, ResumoPlacesCampanha } from '../componentes/GooglePlaces';
 import { fmtNumero, fmtQuando, ROTULO_STATUS_CAMPANHA, TOM_STATUS_CAMPANHA } from '../formatar';
 
 /** "Salvador/BA" ou "Salvador - BA" → { cidade, uf } */
@@ -98,7 +99,7 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
             inputMode="numeric"
             value={f.maxPorBusca}
             onChange={mudar('maxPorBusca')}
-            dica="Limite de lugares que cada busca no Google Maps traz (uma busca por cidade × termo do nicho). Não limita os leads da base de CNPJ. Mais lugares, mais custo no Apify."
+            dica="Lugares que cada busca no Google traz: 20 por página, até 3 páginas (60). Cada página conta como uma busca na franquia do Google. Com 60 ou mais, a cidade que enche é dividida por bairro."
           />
           <TextField
             rotulo="Meta de leads por dia"
@@ -208,9 +209,12 @@ function Andamento(props: {
     servicoEnriquecimento: c.progresso.servicoEnriquecimento ?? 'desconhecido',
     erroBusca: c.progresso.erroBusca ?? null,
     buscasParadas: c.progresso.buscasParadas ?? 0,
+    buscasBloqueadas: c.progresso.buscasBloqueadas ?? 0,
+    buscasPorBairro: c.progresso.buscasPorBairro ?? 0,
   };
   const ativa = c.status === 'ativa';
-  const buscasTotal = p.buscasPendentes + p.buscasConcluidas + p.buscasComErro;
+  const buscasTotal = p.buscasPendentes + p.buscasConcluidas + p.buscasComErro + p.buscasBloqueadas;
+  const noTeto = p.buscasBloqueadas > 0;
   const paradas = ativa ? p.buscasParadas : 0;
   const buscando = ativa && p.buscasPendentes > paradas;
   const enriquecendo = p.naFilaEnriquecimento > 0;
@@ -243,7 +247,20 @@ function Andamento(props: {
           </span>
         </div>
         {buscasTotal > 0 && <Barra feito={p.buscasConcluidas} total={buscasTotal} rotulo="Buscas no Maps" />}
-        {p.erroBusca || paradas > 0 ? (
+        <ResumoPlacesCampanha c={c} />
+        {noTeto ? (
+          <div className="etapa-campanha__erro">
+            <p className="erro-texto">
+              {fmtNumero(p.buscasBloqueadas)} {p.buscasBloqueadas === 1 ? 'busca parada' : 'buscas paradas'}{' '}
+              no teto. {p.erroBusca}
+            </p>
+            {c.status !== 'encerrada' && (
+              <Button size="sm" disabled={props.ocupado} onClick={props.aoTentarDeNovo}>
+                Ajustar teto e retomar
+              </Button>
+            )}
+          </div>
+        ) : p.erroBusca || paradas > 0 ? (
           <div className="etapa-campanha__erro">
             <p className="erro-texto">
               {paradas > 0 && `${fmtNumero(paradas)} ${paradas === 1 ? 'busca parada' : 'buscas paradas'}. `}
@@ -260,7 +277,7 @@ function Andamento(props: {
             {!ativa && p.buscasPendentes > 0
               ? 'Campanha pausada: as buscas esperam ela voltar.'
               : buscando
-                ? `${fmtNumero(p.buscasPendentes - paradas)} em andamento · cada busca leva alguns minutos no Apify.`
+                ? `${fmtNumero(p.buscasPendentes - paradas)} em andamento no Google · cada uma leva poucos segundos.`
                 : buscasTotal
                   ? `Concluídas · última ${fmtQuando(p.ultimaBusca)} · ${fmtNumero(p.noMaps)} lugares ligados`
                   : ativa
@@ -319,12 +336,24 @@ function CardCampanha({ c }: { c: Campanha }) {
   const cliente = useQueryClient();
   const navegar = useNavigate();
   const [avisos, setAvisos] = useState<string[]>([]);
+  const [estimando, setEstimando] = useState(false);
   const acao = useMutation({
     mutationFn: (qual: 'iniciar' | 'pausar' | 'encerrar') =>
       api<{ avisos?: string[] }>(`/campanhas/${c.id}/${qual}`, { metodo: 'POST' }),
     onSuccess: (r) => {
       setAvisos(r?.avisos ?? []);
       cliente.invalidateQueries({ queryKey: ['campanhas'] });
+    },
+  });
+  /** Iniciar/retomar depois da estimativa do Google, já com o teto escolhido. */
+  const rodar = useMutation({
+    mutationFn: (tetoPlacesUsd: number | null) =>
+      api<{ avisos?: string[] }>(`/campanhas/${c.id}/iniciar`, { metodo: 'POST', corpo: { tetoPlacesUsd } }),
+    onSuccess: (r) => {
+      setEstimando(false);
+      setAvisos(r?.avisos ?? []);
+      cliente.invalidateQueries({ queryKey: ['campanhas'] });
+      cliente.invalidateQueries({ queryKey: ['places-uso'] });
     },
   });
   const [confirmarRefazer, setConfirmarRefazer] = useState(false);
@@ -420,17 +449,25 @@ function CardCampanha({ c }: { c: Campanha }) {
       </div>
       <Andamento
         c={c}
-        aoTentarDeNovo={() => acao.mutate('iniciar')}
+        aoTentarDeNovo={() => setEstimando(true)}
         aoParar={() => parar.mutate()}
-        ocupado={acao.isPending || parar.isPending}
+        ocupado={acao.isPending || parar.isPending || rodar.isPending}
       />
+      {estimando && (
+        <EstimativaBusca
+          c={c}
+          ocupado={rodar.isPending}
+          aoRodar={(teto) => rodar.mutate(teto)}
+          aoCancelar={() => setEstimando(false)}
+        />
+      )}
 
       {avisos.map((a) => (
         <Mensagem key={a} tipo="aviso">
           {a}
         </Mensagem>
       ))}
-      <ErroDaApi erro={acao.error ?? refazer.error} />
+      <ErroDaApi erro={acao.error ?? rodar.error ?? refazer.error} />
       <ErroDaApi erro={parar.error ?? apagar.error} />
       {apagando && (
         <div className="confirmar" style={{ borderColor: 'var(--danger)', background: 'var(--danger-soft)' }}>
@@ -526,8 +563,8 @@ function CardCampanha({ c }: { c: Campanha }) {
             variant="primary"
             size="sm"
             icon="send"
-            disabled={acao.isPending}
-            onClick={() => acao.mutate('iniciar')}
+            disabled={acao.isPending || estimando}
+            onClick={() => setEstimando(true)}
           >
             {c.status === 'rascunho' ? 'Iniciar busca' : 'Retomar'}
           </Button>
@@ -601,6 +638,7 @@ export function Campanhas() {
         </Button>
       </div>
 
+      <PainelPlaces />
       <ErroDaApi erro={campanhas.error} />
       {campanhas.isPending ? (
         <div className="grade-cards">

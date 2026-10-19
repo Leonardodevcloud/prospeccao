@@ -3,6 +3,7 @@ import { carregarEnv, envBase, opcional } from '@prospeccao/config';
 import { criarPool } from '@prospeccao/db';
 import * as apify from '@prospeccao/integrations/apify';
 import * as ors from '@prospeccao/integrations/ors';
+import * as places from '@prospeccao/integrations/places';
 import { conectarFilas, ErroDefinitivo, encerrarAoReceberSinal, POLITICA_FILAS } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { z } from 'zod';
@@ -11,7 +12,12 @@ import type { Deps } from './dependencias.js';
 
 const env = carregarEnv(
   envBase.extend({
-    APIFY_TOKEN: z.string().min(10, 'APIFY_TOKEN é obrigatório'),
+    /** Google Places API (New): provedor das buscas no Maps. Ative a "Places API (New)" no Google Cloud. */
+    GOOGLE_PLACES_KEY: opcional(z.string().min(10)),
+    /** "apify" força o Apify mesmo com a chave do Google (para voltar atrás sem mexer em código). */
+    MAPS_PROVEDOR: z.enum(['places', 'apify']).default('places'),
+    /** Opcional (legado): Apify, usado só sem GOOGLE_PLACES_KEY ou com MAPS_PROVEDOR=apify. */
+    APIFY_TOKEN: opcional(z.string().min(10)),
     APIFY_MAPS_ATOR: z.string().default('compass~crawler-google-places'),
     /** JSON com opções extras do ator, ex.: {"scrapePlaceDetailPage":true}. */
     APIFY_MAPS_INPUT_EXTRA: z
@@ -37,6 +43,11 @@ const env = carregarEnv(
 );
 
 const log = criarLogger('worker-descoberta', env.LOG_LEVEL);
+const usarPlaces = !!env.GOOGLE_PLACES_KEY && env.MAPS_PROVEDOR === 'places';
+if (!usarPlaces && !env.APIFY_TOKEN) {
+  log.fatal('Configure GOOGLE_PLACES_KEY (Google Places) ou APIFY_TOKEN no worker-descoberta.');
+  process.exit(1);
+}
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-descoberta', max: 6 });
 const filas = await conectarFilas({
   url: env.DATABASE_URL,
@@ -53,21 +64,23 @@ const filas = await conectarFilas({
   ],
 });
 
-const cfgApify: apify.ConfigApify = {
-  token: env.APIFY_TOKEN,
-  atorMaps: env.APIFY_MAPS_ATOR,
-  inputExtra: env.APIFY_MAPS_INPUT_EXTRA,
-};
+const cfgApify: apify.ConfigApify | null = env.APIFY_TOKEN
+  ? { token: env.APIFY_TOKEN, atorMaps: env.APIFY_MAPS_ATOR, inputExtra: env.APIFY_MAPS_INPUT_EXTRA }
+  : null;
+const cfgPlaces: places.ConfigPlaces | null = usarPlaces ? { apiKey: env.GOOGLE_PLACES_KEY! } : null;
 
 const deps: Deps = {
   pool,
   filas,
   log,
-  maps: {
-    iniciar: (busca) => apify.iniciarBuscaMaps(cfgApify, busca),
-    obter: (runId) => apify.obterRun(cfgApify, runId),
-    itens: (datasetId) => apify.listarItensMaps(cfgApify, datasetId),
-  },
+  places: cfgPlaces ? { buscar: (busca) => places.buscarTexto(cfgPlaces, busca) } : null,
+  maps: cfgApify
+    ? {
+        iniciar: (busca) => apify.iniciarBuscaMaps(cfgApify, busca),
+        obter: (runId) => apify.obterRun(cfgApify, runId),
+        itens: (datasetId) => apify.listarItensMaps(cfgApify, datasetId),
+      }
+    : null,
   geo: env.ORS_API_KEY
     ? {
         async geocodificar(endereco) {
@@ -118,7 +131,13 @@ await filas.consumir('cnpj.importacao_concluida', () => casos.aoAtualizarBaseCnp
 await casos
   .retomarBuscasParadas(deps)
   .catch((erro) => log.warn({ err: erro }, 'não consegui retomar buscas'));
-log.info({ geocodificacao: deps.geo ? 'ligada' : 'desligada (sem ORS_API_KEY)' }, 'worker-descoberta pronto');
+log.info(
+  {
+    buscas: usarPlaces ? 'Google Places' : 'Apify',
+    geocodificacao: deps.geo ? 'ligada' : 'desligada (sem ORS_API_KEY)',
+  },
+  'worker-descoberta pronto',
+);
 
 encerrarAoReceberSinal(log, async () => {
   await filas.parar();

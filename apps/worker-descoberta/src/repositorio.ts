@@ -1,4 +1,4 @@
-import type { Executor } from '@prospeccao/db';
+import { comTransacao, type Executor, type Pool } from '@prospeccao/db';
 import type { ItemMaps } from '@prospeccao/integrations/apify';
 
 /** Leituras de outros domínios (só views) e escritas no schema descoberta. */
@@ -20,6 +20,8 @@ export interface CampanhaDescoberta {
   idade_minima_anos: number;
   /** MEI fica de fora do enriquecimento e da lista (padrão). */
   excluir_mei: boolean;
+  /** Teto de gasto em buscas pagas no Google. null = sem teto; 0 = só a franquia grátis. */
+  teto_places_usd: number | null;
 }
 
 export async function obterCampanha(db: Executor, id: number): Promise<CampanhaDescoberta | null> {
@@ -38,8 +40,10 @@ export async function campanhasAtivas(db: Executor): Promise<number[]> {
 }
 
 /**
- * Cria as buscas (cidade × termo) que ainda não rodaram dentro do prazo de
- * rebusca e devolve os ids das que precisam ser disparadas (novas ou pendentes).
+ * Cria as buscas da cidade inteira (cidade × termo) que ainda não rodaram dentro do prazo de
+ * rebusca e devolve os ids de todas as buscas pendentes da campanha (inclusive as por bairro).
+ * Buscas que pararam no teto voltam para a fila; uma busca do Places "rodando" que não anda há
+ * 10 minutos (o worker caiu no meio) também.
  */
 export async function prepararBuscas(
   db: Executor,
@@ -47,27 +51,81 @@ export async function prepararBuscas(
   rebuscaDias: number,
 ): Promise<number[]> {
   const pares = campanha.cidades.flatMap((c) => campanha.termos_maps.map((termo) => ({ ...c, termo })));
-  const ids: number[] = [];
   for (const p of pares) {
-    const { rows: existentes } = await db.query<{ id: number; status: string }>(
-      `SELECT id, status FROM descoberta.buscas_maps
-        WHERE campanha_id = $1 AND cidade = $2 AND uf = $3 AND lower(termo) = lower($4)
-          AND (status IN ('pendente', 'rodando') OR (status = 'concluida' AND concluido_em > now() - make_interval(days => $5)))
+    const { rows: existentes } = await db.query<{ id: number }>(
+      `SELECT id FROM descoberta.buscas_maps
+        WHERE campanha_id = $1 AND cidade = $2 AND uf = $3 AND lower(termo) = lower($4) AND bairro IS NULL
+          AND (status IN ('pendente', 'rodando', 'bloqueada')
+               OR (status = 'concluida' AND concluido_em > now() - make_interval(days => $5)))
         ORDER BY id DESC LIMIT 1`,
       [campanha.id, p.cidade, p.uf, p.termo, rebuscaDias],
     );
+    if (existentes[0]) continue;
+    await db.query(
+      `INSERT INTO descoberta.buscas_maps (campanha_id, cidade, uf, termo) VALUES ($1, $2, $3, $4)`,
+      [campanha.id, p.cidade, p.uf, p.termo],
+    );
+  }
+  await db.query(
+    `UPDATE descoberta.buscas_maps SET status = 'pendente'
+      WHERE campanha_id = $1
+        AND (status = 'bloqueada'
+             OR (status = 'rodando' AND fonte = 'places' AND iniciado_em < now() - interval '10 minutes'))`,
+    [campanha.id],
+  );
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM descoberta.buscas_maps WHERE campanha_id = $1 AND status = 'pendente'
+      ORDER BY bairro NULLS FIRST, id`,
+    [campanha.id],
+  );
+  return rows.map((r) => Number(r.id));
+}
+
+/**
+ * A busca da cidade inteira encheu (o Google entrega no máximo 60 lugares por texto): cria uma
+ * busca por bairro para o mesmo termo. Devolve os ids pendentes (novos ou que já existiam).
+ */
+export async function criarBuscasPorBairro(
+  db: Executor,
+  busca: Pick<Busca, 'campanha_id' | 'cidade' | 'uf' | 'termo'>,
+  bairros: string[],
+  rebuscaDias: number,
+): Promise<number[]> {
+  const ids: number[] = [];
+  for (const bairro of bairros) {
+    const { rows: existentes } = await db.query<{ id: number; status: string }>(
+      `SELECT id, status FROM descoberta.buscas_maps
+        WHERE campanha_id = $1 AND cidade = $2 AND uf = $3 AND lower(termo) = lower($4) AND bairro = $5
+          AND (status IN ('pendente', 'rodando', 'bloqueada')
+               OR (status = 'concluida' AND concluido_em > now() - make_interval(days => $6)))
+        ORDER BY id DESC LIMIT 1`,
+      [busca.campanha_id, busca.cidade, busca.uf, busca.termo, bairro, rebuscaDias],
+    );
     const existente = existentes[0];
     if (existente) {
-      if (existente.status === 'pendente') ids.push(existente.id);
+      if (existente.status === 'pendente') ids.push(Number(existente.id));
       continue;
     }
     const { rows } = await db.query<{ id: number }>(
-      `INSERT INTO descoberta.buscas_maps (campanha_id, cidade, uf, termo) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [campanha.id, p.cidade, p.uf, p.termo],
+      `INSERT INTO descoberta.buscas_maps (campanha_id, cidade, uf, termo, bairro, fonte)
+       VALUES ($1, $2, $3, $4, $5, 'places') RETURNING id`,
+      [busca.campanha_id, busca.cidade, busca.uf, busca.termo, bairro],
     );
-    ids.push(rows[0]!.id);
+    ids.push(Number(rows[0]!.id));
   }
   return ids;
+}
+
+/** Bairros com empresas do nicho na base de CNPJ (mais cheios primeiro). */
+export async function bairrosParaBusca(
+  db: Executor,
+  c: { cidade: string; uf: string; cnaes: string[]; limite: number },
+): Promise<string[]> {
+  const { rows } = await db.query<{ bairro: string }>(
+    'SELECT bairro FROM descoberta.bairros_para_busca($1, $2, $3::text[], $4)',
+    [c.cidade, c.uf, c.cnaes, c.limite],
+  );
+  return rows.map((r) => r.bairro);
 }
 
 /**
@@ -155,6 +213,11 @@ export interface Busca {
   apify_run_id: string | null;
   dataset_id: string | null;
   verificacoes: number;
+  /** null = cidade inteira. */
+  bairro: string | null;
+  fonte: 'apify' | 'places';
+  paginas: number;
+  proxima_pagina: string | null;
 }
 
 export async function obterBusca(db: Executor, id: number): Promise<Busca | null> {
@@ -186,9 +249,150 @@ export async function concluirBusca(db: Executor, id: number, erro: string | nul
   );
 }
 
-/** Falha que ainda vai ser tentada de novo: só guarda o motivo (a busca segue pendente/rodando). */
+/**
+ * Falha que ainda vai ser tentada de novo: guarda o motivo. Busca do Places volta para pendente
+ * (a próxima tentativa retoma da página onde parou); run do Apify segue rodando.
+ */
 export async function anotarFalhaBusca(db: Executor, id: number, erro: string) {
-  await db.query('UPDATE descoberta.buscas_maps SET erro = $2 WHERE id = $1', [id, erro]);
+  await db.query(
+    `UPDATE descoberta.buscas_maps
+        SET erro = $2, status = CASE WHEN fonte = 'places' AND status = 'rodando' THEN 'pendente' ELSE status END
+      WHERE id = $1`,
+    [id, erro],
+  );
+}
+
+/**
+ * Pega a busca para o Places. Só uma tarefa por vez: pendente, ou "rodando" sem andar há
+ * 4 minutos (a tarefa anterior caiu). Devolve null se outra tarefa está nela ou já acabou.
+ */
+export async function reivindicarBuscaPlaces(db: Executor, id: number): Promise<Busca | null> {
+  const { rows } = await db.query<Busca>(
+    `UPDATE descoberta.buscas_maps
+        SET status = 'rodando', fonte = 'places', iniciado_em = now()
+      WHERE id = $1
+        AND (status = 'pendente' OR (status = 'rodando' AND fonte = 'places' AND iniciado_em < now() - interval '4 minutes'))
+      RETURNING *`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+/** Página lida: guarda onde parou (para retomar) e renova a posse da busca. */
+export async function gravarPaginaPlaces(db: Executor, id: number, paginas: number, proxima: string | null) {
+  await db.query(
+    `UPDATE descoberta.buscas_maps SET paginas = $2, proxima_pagina = $3, iniciado_em = now() WHERE id = $1`,
+    [id, paginas, proxima],
+  );
+}
+
+/** Parou no teto: fica "bloqueada" com o motivo até a campanha ser retomada. */
+export async function bloquearBusca(db: Executor, id: number, motivo: string) {
+  await db.query(
+    `UPDATE descoberta.buscas_maps SET status = 'bloqueada', erro = $2, concluido_em = now() WHERE id = $1`,
+    [id, motivo],
+  );
+}
+
+export async function contarResultados(db: Executor, buscaId: number): Promise<number> {
+  const { rows } = await db.query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM descoberta.maps_resultados WHERE busca_id = $1',
+    [buscaId],
+  );
+  return rows[0]?.n ?? 0;
+}
+
+/* ---------------- Uso do Google Places (franquia, custo e tetos) ---------------- */
+
+export interface ConfigPlaces {
+  franquia_mensal: number;
+  preco_mil_usd: number;
+  cotacao_brl: number;
+  teto_mensal_usd: number | null;
+  max_bairros: number;
+}
+
+const CONFIG_PADRAO: ConfigPlaces = {
+  franquia_mensal: 1000,
+  preco_mil_usd: 35,
+  cotacao_brl: 5.5,
+  teto_mensal_usd: null,
+  max_bairros: 150,
+};
+
+export async function configPlaces(db: Executor): Promise<ConfigPlaces> {
+  const { rows } = await db.query<ConfigPlaces>('SELECT * FROM cadastro.v_config_places');
+  return rows[0] ?? CONFIG_PADRAO;
+}
+
+const usd = (v: number) => `US$ ${v.toFixed(2).replace('.', ',')}`;
+
+export type ReservaPlaces = { ok: true; usoId: number; paga: boolean } | { ok: false; motivo: string };
+
+/**
+ * Antes de cada pedido ao Google: conta o uso do mês, decide se o pedido é grátis ou pago e
+ * confere os tetos. Um pedido de cada vez (lock), para duas buscas em paralelo não passarem
+ * juntas do teto. O pedido fica registrado já aqui; se falhar, `cancelarUsoPlaces` desfaz.
+ */
+export async function reservarUsoPlaces(
+  pool: Pool,
+  r: { campanhaId: number; buscaId: number; tetoCampanhaUsd: number | null },
+): Promise<ReservaPlaces> {
+  return comTransacao(pool, async (db) => {
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext('descoberta.uso_places'))`);
+    const cfg = await configPlaces(db);
+    const { rows: mes } = await db.query<{ pedidos: number; gasto: number }>(
+      `SELECT count(*)::int AS pedidos, coalesce(sum(custo_usd), 0)::float8 AS gasto
+         FROM descoberta.uso_places WHERE mes = descoberta.mes_places()`,
+    );
+    const usados = mes[0]?.pedidos ?? 0;
+    const paga = usados >= cfg.franquia_mensal;
+    const custo = paga ? cfg.preco_mil_usd / 1000 : 0;
+
+    if (paga && r.tetoCampanhaUsd != null) {
+      if (r.tetoCampanhaUsd <= 0) {
+        return {
+          ok: false as const,
+          motivo:
+            'A franquia grátis do Google acabou e esta campanha está em "só o grátis". Ela volta a buscar no próximo mês, ou libere buscas pagas.',
+        };
+      }
+      const { rows } = await db.query<{ gasto: number }>(
+        `SELECT coalesce(sum(custo_usd), 0)::float8 AS gasto FROM descoberta.uso_places WHERE campanha_id = $1`,
+        [r.campanhaId],
+      );
+      if ((rows[0]?.gasto ?? 0) + custo > r.tetoCampanhaUsd + 1e-9) {
+        return {
+          ok: false as const,
+          motivo: `Teto da campanha atingido: ${usd(r.tetoCampanhaUsd)} em buscas pagas no Google. Aumente o teto para continuar.`,
+        };
+      }
+    }
+    if (paga && cfg.teto_mensal_usd != null && (mes[0]?.gasto ?? 0) + custo > cfg.teto_mensal_usd + 1e-9) {
+      return {
+        ok: false as const,
+        motivo:
+          cfg.teto_mensal_usd <= 0
+            ? 'A franquia grátis do Google acabou e o teto do mês é US$ 0: as buscas voltam no próximo mês.'
+            : `Teto do mês no Google atingido (${usd(cfg.teto_mensal_usd)}). Aumente o teto do mês para continuar.`,
+      };
+    }
+    const { rows } = await db.query<{ id: number }>(
+      `INSERT INTO descoberta.uso_places (mes, campanha_id, busca_id, paga, custo_usd)
+       VALUES (descoberta.mes_places(), $1, $2, $3, $4) RETURNING id`,
+      [r.campanhaId, r.buscaId, paga, custo],
+    );
+    return { ok: true as const, usoId: Number(rows[0]!.id), paga };
+  });
+}
+
+export async function confirmarUsoPlaces(db: Executor, usoId: number, itens: number) {
+  await db.query('UPDATE descoberta.uso_places SET itens = $2 WHERE id = $1', [usoId, itens]);
+}
+
+/** O pedido falhou (o Google não cobra pedido com erro): não conta no uso. */
+export async function cancelarUsoPlaces(db: Executor, usoId: number) {
+  await db.query('DELETE FROM descoberta.uso_places WHERE id = $1', [usoId]);
 }
 
 export async function buscasEmAberto(db: Executor, campanhaId: number): Promise<number> {

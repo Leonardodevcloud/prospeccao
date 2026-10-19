@@ -1,5 +1,13 @@
-import { converterItem, runTerminou } from '@prospeccao/integrations/apify';
+import { converterItem, type ItemMaps, runTerminou } from '@prospeccao/integrations/apify';
+import {
+  converterLugar,
+  ehLugarPlaces,
+  MAX_PAGINAS,
+  POR_PAGINA,
+  textoDaBusca,
+} from '@prospeccao/integrations/places';
 import { ErroDefinitivo } from '@prospeccao/queue';
+import { AppError } from '@prospeccao/shared';
 import { cruzarResultado } from './cruzamento.js';
 import type { Deps } from './dependencias.js';
 import * as repo from './repositorio.js';
@@ -32,15 +40,43 @@ export async function buscarNaBaseCnpj(deps: Deps, campanhaId: number) {
   if ((await repo.buscasEmAberto(deps.pool, campanhaId)) === 0) await finalizarDescoberta(deps, campanhaId);
 }
 
-/** Dispara a busca no Apify e agenda a coleta. */
+/** O item guardado em `dados` pode ter vindo do Places ou do Apify. */
+function converterDados(dados: unknown): ItemMaps | null {
+  return ehLugarPlaces(dados) ? converterLugar(dados) : converterItem(dados);
+}
+
+/** Cruza tudo que ainda não foi cruzado na busca (inclusive de uma tentativa que caiu no meio). */
+async function cruzarPendentes(deps: Deps, campanha: repo.CampanhaDescoberta, busca: repo.Busca) {
+  const { rows: pendentes } = await deps.pool.query<{ id: number; dados: unknown }>(
+    'SELECT id, dados FROM descoberta.maps_resultados WHERE busca_id = $1 AND cruzamento IS NULL ORDER BY id',
+    [busca.id],
+  );
+  const contagem: Record<string, number> = {};
+  for (const p of pendentes) {
+    const item = converterDados(p.dados);
+    if (!item) continue;
+    const { tipo } = await cruzarResultado(deps.pool, campanha, busca, p.id, item);
+    contagem[tipo] = (contagem[tipo] ?? 0) + 1;
+  }
+  return contagem;
+}
+
+/**
+ * Roda a busca: no Google Places (padrão), na hora, página a página; no Apify (legado),
+ * dispara o run e agenda a coleta.
+ */
 export async function dispararBuscaMaps(deps: Deps, buscaId: number) {
   const busca = await repo.obterBusca(deps.pool, buscaId);
   if (!busca) throw new ErroDefinitivo(`Busca ${buscaId} não existe`);
+  if (deps.places) return buscarNoPlaces(deps, busca);
+
   if (busca.status !== 'pendente') return; // já disparada (job repetido)
   const campanha = await repo.obterCampanha(deps.pool, busca.campanha_id);
   if (campanha?.status !== 'ativa') return; // fica pendente até a campanha voltar
+  if (!deps.maps)
+    throw new ErroDefinitivo('Sem provedor de busca: configure GOOGLE_PLACES_KEY no worker-descoberta.');
 
-  const local = `${busca.cidade}, ${busca.uf}, Brasil`;
+  const local = `${busca.bairro ? `${busca.bairro}, ` : ''}${busca.cidade}, ${busca.uf}, Brasil`;
   const run = await deps.maps.iniciar({ termo: busca.termo, local, max: campanha.max_por_busca });
   await repo.marcarBuscaRodando(deps.pool, buscaId, run.id, run.datasetId);
   await deps.filas.publicar(
@@ -51,12 +87,105 @@ export async function dispararBuscaMaps(deps: Deps, buscaId: number) {
   deps.log.info({ buscaId, runId: run.id, termo: busca.termo, local }, 'busca no Maps disparada');
 }
 
-/** Confere o run; se terminou, grava e cruza os resultados. */
+/**
+ * Busca no Google Places: até 3 páginas de 20 (limitado por "lugares por busca" da campanha).
+ * Cada página passa pela reserva de uso (franquia e tetos) antes de ir ao Google; se o teto
+ * bater, a busca fica "bloqueada" com o motivo e a campanha segue com o que já achou.
+ * A busca da cidade inteira que enche (60 lugares) é dividida por bairro.
+ */
+async function buscarNoPlaces(deps: Deps, inicial: repo.Busca) {
+  const places = deps.places!;
+  const campanha = await repo.obterCampanha(deps.pool, inicial.campanha_id);
+  if (campanha?.status !== 'ativa') return; // fica pendente até a campanha voltar
+  const busca = await repo.reivindicarBuscaPlaces(deps.pool, inicial.id);
+  if (!busca) return; // outra tarefa está nela, ou já terminou
+
+  const maxPaginas = Math.min(MAX_PAGINAS, Math.max(1, Math.ceil(campanha.max_por_busca / POR_PAGINA)));
+  const texto = textoDaBusca(busca);
+  let paginas = busca.paginas;
+  let proxima = busca.proxima_pagina;
+
+  while (paginas < maxPaginas && (paginas === 0 || proxima)) {
+    const reserva = await repo.reservarUsoPlaces(deps.pool, {
+      campanhaId: campanha.id,
+      buscaId: busca.id,
+      tetoCampanhaUsd: campanha.teto_places_usd,
+    });
+    if (!reserva.ok) {
+      await cruzarPendentes(deps, campanha, busca);
+      await repo.bloquearBusca(deps.pool, busca.id, reserva.motivo);
+      deps.log.warn(
+        { buscaId: busca.id, campanhaId: campanha.id, motivo: reserva.motivo },
+        'busca parada no teto',
+      );
+      await aoConcluirBusca(deps, campanha.id);
+      return;
+    }
+    let pagina: Awaited<ReturnType<typeof places.buscar>>;
+    try {
+      pagina = await places.buscar({ texto, pagina: proxima });
+    } catch (erro) {
+      await repo.cancelarUsoPlaces(deps.pool, reserva.usoId);
+      // Token de página vencido (a busca ficou parada muito tempo): fecha com o que já tem.
+      if (
+        proxima &&
+        erro instanceof AppError &&
+        (erro.detalhes as { status?: number } | undefined)?.status === 400
+      ) {
+        proxima = null;
+        break;
+      }
+      throw erro;
+    }
+    for (const item of pagina.itens) await repo.salvarResultado(deps.pool, busca.id, item);
+    await repo.confirmarUsoPlaces(deps.pool, reserva.usoId, pagina.itens.length);
+    paginas++;
+    proxima = pagina.proximaPagina;
+    await repo.gravarPaginaPlaces(deps.pool, busca.id, paginas, proxima);
+  }
+
+  const contagem = await cruzarPendentes(deps, campanha, busca);
+  const itens = await repo.contarResultados(deps.pool, busca.id);
+
+  // Encheu? O Google não entrega mais que isso por texto: divide a cidade por bairro.
+  let porBairro = 0;
+  if (!busca.bairro && paginas >= MAX_PAGINAS && itens >= MAX_PAGINAS * POR_PAGINA) {
+    const cfg = await repo.configPlaces(deps.pool);
+    const bairros = await repo.bairrosParaBusca(deps.pool, {
+      cidade: busca.cidade,
+      uf: busca.uf,
+      cnaes: campanha.cnaes,
+      limite: cfg.max_bairros,
+    });
+    const ids = await repo.criarBuscasPorBairro(deps.pool, busca, bairros, deps.ajustes.rebuscaDias);
+    for (const id of ids) await deps.filas.publicar('maps.buscar', { buscaId: id });
+    porBairro = ids.length;
+  }
+
+  await repo.concluirBusca(deps.pool, busca.id, null, itens);
+  deps.log.info(
+    { buscaId: busca.id, texto, paginas, itens, cruzamento: contagem, porBairro },
+    'busca no Google Places concluída',
+  );
+  await aoConcluirBusca(deps, campanha.id);
+}
+
+/** Confere o run do Apify; se terminou, grava e cruza os resultados. */
 export async function coletarBuscaMaps(deps: Deps, buscaId: number) {
   const busca = await repo.obterBusca(deps.pool, buscaId);
   if (busca?.status !== 'rodando' || !busca.apify_run_id || !busca.dataset_id) return;
   const campanha = await repo.obterCampanha(deps.pool, busca.campanha_id);
   if (!campanha) throw new ErroDefinitivo(`Campanha ${busca.campanha_id} não existe`);
+  if (!deps.maps) {
+    await repo.concluirBusca(
+      deps.pool,
+      buscaId,
+      'Apify desligado (sem APIFY_TOKEN): run antigo não coletado.',
+      null,
+    );
+    await aoConcluirBusca(deps, busca.campanha_id);
+    return;
+  }
 
   const run = await deps.maps.obter(busca.apify_run_id);
   const estado = runTerminou(run.status);
@@ -89,19 +218,7 @@ export async function coletarBuscaMaps(deps: Deps, buscaId: number) {
 
   const { itens, ignorados } = await deps.maps.itens(busca.dataset_id);
   for (const item of itens) await repo.salvarResultado(deps.pool, buscaId, item);
-
-  // Processa tudo que ainda não foi cruzado (inclusive de uma tentativa anterior que caiu no meio).
-  const { rows: pendentes } = await deps.pool.query<{ id: number; dados: unknown }>(
-    'SELECT id, dados FROM descoberta.maps_resultados WHERE busca_id = $1 AND cruzamento IS NULL ORDER BY id',
-    [buscaId],
-  );
-  const contagem: Record<string, number> = {};
-  for (const p of pendentes) {
-    const item = converterItem(p.dados);
-    if (!item) continue;
-    const { tipo } = await cruzarResultado(deps.pool, campanha, busca, p.id, item);
-    contagem[tipo] = (contagem[tipo] ?? 0) + 1;
-  }
+  const contagem = await cruzarPendentes(deps, campanha, busca);
 
   await repo.concluirBusca(deps.pool, buscaId, null, itens.length);
   deps.log.info({ buscaId, itens: itens.length, ignorados, cruzamento: contagem }, 'busca no Maps coletada');
@@ -197,9 +314,22 @@ export async function aoAtualizarBaseCnpj(deps: Deps) {
   }
 }
 
-/** Erro de busca em português curto (o que aparece na tela de Atividade). */
+/** Erro de busca em português curto (o que aparece na tela de Atividade e no card). */
 export function explicarFalhaBusca(erro: unknown): string {
   const msg = erro instanceof Error ? erro.message : String(erro);
+  if (/^Google Places/i.test(msg)) {
+    if (/BILLING|billing/.test(msg))
+      return 'O Google pediu faturamento: ative o faturamento no projeto do Google Cloud da GOOGLE_PLACES_KEY.';
+    if (/SERVICE_DISABLED|has not been used|not been enabled|API_KEY_SERVICE_BLOCKED/i.test(msg))
+      return 'A "Places API (New)" não está ativa no Google Cloud para a GOOGLE_PLACES_KEY: ative e use "Tentar de novo".';
+    if (/HTTP 401|HTTP 403|API_KEY_INVALID|API key not valid|PERMISSION_DENIED/i.test(msg))
+      return 'O Google recusou a GOOGLE_PLACES_KEY: confira a chave e as restrições dela no Google Cloud.';
+    if (/HTTP 429|RESOURCE_EXHAUSTED|quota/i.test(msg))
+      return 'Limite de pedidos do Google (por minuto ou cota diária): a busca tenta de novo sozinha.';
+    if (/sem resposta|timeout/i.test(msg))
+      return 'O Google demorou demais para responder: a busca tenta de novo.';
+    return msg.slice(0, 240);
+  }
   if (/HTTP 402|not enough usage|usage limit|credit|insufficient/i.test(msg))
     return 'Sem crédito no Apify: recarregue ou troque de plano e use "Tentar de novo".';
   if (/HTTP 401|HTTP 403|token/i.test(msg)) return 'APIFY_TOKEN recusado pelo Apify.';

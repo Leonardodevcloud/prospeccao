@@ -6,6 +6,25 @@ const numero = new Intl.NumberFormat('pt-BR');
 const decimal1 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export const fmtNumero = (n: number | null | undefined) => (n == null ? '—' : numero.format(n));
+
+const dinheiro2 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dinheiro3 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+/** "US$ 6,30"; com `fino`, três casas (preço por busca: "US$ 0,035"). */
+export const fmtUsd = (n: number | null | undefined, fino = false) =>
+  n == null ? '—' : `US$ ${(fino ? dinheiro3 : dinheiro2).format(n)}`;
+/** "R$ 90" (aproximado, sem centavos). */
+export const fmtBrl = (n: number | null | undefined) =>
+  n == null ? '—' : `R$ ${numero.format(Math.round(n))}`;
+/** "2026-11-01" → "1º/11"; "2026-11-14" → "14/11". */
+export function fmtDiaMes(data: string | null | undefined): string {
+  if (!data) return '—';
+  const [, m, d] = data.split('-');
+  return `${d === '01' ? '1º' : String(Number(d))}/${m}`;
+}
+/** "2026-10-01" → "outubro". */
+export function fmtNomeMes(data: string): string {
+  return new Date(`${data}T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' });
+}
 export const fmtKm = (n: number | null | undefined) => (n == null ? '—' : `${decimal1.format(n)} km`);
 export const fmtNota = (n: number | null | undefined) => (n == null ? null : decimal1.format(n));
 

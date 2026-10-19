@@ -13,6 +13,7 @@ import { rotasEmpresas } from './modulos/empresas/rotas.js';
 import { rotasFunil } from './modulos/funil/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
+import { rotasPlaces } from './modulos/places/rotas.js';
 import { rotasRelatorios } from './modulos/relatorios/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
 
@@ -56,6 +57,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/relatorios', rotasRelatorios(deps));
   protegidas.use('/importacoes', rotasImportacoes(deps));
   protegidas.use('/atividade', rotasAtividade(deps));
+  protegidas.use('/places', rotasPlaces(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
   app.use(protegidas);
 

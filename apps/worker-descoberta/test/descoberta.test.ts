@@ -78,6 +78,7 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
         return 'job';
       },
     },
+    places: null, // este teste cobre o caminho do Apify (legado); o Places está em places.test.ts
     maps: {
       async iniciar(): Promise<Run> {
         return { id: 'run1', status: 'RUNNING', datasetId: 'ds1' };

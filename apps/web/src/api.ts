@@ -97,6 +97,14 @@ export interface ProgressoCampanha {
   erroBusca: string | null;
   /** Buscas pendentes/rodando sem tarefa na fila (não andam sozinhas). */
   buscasParadas?: number;
+  /** Buscas paradas no teto de gasto (da campanha ou do mês). */
+  buscasBloqueadas?: number;
+  /** Buscas por bairro (a cidade inteira encheu os 60 lugares do Google). */
+  buscasPorBairro?: number;
+  /** Pedidos feitos ao Google Places por esta campanha (cada página conta), pagos e gasto. */
+  pedidosPlaces?: number;
+  pagosPlaces?: number;
+  gastoPlacesUsd?: number;
 }
 
 export interface Campanha {
@@ -112,6 +120,8 @@ export interface Campanha {
   cadencia: 'padrao' | 'curta';
   modo: 'semi' | 'auto';
   maxPorBusca: number;
+  /** Teto de gasto no Google em buscas pagas. null = sem teto; 0 = só a franquia grátis. */
+  tetoPlacesUsd?: number | null;
   status: 'rascunho' | 'ativa' | 'pausada' | 'encerrada';
   iniciadaEm: string | null;
   criadoEm: string;
@@ -484,7 +494,7 @@ export interface BuscaAtividade {
   cidade: string;
   uf: string;
   termo: string;
-  status: 'pendente' | 'rodando' | 'concluida' | 'erro';
+  status: 'pendente' | 'rodando' | 'concluida' | 'erro' | 'bloqueada';
   itens: number | null;
   erro: string | null;
   verificacoes: number;
@@ -508,4 +518,61 @@ export interface Atividade {
   buscas: BuscaAtividade[];
   buscasEmAndamento: number;
   filas: Record<string, number>;
+}
+
+// ---------- Google Places (uso e custo) ----------
+
+export interface UsoPlaces {
+  /** 1º dia do mês de cobrança do Google (AAAA-MM-DD). */
+  mes: string;
+  renovaEm: string;
+  diasRestantes: number;
+  franquia: number;
+  usados: number;
+  gratisRestantes: number;
+  pagos: number;
+  lugares: number;
+  gastoUsd: number;
+  precoPorPedidoUsd: number;
+  precoMilUsd: number;
+  ritmoDia: number;
+  projecaoPedidos: number;
+  projecaoUsd: number;
+  /** Quando a franquia acaba no ritmo atual (null: não acaba este mês ou já acabou). */
+  franquiaAcabaEm: string | null;
+  situacao: 'gratis' | 'vai_cobrar' | 'cobrando';
+  tetoMensalUsd: number | null;
+  cotacaoBrl: number;
+  maxBairros: number;
+}
+
+export interface ConfigPlaces {
+  franquiaMensal: number;
+  precoMilUsd: number;
+  cotacaoBrl: number;
+  tetoMensalUsd: number | null;
+  maxBairros: number;
+}
+
+export interface EstimativaPlaces {
+  cidades: { cidade: string; uf: string; bairros: number }[];
+  termos: number;
+  paginasPorBusca: number;
+  divideBairro: boolean;
+  mediaPaginasBairro: number;
+  pedidosMin: number;
+  pedidosMax: number;
+  gratisRestantes: number;
+  gratis: number;
+  pagos: number;
+  sobraGratisDepois: number;
+  precoPorPedidoUsd: number;
+  custoUsd: number;
+  custoBrl: number;
+  cotacaoBrl: number;
+  tetoCampanhaUsd: number | null;
+  gastoCampanhaUsd: number;
+  tetoMensalUsd: number | null;
+  gastoMesUsd: number;
+  renovaEm: string;
 }

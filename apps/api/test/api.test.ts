@@ -19,7 +19,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
   /** Simula a fila exclusiva ocupada: o pg-boss devolve null ao publicar. */
   let filaOcupada = false;
 
-  const enviar = (metodo: 'post' | 'patch' | 'delete', rota: string, corpo?: object) =>
+  const enviar = (metodo: 'post' | 'put' | 'patch' | 'delete', rota: string, corpo?: object) =>
     request(app)[metodo](rota).set('Origin', ORIGEM).set('Cookie', cookie).send(corpo);
   const ler = (rota: string) => request(app).get(rota).set('Cookie', cookie);
 
@@ -482,6 +482,58 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     const com = await ler('/empresas?situacao=todos&incluirMei=true');
     expect(com.body.itens.find((e: { id: number }) => e.id === 2)).toMatchObject({ mei: true });
     await pool.query('UPDATE descoberta.empresas SET mei = false WHERE id = 2');
+  });
+
+  it('Google Places: painel do mês, estimativa antes de rodar e teto da campanha', async () => {
+    const cfg = await enviar('put', '/places/config', {
+      franquiaMensal: 100,
+      precoMilUsd: 35,
+      cotacaoBrl: 5.5,
+      tetoMensalUsd: '',
+      maxBairros: 150,
+    });
+    expect(cfg.status).toBe(200);
+    expect(cfg.body).toMatchObject({ franquiaMensal: 100, precoMilUsd: 35, tetoMensalUsd: null });
+    expect((await enviar('put', '/places/config', { franquiaMensal: -1 })).status).toBe(422);
+
+    await pool.query(
+      `INSERT INTO descoberta.uso_places (mes, paga, custo_usd)
+       SELECT descoberta.mes_places(), false, 0 FROM generate_series(1, 90)`,
+    );
+    const uso = await ler('/places/uso');
+    expect(uso.body).toMatchObject({ franquia: 100, usados: 90, gratisRestantes: 10, pagos: 0, gastoUsd: 0 });
+    expect(uso.body.precoPorPedidoUsd).toBeCloseTo(0.035);
+    expect(uso.body.renovaEm > uso.body.mes).toBe(true);
+
+    const criada = await enviar('post', '/campanhas', {
+      nome: 'Places Feira',
+      nichoId: 1,
+      cidades: [{ cidade: 'Feira de Santana', uf: 'BA' }],
+    });
+    const id = criada.body.id as number;
+    const est = await ler(`/campanhas/${id}/estimativa-places`);
+    expect(est.status).toBe(200);
+    expect(est.body).toMatchObject({ paginasPorBusca: 3, divideBairro: true, gratisRestantes: 10 });
+    expect(est.body.pedidosMax).toBeGreaterThanOrEqual(3);
+    expect(est.body.gratis).toBe(Math.min(est.body.pedidosMax, 10));
+    expect(est.body.custoUsd).toBeCloseTo((est.body.pedidosMax - est.body.gratis) * 0.035, 2);
+
+    const iniciada = await enviar('post', `/campanhas/${id}/iniciar`, { tetoPlacesUsd: 0 });
+    expect(iniciada.status).toBe(202);
+    expect(iniciada.body.campanha.tetoPlacesUsd).toBe(0);
+    const teto = await enviar('put', `/campanhas/${id}/teto-places`, { tetoPlacesUsd: 12.5 });
+    expect(teto.body.tetoPlacesUsd).toBe(12.5);
+    expect((await enviar('put', `/campanhas/${id}/teto-places`, { tetoPlacesUsd: -3 })).status).toBe(422);
+
+    await pool.query(
+      `INSERT INTO descoberta.uso_places (mes, campanha_id, paga, custo_usd)
+       VALUES (descoberta.mes_places(), $1, true, 0.035), (descoberta.mes_places(), $1, true, 0.035)`,
+      [id],
+    );
+    const card = await ler(`/campanhas/${id}`);
+    expect(card.body.progresso).toMatchObject({ pedidosPlaces: 2, pagosPlaces: 2 });
+    expect(card.body.progresso.gastoPlacesUsd).toBeCloseTo(0.07);
+    await enviar('post', `/campanhas/${id}/encerrar`);
   });
 
   it('rota inexistente devolve 404 no formato padrão', async () => {

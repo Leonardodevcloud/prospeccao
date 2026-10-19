@@ -12,6 +12,7 @@ const SITUACAO_BUSCA: Record<BuscaAtividade['status'], { rotulo: string; tom: To
   rodando: { rotulo: 'Buscando', tom: 'warning' },
   concluida: { rotulo: 'Concluída', tom: 'brand' },
   erro: { rotulo: 'Erro', tom: 'danger' },
+  bloqueada: { rotulo: 'Bloqueada (teto)', tom: 'warning' },
 };
 
 /** Nome de cada fila em português de gente. */
@@ -209,7 +210,8 @@ function BuscasMaps({ d }: { d: DadosAtividade }) {
         </thead>
         <tbody>
           {d.buscas.map((b) => {
-            const s = SITUACAO_BUSCA[b.status];
+            // Status novo que a tela ainda não conhece não pode derrubar a página.
+            const s = SITUACAO_BUSCA[b.status] ?? { rotulo: b.status, tom: 'neutral' as Tom };
             return (
               <tr key={b.id} style={{ cursor: 'default' }}>
                 <Celula rotulo="Campanha">{b.campanha ?? `#${b.campanhaId}`}</Celula>
@@ -230,7 +232,7 @@ function BuscasMaps({ d }: { d: DadosAtividade }) {
                   {b.status === 'erro' && b.erro && <div className="erro-texto">{b.erro}</div>}
                   {b.status !== 'erro' && b.erro && (
                     <div className="aviso-texto">
-                      {b.parada ? '' : 'Tentando de novo: '}
+                      {b.parada || b.status === 'bloqueada' ? '' : 'Tentando de novo: '}
                       {b.erro}
                     </div>
                   )}

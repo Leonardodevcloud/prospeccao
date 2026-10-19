@@ -185,3 +185,29 @@ export type EscopoReenriquecer = z.infer<typeof reenriquecerEntrada>['escopo'];
 export const apagarCampanhaEntrada = z.object({
   confirmarNome: z.string().trim().min(1, 'Digite o nome da campanha para confirmar.'),
 });
+
+/** Valor em US$ opcional: vazio ou null = sem teto. */
+const tetoUsd = z.preprocess(
+  (v) => (v === '' || v === undefined ? null : v),
+  z.coerce.number().min(0, 'O teto não pode ser negativo.').max(100_000, 'Teto alto demais.').nullable(),
+);
+
+/**
+ * Iniciar/retomar a campanha. `tetoPlacesUsd` (opcional) troca o teto de gasto da campanha em
+ * buscas pagas no Google: null = sem teto; 0 = só a franquia grátis.
+ */
+export const iniciarCampanhaEntrada = z.object({
+  tetoPlacesUsd: tetoUsd.optional(),
+});
+
+export const tetoPlacesEntrada = z.object({ tetoPlacesUsd: tetoUsd });
+
+/** Tabela de preços do Google Places (a do Google pode mudar) e teto do mês. */
+export const configPlacesEntrada = z.object({
+  franquiaMensal: z.coerce.number().int().min(0).max(1_000_000),
+  precoMilUsd: z.coerce.number().min(0).max(1000),
+  cotacaoBrl: z.coerce.number().min(0.5, 'Cotação inválida.').max(50, 'Cotação inválida.'),
+  tetoMensalUsd: tetoUsd,
+  maxBairros: z.coerce.number().int().min(0).max(1000),
+});
+export type ConfigPlacesEntrada = z.infer<typeof configPlacesEntrada>;
