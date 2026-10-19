@@ -94,6 +94,7 @@ describe('MEI', () => {
   it('reconhece o MEI pela razão social com CPF e natureza 213-5', async () => {
     const { pareceMei, lerSimples } = await import('../src/receita/layout.js');
     expect(pareceMei('2135', 'JOAO DA SILVA 12345678901')).toBe(true);
+    expect(pareceMei('2135', '12.666.833 ALVARO SANTOS SOUZA')).toBe(true);
     expect(pareceMei('2135', 'JOAO DA SILVA')).toBe(false);
     expect(pareceMei('2062', 'PECAS LTDA 12345678901')).toBe(false);
     expect(lerSimples(['123', 'S', '', '', 'S', '', ''])).toEqual({

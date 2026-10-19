@@ -1047,3 +1047,65 @@ fieldset.campo {
   line-height: 16px;
   color: var(--ink-muted);
 }
+
+/* ---------- Andamento da campanha ---------- */
+.andamento-campanha {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.etapa-campanha {
+  display: grid;
+  gap: 4px;
+}
+.etapa-campanha + .etapa-campanha {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+.etapa-campanha__topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+.etapa-campanha__topo b {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.etapa-campanha p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+}
+.etapa-campanha__erro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.barra-progresso {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--line);
+  overflow: hidden;
+}
+.barra-progresso span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--brand);
+  transition: width 300ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .barra-progresso span {
+    transition: none;
+  }
+}

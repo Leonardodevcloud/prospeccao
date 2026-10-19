@@ -97,7 +97,16 @@ function ImportacaoCnpj({ d }: { d: DadosAtividade }) {
               </span>
             </>
           )}
-          {i.status === 'concluida' && (
+          {i.status === 'concluida' && i.motivo === 'mei' && (
+            <>
+              <Badge tone="brand">Concluída</Badge>
+              <span>
+                <Quando iso={i.concluidoEm} /> · leitura do Simples Nacional: MEI marcados na base (publicação{' '}
+                {fmtMes(i.mes)})
+              </span>
+            </>
+          )}
+          {i.status === 'concluida' && i.motivo !== 'mei' && (
             <>
               <Badge tone="brand">Concluída</Badge>
               <span>
@@ -211,10 +220,25 @@ function BuscasMaps({ d }: { d: DadosAtividade }) {
                   {b.termo}
                 </Celula>
                 <Celula rotulo="Situação" title={b.erro ?? undefined}>
-                  <Badge tone={s.tom}>
-                    {b.status === 'rodando' && <span className="vivo" aria-hidden="true" />} {s.rotulo}
-                  </Badge>
+                  {b.parada ? (
+                    <Badge tone="danger">Parada</Badge>
+                  ) : (
+                    <Badge tone={s.tom}>
+                      {b.status === 'rodando' && <span className="vivo" aria-hidden="true" />} {s.rotulo}
+                    </Badge>
+                  )}
                   {b.status === 'erro' && b.erro && <div className="erro-texto">{b.erro}</div>}
+                  {b.status !== 'erro' && b.erro && (
+                    <div className="aviso-texto">
+                      {b.parada ? '' : 'Tentando de novo: '}
+                      {b.erro}
+                    </div>
+                  )}
+                  {b.parada && !b.erro && (
+                    <div className="aviso-texto">
+                      Sem tarefa na fila: use "Tentar de novo" no card da campanha.
+                    </div>
+                  )}
                 </Celula>
                 <Celula rotulo="Lugares" className="mono num">
                   {b.itens == null ? '—' : fmtNumero(b.itens)}

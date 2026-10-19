@@ -86,6 +86,15 @@ export interface ProgressoCampanha {
   mei: number;
   /** Pedidos de enriquecimento desta campanha ainda na fila ou rodando. */
   naFilaEnriquecimento: number;
+  /** Leads da campanha já enriquecidos / que podem ser (sem MEI e descartados). */
+  enriquecidos: number;
+  elegiveis: number;
+  /** Estado do worker-enriquecimento pelo sinal de vida que ele grava. */
+  servicoEnriquecimento: 'rodando' | 'pausado' | 'fora' | 'desconhecido';
+  /** Estados da campanha que a Base CNPJ ainda não tem. */
+  ufsForaDaBase: string[];
+  /** Último erro das buscas no Maps (recente). */
+  erroBusca: string | null;
 }
 
 export interface Campanha {
@@ -477,6 +486,8 @@ export interface BuscaAtividade {
   itens: number | null;
   erro: string | null;
   verificacoes: number;
+  /** Pendente/rodando sem tarefa na fila: não anda sozinha. */
+  parada?: boolean;
   criadoEm: string;
   iniciadoEm: string | null;
   concluidoEm: string | null;

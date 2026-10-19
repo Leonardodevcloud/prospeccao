@@ -28,9 +28,28 @@ export function rotasAtividade({ pool, filas }: DepsApi): Router {
                    coalesce(b.concluido_em, b.iniciado_em, b.criado_em) DESC
           LIMIT 40`,
       ),
-      filas.tamanhos(),
+      // Contagem direta na tabela da fila: inclui os que esperam nova tentativa depois de uma falha.
+      pool
+        .query<{ name: string; n: number }>(
+          `SELECT name, count(*)::int AS n FROM fila.job
+            WHERE state IN ('created', 'retry', 'active') GROUP BY name`,
+        )
+        .then((r) => Object.fromEntries(r.rows.map((x) => [x.name, x.n])))
+        .catch(() => filas.tamanhos()),
     ]);
 
+    // Busca "pendente" sem tarefa na fila não vai andar sozinha (falhou de vez ou a campanha pausou).
+    const comTarefa = await pool
+      .query<{ id: string }>(
+        `SELECT DISTINCT data ->> 'buscaId' AS id FROM fila.job
+          WHERE name IN ('maps.buscar', 'maps.coletar') AND state IN ('created', 'retry', 'active')`,
+      )
+      .then((r) => new Set(r.rows.map((x) => Number(x.id))))
+      .catch(() => null);
+    for (const b of buscas.rows) {
+      b.parada =
+        comTarefa != null && (b.status === 'pendente' || b.status === 'rodando') && !comTarefa.has(b.id);
+    }
     const emAndamento = buscas.rows.filter((b) => b.status === 'rodando' || b.status === 'pendente').length;
     res.json({
       agora: new Date().toISOString(),

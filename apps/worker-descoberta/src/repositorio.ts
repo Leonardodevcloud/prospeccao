@@ -88,6 +88,8 @@ export async function importarEmpresasDaBase(db: Executor, c: CampanhaDescoberta
           AND (e.cnae_principal = ANY($3::text[]) OR e.cnaes_secundarios && $3::text[])
           AND e.porte = ANY($4::text[])
           AND ($5::int = 0 OR e.data_inicio <= current_date - make_interval(years => $5::int))
+          -- MEI nem entra na campanha quando o nicho exclui MEI.
+          AND NOT (e.mei AND coalesce($6::boolean, true))
      ),
      gravadas AS (
        INSERT INTO descoberta.empresas AS emp
@@ -115,9 +117,32 @@ export async function importarEmpresasDaBase(db: Executor, c: CampanhaDescoberta
        RETURNING 1
      )
      SELECT count(*)::int AS total FROM ligadas`,
-    [c.id, JSON.stringify(c.cidades), c.cnaes, c.portes, c.idade_minima_anos],
+    [c.id, JSON.stringify(c.cidades), c.cnaes, c.portes, c.idade_minima_anos, c.excluir_mei],
   );
+  if (c.excluir_mei) await tirarMeiDaCampanha(db, c.id);
   return rows[0]?.total ?? 0;
+}
+
+/**
+ * A base marcou mais MEI (leitura do Simples): atualiza a marca e tira da campanha os que ainda
+ * não foram trabalhados no funil.
+ */
+export async function tirarMeiDaCampanha(db: Executor, campanhaId: number): Promise<number> {
+  await db.query(
+    `UPDATE descoberta.empresas d SET mei = true
+       FROM base_cnpj.v_estabelecimentos e
+      WHERE e.cnpj = d.cnpj AND e.mei AND NOT d.mei
+        AND d.id IN (SELECT empresa_id FROM descoberta.campanha_empresas WHERE campanha_id = $1)`,
+    [campanhaId],
+  );
+  const { rowCount } = await db.query(
+    `DELETE FROM descoberta.campanha_empresas ce
+      USING descoberta.empresas e
+      WHERE e.id = ce.empresa_id AND ce.campanha_id = $1 AND e.mei
+        AND NOT EXISTS (SELECT 1 FROM comercial.oportunidades o WHERE o.empresa_id = e.id)`,
+    [campanhaId],
+  );
+  return rowCount ?? 0;
 }
 
 export interface Busca {
@@ -159,6 +184,11 @@ export async function concluirBusca(db: Executor, id: number, erro: string | nul
     `UPDATE descoberta.buscas_maps SET status = $2, erro = $3, itens = $4, concluido_em = now() WHERE id = $1`,
     [id, erro ? 'erro' : 'concluida', erro, itens],
   );
+}
+
+/** Falha que ainda vai ser tentada de novo: só guarda o motivo (a busca segue pendente/rodando). */
+export async function anotarFalhaBusca(db: Executor, id: number, erro: string) {
+  await db.query('UPDATE descoberta.buscas_maps SET erro = $2 WHERE id = $1', [id, erro]);
 }
 
 export async function buscasEmAberto(db: Executor, campanhaId: number): Promise<number> {

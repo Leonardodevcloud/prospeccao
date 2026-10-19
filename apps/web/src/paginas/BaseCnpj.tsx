@@ -234,7 +234,7 @@ export function BaseCnpj() {
                         </div>
                       </td>
                       <td data-rotulo="Estados" className="mono">
-                        <div>{i.ufs.join(', ') || '—'}</div>
+                        <div>{i.motivo === 'mei' ? 'Leitura do Simples (MEI)' : i.ufs.join(', ') || '—'}</div>
                       </td>
                       <td data-rotulo="Estabelecimentos" className="mono num">
                         <div>{fmtNumero(i.estabelecimentos)}</div>

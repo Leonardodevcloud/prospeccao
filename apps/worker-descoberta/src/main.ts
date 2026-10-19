@@ -3,7 +3,7 @@ import { carregarEnv, envBase, opcional } from '@prospeccao/config';
 import { criarPool } from '@prospeccao/db';
 import * as apify from '@prospeccao/integrations/apify';
 import * as ors from '@prospeccao/integrations/ors';
-import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
+import { conectarFilas, ErroDefinitivo, encerrarAoReceberSinal, POLITICA_FILAS } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { z } from 'zod';
 import * as casos from './casos.js';
@@ -87,8 +87,28 @@ const deps: Deps = {
 
 await filas.consumir('campanha.iniciar', (p) => casos.iniciarCampanha(deps, p.campanhaId));
 await filas.consumir('campanha.buscar_cnpj', (p) => casos.buscarNaBaseCnpj(deps, p.campanhaId));
-await filas.consumir('maps.buscar', (p) => casos.dispararBuscaMaps(deps, p.buscaId), { concorrencia: 3 });
-await filas.consumir('maps.coletar', (p) => casos.coletarBuscaMaps(deps, p.buscaId), { concorrencia: 2 });
+/** Roda a etapa da busca; se falhar, deixa o motivo na busca (e fecha com erro na última tentativa). */
+const comFalhaNaBusca =
+  (fila: 'maps.buscar' | 'maps.coletar', etapa: (buscaId: number) => Promise<void>) =>
+  async (p: { buscaId: number }, ctx: { tentativa: number }) => {
+    try {
+      await etapa(p.buscaId);
+    } catch (erro) {
+      const final = erro instanceof ErroDefinitivo || ctx.tentativa >= POLITICA_FILAS[fila].retryLimit;
+      await casos.registrarFalhaBusca(deps, p.buscaId, erro, final).catch(() => {});
+      throw erro;
+    }
+  };
+await filas.consumir(
+  'maps.buscar',
+  comFalhaNaBusca('maps.buscar', (id) => casos.dispararBuscaMaps(deps, id)),
+  { concorrencia: 3 },
+);
+await filas.consumir(
+  'maps.coletar',
+  comFalhaNaBusca('maps.coletar', (id) => casos.coletarBuscaMaps(deps, id)),
+  { concorrencia: 2 },
+);
 // Concorrência 1: respeita o limite do ORS.
 await filas.consumir('empresa.localizar', (p) => casos.localizarEmpresa(deps, p.empresaId), {
   concorrencia: 1,

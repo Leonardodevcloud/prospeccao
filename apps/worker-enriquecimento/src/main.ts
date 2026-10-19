@@ -91,6 +91,18 @@ const deps: Deps = {
 await pool.query(`UPDATE enriquecimento.leads SET status = 'na_fila' WHERE status = 'rodando'`);
 await filas.liberarTravados('enriquecimento.solicitar');
 
+// Sinal de vida a cada minuto: a tela mostra "pausado" ou "fora do ar" em vez de uma fila parada sem explicação.
+const sinalDeVida = () =>
+  pool
+    .query(
+      `INSERT INTO enriquecimento.servico (id, pausado, visto_em, iniciado_em) VALUES (1, $1, now(), now())
+       ON CONFLICT (id) DO UPDATE SET pausado = EXCLUDED.pausado, visto_em = now()`,
+      [env.ENRIQ_PAUSADO],
+    )
+    .catch((erro) => log.warn({ err: erro }, 'não consegui gravar o sinal de vida'));
+await sinalDeVida();
+const batimento = setInterval(sinalDeVida, 60_000);
+
 if (env.ENRIQ_PAUSADO) {
   log.warn('ENRIQ_PAUSADO=true: enriquecimento parado, a fila fica esperando (nada é gasto)');
 } else {
@@ -111,6 +123,7 @@ log.info(
 );
 
 encerrarAoReceberSinal(log, async () => {
+  clearInterval(batimento);
   await filas.parar();
   await pool.end();
 });

@@ -182,3 +182,29 @@ export async function aoAtualizarBaseCnpj(deps: Deps) {
     await deps.filas.publicar('campanha.buscar_cnpj', { campanhaId });
   }
 }
+
+/** Erro de busca em português curto (o que aparece na tela de Atividade). */
+export function explicarFalhaBusca(erro: unknown): string {
+  const msg = erro instanceof Error ? erro.message : String(erro);
+  if (/HTTP 402|not enough usage|usage limit|credit|insufficient/i.test(msg))
+    return 'Sem crédito no Apify: recarregue ou troque de plano e use "Tentar de novo".';
+  if (/HTTP 401|HTTP 403|token/i.test(msg)) return 'APIFY_TOKEN recusado pelo Apify.';
+  if (/TIMED-OUT|timeout|tempo esgotado/i.test(msg)) return 'O Apify demorou demais para responder.';
+  return msg.slice(0, 240);
+}
+
+/**
+ * Falha ao disparar ou coletar uma busca: grava o motivo na busca para a tela mostrar. Na última
+ * tentativa, fecha a busca com erro e segue a campanha com o que as outras buscas acharam.
+ */
+export async function registrarFalhaBusca(deps: Deps, buscaId: number, erro: unknown, final: boolean) {
+  const motivo = explicarFalhaBusca(erro);
+  const busca = await repo.obterBusca(deps.pool, buscaId);
+  if (!busca) return;
+  if (final) {
+    await repo.concluirBusca(deps.pool, buscaId, motivo, null);
+    await aoConcluirBusca(deps, busca.campanha_id);
+  } else {
+    await repo.anotarFalhaBusca(deps.pool, buscaId, motivo);
+  }
+}

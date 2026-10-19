@@ -177,7 +177,13 @@ export function lerSimples(c: string[]): OpcaoSimples | null {
   };
 }
 
-/** MEI pelo cadastro, quando o Simples ainda não foi lido: empresário individual com o CPF na razão social. */
+/**
+ * MEI pelo cadastro, quando o Simples ainda não foi lido: empresário individual (213-5) com a razão
+ * social no formato do MEI: "NOME 12345678901" (CPF no fim) ou "12.345.678 NOME" (raiz do CNPJ no começo).
+ */
 export function pareceMei(naturezaJuridica: string | null, razaoSocial: string): boolean {
-  return naturezaJuridica === '2135' && /\d{11}\s*$/.test(razaoSocial);
+  return (
+    naturezaJuridica === '2135' &&
+    (/\d{11}\s*$/.test(razaoSocial) || /^\d{2}\.\d{3}\.\d{3}\s/.test(razaoSocial))
+  );
 }

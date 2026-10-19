@@ -133,12 +133,18 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
        VALUES ('11222333000181', '11222333', true, 'LADEIRA NOVA PECAS', '02', '2014-03-01', '4530703', '40415000', 'BA', '3849', '{7132410098}'),
               ('22333444000100', '22333444', true, 'AUTO CENTER BROTAS', '02', '2010-01-01', '4530703', '40285000', 'BA', '3849', '{}'),
               ('33444555000100', '33444555', true, 'PECAS LONGE', '02', '2012-01-01', '4530703', '48000000', 'BA', '3849', '{}'),
-              ('44555666000100', '44555666', true, 'FECHADA PECAS', '08', '2012-01-01', '4530703', '40000000', 'BA', '3849', '{}')`,
+              ('44555666000100', '44555666', true, 'FECHADA PECAS', '08', '2012-01-01', '4530703', '40000000', 'BA', '3849', '{}'),
+              ('55666777000100', '55666777', true, NULL, '02', '2015-01-01', '4530703', '40000000', 'BA', '3849', '{}')`,
     );
     await pool.query(
       `INSERT INTO base_cnpj.empresas (cnpj_basico, razao_social, porte)
        VALUES ('11222333', 'LADEIRA NOVA COMERCIO DE PECAS LTDA', 'epp'), ('22333444', 'BROTAS AUTO LTDA', 'me'),
               ('33444555', 'LONGE LTDA', 'me'), ('44555666', 'FECHADA LTDA', 'me')`,
+    );
+    // MEI (marcado pela Receita): nem entra na campanha.
+    await pool.query(
+      `INSERT INTO base_cnpj.empresas (cnpj_basico, razao_social, natureza_juridica, porte, mei, mei_fonte)
+       VALUES ('55666777', '55.666.777 JOSE DA SILVA', '2135', 'me', true, 'nome')`,
     );
     await pool.query(`INSERT INTO cadastro.bases (nome, lat, lng) VALUES ('Base Centro', -12.97, -38.51)`);
     await pool.query(
@@ -191,6 +197,8 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
     // Fechada na Receita e oficina (palavra negativa) não entram
     expect(rows.map((r) => r.nome)).not.toContain('FECHADA PECAS');
     expect(rows.map((r) => r.nome)).not.toContain('Mecânica do Zé');
+    // MEI não entra
+    expect(rows.some((r) => r.cnpj === '55666777000100')).toBe(false);
 
     const { rows: cruz } = await pool.query(
       'SELECT place_id, cruzamento FROM descoberta.maps_resultados ORDER BY place_id',

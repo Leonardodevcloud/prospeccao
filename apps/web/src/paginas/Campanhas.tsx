@@ -2,7 +2,7 @@ import { campanhaEntrada } from '@prospeccao/shared/dominio';
 import { Badge, Button, EmptyState, TextField } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api, type Campanha, type Nicho } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { CampoLista, ErroDaApi, Mensagem } from '../componentes/Formulario';
@@ -169,6 +169,137 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
   );
 }
 
+/** Barra fina de progresso (feito de total). */
+function Barra({ feito, total, rotulo }: { feito: number; total: number; rotulo: string }) {
+  const pct = total > 0 ? Math.min(100, Math.round((feito / total) * 100)) : 0;
+  return (
+    <div
+      className="barra-progresso"
+      role="progressbar"
+      aria-label={rotulo}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={feito}
+    >
+      <span style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/**
+ * Onde a campanha está, etapa por etapa: base de CNPJ, buscas no Maps e enriquecimento. Cada
+ * etapa diz o que já fez e, se parou, por quê e o que fazer.
+ */
+function Andamento(props: {
+  c: Campanha;
+  aoTentarDeNovo: () => void;
+  aoParar: () => void;
+  ocupado: boolean;
+}) {
+  const { c } = props;
+  const p = c.progresso;
+  const ativa = c.status === 'ativa';
+  const buscasTotal = p.buscasPendentes + p.buscasConcluidas + p.buscasComErro;
+  const buscando = ativa && p.buscasPendentes > 0;
+  const enriquecendo = p.naFilaEnriquecimento > 0;
+  const servico = p.servicoEnriquecimento;
+
+  return (
+    <div className="andamento-campanha">
+      {/* 1. Base de CNPJ */}
+      <div className="etapa-campanha">
+        <div className="etapa-campanha__topo">
+          <b>Base de CNPJ</b>
+          <span className="mono">{fmtNumero(p.comCnpj)} empresas</span>
+        </div>
+        {p.ufsForaDaBase.length > 0 ? (
+          <p className="erro-texto">
+            A base ainda não tem {p.ufsForaDaBase.join(', ')}: importe de novo em{' '}
+            <Link to="/base-cnpj">Base CNPJ</Link> (com todos os estados em CNPJ_UFS_EXTRAS).
+          </p>
+        ) : (
+          <p className="quieto">Empresas ativas do nicho nas cidades da campanha (sem MEI).</p>
+        )}
+      </div>
+
+      {/* 2. Google Maps */}
+      <div className="etapa-campanha">
+        <div className="etapa-campanha__topo">
+          <b>{buscando && <span className="vivo" aria-hidden="true" />} Google Maps</b>
+          <span className="mono">
+            {buscasTotal ? `${fmtNumero(p.buscasConcluidas)} de ${fmtNumero(buscasTotal)} buscas` : '—'}
+          </span>
+        </div>
+        {buscasTotal > 0 && <Barra feito={p.buscasConcluidas} total={buscasTotal} rotulo="Buscas no Maps" />}
+        {p.erroBusca ? (
+          <div className="etapa-campanha__erro">
+            <p className="erro-texto">{p.erroBusca}</p>
+            {ativa && (
+              <Button size="sm" disabled={props.ocupado} onClick={props.aoTentarDeNovo}>
+                Tentar de novo
+              </Button>
+            )}
+          </div>
+        ) : (
+          <p className="quieto">
+            {!ativa && p.buscasPendentes > 0
+              ? 'Campanha pausada: as buscas esperam ela voltar.'
+              : buscando
+                ? `${fmtNumero(p.buscasPendentes)} em andamento · cada busca leva alguns minutos no Apify.`
+                : buscasTotal
+                  ? `Concluídas · última ${fmtQuando(p.ultimaBusca)} · ${fmtNumero(p.noMaps)} lugares ligados`
+                  : ativa
+                    ? 'Preparando as buscas…'
+                    : 'Começa quando a campanha for iniciada.'}
+          </p>
+        )}
+      </div>
+
+      {/* 3. Enriquecimento */}
+      <div className="etapa-campanha">
+        <div className="etapa-campanha__topo">
+          <b>
+            {enriquecendo && servico === 'rodando' && <span className="vivo" aria-hidden="true" />}{' '}
+            Enriquecimento
+          </b>
+          <span className="mono">
+            {fmtNumero(p.enriquecidos)} de {fmtNumero(p.elegiveis)} leads
+          </span>
+        </div>
+        {p.elegiveis > 0 && <Barra feito={p.enriquecidos} total={p.elegiveis} rotulo="Leads enriquecidos" />}
+        {servico === 'pausado' ? (
+          <p className="aviso-texto">
+            Pausado no Railway (ENRIQ_PAUSADO=true no worker-enriquecimento).{' '}
+            {fmtNumero(p.naFilaEnriquecimento)} esperando; troque para false para continuar.
+          </p>
+        ) : servico === 'fora' ? (
+          <p className="erro-texto">
+            O worker-enriquecimento não dá sinal de vida há mais de 3 minutos: confira se ele está no ar no
+            Railway.
+          </p>
+        ) : enriquecendo ? (
+          <div className="etapa-campanha__erro">
+            <p className="quieto">{fmtNumero(p.naFilaEnriquecimento)} na fila ou rodando agora.</p>
+            <Button size="sm" variant="danger" disabled={props.ocupado} onClick={props.aoParar}>
+              Parar enriquecimento
+            </Button>
+          </div>
+        ) : (
+          <p className="quieto">
+            {p.elegiveis === 0
+              ? 'Começa quando as buscas encontrarem leads.'
+              : p.enriquecidos >= p.elegiveis
+                ? 'Todos os leads enriquecidos.'
+                : buscando
+                  ? 'Começa quando as buscas no Maps terminarem.'
+                  : 'Nada na fila. Use "Refazer enriquecimento" para enriquecer os que faltam.'}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CardCampanha({ c }: { c: Campanha }) {
   const cliente = useQueryClient();
   const navegar = useNavigate();
@@ -240,7 +371,6 @@ function CardCampanha({ c }: { c: Campanha }) {
   ];
   const escolhida = OPCOES_REFAZER.find((o) => o.id === escopo);
   const p = c.progresso;
-  const buscando = c.status === 'ativa' && p.buscasPendentes > 0;
 
   return (
     <article className="card-campanha">
@@ -273,21 +403,12 @@ function CardCampanha({ c }: { c: Campanha }) {
           <span>descartados</span>
         </div>
       </div>
-      <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
-        {fmtNumero(p.comCnpj)} com CNPJ · {fmtNumero(p.comSinalEntrega)} com sinal de entrega
-        {p.mei > 0 && ` · ${fmtNumero(p.mei)} MEI ignorados`}. Rodar de novo só traz como "novos" os que ainda
-        não foram trabalhados.
-      </p>
-
-      <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
-        {buscando
-          ? `Buscando no Maps: ${p.buscasPendentes} ${p.buscasPendentes === 1 ? 'busca' : 'buscas'} em andamento`
-          : p.buscasConcluidas
-            ? `${p.buscasConcluidas} buscas no Maps · última ${fmtQuando(p.ultimaBusca)}`
-            : 'Nenhuma busca no Maps ainda'}
-        {p.buscasComErro > 0 && ` · ${p.buscasComErro} com erro`}
-        {p.semLocalizacao > 0 && ` · ${p.semLocalizacao} sem localização`}
-      </p>
+      <Andamento
+        c={c}
+        aoTentarDeNovo={() => acao.mutate('iniciar')}
+        aoParar={() => parar.mutate()}
+        ocupado={acao.isPending || parar.isPending}
+      />
 
       {avisos.map((a) => (
         <Mensagem key={a} tipo="aviso">
@@ -295,17 +416,6 @@ function CardCampanha({ c }: { c: Campanha }) {
         </Mensagem>
       ))}
       <ErroDaApi erro={acao.error ?? refazer.error} />
-      {p.naFilaEnriquecimento > 0 && (
-        <div className="linha-status" style={{ fontSize: 13 }}>
-          <Badge tone="warning">
-            <span className="vivo" aria-hidden="true" /> Enriquecendo
-          </Badge>
-          <span>{fmtNumero(p.naFilaEnriquecimento)} leads na fila ou rodando agora</span>
-          <Button size="sm" variant="danger" disabled={parar.isPending} onClick={() => parar.mutate()}>
-            {parar.isPending ? 'Parando…' : 'Parar enriquecimento'}
-          </Button>
-        </div>
-      )}
       <ErroDaApi erro={parar.error ?? apagar.error} />
       {apagando && (
         <div className="confirmar" style={{ borderColor: 'var(--danger)', background: 'var(--danger-soft)' }}>

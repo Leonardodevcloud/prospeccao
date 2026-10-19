@@ -57,11 +57,82 @@ async function naFilaDoEnriquecimento(db: Executor): Promise<Map<number, number>
   }
 }
 
-type ComProgresso = { id: number; nome: string; progresso: Record<string, unknown> };
+type ComProgresso = {
+  id: number;
+  nome: string;
+  cidades: { cidade: string; uf: string }[];
+  progresso: Record<string, unknown>;
+};
 
-async function comFila<T extends ComProgresso>(db: Executor, campanhas: T[]): Promise<T[]> {
-  const fila = await naFilaDoEnriquecimento(db);
-  for (const c of campanhas) c.progresso.naFilaEnriquecimento = fila.get(Number(c.id)) ?? 0;
+/** Estado do worker-enriquecimento pelo sinal de vida que ele grava a cada minuto. */
+async function estadoDoEnriquecimento(
+  db: Executor,
+): Promise<'rodando' | 'pausado' | 'fora' | 'desconhecido'> {
+  try {
+    const { rows } = await db.query<{ pausado: boolean; recente: boolean }>(
+      `SELECT pausado, visto_em > now() - interval '3 minutes' AS recente FROM enriquecimento.servico WHERE id = 1`,
+    );
+    const r = rows[0];
+    if (!r) return 'desconhecido';
+    if (!r.recente) return 'fora';
+    return r.pausado ? 'pausado' : 'rodando';
+  } catch {
+    return 'desconhecido';
+  }
+}
+
+/**
+ * Andamento de cada etapa da campanha, para a tela mostrar se está andando e onde parou:
+ * base de CNPJ (e estados que a base ainda não tem), buscas no Maps (com o último erro) e
+ * enriquecimento (feitos, na fila e se o serviço está rodando).
+ */
+async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]): Promise<T[]> {
+  if (!campanhas.length) return campanhas;
+  const ids = campanhas.map((c) => Number(c.id));
+  const [fila, servico, base, enriq, erros] = await Promise.all([
+    naFilaDoEnriquecimento(db),
+    estadoDoEnriquecimento(db),
+    db.query<{ ufs: string[] }>(
+      `SELECT ufs FROM base_cnpj.importacoes
+        WHERE status = 'concluida' AND motivo <> 'mei' ORDER BY concluido_em DESC LIMIT 1`,
+    ),
+    db.query<{ campanha_id: string; enriquecidos: number; elegiveis: number }>(
+      `SELECT ce.campanha_id, count(*) FILTER (WHERE l.status = 'concluido')::int AS enriquecidos,
+              count(*)::int AS elegiveis
+         FROM descoberta.campanha_empresas ce
+         JOIN descoberta.empresas e ON e.id = ce.empresa_id AND NOT e.mei
+         LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
+        WHERE ce.campanha_id = ANY($1::bigint[])
+          AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = e.id)
+        GROUP BY 1`,
+      [ids],
+    ),
+    db.query<{ campanha_id: string; erro: string; total: number }>(
+      `SELECT DISTINCT ON (campanha_id) campanha_id, erro,
+              count(*) OVER (PARTITION BY campanha_id)::int AS total
+         FROM descoberta.buscas_maps
+        WHERE campanha_id = ANY($1::bigint[]) AND erro IS NOT NULL
+          AND (status IN ('pendente', 'rodando') OR concluido_em > now() - interval '1 day')
+        ORDER BY campanha_id, coalesce(concluido_em, criado_em) DESC`,
+      [ids],
+    ),
+  ]);
+  const ufsNaBase = base.rows[0]?.ufs ?? null;
+  const porCampanha = new Map(enriq.rows.map((r) => [Number(r.campanha_id), r]));
+  const erroPorCampanha = new Map(erros.rows.map((r) => [Number(r.campanha_id), r.erro]));
+  for (const c of campanhas) {
+    const ufs = [...new Set(c.cidades.map((x) => x.uf.toUpperCase()))];
+    const e = porCampanha.get(Number(c.id));
+    Object.assign(c.progresso, {
+      naFilaEnriquecimento: fila.get(Number(c.id)) ?? 0,
+      enriquecidos: e?.enriquecidos ?? 0,
+      elegiveis: e?.elegiveis ?? 0,
+      servicoEnriquecimento: servico,
+      // Estados da campanha que a última importação da Receita não trouxe.
+      ufsForaDaBase: ufsNaBase ? ufs.filter((u) => !ufsNaBase.includes(u)) : ufs,
+      erroBusca: erroPorCampanha.get(Number(c.id)) ?? null,
+    });
+  }
   return campanhas;
 }
 
@@ -69,12 +140,12 @@ export async function listar(db: Executor) {
   const { rows } = await db.query<ComProgresso>(
     `${SELECT} ORDER BY CASE c.status WHEN 'ativa' THEN 0 WHEN 'pausada' THEN 1 WHEN 'rascunho' THEN 2 ELSE 3 END, c.criado_em DESC`,
   );
-  return comFila(db, rows);
+  return comAndamento(db, rows);
 }
 
 export async function obter(db: Executor, id: number) {
   const { rows } = await db.query<ComProgresso>(`${SELECT} WHERE c.id = $1`, [id]);
-  return (await comFila(db, rows))[0] ?? null;
+  return (await comAndamento(db, rows))[0] ?? null;
 }
 
 export async function nichoAtivo(db: Executor, nichoId: number): Promise<boolean> {

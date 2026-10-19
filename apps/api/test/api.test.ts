@@ -471,7 +471,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       campanha: 'Autopeças RMS',
     });
     expect(r.body.buscas[1]).toMatchObject({ cidade: 'Salvador', itens: 87 });
-    expect(r.body.filas).toEqual({ 'maps.coletar': 1 });
+    // Contagem direta na tabela da fila (o job de importação com nova tentativa do teste anterior).
+    expect(r.body.filas).toEqual({ 'cnpj.importar': 1 });
   });
 
   it('MEI fica fora da lista de leads, a menos que peça para ver', async () => {
