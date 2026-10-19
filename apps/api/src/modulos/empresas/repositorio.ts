@@ -12,7 +12,7 @@ const CAMPOS_LISTA = `
   e.maps_categoria AS "mapsCategoria", e.maps_site AS "mapsSite", e.maps_telefone AS "mapsTelefone",
   e.telefones_receita AS "telefonesReceita", e.sinal_entrega AS "sinalEntrega",
   e.distancia_base_km AS "distanciaBaseKm", e.maps_fechada AS "mapsFechada",
-  (e.place_id IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm",
+  (e.place_id IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm", e.mei,
   l.status AS "enriqStatus", l.faixa, l.score, l.motivo,
   dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
   pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
@@ -74,6 +74,8 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
     );
   if (f.faixa === 'pendente') where.push(`(l.status IS NULL OR l.status <> 'concluido')`);
   else if (f.faixa) where.push(`l.faixa = ${p(f.faixa)}`);
+  // MEI não contrata o serviço: fora da lista, a menos que peça para ver.
+  if (!f.incluirMei) where.push('NOT e.mei');
   if (f.situacao === 'novos') where.push('op.empresa_id IS NULL');
   else if (f.situacao === 'no_funil') where.push(`op.etapa <> 'descartado'`);
   else if (f.situacao === 'descartados') where.push(`op.etapa = 'descartado'`);

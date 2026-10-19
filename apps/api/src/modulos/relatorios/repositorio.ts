@@ -25,7 +25,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
                      AND w.status <> 'invalido') AS com_whatsapp
       FROM descoberta.empresas e
       LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
-     WHERE EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce WHERE ce.empresa_id = e.id
+     WHERE NOT e.mei AND EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce WHERE ce.empresa_id = e.id
                      AND ($2::bigint IS NULL OR ce.campanha_id = $2) AND ${noPeriodo('ce.adicionada_em')})`;
 
   // Até onde cada oportunidade chegou (pelo histórico de etapas), mesmo que depois tenha perdido.
@@ -99,6 +99,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
               count(*) FILTER (WHERE o.etapa = 'ganho')::int AS ganhos
          FROM cadastro.campanhas c
          JOIN descoberta.campanha_empresas ce ON ce.campanha_id = c.id AND ${noPeriodo('ce.adicionada_em')}
+          AND NOT EXISTS (SELECT 1 FROM descoberta.empresas m WHERE m.id = ce.empresa_id AND m.mei)
          LEFT JOIN enriquecimento.leads l ON l.empresa_id = ce.empresa_id
          LEFT JOIN comercial.oportunidades o ON o.empresa_id = ce.empresa_id
         WHERE ($2::bigint IS NULL OR c.id = $2)

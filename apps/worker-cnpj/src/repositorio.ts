@@ -1,5 +1,5 @@
 import { type Executor, valoresEmLote } from '@prospeccao/db';
-import type { receita } from '@prospeccao/integrations';
+import { receita } from '@prospeccao/integrations';
 
 /** Escritas no schema base_cnpj. Só este serviço escreve aqui. */
 
@@ -22,7 +22,7 @@ export interface Importacao {
 export async function importacaoDoJob(
   db: Executor,
   jobId: string,
-  motivo: 'manual' | 'agendada',
+  motivo: 'manual' | 'agendada' | 'mei',
   mes: string | null,
 ): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
@@ -34,7 +34,11 @@ export async function importacaoDoJob(
   return Number(rows[0]!.id);
 }
 
-export async function criarImportacao(db: Executor, motivo: 'manual' | 'agendada', mes: string | null) {
+export async function criarImportacao(
+  db: Executor,
+  motivo: 'manual' | 'agendada' | 'mei',
+  mes: string | null,
+) {
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO base_cnpj.importacoes (mes, motivo) VALUES ($1, $2) RETURNING id`,
     [mes ?? 'auto', motivo],
@@ -207,22 +211,31 @@ export async function salvarEstabelecimentos(
 export async function salvarEmpresas(db: Executor, importacaoId: number, itens: receita.Empresa[]) {
   if (!itens.length) return;
   const { placeholders, valores } = valoresEmLote(
-    itens.map((e) => [
-      e.cnpjBasico,
-      e.razaoSocial,
-      e.naturezaJuridica,
-      e.capitalSocial,
-      e.porte,
-      importacaoId,
-    ]),
+    itens.map((e) => {
+      const mei = receita.pareceMei(e.naturezaJuridica, e.razaoSocial);
+      return [
+        e.cnpjBasico,
+        e.razaoSocial,
+        e.naturezaJuridica,
+        e.capitalSocial,
+        e.porte,
+        importacaoId,
+        mei,
+        mei ? 'nome' : null,
+      ];
+    }),
   );
   await db.query(
-    `INSERT INTO base_cnpj.empresas (cnpj_basico, razao_social, natureza_juridica, capital_social, porte, importacao_id)
+    `INSERT INTO base_cnpj.empresas
+       (cnpj_basico, razao_social, natureza_juridica, capital_social, porte, importacao_id, mei, mei_fonte)
      VALUES ${placeholders}
      ON CONFLICT (cnpj_basico) DO UPDATE SET
        razao_social = EXCLUDED.razao_social, natureza_juridica = EXCLUDED.natureza_juridica,
        capital_social = EXCLUDED.capital_social, porte = EXCLUDED.porte,
-       importacao_id = EXCLUDED.importacao_id, atualizado_em = now()`,
+       importacao_id = EXCLUDED.importacao_id, atualizado_em = now(),
+       -- a marca do Simples (oficial) vale mais que a dedução pelo nome
+       mei = CASE WHEN base_cnpj.empresas.mei_fonte = 'simples' THEN base_cnpj.empresas.mei ELSE EXCLUDED.mei END,
+       mei_fonte = CASE WHEN base_cnpj.empresas.mei_fonte = 'simples' THEN 'simples' ELSE EXCLUDED.mei_fonte END`,
     valores,
   );
 }
@@ -264,4 +277,32 @@ export async function encerrarInterrompidas(db: Executor, motivo: string): Promi
     [motivo],
   );
   return rowCount ?? 0;
+}
+
+/** Marca Simples e MEI pela tabela oficial da Receita (vale mais que a dedução pelo nome). */
+export async function salvarSimples(db: Executor, itens: receita.OpcaoSimples[]): Promise<number> {
+  if (!itens.length) return 0;
+  const { rowCount } = await db.query(
+    `UPDATE base_cnpj.empresas e
+        SET simples = x.simples, mei = x.mei, mei_fonte = 'simples'
+       FROM unnest($1::text[], $2::boolean[], $3::boolean[]) AS x(cnpj_basico, simples, mei)
+      WHERE e.cnpj_basico = x.cnpj_basico`,
+    [itens.map((i) => i.cnpjBasico), itens.map((i) => i.simples), itens.map((i) => i.mei)],
+  );
+  return rowCount ?? 0;
+}
+
+/** Raízes de CNPJ de toda a base (para ler o Simples sem reimportar tudo). */
+export async function todosOsBasicos(db: Executor): Promise<string[]> {
+  const { rows } = await db.query<{ cnpj_basico: string }>('SELECT cnpj_basico FROM base_cnpj.empresas');
+  return rows.map((r) => r.cnpj_basico);
+}
+
+/** A base já tem empresas, mas nenhuma marcada pelo Simples: falta ler o arquivo do MEI. */
+export async function faltaLerSimples(db: Executor): Promise<boolean> {
+  const { rows } = await db.query<{ falta: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM base_cnpj.empresas)
+            AND NOT EXISTS (SELECT 1 FROM base_cnpj.empresas WHERE mei_fonte = 'simples') AS falta`,
+  );
+  return rows[0]?.falta ?? false;
 }

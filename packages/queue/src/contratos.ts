@@ -17,7 +17,9 @@ export const JOBS = {
       .string()
       .regex(/^\d{4}-\d{2}$/)
       .optional(),
-    motivo: z.enum(['manual', 'agendada']).default('agendada'),
+    motivo: z.enum(['manual', 'agendada', 'mei']).default('agendada'),
+    /** "simples": lê só o arquivo do Simples Nacional para marcar os MEI da base já importada. */
+    apenas: z.enum(['simples']).optional(),
   }),
 
   /** worker-cnpj → worker-descoberta: base atualizada, reprocessar campanhas ativas. */

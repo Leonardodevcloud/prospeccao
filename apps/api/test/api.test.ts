@@ -459,6 +459,15 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(r.body.filas).toEqual({ 'maps.coletar': 1 });
   });
 
+  it('MEI fica fora da lista de leads, a menos que peça para ver', async () => {
+    const antes = (await ler('/empresas?situacao=todos')).body.total;
+    await pool.query('UPDATE descoberta.empresas SET mei = true WHERE id = 2');
+    expect((await ler('/empresas?situacao=todos')).body.total).toBe(antes - 1);
+    const com = await ler('/empresas?situacao=todos&incluirMei=true');
+    expect(com.body.itens.find((e: { id: number }) => e.id === 2)).toMatchObject({ mei: true });
+    await pool.query('UPDATE descoberta.empresas SET mei = false WHERE id = 2');
+  });
+
   it('rota inexistente devolve 404 no formato padrão', async () => {
     const r = await ler('/nao-existe');
     expect(r.status).toBe(404);

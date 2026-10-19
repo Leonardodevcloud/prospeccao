@@ -98,6 +98,7 @@ export function Leads() {
   const pagina = Number(params.get('pagina') ?? '1');
   const empresaAberta = params.get('empresa');
   const situacao = params.get('situacao') ?? 'novos';
+  const incluirMei = params.get('mei') === '1';
   const [busca, setBusca] = useState(params.get('busca') ?? '');
   const [marcados, setMarcados] = useState<Set<number>>(new Set());
   const [descartando, setDescartando] = useState(false);
@@ -153,6 +154,7 @@ export function Leads() {
     comWhatsapp: aba === 'whatsapp' ? true : undefined,
     comDecisor: aba === 'decisor' ? true : undefined,
     situacao,
+    incluirMei: incluirMei || undefined,
   };
   const empresas = useQuery({
     queryKey: ['empresas', filtros],
@@ -255,6 +257,14 @@ export function Leads() {
           value={busca}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBusca(e.target.value)}
         />
+        <label className="opcao" title="MEI não contrata o serviço e fica escondido por padrão">
+          <input
+            type="checkbox"
+            checked={incluirMei}
+            onChange={(e) => mudar({ mei: e.target.checked ? '1' : null })}
+          />
+          Mostrar MEI
+        </label>
       </div>
 
       {marcados.size > 0 && (
@@ -445,6 +455,11 @@ export function Leads() {
                               .join(' · ')}
                           </span>
                         </button>
+                        {e.mei && (
+                          <span className="celula-selos">
+                            <Badge tone="danger">MEI</Badge>
+                          </span>
+                        )}
                         {e.funilEtapa && (
                           <span className="celula-selos">
                             <Badge tone={TOM_ETAPA[e.funilEtapa]} icon="kanban">

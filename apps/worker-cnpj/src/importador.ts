@@ -110,6 +110,65 @@ class Lote<T> {
 }
 
 /**
+ * Lê o arquivo do Simples e marca Simples/MEI das empresas da base (só as raízes informadas).
+ * Devolve quantas são MEI.
+ */
+export async function lerSimples(
+  ctx: Pick<Contexto, 'pool' | 'fonte'>,
+  basicos: Set<string>,
+  etapa: string,
+  placar: { linhasLidas: number },
+  andamento: Andamento,
+): Promise<number> {
+  const nome = receita.ARQUIVOS.simples[0];
+  await andamento.agora(`${etapa} · baixando`);
+  const inicioDownload = Date.now();
+  const caminho = await ctx.fonte.obter(nome, (feito, tamanho) =>
+    andamento.talvez(`${etapa} · ${textoDownload(feito, tamanho, Date.now() - inicioDownload)}`),
+  );
+  await andamento.agora(`${etapa} · lendo`);
+  let lote: receita.OpcaoSimples[] = [];
+  let mei = 0;
+  for await (const linha of receita.lerZipReceita(caminho)) {
+    placar.linhasLidas++;
+    if (placar.linhasLidas % 50_000 === 0) await andamento.talvezAgora();
+    if (!basicos.has((linha[0] ?? '').padStart(8, '0'))) continue;
+    const s = receita.lerSimples(linha);
+    if (!s) continue;
+    if (s.mei) mei++;
+    lote.push(s);
+    if (lote.length >= LOTE) {
+      await repo.salvarSimples(ctx.pool, lote);
+      lote = [];
+    }
+  }
+  await repo.salvarSimples(ctx.pool, lote);
+  await ctx.fonte.liberar(caminho);
+  return mei;
+}
+
+/**
+ * Só o Simples, para a base já importada: marca os MEI sem baixar tudo de novo.
+ */
+export async function importarSoSimples(ctx: Contexto): Promise<number> {
+  const { pool, log, fonte, importacaoId } = ctx;
+  const importacao = await repo.obterImportacao(pool, importacaoId);
+  if (!importacao) throw new Error(`Importação ${importacaoId} não existe`);
+  const mes = await fonte.resolverMes(importacao.mes === 'auto' ? null : importacao.mes);
+  await repo.marcarInicio(pool, importacaoId, mes, [], []);
+  const placar = { mes, linhasLidas: 0, estabelecimentos: 0, empresas: 0, socios: 0 };
+  const andamento = new Andamento((etapa) =>
+    repo.registrarProgresso(pool, importacaoId, { etapa, ...placar }),
+  );
+  const basicos = new Set(await repo.todosOsBasicos(pool));
+  const mei = await lerSimples(ctx, basicos, 'Marcando MEI pelo Simples Nacional', placar, andamento);
+  await andamento.agora('Finalizando');
+  await andamento.terminar();
+  log.info({ importacaoId, mes, empresas: basicos.size, mei }, 'MEI marcados pelo Simples');
+  return mei;
+}
+
+/**
  * Importa uma publicação da Receita mantendo só o que interessa às campanhas:
  * estabelecimentos das UFs e CNAEs-alvo (qualquer situação, para registrar
  * fechamentos), depois as empresas e os sócios desses estabelecimentos.
@@ -165,7 +224,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     ['cnaes', receita.ARQUIVOS.cnaes, (c: string) => c.padStart(7, '0')],
   ] as const;
   for (const [tabela, arquivos, normalizarCodigo] of dominios) {
-    await progresso(`Etapa 1 de 4 · Tabelas de apoio (${NOME_DOMINIO[tabela]})`);
+    await progresso(`Etapa 1 de 5 · Tabelas de apoio (${NOME_DOMINIO[tabela]})`);
     for (const nome of arquivos) {
       if (feitos.has(nome)) continue;
       const caminho = await fonte.obter(nome);
@@ -193,7 +252,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   for (const [i, nome] of receita.ARQUIVOS.estabelecimentos.entries()) {
     if (feitos.has(nome)) continue;
     const total = receita.ARQUIVOS.estabelecimentos.length;
-    const etapa = `Etapa 2 de 4 · Estabelecimentos · arquivo ${i + 1} de ${total}`;
+    const etapa = `Etapa 2 de 5 · Estabelecimentos · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
     const inicioDownload = Date.now();
     const caminho = await fonte.obter(nome, (feito, tamanho) =>
@@ -226,7 +285,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   for (const [i, nome] of receita.ARQUIVOS.empresas.entries()) {
     if (feitos.has(nome)) continue;
     const total = receita.ARQUIVOS.empresas.length;
-    const etapa = `Etapa 3 de 4 · Empresas (razão social e porte) · arquivo ${i + 1} de ${total}`;
+    const etapa = `Etapa 3 de 5 · Empresas (razão social e porte) · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
     const inicioDownload = Date.now();
     const caminho = await fonte.obter(nome, (feito, tamanho) =>
@@ -258,7 +317,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   for (const [i, nome] of receita.ARQUIVOS.socios.entries()) {
     if (sociosFeitos) break;
     const total = receita.ARQUIVOS.socios.length;
-    const etapa = `Etapa 4 de 4 · Sócios · arquivo ${i + 1} de ${total}`;
+    const etapa = `Etapa 4 de 5 · Sócios · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
     const inicioDownload = Date.now();
     const caminho = await fonte.obter(nome, (feito, tamanho) =>
@@ -282,6 +341,19 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     loteSocios = [];
     await fonte.liberar(caminho);
     await concluido(nome);
+  }
+
+  // 5. Simples Nacional: marca quem é MEI (não usa o serviço).
+  if (!feitos.has(receita.ARQUIVOS.simples[0])) {
+    const mei = await lerSimples(
+      ctx,
+      basicos,
+      'Etapa 5 de 5 · Simples Nacional (quem é MEI)',
+      placar,
+      andamento,
+    );
+    log_.info({ mei }, 'MEI marcados pelo Simples');
+    await concluido(receita.ARQUIVOS.simples[0]);
   }
 
   await progresso('Finalizando');

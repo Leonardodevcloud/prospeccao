@@ -101,6 +101,12 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
       ['49', 'Sócio-Administrador'],
       ['22', 'Sócio'],
     ]);
+    // Simples: a filial baixada (22333444) é MEI; 11222333 é do Simples, mas não MEI.
+    await criarZip(pasta, 'Simples.zip', [
+      ['11222333', 'S', '20140301', '', 'N', '', ''],
+      ['22333444', 'S', '20180101', '', 'S', '20180101', ''],
+      ['99999999', 'S', '20180101', '', 'S', '20180101', ''],
+    ]);
     await criarZip(pasta, 'Cnaes.zip', [
       ['4530703', 'Comércio a varejo de peças e acessórios novos para veículos automotores'],
     ]);
@@ -199,6 +205,15 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
       { nome: 'MARTA RIBEIRO MENEZES', qualificacao: 'Sócio', prioridade: 2 },
     ]);
 
+    // MEI pela tabela do Simples, exposto na view que a descoberta lê.
+    const { rows: mei } = await pool.query(
+      'SELECT cnpj, mei FROM base_cnpj.v_estabelecimentos ORDER BY cnpj',
+    );
+    expect(mei).toEqual([
+      { cnpj: '11222333000181', mei: false },
+      { cnpj: '22333444000211', mei: true },
+    ]);
+
     const { rows: imp } = await pool.query(
       'SELECT status, ufs, cnaes, linhas_lidas FROM base_cnpj.importacoes WHERE id = $1',
       [id],
@@ -246,7 +261,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     pedidos.length = 0;
     const r = await importarBaseCnpj({ pool, log, fonte: fonte(null), importacaoId: id, ufsExtras: [] });
     await marcarFim(pool, id, null);
-    expect(pedidos).toEqual(Array.from({ length: 10 }, (_, i) => `Socios${i}.zip`));
+    expect(pedidos).toEqual([...Array.from({ length: 10 }, (_, i) => `Socios${i}.zip`), 'Simples.zip']);
     expect(r).toMatchObject({ estabelecimentos: 2, empresas: 2, socios: 2 });
 
     const { rows } = await pool.query(
@@ -255,6 +270,6 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
               (SELECT cardinality(arquivos_concluidos) FROM base_cnpj.importacoes WHERE id = $1) AS arquivos`,
       [id],
     );
-    expect(rows[0]).toEqual({ s: 2, status: 'concluida', arquivos: 33 });
+    expect(rows[0]).toEqual({ s: 2, status: 'concluida', arquivos: 34 });
   });
 });

@@ -7,7 +7,7 @@ import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { z } from 'zod';
 import { type FonteArquivos, FonteHttp, FontePasta } from './fonte.js';
-import { importarBaseCnpj } from './importador.js';
+import { importarBaseCnpj, importarSoSimples } from './importador.js';
 import * as repo from './repositorio.js';
 
 const env = carregarEnv(
@@ -58,7 +58,9 @@ await filas.consumir('cnpj.importar', async (payload, { jobId }) => {
     payload.importacaoId ?? (await repo.importacaoDoJob(pool, jobId, payload.motivo, payload.mes ?? null));
   emAndamento = importacaoId;
   try {
-    await importarBaseCnpj({ pool, log, fonte: criarFonte(), importacaoId, ufsExtras: env.CNPJ_UFS_EXTRAS });
+    const ctx = { pool, log, fonte: criarFonte(), importacaoId, ufsExtras: env.CNPJ_UFS_EXTRAS };
+    if (payload.apenas === 'simples') await importarSoSimples(ctx);
+    else await importarBaseCnpj(ctx);
     await repo.marcarFim(pool, importacaoId, null);
     await filas.publicar('cnpj.importacao_concluida', { importacaoId });
   } catch (erro) {
@@ -70,6 +72,13 @@ await filas.consumir('cnpj.importar', async (payload, { jobId }) => {
 });
 
 await filas.agendar('cnpj.importar', env.CNPJ_AGENDA, { motivo: 'agendada' });
+
+// Base importada antes da leitura do Simples: marca os MEI uma vez, sem reimportar tudo.
+// (Fila exclusiva: se uma importação completa já estiver na fila, esta não entra.)
+if (await repo.faltaLerSimples(pool)) {
+  const job = await filas.publicar('cnpj.importar', { motivo: 'mei', apenas: 'simples' });
+  if (job) log.info('leitura do Simples (MEI) agendada para a base já importada');
+}
 log.info({ agenda: env.CNPJ_AGENDA }, 'worker-cnpj pronto');
 
 encerrarAoReceberSinal(log, async () => {

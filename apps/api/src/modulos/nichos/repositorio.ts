@@ -4,7 +4,7 @@ import type { NichoEntrada } from '@prospeccao/shared';
 const CAMPOS = `
   n.id, n.nome, n.cnaes, n.termos_maps AS "termosMaps", n.palavras_positivas AS "palavrasPositivas",
   n.palavras_negativas AS "palavrasNegativas", n.cargos_alvo AS "cargosAlvo", n.portes,
-  n.idade_minima_anos AS "idadeMinimaAnos", n.ativo, n.criado_em AS "criadoEm", n.atualizado_em AS "atualizadoEm",
+  n.idade_minima_anos AS "idadeMinimaAnos", n.excluir_mei AS "excluirMei", n.ativo, n.criado_em AS "criadoEm", n.atualizado_em AS "atualizadoEm",
   (SELECT count(*)::int FROM cadastro.campanhas c WHERE c.nicho_id = n.id AND c.status IN ('ativa', 'pausada')) AS "campanhasEmAndamento"`;
 
 export interface Nicho {
@@ -17,6 +17,7 @@ export interface Nicho {
   cargosAlvo: string[];
   portes: string[];
   idadeMinimaAnos: number;
+  excluirMei: boolean;
   ativo: boolean;
   campanhasEmAndamento: number;
 }
@@ -36,8 +37,8 @@ export async function obter(db: Executor, id: number): Promise<Nicho | null> {
 
 export async function criar(db: Executor, n: NichoEntrada): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO cadastro.nichos (nome, cnaes, termos_maps, palavras_positivas, palavras_negativas, cargos_alvo, portes, idade_minima_anos)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    `INSERT INTO cadastro.nichos (nome, cnaes, termos_maps, palavras_positivas, palavras_negativas, cargos_alvo, portes, idade_minima_anos, excluir_mei)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
     [
       n.nome,
       n.cnaes,
@@ -47,6 +48,7 @@ export async function criar(db: Executor, n: NichoEntrada): Promise<number> {
       n.cargosAlvo,
       n.portes,
       n.idadeMinimaAnos,
+      n.excluirMei,
     ],
   );
   return rows[0]!.id;
@@ -61,6 +63,7 @@ const COLUNAS: Record<string, string> = {
   cargosAlvo: 'cargos_alvo',
   portes: 'portes',
   idadeMinimaAnos: 'idade_minima_anos',
+  excluirMei: 'excluir_mei',
   ativo: 'ativo',
 };
 

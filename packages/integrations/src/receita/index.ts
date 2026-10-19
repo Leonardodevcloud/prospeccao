@@ -19,6 +19,8 @@ export const ARQUIVOS = {
   estabelecimentos: Array.from({ length: 10 }, (_, i) => `Estabelecimentos${i}.zip`),
   empresas: Array.from({ length: 10 }, (_, i) => `Empresas${i}.zip`),
   socios: Array.from({ length: 10 }, (_, i) => `Socios${i}.zip`),
+  /** Opção pelo Simples e pelo MEI. */
+  simples: ['Simples.zip'],
 } as const;
 
 /**

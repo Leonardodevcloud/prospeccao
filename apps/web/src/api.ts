@@ -61,6 +61,7 @@ export interface Nicho {
   cargosAlvo: string[];
   portes: string[];
   idadeMinimaAnos: number;
+  excluirMei: boolean;
   ativo: boolean;
   campanhasEmAndamento: number;
 }
@@ -81,6 +82,8 @@ export interface ProgressoCampanha {
   novos: number;
   noFunil: number;
   descartados: number;
+  /** MEI ignorados (não contratam o serviço). */
+  mei: number;
 }
 
 export interface Campanha {
@@ -122,6 +125,8 @@ export interface EmpresaLista {
   distanciaBaseKm: number | null;
   mapsFechada: boolean | null;
   noMaps: boolean;
+  /** Microempreendedor individual (pelo Simples ou pela razão social com CPF). */
+  mei: boolean;
   origem: 'cnpj' | 'maps' | 'ambos';
   dentroDoRaio: boolean | null;
   campanhaId: number;

@@ -16,6 +16,7 @@ type Rascunho = {
   cargosAlvo: string[];
   portes: string[];
   idadeMinimaAnos: string;
+  excluirMei: boolean;
 };
 
 const VAZIO: Rascunho = {
@@ -27,6 +28,7 @@ const VAZIO: Rascunho = {
   cargosAlvo: ['sócio-administrador'],
   portes: [...PORTES],
   idadeMinimaAnos: '0',
+  excluirMei: true,
 };
 
 function FormNicho({ nicho, aoFechar }: { nicho: Nicho | null; aoFechar: () => void }) {
@@ -148,6 +150,20 @@ function FormNicho({ nicho, aoFechar }: { nicho: Nicho | null; aoFechar: () => v
           }
           dica="0 aceita empresas abertas este ano."
         />
+        <label className="opcao">
+          <input
+            type="checkbox"
+            checked={f.excluirMei}
+            onChange={(e) => setF({ ...f, excluirMei: e.target.checked })}
+          />
+          <span>
+            Deixar MEI de fora
+            <span className="campo__dica" style={{ display: 'block' }}>
+              Microempreendedor individual não tem volume para contratar entregas: não aparece nos leads nem
+              gasta enriquecimento.
+            </span>
+          </span>
+        </label>
         {erroLocal && <Mensagem tipo="erro">{erroLocal}</Mensagem>}
         <ErroDaApi erro={salvar.error} />
         <div className="acoes">

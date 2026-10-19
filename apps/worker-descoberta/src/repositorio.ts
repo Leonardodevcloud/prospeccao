@@ -18,6 +18,8 @@ export interface CampanhaDescoberta {
   palavras_negativas: string[];
   portes: string[];
   idade_minima_anos: number;
+  /** MEI fica de fora do enriquecimento e da lista (padrão). */
+  excluir_mei: boolean;
 }
 
 export async function obterCampanha(db: Executor, id: number): Promise<CampanhaDescoberta | null> {
@@ -90,15 +92,16 @@ export async function importarEmpresasDaBase(db: Executor, c: CampanhaDescoberta
      gravadas AS (
        INSERT INTO descoberta.empresas AS emp
          (cnpj, cnpj_basico, nome, razao_social, cnae_principal, porte, situacao, data_abertura,
-          logradouro, numero, bairro, cep, cidade, uf, telefones_receita, email_receita)
+          logradouro, numero, bairro, cep, cidade, uf, telefones_receita, email_receita, mei)
        SELECT cnpj, cnpj_basico, coalesce(nome_fantasia, razao_social, cnpj), razao_social, cnae_principal,
-              porte, situacao, data_inicio, logradouro, numero, bairro, cep, cidade, uf, telefones, email
+              porte, situacao, data_inicio, logradouro, numero, bairro, cep, cidade, uf, telefones, email, mei
          FROM candidatos
        ON CONFLICT (cnpj) DO UPDATE SET
          razao_social = EXCLUDED.razao_social, cnae_principal = EXCLUDED.cnae_principal,
          porte = EXCLUDED.porte, situacao = EXCLUDED.situacao, logradouro = EXCLUDED.logradouro,
          numero = EXCLUDED.numero, bairro = EXCLUDED.bairro, cep = EXCLUDED.cep,
          telefones_receita = EXCLUDED.telefones_receita, email_receita = EXCLUDED.email_receita,
+         mei = EXCLUDED.mei,
          -- o nome do Maps, quando existe, é o que o cliente reconhece; não sobrescreve
          nome = CASE WHEN emp.place_id IS NULL THEN EXCLUDED.nome ELSE emp.nome END
        RETURNING id
@@ -306,6 +309,8 @@ export async function reservarParaEnriquecimento(
         AND ce.enriquecimento_solicitado_em IS NULL
         AND ce.dentro_do_raio
         AND coalesce(e.maps_fechada, false) = false
+        -- MEI não contrata o serviço: não gasta enriquecimento (se o nicho excluir MEI).
+        AND NOT (e.mei AND c.excluir_mei)
         -- Achada de novo, mas já marcada como fora do perfil no funil: não gasta enriquecimento.
         AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = e.id)
         AND ($1::bigint IS NULL OR ce.campanha_id = $1)

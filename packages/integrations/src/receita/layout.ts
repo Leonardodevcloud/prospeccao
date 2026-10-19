@@ -156,3 +156,28 @@ export function lerCodigoDescricao(c: string[]): { codigo: string; descricao: st
   if (!codigo || !descricao) return null;
   return { codigo, descricao };
 }
+
+export interface OpcaoSimples {
+  cnpjBasico: string;
+  simples: boolean;
+  mei: boolean;
+}
+
+/**
+ * Simples Nacional: 0 cnpj_basico, 1 opção pelo Simples (S/N), 2 data da opção, 3 data de exclusão,
+ * 4 opção pelo MEI (S/N), 5 data da opção pelo MEI, 6 data de exclusão do MEI.
+ */
+export function lerSimples(c: string[]): OpcaoSimples | null {
+  const basico = (c[0] ?? '').replace(/\D/g, '');
+  if (!basico) return null;
+  return {
+    cnpjBasico: basico.padStart(8, '0'),
+    simples: (c[1] ?? '').trim().toUpperCase() === 'S',
+    mei: (c[4] ?? '').trim().toUpperCase() === 'S',
+  };
+}
+
+/** MEI pelo cadastro, quando o Simples ainda não foi lido: empresário individual com o CPF na razão social. */
+export function pareceMei(naturezaJuridica: string | null, razaoSocial: string): boolean {
+  return naturezaJuridica === '2135' && /\d{11}\s*$/.test(razaoSocial);
+}

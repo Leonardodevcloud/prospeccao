@@ -78,6 +78,8 @@ export const nichoEntrada = z.object({
     .min(1, 'Escolha pelo menos um porte.')
     .default([...PORTES]),
   idadeMinimaAnos: z.coerce.number().int().min(0).max(50).default(0),
+  /** MEI fica fora da lista e do enriquecimento (não tem como contratar o serviço). */
+  excluirMei: z.boolean().default(true),
 });
 export type NichoEntrada = z.infer<typeof nichoEntrada>;
 export const nichoAtualizacao = parcialSemPadroes(nichoEntrada).extend({ ativo: z.boolean().optional() });
@@ -156,6 +158,8 @@ export const filtrosEmpresas = z.object({
   situacao: z.enum(['todos', 'novos', 'no_funil', 'descartados']).default('todos'),
   /** Nota mínima (0–100). */
   scoreMinimo: z.coerce.number().int().min(0).max(100).optional(),
+  /** MEI fica de fora por padrão; "true" mostra também. */
+  incluirMei: booleanoQuery,
 });
 export type FiltrosEmpresas = z.infer<typeof filtrosEmpresas>;
 

@@ -21,7 +21,8 @@ const SELECT = `
            'ultimaBusca', b.ultima_conclusao,
            'novos', coalesce(f.novos, 0),
            'noFunil', coalesce(f.no_funil, 0),
-           'descartados', coalesce(f.descartados, 0)
+           'descartados', coalesce(f.descartados, 0),
+           'mei', coalesce(f.mei, 0)
          ) AS progresso
     FROM cadastro.campanhas c
     JOIN cadastro.nichos n ON n.id = c.nicho_id
@@ -29,10 +30,12 @@ const SELECT = `
     LEFT JOIN descoberta.v_buscas_campanha b ON b.campanha_id = c.id
     LEFT JOIN LATERAL (
       -- Situação comercial dos leads da campanha: novos = nunca trabalhados.
-      SELECT count(*) FILTER (WHERE o.empresa_id IS NULL)::int AS novos,
+      SELECT count(*) FILTER (WHERE o.empresa_id IS NULL AND NOT e.mei)::int AS novos,
+             count(*) FILTER (WHERE e.mei AND o.empresa_id IS NULL)::int AS mei,
              count(*) FILTER (WHERE o.etapa <> 'descartado')::int AS no_funil,
              count(*) FILTER (WHERE o.etapa = 'descartado')::int AS descartados
         FROM descoberta.campanha_empresas ce
+        JOIN descoberta.empresas e ON e.id = ce.empresa_id
         LEFT JOIN comercial.oportunidades o ON o.empresa_id = ce.empresa_id
        WHERE ce.campanha_id = c.id
     ) f ON true`;

@@ -224,8 +224,9 @@ function CardCampanha({ c }: { c: Campanha }) {
         </div>
       </div>
       <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
-        {fmtNumero(p.comCnpj)} com CNPJ · {fmtNumero(p.comSinalEntrega)} com sinal de entrega. Rodar de novo
-        só traz como "novos" os que ainda não foram trabalhados.
+        {fmtNumero(p.comCnpj)} com CNPJ · {fmtNumero(p.comSinalEntrega)} com sinal de entrega
+        {p.mei > 0 && ` · ${fmtNumero(p.mei)} MEI ignorados`}. Rodar de novo só traz como "novos" os que ainda
+        não foram trabalhados.
       </p>
 
       <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>

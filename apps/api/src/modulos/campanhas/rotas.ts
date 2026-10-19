@@ -85,6 +85,11 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
       `SELECT ce.empresa_id FROM descoberta.campanha_empresas ce
         WHERE ce.campanha_id = $1
           AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = ce.empresa_id)
+          -- MEI (quando o nicho exclui) também não gasta enriquecimento.
+          AND NOT EXISTS (SELECT 1 FROM descoberta.empresas m
+                           JOIN cadastro.campanhas cp ON cp.id = ce.campanha_id
+                           JOIN cadastro.nichos n ON n.id = cp.nicho_id
+                          WHERE m.id = ce.empresa_id AND m.mei AND n.excluir_mei)
         ORDER BY ce.empresa_id`,
       [id],
     );
