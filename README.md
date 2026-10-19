@@ -145,7 +145,7 @@ Depois, coloque o domínio do Vercel em `APP_ORIGENS` da api.
 
 ## Pendências conhecidas
 
-- **Endereço da base da Receita:** o padrão é `https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/<AAAA-MM>/`. A Receita já mudou esse caminho antes; se a importação falhar listando os meses, ajuste `RECEITA_CNPJ_URL` ou baixe os zips e use `CNPJ_PASTA_LOCAL` + `CNPJ_MES_LOCAL`.
+- **Endereço da base da Receita:** desde 2026 a Receita publica num compartilhamento Nextcloud, lido por WebDAV: `https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/<AAAA-MM>/`. Se mudar de novo, ajuste `RECEITA_CNPJ_URL` (aceita WebDAV ou uma pasta com listagem HTML, como os espelhos) ou baixe os zips e use `CNPJ_PASTA_LOCAL` + `CNPJ_MES_LOCAL`.
 - **Opções de serviço do Maps (entrega):** o ator do Apify só traz "opções de serviço" quando abre a página de detalhes de cada lugar. Ative por `APIFY_MAPS_INPUT_EXTRA` conforme o input atual do ator (custa mais por lugar).
 
 ## Próximas fases

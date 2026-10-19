@@ -43,7 +43,7 @@ export class FonteHttp implements FonteArquivos {
     await mkdir(join(this.pastaTemp, this.mes), { recursive: true });
     const url = receita.urlArquivo(this.baseUrl, this.mes, nome);
     const inicio = Date.now();
-    const bytes = await receita.baixarArquivo(url, destino);
+    const bytes = await receita.baixarArquivo(url, destino, this.baseUrl);
     this.log.info(
       { arquivo: nome, mb: Math.round(bytes / 1e6), s: Math.round((Date.now() - inicio) / 1000) },
       'download concluído',

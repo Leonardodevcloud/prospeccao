@@ -2,6 +2,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { carregarEnv, envBase, listaCsv, opcional } from '@prospeccao/config';
 import { criarPool } from '@prospeccao/db';
+import { receita } from '@prospeccao/integrations';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { z } from 'zod';
@@ -11,10 +12,7 @@ import * as repo from './repositorio.js';
 
 const env = carregarEnv(
   envBase.extend({
-    RECEITA_CNPJ_URL: z
-      .string()
-      .url()
-      .default('https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj'),
+    RECEITA_CNPJ_URL: z.string().url().default(receita.URL_RECEITA_PADRAO),
     /** Pasta com os zips já baixados. Quando definida, nada é baixado. */
     CNPJ_PASTA_LOCAL: opcional(z.string()),
     CNPJ_MES_LOCAL: opcional(z.string().regex(/^\d{4}-\d{2}$/, 'CNPJ_MES_LOCAL no formato AAAA-MM')),
