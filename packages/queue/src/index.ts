@@ -78,7 +78,10 @@ export async function jobsAbertos(
   limite = 20,
 ): Promise<JobAberto[]> {
   const { rows } = await db.query(
-    `SELECT state, retry_count, retry_limit, coalesce(started_on, start_after) AS quando, created_on, data
+    // Em 'retry', started_on ainda é o da tentativa que falhou: a hora da próxima é start_after.
+    `SELECT state, retry_count, retry_limit,
+            CASE WHEN state = 'active' THEN coalesce(started_on, start_after) ELSE start_after END AS quando,
+            created_on, data
        FROM ${SCHEMA_FILAS}.job
       WHERE name = $1 AND state IN ('created', 'retry', 'active')
       ORDER BY created_on DESC
@@ -192,6 +195,13 @@ export async function conectarFilas(opcoes: {
     },
 
     async liberarTravados(nome) {
+      // Jobs criados antes de uma mudança de política guardam o limite antigo de tentativas:
+      // os que ainda estão abertos passam a ter o limite atual.
+      await boss.getDb().executeSql(
+        `UPDATE ${SCHEMA_FILAS}.job SET retry_limit = $2
+          WHERE name = $1 AND state IN ('created', 'retry', 'active') AND retry_limit < $2`,
+        [nome, POLITICA_FILAS[nome].retryLimit],
+      );
       // Chamado no início do serviço que é o único consumidor da fila: nada pode estar rodando aqui,
       // então job "ativo" é sobra de um processo que morreu (deploy). Falhar libera nova tentativa.
       const ativos = (await boss.findJobs(nome)).filter((j) => j.state === 'active').map((j) => j.id);

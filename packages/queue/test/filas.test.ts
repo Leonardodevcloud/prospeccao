@@ -54,11 +54,15 @@ describe.skipIf(!URL_TESTE)('filas (pg-boss de verdade)', () => {
     for (let i = 0; i < 40 && !comecou; i++) await espera(250);
     expect(comecou).toBe(true);
     expect((await jobsAbertos(db, 'cnpj.importar'))[0]?.estado).toBe('rodando');
+    // Job criado quando a política ainda tinha 2 tentativas.
+    await db.query(`UPDATE fila.job SET retry_limit = 2 WHERE name = 'cnpj.importar'`);
 
     // Serviço novo sobe (deploy): o job preso volta para a fila em vez de esperar 8 h.
     const novo = await conectar();
     expect(await novo.liberarTravados('cnpj.importar')).toBe(1);
     const [job] = await jobsAbertos(db, 'cnpj.importar');
     expect(job).toMatchObject({ estado: 'nova_tentativa', falhas: 1, limiteTentativas: 6 });
+    // A hora mostrada é a da próxima tentativa, não a do começo da que falhou.
+    expect(new Date(job!.quando).getTime()).toBeGreaterThan(Date.now() - 5_000);
   });
 });

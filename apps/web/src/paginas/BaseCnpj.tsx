@@ -32,6 +32,9 @@ function Momento({ iso }: { iso: string | null | undefined }) {
 }
 
 /** Importação em andamento, em destaque: etapa legível + contadores que sobem durante a leitura. */
+/** Tabelas de apoio (3) + estabelecimentos, empresas e sócios (10 cada). */
+const TOTAL_ARQUIVOS = 33;
+
 function Andamento({ i, agora }: { i: Importacao & { iniciadoEm?: string | null }; agora: number }) {
   const inicio = i.iniciadoEm ?? i.criadoEm;
   return (
@@ -56,6 +59,12 @@ function Andamento({ i, agora }: { i: Importacao & { iniciadoEm?: string | null 
           <span>linhas lidas da Receita</span>
         </div>
         <div>
+          <b className="mono">
+            {i.arquivosProntos ?? 0} de {TOTAL_ARQUIVOS}
+          </b>
+          <span>arquivos prontos</span>
+        </div>
+        <div>
           <b className="mono">{fmtDuracao(agora - new Date(inicio).getTime())}</b>
           <span>
             desde <Momento iso={inicio} />
@@ -63,9 +72,10 @@ function Andamento({ i, agora }: { i: Importacao & { iniciadoEm?: string | null 
         </div>
       </div>
       <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
-        A Receita publica o Brasil inteiro em 10 arquivos de cerca de 1 GB por tabela. O motor baixa e lê cada
-        um, guardando só as empresas dos estados das suas campanhas e dos CNAEs dos seus nichos. Leva de 20 a
-        60 minutos.
+        A Receita publica o Brasil inteiro em 33 arquivos (os grandes com centenas de MB cada). O motor baixa
+        e lê um por vez, guardando só as empresas dos estados das suas campanhas e dos CNAEs dos seus nichos.
+        O servidor da Receita costuma ser lento, então pode levar algumas horas. Se o serviço reiniciar, a
+        importação continua do último arquivo pronto.
       </p>
     </div>
   );
@@ -165,8 +175,12 @@ export function BaseCnpj() {
           )}
           {agendada?.estado === 'nova_tentativa' && (
             <Mensagem tipo="aviso">
-              Nova tentativa automática {fmtHora(agendada.quando)} (tentativa {agendada.falhas + 1} de{' '}
-              {agendada.limiteTentativas + 1}). Não precisa clicar de novo.
+              Continua sozinha {fmtHora(agendada.quando)}, de onde parou
+              {ultima?.arquivosProntos
+                ? ` (${ultima.arquivosProntos} de ${TOTAL_ARQUIVOS} arquivos já prontos)`
+                : ''}{' '}
+              · tentativa {agendada.falhas + 1} de {agendada.limiteTentativas + 1}. Não precisa clicar de
+              novo.
             </Mensagem>
           )}
           <ErroDaApi erro={importar.error ?? importacoes.error} />

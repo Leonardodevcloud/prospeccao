@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -111,40 +111,132 @@ export function urlArquivo(baseUrl: string, mes: string, nome: string): string {
 
 export type AoBaixar = (baixados: number, total: number | null) => void;
 
-/** Baixa um arquivo grande direto para o disco, sem passar pela memória, avisando o andamento. */
+export interface OpcoesDownload {
+  /** Sem receber nenhum byte por esse tempo, a conexão é refeita (padrão: 2 min). */
+  semDadosMs?: number;
+  /** Quantas vezes reconecta e continua de onde parou antes de desistir (padrão: 12). */
+  reconexoes?: number;
+  /** Espera entre reconexões; dobra a cada uma, até 30 s (padrão: 2 s). */
+  esperaMs?: number;
+}
+
+class SemDados extends Error {
+  override name = 'SemDados';
+}
+
+async function tamanhoDe(caminho: string): Promise<number> {
+  try {
+    return (await stat(caminho)).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** Total do arquivo a partir de "Content-Range: bytes 100-999/1000". */
+function totalDoIntervalo(cabecalho: string | null): number | null {
+  const total = Number(cabecalho?.split('/')[1]);
+  return Number.isFinite(total) && total > 0 ? total : null;
+}
+
+/**
+ * Baixa um arquivo grande direto para o disco, sem passar pela memória, avisando o andamento.
+ *
+ * O servidor da Receita é lento e derruba conexões longas, então não há prazo total: o que
+ * vale é ficar sem receber dados. Quando a conexão cai ou trava, reconecta e continua de onde
+ * parou (Range), até `reconexoes` vezes. O arquivo só aparece em `destino` quando está completo.
+ */
 export async function baixarArquivo(
   url: string,
   destino: string,
   baseUrl = url,
   aoBaixar?: AoBaixar,
+  opcoes: OpcoesDownload = {},
 ): Promise<number> {
+  const semDadosMs = opcoes.semDadosMs ?? 120_000;
+  const maxReconexoes = opcoes.reconexoes ?? 12;
+  const esperaMs = opcoes.esperaMs ?? 2_000;
   await mkdir(dirname(destino), { recursive: true });
-  let resposta: Response;
-  try {
-    resposta = await requisitar(url, baseUrl, { signal: AbortSignal.timeout(60 * 60_000) });
-  } catch (erro) {
-    throw AppError.externo('Receita', `download falhou: ${url} (${descreverFalha(erro)})`, erro);
+  const parcial = `${destino}.parte`;
+  let total: number | null = null;
+  let falhas = 0;
+  let ultimaFalha = '';
+
+  for (;;) {
+    const jaTenho = await tamanhoDe(parcial);
+    if (total != null && jaTenho >= total) break;
+
+    const controle = new AbortController();
+    let vigia: NodeJS.Timeout | undefined;
+    const rearmar = () => {
+      clearTimeout(vigia);
+      vigia = setTimeout(
+        () => controle.abort(new SemDados(`nenhum dado em ${Math.round(semDadosMs / 1000)} s`)),
+        semDadosMs,
+      );
+    };
+
+    try {
+      rearmar();
+      const resposta = await requisitar(url, baseUrl, {
+        signal: controle.signal,
+        headers: jaTenho > 0 ? { Range: `bytes=${jaTenho}-` } : {},
+      });
+      if (resposta.status === 416) {
+        // O pedaço local não bate com o arquivo do servidor: começa de novo.
+        await resposta.body?.cancel();
+        await rm(parcial, { force: true });
+        total = null;
+        throw new SemDados('arquivo parcial inválido (HTTP 416)');
+      }
+      if (!resposta.ok || !resposta.body) {
+        await resposta.body?.cancel();
+        throw new AppError(502, 'falha_externa', `Receita: HTTP ${resposta.status} em ${url}`, {
+          repetivel: resposta.status >= 500 || resposta.status === 429,
+        });
+      }
+
+      // 206: o servidor continuou de onde parou. 200: mandou tudo de novo, então recomeça.
+      const continuando = resposta.status === 206;
+      const tamanhoResposta = Number(resposta.headers.get('content-length')) || null;
+      total = continuando
+        ? (totalDoIntervalo(resposta.headers.get('content-range')) ??
+          (tamanhoResposta ? jaTenho + tamanhoResposta : null))
+        : tamanhoResposta;
+      let baixados = continuando ? jaTenho : 0;
+      const contador = new Transform({
+        transform(pedaco: Buffer, _codificacao, pronto) {
+          baixados += pedaco.length;
+          rearmar();
+          aoBaixar?.(baixados, total);
+          pronto(null, pedaco);
+        },
+      });
+      await pipeline(
+        Readable.fromWeb(resposta.body as unknown as WebReadableStream),
+        contador,
+        createWriteStream(parcial, { flags: continuando ? 'a' : 'w' }),
+      );
+      if (total == null || baixados >= total) break;
+      throw new SemDados(`conexão fechada com ${baixados} de ${total} bytes`);
+    } catch (erro) {
+      if (erro instanceof AppError && !erro.repetivel) throw erro;
+      const motivo = controle.signal.aborted ? (controle.signal.reason as Error) : erro;
+      ultimaFalha = erro instanceof AppError ? erro.message : descreverFalha(motivo);
+      falhas++;
+      if (falhas > maxReconexoes) {
+        throw AppError.externo(
+          'Receita',
+          `download não terminou depois de ${maxReconexoes} reconexões: ${url} (${ultimaFalha})`,
+          erro,
+        );
+      }
+      await new Promise((ok) => setTimeout(ok, Math.min(30_000, esperaMs * 2 ** (falhas - 1))));
+    } finally {
+      clearTimeout(vigia);
+    }
   }
-  if (!resposta.ok || !resposta.body) {
-    await resposta.body?.cancel();
-    throw new AppError(502, 'falha_externa', `Receita: HTTP ${resposta.status} em ${url}`, {
-      repetivel: resposta.status >= 500 || resposta.status === 429,
-    });
-  }
-  const total = Number(resposta.headers.get('content-length')) || null;
-  let baixados = 0;
-  const contador = new Transform({
-    transform(pedaco: Buffer, _codificacao, pronto) {
-      baixados += pedaco.length;
-      aoBaixar?.(baixados, total);
-      pronto(null, pedaco);
-    },
-  });
-  await pipeline(
-    Readable.fromWeb(resposta.body as unknown as WebReadableStream),
-    contador,
-    createWriteStream(destino),
-  );
+
+  await rename(parcial, destino);
   return (await stat(destino)).size;
 }
 

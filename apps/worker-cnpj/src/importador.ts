@@ -5,6 +5,7 @@ import type { FonteArquivos } from './fonte.js';
 import * as repo from './repositorio.js';
 
 const LOTE = 1000;
+const TOTAL_ARQUIVOS = Object.values(receita.ARQUIVOS).reduce((n, a) => n + a.length, 0);
 
 export interface ResultadoImportacao {
   mes: string;
@@ -126,16 +127,36 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     throw new Error('Nenhuma UF alvo: crie uma campanha com cidades ou defina CNPJ_UFS_EXTRAS.');
   const ufsAlvo = new Set(ufs);
 
+  // Nova tentativa do mesmo job: continua a mesma publicação, pulando os arquivos já processados.
+  const retomando = importacao.arquivosConcluidos.length > 0 && importacao.mes !== 'auto';
+  const feitos = new Set(retomando ? importacao.arquivosConcluidos : []);
   const mes = await fonte.resolverMes(importacao.mes === 'auto' ? null : importacao.mes);
-  await repo.marcarInicio(pool, importacaoId, mes, ufs, [...cnaes]);
+  await repo.marcarInicio(pool, importacaoId, mes, ufs, [...cnaes], retomando);
   const log_ = log.child({ importacaoId, mes });
-  log_.info({ ufs, cnaes: cnaes.size }, 'importação iniciada');
 
-  const placar: ResultadoImportacao = { mes, linhasLidas: 0, estabelecimentos: 0, empresas: 0, socios: 0 };
+  const placar: ResultadoImportacao = retomando
+    ? {
+        mes,
+        linhasLidas: importacao.linhasLidas,
+        estabelecimentos: importacao.estabelecimentos,
+        empresas: importacao.empresas,
+        socios: importacao.socios,
+      }
+    : { mes, linhasLidas: 0, estabelecimentos: 0, empresas: 0, socios: 0 };
   const andamento = new Andamento((etapa) =>
     repo.registrarProgresso(pool, importacaoId, { etapa, ...placar }),
   );
   const progresso = (etapa: string) => andamento.agora(etapa);
+  const concluido = async (nome: string) => {
+    feitos.add(nome);
+    await repo.marcarArquivoConcluido(pool, importacaoId, [nome], placar);
+  };
+  if (retomando) {
+    log_.info({ ufs, cnaes: cnaes.size, arquivosJaFeitos: feitos.size }, 'importação retomada');
+    await progresso(`Retomando: ${feitos.size} de ${TOTAL_ARQUIVOS} arquivos já processados`);
+  } else {
+    log_.info({ ufs, cnaes: cnaes.size }, 'importação iniciada');
+  }
 
   // 1. Tabelas de domínio (pequenas).
   const dominios = [
@@ -146,6 +167,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   for (const [tabela, arquivos, normalizarCodigo] of dominios) {
     await progresso(`Etapa 1 de 4 · Tabelas de apoio (${NOME_DOMINIO[tabela]})`);
     for (const nome of arquivos) {
+      if (feitos.has(nome)) continue;
       const caminho = await fonte.obter(nome);
       const lote = new Lote<{ codigo: string; descricao: string }>(
         (i) => i.codigo,
@@ -157,16 +179,19 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
       }
       await lote.descarregar();
       await fonte.liberar(caminho);
+      await concluido(nome);
     }
   }
 
   // 2. Estabelecimentos: o filtro principal (UF + CNAE).
-  const basicos = new Set<string>();
+  // Na retomada, as raízes dos estabelecimentos já guardados vêm do banco.
+  const basicos = new Set<string>(retomando ? await repo.basicosDaImportacao(pool, importacaoId) : []);
   const loteEstab = new Lote<receita.Estabelecimento>(
     (e) => e.cnpj,
     (itens) => repo.salvarEstabelecimentos(pool, importacaoId, itens),
   );
   for (const [i, nome] of receita.ARQUIVOS.estabelecimentos.entries()) {
+    if (feitos.has(nome)) continue;
     const total = receita.ARQUIVOS.estabelecimentos.length;
     const etapa = `Etapa 2 de 4 · Estabelecimentos · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
@@ -189,6 +214,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     }
     await loteEstab.descarregar();
     await fonte.liberar(caminho);
+    await concluido(nome);
     log_.info({ arquivo: nome, ...placar }, 'arquivo de estabelecimentos processado');
   }
 
@@ -198,6 +224,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     (itens) => repo.salvarEmpresas(pool, importacaoId, itens),
   );
   for (const [i, nome] of receita.ARQUIVOS.empresas.entries()) {
+    if (feitos.has(nome)) continue;
     const total = receita.ARQUIVOS.empresas.length;
     const etapa = `Etapa 3 de 4 · Empresas (razão social e porte) · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
@@ -217,12 +244,19 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     }
     await loteEmp.descarregar();
     await fonte.liberar(caminho);
+    await concluido(nome);
   }
 
-  // 4. Sócios: quadro substituído por inteiro.
-  await repo.limparSocios(pool, [...basicos]);
+  // 4. Sócios: quadro substituído por inteiro. Sem chave única, uma etapa interrompida é refeita
+  // desde o primeiro arquivo (senão duplicaria os sócios do arquivo que estava no meio).
+  const sociosFeitos = receita.ARQUIVOS.socios.every((n) => feitos.has(n));
+  if (!sociosFeitos) {
+    await repo.limparSocios(pool, [...basicos]);
+    placar.socios = 0;
+  }
   let loteSocios: receita.Socio[] = [];
   for (const [i, nome] of receita.ARQUIVOS.socios.entries()) {
+    if (sociosFeitos) break;
     const total = receita.ARQUIVOS.socios.length;
     const etapa = `Etapa 4 de 4 · Sócios · arquivo ${i + 1} de ${total}`;
     await progresso(`${etapa} · baixando`);
@@ -247,6 +281,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     await repo.salvarSocios(pool, importacaoId, loteSocios);
     loteSocios = [];
     await fonte.liberar(caminho);
+    await concluido(nome);
   }
 
   await progresso('Finalizando');

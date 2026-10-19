@@ -267,6 +267,8 @@ export interface Importacao {
   cnaes: string[];
   etapa: string | null;
   linhasLidas: number;
+  /** Arquivos da Receita já processados (de 33); a importação retoma a partir deles. */
+  arquivosProntos?: number;
   estabelecimentos: number;
   empresas: number;
   socios: number;

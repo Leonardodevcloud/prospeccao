@@ -44,7 +44,7 @@ function criarFonte(): FonteArquivos {
 // Sobras de um processo anterior que morreu no meio (deploy): fecha o registro e libera o job.
 const interrompidas = await repo.encerrarInterrompidas(
   pool,
-  'Interrompida: o serviço reiniciou (deploy) no meio da importação. Uma nova tentativa começa sozinha em instantes.',
+  'Interrompida: o serviço reiniciou (deploy) no meio da importação. Ela continua sozinha de onde parou em instantes.',
 );
 const liberados = await filas.liberarTravados('cnpj.importar');
 if (interrompidas || liberados)
@@ -52,9 +52,10 @@ if (interrompidas || liberados)
 
 let emAndamento: number | null = null;
 
-await filas.consumir('cnpj.importar', async (payload) => {
+await filas.consumir('cnpj.importar', async (payload, { jobId }) => {
+  // Nova tentativa do mesmo job (deploy, queda) reabre a mesma importação e continua de onde parou.
   const importacaoId =
-    payload.importacaoId ?? (await repo.criarImportacao(pool, payload.motivo, payload.mes ?? null));
+    payload.importacaoId ?? (await repo.importacaoDoJob(pool, jobId, payload.motivo, payload.mes ?? null));
   emAndamento = importacaoId;
   try {
     await importarBaseCnpj({ pool, log, fonte: criarFonte(), importacaoId, ufsExtras: env.CNPJ_UFS_EXTRAS });
@@ -78,7 +79,7 @@ encerrarAoReceberSinal(log, async () => {
       .marcarFim(
         pool,
         emAndamento,
-        'Interrompida pelo deploy. Uma nova tentativa começa sozinha em instantes.',
+        'Interrompida pelo deploy. Ela continua sozinha de onde parou em instantes.',
       )
       .catch(() => {});
   }

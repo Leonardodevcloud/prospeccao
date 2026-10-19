@@ -31,7 +31,7 @@ export function rotasImportacoes({ pool, filas, log }: DepsApi): Router {
   r.get('/', async (_req, res) => {
     const { rows } = await pool.query(
       `SELECT id, mes, status, motivo, ufs, cnaes, etapa, linhas_lidas AS "linhasLidas",
-              estabelecimentos, empresas, socios, erro, criado_em AS "criadoEm",
+              cardinality(arquivos_concluidos) AS "arquivosProntos", estabelecimentos, empresas, socios, erro, criado_em AS "criadoEm",
               iniciado_em AS "iniciadoEm", concluido_em AS "concluidoEm"
          FROM base_cnpj.importacoes ORDER BY criado_em DESC LIMIT 20`,
     );

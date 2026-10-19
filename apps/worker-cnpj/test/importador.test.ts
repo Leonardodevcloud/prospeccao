@@ -8,9 +8,9 @@ import { criarLogger } from '@prospeccao/shared';
 import iconv from 'iconv-lite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import yazl from 'yazl';
-import { FontePasta } from '../src/fonte.js';
+import { type FonteArquivos, FontePasta } from '../src/fonte.js';
 import { importarBaseCnpj } from '../src/importador.js';
-import { criarImportacao, marcarFim } from '../src/repositorio.js';
+import { criarImportacao, importacaoDoJob, marcarFim } from '../src/repositorio.js';
 
 const URL_TESTE = process.env.TEST_DATABASE_URL;
 const log = criarLogger('teste', 'silent');
@@ -219,5 +219,42 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
       'SELECT (SELECT count(*) FROM base_cnpj.estabelecimentos) AS e, (SELECT count(*) FROM base_cnpj.socios) AS s',
     );
     expect(rows[0]).toEqual({ e: 2, s: 2 });
+  });
+
+  it('nova tentativa do mesmo job continua de onde parou, sem refazer arquivos nem duplicar sócios', async () => {
+    const id = await importacaoDoJob(pool, 'job-retomada', 'manual', null);
+    expect(await importacaoDoJob(pool, 'job-retomada', 'manual', null)).toBe(id);
+
+    // 1ª tentativa: cai no meio dos sócios (deploy), depois do Socios0 já gravado.
+    const pedidos: string[] = [];
+    const pastaReal = new FontePasta(pasta, '2026-09');
+    const fonte = (quebrarEm: string | null): FonteArquivos => ({
+      resolverMes: (m) => pastaReal.resolverMes(m),
+      liberar: async () => {},
+      obter: async (nome) => {
+        if (nome === quebrarEm) throw new Error('serviço reiniciou');
+        pedidos.push(nome);
+        return pastaReal.obter(nome);
+      },
+    });
+    await expect(
+      importarBaseCnpj({ pool, log, fonte: fonte('Socios4.zip'), importacaoId: id, ufsExtras: [] }),
+    ).rejects.toThrow('serviço reiniciou');
+    await marcarFim(pool, id, 'Interrompida');
+
+    // 2ª tentativa: pula domínios, estabelecimentos e empresas; refaz só a etapa de sócios.
+    pedidos.length = 0;
+    const r = await importarBaseCnpj({ pool, log, fonte: fonte(null), importacaoId: id, ufsExtras: [] });
+    await marcarFim(pool, id, null);
+    expect(pedidos).toEqual(Array.from({ length: 10 }, (_, i) => `Socios${i}.zip`));
+    expect(r).toMatchObject({ estabelecimentos: 2, empresas: 2, socios: 2 });
+
+    const { rows } = await pool.query(
+      `SELECT (SELECT count(*) FROM base_cnpj.socios) AS s,
+              (SELECT status FROM base_cnpj.importacoes WHERE id = $1) AS status,
+              (SELECT cardinality(arquivos_concluidos) FROM base_cnpj.importacoes WHERE id = $1) AS arquivos`,
+      [id],
+    );
+    expect(rows[0]).toEqual({ s: 2, status: 'concluida', arquivos: 33 });
   });
 });

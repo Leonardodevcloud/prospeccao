@@ -7,6 +7,31 @@ export interface Importacao {
   id: number;
   mes: string;
   status: string;
+  /** Arquivos já processados por uma tentativa anterior (a nova tentativa pula). */
+  arquivosConcluidos: string[];
+  linhasLidas: number;
+  estabelecimentos: number;
+  empresas: number;
+  socios: number;
+}
+
+/**
+ * Importação de um job da fila. Nova tentativa do mesmo job (deploy, queda de rede) devolve
+ * a mesma importação, para continuar de onde parou em vez de criar outra do zero.
+ */
+export async function importacaoDoJob(
+  db: Executor,
+  jobId: string,
+  motivo: 'manual' | 'agendada',
+  mes: string | null,
+): Promise<number> {
+  const { rows } = await db.query<{ id: number }>(
+    `INSERT INTO base_cnpj.importacoes (mes, motivo, job_id) VALUES ($1, $2, $3)
+     ON CONFLICT (job_id) WHERE job_id IS NOT NULL DO UPDATE SET job_id = EXCLUDED.job_id
+     RETURNING id`,
+    [mes ?? 'auto', motivo, jobId],
+  );
+  return Number(rows[0]!.id);
 }
 
 export async function criarImportacao(db: Executor, motivo: 'manual' | 'agendada', mes: string | null) {
@@ -14,25 +39,77 @@ export async function criarImportacao(db: Executor, motivo: 'manual' | 'agendada
     `INSERT INTO base_cnpj.importacoes (mes, motivo) VALUES ($1, $2) RETURNING id`,
     [mes ?? 'auto', motivo],
   );
-  return rows[0]!.id;
+  return Number(rows[0]!.id);
 }
 
 export async function obterImportacao(db: Executor, id: number): Promise<Importacao | null> {
   const { rows } = await db.query<Importacao>(
-    'SELECT id, mes, status FROM base_cnpj.importacoes WHERE id = $1',
+    `SELECT id, mes, status, arquivos_concluidos AS "arquivosConcluidos",
+            coalesce((placar_concluido->>'linhasLidas')::bigint, 0)::float8 AS "linhasLidas",
+            coalesce((placar_concluido->>'estabelecimentos')::int, 0) AS estabelecimentos,
+            coalesce((placar_concluido->>'empresas')::int, 0) AS empresas,
+            coalesce((placar_concluido->>'socios')::int, 0) AS socios
+       FROM base_cnpj.importacoes WHERE id = $1`,
     [id],
   );
   return rows[0] ?? null;
 }
 
-export async function marcarInicio(db: Executor, id: number, mes: string, ufs: string[], cnaes: string[]) {
+/** Começo (ou retomada) da importação. Na retomada, mantém os contadores e os arquivos já feitos. */
+export async function marcarInicio(
+  db: Executor,
+  id: number,
+  mes: string,
+  ufs: string[],
+  cnaes: string[],
+  retomando = false,
+) {
   await db.query(
-    `UPDATE base_cnpj.importacoes
-        SET status = 'rodando', mes = $2, ufs = $3, cnaes = $4, iniciado_em = now(), erro = NULL,
-            linhas_lidas = 0, estabelecimentos = 0, empresas = 0, socios = 0
-      WHERE id = $1`,
+    retomando
+      ? `UPDATE base_cnpj.importacoes
+            SET status = 'rodando', mes = $2, ufs = $3, cnaes = $4, erro = NULL, concluido_em = NULL
+          WHERE id = $1`
+      : `UPDATE base_cnpj.importacoes
+            SET status = 'rodando', mes = $2, ufs = $3, cnaes = $4, iniciado_em = now(), erro = NULL,
+                concluido_em = NULL, linhas_lidas = 0, estabelecimentos = 0, empresas = 0, socios = 0,
+                arquivos_concluidos = '{}', placar_concluido = NULL
+          WHERE id = $1`,
     [id, mes, ufs, cnaes],
   );
+}
+
+/** Ponto de retomada: arquivo processado por inteiro, com os contadores daquele momento. */
+export async function marcarArquivoConcluido(
+  db: Executor,
+  id: number,
+  arquivos: string[],
+  p: { linhasLidas: number; estabelecimentos: number; empresas: number; socios: number },
+) {
+  await db.query(
+    `UPDATE base_cnpj.importacoes
+        SET arquivos_concluidos = (SELECT array_agg(DISTINCT a) FROM unnest(arquivos_concluidos || $2::text[]) a),
+            placar_concluido = $3::jsonb
+      WHERE id = $1`,
+    [
+      id,
+      arquivos,
+      JSON.stringify({
+        linhasLidas: p.linhasLidas,
+        estabelecimentos: p.estabelecimentos,
+        empresas: p.empresas,
+        socios: p.socios,
+      }),
+    ],
+  );
+}
+
+/** Raízes de CNPJ já guardadas por esta importação (para retomar depois dos estabelecimentos). */
+export async function basicosDaImportacao(db: Executor, id: number): Promise<string[]> {
+  const { rows } = await db.query<{ cnpj_basico: string }>(
+    'SELECT DISTINCT cnpj_basico FROM base_cnpj.estabelecimentos WHERE importacao_id = $1',
+    [id],
+  );
+  return rows.map((r) => r.cnpj_basico);
 }
 
 export async function registrarProgresso(
