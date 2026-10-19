@@ -1,5 +1,6 @@
 export * from './dominio.js';
 export * from './erros.js';
+export * from './funil.js';
 export * from './geo.js';
 export * from './logger.js';
 export * from './normalizar.js';

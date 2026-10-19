@@ -90,6 +90,24 @@ Decisor: quem cuida de compras, se aparecer; senão quem administra na Receita; 
 Melhor contato: WhatsApp confirmado > WhatsApp do site/Instagram > telefone do Google > e-mail de compras.
 A mesma empresa não é refeita antes de `ENRIQ_REFAZER_DIAS` (o botão "Enriquecer de novo" força).
 
+## Funil comercial e relatórios
+
+Schema `comercial` (dono: api). **Uma oportunidade por empresa**, não por campanha: a mesma loja
+achada de novo (outra campanha, nova rodada) continua sendo um card só, com o histórico.
+
+- **Leads** mostra por padrão só os **novos** (nunca mandados ao funil nem descartados). Marque e
+  use *Mandar para o funil* ou *Descartar* (com motivo). Descartados não voltam como novos e não
+  gastam enriquecimento de novo.
+- **Contato repetido:** antes de entrar no funil, o telefone (do site, Instagram, Maps; o da Receita
+  fica de fora porque costuma ser do contador) é comparado com o das empresas já trabalhadas. Igual →
+  fica de fora com aviso; *Mandar mesmo assim* força.
+- **Funil** (Kanban): A abordar → Abordado → Respondeu → Reunião → Proposta → Ganho / Perdido.
+  Arrastar move; perder pede motivo. Na ficha: etapa, próximo passo com data (follow-up), potencial
+  em R$/mês, registro de contatos (a etapa avança sozinha) e histórico.
+- **Relatórios**: comercial do período (abordados, taxa de resposta, reuniões, ganhos), prospecção
+  (A/B, com decisor, com WhatsApp), funil cumulativo, ritmo diário, *a nota acerta?* (resultado por
+  nota de entrada), origem dos decisores (mede a falta da fonte paga), campanhas e motivos de perda.
+
 ## Rodar localmente
 
 Requisitos: Node 22, pnpm 10 e Postgres 16 (com as extensões `pg_trgm` e `unaccent`, que vêm no pacote contrib).

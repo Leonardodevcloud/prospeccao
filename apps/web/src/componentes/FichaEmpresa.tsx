@@ -32,6 +32,7 @@ import {
 } from '../formatar';
 import { Drawer } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
+import { SecaoFunil } from './SecaoFunil';
 
 const PORTE: Record<string, string> = {
   me: 'Microempresa',
@@ -318,7 +319,16 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
   );
 }
 
-export function FichaEmpresa({ id, aoFechar }: { id: number; aoFechar: () => void }) {
+export function FichaEmpresa({
+  id,
+  aoFechar,
+  aoAbrir,
+}: {
+  id: number;
+  aoFechar: () => void;
+  /** Abre outra empresa na ficha (aviso de telefone repetido). */
+  aoAbrir?: (id: number) => void;
+}) {
   const cliente = useQueryClient();
   const q = useQuery({
     queryKey: ['empresa', id],
@@ -429,6 +439,16 @@ export function FichaEmpresa({ id, aoFechar }: { id: number; aoFechar: () => voi
             )}
             {pedido && en?.status !== 'rodando' && <Mensagem tipo="ok">{pedido}</Mensagem>}
             <ErroDaApi erro={enriquecer.error} />
+
+            <SecaoFunil
+              key={e.id}
+              empresaId={e.id}
+              aoAbrirEmpresa={aoAbrir}
+              contatoPrincipal={
+                e.contatos.find((c) => c.principal) ??
+                (e.mapsTelefone ? { canal: 'telefone', valor: e.mapsTelefone } : null)
+              }
+            />
 
             <section className="secao">
               <h2>

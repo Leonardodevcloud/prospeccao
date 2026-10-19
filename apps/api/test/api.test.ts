@@ -32,6 +32,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await pool.query(
       'TRUNCATE enriquecimento.leads, enriquecimento.pessoas, enriquecimento.contatos, enriquecimento.etapas RESTART IDENTITY CASCADE',
     );
+    await pool.query('TRUNCATE comercial.oportunidades CASCADE');
     app = criarApp({
       pool,
       log,
@@ -292,6 +293,115 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       nome: 'enriquecimento.solicitar',
       payload: { empresaId: 1, campanhaId: 2, forcar: true },
     });
+  });
+
+  it('funil: entra sem duplicar, barra telefone repetido, avança etapas e alimenta os relatórios', async () => {
+    const add = await enviar('post', '/funil', { empresaIds: [1] });
+    expect(add.status).toBe(200);
+    expect(add.body).toMatchObject({ adicionadas: 1, jaNoFunil: 0, duplicadas: [] });
+    // Rodar de novo (ou outra campanha achar a mesma loja) não cria um segundo card.
+    expect((await enviar('post', '/funil', { empresaIds: [1] })).body).toMatchObject({
+      adicionadas: 0,
+      jaNoFunil: 1,
+    });
+
+    // Outra empresa com o mesmo WhatsApp: fica de fora, com o aviso de quem já tem o número.
+    await pool.query(
+      `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, principal)
+       VALUES (2, 'whatsapp', '71998124410', 'instagram', '{instagram}', 'nao_verificado', true)`,
+    );
+    const dup = await enviar('post', '/funil', { empresaIds: [2] });
+    expect(dup.body.adicionadas).toBe(0);
+    expect(dup.body.duplicadas).toEqual([
+      expect.objectContaining({
+        empresaId: 2,
+        outraEmpresaId: 1,
+        outraEtapa: 'a_abordar',
+        telefone: '71998124410',
+      }),
+    ]);
+    expect((await ler('/funil/2')).body.duplicada).toMatchObject({ outraEmpresaId: 1 });
+    expect((await enviar('post', '/funil', { empresaIds: [2], forcar: true })).body.adicionadas).toBe(1);
+    expect((await enviar('delete', '/funil/2')).status).toBe(204);
+    expect((await ler('/empresas?situacao=novos')).body.itens.map((e: { id: number }) => e.id)).toEqual([2]);
+    expect((await ler('/empresas?situacao=no_funil')).body.itens[0]).toMatchObject({
+      id: 1,
+      funilEtapa: 'a_abordar',
+    });
+
+    // Mandou mensagem → abordado; ele respondeu → respondeu. Próximo passo vencido aparece como pendente.
+    const msg = await enviar('post', '/funil/1/atividades', {
+      tipo: 'whatsapp',
+      direcao: 'enviada',
+      texto: 'Oi Maria, aqui é da Tutts',
+      proximaAcao: 'Cobrar resposta',
+      proximaAcaoEm: '2020-01-01',
+    });
+    expect(msg.status).toBe(201);
+    expect(msg.body.oportunidade).toMatchObject({
+      etapa: 'abordado',
+      proximaAcao: 'Cobrar resposta',
+      pendente: true,
+    });
+    const quadro = await ler('/funil');
+    expect(quadro.body.pendentes).toBe(1);
+    expect(quadro.body.cards[0]).toMatchObject({ empresaId: 1, etapa: 'abordado', faixa: 'A', contatos: 1 });
+    expect((await ler('/funil?pendentes=true')).body.cards).toHaveLength(1);
+
+    const resp = await enviar('post', '/funil/1/atividades', {
+      tipo: 'whatsapp',
+      direcao: 'recebida',
+      texto: 'Quanto custa?',
+    });
+    expect(resp.body.oportunidade.etapa).toBe('respondeu');
+    // Nota não mexe na etapa.
+    expect(
+      (await enviar('post', '/funil/1/atividades', { tipo: 'nota', texto: 'Ligar à tarde' })).body
+        .oportunidade.etapa,
+    ).toBe('respondeu');
+
+    const semMotivo = await enviar('patch', '/funil/1', { etapa: 'perdido' });
+    expect(semMotivo.status).toBeGreaterThanOrEqual(400);
+    const ganho = await enviar('patch', '/funil/1', { etapa: 'ganho', valorMensal: 1800 });
+    expect(ganho.body.oportunidade).toMatchObject({ etapa: 'ganho', valorMensal: 1800, proximaAcao: null });
+    expect(
+      ganho.body.atividades
+        .filter((a: { tipo: string }) => a.tipo === 'etapa')
+        .map((a: { paraEtapa: string }) => a.paraEtapa),
+    ).toEqual(['ganho', 'respondeu', 'abordado', 'a_abordar']);
+
+    // Descartado: sai dos "novos", não volta a ser enriquecido pela campanha.
+    const desc = await enviar('post', '/funil', {
+      empresaIds: [2],
+      etapa: 'descartado',
+      motivo: 'Atacadista',
+    });
+    expect(desc.body.adicionadas).toBe(1);
+    expect((await ler('/empresas?situacao=descartados')).body.total).toBe(1);
+    expect((await ler('/empresas?situacao=novos')).body.total).toBe(0);
+    expect((await enviar('post', '/campanhas/2/reenriquecer')).body).toEqual({ quantidade: 1 });
+    const camp = await ler('/campanhas/2');
+    expect(camp.body.progresso).toMatchObject({ novos: 0, noFunil: 1, descartados: 1 });
+
+    const rel = await ler('/relatorios?dias=0');
+    expect(rel.status).toBe(200);
+    expect(rel.body.kpis).toMatchObject({
+      encontrados: 2,
+      faixaA: 1,
+      comDecisor: 1,
+      entraramNoFunil: 1,
+      abordados: 1,
+      responderam: 1,
+      ganhos: 1,
+      valorGanho: 1800,
+    });
+    // Funil cumulativo: quem fechou conta como tendo passado pelas etapas do meio.
+    expect(rel.body.funil).toMatchObject({ a_abordar: 1, abordado: 1, respondeu: 1, reuniao: 1, ganho: 1 });
+    expect(rel.body.faixas).toEqual([expect.objectContaining({ faixa: 'A', noFunil: 1, ganhos: 1 })]);
+    expect(rel.body.motivos).toEqual([{ etapa: 'descartado', motivo: 'Atacadista', quantidade: 1 }]);
+    expect(rel.body.campanhas[0]).toMatchObject({ id: 2, encontrados: 2, ganhos: 1, descartados: 1 });
+    expect(rel.body.diario.at(-1)).toMatchObject({ contatos: 1, respostas: 1 });
+    expect((await ler('/relatorios?dias=7&campanhaId=2')).status).toBe(200);
   });
 
   it('pede importação da base de CNPJ pela fila, sem escrever no schema do worker', async () => {

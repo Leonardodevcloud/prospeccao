@@ -81,7 +81,11 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
   r.post('/:id/reenriquecer', async (req, res) => {
     const id = idDaRota(req);
     const { rows } = await pool.query<{ empresa_id: number }>(
-      'SELECT empresa_id FROM descoberta.campanha_empresas WHERE campanha_id = $1 ORDER BY empresa_id',
+      // Descartados (fora do perfil) não gastam Apify/Gemini de novo.
+      `SELECT ce.empresa_id FROM descoberta.campanha_empresas ce
+        WHERE ce.campanha_id = $1
+          AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = ce.empresa_id)
+        ORDER BY ce.empresa_id`,
       [id],
     );
     if (!rows.length) throw AppError.invalido('A campanha ainda não tem empresas.');

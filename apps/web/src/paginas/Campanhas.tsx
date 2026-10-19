@@ -211,14 +211,22 @@ function CardCampanha({ c }: { c: Campanha }) {
           <span>empresas</span>
         </div>
         <div>
-          <b>{fmtNumero(p.comCnpj)}</b>
-          <span>com CNPJ</span>
+          <b>{fmtNumero(p.novos)}</b>
+          <span>novos</span>
         </div>
         <div>
-          <b>{fmtNumero(p.comSinalEntrega)}</b>
-          <span>com entrega</span>
+          <b>{fmtNumero(p.noFunil)}</b>
+          <span>no funil</span>
+        </div>
+        <div>
+          <b>{fmtNumero(p.descartados)}</b>
+          <span>descartados</span>
         </div>
       </div>
+      <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
+        {fmtNumero(p.comCnpj)} com CNPJ · {fmtNumero(p.comSinalEntrega)} com sinal de entrega. Rodar de novo
+        só traz como "novos" os que ainda não foram trabalhados.
+      </p>
 
       <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
         {buscando
@@ -239,11 +247,12 @@ function CardCampanha({ c }: { c: Campanha }) {
       {confirmarRefazer && (
         <div className="confirmar">
           <span>
-            Refazer o enriquecimento dos {fmtNumero(p.empresas)} leads? Gasta de novo no Apify e no Gemini.
+            Refazer o enriquecimento dos {fmtNumero(p.empresas - p.descartados)} leads (descartados ficam de
+            fora)? Gasta de novo no Apify e no Gemini.
           </span>
           <div className="acoes">
             <Button size="sm" variant="primary" disabled={refazer.isPending} onClick={() => refazer.mutate()}>
-              {refazer.isPending ? 'Enviando…' : `Refazer ${fmtNumero(p.empresas)} leads`}
+              {refazer.isPending ? 'Enviando…' : `Refazer ${fmtNumero(p.empresas - p.descartados)} leads`}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirmarRefazer(false)}>
               Cancelar
@@ -270,8 +279,12 @@ function CardCampanha({ c }: { c: Campanha }) {
           </Button>
         )}
         {p.empresas > 0 && (
-          <Button size="sm" icon="users" onClick={() => navegar(`/?campanhaId=${c.id}`)}>
-            Ver leads
+          <Button
+            size="sm"
+            icon="users"
+            onClick={() => navegar(`/?campanhaId=${c.id}${p.novos ? '' : '&situacao=todos'}`)}
+          >
+            {p.novos ? `Ver ${fmtNumero(p.novos)} novos` : 'Ver leads'}
           </Button>
         )}
         {p.empresas > 0 && !confirmarRefazer && (

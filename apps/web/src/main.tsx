@@ -9,9 +9,11 @@ import { Shell } from './componentes/Shell';
 import { Atividade } from './paginas/Atividade';
 import { BaseCnpj } from './paginas/BaseCnpj';
 import { Campanhas } from './paginas/Campanhas';
+import { Funil } from './paginas/Funil';
 import { Leads } from './paginas/Leads';
 import { Login } from './paginas/Login';
 import { Nichos } from './paginas/Nichos';
+import { Relatorios } from './paginas/Relatorios';
 
 // Tema claro sempre (preferência da operação).
 document.documentElement.setAttribute('data-theme', 'light');
@@ -23,6 +25,8 @@ const roteador = createBrowserRouter([
     element: <Shell />,
     children: [
       { index: true, element: <Leads /> },
+      { path: 'funil', element: <Funil /> },
+      { path: 'relatorios', element: <Relatorios /> },
       { path: 'campanhas', element: <Campanhas /> },
       { path: 'atividade', element: <Atividade /> },
       { path: 'nichos', element: <Nichos /> },

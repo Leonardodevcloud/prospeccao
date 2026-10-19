@@ -306,6 +306,8 @@ export async function reservarParaEnriquecimento(
         AND ce.enriquecimento_solicitado_em IS NULL
         AND ce.dentro_do_raio
         AND coalesce(e.maps_fechada, false) = false
+        -- Achada de novo, mas já marcada como fora do perfil no funil: não gasta enriquecimento.
+        AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = e.id)
         AND ($1::bigint IS NULL OR ce.campanha_id = $1)
         AND ($2::bigint IS NULL OR ce.empresa_id = $2)
       RETURNING ce.empresa_id, ce.campanha_id`,

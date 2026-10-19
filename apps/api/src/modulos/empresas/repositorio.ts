@@ -15,17 +15,19 @@ const CAMPOS_LISTA = `
   (e.place_id IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm",
   l.status AS "enriqStatus", l.faixa, l.score, l.motivo,
   dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
-  pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus"`;
+  pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
+  op.etapa AS "funilEtapa", op.proxima_acao_em AS "funilProximaAcaoEm"`;
 
 /** Nota, decisor e melhor contato do enriquecimento (schema do worker-enriquecimento, só leitura). */
-const JUNCOES_ENRIQ = `
+export const JUNCOES_ENRIQ = `
   LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
   LEFT JOIN LATERAL (
     SELECT nome, cargo FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor LIMIT 1
   ) dec ON true
   LEFT JOIN LATERAL (
     SELECT canal, valor, status FROM enriquecimento.contatos c WHERE c.empresa_id = e.id AND c.principal LIMIT 1
-  ) pc ON true`;
+  ) pc ON true
+  LEFT JOIN comercial.oportunidades op ON op.empresa_id = e.id`;
 
 const ORDENS: Record<FiltrosEmpresas['ordem'], string> = {
   nota: 'l.score DESC NULLS LAST, e.maps_avaliacoes DESC NULLS LAST, e.nome',
@@ -72,8 +74,14 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
     );
   if (f.faixa === 'pendente') where.push(`(l.status IS NULL OR l.status <> 'concluido')`);
   else if (f.faixa) where.push(`l.faixa = ${p(f.faixa)}`);
+  if (f.situacao === 'novos') where.push('op.empresa_id IS NULL');
+  else if (f.situacao === 'no_funil') where.push(`op.etapa <> 'descartado'`);
+  else if (f.situacao === 'descartados') where.push(`op.etapa = 'descartado'`);
+  if (f.comDecisor != null) where.push(f.comDecisor ? 'dec.nome IS NOT NULL' : 'dec.nome IS NULL');
+  if (f.scoreMinimo != null) where.push(`l.score >= ${p(f.scoreMinimo)}`);
   if (f.comWhatsapp != null) {
-    const existe = `EXISTS (SELECT 1 FROM enriquecimento.contatos w WHERE w.empresa_id = e.id AND w.canal = 'whatsapp' AND w.status = 'verificado')`;
+    // WhatsApp achado (botão do site, bio, Evolution); só o número conferido como inválido fica de fora.
+    const existe = `EXISTS (SELECT 1 FROM enriquecimento.contatos w WHERE w.empresa_id = e.id AND w.canal = 'whatsapp' AND w.status <> 'invalido')`;
     where.push(f.comWhatsapp ? existe : `NOT ${existe}`);
   }
 

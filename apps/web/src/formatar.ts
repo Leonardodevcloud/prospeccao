@@ -140,3 +140,46 @@ export function fmtNome(nome: string): string {
   if (nome !== nome.toUpperCase()) return nome;
   return fmtCidade(nome);
 }
+
+const reais = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+  maximumFractionDigits: 0,
+});
+export const fmtReais = (n: number | null | undefined) => (n == null ? '—' : reais.format(n));
+
+/** "38%" (sem base, "—"). */
+export function fmtPct(parte: number, total: number): string {
+  if (!total) return '—';
+  return `${Math.round((parte / total) * 100)}%`;
+}
+
+/** Data no fuso de São Paulo no formato do <input type="date"> (AAAA-MM-DD). */
+export function diaDoInput(iso: string | null | undefined): string {
+  return iso ? diaSP.format(new Date(iso)) : '';
+}
+
+/** Hoje + n dias, para o <input type="date">. */
+export function diaDaqui(n: number): string {
+  return diaSP.format(new Date(Date.now() + n * 86_400_000));
+}
+
+/** Prazo do próximo passo: "atrasado 3 dias", "hoje", "amanhã", "em 4 dias", "12/11". */
+export function fmtPrazo(
+  iso: string | null | undefined,
+): { texto: string; tom: 'atrasado' | 'hoje' | 'futuro' } | null {
+  if (!iso) return null;
+  const dia = (d: Date) => Date.parse(`${diaSP.format(d)}T00:00:00Z`);
+  const diff = Math.round((dia(new Date(iso)) - dia(new Date())) / 86_400_000);
+  if (diff < 0) return { texto: diff === -1 ? 'atrasado 1 dia' : `atrasado ${-diff} dias`, tom: 'atrasado' };
+  if (diff === 0) return { texto: 'hoje', tom: 'hoje' };
+  if (diff === 1) return { texto: 'amanhã', tom: 'futuro' };
+  if (diff <= 6) return { texto: `em ${diff} dias`, tom: 'futuro' };
+  return { texto: diaMesSP.format(new Date(iso)), tom: 'futuro' };
+}
+
+/** Dias desde uma data ("há 3 dias na etapa"). */
+export function diasDesde(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+}

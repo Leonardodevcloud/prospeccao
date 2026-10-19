@@ -1,20 +1,65 @@
 import { Badge, Button, ContactStatus, EmptyState, Icon, ScoreBadge, Tabs, TextField } from '@prospeccao/ui';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { api, type Campanha, type EmpresaLista, type Pagina, qs, type StatusContato } from '../api';
+import {
+  api,
+  type Campanha,
+  type EmpresaLista,
+  type EtapaFunil,
+  type Pagina,
+  qs,
+  type ResultadoAdicionar,
+  ROTULO_ETAPA,
+  type StatusContato,
+} from '../api';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
-import { ErroDaApi } from '../componentes/Formulario';
+import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtCidade, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO_ORIGEM } from '../formatar';
 
 const ABAS = [
   { id: 'todos', rotulo: 'Todos' },
   { id: 'A', rotulo: 'Nota A' },
   { id: 'B', rotulo: 'Nota B' },
+  { id: 'decisor', rotulo: 'Com decisor' },
   { id: 'whatsapp', rotulo: 'Com WhatsApp' },
   { id: 'entrega', rotulo: 'Com entrega' },
   { id: 'pendente', rotulo: 'Aguardando enriquecimento' },
 ];
+
+/** Situação comercial: por padrão só os nunca trabalhados, para a rodada nova não repetir quem já foi visto. */
+const SITUACOES = [
+  { id: 'novos', rotulo: 'Novos (não trabalhados)' },
+  { id: 'no_funil', rotulo: 'Já no funil' },
+  { id: 'descartados', rotulo: 'Descartados' },
+  { id: 'todos', rotulo: 'Todos' },
+];
+
+const TOM_ETAPA: Record<EtapaFunil, 'neutral' | 'brand' | 'warning' | 'danger' | 'outline'> = {
+  a_abordar: 'outline',
+  abordado: 'neutral',
+  respondeu: 'warning',
+  reuniao: 'warning',
+  proposta: 'warning',
+  ganho: 'brand',
+  perdido: 'danger',
+  descartado: 'neutral',
+};
+
+/** Resumo do envio em lote para o funil. */
+function textoResultado(r: ResultadoAdicionar, descartando: boolean): string {
+  const partes = [
+    descartando
+      ? `${fmtNumero(r.adicionadas)} descartado${r.adicionadas === 1 ? '' : 's'}`
+      : `${fmtNumero(r.adicionadas)} mandado${r.adicionadas === 1 ? '' : 's'} para o funil`,
+  ];
+  if (r.jaNoFunil) partes.push(`${fmtNumero(r.jaNoFunil)} já estava${r.jaNoFunil === 1 ? '' : 'm'} lá`);
+  if (r.duplicadas.length)
+    partes.push(
+      `${fmtNumero(r.duplicadas.length)} ficou de fora por ter o mesmo telefone de uma empresa já trabalhada`,
+    );
+  return `${partes.join(' · ')}.`;
+}
 
 const POR_PAGINA = 50;
 
@@ -52,13 +97,39 @@ export function Leads() {
   const ordem = params.get('ordem') ?? 'nota';
   const pagina = Number(params.get('pagina') ?? '1');
   const empresaAberta = params.get('empresa');
+  const situacao = params.get('situacao') ?? 'novos';
   const [busca, setBusca] = useState(params.get('busca') ?? '');
+  const [marcados, setMarcados] = useState<Set<number>>(new Set());
+  const [descartando, setDescartando] = useState(false);
+  const [motivo, setMotivo] = useState('');
+  const cliente = useQueryClient();
+  const enviarLote = useMutation({
+    mutationFn: (d: {
+      empresaIds: number[];
+      etapa: 'a_abordar' | 'descartado';
+      motivo?: string;
+      forcar?: boolean;
+    }) => api<ResultadoAdicionar>('/funil', { metodo: 'POST', corpo: d }),
+    onSuccess: (r, d) => {
+      // Os duplicados continuam marcados: dá para conferir e mandar mesmo assim.
+      setMarcados(new Set(r.duplicadas.map((x) => x.empresaId).filter((id) => d.empresaIds.includes(id))));
+      setDescartando(false);
+      setMotivo('');
+      cliente.invalidateQueries({ queryKey: ['empresas'] });
+      cliente.invalidateQueries({ queryKey: ['quadro'] });
+      cliente.invalidateQueries({ queryKey: ['campanhas'] });
+    },
+  });
 
   const mudar = (novos: Record<string, string | null>) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(novos)) v ? p.set(k, v) : p.delete(k);
     if (!('pagina' in novos) && !('empresa' in novos)) p.delete('pagina');
     setParams(p, { replace: true });
+    if (!('empresa' in novos)) {
+      setMarcados(new Set());
+      enviarLote.reset();
+    }
   };
 
   // Busca com pausa: só consulta quando o usuário para de digitar.
@@ -80,6 +151,8 @@ export function Leads() {
     entrega: aba === 'entrega' ? true : undefined,
     faixa: aba === 'A' || aba === 'B' || aba === 'pendente' ? aba : undefined,
     comWhatsapp: aba === 'whatsapp' ? true : undefined,
+    comDecisor: aba === 'decisor' ? true : undefined,
+    situacao,
   };
   const empresas = useQuery({
     queryKey: ['empresas', filtros],
@@ -95,6 +168,16 @@ export function Leads() {
   const total = empresas.data?.total ?? 0;
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
   const campanhaAtual = campanhas.data?.find((c) => String(c.id) === campanhaId);
+  const itens = empresas.data?.itens ?? [];
+  const todosMarcados = itens.length > 0 && itens.every((e) => marcados.has(e.id));
+  const alternar = (id: number) =>
+    setMarcados((m) => {
+      const n = new Set(m);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  const ultimoResultado = enviarLote.data;
+  const filtrando = !!filtros.busca || aba !== 'todos';
 
   return (
     <>
@@ -121,6 +204,21 @@ export function Leads() {
             {campanhas.data?.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nome}
+              </option>
+            ))}
+          </select>
+          <label className="pp-sr" htmlFor="filtro-situacao">
+            Situação no funil
+          </label>
+          <select
+            id="filtro-situacao"
+            className="filtro"
+            value={situacao}
+            onChange={(e) => mudar({ situacao: e.target.value === 'novos' ? null : e.target.value })}
+          >
+            {SITUACOES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.rotulo}
               </option>
             ))}
           </select>
@@ -159,7 +257,85 @@ export function Leads() {
         />
       </div>
 
-      <ErroDaApi erro={empresas.error} />
+      {marcados.size > 0 && (
+        <section className="barra-lote" aria-label="Ações com os leads marcados">
+          <b>
+            {fmtNumero(marcados.size)} marcado{marcados.size === 1 ? '' : 's'}
+          </b>
+          {descartando ? (
+            <>
+              <label className="pp-sr" htmlFor="motivo-descarte">
+                Motivo do descarte
+              </label>
+              <input
+                id="motivo-descarte"
+                className="filtro"
+                style={{ flex: '1 1 220px' }}
+                placeholder="Motivo (ex.: atacadista, não entrega)"
+                value={motivo}
+                // biome-ignore lint/a11y/noAutofocus: aparece por ação do usuário
+                autoFocus
+                onChange={(e) => setMotivo(e.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={!motivo.trim() || enviarLote.isPending}
+                onClick={() =>
+                  enviarLote.mutate({ empresaIds: [...marcados], etapa: 'descartado', motivo: motivo.trim() })
+                }
+              >
+                Descartar {fmtNumero(marcados.size)}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setDescartando(false)}>
+                Cancelar
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="primary"
+                icon="kanban"
+                disabled={enviarLote.isPending}
+                onClick={() =>
+                  enviarLote.mutate({
+                    empresaIds: [...marcados],
+                    etapa: 'a_abordar',
+                    // Depois do aviso de duplicado, o segundo clique manda mesmo assim.
+                    forcar: !!ultimoResultado?.duplicadas.length,
+                  })
+                }
+              >
+                {ultimoResultado?.duplicadas.length ? 'Mandar mesmo assim' : 'Mandar para o funil'}
+              </Button>
+              <Button size="sm" icon="x" onClick={() => setDescartando(true)}>
+                Descartar
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setMarcados(new Set())}>
+                Desmarcar
+              </Button>
+            </>
+          )}
+        </section>
+      )}
+      {ultimoResultado && (
+        <Mensagem tipo={ultimoResultado.duplicadas.length ? 'aviso' : 'ok'}>
+          {textoResultado(ultimoResultado, enviarLote.variables?.etapa === 'descartado')}
+          {ultimoResultado.duplicadas.length > 0 && (
+            <>
+              {' '}
+              {ultimoResultado.duplicadas
+                .slice(0, 3)
+                .map((d) => `${fmtNome(d.nome)} = ${fmtNome(d.outraNome)} (${ROTULO_ETAPA[d.outraEtapa]})`)
+                .join('; ')}
+              {ultimoResultado.duplicadas.length > 3 ? '…' : ''}. Eles continuam marcados: confira e use
+              "Mandar mesmo assim" se forem lojas diferentes.
+            </>
+          )}
+        </Mensagem>
+      )}
+      <ErroDaApi erro={empresas.error ?? enviarLote.error} />
 
       {empresas.isPending ? (
         <div className="pilha" aria-busy="true">
@@ -170,19 +346,29 @@ export function Leads() {
       ) : total === 0 ? (
         <div className="pp-panel">
           <EmptyState
-            icone={filtros.busca || aba !== 'todos' ? 'search' : 'inbox'}
+            icone={filtrando ? 'search' : situacao === 'novos' ? 'check' : 'inbox'}
             titulo={
-              filtros.busca || aba !== 'todos'
+              filtrando
                 ? 'Nenhum lead com esses filtros'
-                : 'Nenhum lead encontrado ainda'
+                : situacao === 'novos'
+                  ? 'Nenhum lead novo'
+                  : situacao === 'descartados'
+                    ? 'Nenhum lead descartado'
+                    : situacao === 'no_funil'
+                      ? 'Nenhum lead no funil'
+                      : 'Nenhum lead encontrado ainda'
             }
             texto={
-              filtros.busca || aba !== 'todos'
+              filtrando
                 ? 'Tente outra busca ou volte para a aba Todos.'
-                : 'Crie e inicie uma campanha: o motor busca na base de CNPJ e no Google Maps.'
+                : situacao === 'novos'
+                  ? 'Todos os leads encontrados já foram mandados para o funil ou descartados. Rode a campanha de novo ou crie uma em outra cidade.'
+                  : situacao === 'todos'
+                    ? 'Crie e inicie uma campanha: o motor busca na base de CNPJ e no Google Maps.'
+                    : 'Troque a situação para ver os outros leads.'
             }
             acao={
-              filtros.busca || aba !== 'todos' ? (
+              filtrando ? (
                 <Button
                   size="sm"
                   onClick={() => {
@@ -206,6 +392,16 @@ export function Leads() {
             <table className="pp-table">
               <thead>
                 <tr>
+                  <th className="col-marcar">
+                    <input
+                      type="checkbox"
+                      aria-label="Marcar todos desta página"
+                      checked={todosMarcados}
+                      onChange={() =>
+                        setMarcados(todosMarcados ? new Set() : new Set(itens.map((e) => e.id)))
+                      }
+                    />
+                  </th>
                   <th>Empresa</th>
                   <th>Nota</th>
                   <th>Quem decide</th>
@@ -224,6 +420,15 @@ export function Leads() {
                       className="linha-clicavel"
                       onClick={() => mudar({ empresa: String(e.id) })}
                     >
+                      <td className="col-marcar">
+                        <input
+                          type="checkbox"
+                          onClick={(ev) => ev.stopPropagation()}
+                          aria-label={`Marcar ${fmtNome(e.nome)}`}
+                          checked={marcados.has(e.id)}
+                          onChange={() => alternar(e.id)}
+                        />
+                      </td>
                       <td>
                         <button
                           type="button"
@@ -240,6 +445,13 @@ export function Leads() {
                               .join(' · ')}
                           </span>
                         </button>
+                        {e.funilEtapa && (
+                          <span className="celula-selos">
+                            <Badge tone={TOM_ETAPA[e.funilEtapa]} icon="kanban">
+                              {ROTULO_ETAPA[e.funilEtapa]}
+                            </Badge>
+                          </span>
+                        )}
                       </td>
                       <td title={e.motivo ?? undefined}>
                         {e.faixa ? (
@@ -321,7 +533,13 @@ export function Leads() {
         </>
       )}
 
-      {empresaAberta && <FichaEmpresa id={Number(empresaAberta)} aoFechar={() => mudar({ empresa: null })} />}
+      {empresaAberta && (
+        <FichaEmpresa
+          id={Number(empresaAberta)}
+          aoFechar={() => mudar({ empresa: null })}
+          aoAbrir={(id) => mudar({ empresa: String(id) })}
+        />
+      )}
     </>
   );
 }

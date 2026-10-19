@@ -3,9 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api, ErroApi } from '../api';
 import { temAtividade, useAtividade } from '../paginas/Atividade';
+import { useFollowupsPendentes } from '../paginas/Funil';
 
 const ITENS = [
   { para: '/', rotulo: 'Leads', icone: 'users', fim: true },
+  { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
+  { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up' },
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
   { para: '/atividade', rotulo: 'Atividade', icone: 'clock' },
   { para: '/nichos', rotulo: 'Nichos', icone: 'store' },
@@ -20,6 +23,7 @@ export function Shell() {
   const sessao = useQuery({ queryKey: ['sessao'], queryFn: () => api<{ email: string }>('/auth/eu') });
   // Ponto pulsando em "Atividade" enquanto o motor trabalha, em qualquer tela.
   const ativo = temAtividade(useAtividade(60_000).data);
+  const pendentes = useFollowupsPendentes().data?.pendentes ?? 0;
   const sair = useMutation({
     mutationFn: () => api('/auth/logout', { metodo: 'POST' }),
     onSettled: () => {
@@ -46,6 +50,11 @@ export function Shell() {
           <NavLink key={i.para} to={i.para} end={i.fim} className="nav__link">
             <Icon name={i.icone} size={16} />
             {i.rotulo}
+            {i.para === '/funil' && pendentes > 0 && (
+              <span className="nav__conta" title="Follow-ups vencidos ou para hoje">
+                {pendentes}
+              </span>
+            )}
             {i.para === '/atividade' && ativo && (
               <span className="vivo nav__vivo" role="img" aria-label="trabalhando agora" />
             )}

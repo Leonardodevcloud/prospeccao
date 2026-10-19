@@ -10,8 +10,10 @@ import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
 import { rotasCampanhas } from './modulos/campanhas/rotas.js';
 import { rotasEmpresas } from './modulos/empresas/rotas.js';
+import { rotasFunil } from './modulos/funil/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
+import { rotasRelatorios } from './modulos/relatorios/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
 
 /** Monta a aplicação a partir das dependências (os testes passam as suas). */
@@ -50,6 +52,8 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/campanhas', rotasCampanhas(deps));
   protegidas.use('/bases', rotasBases(deps));
   protegidas.use('/empresas', rotasEmpresas(deps));
+  protegidas.use('/funil', rotasFunil(deps));
+  protegidas.use('/relatorios', rotasRelatorios(deps));
   protegidas.use('/importacoes', rotasImportacoes(deps));
   protegidas.use('/atividade', rotasAtividade(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));

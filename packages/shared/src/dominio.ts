@@ -145,8 +145,17 @@ export const filtrosEmpresas = z.object({
   ordem: z.enum(['nota', 'recentes', 'distancia', 'avaliacoes', 'nome']).default('nota'),
   /** Nota do enriquecimento: "A", "B", "C" ou "pendente" (ainda não enriquecido). */
   faixa: z.enum(['A', 'B', 'C', 'pendente']).optional(),
-  /** Só quem já tem WhatsApp confirmado. */
+  /** Só quem tem WhatsApp achado (e não conferido como inválido). */
   comWhatsapp: booleanoQuery,
+  /** Só quem tem decisor identificado (sócio da Receita ou cargo comprovado). */
+  comDecisor: booleanoQuery,
+  /**
+   * Situação no funil: "novos" = nunca trabalhados (nem no funil, nem descartados);
+   * "no_funil" = em alguma etapa; "descartados" = marcados como fora do perfil.
+   */
+  situacao: z.enum(['todos', 'novos', 'no_funil', 'descartados']).default('todos'),
+  /** Nota mínima (0–100). */
+  scoreMinimo: z.coerce.number().int().min(0).max(100).optional(),
 });
 export type FiltrosEmpresas = z.infer<typeof filtrosEmpresas>;
 

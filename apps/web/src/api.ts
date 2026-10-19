@@ -77,6 +77,10 @@ export interface ProgressoCampanha {
   buscasConcluidas: number;
   buscasComErro: number;
   ultimaBusca: string | null;
+  /** Leads nunca trabalhados (nem no funil, nem descartados). */
+  novos: number;
+  noFunil: number;
+  descartados: number;
 }
 
 export interface Campanha {
@@ -131,6 +135,182 @@ export interface EmpresaLista {
   contatoCanal: CanalContato | null;
   contatoValor: string | null;
   contatoStatus: StatusContato | null;
+  /** Etapa no funil comercial; null = nunca trabalhado. */
+  funilEtapa: EtapaFunil | null;
+  funilProximaAcaoEm: string | null;
+}
+
+export type EtapaFunil =
+  | 'a_abordar'
+  | 'abordado'
+  | 'respondeu'
+  | 'reuniao'
+  | 'proposta'
+  | 'ganho'
+  | 'perdido'
+  | 'descartado';
+
+export const COLUNAS_FUNIL: EtapaFunil[] = [
+  'a_abordar',
+  'abordado',
+  'respondeu',
+  'reuniao',
+  'proposta',
+  'ganho',
+  'perdido',
+];
+
+export const ROTULO_ETAPA: Record<EtapaFunil, string> = {
+  a_abordar: 'A abordar',
+  abordado: 'Abordado',
+  respondeu: 'Respondeu',
+  reuniao: 'Reunião',
+  proposta: 'Proposta',
+  ganho: 'Ganho',
+  perdido: 'Perdido',
+  descartado: 'Descartado',
+};
+
+export type TipoAtividade = 'whatsapp' | 'ligacao' | 'email' | 'visita' | 'reuniao' | 'nota' | 'etapa';
+
+export interface AtividadeFunil {
+  id: number;
+  tipo: TipoAtividade;
+  direcao: 'enviada' | 'recebida' | null;
+  texto: string | null;
+  contato: string | null;
+  deEtapa: EtapaFunil | null;
+  paraEtapa: EtapaFunil | null;
+  autor: string | null;
+  em: string;
+}
+
+export interface Duplicada {
+  empresaId: number;
+  nome: string;
+  outraEmpresaId: number;
+  outraNome: string;
+  outraEtapa: EtapaFunil;
+  telefone: string;
+}
+
+export interface DetalheFunil {
+  oportunidade: {
+    etapa: EtapaFunil;
+    motivo: string | null;
+    valorMensal: number | null;
+    proximaAcao: string | null;
+    proximaAcaoEm: string | null;
+    ultimoContatoEm: string | null;
+    etapaDesde: string;
+    criadoEm: string;
+    faixaEntrada: 'A' | 'B' | 'C' | null;
+    campanhaId: number | null;
+    pendente: boolean | null;
+  } | null;
+  atividades: AtividadeFunil[];
+  duplicada: Duplicada | null;
+}
+
+export interface CardFunil {
+  empresaId: number;
+  etapa: EtapaFunil;
+  posicao: number;
+  proximaAcao: string | null;
+  proximaAcaoEm: string | null;
+  pendente: boolean | null;
+  ultimoContatoEm: string | null;
+  etapaDesde: string;
+  valorMensal: number | null;
+  motivo: string | null;
+  nome: string;
+  cidade: string;
+  uf: string;
+  categoria: string | null;
+  faixa: 'A' | 'B' | 'C' | null;
+  score: number | null;
+  decisorNome: string | null;
+  decisorCargo: string | null;
+  contatoCanal: CanalContato | null;
+  contatoValor: string | null;
+  contatoStatus: StatusContato | null;
+  telefone: string | null;
+  contatos: number;
+}
+
+export interface Quadro {
+  cards: CardFunil[];
+  pendentes: number;
+  descartados: number;
+}
+
+export interface ResultadoAdicionar {
+  adicionadas: number;
+  jaNoFunil: number;
+  naoEncontradas: number;
+  duplicadas: Duplicada[];
+}
+
+export interface Relatorio {
+  kpis: {
+    encontrados: number;
+    enriquecidos: number;
+    faixaA: number;
+    faixaB: number;
+    faixaC: number;
+    comDecisor: number;
+    comWhatsapp: number;
+    entraramNoFunil: number;
+    abordados: number;
+    responderam: number;
+    reunioes: number;
+    ganhos: number;
+    perdidos: number;
+    contatos: number;
+    valorGanho: number;
+    followupsAtrasados: number;
+    semProximoPasso: number;
+  };
+  funil: Record<
+    'a_abordar' | 'abordado' | 'respondeu' | 'reuniao' | 'proposta' | 'ganho' | 'perdido',
+    number
+  >;
+  campanhas: {
+    id: number;
+    nome: string;
+    status: string;
+    encontrados: number;
+    faixaA: number;
+    faixaB: number;
+    faixaC: number;
+    comDecisor: number;
+    novos: number;
+    descartados: number;
+    noFunil: number;
+    abordados: number;
+    responderam: number;
+    ganhos: number;
+  }[];
+  faixas: {
+    faixa: 'A' | 'B' | 'C' | 'sem_nota';
+    noFunil: number;
+    abordados: number;
+    responderam: number;
+    reunioes: number;
+    ganhos: number;
+    perdidos: number;
+  }[];
+  decisores: {
+    faixa: 'A' | 'B' | 'C';
+    total: number;
+    receita: number;
+    linkedin: number;
+    outras: number;
+    semDecisor: number;
+    comWhatsapp: number;
+  }[];
+  motivos: { etapa: 'perdido' | 'descartado'; motivo: string; quantidade: number }[];
+  diario: { dia: string; contatos: number; respostas: number; novosNoFunil: number }[];
 }
 
 export type CanalContato = 'whatsapp' | 'telefone' | 'email' | 'instagram' | 'linkedin' | 'site' | 'facebook';
