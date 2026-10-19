@@ -1,4 +1,4 @@
-import type { Executor } from '@prospeccao/db';
+import { comTransacao, type Executor, type Pool } from '@prospeccao/db';
 import type { CampanhaEntrada, EscopoReenriquecer, StatusCampanha } from '@prospeccao/shared';
 
 /** Campanha com o progresso da descoberta (lido das views publicadas pelo domínio descoberta). */
@@ -57,7 +57,7 @@ async function naFilaDoEnriquecimento(db: Executor): Promise<Map<number, number>
   }
 }
 
-type ComProgresso = { id: number; progresso: Record<string, unknown> };
+type ComProgresso = { id: number; nome: string; progresso: Record<string, unknown> };
 
 async function comFila<T extends ComProgresso>(db: Executor, campanhas: T[]): Promise<T[]> {
   const fila = await naFilaDoEnriquecimento(db);
@@ -189,4 +189,46 @@ export async function empresasParaReenriquecer(
     [campanhaId],
   );
   return rows.map((r) => r.id);
+}
+
+/** Buscas no Maps da campanha (para tirar da fila as que ainda não rodaram). */
+export async function buscasDaCampanha(db: Executor, campanhaId: number): Promise<number[]> {
+  const { rows } = await db.query<{ id: number }>(
+    'SELECT id::int FROM descoberta.buscas_maps WHERE campanha_id = $1',
+    [campanhaId],
+  );
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Apaga a campanha e os leads que só ela achou (com enriquecimento e funil). Leads achados também
+ * por outra campanha ficam. Base de CNPJ e nichos não são tocados.
+ *
+ * Exceção consciente à regra "um dono por schema": é uma faxina de teste pedida pela pessoa, feita
+ * numa transação só. Os workers tratam o que sumiu (empresa/busca inexistente → job descartado).
+ */
+export async function apagarComLeads(pool: Pool, campanhaId: number) {
+  return comTransacao(pool, async (tx) => {
+    const { rows } = await tx.query<{ id: number }>(
+      `SELECT ce.empresa_id::int AS id FROM descoberta.campanha_empresas ce
+        WHERE ce.campanha_id = $1
+          AND NOT EXISTS (SELECT 1 FROM descoberta.campanha_empresas o
+                           WHERE o.empresa_id = ce.empresa_id AND o.campanha_id <> $1)`,
+      [campanhaId],
+    );
+    const ids = rows.map((r) => r.id);
+    await tx.query('DELETE FROM comercial.oportunidades WHERE empresa_id = ANY($1::bigint[])', [ids]);
+    for (const t of ['contatos', 'pessoas', 'etapas', 'leads'])
+      await tx.query(`DELETE FROM enriquecimento.${t} WHERE empresa_id = ANY($1::bigint[])`, [ids]);
+    await tx.query('DELETE FROM descoberta.campanha_empresas WHERE campanha_id = $1', [campanhaId]);
+    await tx.query('DELETE FROM descoberta.buscas_maps WHERE campanha_id = $1', [campanhaId]);
+    await tx.query('DELETE FROM descoberta.empresas WHERE id = ANY($1::bigint[])', [ids]);
+    // Sobras de enriquecimento sem empresa (job que terminou durante uma faxina anterior).
+    for (const t of ['contatos', 'pessoas', 'etapas', 'leads'])
+      await tx.query(
+        `DELETE FROM enriquecimento.${t} x WHERE NOT EXISTS (SELECT 1 FROM descoberta.empresas e WHERE e.id = x.empresa_id)`,
+      );
+    await tx.query('DELETE FROM cadastro.campanhas WHERE id = $1', [campanhaId]);
+    return { leadsApagados: ids.length };
+  });
 }

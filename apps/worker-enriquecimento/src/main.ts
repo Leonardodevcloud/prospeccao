@@ -27,6 +27,8 @@ const env = carregarEnv(
     ENRIQ_FAIXAS_LINKEDIN: listaCsv.default(['A', 'B']),
     ENRIQ_FAIXAS_PLACES: listaCsv.default(['A', 'B']),
     ENRIQ_BUSCAR_INSTAGRAM: booleano.default(true),
+    /** Interruptor de emergência: com "true", o serviço sobe mas não processa nada (a fila espera). */
+    ENRIQ_PAUSADO: booleano.default(false),
     ENRIQ_REFAZER_DIAS: z.coerce.number().int().min(0).default(30),
     ENRIQ_CONCORRENCIA: z.coerce.number().int().min(1).max(10).default(2),
   }),
@@ -89,9 +91,13 @@ const deps: Deps = {
 await pool.query(`UPDATE enriquecimento.leads SET status = 'na_fila' WHERE status = 'rodando'`);
 await filas.liberarTravados('enriquecimento.solicitar');
 
-await filas.consumir('enriquecimento.solicitar', (p) => enriquecerEmpresa(deps, p).then(() => undefined), {
-  concorrencia: env.ENRIQ_CONCORRENCIA,
-});
+if (env.ENRIQ_PAUSADO) {
+  log.warn('ENRIQ_PAUSADO=true: enriquecimento parado, a fila fica esperando (nada é gasto)');
+} else {
+  await filas.consumir('enriquecimento.solicitar', (p) => enriquecerEmpresa(deps, p).then(() => undefined), {
+    concorrencia: env.ENRIQ_CONCORRENCIA,
+  });
+}
 
 const ligado = (v: unknown) => (v ? 'ligado' : 'desligado');
 log.info(

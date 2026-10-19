@@ -86,5 +86,15 @@ describe.skipIf(!URL_TESTE)('filas (pg-boss de verdade)', () => {
       `SELECT count(*)::int AS n FROM fila.job WHERE name = 'enriquecimento.solicitar' AND state = 'created'`,
     );
     expect(rows[0].n).toBe(1200);
+
+    // Parar a campanha 9: tudo que ainda não começou sai da fila; outra campanha não é tocada.
+    await f.publicar('enriquecimento.solicitar', { empresaId: 1, campanhaId: 10 });
+    expect(await f.cancelarPendentes('enriquecimento.solicitar', { campo: 'campanhaId', valores: [9] })).toBe(
+      1200,
+    );
+    const { rows: resto } = await db.query(
+      `SELECT data->>'campanhaId' AS c FROM fila.job WHERE name = 'enriquecimento.solicitar' AND state = 'created'`,
+    );
+    expect(resto).toEqual([{ c: '10' }]);
   });
 });

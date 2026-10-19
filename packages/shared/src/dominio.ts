@@ -180,3 +180,8 @@ export const reenriquecerEntrada = z.object({
   escopo: z.enum(['ab', 'sem_decisor', 'todos']).default('ab'),
 });
 export type EscopoReenriquecer = z.infer<typeof reenriquecerEntrada>['escopo'];
+
+/** Confirmação para apagar a campanha com os leads: o nome digitado. */
+export const apagarCampanhaEntrada = z.object({
+  confirmarNome: z.string().trim().min(1, 'Digite o nome da campanha para confirmar.'),
+});

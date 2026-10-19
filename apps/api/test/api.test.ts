@@ -15,6 +15,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
   let app: ReturnType<typeof criarApp>;
   let cookie = '';
   const publicados: { nome: NomeJob; payload: unknown }[] = [];
+  const cancelados: { nome: NomeJob; filtro: unknown }[] = [];
   /** Simula a fila exclusiva ocupada: o pg-boss devolve null ao publicar. */
   let filaOcupada = false;
 
@@ -41,6 +42,10 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
           if (filaOcupada) return null;
           publicados.push({ nome, payload });
           return 'job-1';
+        },
+        async cancelarPendentes(nome, filtro) {
+          cancelados.push({ nome, filtro });
+          return 3;
         },
         async publicarVarios(nome, payloads) {
           for (const payload of payloads) publicados.push({ nome, payload });
@@ -482,5 +487,31 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     const r = await ler('/nao-existe');
     expect(r.status).toBe(404);
     expect(r.body.erro.codigo).toBe('rota_inexistente');
+  });
+
+  it('para o enriquecimento e apaga a campanha com os leads só dela (base de CNPJ fica)', async () => {
+    const parar = await enviar('post', '/campanhas/2/parar-enriquecimento');
+    expect(parar.body).toEqual({ cancelados: 3 });
+    expect(cancelados).toContainEqual({
+      nome: 'enriquecimento.solicitar',
+      filtro: { campo: 'campanhaId', valores: [2] },
+    });
+
+    const errado = await enviar('delete', '/campanhas/2', { confirmarNome: 'outra coisa' });
+    expect(errado.status).toBeGreaterThanOrEqual(400);
+
+    const { rows: antes } = await pool.query('SELECT count(*)::int AS n FROM base_cnpj.socios');
+    const nome = (await ler('/campanhas/2')).body.nome;
+    const apagar = await enviar('delete', '/campanhas/2', { confirmarNome: nome.toUpperCase() });
+    expect(apagar.status).toBe(200);
+    expect(apagar.body.leadsApagados).toBeGreaterThan(0);
+    expect((await ler('/campanhas/2')).status).toBe(404);
+    const { rows } = await pool.query(
+      `SELECT (SELECT count(*) FROM descoberta.campanha_empresas WHERE campanha_id = 2)::int AS vinculos,
+              (SELECT count(*) FROM comercial.oportunidades)::int AS funil,
+              (SELECT count(*) FROM enriquecimento.leads)::int AS leads,
+              (SELECT count(*) FROM base_cnpj.socios)::int AS socios`,
+    );
+    expect(rows[0]).toEqual({ vinculos: 0, funil: 0, leads: 0, socios: antes[0].n });
   });
 });

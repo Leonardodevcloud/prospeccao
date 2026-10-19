@@ -1,5 +1,6 @@
 import {
   AppError,
+  apagarCampanhaEntrada,
   campanhaAtualizacao,
   campanhaEntrada,
   reenriquecerEntrada,
@@ -74,10 +75,57 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
     res.status(202).json({ campanha: await repo.obter(pool, id), avisos });
   });
 
+  /** Tira da fila tudo que a campanha ainda não processou: enriquecimento e buscas no Maps. */
+  async function pararFilas(id: number) {
+    const buscas = await repo.buscasDaCampanha(pool, id);
+    const porCampanha = { campo: 'campanhaId', valores: [id] };
+    const porBusca = { campo: 'buscaId', valores: buscas };
+    const [enriquecimento, ...outros] = await Promise.all([
+      filas.cancelarPendentes('enriquecimento.solicitar', porCampanha),
+      filas.cancelarPendentes('campanha.iniciar', porCampanha),
+      filas.cancelarPendentes('campanha.buscar_cnpj', porCampanha),
+      filas.cancelarPendentes('maps.buscar', porBusca),
+      filas.cancelarPendentes('maps.coletar', porBusca),
+    ]);
+    return { enriquecimento: enriquecimento ?? 0, outros: outros.reduce((a, b) => a + b, 0) };
+  }
+
+  /** Pausar também para o que está na fila (o que já está rodando termina). */
   r.post('/:id/pausar', async (req, res) => {
     const id = idDaRota(req);
     await transicionar(id, 'pausada');
+    const cancelados = await pararFilas(id);
+    log.info({ campanhaId: id, ...cancelados }, 'campanha pausada');
     res.json(await repo.obter(pool, id));
+  });
+
+  /** Para o enriquecimento da campanha sem pausar a campanha. */
+  r.post('/:id/parar-enriquecimento', async (req, res) => {
+    const id = idDaRota(req);
+    if (!(await repo.statusAtual(pool, id))) throw AppError.naoEncontrado('Campanha');
+    const cancelados = await filas.cancelarPendentes('enriquecimento.solicitar', {
+      campo: 'campanhaId',
+      valores: [id],
+    });
+    log.info({ campanhaId: id, cancelados }, 'enriquecimento parado');
+    res.json({ cancelados });
+  });
+
+  /**
+   * Apaga a campanha e os leads só dela (para recomeçar um teste). Pede o nome da campanha
+   * digitado como confirmação. Base de CNPJ e nichos ficam.
+   */
+  r.delete('/:id', async (req, res) => {
+    const id = idDaRota(req);
+    const campanha = await repo.obter(pool, id);
+    if (!campanha) throw AppError.naoEncontrado('Campanha');
+    const { confirmarNome } = corpo(req, apagarCampanhaEntrada);
+    if (confirmarNome.trim().toLowerCase() !== campanha.nome.trim().toLowerCase())
+      throw AppError.invalido('Digite o nome da campanha exatamente como aparece para confirmar.');
+    const cancelados = await pararFilas(id);
+    const r2 = await repo.apagarComLeads(pool, id);
+    log.warn({ campanhaId: id, ...cancelados, ...r2 }, 'campanha apagada com os leads');
+    res.json(r2);
   });
 
   /** Quantos leads cada opção de "refazer enriquecimento" mandaria para a fila (para confirmar). */

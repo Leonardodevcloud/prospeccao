@@ -182,6 +182,30 @@ function CardCampanha({ c }: { c: Campanha }) {
     },
   });
   const [confirmarRefazer, setConfirmarRefazer] = useState(false);
+  const [apagando, setApagando] = useState(false);
+  const [nomeDigitado, setNomeDigitado] = useState('');
+  const parar = useMutation({
+    mutationFn: () =>
+      api<{ cancelados: number }>(`/campanhas/${c.id}/parar-enriquecimento`, { metodo: 'POST' }),
+    onSuccess: (r) => {
+      setAvisos([
+        `Enriquecimento parado: ${fmtNumero(r.cancelados)} leads saíram da fila. Os que já estavam rodando terminam em instantes.`,
+      ]);
+      cliente.invalidateQueries({ queryKey: ['campanhas'] });
+    },
+  });
+  const apagar = useMutation({
+    mutationFn: () =>
+      api<{ leadsApagados: number }>(`/campanhas/${c.id}`, {
+        metodo: 'DELETE',
+        corpo: { confirmarNome: nomeDigitado },
+      }),
+    onSuccess: () => {
+      cliente.invalidateQueries({ queryKey: ['campanhas'] });
+      cliente.invalidateQueries({ queryKey: ['empresas'] });
+      cliente.invalidateQueries({ queryKey: ['quadro'] });
+    },
+  });
   const [escopo, setEscopo] = useState<'ab' | 'sem_decisor' | 'todos'>('ab');
   const previa = useQuery({
     queryKey: ['reenriquecer', c.id],
@@ -277,6 +301,50 @@ function CardCampanha({ c }: { c: Campanha }) {
             <span className="vivo" aria-hidden="true" /> Enriquecendo
           </Badge>
           <span>{fmtNumero(p.naFilaEnriquecimento)} leads na fila ou rodando agora</span>
+          <Button size="sm" variant="danger" disabled={parar.isPending} onClick={() => parar.mutate()}>
+            {parar.isPending ? 'Parando…' : 'Parar enriquecimento'}
+          </Button>
+        </div>
+      )}
+      <ErroDaApi erro={parar.error ?? apagar.error} />
+      {apagando && (
+        <div className="confirmar" style={{ borderColor: 'var(--danger)', background: 'var(--danger-soft)' }}>
+          <span>
+            Apagar a campanha e os {fmtNumero(p.empresas)} leads dela, com enriquecimento e funil? Leads que
+            outra campanha também achou ficam. A Base CNPJ e os nichos não são apagados. Não dá para desfazer.
+          </span>
+          <div className="campo">
+            <label htmlFor={`apagar-${c.id}`}>
+              Digite <b>{c.nome}</b> para confirmar
+            </label>
+            <input
+              id={`apagar-${c.id}`}
+              className="filtro"
+              value={nomeDigitado}
+              autoComplete="off"
+              onChange={(e) => setNomeDigitado(e.target.value)}
+            />
+          </div>
+          <div className="acoes">
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={apagar.isPending || nomeDigitado.trim().toLowerCase() !== c.nome.trim().toLowerCase()}
+              onClick={() => apagar.mutate()}
+            >
+              {apagar.isPending ? 'Apagando…' : 'Apagar campanha e leads'}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setApagando(false);
+                setNomeDigitado('');
+              }}
+            >
+              Cancelar
+            </Button>
+          </div>
         </div>
       )}
       {confirmarRefazer && (
@@ -369,6 +437,11 @@ function CardCampanha({ c }: { c: Campanha }) {
             }}
           >
             Encerrar
+          </Button>
+        )}
+        {!apagando && (
+          <Button variant="ghost" size="sm" icon="x" onClick={() => setApagando(true)}>
+            Apagar campanha
           </Button>
         )}
       </div>

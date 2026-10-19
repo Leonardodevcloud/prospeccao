@@ -41,6 +41,12 @@ export interface Filas {
   ): Promise<void>;
   agendar<N extends NomeJob>(nome: N, cron: string, payload: PayloadJob<N>, fuso?: string): Promise<void>;
   tamanhos(nomes?: NomeJob[]): Promise<Record<string, number>>;
+  /**
+   * Tira da fila os jobs que ainda não começaram (e os que esperam nova tentativa). Com `filtro`,
+   * só os cujo payload tem `campo` com um dos `valores` (ex.: campanhaId). Os que já estão rodando
+   * terminam normalmente. Devolve quantos saíram.
+   */
+  cancelarPendentes(nome: NomeJob, filtro?: { campo: string; valores: number[] }): Promise<number>;
   /** Libera jobs que ficaram "ativos" porque o processo anterior morreu. Devolve quantos. */
   liberarTravados(nome: NomeJob): Promise<number>;
   parar(): Promise<void>;
@@ -213,6 +219,22 @@ export async function conectarFilas(opcoes: {
 
     async agendar(nome, cron, payload, fuso = 'America/Sao_Paulo') {
       await boss.schedule(nome, cron, JOBS[nome].parse(payload), { tz: fuso, key: 'padrao' });
+    },
+
+    async cancelarPendentes(nome, filtro) {
+      if (filtro && !filtro.valores.length) return 0;
+      const { rows } = await boss.getDb().executeSql(
+        `WITH apagados AS (
+           DELETE FROM ${SCHEMA_FILAS}.job
+            WHERE name = $1 AND state IN ('created', 'retry')
+              AND ($2::text IS NULL OR (data ->> $2)::bigint = ANY($3::bigint[]))
+           RETURNING 1)
+         SELECT count(*)::int AS n FROM apagados`,
+        [nome, filtro?.campo ?? null, filtro?.valores ?? []],
+      );
+      const n = Number(rows[0]?.n ?? 0);
+      if (n) log.info({ fila: nome, cancelados: n, filtro }, 'jobs pendentes cancelados');
+      return n;
     },
 
     async tamanhos(nomes) {
