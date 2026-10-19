@@ -220,9 +220,14 @@ export class Coletor {
         Number(!!b.linkedin) - Number(!!a.linkedin) ||
         (a.desde ?? '9').localeCompare(b.desde ?? '9'),
     );
-    // Só vira "decisor" quem tem prova de que decide: está no quadro societário da Receita ou
-    // tem cargo de compras/gestão/sócio comprovado (LinkedIn, site com cargo ao lado do nome).
-    const podeDecidir = (p: Pessoa) => p.prioridadeReceita != null || p.papel !== 'outro';
+    // Só vira "decisor" quem tem prova de que decide (nunca por nome parecido em outra fonte).
+    // Decide quem administra a empresa na Receita (sócio-administrador) ou quem tem cargo de
+    // compras/gestão/dono comprovado. Sócio sem poder de administração, só na Receita, não decide.
+    const podeDecidir = (p: Pessoa) =>
+      p.prioridadeReceita === 1 ||
+      p.papel === 'compras' ||
+      p.papel === 'gestao' ||
+      (p.papel === 'socio' && p.prioridadeReceita == null);
     const decisor = ordenadas.find(podeDecidir) ?? null;
     ordenadas.forEach((p, i) => {
       p.prioridade = i + 1;

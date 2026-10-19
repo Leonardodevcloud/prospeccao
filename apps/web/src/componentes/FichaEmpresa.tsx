@@ -84,6 +84,16 @@ const PAPEL: Record<PessoaEnriq['papel'], string> = {
   outro: '',
 };
 
+/** De onde vem a certeza sobre a pessoa, quando não há trecho do site. */
+function provaDaPessoa(p: PessoaEnriq): string | undefined {
+  const receita = p.fontes.includes('receita');
+  const linkedin = p.fontes.includes('linkedin') && p.linkedin;
+  if (receita && linkedin) return 'No quadro de sócios da Receita; o LinkedIn dele cita esta empresa.';
+  if (receita) return 'No quadro de sócios da Receita.';
+  if (linkedin) return 'O LinkedIn cita esta empresa no emprego atual.';
+  return undefined;
+}
+
 function paraContactRow(c: ContatoEnriq): ContactRowProps {
   const fone = c.canal === 'whatsapp' || c.canal === 'telefone';
   const valor = fone
@@ -278,7 +288,7 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
               principal={p.decisor}
               fontes={[...new Set(p.fontes.map((f) => FONTE[f]))]}
               linkedin={p.linkedin}
-              evidencia={p.evidencia ?? undefined}
+              evidencia={p.evidencia ?? provaDaPessoa(p)}
               contatos={p.decisor ? [...proprios, ...melhores] : proprios}
             />
           );

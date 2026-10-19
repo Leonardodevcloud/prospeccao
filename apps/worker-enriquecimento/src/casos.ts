@@ -1,14 +1,17 @@
 import {
   type AvaliacaoIa,
   instagramNosResultados,
-  interpretarLinkedin,
   normalizarSite,
   type PerfilInstagram,
+  palavrasDaEmpresa,
+  perfilDoSocio,
+  pessoasDaEmpresa,
   provarPessoa,
+  type ResultadoGoogle,
   type ResultadoSite,
 } from '@prospeccao/integrations/enriquecimento';
 import { ErroDefinitivo } from '@prospeccao/queue';
-import { normalizarNome, normalizarTelefone } from '@prospeccao/shared';
+import { normalizarTelefone } from '@prospeccao/shared';
 import { Coletor, notaPorRegras, papelPeloCargo } from './coletor.js';
 import type { Deps } from './dependencias.js';
 import * as repo from './repositorio.js';
@@ -27,30 +30,27 @@ function mensagemDe(erro: unknown): string {
   return erro instanceof Error ? erro.message : String(erro);
 }
 
-/** Palavras do nome que identificam a empresa numa busca ("Auto Peças Ladeira" → "ladeira"). */
-function palavrasFortes(nome: string): string[] {
-  const fracas = new Set([
-    'auto',
-    'pecas',
-    'peca',
-    'comercio',
-    'de',
-    'do',
-    'da',
-    'e',
-    'loja',
-    'distribuidora',
-    'pet',
-    'shop',
-    'farmacia',
-    'drogaria',
-    'moto',
-    'motos',
-    'ltda',
-  ]);
-  return normalizarNome(nome)
-    .split(' ')
-    .filter((p) => p.length >= 3 && !fracas.has(p));
+/** A busca no Google pelo Apify às vezes estoura o tempo do ator: uma segunda tentativa resolve quase sempre. */
+async function buscarComRetentativa(
+  google: { buscar(consultas: string[]): Promise<Map<string, ResultadoGoogle[]>> },
+  consultas: string[],
+): Promise<Map<string, ResultadoGoogle[]>> {
+  try {
+    return await google.buscar(consultas);
+  } catch (erro) {
+    if (!/TIMED-OUT|timeout|tempo esgotado/i.test(mensagemDe(erro))) throw erro;
+    return google.buscar(consultas);
+  }
+}
+
+/** Erro do Apify em português curto, sem o JSON bruto. */
+function explicarFalhaApify(erro: unknown): string {
+  const msg = mensagemDe(erro);
+  if (/TIMED-OUT|timeout|tempo esgotado/i.test(msg))
+    return 'A busca no Google (Apify) demorou demais duas vezes. Use "Enriquecer de novo" mais tarde.';
+  if (/HTTP 402|usage|credit|limit/i.test(msg)) return 'Sem crédito no Apify para a busca no Google.';
+  if (/HTTP 401|HTTP 403|token/i.test(msg)) return 'APIFY_TOKEN recusado pelo Apify.';
+  return `Busca no Google falhou: ${msg.slice(0, 160)}`;
 }
 
 /**
@@ -395,80 +395,86 @@ export async function enriquecerEmpresa(
       await etapa('ia', 'pulada', `Sem GEMINI_API_KEY. ${motivo}`);
     }
 
-    // 6. LinkedIn: pessoas de compras e o sócio, só para leads que valem a busca.
+    // 6. LinkedIn: pessoas de compras/gestão e os sócios-administradores, só para leads que valem a
+    // busca. Perfil só entra se o próprio LinkedIn disser que a pessoa trabalha NESTA empresa:
+    // nome igual não basta (homônimos são comuns).
     if (ajustes.faixasLinkedin.has(faixa) && fontes.google) {
       const cargos = campanha.cargos_alvo.length ? campanha.cargos_alvo : CARGOS_PADRAO;
       const nomeBusca = empresa.nome.replace(/["]/g, '');
       const consultaEmpresa = `site:linkedin.com/in "${nomeBusca}" (${cargos.map((x) => `"${x}"`).join(' OR ')})`;
       const admins = socios.filter((s) => s.prioridade === 1).slice(0, 2);
-      const consultasSocios = admins.map(
-        (s) => `site:linkedin.com/in "${s.nome}" ${empresa.cidade.toLowerCase()}`,
-      );
+      const consultasSocios = admins.map((s) => `site:linkedin.com/in "${s.nome}" ${nomeBusca}`);
+      const palavras = palavrasDaEmpresa(empresa.nome, empresa.razao_social);
       try {
-        const r = await fontes.google.buscar([consultaEmpresa, ...consultasSocios]);
-        const fortes = palavrasFortes(empresa.nome);
-        let achadas = 0;
-        for (const res of r.get(consultaEmpresa) ?? []) {
-          const p = interpretarLinkedin(res);
-          if (!p) continue;
-          const texto = normalizarNome(`${p.empresa ?? ''} ${res.descricao}`);
-          if (fortes.length && !fortes.some((f) => texto.includes(f))) continue; // outra empresa com nome parecido
-          c.pessoa({
-            nome: p.nome,
-            cargo: p.cargo,
-            papel: papelPeloCargo(p.cargo),
-            linkedin: p.url,
-            fonte: 'linkedin',
-            urlOrigem: p.url,
-          });
-          c.contato({
-            canal: 'linkedin',
-            valor: p.url,
-            fonte: 'linkedin',
-            confianca: 70,
-            pessoa: p.nome,
-            urlOrigem: p.url,
-          });
-          achadas++;
-        }
-        admins.forEach((s, i) => {
-          const consulta = consultasSocios[i] ?? '';
-          const alvo = normalizarNome(s.nome).split(' ');
-          for (const res of r.get(consulta) ?? []) {
-            const p = interpretarLinkedin(res);
-            if (!p) continue;
-            const nome = normalizarNome(p.nome).split(' ');
-            // Primeiro e último nome do sócio precisam bater.
-            if (nome[0] !== alvo[0] || !nome.includes(alvo.at(-1) ?? '')) continue;
+        if (!palavras.length) {
+          // "Js Peças", "Auto Peças Salvador": nada no nome que diferencie de outras lojas.
+          await etapa(
+            'linkedin',
+            'pulada',
+            'Nome da empresa genérico demais para confirmar no LinkedIn quem trabalha nela.',
+          );
+        } else {
+          const r = await buscarComRetentativa(fontes.google, [consultaEmpresa, ...consultasSocios]);
+          let achadas = 0;
+          for (const p of pessoasDaEmpresa(r.get(consultaEmpresa) ?? [], palavras)) {
+            const papel = papelPeloCargo(p.cargo);
             c.pessoa({
-              nome: s.nome,
+              nome: p.nome,
               cargo: p.cargo,
-              fonte: 'linkedin',
+              papel,
               linkedin: p.url,
-              papel: 'socio',
+              fonte: 'linkedin',
               urlOrigem: p.url,
             });
             c.contato({
               canal: 'linkedin',
               valor: p.url,
               fonte: 'linkedin',
-              confianca: 75,
-              pessoa: s.nome,
+              confianca: 70,
+              pessoa: p.nome,
               urlOrigem: p.url,
             });
             achadas++;
-            break;
           }
-        });
-        await etapa(
-          'linkedin',
-          achadas ? 'encontrado' : 'sem_resultado',
-          achadas
-            ? `${achadas} perfil(is) de pessoas da empresa.`
-            : 'Nenhum perfil com cargo-alvo ou dos sócios.',
-        );
+          const homonimos: string[] = [];
+          admins.forEach((s, i) => {
+            const resultados = r.get(consultasSocios[i] ?? '') ?? [];
+            const perfil = perfilDoSocio(s.nome, resultados, palavras);
+            if (!perfil) {
+              if (resultados.some((x) => /linkedin\.com\/in\//.test(x.url))) homonimos.push(s.nome);
+              return;
+            }
+            c.pessoa({
+              nome: s.nome,
+              cargo: perfil.cargo,
+              fonte: 'linkedin',
+              linkedin: perfil.url,
+              papel: 'socio',
+              urlOrigem: perfil.url,
+            });
+            c.contato({
+              canal: 'linkedin',
+              valor: perfil.url,
+              fonte: 'linkedin',
+              confianca: 75,
+              pessoa: s.nome,
+              urlOrigem: perfil.url,
+            });
+            achadas++;
+          });
+          const aviso = homonimos.length
+            ? ` Perfis com o nome de ${homonimos.map((n) => n.split(' ')[0]).join(' e ')} não citam esta empresa: ignorados (podem ser homônimos).`
+            : '';
+          await etapa(
+            'linkedin',
+            achadas ? 'encontrado' : 'sem_resultado',
+            (achadas
+              ? `${achadas} perfil(is) de quem trabalha nesta empresa.`
+              : 'Nenhum perfil que cite esta empresa no emprego atual.') + aviso,
+          );
+        }
       } catch (erro) {
-        await etapa('linkedin', 'erro', mensagemDe(erro));
+        await etapa('linkedin', 'erro', explicarFalhaApify(erro));
       }
     } else {
       await etapa(

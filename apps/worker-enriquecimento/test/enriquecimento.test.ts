@@ -145,6 +145,11 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
             ]);
           else if (q.includes('"JOAO DA SILVA"'))
             m.set(q, [
+              // Homônimo em outra empresa vem primeiro: não pode ser ligado ao sócio.
+              resultado(
+                'João da Silva Caldas - Operador de Produção - Tronox | LinkedIn',
+                'https://br.linkedin.com/in/joaocaldas',
+              ),
               resultado(
                 'João da Silva - Sócio - Ladeira Auto Peças | LinkedIn',
                 'https://br.linkedin.com/in/joaodasilva',
