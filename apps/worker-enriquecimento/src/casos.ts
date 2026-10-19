@@ -620,6 +620,9 @@ export async function enriquecerEmpresa(
       const cargos = campanha.cargos_alvo.length ? campanha.cargos_alvo : CARGOS_PADRAO;
       const nomeBusca = empresa.nome.replace(/["]/g, '');
       const consultaEmpresa = `site:linkedin.com/in "${nomeBusca}" (${cargos.map((x) => `"${x}"`).join(' OR ')})`;
+      // Busca ampla, como uma pessoa digitaria: nome da loja + cidade no LinkedIn. Traz perfis
+      // sem o cargo no título e a página da empresa.
+      const consultaAmpla = `site:linkedin.com "${nomeBusca}" ${empresa.cidade.toLowerCase()}`;
       const admins = socios.filter((s) => s.prioridade === 1).slice(0, 2);
       const consultasSocios = admins.map((s) => `site:linkedin.com/in "${s.nome}" ${nomeBusca}`);
       const palavras = palavrasDaEmpresa(empresa.nome, empresa.razao_social);
@@ -632,11 +635,17 @@ export async function enriquecerEmpresa(
             'Nome da empresa genérico demais para confirmar no LinkedIn quem trabalha nela.',
           );
         } else {
-          const r = await buscarComRetentativa(fontes.google, [consultaEmpresa, ...consultasSocios]);
+          const r = await buscarComRetentativa(fontes.google, [
+            consultaEmpresa,
+            consultaAmpla,
+            ...consultasSocios,
+          ]);
           let achadas = 0;
           const aceitos: string[] = [];
           const urlsAceitas = new Set<string>();
-          for (const p of pessoasDaEmpresa(r.get(consultaEmpresa) ?? [], palavras)) {
+          const resultadosEmpresa = [...(r.get(consultaEmpresa) ?? []), ...(r.get(consultaAmpla) ?? [])];
+          for (const p of pessoasDaEmpresa(resultadosEmpresa, palavras)) {
+            if (urlsAceitas.has(p.url)) continue;
             urlsAceitas.add(p.url);
             aceitos.push(p.cargo ? `${p.nome} (${p.cargo})` : p.nome);
             const papel = papelPeloCargo(p.cargo);
@@ -682,6 +691,25 @@ export async function enriquecerEmpresa(
             urlsAceitas.add(perfil.url);
           });
           achadas = urlsAceitas.size;
+          // Página da empresa no LinkedIn (linkedin.com/company/…) com o nome da loja.
+          const paginaEmpresa = resultadosEmpresa.find((x) => {
+            if (!/linkedin\.com\/company\//i.test(x.url)) return false;
+            const t = `${x.titulo} ${x.url}`
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase();
+            return palavras.some((w) => t.includes(w));
+          });
+          if (paginaEmpresa)
+            c.contato({
+              canal: 'linkedin',
+              valor: paginaEmpresa.url.split('?')[0] ?? paginaEmpresa.url,
+              fonte: 'linkedin',
+              confianca: 70,
+              rotulo: 'Página da empresa no LinkedIn',
+              urlOrigem: paginaEmpresa.url,
+            });
+          const pagina = paginaEmpresa ? ' Página da empresa no LinkedIn encontrada.' : '';
           // Quantos perfis o Google trouxe no total: o que não entrou foi descartado de propósito.
           const vistos = new Set<string>();
           for (const lista of r.values())
@@ -695,11 +723,11 @@ export async function enriquecerEmpresa(
             'linkedin',
             achadas ? 'encontrado' : 'sem_resultado',
             achadas
-              ? `${achadas} de ${vistos.size} perfil(is) trabalham nesta empresa: ${aceitos.join(', ')}.${ignorados ? ` ${ignorados} ignorado(s): ${motivoIgnorados}.` : ''}`
+              ? `${achadas} de ${vistos.size} perfil(is) trabalham nesta empresa: ${aceitos.join(', ')}.${ignorados ? ` ${ignorados} ignorado(s): ${motivoIgnorados}.` : ''}${pagina}`
               : vistos.size
-                ? `O Google trouxe ${vistos.size} perfil(is), nenhum desta empresa: ${motivoIgnorados}.`
-                : 'Nenhum perfil do LinkedIn no Google para esta empresa e estes cargos.',
-            linkGoogle(consultaEmpresa),
+                ? `O Google trouxe ${vistos.size} perfil(is), nenhum desta empresa: ${motivoIgnorados}.${pagina}`
+                : `Nenhum perfil do LinkedIn no Google com o nome desta empresa.${pagina}`,
+            linkGoogle(consultaAmpla),
           );
         }
       } catch (erro) {
@@ -707,7 +735,7 @@ export async function enriquecerEmpresa(
           'linkedin',
           'erro',
           explicarFalhaBusca(erro, fontes.google.nome),
-          linkGoogle(consultaEmpresa),
+          linkGoogle(consultaAmpla),
         );
       }
     } else {

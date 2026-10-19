@@ -309,6 +309,8 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     // Sócio achado no LinkedIn ganha o perfil; empresa de nome parecido fica de fora.
     expect(pessoas[1]).toMatchObject({ linkedin_url: 'https://br.linkedin.com/in/joaodasilva' });
     expect(pessoas.some((p) => p.nome === 'Pedro Alves')).toBe(false);
+    // Além da busca por cargo, a busca ampla (nome da loja + cidade), como uma pessoa digitaria.
+    expect(consultas).toContain('site:linkedin.com "Ladeira Auto Peças" salvador');
     expect(pessoas.some((p) => p.nome === 'Emmanuel Junior')).toBe(false);
 
     const { rows: contatos } = await pool.query(

@@ -342,6 +342,15 @@ function hrefDoContato(canal, valor) {
   if (canal === 'telefone') return 'tel:+55' + soDigitos(valor);
   if (canal === 'email') return 'mailto:' + valor;
   if (/^https?:\/\//.test(valor)) return valor;
+  // "@loja" ou "instagram.com/loja": o link vai para o perfil, não para "https://@loja".
+  if (canal === 'instagram') {
+    var usuario = String(valor)
+      .replace(/^@/, '')
+      .replace(/^(www\.)?instagram\.com\//i, '')
+      .replace(/\/.*$/, '');
+    return 'https://www.instagram.com/' + usuario + '/';
+  }
+  if (canal === 'linkedin' && !/linkedin\.com/i.test(valor)) return 'https://www.linkedin.com/in/' + valor;
   return 'https://' + valor;
 }
 
