@@ -23,7 +23,8 @@ flowchart LR
   fila --> wc[worker-cnpj<br/>Railway]
   wc -- cnpj.importacao_concluida --> fila
   wd -- enriquecimento.solicitar --> fila
-  fila -. Fase 2 .-> we[worker-enriquecimento]
+  fila --> we[worker-enriquecimento<br/>Railway]
+  api -- enriquecimento.solicitar --> fila
   wd <--> apify[Apify<br/>Google Maps]
   wd <--> ors[OpenRouteService]
   wc <--> receita[Dados abertos<br/>CNPJ]
@@ -37,7 +38,8 @@ flowchart LR
 | `apps/api` | Login, cadastro de nichos, campanhas e bases; leitura dos leads | `cadastro` | — | `campanha.iniciar`, `cnpj.importar` |
 | `apps/worker-cnpj` | Importa todo mês a base de CNPJ filtrada por UF e CNAE | `base_cnpj` | `cnpj.importar` | `cnpj.importacao_concluida` |
 | `apps/worker-descoberta` | Base de CNPJ → empresas da campanha; buscas no Maps; cruzamento; localização e raio | `descoberta` | `campanha.*`, `maps.*`, `empresa.localizar`, `cnpj.importacao_concluida` | `enriquecimento.solicitar` |
-| `apps/web` | Interface: leads, ficha, campanhas, nichos, configurações | — | — | — |
+| `apps/worker-enriquecimento` | Quem decide e como falar com ele: Receita, Maps, site, Instagram, IA (nota A/B/C), LinkedIn, Places, WhatsApp | `enriquecimento` | `enriquecimento.solicitar` | — |
+| `apps/web` | Interface: leads, ficha, campanhas, nichos, base CNPJ, atividade | — | — | — |
 
 ### Regras
 
@@ -68,7 +70,25 @@ de produção leva só o `dist` e as dependências de terceiros daquele serviço
 3. Cada busca dispara um run no Apify e é conferida a cada 60 s até terminar.
 4. Cada lugar do Maps é **cruzado** com a base, nesta ordem de confiança: mesmo `place_id`, mesmo telefone, nome parecido no mesmo CEP, nome muito parecido na mesma cidade. Sem par, vira empresa nova (sem CNPJ). Nome ou categoria com palavra negativa do nicho é descartado.
 5. **Abrangência.** Por padrão a campanha é **nacional**: ninguém fica de fora por distância e nada é geocodificado. Se a campanha tiver **raio**, quem ainda não tem coordenada é geocodificado no ORS (com pausa para respeitar o limite gratuito) e a distância até a base mais próxima define se está na área.
-6. Leads na área, abertos, de campanha ativa vão para `enriquecimento.solicitar`, uma vez cada. Essa fila é consumida pelo `worker-enriquecimento` na Fase 2; até lá os jobs ficam guardados.
+6. Leads na área, abertos, de campanha ativa vão para `enriquecimento.solicitar`, uma vez cada.
+
+## Como o enriquecimento funciona
+
+Cascata por empresa, das fontes grátis para as que custam; cada etapa grava o que achou ou por que
+foi pulada (é a trilha "Como encontramos" da ficha), e a falha de uma fonte não derruba as outras.
+
+1. **Receita**: sócios (quem administra vem primeiro) e contatos cadastrados (e-mail de contador é marcado).
+2. **Google Maps**: telefone e site que a descoberta já trouxe.
+3. **Site**: home + até 3 páginas de contato/sobre: e-mails, telefones, botão de WhatsApp, Instagram, Facebook, LinkedIn e CNPJ no rodapé.
+4. **Instagram**: pelo link do site ou, se não houver, procurado no Google; bio, WhatsApp e contato comercial.
+5. **Nota (Gemini)**: faixa A/B/C, score e o motivo, mais pessoas citadas no site. Sem chave, nota por regras.
+6. **LinkedIn** (só A e B): pessoas com os cargos-alvo do nicho e o perfil dos sócios-administradores, via busca no Google.
+7. **Google Places** (só A e B, opcional): a loja segue aberta?
+8. **WhatsApp** (Evolution API): quais telefones têm WhatsApp. Só consulta, não envia nada.
+
+Decisor: quem cuida de compras, se aparecer; senão quem administra na Receita; senão um gestor citado.
+Melhor contato: WhatsApp confirmado > WhatsApp do site/Instagram > telefone do Google > e-mail de compras.
+A mesma empresa não é refeita antes de `ENRIQ_REFAZER_DIAS` (o botão "Enriquecer de novo" força).
 
 ## Rodar localmente
 
@@ -122,6 +142,7 @@ A variável `SERVICO` escolhe o que a imagem empacota.
 | api | `api` | `node dist/migrar.js` | `/saude` | `APP_ORIGENS`, `JWT_SEGREDO`, `ADMIN_EMAIL`, `ADMIN_SENHA_HASH`, `ORS_API_KEY` (opcional) |
 | worker-descoberta | `worker-descoberta` | — | — | `APIFY_TOKEN`; opcionais: `ORS_API_KEY` (campanhas com raio) e ajustes (ver `.env.example`) |
 | worker-cnpj | `worker-cnpj` | — | — | opcionais: `CNPJ_UFS_EXTRAS`, `CNPJ_AGENDA` |
+| worker-enriquecimento | `worker-enriquecimento` | — | — | opcionais: `APIFY_TOKEN`, `GEMINI_API_KEY`, `EVOLUTION_URL` + `EVOLUTION_API_KEY` + `EVOLUTION_INSTANCIA`, `GOOGLE_PLACES_KEY` |
 
 - As migrations rodam só no pre-deploy da `api`, antes da nova versão subir. Os workers não migram.
 - Em "Watch paths", limite cada serviço a `apps/<serviço>/**`, `packages/**` e `pnpm-lock.yaml`, para um deploy não reiniciar os outros.
@@ -150,7 +171,7 @@ Depois, coloque o domínio do Vercel em `APP_ORIGENS` da api.
 
 ## Próximas fases
 
-- **Fase 2 · `worker-enriquecimento`:** consome `enriquecimento.solicitar`; contatos em camadas (QSA, site, Instagram, LinkedIn, Receita), validação de WhatsApp na Evolution API, Places API para validar leads A e B, score de ICP com Gemini. Schema próprio: `enriquecimento`.
+- **Fase 2b:** base paga para o celular do sócio (Direct Data, ~R$ 0,32/lead), plugada atrás de um teto diário e só para A/B.
 - **Fase 3 · CRM:** funil, ficha completa, inbox de WhatsApp em tempo real.
 - **Fase 4 · `worker-cadencia`:** cadências automáticas e proteção do chip.
 - **Fase 5:** IA nas respostas e painel.

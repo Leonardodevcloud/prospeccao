@@ -659,3 +659,26 @@ fieldset.campo {
   font-size: 13px;
   color: var(--ink-muted);
 }
+
+/* Leads: células com duas linhas */
+.celula-dupla {
+  display: grid;
+  font-size: 14px;
+  line-height: 20px;
+}
+.celula-dupla .quieto {
+  font-size: 12px;
+  line-height: 16px;
+}
+.contato-celula {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.celula-selos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}

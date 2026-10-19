@@ -1,0 +1,204 @@
+import { requisitarJson } from '../http.js';
+
+/* ---------------- WhatsApp (Evolution API) ---------------- */
+
+export interface ConfigEvolution {
+  url: string;
+  apiKey: string;
+  instancia: string;
+}
+
+/**
+ * Confere quais números têm WhatsApp, pelo chip conectado na Evolution API. Só consulta:
+ * não envia mensagem. Devolve um mapa número (DDD + número) → tem WhatsApp.
+ */
+export async function verificarWhatsapp(
+  cfg: ConfigEvolution,
+  numeros: string[],
+): Promise<Map<string, boolean>> {
+  const saida = new Map<string, boolean>();
+  if (!numeros.length) return saida;
+  const resposta = await requisitarJson<{ exists?: boolean; number?: string; jid?: string }[]>(
+    `${cfg.url.replace(/\/$/, '')}/chat/whatsappNumbers/${encodeURIComponent(cfg.instancia)}`,
+    {
+      servico: 'Evolution API',
+      method: 'POST',
+      headers: { apikey: cfg.apiKey },
+      body: { numbers: numeros.map((n) => `55${n}`) },
+      timeoutMs: 30_000,
+    },
+  );
+  for (const r of resposta) {
+    const digitos = (r.number ?? r.jid ?? '').replace(/\D/g, '').replace(/^55/, '');
+    const original = numeros.find((n) => digitos.endsWith(n.slice(-8)) && digitos.startsWith(n.slice(0, 2)));
+    if (original) saida.set(original, r.exists === true);
+  }
+  return saida;
+}
+
+/* ---------------- Google Places (validação) ---------------- */
+
+export interface ConfigPlaces {
+  apiKey: string;
+}
+
+export interface DetalhesPlaces {
+  aberto: boolean | null;
+  telefone: string | null;
+  site: string | null;
+  nota: number | null;
+  avaliacoes: number | null;
+}
+
+export async function detalhesDoLugar(cfg: ConfigPlaces, placeId: string): Promise<DetalhesPlaces> {
+  const r = await requisitarJson<{
+    businessStatus?: string;
+    nationalPhoneNumber?: string;
+    websiteUri?: string;
+    rating?: number;
+    userRatingCount?: number;
+  }>(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+    servico: 'Google Places',
+    headers: {
+      'X-Goog-Api-Key': cfg.apiKey,
+      'X-Goog-FieldMask': 'businessStatus,nationalPhoneNumber,websiteUri,rating,userRatingCount',
+    },
+  });
+  return {
+    aberto: r.businessStatus ? r.businessStatus === 'OPERATIONAL' : null,
+    telefone: r.nationalPhoneNumber ?? null,
+    site: r.websiteUri ?? null,
+    nota: r.rating ?? null,
+    avaliacoes: r.userRatingCount ?? null,
+  };
+}
+
+/* ---------------- Gemini ---------------- */
+
+export interface ConfigGemini {
+  apiKey: string;
+  modelo: string;
+}
+
+export interface EntradaAvaliacao {
+  nicho: string;
+  empresa: {
+    nome: string;
+    razaoSocial: string | null;
+    cidade: string;
+    uf: string;
+    porte: string | null;
+    abertaHaAnos: number | null;
+    categoriaMaps: string | null;
+    notaMaps: number | null;
+    avaliacoesMaps: number | null;
+    sinalEntregaMaps: boolean | null;
+    temSite: boolean;
+    temInstagram: boolean;
+    seguidoresInstagram: number | null;
+  };
+  socios: { nome: string; qualificacao: string }[];
+  cargosAlvo: string[];
+  textoSite: string | null;
+  bioInstagram: string | null;
+}
+
+export interface AvaliacaoIa {
+  faixa: 'A' | 'B' | 'C';
+  score: number;
+  motivo: string;
+  resumo: string;
+  entrega: boolean | null;
+  pessoas: { nome: string; cargo: string | null; papel: 'socio' | 'compras' | 'gestao' | 'outro' }[];
+}
+
+const ESQUEMA = {
+  type: 'OBJECT',
+  properties: {
+    faixa: { type: 'STRING', enum: ['A', 'B', 'C'] },
+    score: { type: 'INTEGER' },
+    motivo: { type: 'STRING' },
+    resumo: { type: 'STRING' },
+    entrega: { type: 'BOOLEAN', nullable: true },
+    pessoas: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          nome: { type: 'STRING' },
+          cargo: { type: 'STRING', nullable: true },
+          papel: { type: 'STRING', enum: ['socio', 'compras', 'gestao', 'outro'] },
+        },
+        required: ['nome', 'papel'],
+      },
+    },
+  },
+  required: ['faixa', 'score', 'motivo', 'resumo', 'pessoas'],
+};
+
+export function montarPrompt(e: EntradaAvaliacao): string {
+  return [
+    'Você qualifica empresas para a Central Tutts, que vende entregas de última milha por motoboy (B2B).',
+    `Nicho da campanha: ${e.nicho}. Cliente ideal: faz ou quer fazer entregas locais com frequência, tem movimento (avaliações no Google, Instagram ativo), porte pequeno a médio, já estabelecida.`,
+    'Responda em português, em JSON, com:',
+    '- faixa: A (prioridade alta, abordar já), B (vale abordar), C (baixa prioridade ou fora do perfil);',
+    '- score: 0 a 100, coerente com a faixa (A ≥ 70, B 40–69, C < 40);',
+    '- motivo: uma frase objetiva com os sinais que pesaram (ex.: "faz entrega pelo WhatsApp, 380 avaliações, 12 anos");',
+    '- resumo: uma frase dizendo o que a empresa faz;',
+    '- entrega: true se o site/Instagram indicar que entrega, false se indicar que não, null se não der para saber;',
+    '- pessoas: só nomes de pessoas citadas no site/Instagram com o cargo (não invente; não repita os sócios).',
+    `Cargos que mais interessam: ${e.cargosAlvo.join(', ') || 'dono, sócio, gerente, comprador'}.`,
+    '',
+    'DADOS DA EMPRESA',
+    JSON.stringify(e.empresa),
+    `Sócios (Receita): ${e.socios.map((s) => `${s.nome} (${s.qualificacao})`).join('; ') || 'não informado'}`,
+    '',
+    `BIO DO INSTAGRAM: ${e.bioInstagram ?? 'sem Instagram'}`,
+    '',
+    'TEXTO DO SITE (pode estar cortado):',
+    e.textoSite ?? 'sem site',
+  ].join('\n');
+}
+
+export async function avaliarComGemini(cfg: ConfigGemini, entrada: EntradaAvaliacao): Promise<AvaliacaoIa> {
+  const r = await requisitarJson<{
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+  }>(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`,
+    {
+      servico: 'Gemini',
+      method: 'POST',
+      headers: { 'x-goog-api-key': cfg.apiKey },
+      body: {
+        contents: [{ role: 'user', parts: [{ text: montarPrompt(entrada) }] }],
+        generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: ESQUEMA },
+      },
+      timeoutMs: 60_000,
+    },
+  );
+  const texto = r.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  return lerAvaliacao(texto);
+}
+
+/** Valida a resposta da IA: nota fora da faixa ou campos faltando não passam adiante. */
+export function lerAvaliacao(texto: string): AvaliacaoIa {
+  const j = JSON.parse(texto) as Partial<AvaliacaoIa>;
+  const faixa = j.faixa === 'A' || j.faixa === 'B' || j.faixa === 'C' ? j.faixa : 'C';
+  const score = Math.max(0, Math.min(100, Math.round(Number(j.score) || 0)));
+  const papeis = new Set(['socio', 'compras', 'gestao', 'outro']);
+  return {
+    faixa,
+    score,
+    motivo: String(j.motivo ?? '').slice(0, 300),
+    resumo: String(j.resumo ?? '').slice(0, 300),
+    entrega: typeof j.entrega === 'boolean' ? j.entrega : null,
+    pessoas: (Array.isArray(j.pessoas) ? j.pessoas : [])
+      .filter((p) => p && typeof p.nome === 'string' && p.nome.trim().split(' ').length >= 2)
+      .slice(0, 10)
+      .map((p) => ({
+        nome: p.nome.trim(),
+        cargo: p.cargo?.trim() || null,
+        papel: papeis.has(p.papel) ? p.papel : 'outro',
+      })),
+  };
+}

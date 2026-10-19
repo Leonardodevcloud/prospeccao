@@ -121,6 +121,83 @@ export interface EmpresaLista {
   origem: 'cnpj' | 'maps' | 'ambos';
   dentroDoRaio: boolean | null;
   campanhaId: number;
+  /** Enriquecimento: null enquanto não rodou. */
+  enriqStatus: 'na_fila' | 'rodando' | 'concluido' | 'erro' | null;
+  faixa: 'A' | 'B' | 'C' | null;
+  score: number | null;
+  motivo: string | null;
+  decisorNome: string | null;
+  decisorCargo: string | null;
+  contatoCanal: CanalContato | null;
+  contatoValor: string | null;
+  contatoStatus: StatusContato | null;
+}
+
+export type CanalContato = 'whatsapp' | 'telefone' | 'email' | 'instagram' | 'linkedin' | 'site' | 'facebook';
+export type StatusContato = 'verificado' | 'nao_verificado' | 'atencao' | 'invalido';
+export type FonteEnriq =
+  | 'receita'
+  | 'maps'
+  | 'site'
+  | 'instagram'
+  | 'linkedin'
+  | 'google'
+  | 'ia'
+  | 'places'
+  | 'manual';
+
+export interface PessoaEnriq {
+  id: number;
+  nome: string;
+  cargo: string | null;
+  papel: 'socio' | 'compras' | 'gestao' | 'outro';
+  decisor: boolean;
+  prioridade: number;
+  desde: string | null;
+  linkedin: string | null;
+  fontes: FonteEnriq[];
+}
+
+export interface ContatoEnriq {
+  id: number;
+  pessoaId: number | null;
+  canal: CanalContato;
+  valor: string;
+  rotulo: string | null;
+  fonte: FonteEnriq;
+  fontes: FonteEnriq[];
+  urlOrigem: string | null;
+  confianca: number;
+  status: StatusContato;
+  whatsapp: boolean | null;
+  principal: boolean;
+}
+
+export interface EtapaEnriq {
+  etapa: 'receita' | 'maps' | 'site' | 'instagram' | 'ia' | 'linkedin' | 'places' | 'whatsapp';
+  status: 'encontrado' | 'sem_resultado' | 'pulada' | 'erro';
+  detalhe: string | null;
+  url: string | null;
+  em: string;
+}
+
+export interface Enriquecimento {
+  status: 'na_fila' | 'rodando' | 'concluido' | 'erro';
+  faixa: 'A' | 'B' | 'C' | null;
+  score: number | null;
+  motivo: string | null;
+  resumo: string | null;
+  entrega: boolean | null;
+  cnpjAchado: string | null;
+  site: string | null;
+  instagram: string | null;
+  facebook: string | null;
+  linkedinEmpresa: string | null;
+  mapsAberto: boolean | null;
+  erro: string | null;
+  solicitadoEm: string;
+  iniciadoEm: string | null;
+  concluidoEm: string | null;
 }
 
 export interface Socio {
@@ -156,8 +233,13 @@ export interface EmpresaDetalhe extends EmpresaLista {
     origem: string;
     dentroDoRaio: boolean | null;
     enriquecimentoSolicitadoEm: string | null;
+    adicionadaEm: string;
   }[];
   cruzamento: { tipo: string; similaridade: number | null } | null;
+  enriquecimento: Enriquecimento | null;
+  pessoas: PessoaEnriq[];
+  contatos: ContatoEnriq[];
+  etapas: EtapaEnriq[];
 }
 
 export interface Pagina<T> {

@@ -1,24 +1,47 @@
-import { Badge, Button, ContactStatus, EmptyState, Icon, Tabs, TextField } from '@prospeccao/ui';
+import { Badge, Button, ContactStatus, EmptyState, Icon, ScoreBadge, Tabs, TextField } from '@prospeccao/ui';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { api, type Campanha, type EmpresaLista, type Pagina, qs } from '../api';
+import { api, type Campanha, type EmpresaLista, type Pagina, qs, type StatusContato } from '../api';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi } from '../componentes/Formulario';
 import { fmtCidade, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO_ORIGEM } from '../formatar';
 
 const ABAS = [
   { id: 'todos', rotulo: 'Todos' },
+  { id: 'A', rotulo: 'Nota A' },
+  { id: 'B', rotulo: 'Nota B' },
+  { id: 'whatsapp', rotulo: 'Com WhatsApp' },
   { id: 'entrega', rotulo: 'Com entrega' },
-  { id: 'maps', rotulo: 'Só no Maps' },
+  { id: 'pendente', rotulo: 'Aguardando enriquecimento' },
 ];
 
 const POR_PAGINA = 50;
 
-function telefonePrincipal(e: EmpresaLista): { valor: string; fonte: 'Maps' | 'Receita' } | null {
-  if (e.mapsTelefone) return { valor: e.mapsTelefone, fonte: 'Maps' };
+const ICONE_CANAL: Record<string, string> = {
+  whatsapp: 'message-circle',
+  telefone: 'phone',
+  email: 'mail',
+  instagram: 'camera',
+  linkedin: 'id-card',
+  site: 'globe',
+  facebook: 'globe',
+};
+
+/** Melhor contato: o escolhido pelo enriquecimento; antes dele, o telefone do Google ou da Receita. */
+function melhorContato(e: EmpresaLista): { canal: string; valor: string; status: StatusContato } | null {
+  if (e.contatoCanal && e.contatoValor) {
+    const fone = e.contatoCanal === 'whatsapp' || e.contatoCanal === 'telefone';
+    return {
+      canal: e.contatoCanal,
+      valor: fone ? formatarTelefone(e.contatoValor) : e.contatoValor,
+      status: e.contatoStatus ?? 'nao_verificado',
+    };
+  }
+  if (e.mapsTelefone)
+    return { canal: 'telefone', valor: formatarTelefone(e.mapsTelefone), status: 'nao_verificado' };
   const t = e.telefonesReceita[0];
-  return t ? { valor: t, fonte: 'Receita' } : null;
+  return t ? { canal: 'telefone', valor: formatarTelefone(t), status: 'atencao' } : null;
 }
 
 export function Leads() {
@@ -26,7 +49,7 @@ export function Leads() {
   const navegar = useNavigate();
   const aba = params.get('aba') ?? 'todos';
   const campanhaId = params.get('campanhaId') ?? '';
-  const ordem = params.get('ordem') ?? 'avaliacoes';
+  const ordem = params.get('ordem') ?? 'nota';
   const pagina = Number(params.get('pagina') ?? '1');
   const empresaAberta = params.get('empresa');
   const [busca, setBusca] = useState(params.get('busca') ?? '');
@@ -55,12 +78,18 @@ export function Leads() {
     pagina,
     porPagina: POR_PAGINA,
     entrega: aba === 'entrega' ? true : undefined,
-    origem: aba === 'maps' ? 'maps' : undefined,
+    faixa: aba === 'A' || aba === 'B' || aba === 'pendente' ? aba : undefined,
+    comWhatsapp: aba === 'whatsapp' ? true : undefined,
   };
   const empresas = useQuery({
     queryKey: ['empresas', filtros],
     queryFn: () => api<Pagina<EmpresaLista>>(`/empresas${qs(filtros)}`),
     placeholderData: keepPreviousData,
+    // Enquanto há leads na fila do enriquecimento, a lista se atualiza sozinha.
+    refetchInterval: (q) =>
+      q.state.data?.itens.some((e) => e.enriqStatus !== 'concluido' && e.enriqStatus !== 'erro')
+        ? 15_000
+        : false,
   });
 
   const total = empresas.data?.total ?? 0;
@@ -104,6 +133,7 @@ export function Leads() {
             value={ordem}
             onChange={(e) => mudar({ ordem: e.target.value })}
           >
+            <option value="nota">Maior nota</option>
             <option value="avaliacoes">Mais avaliados no Google</option>
             <option value="recentes">Encontrados por último</option>
             <option value="nome">Nome</option>
@@ -177,15 +207,15 @@ export function Leads() {
               <thead>
                 <tr>
                   <th>Empresa</th>
-                  <th>Origem</th>
+                  <th>Nota</th>
+                  <th>Quem decide</th>
+                  <th>Melhor contato</th>
                   <th>Google</th>
-                  <th>Telefone</th>
-                  <th>Entrega</th>
                 </tr>
               </thead>
               <tbody>
                 {empresas.data?.itens.map((e) => {
-                  const tel = telefonePrincipal(e);
+                  const contato = melhorContato(e);
                   const aberta = empresaAberta === String(e.id);
                   return (
                     <tr
@@ -211,10 +241,39 @@ export function Leads() {
                           </span>
                         </button>
                       </td>
+                      <td title={e.motivo ?? undefined}>
+                        {e.faixa ? (
+                          <ScoreBadge faixa={e.faixa} score={e.score ?? undefined} />
+                        ) : e.enriqStatus === 'rodando' ? (
+                          <Badge tone="warning">Enriquecendo</Badge>
+                        ) : e.enriqStatus === 'erro' ? (
+                          <Badge tone="danger">Erro</Badge>
+                        ) : (
+                          <span className="quieto" style={{ fontSize: 13 }}>
+                            Na fila
+                          </span>
+                        )}
+                      </td>
                       <td>
-                        <Badge tone={e.origem === 'ambos' ? 'brand' : 'neutral'}>
-                          {ROTULO_ORIGEM[e.origem]}
-                        </Badge>
+                        {e.decisorNome ? (
+                          <span className="celula-dupla">
+                            <span>{fmtNome(e.decisorNome)}</span>
+                            {e.decisorCargo && <span className="quieto">{e.decisorCargo}</span>}
+                          </span>
+                        ) : (
+                          <span className="quieto">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {contato ? (
+                          <span className="contato-celula">
+                            <Icon name={ICONE_CANAL[contato.canal] ?? 'phone'} size={14} />
+                            <span className="mono">{contato.valor}</span>
+                            <ContactStatus status={contato.status} compact />
+                          </span>
+                        ) : (
+                          <span className="quieto">Sem contato</span>
+                        )}
                       </td>
                       <td>
                         {e.mapsAvaliacoes != null ? (
@@ -225,27 +284,15 @@ export function Leads() {
                         ) : (
                           <span className="quieto">—</span>
                         )}
-                      </td>
-                      <td>
-                        {tel ? (
-                          <span className="mono" title={`Fonte: ${tel.fonte}`}>
-                            {formatarTelefone(tel.valor)}{' '}
-                            <ContactStatus
-                              status={tel.fonte === 'Receita' ? 'atencao' : 'nao_verificado'}
-                              compact
-                            />
+                        {(e.sinalEntrega || e.origem === 'maps') && (
+                          <span className="celula-selos">
+                            {e.sinalEntrega && (
+                              <Badge tone="brand" icon="package">
+                                Entrega
+                              </Badge>
+                            )}
+                            {e.origem === 'maps' && <Badge tone="neutral">{ROTULO_ORIGEM[e.origem]}</Badge>}
                           </span>
-                        ) : (
-                          <span className="quieto">Sem telefone</span>
-                        )}
-                      </td>
-                      <td>
-                        {e.sinalEntrega ? (
-                          <Badge tone="brand" icon="package">
-                            Entrega
-                          </Badge>
-                        ) : (
-                          <span className="quieto">—</span>
                         )}
                       </td>
                     </tr>

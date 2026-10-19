@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./apify": "./src/apify/index.ts",
     "./ors": "./src/ors/index.ts",
-    "./receita": "./src/receita/index.ts"
+    "./receita": "./src/receita/index.ts",
+    "./enriquecimento": "./src/enriquecimento/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

@@ -1,4 +1,4 @@
-import type { Camada, ContactRowProps, DataFieldItem } from '@prospeccao/ui';
+import type { Camada, ContactRowProps, DataFieldItem, Fonte } from '@prospeccao/ui';
 import {
   Button,
   ContactRow,
@@ -8,12 +8,20 @@ import {
   LeadHeader,
   Panel,
 } from '@prospeccao/ui';
-import { useQuery } from '@tanstack/react-query';
-import { api, type EmpresaDetalhe } from '../api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import {
+  api,
+  type ContatoEnriq,
+  type EmpresaDetalhe,
+  type EtapaEnriq,
+  type FonteEnriq,
+  type PessoaEnriq,
+} from '../api';
 import {
   fmtCidade,
   fmtData,
-  fmtKm,
+  fmtHora,
   fmtNome,
   fmtNota,
   fmtNumero,
@@ -32,7 +40,75 @@ const PORTE: Record<string, string> = {
   nao_informado: 'Não informado',
 };
 
-function contatosDaEmpresa(e: EmpresaDetalhe): ContactRowProps[] {
+/** Fonte do enriquecimento → selo do design system. */
+const FONTE: Record<FonteEnriq, Fonte> = {
+  receita: 'qsa',
+  maps: 'maps',
+  site: 'site',
+  instagram: 'instagram',
+  linkedin: 'linkedin',
+  google: 'site',
+  ia: 'ia',
+  places: 'places',
+  manual: 'manual',
+};
+
+const NOME_FONTE: Record<FonteEnriq, string> = {
+  receita: 'Receita',
+  maps: 'Google Maps',
+  site: 'site',
+  instagram: 'Instagram',
+  linkedin: 'LinkedIn',
+  google: 'Google',
+  ia: 'IA',
+  places: 'Google',
+  manual: 'cadastro manual',
+};
+
+const NOME_ETAPA: Record<EtapaEnriq['etapa'], string> = {
+  receita: 'Quadro de sócios (Receita)',
+  maps: 'Google Maps',
+  site: 'Site da empresa',
+  instagram: 'Instagram',
+  ia: 'Nota da IA',
+  linkedin: 'LinkedIn',
+  places: 'Validação no Google',
+  whatsapp: 'WhatsApp',
+};
+
+const PAPEL: Record<PessoaEnriq['papel'], string> = {
+  socio: 'Sócio',
+  compras: 'Compras',
+  gestao: 'Gestão',
+  outro: '',
+};
+
+function paraContactRow(c: ContatoEnriq): ContactRowProps {
+  const fone = c.canal === 'whatsapp' || c.canal === 'telefone';
+  const valor = fone
+    ? formatarTelefone(c.valor)
+    : c.canal === 'site' || c.canal === 'facebook'
+      ? c.valor.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')
+      : c.canal === 'instagram'
+        ? (c.rotulo ?? c.valor)
+        : c.canal === 'linkedin'
+          ? c.valor.replace(/^https?:\/\/([a-z]{2}\.)?(www\.)?/, '')
+          : c.valor;
+  const vistoEm = c.fontes.length > 1 ? `Visto em: ${c.fontes.map((f) => NOME_FONTE[f]).join(', ')}` : null;
+  return {
+    canal: c.canal === 'facebook' ? 'site' : c.canal,
+    valor,
+    rotulo:
+      [c.canal === 'facebook' ? 'Facebook' : c.rotulo, vistoEm].filter(Boolean).join(' · ') ||
+      NOME_FONTE[c.fonte],
+    status: c.status,
+    fonte: FONTE[c.fonte],
+    principal: c.principal,
+  };
+}
+
+/** Antes do enriquecimento: contatos que a descoberta já trouxe (Google e Receita). */
+function contatosDaDescoberta(e: EmpresaDetalhe): ContactRowProps[] {
   const contatos: ContactRowProps[] = [];
   if (e.mapsTelefone) {
     contatos.push({
@@ -62,7 +138,7 @@ function contatosDaEmpresa(e: EmpresaDetalhe): ContactRowProps[] {
       fonte: 'receita',
     });
   }
-  if (e.mapsSite)
+  if (e.mapsSite) {
     contatos.push({
       canal: 'site',
       valor: e.mapsSite.replace(/^https?:\/\//, ''),
@@ -70,12 +146,12 @@ function contatosDaEmpresa(e: EmpresaDetalhe): ContactRowProps[] {
       status: 'nao_verificado',
       fonte: 'maps',
     });
+  }
   return contatos;
 }
 
 function trilha(e: EmpresaDetalhe): Camada[] {
-  const camadas: Camada[] = [];
-  camadas.push(
+  const camadas: Camada[] = [
     e.cnpj
       ? {
           nome: 'Base de CNPJ',
@@ -89,8 +165,6 @@ function trilha(e: EmpresaDetalhe): Camada[] {
           fonte: 'cnpj',
           detalhe: 'Não está na base filtrada pelo nicho e pelas cidades da campanha.',
         },
-  );
-  camadas.push(
     e.placeId
       ? {
           nome: 'Google Maps',
@@ -104,39 +178,34 @@ function trilha(e: EmpresaDetalhe): Camada[] {
           nome: 'Google Maps',
           status: 'sem_resultado',
           fonte: 'maps',
-          detalhe: 'Não apareceu nas buscas do Maps desta campanha.',
+          detalhe: 'Não apareceu nas buscas do Maps.',
         },
-  );
-  camadas.push(
-    e.lat != null
-      ? {
-          nome: 'Localização',
-          status: 'encontrado',
-          detalhe: `Coordenadas ${e.geoFonte === 'maps' ? 'do Google Maps' : 'pelo endereço da Receita'}${e.baseNome ? `; ${fmtKm(e.distanciaBaseKm)} da ${e.baseNome}` : ''}.`,
-        }
-      : {
-          nome: 'Localização',
-          status: 'sem_resultado',
-          detalhe: 'Sem coordenada no mapa.',
-        },
-  );
-  const solicitado = e.campanhas.find((c) => c.enriquecimentoSolicitadoEm);
-  const foraDoRaio = e.campanhas.every((c) => c.dentroDoRaio === false);
-  camadas.push(
-    solicitado
-      ? {
-          nome: 'Contatos do decisor',
-          status: 'em_andamento',
-          detalhe: 'Na fila do enriquecimento (Fase 2: site, Instagram, LinkedIn e validação de WhatsApp).',
-        }
-      : {
-          nome: 'Contatos do decisor',
-          status: 'pulada',
-          detalhe: foraDoRaio
-            ? 'Fora do raio da campanha: não será enriquecido.'
+  ];
+  for (const et of e.etapas) {
+    if (et.etapa === 'maps') continue;
+    camadas.push({
+      nome: NOME_ETAPA[et.etapa],
+      status: et.status,
+      fonte:
+        et.etapa === 'whatsapp'
+          ? undefined
+          : FONTE[et.etapa === 'receita' ? 'receita' : (et.etapa as FonteEnriq)],
+      detalhe: et.detalhe ?? undefined,
+    });
+  }
+  const st = e.enriquecimento?.status;
+  if (!e.etapas.length || st === 'rodando' || st === 'na_fila') {
+    camadas.push({
+      nome: 'Contatos do decisor',
+      status: st === 'rodando' ? 'em_andamento' : 'pulada',
+      detalhe:
+        st === 'rodando'
+          ? 'Buscando agora: site, Instagram, LinkedIn e WhatsApp.'
+          : e.campanhas.some((c) => c.enriquecimentoSolicitadoEm)
+            ? 'Na fila do enriquecimento.'
             : 'Ainda não enviado: a campanha precisa estar ativa.',
-        },
-  );
+    });
+  }
   return camadas;
 }
 
@@ -144,8 +213,12 @@ function dados(e: EmpresaDetalhe): DataFieldItem[] {
   const endereco =
     e.mapsEndereco ??
     [e.logradouro, e.numero, e.bairro, fmtCidade(e.cidade), e.uf, e.cep].filter(Boolean).join(', ');
+  const en = e.enriquecimento;
   return [
     { rotulo: 'CNPJ', valor: e.cnpj ? formatarCnpj(e.cnpj) : null, mono: true, fonte: 'cnpj' },
+    ...(en?.cnpjAchado && !e.cnpj
+      ? [{ rotulo: 'CNPJ achado', valor: formatarCnpj(en.cnpjAchado), mono: true, fonte: 'site' as Fonte }]
+      : []),
     { rotulo: 'Razão social', valor: e.razaoSocial, fonte: 'cnpj' },
     {
       rotulo: 'CNAE principal',
@@ -164,20 +237,110 @@ function dados(e: EmpresaDetalhe): DataFieldItem[] {
       fonte: 'maps',
     },
     { rotulo: 'Categoria no Maps', valor: e.mapsCategoria, fonte: 'maps' },
-    {
-      rotulo: 'Distância da base',
-      valor:
-        e.distanciaBaseKm != null
-          ? `${fmtKm(e.distanciaBaseKm)}${e.baseNome ? ` · ${e.baseNome}` : ''}`
-          : null,
-    },
+    ...(en?.resumo ? [{ rotulo: 'O que faz', valor: en.resumo, largo: true, fonte: 'ia' as Fonte }] : []),
     { rotulo: 'Endereço', valor: endereco || null, largo: true, fonte: e.mapsEndereco ? 'maps' : 'cnpj' },
   ];
 }
 
+function QuemDecide({ e }: { e: EmpresaDetalhe }) {
+  const [todos, setTodos] = useState(false);
+  const daEmpresa = e.contatos.filter((c) => c.pessoaId == null);
+  // Contatos que valem para falar com o decisor: o principal e os WhatsApp confirmados da empresa.
+  const melhores = daEmpresa
+    .filter((c) => c.principal || (c.canal === 'whatsapp' && c.status === 'verificado'))
+    .slice(0, 2)
+    .map(paraContactRow);
+
+  if (e.pessoas.length) {
+    const visiveis = todos ? e.pessoas : e.pessoas.slice(0, 3);
+    return (
+      <div className="pilha">
+        {visiveis.map((p) => {
+          const proprios = e.contatos
+            .filter((c) => c.pessoaId === p.id && c.canal !== 'linkedin')
+            .map(paraContactRow);
+          return (
+            <DecisorCard
+              key={p.id}
+              nome={fmtNome(p.nome)}
+              cargo={
+                [p.cargo, p.papel === 'compras' && !/compr/i.test(p.cargo ?? '') ? PAPEL.compras : null]
+                  .filter(Boolean)
+                  .join(' · ') ||
+                PAPEL[p.papel] ||
+                undefined
+              }
+              desde={p.desde?.slice(0, 4)}
+              principal={p.decisor}
+              fontes={[...new Set(p.fontes.map((f) => FONTE[f]))]}
+              linkedin={p.linkedin}
+              contatos={p.decisor ? [...proprios, ...melhores] : proprios}
+            />
+          );
+        })}
+        {e.pessoas.length > 3 && (
+          <Button variant="ghost" size="sm" onClick={() => setTodos(!todos)}>
+            {todos ? 'Mostrar menos' : `Ver mais ${e.pessoas.length - 3} pessoa(s)`}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (e.socios.length) {
+    return (
+      <div className="pilha">
+        {e.socios.map((s, i) => (
+          <DecisorCard
+            key={`${s.nome}-${s.dataEntrada ?? ''}`}
+            nome={fmtNome(s.nome)}
+            cargo={s.qualificacao}
+            desde={s.dataEntrada?.slice(0, 4)}
+            principal={i === 0 && s.prioridade === 1}
+            fontes={['qsa']}
+            contatos={[]}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <Mensagem tipo="aviso">
+      {e.cnpj
+        ? 'A Receita não lista sócios para este CNPJ e o enriquecimento ainda não achou um responsável.'
+        : 'Empresa achada só no Google Maps, sem CNPJ: o responsável vem do site, do Instagram e do LinkedIn.'}
+    </Mensagem>
+  );
+}
+
 export function FichaEmpresa({ id, aoFechar }: { id: number; aoFechar: () => void }) {
-  const q = useQuery({ queryKey: ['empresa', id], queryFn: () => api<EmpresaDetalhe>(`/empresas/${id}`) });
+  const cliente = useQueryClient();
+  const q = useQuery({
+    queryKey: ['empresa', id],
+    queryFn: () => api<EmpresaDetalhe>(`/empresas/${id}`),
+    // Enquanto o enriquecimento roda, a ficha se atualiza sozinha.
+    refetchInterval: (r) => {
+      const st = r.state.data?.enriquecimento?.status;
+      return st === 'rodando' || st === 'na_fila' ? 4_000 : false;
+    },
+  });
+  const [pedido, setPedido] = useState<string | null>(null);
+  const enriquecer = useMutation({
+    mutationFn: () => api<{ mensagem: string }>(`/empresas/${id}/enriquecer`, { metodo: 'POST' }),
+    onSuccess: (r) => {
+      setPedido(r.mensagem);
+      // A fila leva alguns segundos para começar: consulta de novo logo em seguida.
+      setTimeout(() => cliente.invalidateQueries({ queryKey: ['empresa', id] }), 3_000);
+    },
+  });
   const e = q.data;
+  const en = e?.enriquecimento;
+  const contatos = e
+    ? e.contatos.length
+      ? e.contatos.filter((c) => c.pessoaId == null).map(paraContactRow)
+      : contatosDaDescoberta(e)
+    : [];
 
   return (
     <Drawer
@@ -202,62 +365,85 @@ export function FichaEmpresa({ id, aoFechar }: { id: number; aoFechar: () => voi
             nome={fmtNome(e.nome)}
             razaoSocial={e.razaoSocial ?? undefined}
             cnpj={e.cnpj ? formatarCnpj(e.cnpj) : undefined}
+            faixa={en?.faixa ?? undefined}
+            score={en?.score ?? undefined}
+            motivo={en?.motivo ?? undefined}
             nicho={e.mapsCategoria ?? undefined}
             cidade={`${fmtCidade(e.cidade)}, ${e.uf}`}
-            sinalEntrega={e.sinalEntrega ? 'Faz entregas' : undefined}
-            distancia={e.distanciaBaseKm != null ? `${fmtKm(e.distanciaBaseKm)} da base` : undefined}
+            sinalEntrega={e.sinalEntrega || en?.entrega ? 'Faz entregas' : undefined}
             acoes={
               <>
                 {e.mapsUrl && (
                   <Button icon="map-pin" href={e.mapsUrl} target="_blank" rel="noreferrer">
-                    Abrir no Google Maps
+                    Google Maps
                   </Button>
                 )}
-                {e.mapsSite && (
-                  <Button icon="globe" href={e.mapsSite} target="_blank" rel="noreferrer">
-                    Ver site
+                {(en?.site ?? e.mapsSite) && (
+                  <Button
+                    icon="globe"
+                    href={en?.site ?? e.mapsSite ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Site
                   </Button>
                 )}
+                {en?.instagram && (
+                  <Button
+                    icon="camera"
+                    href={`https://www.instagram.com/${en.instagram}/`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Instagram
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  icon="loader"
+                  disabled={enriquecer.isPending || en?.status === 'rodando'}
+                  onClick={() => enriquecer.mutate()}
+                >
+                  {en?.status === 'rodando'
+                    ? 'Enriquecendo…'
+                    : en
+                      ? 'Enriquecer de novo'
+                      : 'Enriquecer agora'}
+                </Button>
               </>
             }
           />
           <div className="drawer__corpo">
-            {e.mapsFechada && <Mensagem tipo="aviso">O Google Maps marca este lugar como fechado.</Mensagem>}
+            {(e.mapsFechada || en?.mapsAberto === false) && (
+              <Mensagem tipo="aviso">O Google marca este lugar como fechado.</Mensagem>
+            )}
+            {en?.status === 'erro' && <Mensagem tipo="erro">O enriquecimento falhou: {en.erro}</Mensagem>}
+            {en?.status === 'rodando' && (
+              <Mensagem tipo="aviso">
+                Enriquecendo agora (começou {fmtHora(en.iniciadoEm)}). A ficha se atualiza sozinha.
+              </Mensagem>
+            )}
+            {pedido && en?.status !== 'rodando' && <Mensagem tipo="ok">{pedido}</Mensagem>}
+            <ErroDaApi erro={enriquecer.error} />
 
             <section className="secao">
               <h2>
-                Quem decide <small>{e.socios.length ? `${e.socios.length} no quadro de sócios` : ''}</small>
+                Quem decide{' '}
+                <small>
+                  {e.pessoas.length
+                    ? `${e.pessoas.length} ${e.pessoas.length === 1 ? 'pessoa' : 'pessoas'}`
+                    : e.socios.length
+                      ? `${e.socios.length} no quadro de sócios`
+                      : ''}
+                </small>
               </h2>
-              {e.cnpj ? (
-                e.socios.length ? (
-                  <div className="pilha">
-                    {e.socios.map((s, i) => (
-                      <DecisorCard
-                        key={`${s.nome}-${s.dataEntrada ?? ''}`}
-                        nome={fmtNome(s.nome)}
-                        cargo={s.qualificacao}
-                        desde={s.dataEntrada?.slice(0, 4)}
-                        principal={i === 0 && s.prioridade === 1}
-                        fontes={['qsa']}
-                        contatos={[]}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <Mensagem tipo="aviso">A Receita não lista sócios para este CNPJ.</Mensagem>
-                )
-              ) : (
-                <Mensagem tipo="aviso">
-                  Empresa achada só no Google Maps, sem CNPJ: não há quadro de sócios. O enriquecimento vai
-                  procurar o responsável no site e no LinkedIn.
-                </Mensagem>
-              )}
+              <QuemDecide e={e} />
             </section>
 
-            <Panel titulo="Contatos da empresa" contagem={contatosDaEmpresa(e).length} semPadding>
-              {contatosDaEmpresa(e).length ? (
+            <Panel titulo="Contatos da empresa" contagem={contatos.length} semPadding>
+              {contatos.length ? (
                 <ul className="pp-contacts">
-                  {contatosDaEmpresa(e).map((c) => (
+                  {contatos.map((c) => (
                     <ContactRow key={`${c.canal}-${c.valor}`} {...c} />
                   ))}
                 </ul>
@@ -274,6 +460,11 @@ export function FichaEmpresa({ id, aoFechar }: { id: number; aoFechar: () => voi
 
             <Panel titulo="Como encontramos">
               <EnrichmentTrail camadas={trilha(e)} />
+              {en?.concluidoEm && (
+                <p className="quieto" style={{ margin: '12px 0 0', fontSize: 12 }}>
+                  Enriquecido {fmtHora(en.concluidoEm)}.
+                </p>
+              )}
             </Panel>
 
             <section className="secao">
@@ -281,15 +472,7 @@ export function FichaEmpresa({ id, aoFechar }: { id: number; aoFechar: () => voi
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: '22px' }}>
                 {e.campanhas.map((c) => (
                   <li key={c.id}>
-                    {c.nome}{' '}
-                    <span className="quieto">
-                      ·{' '}
-                      {c.dentroDoRaio === false
-                        ? 'fora do raio'
-                        : c.dentroDoRaio
-                          ? 'dentro do raio'
-                          : 'sem localização'}
-                    </span>
+                    {c.nome} <span className="quieto">· encontrada {fmtHora(c.adicionadaEm)}</span>
                   </li>
                 ))}
               </ul>

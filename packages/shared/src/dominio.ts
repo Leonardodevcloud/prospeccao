@@ -142,7 +142,11 @@ export const filtrosEmpresas = z.object({
   entrega: booleanoQuery,
   pagina: z.coerce.number().int().min(1).default(1),
   porPagina: z.coerce.number().int().min(1).max(200).default(50),
-  ordem: z.enum(['recentes', 'distancia', 'avaliacoes', 'nome']).default('avaliacoes'),
+  ordem: z.enum(['nota', 'recentes', 'distancia', 'avaliacoes', 'nome']).default('nota'),
+  /** Nota do enriquecimento: "A", "B", "C" ou "pendente" (ainda não enriquecido). */
+  faixa: z.enum(['A', 'B', 'C', 'pendente']).optional(),
+  /** Só quem já tem WhatsApp confirmado. */
+  comWhatsapp: booleanoQuery,
 });
 export type FiltrosEmpresas = z.infer<typeof filtrosEmpresas>;
 

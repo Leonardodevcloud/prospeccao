@@ -29,6 +29,9 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await pool.query('TRUNCATE cadastro.campanhas, cadastro.nichos, cadastro.bases RESTART IDENTITY CASCADE');
     await pool.query('TRUNCATE descoberta.empresas, descoberta.buscas_maps RESTART IDENTITY CASCADE');
     await pool.query('TRUNCATE base_cnpj.importacoes, base_cnpj.socios RESTART IDENTITY CASCADE');
+    await pool.query(
+      'TRUNCATE enriquecimento.leads, enriquecimento.pessoas, enriquecimento.contatos, enriquecimento.etapas RESTART IDENTITY CASCADE',
+    );
     app = criarApp({
       pool,
       log,
@@ -223,6 +226,64 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
 
     expect((await ler('/empresas/999')).status).toBe(404);
     expect((await ler('/empresas/abc')).status).toBe(400);
+  });
+
+  it('mostra nota, decisor e contatos do enriquecimento; filtra por faixa e WhatsApp', async () => {
+    await pool.query(
+      `INSERT INTO enriquecimento.leads (empresa_id, campanha_id, status, faixa, score, motivo, concluido_em)
+       VALUES (1, 2, 'concluido', 'A', 84, 'Faz entrega, 412 avaliações', now())`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.pessoas (empresa_id, nome, cargo, papel, decisor, prioridade, fontes)
+       VALUES (1, 'Maria Souza', 'Compradora', 'compras', true, 1, '{linkedin}'),
+              (1, 'CARLOS MENEZES', 'Sócio-Administrador', 'socio', false, 2, '{receita}')`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, whatsapp, principal)
+       VALUES (1, 'whatsapp', '71998124410', 'site', '{site,maps}', 'verificado', true, true),
+              (1, 'email', 'compras@ladeira.com.br', 'site', '{site}', 'nao_verificado', NULL, false)`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.etapas (empresa_id, ordem, etapa, status, detalhe) VALUES (1, 1, 'receita', 'encontrado', '1 sócio')`,
+    );
+
+    const lista = await ler('/empresas?campanhaId=2');
+    expect(lista.body.itens[0]).toMatchObject({
+      nome: 'Autopeças Ladeira Nova',
+      faixa: 'A',
+      score: 84,
+      decisorNome: 'Maria Souza',
+      contatoCanal: 'whatsapp',
+      contatoStatus: 'verificado',
+    });
+    expect(lista.body.itens[1]).toMatchObject({
+      nome: 'Moto Peças Nova Era',
+      faixa: null,
+      enriqStatus: null,
+    });
+
+    expect((await ler('/empresas?faixa=A')).body.total).toBe(1);
+    expect((await ler('/empresas?faixa=pendente')).body.itens.map((e: { nome: string }) => e.nome)).toEqual([
+      'Moto Peças Nova Era',
+    ]);
+    expect((await ler('/empresas?comWhatsapp=true')).body.total).toBe(1);
+
+    const d = await ler('/empresas/1');
+    expect(d.body.enriquecimento).toMatchObject({ status: 'concluido', faixa: 'A' });
+    expect(d.body.pessoas.map((p: { nome: string }) => p.nome)).toEqual(['Maria Souza', 'CARLOS MENEZES']);
+    expect(d.body.contatos[0]).toMatchObject({
+      canal: 'whatsapp',
+      principal: true,
+      fontes: ['site', 'maps'],
+    });
+    expect(d.body.etapas).toEqual([expect.objectContaining({ etapa: 'receita', status: 'encontrado' })]);
+
+    const r = await enviar('post', '/empresas/1/enriquecer');
+    expect(r.status).toBe(202);
+    expect(publicados).toContainEqual({
+      nome: 'enriquecimento.solicitar',
+      payload: { empresaId: 1, campanhaId: 2, forcar: true },
+    });
   });
 
   it('pede importação da base de CNPJ pela fila, sem escrever no schema do worker', async () => {

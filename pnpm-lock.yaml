@@ -213,6 +213,36 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
+  apps/worker-enriquecimento:
+    dependencies:
+      '@prospeccao/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@prospeccao/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@prospeccao/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
+      '@prospeccao/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
+      '@prospeccao/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+      pg-boss:
+        specifier: 12.36.0
+        version: 12.36.0(@opentelemetry/api@1.9.1)
+      pino:
+        specifier: 10.4.0
+        version: 10.4.0
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+
   packages/config:
     dependencies:
       zod:

@@ -12,9 +12,23 @@ const CAMPOS_LISTA = `
   e.maps_categoria AS "mapsCategoria", e.maps_site AS "mapsSite", e.maps_telefone AS "mapsTelefone",
   e.telefones_receita AS "telefonesReceita", e.sinal_entrega AS "sinalEntrega",
   e.distancia_base_km AS "distanciaBaseKm", e.maps_fechada AS "mapsFechada",
-  (e.place_id IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm"`;
+  (e.place_id IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm",
+  l.status AS "enriqStatus", l.faixa, l.score, l.motivo,
+  dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
+  pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus"`;
+
+/** Nota, decisor e melhor contato do enriquecimento (schema do worker-enriquecimento, só leitura). */
+const JUNCOES_ENRIQ = `
+  LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
+  LEFT JOIN LATERAL (
+    SELECT nome, cargo FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor LIMIT 1
+  ) dec ON true
+  LEFT JOIN LATERAL (
+    SELECT canal, valor, status FROM enriquecimento.contatos c WHERE c.empresa_id = e.id AND c.principal LIMIT 1
+  ) pc ON true`;
 
 const ORDENS: Record<FiltrosEmpresas['ordem'], string> = {
+  nota: 'l.score DESC NULLS LAST, e.maps_avaliacoes DESC NULLS LAST, e.nome',
   avaliacoes: 'e.maps_avaliacoes DESC NULLS LAST, e.nome',
   distancia: 'e.distancia_base_km ASC NULLS LAST, e.nome',
   recentes: 'e.criado_em DESC, e.id DESC',
@@ -52,10 +66,19 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
   if (f.comCnpj != null) where.push(f.comCnpj ? 'e.cnpj IS NOT NULL' : 'e.cnpj IS NULL');
   if (f.dentroDoRaio != null)
     where.push(f.dentroDoRaio ? 'ce.dentro_do_raio' : 'ce.dentro_do_raio IS NOT TRUE');
-  if (f.entrega != null) where.push(f.entrega ? 'e.sinal_entrega' : 'e.sinal_entrega IS NOT TRUE');
+  if (f.entrega != null)
+    where.push(
+      f.entrega ? '(e.sinal_entrega OR l.entrega)' : 'NOT coalesce(e.sinal_entrega OR l.entrega, false)',
+    );
+  if (f.faixa === 'pendente') where.push(`(l.status IS NULL OR l.status <> 'concluido')`);
+  else if (f.faixa) where.push(`l.faixa = ${p(f.faixa)}`);
+  if (f.comWhatsapp != null) {
+    const existe = `EXISTS (SELECT 1 FROM enriquecimento.contatos w WHERE w.empresa_id = e.id AND w.canal = 'whatsapp' AND w.status = 'verificado')`;
+    where.push(f.comWhatsapp ? existe : `NOT ${existe}`);
+  }
 
   const filtro = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const base = `FROM descoberta.empresas e ${vinculo} ${filtro}`;
+  const base = `FROM descoberta.empresas e ${vinculo} ${JUNCOES_ENRIQ} ${filtro}`;
 
   const total = await db.query<{ n: number }>(`SELECT count(*)::int AS n ${base}`, valores);
   const pagina = await db.query(
@@ -78,13 +101,14 @@ export async function obter(db: Executor, id: number) {
             b.nome AS "baseNome"
        FROM descoberta.empresas e
        LEFT JOIN cadastro.v_bases_ativas b ON b.id = e.base_id
+       ${JUNCOES_ENRIQ}
       WHERE e.id = $1`,
     [id],
   );
   const empresa = rows[0];
   if (!empresa) return null;
 
-  const [socios, campanhas, cruzamento] = await Promise.all([
+  const [socios, campanhas, cruzamento, enriquecimento, pessoas, contatos, etapas] = await Promise.all([
     empresa.cnpjBasico
       ? db.query(
           `SELECT nome, tipo, qualificacao, qualificacao_codigo AS "qualificacaoCodigo", data_entrada AS "dataEntrada",
@@ -106,6 +130,30 @@ export async function obter(db: Executor, id: number) {
          FROM descoberta.maps_resultados WHERE empresa_id = $1 ORDER BY id DESC LIMIT 1`,
       [id],
     ),
+    db.query(
+      `SELECT status, faixa, score, motivo, resumo, entrega, cnpj_achado AS "cnpjAchado", site_url AS "site",
+              instagram, facebook, linkedin_empresa AS "linkedinEmpresa", maps_aberto AS "mapsAberto",
+              erro, solicitado_em AS "solicitadoEm", iniciado_em AS "iniciadoEm", concluido_em AS "concluidoEm"
+         FROM enriquecimento.leads WHERE empresa_id = $1`,
+      [id],
+    ),
+    db.query(
+      `SELECT id, nome, cargo, papel, decisor, prioridade, desde, linkedin_url AS "linkedin", fontes
+         FROM enriquecimento.pessoas WHERE empresa_id = $1 ORDER BY prioridade, nome`,
+      [id],
+    ),
+    db.query(
+      `SELECT id, pessoa_id AS "pessoaId", canal, valor, rotulo, fonte, fontes, url_origem AS "urlOrigem",
+              confianca, status, whatsapp, principal
+         FROM enriquecimento.contatos WHERE empresa_id = $1
+        ORDER BY principal DESC, (status = 'verificado') DESC, confianca DESC, canal`,
+      [id],
+    ),
+    db.query(
+      `SELECT etapa, status, detalhe, url, criado_em AS "em"
+         FROM enriquecimento.etapas WHERE empresa_id = $1 ORDER BY ordem`,
+      [id],
+    ),
   ]);
 
   return {
@@ -113,5 +161,18 @@ export async function obter(db: Executor, id: number) {
     socios: socios.rows,
     campanhas: campanhas.rows,
     cruzamento: cruzamento.rows[0] ?? null,
+    enriquecimento: enriquecimento.rows[0] ?? null,
+    pessoas: pessoas.rows,
+    contatos: contatos.rows,
+    etapas: etapas.rows,
   };
+}
+
+/** Campanha mais recente da empresa: para onde vai o pedido de "enriquecer de novo". */
+export async function campanhaDaEmpresa(db: Executor, id: number): Promise<number | null> {
+  const { rows } = await db.query<{ campanha_id: number }>(
+    `SELECT campanha_id FROM descoberta.campanha_empresas WHERE empresa_id = $1 ORDER BY adicionada_em DESC LIMIT 1`,
+    [id],
+  );
+  return rows[0]?.campanha_id ?? null;
 }

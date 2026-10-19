@@ -50,10 +50,14 @@ export const JOBS = {
     empresaId: z.number().int().positive(),
   }),
 
-  /** worker-descoberta → worker-enriquecimento (Fase 2): empresa pronta para buscar contatos. */
+  /**
+   * worker-descoberta / api → worker-enriquecimento: buscar quem decide e como falar com ele.
+   * forcar: refaz mesmo se a empresa foi enriquecida há pouco (botão "Enriquecer de novo").
+   */
   'enriquecimento.solicitar': z.object({
     empresaId: z.number().int().positive(),
     campanhaId: z.number().int().positive(),
+    forcar: z.boolean().optional(),
   }),
 } as const;
 
