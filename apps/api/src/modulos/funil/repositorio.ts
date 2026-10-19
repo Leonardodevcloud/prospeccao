@@ -9,6 +9,7 @@ import {
   ORDEM_ETAPA,
 } from '@prospeccao/shared';
 import { JUNCOES_ENRIQ } from '../empresas/repositorio.js';
+import { aplicarCadencia, obterConfig } from './cadencia.js';
 
 /**
  * Funil comercial (schema comercial, escrito só pela API). Uma oportunidade por empresa:
@@ -102,7 +103,10 @@ async function criarOportunidade(
      ON CONFLICT (empresa_id) DO NOTHING`,
     [empresaId, etapa, posicao, motivo],
   );
-  if (rowCount) await registrarEtapa(db, empresaId, null, etapa, autor, motivo);
+  if (rowCount) {
+    await registrarEtapa(db, empresaId, null, etapa, autor, motivo);
+    await aplicarCadencia(db, empresaId, 'etapa');
+  }
   return (rowCount ?? 0) > 0;
 }
 
@@ -158,9 +162,10 @@ export async function adicionar(pool: Pool, d: FunilAdicionar, autor: string): P
     const bloqueio = new Set(bloqueadas.map((b) => b.empresaId));
     for (const e of candidatas) {
       if (bloqueio.has(e.id)) continue;
-      if (e.etapa === 'descartado')
+      if (e.etapa === 'descartado') {
         await mover(tx, e.id, 'descartado', 'a_abordar', 'voltou para o funil', autor);
-      else await criarOportunidade(tx, e.id, 'a_abordar', null, autor);
+        await aplicarCadencia(tx, e.id, 'etapa');
+      } else await criarOportunidade(tx, e.id, 'a_abordar', null, autor);
       r.adicionadas++;
     }
     return r;
@@ -182,7 +187,8 @@ async function mover(
         SET etapa = $2, etapa_desde = now(), posicao = $3,
             motivo = CASE WHEN $2 IN ('perdido', 'descartado') THEN $4 ELSE motivo END,
             proxima_acao = CASE WHEN $5 THEN NULL ELSE proxima_acao END,
-            proxima_acao_em = CASE WHEN $5 THEN NULL ELSE proxima_acao_em END
+            proxima_acao_em = CASE WHEN $5 THEN NULL ELSE proxima_acao_em END,
+            tentativas = 0, encerrar_em = NULL
       WHERE empresa_id = $1`,
     [empresaId, para, posicao ?? (await proximaPosicao(db, para)), motivo, fechando],
   );
@@ -221,8 +227,12 @@ export async function atualizar(pool: Pool, empresaId: number, d: FunilAtualizar
       throw AppError.invalido('Diga o motivo da perda: ajuda a entender o que não funcionou.');
 
     const posicao = d.antesDe != null ? await posicaoAntesDe(tx, para, d.antesDe, empresaId) : undefined;
-    if (para !== atual) await mover(tx, empresaId, atual, para, d.motivo ?? null, autor, posicao);
-    else if (posicao != null)
+    if (para !== atual) {
+      await mover(tx, empresaId, atual, para, d.motivo ?? null, autor, posicao);
+      // Arrastou de etapa: o próximo passo segue a cadência (a não ser que já venha um junto).
+      if (d.proximaAcao === undefined && d.proximaAcaoEm === undefined)
+        await aplicarCadencia(tx, empresaId, 'etapa');
+    } else if (posicao != null)
       await tx.query('UPDATE comercial.oportunidades SET posicao = $2 WHERE empresa_id = $1', [
         empresaId,
         posicao,
@@ -236,7 +246,11 @@ export async function atualizar(pool: Pool, empresaId: number, d: FunilAtualizar
     };
     if (d.valorMensal !== undefined) set('valor_mensal', d.valorMensal);
     if (d.proximaAcao !== undefined) set('proxima_acao', d.proximaAcao);
-    if (d.proximaAcaoEm !== undefined) set('proxima_acao_em', d.proximaAcaoEm);
+    if (d.proximaAcaoEm !== undefined) {
+      set('proxima_acao_em', d.proximaAcaoEm);
+      // Data escolhida à mão: o encerramento automático deixa de valer.
+      sets.push('encerrar_em = NULL');
+    }
     if (d.motivo !== undefined && para === atual) set('motivo', d.motivo);
     if (sets.length)
       await tx.query(`UPDATE comercial.oportunidades SET ${sets.join(', ')} WHERE empresa_id = $1`, valores);
@@ -274,6 +288,14 @@ export async function registrarAtividade(
       if (ORDEM_ETAPA[alvo] > ORDEM_ETAPA[atual]) para = alvo;
     }
     if (para !== atual) await mover(tx, empresaId, atual, para, null, autor);
+    // Próximo passo automático: follow-up depois de mensagem sem resposta, responder no mesmo
+    // dia quando ele responde, mandar proposta depois da reunião.
+    if (d.tipo !== 'nota' && ORDEM_ETAPA[para] < ORDEM_ETAPA.ganho)
+      await aplicarCadencia(
+        tx,
+        empresaId,
+        d.tipo === 'reuniao' ? 'reuniao' : d.direcao === 'recebida' ? 'recebida' : 'enviada',
+      );
 
     const sets = d.tipo === 'nota' ? [] : ['ultimo_contato_em = now()'];
     const valores: unknown[] = [empresaId];
@@ -283,7 +305,7 @@ export async function registrarAtividade(
     }
     if (d.proximaAcaoEm !== undefined) {
       valores.push(d.proximaAcaoEm);
-      sets.push(`proxima_acao_em = $${valores.length}`);
+      sets.push(`proxima_acao_em = $${valores.length}`, 'encerrar_em = NULL');
     }
     if (sets.length)
       await tx.query(`UPDATE comercial.oportunidades SET ${sets.join(', ')} WHERE empresa_id = $1`, valores);
@@ -305,7 +327,8 @@ export async function detalhe(db: Executor, empresaId: number) {
       `SELECT o.etapa, o.motivo, o.valor_mensal::float8 AS "valorMensal", o.proxima_acao AS "proximaAcao",
               o.proxima_acao_em AS "proximaAcaoEm", o.ultimo_contato_em AS "ultimoContatoEm",
               o.etapa_desde AS "etapaDesde", o.criado_em AS "criadoEm", o.faixa_entrada AS "faixaEntrada",
-              o.campanha_id AS "campanhaId", (o.proxima_acao_em < ${FIM_DE_HOJE}) AS pendente
+              o.campanha_id AS "campanhaId", (o.proxima_acao_em < ${FIM_DE_HOJE}) AS pendente,
+              o.tentativas, o.encerrar_em AS "encerrarEm"
          FROM comercial.oportunidades o WHERE o.empresa_id = $1`,
       [empresaId],
     ),
@@ -343,7 +366,7 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
     `SELECT o.empresa_id::int AS "empresaId", o.etapa, o.posicao, o.proxima_acao AS "proximaAcao",
             o.proxima_acao_em AS "proximaAcaoEm", (o.proxima_acao_em < ${FIM_DE_HOJE}) AS pendente,
             o.ultimo_contato_em AS "ultimoContatoEm", o.etapa_desde AS "etapaDesde",
-            o.valor_mensal::float8 AS "valorMensal", o.motivo,
+            o.valor_mensal::float8 AS "valorMensal", o.motivo, o.tentativas, o.encerrar_em AS "encerrarEm",
             e.nome, e.cidade, e.uf, e.maps_categoria AS "categoria",
             l.faixa, l.score, dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
             pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
@@ -364,7 +387,8 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
             count(*) FILTER (WHERE etapa = 'descartado')::int AS descartados
        FROM comercial.oportunidades`,
   );
-  return { cards: rows, ...resumo.rows[0] };
+  const cfg = await obterConfig(db);
+  return { cards: rows, ...resumo.rows[0], totalTentativas: cfg.diasFollowup.length + 1 };
 }
 
 /** Contagem leve para o menu: follow-ups vencidos ou para hoje. */
@@ -374,4 +398,31 @@ export async function resumo(db: Executor): Promise<{ pendentes: number }> {
       WHERE proxima_acao_em < ${FIM_DE_HOJE} AND etapa NOT IN ('ganho', 'perdido', 'descartado')`,
   );
   return rows[0] ?? { pendentes: 0 };
+}
+
+/**
+ * Quem recebeu a última tentativa e não respondeu até o prazo vai para "Perdido: sem resposta".
+ * Roda de tempos em tempos (ver automacao.ts). Devolve quantos foram encerrados.
+ */
+export async function encerrarSemResposta(pool: Pool): Promise<number> {
+  return comTransacao(pool, async (tx) => {
+    const { rows } = await tx.query<{ empresa_id: number; tentativas: number }>(
+      `SELECT o.empresa_id::int, o.tentativas FROM comercial.oportunidades o
+        WHERE o.etapa = 'abordado' AND o.encerrar_em < now()
+          AND (SELECT encerrar_sem_resposta FROM comercial.config_cadencia LIMIT 1)
+        ORDER BY o.encerrar_em
+        LIMIT 500
+        FOR UPDATE SKIP LOCKED`,
+    );
+    for (const o of rows)
+      await mover(
+        tx,
+        o.empresa_id,
+        'abordado',
+        'perdido',
+        `Sem resposta após ${o.tentativas} ${o.tentativas === 1 ? 'mensagem' : 'mensagens'}`,
+        'sistema',
+      );
+    return rows.length;
+  });
 }

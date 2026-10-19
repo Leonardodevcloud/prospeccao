@@ -235,6 +235,10 @@ export interface DetalheFunil {
     faixaEntrada: 'A' | 'B' | 'C' | null;
     campanhaId: number | null;
     pendente: boolean | null;
+    /** Mensagens enviadas sem resposta nesta etapa. */
+    tentativas: number;
+    /** Última tentativa feita: vai para "Perdido" nesta data se não responder. */
+    encerrarEm: string | null;
   } | null;
   atividades: AtividadeFunil[];
   duplicada: Duplicada | null;
@@ -264,12 +268,52 @@ export interface CardFunil {
   contatoStatus: StatusContato | null;
   telefone: string | null;
   contatos: number;
+  tentativas: number;
+  encerrarEm: string | null;
 }
 
 export interface Quadro {
   cards: CardFunil[];
   pendentes: number;
   descartados: number;
+  /** Mensagens que a cadência manda antes de desistir. */
+  totalTentativas: number;
+}
+
+export type ModeloMensagem =
+  | 'primeira'
+  | 'followup1'
+  | 'followup2'
+  | 'ultima'
+  | 'marcar_reuniao'
+  | 'cobrar_proposta';
+
+export const MODELOS_MENSAGEM: { id: ModeloMensagem; rotulo: string; quando: string }[] = [
+  { id: 'primeira', rotulo: 'Primeira abordagem', quando: 'Lead em "A abordar"' },
+  { id: 'followup1', rotulo: '1º follow-up', quando: 'Depois da 1ª mensagem sem resposta' },
+  { id: 'followup2', rotulo: 'Follow-ups seguintes', quando: 'Do 2º follow-up em diante' },
+  { id: 'ultima', rotulo: 'Última tentativa', quando: 'A última mensagem antes de encerrar' },
+  { id: 'marcar_reuniao', rotulo: 'Marcar reunião', quando: 'Lead em "Respondeu"' },
+  { id: 'cobrar_proposta', rotulo: 'Cobrar proposta', quando: 'Lead em "Proposta"' },
+];
+
+export interface ConfigCadencia {
+  diasFollowup: number[];
+  diasEncerrar: number;
+  encerrarSemResposta: boolean;
+  diasCobrarProposta: number[];
+  remetente: string;
+  modelos: Record<ModeloMensagem, string>;
+}
+
+export interface MensagemPronta {
+  modelo: ModeloMensagem | null;
+  rotulo: string | null;
+  texto: string;
+  telefone: string | null;
+  /** Número desta mensagem na cadência (1 = primeira); 0 fora da prospecção. */
+  tentativa: number;
+  totalTentativas: number;
 }
 
 export interface ResultadoAdicionar {

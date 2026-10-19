@@ -419,6 +419,87 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect((await ler('/relatorios?dias=7&campanhaId=2')).status).toBe(200);
   });
 
+  it('funil: cadência marca o follow-up sozinho, monta a mensagem e encerra quem não responde', async () => {
+    // Quem mexer na cadência pela tela muda tudo daqui para a frente.
+    const cfg = await ler('/funil/cadencia');
+    expect(cfg.body).toMatchObject({ diasFollowup: [2, 3, 5], encerrarSemResposta: true });
+    const salvo = await enviar('put', '/funil/cadencia', {
+      ...cfg.body,
+      diasFollowup: [2, 3],
+      remetente: 'Leo',
+    });
+    expect(salvo.status).toBe(200);
+    expect(salvo.body).toMatchObject({ diasFollowup: [2, 3], remetente: 'Leo' });
+    expect((await enviar('put', '/funil/cadencia', { ...cfg.body, diasEncerrar: 0 })).status).toBe(422);
+
+    // Volta do descarte: entra com "Primeira abordagem" para hoje.
+    const volta = await enviar('post', '/funil', { empresaIds: [2], forcar: true });
+    expect(volta.body.adicionadas).toBe(1);
+    let d = (await ler('/funil/2')).body;
+    expect(d.oportunidade).toMatchObject({
+      etapa: 'a_abordar',
+      proximaAcao: 'Primeira abordagem',
+      pendente: true,
+    });
+
+    const msg = await ler('/funil/2/mensagem');
+    expect(msg.body).toMatchObject({
+      modelo: 'primeira',
+      tentativa: 1,
+      totalTentativas: 3,
+      telefone: '71998124410',
+    });
+    expect(msg.body.texto).toContain('Aqui é Leo da Tutts');
+
+    // 1ª mensagem → Abordado, follow-up 1 em 2 dias úteis (não pendente hoje).
+    const enviar1 = () =>
+      enviar('post', '/funil/2/atividades', { tipo: 'whatsapp', direcao: 'enviada', texto: 'oi' });
+    d = (await enviar1()).body;
+    expect(d.oportunidade).toMatchObject({
+      etapa: 'abordado',
+      proximaAcao: 'Follow-up 1',
+      tentativas: 1,
+      pendente: false,
+    });
+    expect((await ler('/funil/2/mensagem')).body.modelo).toBe('followup1');
+    d = (await enviar1()).body;
+    expect(d.oportunidade).toMatchObject({ proximaAcao: 'Follow-up 2', tentativas: 2 });
+    expect((await ler('/funil/2/mensagem')).body.modelo).toBe('ultima');
+    d = (await enviar1()).body;
+    expect(d.oportunidade).toMatchObject({ proximaAcao: 'Sem resposta: encerrar', tentativas: 3 });
+    expect(d.oportunidade.encerrarEm).toBeTruthy();
+
+    // Prazo passou sem resposta: a automação leva para Perdido com o motivo.
+    await pool.query(
+      "UPDATE comercial.oportunidades SET encerrar_em = now() - interval '1 minute' WHERE empresa_id = 2",
+    );
+    const { encerrarSemResposta } = await import('../src/modulos/funil/repositorio.js');
+    expect(await encerrarSemResposta(pool)).toBe(1);
+    d = (await ler('/funil/2')).body;
+    expect(d.oportunidade).toMatchObject({
+      etapa: 'perdido',
+      motivo: 'Sem resposta após 3 mensagens',
+      proximaAcao: null,
+    });
+    expect(d.atividades[0]).toMatchObject({ tipo: 'etapa', paraEtapa: 'perdido', autor: 'sistema' });
+    expect(await encerrarSemResposta(pool)).toBe(0);
+
+    // Arrastar de volta para Abordado conta como 1ª mensagem; resposta zera e pede retorno hoje.
+    d = (await enviar('patch', '/funil/2', { etapa: 'abordado' })).body;
+    expect(d.oportunidade).toMatchObject({ etapa: 'abordado', tentativas: 1, proximaAcao: 'Follow-up 1' });
+    d = (
+      await enviar('post', '/funil/2/atividades', { tipo: 'whatsapp', direcao: 'recebida', texto: 'quanto?' })
+    ).body;
+    expect(d.oportunidade).toMatchObject({
+      etapa: 'respondeu',
+      tentativas: 0,
+      pendente: true,
+      encerrarEm: null,
+    });
+    expect((await ler('/funil')).body.totalTentativas).toBe(3);
+    await enviar('put', '/funil/cadencia', cfg.body);
+  });
+
   it('pede importação da base de CNPJ pela fila, sem escrever no schema do worker', async () => {
     const r = await enviar('post', '/importacoes/cnpj', { mes: '2026-09' });
     expect(r.status).toBe(202);

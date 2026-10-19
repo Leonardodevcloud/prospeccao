@@ -12,6 +12,7 @@ import {
   type TipoAtividade,
 } from '../api';
 import { diaDaqui, diaDoInput, fmtHora, fmtNome, fmtPrazo, formatarTelefone } from '../formatar';
+import { ProximaMensagem } from './Cadencia';
 import { ErroDaApi, Mensagem } from './Formulario';
 
 const ETAPAS: EtapaFunil[] = [
@@ -157,6 +158,7 @@ export function SecaoFunil(props: {
   });
   const atualizarCache = (d: DetalheFunil) => {
     cliente.setQueryData(['funil', empresaId], d);
+    cliente.invalidateQueries({ queryKey: ['funil', empresaId, 'mensagem'] });
     cliente.invalidateQueries({ queryKey: ['quadro'] });
     cliente.invalidateQueries({ queryKey: ['empresas'] });
   };
@@ -310,6 +312,12 @@ export function SecaoFunil(props: {
       </h2>
       <div className="pilha">
         {aviso}
+        {op.encerrarEm && op.etapa === 'abordado' && (
+          <Mensagem tipo="aviso">
+            Todas as mensagens da cadência foram enviadas. Se não responder até {fmtHora(op.encerrarEm)}, o
+            lead vai sozinho para Perdido (sem resposta).
+          </Mensagem>
+        )}
         {op.motivo && PEDE_MOTIVO.has(op.etapa) && (
           <Mensagem tipo="aviso">
             {op.etapa === 'perdido' ? 'Perdido' : 'Descartado'}: {op.motivo}
@@ -424,6 +432,12 @@ export function SecaoFunil(props: {
           <ErroDaApi erro={atualizar.error} />
         </Panel>
 
+        {['a_abordar', 'abordado', 'respondeu', 'proposta'].includes(op.etapa) && !op.encerrarEm && (
+          <Panel titulo="Próxima mensagem">
+            <ProximaMensagem empresaId={empresaId} />
+          </Panel>
+        )}
+
         <Panel
           titulo="Registrar contato"
           acoes={
@@ -503,7 +517,8 @@ export function SecaoFunil(props: {
                 onChange={(e) => setTexto(e.target.value)}
               />
               <span className="campo__dica">
-                A etapa avança sozinha: contato feito → Abordado; resposta → Respondeu; reunião → Reunião.
+                A etapa e o próximo passo andam sozinhos: contato feito → Abordado e follow-up agendado;
+                resposta → Respondeu para responder hoje; reunião → Reunião e proposta amanhã.
               </span>
             </div>
             <div className="acoes">

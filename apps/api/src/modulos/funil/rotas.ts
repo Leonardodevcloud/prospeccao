@@ -1,12 +1,20 @@
-import { AppError, atividadeEntrada, filtrosFunil, funilAdicionar, funilAtualizar } from '@prospeccao/shared';
+import {
+  AppError,
+  atividadeEntrada,
+  configCadenciaEntrada,
+  filtrosFunil,
+  funilAdicionar,
+  funilAtualizar,
+} from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
+import * as cadencia from './cadencia.js';
 import * as repo from './repositorio.js';
 
 const autor = (req: Request) => req.usuario?.email ?? 'sistema';
 
-export function rotasFunil({ pool }: DepsApi): Router {
+export function rotasFunil({ pool, log }: DepsApi): Router {
   const r = Router();
 
   /** Quadro: cards de todas as etapas (menos descartados) e quantos follow-ups vencem hoje. */
@@ -23,8 +31,25 @@ export function rotasFunil({ pool }: DepsApi): Router {
     res.json(await repo.resumo(pool));
   });
 
+  /** Cadência de follow-up e modelos de mensagem. */
+  r.get('/cadencia', async (_req, res) => {
+    res.json(await cadencia.obterConfig(pool));
+  });
+
+  r.put('/cadencia', async (req, res) => {
+    const dados = corpo(req, configCadenciaEntrada);
+    await cadencia.salvarConfig(pool, dados);
+    log.info({ diasFollowup: dados.diasFollowup, diasEncerrar: dados.diasEncerrar }, 'cadência atualizada');
+    res.json(await cadencia.obterConfig(pool));
+  });
+
   r.get('/:empresaId', async (req, res) => {
     res.json(await repo.detalhe(pool, idDaRota(req, 'empresaId')));
+  });
+
+  /** Mensagem pronta do próximo envio (WhatsApp), com nome, empresa e cidade. */
+  r.get('/:empresaId/mensagem', async (req, res) => {
+    res.json(await cadencia.mensagemDoLead(pool, idDaRota(req, 'empresaId')));
   });
 
   /** Mover de etapa, reordenar, próximo passo, valor. */

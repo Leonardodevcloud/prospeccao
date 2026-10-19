@@ -5,6 +5,7 @@ import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { criarApp } from './app.js';
 import { carregarEnvApi } from './config.js';
+import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 
 const env = carregarEnvApi();
 const log = criarLogger('api', env.LOG_LEVEL);
@@ -39,8 +40,11 @@ const app = criarApp({
 
 const servidor = createServer(app);
 servidor.listen(env.PORT, () => log.info({ porta: env.PORT }, 'api pronta'));
+// Follow-up: encerra sozinho quem esgotou a cadência sem responder.
+const pararAutomacao = iniciarAutomacaoFunil(pool, log);
 
 encerrarAoReceberSinal(log, async () => {
+  pararAutomacao();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
   await filas.parar();
   await pool.end();

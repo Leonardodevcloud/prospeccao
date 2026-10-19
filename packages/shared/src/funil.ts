@@ -105,3 +105,166 @@ export const filtrosRelatorio = z.object({
   campanhaId: z.coerce.number().int().positive().optional(),
 });
 export type FiltrosRelatorio = z.infer<typeof filtrosRelatorio>;
+
+/* ───────────────────────────── Cadência de follow-up ───────────────────────────── */
+
+/** Modelos de mensagem, um por momento da cadência. */
+export const MODELOS_MENSAGEM = [
+  'primeira',
+  'followup1',
+  'followup2',
+  'ultima',
+  'marcar_reuniao',
+  'cobrar_proposta',
+] as const;
+export type ModeloMensagem = (typeof MODELOS_MENSAGEM)[number];
+
+export const ROTULO_MODELO: Record<ModeloMensagem, string> = {
+  primeira: 'Primeira abordagem',
+  followup1: '1º follow-up',
+  followup2: 'Follow-ups seguintes',
+  ultima: 'Última tentativa',
+  marcar_reuniao: 'Marcar reunião (depois que respondeu)',
+  cobrar_proposta: 'Cobrar proposta',
+};
+
+export interface ConfigCadencia {
+  /** Dias de espera depois de cada mensagem sem resposta: [2, 3, 5] = 3 follow-ups. */
+  diasFollowup: number[];
+  /** Depois da última tentativa sem resposta, quantos dias até encerrar. */
+  diasEncerrar: number;
+  /** Encerra sozinho (vai para "Perdido: sem resposta") quando o prazo acima passa. */
+  encerrarSemResposta: boolean;
+  /** Dias para cobrar a proposta: [3, 7] = cobra 2 vezes. */
+  diasCobrarProposta: number[];
+  /** Seu nome nas mensagens ("Aqui é {remetente} da Tutts"). */
+  remetente: string;
+  modelos: Record<ModeloMensagem, string>;
+}
+
+const listaDeDias = (max: number) => z.array(z.number().int().min(1).max(60)).max(max);
+
+export const configCadenciaEntrada = z.object({
+  diasFollowup: listaDeDias(6),
+  diasEncerrar: z.number().int().min(1).max(60),
+  encerrarSemResposta: z.boolean(),
+  diasCobrarProposta: listaDeDias(4),
+  remetente: z.string().trim().max(60),
+  modelos: z.object(
+    Object.fromEntries(
+      MODELOS_MENSAGEM.map((m) => [m, z.string().trim().min(1, 'Mensagem vazia.').max(1000)]),
+    ) as Record<ModeloMensagem, z.ZodString>,
+  ),
+});
+
+/** Total de mensagens que a cadência manda antes de desistir (a primeira + os follow-ups). */
+export const totalTentativas = (c: Pick<ConfigCadencia, 'diasFollowup'>) => c.diasFollowup.length + 1;
+
+/** O que a cadência faz depois de um acontecimento. */
+export type EventoCadencia = 'etapa' | 'enviada' | 'recebida' | 'reuniao';
+
+export interface PassoCadencia {
+  acao: string;
+  /** Em quantos dias (0 = hoje). */
+  dias: number;
+  /** Mensagens enviadas sem resposta nesta etapa, depois do evento. */
+  tentativas: number;
+  /** Última tentativa feita: encerra quando o prazo passar. */
+  encerrar: boolean;
+}
+
+/**
+ * Próximo passo automático. `tentativas` é quantas mensagens já foram enviadas sem resposta
+ * na etapa atual (zera quando a etapa muda). Etapas fechadas não têm próximo passo.
+ */
+export function proximoPasso(
+  etapa: EtapaFunil,
+  tentativas: number,
+  evento: EventoCadencia,
+  c: Pick<ConfigCadencia, 'diasFollowup' | 'diasEncerrar' | 'diasCobrarProposta'>,
+): PassoCadencia | null {
+  const passo = (acao: string, dias: number, t = tentativas, encerrar = false): PassoCadencia => ({
+    acao,
+    dias,
+    tentativas: t,
+    encerrar,
+  });
+  switch (etapa) {
+    case 'a_abordar':
+      return passo('Primeira abordagem', 0, 0);
+    case 'abordado': {
+      // Entrar em "Abordado" (arrastando) conta como a primeira mensagem.
+      const t = evento === 'enviada' ? tentativas + 1 : Math.max(tentativas, 1);
+      if (t <= c.diasFollowup.length) return passo(`Follow-up ${t}`, c.diasFollowup[t - 1] ?? 2, t);
+      return passo('Sem resposta: encerrar', c.diasEncerrar, t, true);
+    }
+    case 'respondeu':
+      if (evento === 'enviada') return passo('Cobrar retorno', 2, tentativas + 1);
+      return passo('Responder e marcar reunião', 0, 0);
+    case 'reuniao':
+      if (evento === 'recebida') return passo('Responder', 0, 0);
+      return passo('Mandar proposta', 1, 0);
+    case 'proposta': {
+      if (evento === 'recebida') return passo('Responder sobre a proposta', 0, 0);
+      const t = evento === 'enviada' ? tentativas + 1 : 0;
+      const dias = c.diasCobrarProposta[t];
+      return dias != null
+        ? passo('Cobrar resposta da proposta', dias, t)
+        : passo('Decidir: ganho ou perdido', 3, t);
+    }
+    default:
+      return null;
+  }
+}
+
+/** Qual modelo de mensagem usar no próximo envio. */
+export function modeloDoPasso(
+  etapa: EtapaFunil,
+  tentativas: number,
+  c: Pick<ConfigCadencia, 'diasFollowup'>,
+): ModeloMensagem | null {
+  if (etapa === 'a_abordar') return 'primeira';
+  if (etapa === 'abordado') {
+    const total = totalTentativas(c);
+    if (tentativas + 1 >= total) return 'ultima';
+    return tentativas <= 1 ? 'followup1' : 'followup2';
+  }
+  if (etapa === 'respondeu') return 'marcar_reuniao';
+  if (etapa === 'proposta') return 'cobrar_proposta';
+  return null;
+}
+
+/**
+ * Dia do próximo passo às 9h de São Paulo, pulando sábado e domingo.
+ * (O Brasil não tem horário de verão desde 2019: São Paulo é sempre -03:00.)
+ */
+export function dataDoPasso(dias: number, agora = new Date()): string {
+  const [a, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' })
+    .format(agora)
+    .split('-')
+    .map(Number) as [number, number, number];
+  const dia = new Date(Date.UTC(a, m - 1, d + dias, 12));
+  if (dias > 0) while (dia.getUTCDay() === 0 || dia.getUTCDay() === 6) dia.setUTCDate(dia.getUTCDate() + 1);
+  return new Date(`${dia.toISOString().slice(0, 10)}T09:00:00-03:00`).toISOString();
+}
+
+/** Monta a mensagem trocando {saudacao}, {nome}, {empresa}, {cidade} e {remetente}. */
+export function montarMensagem(
+  modelo: string,
+  v: { nome?: string | null; empresa: string; cidade?: string | null; remetente?: string | null },
+): string {
+  const nome = v.nome?.trim() || '';
+  const valores: Record<string, string> = {
+    saudacao: nome ? `Olá, ${nome}!` : 'Olá!',
+    nome,
+    empresa: v.empresa,
+    cidade: v.cidade?.trim() || 'sua cidade',
+    remetente: v.remetente?.trim() || '',
+  };
+  return modelo
+    .replace(/\{(\w+)\}/g, (todo, chave: string) => valores[chave] ?? todo)
+    .replace(/Aqui é\s+da/g, 'Aqui é da')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ ([,.!?])/g, '$1')
+    .trim();
+}

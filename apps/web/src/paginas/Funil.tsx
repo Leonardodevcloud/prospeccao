@@ -12,9 +12,13 @@ import {
   qs,
   ROTULO_ETAPA,
 } from '../api';
+import { ConfigurarCadencia, EnvioRapido } from '../componentes/Cadencia';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { diasDesde, fmtCidade, fmtNome, fmtNumero, fmtPrazo, fmtReais, formatarTelefone } from '../formatar';
+
+/** Etapas em que a cadência tem uma mensagem pronta para mandar. */
+const COM_MENSAGEM = new Set<EtapaFunil>(['a_abordar', 'abordado', 'respondeu', 'proposta']);
 
 /** Colunas de fechamento mostram só os mais recentes, para o quadro não crescer sem fim. */
 const FECHADAS = new Set<EtapaFunil>(['ganho', 'perdido']);
@@ -42,8 +46,10 @@ export function useFollowupsPendentes() {
 
 function Card(props: {
   c: CardFunil;
+  totalTentativas: number;
   arrastando: boolean;
   aoAbrir: () => void;
+  aoMandarMensagem: () => void;
   aoArrastar: (e: DragEvent) => void;
   aoSoltarSobre: (e: DragEvent, depois: boolean) => void;
   marcadorAntes: boolean;
@@ -109,12 +115,29 @@ function Card(props: {
                 <span className="quieto">Sem próximo passo</span>
               )}
               <span className="quieto" title="Tempo nesta etapa">
+                {c.etapa === 'abordado' && c.tentativas > 0
+                  ? `msg ${Math.min(c.tentativas, props.totalTentativas)}/${props.totalTentativas} · `
+                  : ''}
                 {dias === 0 ? 'hoje' : `${dias} d`}
-                {c.contatos > 0 && ` · ${c.contatos} contato${c.contatos === 1 ? '' : 's'}`}
+                {c.etapa !== 'abordado' &&
+                  c.contatos > 0 &&
+                  ` · ${c.contatos} contato${c.contatos === 1 ? '' : 's'}`}
               </span>
             </span>
           )}
         </button>
+        {COM_MENSAGEM.has(c.etapa) && c.telefone && !c.encerrarEm && (
+          <div className="cartao__acoes">
+            <Button
+              size="sm"
+              variant={c.pendente ? 'primary' : 'secondary'}
+              icon="message-circle"
+              onClick={props.aoMandarMensagem}
+            >
+              {c.etapa === 'a_abordar' ? 'Abordar' : c.etapa === 'abordado' ? 'Follow-up' : 'Mensagem'}
+            </Button>
+          </div>
+        )}
       </article>
     </>
   );
@@ -134,6 +157,8 @@ export function Funil() {
   const [perda, setPerda] = useState<{ card: CardFunil; antesDe: number | null } | null>(null);
   const [motivo, setMotivo] = useState('');
   const [verTodas, setVerTodas] = useState<Set<EtapaFunil>>(new Set());
+  const [mensagemPara, setMensagemPara] = useState<CardFunil | null>(null);
+  const [configurando, setConfigurando] = useState(false);
 
   const mudar = (novos: Record<string, string | null>) => {
     const p = new URLSearchParams(params);
@@ -292,6 +317,9 @@ export function Funil() {
         >
           Follow-ups de hoje{quadro.data ? ` (${fmtNumero(quadro.data.pendentes)})` : ''}
         </Button>
+        <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
+          Cadência e mensagens
+        </Button>
       </div>
 
       {perda && (
@@ -427,6 +455,8 @@ export function Funil() {
                       <Card
                         key={c.empresaId}
                         c={c}
+                        totalTentativas={quadro.data?.totalTentativas ?? 4}
+                        aoMandarMensagem={() => setMensagemPara(c)}
                         arrastando={arrastado?.empresaId === c.empresaId}
                         marcadorAntes={recebendo && alvo?.antesDe === c.empresaId}
                         aoAbrir={() => mudar({ empresa: String(c.empresaId) })}
@@ -462,11 +492,20 @@ export function Funil() {
             })}
           </div>
           <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
-            Arraste os cards entre as colunas ou abra o card para mudar a etapa, registrar contatos e marcar o
-            próximo passo.
+            O próximo passo é marcado sozinho: cada mensagem sem resposta agenda o follow-up seguinte, e quem
+            não responde a nenhuma vai para Perdido. Use "Follow-ups de hoje" para ver o que mandar agora.
           </p>
         </>
       )}
+
+      {mensagemPara && (
+        <EnvioRapido
+          empresaId={mensagemPara.empresaId}
+          nome={mensagemPara.nome}
+          aoFechar={() => setMensagemPara(null)}
+        />
+      )}
+      {configurando && <ConfigurarCadencia aoFechar={() => setConfigurando(false)} />}
 
       {empresaAberta && (
         <FichaEmpresa
