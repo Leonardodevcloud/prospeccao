@@ -947,3 +947,116 @@ export interface ConfigAgenda {
   lembreteUsuarioWhatsapp: boolean;
   duracaoReuniaoMin: number;
 }
+
+/* ───────────────────────────── E-mail ───────────────────────────── */
+
+export type ClasseResposta = 'interessado' | 'sem_interesse' | 'descadastro' | 'automatica';
+export const ROTULO_CLASSE: Record<ClasseResposta, string> = {
+  interessado: 'Tem interesse',
+  sem_interesse: 'Sem interesse',
+  descadastro: 'Pediu para sair',
+  automatica: 'Resposta automática',
+};
+
+export interface ConfigEmail {
+  ligado: boolean;
+  remetenteNome: string;
+  responderPara: string | null;
+  assinatura: string;
+  limiteDia: number;
+  intervaloSeg: number;
+  horaInicio: number;
+  horaFim: number;
+  diasSemana: number[];
+  rastrearAbertura: boolean;
+  imapUltimoUid: number | null;
+  imapLidoEm: string | null;
+  imapErro: string | null;
+}
+
+export interface VisaoEmail {
+  config: ConfigEmail;
+  resumo: { enviadosHoje: number; naFila: number; respostasNaoLidas: number };
+  status: { smtp: boolean; imap: boolean; ia: boolean; remetente: string | null };
+}
+
+export interface ArquivoEmail {
+  id: number;
+  nome: string;
+  mime: string;
+  tamanho: number;
+}
+
+export interface ModeloEmail {
+  id: number;
+  nome: string;
+  assunto: string;
+  corpo: string;
+  anexos: number[];
+  arquivos: ArquivoEmail[];
+  atualizadoEm: string;
+}
+
+export interface CampanhaEmail {
+  id: number;
+  nome: string;
+  status: 'rascunho' | 'enviando' | 'pausada' | 'concluida';
+  passos: { modeloId: number; dias: number }[];
+  faixas: ('A' | 'B' | 'C')[];
+  pularNoFunil: boolean;
+  incluirContador: boolean;
+  campanhaId: number;
+  campanhaNome: string;
+  criadoEm: string;
+  iniciadaEm: string | null;
+  concluidaEm: string | null;
+  leads: number;
+  naFila: number;
+  enviados: number;
+  erros: number;
+  abriram: number;
+  clicaram: number;
+  responderam: number;
+  interessados: number;
+  ultimoEnvio: string | null;
+}
+
+export interface EnvioEmail {
+  id: number;
+  empresaId: number;
+  nome: string;
+  cidade: string | null;
+  email: string;
+  passo: number;
+  status: 'na_fila' | 'enviado' | 'erro' | 'devolvido' | 'cancelado';
+  assunto: string | null;
+  erro: string | null;
+  enviadoEm: string | null;
+  abertoEm: string | null;
+  aberturas: number;
+  clicadoEm: string | null;
+  cliques: number;
+  respondidoEm: string | null;
+  campanhaNome: string;
+  campanhaEmailId: number;
+  classeResposta: ClasseResposta | null;
+  etapaFunil: EtapaFunil | null;
+}
+
+export interface RespostaEmail {
+  id: number;
+  empresaId: number | null;
+  nome: string | null;
+  cidade: string | null;
+  deEmail: string;
+  deNome: string | null;
+  assunto: string | null;
+  texto: string;
+  recebidoEm: string;
+  classe: ClasseResposta;
+  resumo: string | null;
+  classificadoPor: 'ia' | 'regra' | 'voce';
+  lidaEm: string | null;
+  etapaFunil: EtapaFunil | null;
+  campanhaNome: string | null;
+}

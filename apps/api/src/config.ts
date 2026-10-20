@@ -31,6 +31,15 @@ export const esquemaEnvApi = envBase.extend({
   EVOLUTION_INSTANCIA: opcional(z.string().min(1)),
   GEMINI_API_KEY: opcional(z.string().min(10)),
   GEMINI_MODELO: z.string().default('gemini-3.5-flash-lite'),
+  /** E-mail de prospecção: a caixa da empresa (SMTP para enviar, IMAP para ler as respostas). */
+  EMAIL_SMTP_HOST: opcional(z.string().min(3)),
+  EMAIL_SMTP_PORTA: z.coerce.number().int().default(587),
+  EMAIL_USUARIO: opcional(z.string().min(3)),
+  EMAIL_SENHA: opcional(z.string().min(1)),
+  /** Remetente (padrão: o próprio EMAIL_USUARIO). */
+  EMAIL_REMETENTE: opcional(z.string().email()),
+  EMAIL_IMAP_HOST: opcional(z.string().min(3)),
+  EMAIL_IMAP_PORTA: z.coerce.number().int().default(993),
 });
 
 export type EnvApi = z.infer<typeof esquemaEnvApi>;

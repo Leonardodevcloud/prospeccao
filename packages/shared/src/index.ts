@@ -1,4 +1,5 @@
 export * from './dominio.js';
+export * from './email.js';
 export * from './equipe.js';
 export * from './erros.js';
 export * from './funil.js';

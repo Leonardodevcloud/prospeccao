@@ -11,7 +11,8 @@
     "./enriquecimento": "./src/enriquecimento/index.ts",
     "./places": "./src/places/index.ts",
     "./whatsapp": "./src/whatsapp/index.ts",
-    "./agente": "./src/agente/index.ts"
+    "./agente": "./src/agente/index.ts",
+    "./email": "./src/email/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -21,10 +22,15 @@
     "@prospeccao/shared": "workspace:*",
     "csv-parse": "7.0.3",
     "iconv-lite": "0.7.3",
+    "imapflow": "2.1.2",
+    "mailparser": "3.9.32",
+    "nodemailer": "10.0.13",
     "yauzl": "3.4.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@types/mailparser": "3.9.0",
+    "@types/nodemailer": "8.0.2",
     "@types/yauzl": "3.4.0"
   }
 }

@@ -1183,8 +1183,10 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
   });
 
   it('agenda: tarefas, meu dia, calendário para o Google e lembretes da reunião', async () => {
-    const amanha10 = new Date(Date.now() + 86_400_000);
-    amanha10.setUTCHours(13, 0, 0, 0); // 10h em São Paulo
+    const diaAmanha = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(
+      new Date(Date.now() + 86_400_000),
+    );
+    const amanha10 = new Date(`${diaAmanha}T10:00:00-03:00`);
     const tarefa = await enviar('post', '/agenda', {
       tipo: 'ligacao',
       titulo: 'Ligar para o gerente',
@@ -1251,6 +1253,252 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await pool.query(
       `UPDATE cadastro.usuarios SET ativo = false WHERE email IN ('ana@exemplo.com', 'caio@exemplo.com')`,
     );
+  });
+
+  it('e-mail: quem recebe, modelo com anexo e prévia, envio rastreado, follow-up, resposta com interesse vai para o SDR', async () => {
+    const motor = await import('../src/modulos/email/motor.js');
+    await pool.query(
+      `INSERT INTO cadastro.campanhas (id, nome, nicho_id, cidades) VALUES
+         (95, 'Campanha e-mail', (SELECT id FROM cadastro.nichos ORDER BY id LIMIT 1), '[{"nome":"Salvador","uf":"BA"}]')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO descoberta.empresas (id, nome, cidade, uf) VALUES
+         (95, 'AUTO PECAS EMAIL', 'SALVADOR', 'BA'), (96, 'Peças do Contador', 'SALVADOR', 'BA'),
+         (97, 'Descartada Peças', 'SALVADOR', 'BA'), (98, 'Sem Email Peças', 'SALVADOR', 'BA')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) SELECT 95, x, 'maps' FROM unnest(ARRAY[95,96,97,98]) x ON CONFLICT DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, rotulo) VALUES
+         (95, 'email', 'compras@autopecasemail.com.br', 'site', '{site}', 'nao_verificado', null),
+         (96, 'email', 'fiscal@contabilidadex.com.br', 'receita', '{receita}', 'atencao', 'Pode ser do contador'),
+         (97, 'email', 'loja@descartada.com.br', 'site', '{site}', 'nao_verificado', null)`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.pessoas (empresa_id, nome, cargo, decisor, papel, fontes) VALUES (95, 'JOAO CARLOS', 'Sócio', true, 'socio', '{receita}')`,
+    );
+    await enviar('post', '/funil', { empresaIds: [97], etapa: 'descartado', motivo: 'teste' });
+
+    // Quem recebe: só quem tem e-mail, sem o do contador e sem o descartado.
+    const est = await enviar('post', '/email/campanhas/estimar', { campanhaId: 95 });
+    expect(est.body).toMatchObject({ leads: 4, comEmail: 3, elegiveis: 1 });
+    expect(
+      (await enviar('post', '/email/campanhas/estimar', { campanhaId: 95, incluirContador: true })).body
+        .elegiveis,
+    ).toBe(2);
+
+    // Modelo com a proposta em anexo e prévia com um lead de verdade.
+    const modelos = (await ler('/email/modelos')).body;
+    expect(modelos.length).toBeGreaterThanOrEqual(2);
+    const anexo = await enviar('post', '/email/anexos', {
+      nome: 'proposta.pdf',
+      mime: 'application/pdf',
+      base64: Buffer.from('%PDF-1.4 proposta').toString('base64'),
+    });
+    expect(anexo.status).toBe(201);
+    const salvo = await enviar('put', `/email/modelos/${modelos[0].id}`, {
+      ...modelos[0],
+      anexos: [anexo.body.id],
+    });
+    expect(salvo.body.modelos[0].arquivos[0]).toMatchObject({
+      nome: 'proposta.pdf',
+      mime: 'application/pdf',
+    });
+    const previa = await enviar('post', '/email/previa', {
+      assunto: 'Oi {empresa}',
+      corpo: '{saudacao}\n\nVeja www.tutts.com.br',
+      empresaId: 95,
+    });
+    expect(previa.body.assunto).toBe('Oi Auto Pecas Email');
+    expect(previa.body.html).toMatch(/href="https:\/\/www\.tutts\.com\.br"/);
+
+    // Campanha em sequência: 1º e-mail (com anexo) e follow-up 3 dias depois sem resposta.
+    const camp = await enviar('post', '/email/campanhas', {
+      nome: 'Teste',
+      campanhaId: 95,
+      incluirContador: true,
+      passos: [
+        { modeloId: modelos[0].id, dias: 0 },
+        { modeloId: modelos[1].id, dias: 3 },
+      ],
+    });
+    expect(camp.status).toBe(201);
+    expect((await enviar('post', `/email/campanhas/${camp.body.id}/iniciar`)).body).toEqual({ naFila: 2 });
+    const cfg = (await ler('/email')).body.config;
+    expect(
+      (
+        await enviar('put', '/email/config', {
+          ...cfg,
+          ligado: true,
+          horaInicio: 0,
+          horaFim: 24,
+          diasSemana: [0, 1, 2, 3, 4, 5, 6],
+          intervaloSeg: 10,
+        })
+      ).status,
+    ).toBe(200);
+
+    const enviados: {
+      para: string;
+      assunto: string;
+      html: string;
+      anexos?: unknown[];
+      emRespostaA?: string | null;
+      descadastro?: string | null;
+    }[] = [];
+    const deps = {
+      pool,
+      log: criarLogger('teste', 'silent'),
+      origens: [ORIGEM],
+      classificarEmail: null,
+      email: {
+        remetente: 'comercial@tutts.com.br',
+        async enviar(e: (typeof enviados)[number]) {
+          enviados.push(e);
+          return { messageId: `<msg-${enviados.length}@tutts>` };
+        },
+      },
+    };
+    const conf = await (await import('../src/modulos/email/repositorio.js')).obterConfig(pool);
+    const agora = Date.now();
+    const ok1 = await motor.enviarProximo(deps as never, conf, new Date(agora));
+    expect(ok1).toBe(true);
+    expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 1000))).toBe(false); // intervalo
+    expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 20_000))).toBe(true);
+    const primeiro = enviados.find((e) => e.para === 'compras@autopecasemail.com.br')!;
+    expect(primeiro.assunto).toBe('Entregas mais rápidas para a Auto Pecas Email');
+    expect(primeiro.html).toMatch(/Olá, Joao!/);
+    expect(primeiro.html).toMatch(/<ul[^>]*><li[^>]*>Motoboy dedicado/);
+    expect(primeiro.anexos).toHaveLength(1);
+    expect(primeiro.descadastro).toMatch(/\/e\/sair\/[0-9a-f]{32}$/);
+    const {
+      rows: [envio95],
+    } = await pool.query(`SELECT * FROM comercial.envios_email WHERE empresa_id = 95`);
+    expect(envio95).toMatchObject({ status: 'enviado', message_id: '<msg-1@tutts>' });
+    expect(primeiro.html).toContain(`/e/a/${envio95.token}.gif`);
+
+    // Abertura (imagem) e clique (só para o link que estava no e-mail).
+    const gif = await request(app).get(`/e/a/${envio95.token}.gif`);
+    expect(gif.headers['content-type']).toBe('image/gif');
+    const clique = await request(app).get(`/e/c/${envio95.token}/0`);
+    expect(clique.status).toBe(302);
+    expect(clique.headers.location).toMatch(/^https:\/\//);
+    expect((await request(app).get(`/e/c/${envio95.token}/99`)).status).toBe(404);
+    const {
+      rows: [aberto],
+    } = await pool.query(`SELECT aberturas, cliques, aberto_em FROM comercial.envios_email WHERE id = $1`, [
+      envio95.id,
+    ]);
+    expect(aberto).toMatchObject({ aberturas: 1, cliques: 1 });
+
+    // E-mail do contador voltou: endereço inválido, não recebe follow-up.
+    expect(
+      await motor.processarRecebido(deps as never, {
+        uid: 1,
+        messageId: '<bounce@x>',
+        emRespostaA: null,
+        referencias: [],
+        de: 'mailer-daemon@googlemail.com',
+        deNome: null,
+        assunto: 'Delivery Status Notification (Failure)',
+        texto: 'Address not found: fiscal@contabilidadex.com.br',
+        data: new Date().toISOString(),
+        automatica: false,
+        devolucao: true,
+      }),
+    ).toBe('devolucao');
+    const {
+      rows: [contador],
+    } = await pool.query(
+      `SELECT status FROM enriquecimento.contatos WHERE empresa_id = 96 AND canal = 'email'`,
+    );
+    expect(contador.status).toBe('invalido');
+
+    // Follow-up: 3 dias sem resposta → 2º e-mail na mesma conversa.
+    await pool.query(
+      `UPDATE comercial.envios_email SET enviado_em = now() - interval '4 days' WHERE campanha_email_id = $1`,
+      [camp.body.id],
+    );
+    expect(await motor.agendarSeguimentos(deps as never)).toBe(1);
+    expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 60_000))).toBe(true);
+    expect(enviados.at(-1)).toMatchObject({
+      para: 'compras@autopecasemail.com.br',
+      emRespostaA: '<msg-1@tutts>',
+    });
+
+    // Resposta com interesse: entra no SDR em "Respondeu", com próximo passo e aviso.
+    expect(
+      await motor.processarRecebido(deps as never, {
+        uid: 2,
+        messageId: '<resp-1@cliente>',
+        emRespostaA: '<msg-3@tutts>',
+        referencias: ['<msg-1@tutts>'],
+        de: 'compras@autopecasemail.com.br',
+        deNome: 'João',
+        assunto: 'Re: Entregas',
+        texto: 'Oi! Tenho interesse sim, quanto fica para 30 entregas por dia?',
+        data: new Date().toISOString(),
+        automatica: false,
+        devolucao: false,
+      }),
+    ).toBe('resposta');
+    const op = (await ler('/funil/95')).body.oportunidade;
+    expect(op).toMatchObject({ etapa: 'respondeu', proximaAcao: 'Responder o e-mail', pipelineNome: 'SDR' });
+    const resps = (await ler('/email/respostas')).body;
+    expect(resps[0]).toMatchObject({ empresaId: 95, classe: 'interessado', classificadoPor: 'regra' });
+    expect(
+      (await ler('/email/envios?filtro=responderam')).body.map((e: { empresaId: number }) => e.empresaId),
+    ).toContain(95);
+    const camps = (await ler('/email/campanhas')).body;
+    expect(camps.find((c: { id: number }) => c.id === camp.body.id)).toMatchObject({
+      enviados: 2,
+      abriram: 1,
+      clicaram: 1,
+      responderam: 1,
+      interessados: 1,
+    });
+    // Mesma mensagem lida de novo: ignora.
+    expect(
+      await motor.processarRecebido(deps as never, {
+        uid: 2,
+        messageId: '<resp-1@cliente>',
+        emRespostaA: '<msg-3@tutts>',
+        referencias: [],
+        de: 'compras@autopecasemail.com.br',
+        deNome: null,
+        assunto: 'Re',
+        texto: 'x',
+        data: new Date().toISOString(),
+        automatica: false,
+        devolucao: false,
+      }),
+    ).toBe('ignorado');
+    expect((await ler('/email/lead/95')).body.respostas).toHaveLength(1);
+
+    // Sair da lista pelo link do e-mail: GET só pergunta, POST tira.
+    expect((await request(app).get(`/e/sair/${envio95.token}`)).text).toMatch(/me tire da lista/);
+    expect((await request(app).post(`/e/sair/${envio95.token}`)).text).toMatch(/você saiu da lista/);
+    expect(
+      (await enviar('post', '/email/campanhas/estimar', { campanhaId: 95, pularNoFunil: false })).body
+        .elegiveis,
+    ).toBe(0);
+
+    // Corrigir a classificação: descadastro também tira da lista.
+    expect(
+      (await enviar('post', `/email/respostas/${resps[0].id}/classe`, { classe: 'sem_interesse' })).status,
+    ).toBe(200);
+    expect((await ler('/email/respostas?classe=sem_interesse')).body).toHaveLength(1);
+
+    // Limpa (o próximo teste conta o funil).
+    await pool.query('DELETE FROM comercial.campanhas_email');
+    await pool.query('DELETE FROM comercial.oportunidades WHERE empresa_id IN (95, 96, 97, 98)');
+    await pool.query('DELETE FROM descoberta.empresas WHERE id IN (95, 96, 97, 98)');
+    await pool.query('DELETE FROM enriquecimento.pessoas WHERE empresa_id IN (95, 96, 97, 98)');
+    await pool.query('DELETE FROM enriquecimento.contatos WHERE empresa_id IN (95, 96, 97, 98)');
+    await pool.query('DELETE FROM cadastro.campanhas WHERE id = 95');
   });
 
   it('para o enriquecimento e apaga a campanha com os leads só dela (base de CNPJ fica)', async () => {

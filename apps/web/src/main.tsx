@@ -13,6 +13,7 @@ import { BaseCnpj } from './paginas/BaseCnpj';
 import { Campanhas } from './paginas/Campanhas';
 import { Conversas } from './paginas/Conversas';
 import { Convite } from './paginas/Convite';
+import { Email } from './paginas/Email';
 import { Equipe } from './paginas/Equipe';
 import { Funil } from './paginas/Funil';
 import { Leads } from './paginas/Leads';
@@ -36,6 +37,7 @@ const roteador = createBrowserRouter([
       { path: 'hoje', element: <MeuDia /> },
       { path: 'conversas', element: <Conversas /> },
       { path: 'equipe', element: <Equipe /> },
+      { path: 'email', element: <Email /> },
       { path: 'funil', element: <Funil /> },
       { path: 'relatorios', element: <Relatorios /> },
       { path: 'agente', element: <Agente /> },

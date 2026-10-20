@@ -239,7 +239,14 @@ export function Agente() {
             precisa.
           </p>
         </div>
-        <Badge tone={d.config.ligado ? 'brand' : 'neutral'}>{d.config.ligado ? 'Ligado' : 'Desligado'}</Badge>
+        <div className="acoes">
+          <Button variant="ghost" icon="mail" onClick={() => navegar('/email?aba=modelos')}>
+            Textos dos e-mails
+          </Button>
+          <Badge tone={d.config.ligado ? 'brand' : 'neutral'}>
+            {d.config.ligado ? 'Ligado' : 'Desligado'}
+          </Badge>
+        </div>
       </div>
 
       {(!d.status.whatsapp || !d.status.ia) && (

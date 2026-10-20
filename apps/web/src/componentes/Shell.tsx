@@ -5,6 +5,7 @@ import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-route
 import { api, ErroApi, ROTULO_PAPEL_USUARIO } from '../api';
 import { useAgentePendente } from '../paginas/Agente';
 import { temAtividade, useAtividade } from '../paginas/Atividade';
+import { useVisaoEmail } from '../paginas/Email';
 import { useFollowupsPendentes } from '../paginas/Funil';
 import { useMeuDiaResumo } from '../paginas/MeuDia';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
@@ -15,6 +16,7 @@ import { Dono, useSessao } from './Sessao';
 const ITENS: { para: string; rotulo: string; icone: string; fim?: boolean; admin?: boolean }[] = [
   { para: '/hoje', rotulo: 'Meu dia', icone: 'calendar' },
   { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle' },
+  { para: '/email', rotulo: 'E-mail', icone: 'mail' },
   { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
   { para: '/', rotulo: 'Leads', icone: 'users', fim: true },
   { para: '/agente', rotulo: 'Agente', icone: 'bot' },
@@ -47,6 +49,7 @@ export function Shell() {
   useAvisosNoNavegador(avisos.data?.itens, avisos.data?.naoLidas ?? 0);
   const naoLidas = useConversasNaoLidas().data?.naoLidas ?? 0;
   const doDia = useMeuDiaResumo().data ?? 0;
+  const respostasEmail = useVisaoEmail().data?.resumo.respostasNaoLidas ?? 0;
   // Ponto pulsando em "Atividade" enquanto o motor trabalha, em qualquer tela.
   const ativo = temAtividade(useAtividade(60_000).data);
   const pendentes = useFollowupsPendentes().data?.pendentes ?? 0;
@@ -85,6 +88,11 @@ export function Shell() {
             {i.para === '/conversas' && naoLidas > 0 && (
               <span className="nav__conta nav__conta--marca" title="Conversas com mensagem não lida">
                 {naoLidas}
+              </span>
+            )}
+            {i.para === '/email' && respostasEmail > 0 && (
+              <span className="nav__conta nav__conta--marca" title="Respostas de e-mail não lidas">
+                {respostasEmail}
               </span>
             )}
             {i.para === '/funil' && pendentes > 0 && (

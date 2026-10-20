@@ -31,6 +31,7 @@ import {
   ROTULO_CRUZAMENTO,
 } from '../formatar';
 import { Drawer } from './Drawer';
+import { EmailsDoLead } from './EmailsDoLead';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { SecaoFunil } from './SecaoFunil';
 
@@ -577,6 +578,8 @@ export function FichaEmpresa({
                 (e.mapsTelefone ? { canal: 'telefone', valor: e.mapsTelefone } : null)
               }
             />
+
+            <EmailsDoLead empresaId={e.id} />
 
             <section className="secao">
               <h2>

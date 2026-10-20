@@ -12,6 +12,8 @@ import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
 import { rotasCampanhas } from './modulos/campanhas/rotas.js';
 import { rotasConversas } from './modulos/conversas/rotas.js';
+import { rotasEmailPublico } from './modulos/email/publico.js';
+import { rotasEmail } from './modulos/email/rotas.js';
 import { rotasEmpresas } from './modulos/empresas/rotas.js';
 import { rotasEquipe } from './modulos/equipe/rotas.js';
 import { rotasFunil } from './modulos/funil/rotas.js';
@@ -36,7 +38,9 @@ export function criarApp(deps: DepsApi): Express {
   const jsonGrande = express.json({ limit: '15mb' });
   const jsonPequeno = express.json({ limit: '200kb' });
   app.use((req, res, next) =>
-    /^\/conversas\/\d+\/midia$/.test(req.path) ? jsonGrande(req, res, next) : jsonPequeno(req, res, next),
+    /^\/conversas\/\d+\/midia$|^\/email\/anexos$/.test(req.path)
+      ? jsonGrande(req, res, next)
+      : jsonPequeno(req, res, next),
   );
   app.use(cookieParser());
   app.use(
@@ -59,6 +63,8 @@ export function criarApp(deps: DepsApi): Express {
   app.use('/saude', rotasSaudePublica(deps));
   // Agenda por link secreto, para o Google Agenda assinar (sem login).
   app.use('/calendario', rotasCalendario(deps));
+  // Abertura, clique e "sair da lista" dos e-mails (o leitor do lead não tem login nem origem).
+  app.use('/e', rotasEmailPublico(deps));
   app.use(exigirOrigemConhecida(deps.origens));
   app.use('/auth', rotasAuth(deps));
 
@@ -77,6 +83,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));
   protegidas.use('/agenda', rotasAgenda(deps));
+  protegidas.use('/email', rotasEmail(deps));
   protegidas.use('/atividade', rotasAtividade(deps));
   protegidas.use('/places', rotasPlaces(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));

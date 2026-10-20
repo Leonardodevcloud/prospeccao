@@ -134,3 +134,80 @@ export async function decidirComGemini(cfg: ConfigGeminiAgente, c: ContextoAgent
   );
   return lerDecisao(r.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
 }
+
+/* ───────────── Resposta de e-mail: o lead tem interesse? ───────────── */
+
+export type ClasseRespostaEmail = 'interessado' | 'sem_interesse' | 'descadastro' | 'automatica';
+
+export interface AnaliseRespostaEmail {
+  classe: ClasseRespostaEmail;
+  /** Uma frase com o que o lead disse (para o vendedor ler no card). */
+  resumo: string;
+}
+
+const ESQUEMA_EMAIL = {
+  type: 'OBJECT',
+  properties: {
+    classe: { type: 'STRING', enum: ['interessado', 'sem_interesse', 'descadastro', 'automatica'] },
+    resumo: { type: 'STRING' },
+  },
+  required: ['classe', 'resumo'],
+};
+
+export function promptRespostaEmail(c: { sobreEmpresa: string; assunto: string; texto: string }): string {
+  return [
+    'Você classifica respostas a e-mails de prospecção B2B. Responda só com o JSON pedido.',
+    `Quem mandou o e-mail: ${c.sobreEmpresa.slice(0, 1500)}`,
+    '',
+    'Classes:',
+    '- "interessado": quer saber mais, pediu preço, proposta, ligação, reunião, fez pergunta, indicou outra pessoa ou disse "talvez mais pra frente". Na dúvida entre interessado e sem_interesse, escolha interessado.',
+    '- "sem_interesse": recusou claramente (não precisa, já tem fornecedor, não atende o perfil).',
+    '- "descadastro": pediu para não receber mais e-mails.',
+    '- "automatica": resposta automática (férias, ausência, recebemos sua mensagem).',
+    '"resumo": uma frase curta em português dizendo o que o lead disse.',
+    '',
+    `Assunto: ${c.assunto.slice(0, 300)}`,
+    'Resposta do lead:',
+    c.texto.slice(0, 6000),
+  ].join('\n');
+}
+
+export function lerAnaliseEmail(bruto: string): AnaliseRespostaEmail | null {
+  try {
+    const j = JSON.parse(bruto) as Partial<AnaliseRespostaEmail>;
+    const classes: ClasseRespostaEmail[] = ['interessado', 'sem_interesse', 'descadastro', 'automatica'];
+    if (!j.classe || !classes.includes(j.classe)) return null;
+    return {
+      classe: j.classe,
+      resumo: String(j.resumo ?? '')
+        .trim()
+        .slice(0, 300),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function classificarRespostaEmail(
+  cfg: ConfigGeminiAgente,
+  c: { sobreEmpresa: string; assunto: string; texto: string },
+): Promise<AnaliseRespostaEmail | null> {
+  const r = await requisitarJson<{ candidates?: { content?: { parts?: { text?: string }[] } }[] }>(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`,
+    {
+      servico: 'Gemini',
+      method: 'POST',
+      headers: { 'x-goog-api-key': cfg.apiKey },
+      body: {
+        contents: [{ role: 'user', parts: [{ text: promptRespostaEmail(c) }] }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+          responseSchema: ESQUEMA_EMAIL,
+        },
+      },
+      timeoutMs: 30_000,
+    },
+  );
+  return lerAnaliseEmail(r.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
+}

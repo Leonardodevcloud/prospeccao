@@ -1,5 +1,6 @@
 import type { Pool } from '@prospeccao/db';
-import type { ContextoAgente, DecisaoAgente } from '@prospeccao/integrations/agente';
+import type { AnaliseRespostaEmail, ContextoAgente, DecisaoAgente } from '@prospeccao/integrations/agente';
+import type { EmailParaEnviar, EmailRecebido } from '@prospeccao/integrations/email';
 import type { Filas } from '@prospeccao/queue';
 import type { Logger } from '@prospeccao/shared';
 
@@ -34,6 +35,18 @@ export interface DepsApi {
     /** Arquivo de mensagem recebida, quando não vem junto no webhook. */
     baixarMidia?(idExterno: string): Promise<{ base64: string; mime: string | null } | null>;
   } | null;
+  /** E-mail da empresa: envia por SMTP e (com IMAP) lê as respostas. */
+  email?: {
+    /** Endereço que aparece como remetente. */
+    remetente: string;
+    enviar(e: EmailParaEnviar): Promise<{ messageId: string }>;
+    verificar?(): Promise<void>;
+    lerNovos?(desdeUid: number | null): Promise<{ itens: EmailRecebido[]; ultimoUid: number }>;
+  } | null;
+  /** IA que lê a resposta do e-mail (tem interesse?). Sem ela, uma regra de palavras decide. */
+  classificarEmail?:
+    | ((c: { sobreEmpresa: string; assunto: string; texto: string }) => Promise<AnaliseRespostaEmail | null>)
+    | null;
   /** IA do agente (Gemini). Sem ela, resposta do lead vai direto para você. */
   ia?: { decidir(contexto: ContextoAgente): Promise<DecisaoAgente> } | null;
 }

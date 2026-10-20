@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { criarPool } from '@prospeccao/db';
-import { decidirComGemini } from '@prospeccao/integrations/agente';
+import { classificarRespostaEmail, decidirComGemini } from '@prospeccao/integrations/agente';
+import { criarEnvioSmtp, lerNovos } from '@prospeccao/integrations/email';
 import * as ors from '@prospeccao/integrations/ors';
 import { baixarMidia, enviarMidia, enviarTexto } from '@prospeccao/integrations/whatsapp';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
@@ -9,6 +10,7 @@ import { criarApp } from './app.js';
 import { carregarEnvApi } from './config.js';
 import { iniciarLembretes } from './modulos/agenda/lembretes.js';
 import { iniciarAgente } from './modulos/agente/motor.js';
+import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 
 const env = carregarEnvApi();
@@ -40,9 +42,44 @@ const ia = env.GEMINI_API_KEY
     }
   : null;
 
+const smtp =
+  env.EMAIL_SMTP_HOST && env.EMAIL_USUARIO && env.EMAIL_SENHA
+    ? criarEnvioSmtp({
+        host: env.EMAIL_SMTP_HOST,
+        porta: env.EMAIL_SMTP_PORTA,
+        usuario: env.EMAIL_USUARIO,
+        senha: env.EMAIL_SENHA,
+      })
+    : null;
+const email = smtp
+  ? {
+      remetente: env.EMAIL_REMETENTE ?? env.EMAIL_USUARIO!,
+      enviar: smtp.enviar,
+      verificar: smtp.verificar,
+      lerNovos: env.EMAIL_IMAP_HOST
+        ? (desde: number | null) =>
+            lerNovos(
+              {
+                host: env.EMAIL_IMAP_HOST!,
+                porta: env.EMAIL_IMAP_PORTA,
+                usuario: env.EMAIL_USUARIO!,
+                senha: env.EMAIL_SENHA!,
+              },
+              desde,
+            )
+        : undefined,
+    }
+  : null;
+const classificarEmail = env.GEMINI_API_KEY
+  ? (c: Parameters<typeof classificarRespostaEmail>[1]) =>
+      classificarRespostaEmail({ apiKey: env.GEMINI_API_KEY!, modelo: env.GEMINI_MODELO }, c)
+  : null;
+
 const app = criarApp({
   whatsapp,
   ia,
+  email,
+  classificarEmail,
   pool,
   filas,
   log,
@@ -70,11 +107,14 @@ const pararAutomacao = iniciarAutomacaoFunil(pool, log);
 const pararAgente = iniciarAgente({ pool, log, whatsapp, ia }, log);
 // Agenda: lembrete da reunião para o lead (WhatsApp) e aviso para o vendedor.
 const pararLembretes = iniciarLembretes({ pool, log, whatsapp });
+// E-mail de prospecção: envia as campanhas e lê as respostas (só envia se estiver ligado na tela).
+const pararEmail = iniciarEmail({ pool, log, email, classificarEmail, origens: env.APP_ORIGENS });
 
 encerrarAoReceberSinal(log, async () => {
   pararAutomacao();
   pararAgente();
   pararLembretes();
+  pararEmail();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
   await filas.parar();
   await pool.end();
