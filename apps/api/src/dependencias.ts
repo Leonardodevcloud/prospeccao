@@ -35,13 +35,17 @@ export interface DepsApi {
     /** Arquivo de mensagem recebida, quando não vem junto no webhook. */
     baixarMidia?(idExterno: string): Promise<{ base64: string; mime: string | null } | null>;
   } | null;
-  /** E-mail da empresa: envia por SMTP e (com IMAP) lê as respostas. */
+  /** E-mail pelo Resend: envia e busca as respostas recebidas. */
   email?: {
-    /** Endereço que aparece como remetente. */
+    /** Endereço que aparece como remetente (domínio verificado no Resend). */
     remetente: string;
-    enviar(e: EmailParaEnviar): Promise<{ messageId: string }>;
-    verificar?(): Promise<void>;
-    lerNovos?(desdeUid: number | null): Promise<{ itens: EmailRecebido[]; ultimoUid: number }>;
+    /** Domínio de recebimento do Resend: a resposta do lead vai para r-<token>@este domínio. */
+    dominioRespostas: string | null;
+    /** Segredo do webhook (whsec_…): só aceita avisos assinados pelo Resend. */
+    segredoWebhook: string | null;
+    enviar(e: EmailParaEnviar): Promise<{ id: string }>;
+    verificar?(): Promise<string>;
+    buscarRecebido?(id: string): Promise<EmailRecebido>;
   } | null;
   /** IA que lê a resposta do e-mail (tem interesse?). Sem ela, uma regra de palavras decide. */
   classificarEmail?:

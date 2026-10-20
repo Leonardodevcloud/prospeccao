@@ -1,5 +1,7 @@
-import { Router } from 'express';
+import { assinaturaValida } from '@prospeccao/integrations/email';
+import express, { Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
+import { type EventoResend, processarEvento } from './motor.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -95,5 +97,51 @@ export function rotasEmailPublico({ pool, log }: DepsApi): Router {
       );
   });
 
+  return r;
+}
+
+/**
+ * Webhook do Resend (entregue, abriu, clicou, voltou, spam, resposta recebida). Só aceita aviso
+ * assinado com o segredo do webhook; precisa do corpo cru para conferir a assinatura.
+ */
+export function rotasWebhookResend(deps: DepsApi): Router {
+  const r = Router();
+  r.post('/', express.raw({ type: '*/*', limit: '2mb' }), async (req, res) => {
+    const segredo = deps.email?.segredoWebhook;
+    if (!deps.email || !segredo) {
+      res
+        .status(404)
+        .json({ erro: { codigo: 'nao_configurado', mensagem: 'Webhook do Resend não configurado.' } });
+      return;
+    }
+    const corpo = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+    const ok = assinaturaValida(
+      segredo,
+      { id: req.get('svix-id'), timestamp: req.get('svix-timestamp'), assinatura: req.get('svix-signature') },
+      corpo,
+    );
+    if (!ok) {
+      res.status(401).json({ erro: { codigo: 'assinatura_invalida', mensagem: 'Assinatura inválida.' } });
+      return;
+    }
+    let evento: EventoResend;
+    try {
+      evento = JSON.parse(corpo.toString('utf8')) as EventoResend;
+    } catch {
+      res.status(400).json({ erro: { codigo: 'json_invalido', mensagem: 'Corpo inválido.' } });
+      return;
+    }
+    try {
+      const feito = await processarEvento(deps, evento);
+      deps.log.info({ tipo: evento.type, feito }, 'resend: aviso processado');
+      res.json({ ok: true, feito });
+    } catch (erro) {
+      // 500 faz o Resend tentar de novo mais tarde.
+      deps.log.error({ err: erro, tipo: evento.type }, 'resend: falha ao processar aviso');
+      res
+        .status(500)
+        .json({ erro: { codigo: 'falha', mensagem: 'Falha ao processar; o Resend vai tentar de novo.' } });
+    }
+  });
   return r;
 }

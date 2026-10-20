@@ -1341,31 +1341,77 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       ).status,
     ).toBe(200);
 
+    // Resend falso: guarda o que foi enviado e devolve as respostas "recebidas".
+    const SEGREDO = `whsec_${Buffer.from('segredo-de-teste-do-webhook').toString('base64')}`;
     const enviados: {
       para: string;
       assunto: string;
       html: string;
       anexos?: unknown[];
       emRespostaA?: string | null;
+      responderPara?: string | null;
       descadastro?: string | null;
+      etiquetas?: Record<string, string>;
     }[] = [];
+    const recebidos = new Map<string, unknown>();
+    const email = {
+      remetente: 'comercial@tutts.com.br',
+      dominioRespostas: 'respostas.tutts.com.br',
+      segredoWebhook: SEGREDO,
+      async enviar(e: (typeof enviados)[number]) {
+        enviados.push(e);
+        return { id: `re-${enviados.length}` };
+      },
+      async buscarRecebido(id: string) {
+        return recebidos.get(id) as never;
+      },
+    };
     const deps = {
       pool,
       log: criarLogger('teste', 'silent'),
       origens: [ORIGEM],
       classificarEmail: null,
-      email: {
-        remetente: 'comercial@tutts.com.br',
-        async enviar(e: (typeof enviados)[number]) {
-          enviados.push(e);
-          return { messageId: `<msg-${enviados.length}@tutts>` };
-        },
-      },
+      email,
     };
+    const appResend = criarApp({
+      pool,
+      log: criarLogger('teste', 'silent'),
+      filas: {
+        publicar: async () => 'x',
+        publicarVarios: async () => 0,
+        cancelarPendentes: async () => 0,
+        tamanhos: async () => ({}),
+      },
+      auth: {
+        jwtSegredo: 'x'.repeat(40),
+        adminEmail: 'ops@exemplo.com',
+        adminSenhaHash: 'x',
+        sessaoHoras: 1,
+        cookieSeguro: false,
+      },
+      origens: [ORIGEM],
+      email,
+    });
+    const { createHmac } = await import('node:crypto');
+    const aviso = (evento: object, segredo = SEGREDO) => {
+      const corpo = JSON.stringify(evento);
+      const id = `msg_${Math.random().toString(36).slice(2)}`;
+      const ts = String(Math.floor(Date.now() / 1000));
+      const assinatura = createHmac('sha256', Buffer.from(segredo.replace(/^whsec_/, ''), 'base64'))
+        .update(`${id}.${ts}.${corpo}`)
+        .digest('base64');
+      return request(appResend)
+        .post('/e/resend')
+        .set('content-type', 'application/json')
+        .set('svix-id', id)
+        .set('svix-timestamp', ts)
+        .set('svix-signature', `v1,${assinatura}`)
+        .send(corpo);
+    };
+
     const conf = await (await import('../src/modulos/email/repositorio.js')).obterConfig(pool);
     const agora = Date.now();
-    const ok1 = await motor.enviarProximo(deps as never, conf, new Date(agora));
-    expect(ok1).toBe(true);
+    expect(await motor.enviarProximo(deps as never, conf, new Date(agora))).toBe(true);
     expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 1000))).toBe(false); // intervalo
     expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 20_000))).toBe(true);
     const primeiro = enviados.find((e) => e.para === 'compras@autopecasemail.com.br')!;
@@ -1377,8 +1423,11 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     const {
       rows: [envio95],
     } = await pool.query(`SELECT * FROM comercial.envios_email WHERE empresa_id = 95`);
-    expect(envio95).toMatchObject({ status: 'enviado', message_id: '<msg-1@tutts>' });
+    expect(envio95).toMatchObject({ status: 'enviado', resend_id: expect.stringMatching(/^re-/) });
     expect(primeiro.html).toContain(`/e/a/${envio95.token}.gif`);
+    // A resposta do lead vai para um endereço só deste envio, no domínio de recebimento do Resend.
+    expect(primeiro.responderPara).toMatch(new RegExp(`<r-${envio95.token}@respostas\\.tutts\\.com\\.br>$`));
+    expect(primeiro.etiquetas).toEqual({ envio: String(envio95.id) });
 
     // Abertura (imagem) e clique (só para o link que estava no e-mail).
     const gif = await request(app).get(`/e/a/${envio95.token}.gif`);
@@ -1394,22 +1443,39 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     ]);
     expect(aberto).toMatchObject({ aberturas: 1, cliques: 1 });
 
+    // Webhook do Resend: só com assinatura válida.
+    const entregue = {
+      type: 'email.delivered',
+      created_at: new Date().toISOString(),
+      data: {
+        email_id: envio95.resend_id,
+        message_id: '<msg-1@resend>',
+        tags: { envio: String(envio95.id) },
+      },
+    };
+    expect((await aviso(entregue, `whsec_${Buffer.from('outro').toString('base64')}`)).status).toBe(401);
+    const r1 = await aviso(entregue);
+    expect(r1.body).toEqual({ ok: true, feito: 'entregue' });
+    const {
+      rows: [entregue95],
+    } = await pool.query(`SELECT message_id, entregue_em FROM comercial.envios_email WHERE id = $1`, [
+      envio95.id,
+    ]);
+    expect(entregue95.message_id).toBe('<msg-1@resend>');
+    expect(entregue95.entregue_em).not.toBeNull();
+
     // E-mail do contador voltou: endereço inválido, não recebe follow-up.
+    const {
+      rows: [envio96],
+    } = await pool.query(`SELECT id, resend_id FROM comercial.envios_email WHERE empresa_id = 96`);
     expect(
-      await motor.processarRecebido(deps as never, {
-        uid: 1,
-        messageId: '<bounce@x>',
-        emRespostaA: null,
-        referencias: [],
-        de: 'mailer-daemon@googlemail.com',
-        deNome: null,
-        assunto: 'Delivery Status Notification (Failure)',
-        texto: 'Address not found: fiscal@contabilidadex.com.br',
-        data: new Date().toISOString(),
-        automatica: false,
-        devolucao: true,
-      }),
-    ).toBe('devolucao');
+      (
+        await aviso({
+          type: 'email.bounced',
+          data: { email_id: envio96.resend_id, bounce: { type: 'Permanent', message: 'Address not found' } },
+        })
+      ).body.feito,
+    ).toBe('devolvido');
     const {
       rows: [contador],
     } = await pool.query(
@@ -1426,25 +1492,26 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 60_000))).toBe(true);
     expect(enviados.at(-1)).toMatchObject({
       para: 'compras@autopecasemail.com.br',
-      emRespostaA: '<msg-1@tutts>',
+      emRespostaA: '<msg-1@resend>',
     });
 
-    // Resposta com interesse: entra no SDR em "Respondeu", com próximo passo e aviso.
-    expect(
-      await motor.processarRecebido(deps as never, {
-        uid: 2,
-        messageId: '<resp-1@cliente>',
-        emRespostaA: '<msg-3@tutts>',
-        referencias: ['<msg-1@tutts>'],
-        de: 'compras@autopecasemail.com.br',
-        deNome: 'João',
-        assunto: 'Re: Entregas',
-        texto: 'Oi! Tenho interesse sim, quanto fica para 30 entregas por dia?',
-        data: new Date().toISOString(),
-        automatica: false,
-        devolucao: false,
-      }),
-    ).toBe('resposta');
+    // Resposta com interesse chega pelo Resend: entra no SDR em "Respondeu", com próximo passo e aviso.
+    recebidos.set('in-1', {
+      id: 'in-1',
+      messageId: '<resp-1@cliente>',
+      emRespostaA: null,
+      referencias: [],
+      de: 'compras@autopecasemail.com.br',
+      deNome: 'João',
+      para: [`r-${envio95.token}@respostas.tutts.com.br`],
+      assunto: 'Re: Entregas',
+      texto: 'Oi! Tenho interesse sim, quanto fica para 30 entregas por dia?',
+      data: new Date().toISOString(),
+      automatica: false,
+      devolucao: false,
+    });
+    expect((await aviso({ type: 'email.received', data: { email_id: 'in-1' } })).body.feito).toBe('resposta');
+    expect((await aviso({ type: 'email.received', data: { email_id: 'in-1' } })).body.feito).toBe('repetido');
     const op = (await ler('/funil/95')).body.oportunidade;
     expect(op).toMatchObject({ etapa: 'respondeu', proximaAcao: 'Responder o e-mail', pipelineNome: 'SDR' });
     const resps = (await ler('/email/respostas')).body;
@@ -1460,23 +1527,10 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       responderam: 1,
       interessados: 1,
     });
-    // Mesma mensagem lida de novo: ignora.
-    expect(
-      await motor.processarRecebido(deps as never, {
-        uid: 2,
-        messageId: '<resp-1@cliente>',
-        emRespostaA: '<msg-3@tutts>',
-        referencias: [],
-        de: 'compras@autopecasemail.com.br',
-        deNome: null,
-        assunto: 'Re',
-        texto: 'x',
-        data: new Date().toISOString(),
-        automatica: false,
-        devolucao: false,
-      }),
-    ).toBe('ignorado');
     expect((await ler('/email/lead/95')).body.respostas).toHaveLength(1);
+    expect((await ler('/email')).body.status).toMatchObject({
+      webhookUrl: expect.stringMatching(/\/e\/resend$/),
+    });
 
     // Sair da lista pelo link do e-mail: GET só pergunta, POST tira.
     expect((await request(app).get(`/e/sair/${envio95.token}`)).text).toMatch(/me tire da lista/);

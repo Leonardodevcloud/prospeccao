@@ -11,6 +11,7 @@ import {
 import { Router } from 'express';
 import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
+import { urlPublicaApi } from '../../endereco.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { guardarMidia } from '../conversas/repositorio.js';
@@ -21,17 +22,20 @@ export function rotasEmail(deps: DepsApi): Router {
   const { pool } = deps;
   const r = Router();
 
-  /** Visão geral: configuração, se o e-mail está ligado na API e os números do dia. */
+  /** Visão geral: configuração, o que está conectado no Resend e os números do dia. */
   r.get('/', async (_req, res) => {
     const [config, resumo] = await Promise.all([repo.obterConfig(pool), repo.resumo(pool)]);
     res.json({
       config,
       resumo,
       status: {
-        smtp: !!deps.email,
-        imap: !!deps.email?.lerNovos,
-        ia: !!deps.classificarEmail,
+        resend: !!deps.email,
         remetente: deps.email?.remetente ?? null,
+        dominioRespostas: deps.email?.dominioRespostas ?? null,
+        webhook: !!deps.email?.segredoWebhook,
+        // Endereço para colar no Resend (Webhooks → Add endpoint).
+        webhookUrl: `${urlPublicaApi(deps.origens)}/e/resend`,
+        ia: !!deps.classificarEmail,
       },
     });
   });
@@ -41,26 +45,27 @@ export function rotasEmail(deps: DepsApi): Router {
     res.json(await repo.obterConfig(pool));
   });
 
-  /** Testa a conexão com o servidor de e-mail (SMTP e IMAP). */
+  /** Confere a chave do Resend e o domínio do remetente. */
   r.post('/verificar', exigirAdmin, async (_req, res) => {
-    if (!deps.email) throw AppError.invalido('O e-mail não está configurado na API.');
-    const resultado: { smtp: string; imap: string } = {
-      smtp: 'ok',
-      imap: deps.email.lerNovos ? 'ok' : 'não configurado',
-    };
+    if (!deps.email)
+      throw AppError.invalido('O Resend não está configurado na API (RESEND_API_KEY e EMAIL_REMETENTE).');
+    let resend: string;
     try {
-      await deps.email.verificar?.();
+      resend = (await deps.email.verificar?.()) ?? 'ok';
     } catch (erro) {
-      resultado.smtp = erro instanceof Error ? erro.message : String(erro);
+      resend = erro instanceof Error ? erro.message : String(erro);
     }
-    if (deps.email.lerNovos) {
-      const cfg = await repo.obterConfig(pool);
-      const lidas = await motor.lerRespostas(deps, cfg, true);
-      const depois = await repo.obterConfig(pool);
-      resultado.imap =
-        depois.imapErro ?? `ok (${lidas} resposta${lidas === 1 ? '' : 's'} nova${lidas === 1 ? '' : 's'})`;
-    }
-    res.json(resultado);
+    const cfg = await repo.obterConfig(pool);
+    res.json({
+      resend,
+      respostas: deps.email.dominioRespostas
+        ? deps.email.segredoWebhook
+          ? cfg.webhookEm
+            ? `ok (último aviso do Resend ${new Date(cfg.webhookEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })})`
+            : 'configurado; nenhum aviso do Resend chegou ainda (confira o webhook no Resend)'
+          : 'falta RESEND_WEBHOOK_SEGREDO'
+        : 'falta RESEND_DOMINIO_RESPOSTAS',
+    });
   });
 
   /* Modelos */
@@ -112,9 +117,7 @@ export function rotasEmail(deps: DepsApi): Router {
       }),
     );
     if (!deps.email)
-      throw AppError.invalido(
-        'O e-mail não está configurado na API (EMAIL_SMTP_HOST, EMAIL_USUARIO, EMAIL_SENHA).',
-      );
+      throw AppError.invalido('O Resend não está configurado na API (RESEND_API_KEY e EMAIL_REMETENTE).');
     const cfg = await repo.obterConfig(pool);
     const p = await repo.previa(pool, d);
     const e = montarEmail({ assunto: `[TESTE] ${d.assunto}`, corpo: d.corpo }, p.lead, {
@@ -124,7 +127,7 @@ export function rotasEmail(deps: DepsApi): Router {
     await deps.email.enviar({
       de: { nome: cfg.remetenteNome, email: deps.email.remetente },
       para: d.para,
-      responderPara: cfg.responderPara,
+      responderPara: motor.enderecoDeResposta(deps, cfg, null),
       assunto: e.assunto,
       html: e.html,
       texto: e.texto,

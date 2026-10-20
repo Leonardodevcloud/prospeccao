@@ -12,7 +12,7 @@ import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
 import { rotasCampanhas } from './modulos/campanhas/rotas.js';
 import { rotasConversas } from './modulos/conversas/rotas.js';
-import { rotasEmailPublico } from './modulos/email/publico.js';
+import { rotasEmailPublico, rotasWebhookResend } from './modulos/email/publico.js';
 import { rotasEmail } from './modulos/email/rotas.js';
 import { rotasEmpresas } from './modulos/empresas/rotas.js';
 import { rotasEquipe } from './modulos/equipe/rotas.js';
@@ -34,6 +34,8 @@ export function criarApp(deps: DepsApi): Express {
   // Webhook do WhatsApp: vem da Evolution (sem origem do navegador, sem sessão); protegido por token.
   // Antes do limite de 200 kb: mensagem com mídia chega grande.
   app.use('/webhooks', express.json({ limit: '10mb' }), rotasWebhook(deps));
+  // Webhook do Resend: corpo cru (a assinatura é conferida sobre os bytes exatos).
+  app.use('/e/resend', rotasWebhookResend(deps));
   // Anexo da conversa (até 10 MB em base64) é o único corpo grande; o resto fica em 200 kb.
   const jsonGrande = express.json({ limit: '15mb' });
   const jsonPequeno = express.json({ limit: '200kb' });

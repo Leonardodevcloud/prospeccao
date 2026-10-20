@@ -969,15 +969,21 @@ export interface ConfigEmail {
   horaFim: number;
   diasSemana: number[];
   rastrearAbertura: boolean;
-  imapUltimoUid: number | null;
-  imapLidoEm: string | null;
-  imapErro: string | null;
+  /** Último aviso do Resend recebido. */
+  webhookEm: string | null;
 }
 
 export interface VisaoEmail {
   config: ConfigEmail;
   resumo: { enviadosHoje: number; naFila: number; respostasNaoLidas: number };
-  status: { smtp: boolean; imap: boolean; ia: boolean; remetente: string | null };
+  status: {
+    resend: boolean;
+    remetente: string | null;
+    dominioRespostas: string | null;
+    webhook: boolean;
+    webhookUrl: string;
+    ia: boolean;
+  };
 }
 
 export interface ArquivoEmail {

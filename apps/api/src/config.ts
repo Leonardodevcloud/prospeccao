@@ -31,15 +31,19 @@ export const esquemaEnvApi = envBase.extend({
   EVOLUTION_INSTANCIA: opcional(z.string().min(1)),
   GEMINI_API_KEY: opcional(z.string().min(10)),
   GEMINI_MODELO: z.string().default('gemini-3.5-flash-lite'),
-  /** E-mail de prospecção: a caixa da empresa (SMTP para enviar, IMAP para ler as respostas). */
-  EMAIL_SMTP_HOST: opcional(z.string().min(3)),
-  EMAIL_SMTP_PORTA: z.coerce.number().int().default(587),
-  EMAIL_USUARIO: opcional(z.string().min(3)),
-  EMAIL_SENHA: opcional(z.string().min(1)),
-  /** Remetente (padrão: o próprio EMAIL_USUARIO). */
+  /** E-mail de prospecção pelo Resend. */
+  RESEND_API_KEY: opcional(z.string().startsWith('re_', 'RESEND_API_KEY começa com re_')),
+  /** Remetente, de um domínio verificado no Resend (ex.: comercial@tutts.com.br). */
   EMAIL_REMETENTE: opcional(z.string().email()),
-  EMAIL_IMAP_HOST: opcional(z.string().min(3)),
-  EMAIL_IMAP_PORTA: z.coerce.number().int().default(993),
+  /** Domínio de recebimento no Resend (ex.: respostas.tutts.com.br ou xxxx.resend.app). */
+  RESEND_DOMINIO_RESPOSTAS: opcional(
+    z
+      .string()
+      .transform((v) => v.trim().toLowerCase().replace(/^@/, ''))
+      .pipe(z.string().regex(/^[a-z0-9.-]+\.[a-z]{2,}$/, 'Domínio inválido')),
+  ),
+  /** Segredo do webhook do Resend (whsec_…). */
+  RESEND_WEBHOOK_SEGREDO: opcional(z.string().startsWith('whsec_', 'O segredo do webhook começa com whsec_')),
 });
 
 export type EnvApi = z.infer<typeof esquemaEnvApi>;

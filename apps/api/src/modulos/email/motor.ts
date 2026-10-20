@@ -12,7 +12,7 @@ import * as repo from './repositorio.js';
  * Motor do e-mail (a cada 30 s, uma instância por vez):
  *  1. follow-ups: quem não respondeu ganha o próximo e-mail da sequência no dia certo;
  *  2. envio: um e-mail por vez, dentro do horário, do limite do dia e do intervalo;
- *  3. respostas: a cada 2 min lê a caixa (IMAP); quem tem interesse entra no SDR.
+ *  3. respostas e avisos chegam pelo webhook do Resend (processarEvento); quem tem interesse entra no SDR.
  */
 
 const LOCK = 7_301_028;
@@ -64,12 +64,26 @@ export async function concluirCampanhas(deps: Pick<Deps, 'pool'>): Promise<void>
   );
 }
 
+/**
+ * Para onde vai a resposta do lead: com o domínio de recebimento do Resend, um endereço só deste
+ * envio (r-<token>@…), assim a resposta volta para o sistema e já se sabe de quem é.
+ */
+export function enderecoDeResposta(
+  deps: Pick<Deps, 'email'>,
+  cfg: Pick<repo.ConfigEmail, 'remetenteNome' | 'responderPara'>,
+  token: string | null,
+): string | null {
+  const dominio = deps.email?.dominioRespostas;
+  if (dominio) return `${cfg.remetenteNome.replace(/["<>]/g, '')} <r-${token ?? 'geral'}@${dominio}>`;
+  return cfg.responderPara;
+}
+
 /** Erro do servidor de e-mail que quer dizer "esse endereço não existe". */
 function enderecoNaoExiste(erro: unknown): boolean {
   const e = erro as { responseCode?: number; message?: string };
   return (
     (e.responseCode != null && [550, 551, 553].includes(e.responseCode)) ||
-    /user unknown|no such user|does not exist|mailbox unavailable|recipient address rejected|não existe/i.test(
+    /user unknown|no such user|does not exist|mailbox unavailable|recipient address rejected|não existe|invalid `to`|invalid email/i.test(
       e.message ?? '',
     )
   );
@@ -156,7 +170,7 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
       const r = await deps.email.enviar({
         de: { nome: cfg.remetenteNome, email: deps.email.remetente },
         para: en.email,
-        responderPara: cfg.responderPara,
+        responderPara: enderecoDeResposta(deps, cfg, en.token),
         assunto: e.assunto,
         html: e.html,
         texto: e.texto,
@@ -164,12 +178,14 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
         emRespostaA: refs.at(-1) ?? null,
         referencias: refs,
         descadastro: end.descadastro,
+        etiquetas: { envio: String(en.id) },
+        chave: `envio-${en.id}`,
       });
       await deps.pool.query(
         `UPDATE comercial.envios_email
-            SET status = 'enviado', enviado_em = now(), message_id = $2, assunto = $3, links = $4, erro = NULL
+            SET status = 'enviado', enviado_em = now(), resend_id = $2, assunto = $3, links = $4, erro = NULL
           WHERE id = $1`,
-        [en.id, r.messageId, e.assunto, e.links],
+        [en.id, r.id, e.assunto, e.links],
       );
       // Lead que já está no funil: o e-mail entra no histórico (sem mudar a etapa).
       await deps.pool.query(
@@ -300,14 +316,16 @@ export async function processarRecebido(
     return rows.length ? 'devolucao' : 'ignorado';
   }
 
-  // A qual envio responde: pelo cabeçalho da conversa; senão, pelo remetente.
+  // A qual envio responde: pelo endereço com o token (r-<token>@…); senão pelo cabeçalho da
+  // conversa; senão pelo remetente.
+  const tokens = r.para.map((p) => p.match(/^r-([a-f0-9]{32})@/)?.[1]).filter(Boolean) as string[];
   const ids = [r.emRespostaA, ...r.referencias].filter(Boolean) as string[];
   const { rows: envios } = await pool.query<{ id: number; empresa_id: number; campanha_email_id: number }>(
     `SELECT id::int, empresa_id::int, campanha_email_id FROM comercial.envios_email
-      WHERE (message_id = ANY($1::text[]))
+      WHERE token = ANY($3::text[]) OR (message_id = ANY($1::text[]))
          OR (lower(email) = $2 AND status = 'enviado' AND enviado_em > now() - interval '60 days')
-      ORDER BY (message_id = ANY($1::text[])) DESC, enviado_em DESC LIMIT 1`,
-    [ids, r.de],
+      ORDER BY (token = ANY($3::text[])) DESC, (message_id = ANY($1::text[])) DESC, enviado_em DESC LIMIT 1`,
+    [ids, r.de, tokens],
   );
   const envio = envios[0] ?? null;
   let empresaId = envio?.empresa_id ?? null;
@@ -326,9 +344,10 @@ export async function processarRecebido(
   const c = await classificar(deps, r);
   const { rows: ins } = await pool.query<{ id: number }>(
     `INSERT INTO comercial.respostas_email
-       (envio_id, empresa_id, de_email, de_nome, assunto, texto, message_id, recebido_em, classe, resumo, classificado_por)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     ON CONFLICT (message_id) WHERE message_id IS NOT NULL DO NOTHING
+       (envio_id, empresa_id, de_email, de_nome, assunto, texto, message_id, recebido_em, classe, resumo,
+        classificado_por, resend_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     ON CONFLICT DO NOTHING
      RETURNING id::int`,
     [
       envio?.id ?? null,
@@ -342,6 +361,7 @@ export async function processarRecebido(
       c.classe,
       c.resumo,
       c.por,
+      r.id,
     ],
   );
   const id = ins[0]?.id;
@@ -371,35 +391,6 @@ export async function processarRecebido(
   return 'resposta';
 }
 
-/** Lê a caixa de entrada (no máximo a cada 2 minutos). */
-export async function lerRespostas(deps: Deps, cfg: repo.ConfigEmail, forcar = false): Promise<number> {
-  if (!deps.email?.lerNovos) return 0;
-  if (!forcar && cfg.imapLidoEm && Date.now() - new Date(cfg.imapLidoEm).getTime() < 120_000) return 0;
-  try {
-    const { itens, ultimoUid } = await deps.email.lerNovos(cfg.imapUltimoUid);
-    let n = 0;
-    for (const item of itens) {
-      try {
-        if ((await processarRecebido(deps, item)) === 'resposta') n++;
-      } catch (erro) {
-        deps.log.warn({ err: erro, uid: item.uid }, 'e-mail: falha ao processar uma resposta');
-      }
-    }
-    await deps.pool.query(
-      'UPDATE comercial.config_email SET imap_ultimo_uid = $1, imap_lido_em = now(), imap_erro = NULL',
-      [ultimoUid],
-    );
-    return n;
-  } catch (erro) {
-    const msg = erro instanceof Error ? erro.message : String(erro);
-    await deps.pool.query('UPDATE comercial.config_email SET imap_lido_em = now(), imap_erro = $1', [
-      msg.slice(0, 300),
-    ]);
-    deps.log.warn({ err: erro }, 'e-mail: falha ao ler a caixa de entrada');
-    return 0;
-  }
-}
-
 export async function rodarEmail(deps: Deps): Promise<void> {
   const cliente = await deps.pool.connect();
   try {
@@ -407,7 +398,6 @@ export async function rodarEmail(deps: Deps): Promise<void> {
     if (!rows[0]?.ok) return;
     try {
       const cfg = await repo.obterConfig(deps.pool);
-      await lerRespostas(deps, cfg);
       if (!cfg.ligado) return;
       await agendarSeguimentos(deps);
       await enviarProximo(deps, cfg);
@@ -426,7 +416,12 @@ export function iniciarEmail(deps: Deps): () => void {
   const t = setInterval(() => void rodarEmail(deps), 30_000);
   t.unref();
   deps.log.info(
-    { smtp: !!deps.email, imap: !!deps.email?.lerNovos, ia: !!deps.classificarEmail },
+    {
+      resend: !!deps.email,
+      respostas: !!deps.email?.dominioRespostas,
+      webhook: !!deps.email?.segredoWebhook,
+      ia: !!deps.classificarEmail,
+    },
     'e-mail de prospecção pronto (liga e desliga na tela)',
   );
   return () => clearInterval(t);
@@ -435,17 +430,17 @@ export function iniciarEmail(deps: Deps): () => void {
 /** Responde o lead de dentro do sistema (na mesma conversa do e-mail dele). */
 export async function responder(deps: Deps, respostaId: number, texto: string): Promise<void> {
   if (!deps.email)
-    throw AppError.invalido(
-      'O e-mail não está configurado na API (EMAIL_SMTP_HOST, EMAIL_USUARIO, EMAIL_SENHA).',
-    );
+    throw AppError.invalido('O e-mail não está configurado na API (RESEND_API_KEY e EMAIL_REMETENTE).');
   const { rows } = await deps.pool.query<{
     empresa_id: number | null;
     de_email: string;
     assunto: string | null;
     message_id: string | null;
     refs: string[];
+    token: string | null;
   }>(
     `SELECT r.empresa_id::int, r.de_email, r.assunto, r.message_id,
+            (SELECT token FROM comercial.envios_email WHERE id = r.envio_id) AS token,
             coalesce((SELECT array_agg(x.message_id ORDER BY x.passo) FROM comercial.envios_email x
                        WHERE x.id = r.envio_id OR (x.campanha_email_id = (SELECT campanha_email_id FROM comercial.envios_email WHERE id = r.envio_id)
                                                   AND x.empresa_id = r.empresa_id AND x.message_id IS NOT NULL)), '{}') AS refs
@@ -464,7 +459,7 @@ export async function responder(deps: Deps, respostaId: number, texto: string): 
   await deps.email.enviar({
     de: { nome: cfg.remetenteNome, email: deps.email.remetente },
     para: r.de_email,
-    responderPara: cfg.responderPara,
+    responderPara: enderecoDeResposta(deps, cfg, r.token),
     assunto: e.assunto,
     html: e.html,
     texto: e.texto,
@@ -487,4 +482,112 @@ export async function responder(deps: Deps, respostaId: number, texto: string): 
         usuarioAtual()?.id ?? null,
       ],
     );
+}
+
+/* ───────────── Avisos do Resend (webhook) ───────────── */
+
+export interface EventoResend {
+  type: string;
+  created_at?: string;
+  data?: {
+    email_id?: string;
+    message_id?: string;
+    to?: string[];
+    tags?: Record<string, string> | { name: string; value: string }[];
+    bounce?: { message?: string; type?: string; subType?: string };
+    click?: { link?: string };
+    failed?: { reason?: string };
+    [k: string]: unknown;
+  };
+}
+
+/** Envio do aviso: pela etiqueta "envio" ou pelo id do e-mail no Resend. */
+async function envioDoEvento(deps: Pick<Deps, 'pool'>, d: NonNullable<EventoResend['data']>) {
+  const tags = Array.isArray(d.tags)
+    ? Object.fromEntries(d.tags.map((t) => [t.name, t.value]))
+    : (d.tags ?? {});
+  const id = Number(tags.envio);
+  const { rows } = await deps.pool.query<{ id: number; empresa_id: number; email: string }>(
+    `SELECT id::int, empresa_id::int, email FROM comercial.envios_email
+      WHERE ($1::bigint IS NOT NULL AND id = $1) OR ($2::text IS NOT NULL AND resend_id = $2)
+      LIMIT 1`,
+    [Number.isInteger(id) && id > 0 ? id : null, d.email_id ?? null],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Processa um aviso do Resend: entrega, abertura, clique, devolução, spam e resposta recebida.
+ * Devolve o que foi feito (para o log e os testes).
+ */
+export async function processarEvento(deps: Deps, ev: EventoResend): Promise<string> {
+  const { pool } = deps;
+  const d = ev.data ?? {};
+  await pool.query('UPDATE comercial.config_email SET webhook_em = now()');
+
+  if (ev.type === 'email.received') {
+    if (!deps.email?.buscarRecebido || !d.email_id) return 'ignorado';
+    const { rows } = await pool.query('SELECT 1 FROM comercial.respostas_email WHERE resend_id = $1', [
+      d.email_id,
+    ]);
+    if (rows.length) return 'repetido';
+    const recebido = await deps.email.buscarRecebido(d.email_id);
+    return processarRecebido(deps, recebido);
+  }
+
+  const envio = await envioDoEvento(deps, d);
+  if (!envio) return 'sem envio';
+  const quando = ev.created_at ?? new Date().toISOString();
+  switch (ev.type) {
+    case 'email.sent':
+    case 'email.delivered':
+      await pool.query(
+        `UPDATE comercial.envios_email
+            SET message_id = coalesce(message_id, $2),
+                entregue_em = CASE WHEN $3 THEN coalesce(entregue_em, $4::timestamptz) ELSE entregue_em END
+          WHERE id = $1`,
+        [envio.id, d.message_id ?? null, ev.type === 'email.delivered', quando],
+      );
+      return 'entregue';
+    case 'email.opened':
+      await pool.query(
+        `UPDATE comercial.envios_email SET aberto_em = coalesce(aberto_em, $2), aberturas = aberturas + 1 WHERE id = $1`,
+        [envio.id, quando],
+      );
+      return 'aberto';
+    case 'email.clicked':
+      await pool.query(
+        `UPDATE comercial.envios_email
+            SET clicado_em = coalesce(clicado_em, $2), cliques = cliques + 1, aberto_em = coalesce(aberto_em, $2)
+          WHERE id = $1`,
+        [envio.id, quando],
+      );
+      return 'clicado';
+    case 'email.bounced': {
+      // Devolução permanente: o endereço não existe. Temporária (caixa cheia): só registra.
+      const permanente = !/transient|temporary/i.test(`${d.bounce?.type ?? ''} ${d.bounce?.subType ?? ''}`);
+      await pool.query(`UPDATE comercial.envios_email SET status = 'devolvido', erro = $2 WHERE id = $1`, [
+        envio.id,
+        `Voltou: ${d.bounce?.message ?? d.bounce?.type ?? 'endereço recusou'}`.slice(0, 300),
+      ]);
+      if (permanente) await marcarEmailInvalido(deps, envio.empresa_id, envio.email);
+      return 'devolvido';
+    }
+    case 'email.complained':
+      // Marcou como spam: nunca mais recebe.
+      await repo.descadastrar(pool, envio.email, 'Marcou o e-mail como spam');
+      return 'spam';
+    case 'email.failed':
+    case 'email.suppressed':
+      await pool.query(`UPDATE comercial.envios_email SET status = 'erro', erro = $2 WHERE id = $1`, [
+        envio.id,
+        (ev.type === 'email.suppressed'
+          ? 'O Resend bloqueou: este endereço já voltou ou marcou spam antes'
+          : `Falhou: ${d.failed?.reason ?? 'erro no envio'}`
+        ).slice(0, 300),
+      ]);
+      return 'falhou';
+    default:
+      return 'ignorado';
+  }
 }

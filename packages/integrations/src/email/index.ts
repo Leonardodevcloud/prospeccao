@@ -1,86 +1,108 @@
-import { ImapFlow } from 'imapflow';
-import { simpleParser } from 'mailparser';
-import nodemailer from 'nodemailer';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { requisitarJson } from '../http.js';
 
 /**
- * E-mail pela caixa da própria empresa: envia por SMTP e lê as respostas por IMAP (Google
- * Workspace, Gmail com senha de app, Zoho, Hostinger, Outlook…). Assim a resposta do lead cai
- * na mesma caixa e o sistema lê de lá.
+ * E-mail pelo Resend: envia pela API, recebe os avisos (entregue, voltou, spam, abriu, clicou)
+ * e as respostas dos leads por webhook. A resposta chega num endereço do domínio de recebimento
+ * configurado no Resend (r-<token>@respostas.suaempresa.com.br): o token diz de qual envio ela é.
  */
 
-export interface ConfigSmtp {
-  host: string;
-  porta: number;
-  usuario: string;
-  senha: string;
-}
+const API = 'https://api.resend.com';
 
-export interface ConfigImap {
-  host: string;
-  porta: number;
-  usuario: string;
-  senha: string;
+export interface ConfigResend {
+  apiKey: string;
 }
 
 export interface EmailParaEnviar {
   de: { nome: string; email: string };
   para: string;
+  /** Para onde vai a resposta do lead (o endereço com o token, quando há domínio de respostas). */
   responderPara?: string | null;
   assunto: string;
   html: string;
   texto: string;
   anexos?: { nome: string; mime: string; conteudo: Buffer }[];
-  /** Para responder dentro da mesma conversa. */
+  /** Para o follow-up cair na mesma conversa do e-mail anterior. */
   emRespostaA?: string | null;
   referencias?: string[];
   /** Link de descadastro (cabeçalho List-Unsubscribe: o Gmail mostra "Cancelar inscrição"). */
   descadastro?: string | null;
+  /** Etiquetas que voltam nos webhooks (ex.: o id do envio). */
+  etiquetas?: Record<string, string>;
+  /** Evita mandar duas vezes se a mesma chamada repetir. */
+  chave?: string;
 }
 
-export function criarEnvioSmtp(cfg: ConfigSmtp) {
-  const transporte = nodemailer.createTransport({
-    host: cfg.host,
-    port: cfg.porta,
-    secure: cfg.porta === 465,
-    auth: { user: cfg.usuario, pass: cfg.senha },
-    connectionTimeout: 20_000,
-    greetingTimeout: 20_000,
-    socketTimeout: 60_000,
+const nomeSeguro = (s: string) => s.replace(/["<>\r\n]/g, '').trim();
+
+export async function enviarEmail(cfg: ConfigResend, e: EmailParaEnviar): Promise<{ id: string }> {
+  const cabecalhos: Record<string, string> = {};
+  if (e.descadastro) {
+    cabecalhos['List-Unsubscribe'] = `<${e.descadastro}>`;
+    cabecalhos['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+  }
+  if (e.emRespostaA) cabecalhos['In-Reply-To'] = e.emRespostaA;
+  if (e.referencias?.length) cabecalhos.References = e.referencias.join(' ');
+  return requisitarJson<{ id: string }>(`${API}/emails`, {
+    servico: 'Resend',
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${cfg.apiKey}`,
+      ...(e.chave ? { 'idempotency-key': e.chave } : {}),
+    },
+    body: {
+      from: `${nomeSeguro(e.de.nome)} <${e.de.email}>`,
+      to: [e.para],
+      subject: e.assunto,
+      html: e.html,
+      text: e.texto,
+      ...(e.responderPara ? { reply_to: e.responderPara } : {}),
+      ...(Object.keys(cabecalhos).length ? { headers: cabecalhos } : {}),
+      ...(e.anexos?.length
+        ? {
+            attachments: e.anexos.map((a) => ({
+              filename: a.nome,
+              content: a.conteudo.toString('base64'),
+              content_type: a.mime,
+            })),
+          }
+        : {}),
+      ...(e.etiquetas
+        ? {
+            tags: Object.entries(e.etiquetas).map(([name, value]) => ({
+              name,
+              value: value.replace(/[^\w-]/g, '_'),
+            })),
+          }
+        : {}),
+    },
+    timeoutMs: 60_000,
   });
-  return {
-    async enviar(e: EmailParaEnviar): Promise<{ messageId: string }> {
-      const info = await transporte.sendMail({
-        from: { name: e.de.nome, address: e.de.email },
-        to: e.para,
-        replyTo: e.responderPara ?? undefined,
-        subject: e.assunto,
-        html: e.html,
-        text: e.texto,
-        attachments: e.anexos?.map((a) => ({ filename: a.nome, contentType: a.mime, content: a.conteudo })),
-        inReplyTo: e.emRespostaA ?? undefined,
-        references: e.referencias?.length ? e.referencias : undefined,
-        headers: e.descadastro
-          ? {
-              'List-Unsubscribe': `<${e.descadastro}>`,
-              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-            }
-          : undefined,
-      });
-      return { messageId: info.messageId };
-    },
-    async verificar(): Promise<void> {
-      await transporte.verify();
-    },
-  };
+}
+
+/** Confere a chave e se o domínio do remetente está verificado no Resend. */
+export async function verificarResend(cfg: ConfigResend, remetente: string): Promise<string> {
+  const r = await requisitarJson<{ data?: { name: string; status: string }[] }>(`${API}/domains`, {
+    servico: 'Resend',
+    headers: { authorization: `Bearer ${cfg.apiKey}` },
+  });
+  const dominio = remetente.split('@')[1]?.toLowerCase() ?? '';
+  const d = r.data?.find((x) => x.name.toLowerCase() === dominio);
+  if (!d) return `chave ok, mas o domínio ${dominio} não está cadastrado no Resend`;
+  return d.status === 'verified'
+    ? `ok (${dominio} verificado)`
+    : `domínio ${dominio}: ${d.status} (falta verificar o DNS)`;
 }
 
 export interface EmailRecebido {
-  uid: number;
+  id: string;
   messageId: string | null;
   emRespostaA: string | null;
   referencias: string[];
   de: string;
   deNome: string | null;
+  /** Endereços para onde o lead respondeu (o do token está aqui). */
+  para: string[];
   assunto: string;
   /** Só o que a pessoa escreveu (sem o e-mail citado abaixo, quando dá para separar). */
   texto: string;
@@ -105,66 +127,102 @@ export function textoNovo(texto: string): string {
   return (novo || texto).trim().slice(0, 20_000);
 }
 
-/**
- * Lê as mensagens novas da caixa de entrada desde o último UID lido. Na primeira vez (sem UID)
- * só marca onde a caixa está: e-mails antigos não entram.
- */
-export async function lerNovos(
-  cfg: ConfigImap,
-  desdeUid: number | null,
-  limite = 100,
-): Promise<{ itens: EmailRecebido[]; ultimoUid: number }> {
-  const cliente = new ImapFlow({
-    host: cfg.host,
-    port: cfg.porta,
-    secure: cfg.porta === 993,
-    auth: { user: cfg.usuario, pass: cfg.senha },
-    logger: false,
+/** HTML → texto simples (quando o e-mail recebido não traz a versão em texto). */
+export function htmlParaTexto(html: string): string {
+  return html
+    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h\d)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** "Fulano <a@b.com>" → { email, nome }. */
+export function lerEndereco(bruto: string): { email: string; nome: string | null } {
+  const m = bruto.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  if (m) return { email: (m[2] ?? '').trim().toLowerCase(), nome: m[1]?.trim() || null };
+  return { email: bruto.trim().toLowerCase(), nome: null };
+}
+
+interface RecebidoResend {
+  id: string;
+  from: string;
+  to: string[];
+  subject: string | null;
+  html: string | null;
+  text: string | null;
+  headers: Record<string, string | string[]> | null;
+  message_id: string | null;
+  created_at: string;
+}
+
+/** Busca o e-mail recebido completo (o webhook só traz o resumo). */
+export async function buscarRecebido(cfg: ConfigResend, id: string): Promise<EmailRecebido> {
+  const r = await requisitarJson<RecebidoResend>(`${API}/emails/receiving/${encodeURIComponent(id)}`, {
+    servico: 'Resend',
+    headers: { authorization: `Bearer ${cfg.apiKey}` },
   });
-  await cliente.connect();
-  const itens: EmailRecebido[] = [];
-  let ultimoUid = desdeUid ?? 0;
-  const trava = await cliente.getMailboxLock('INBOX');
-  try {
-    const caixa = cliente.mailbox;
-    const proximo = caixa && typeof caixa === 'object' ? Number(caixa.uidNext ?? 1) : 1;
-    if (desdeUid == null) return { itens, ultimoUid: proximo - 1 };
-    if (proximo - 1 <= desdeUid) return { itens, ultimoUid: desdeUid };
-    for await (const m of cliente.fetch(`${desdeUid + 1}:*`, { uid: true, source: true }, { uid: true })) {
-      if (m.uid <= desdeUid || !m.source) continue;
-      ultimoUid = Math.max(ultimoUid, m.uid);
-      if (itens.length >= limite) continue;
-      const p = await simpleParser(m.source);
-      const de = p.from?.value?.[0];
-      const cab = (n: string) => String(p.headers.get(n) ?? '').toLowerCase();
-      const assunto = p.subject ?? '';
-      const remetente = (de?.address ?? '').toLowerCase();
-      const refs = p.references ? (Array.isArray(p.references) ? p.references : [p.references]) : [];
-      itens.push({
-        uid: m.uid,
-        messageId: p.messageId ?? null,
-        emRespostaA: p.inReplyTo ?? null,
-        referencias: refs,
-        de: remetente,
-        deNome: de?.name || null,
+  const cab = (n: string) => {
+    const h = r.headers ?? {};
+    const k = Object.keys(h).find((x) => x.toLowerCase() === n);
+    const v = k ? h[k] : '';
+    return (Array.isArray(v) ? v.join(' ') : String(v ?? '')).trim();
+  };
+  const de = lerEndereco(r.from ?? '');
+  const assunto = r.subject ?? '';
+  return {
+    id: r.id,
+    messageId: r.message_id ?? (cab('message-id') || null),
+    emRespostaA: cab('in-reply-to') || null,
+    referencias: cab('references').split(/\s+/).filter(Boolean),
+    de: de.email,
+    deNome: de.nome,
+    para: (r.to ?? []).map((t) => lerEndereco(t).email),
+    assunto,
+    texto: textoNovo(r.text?.trim() ? r.text : htmlParaTexto(r.html ?? '')),
+    data: r.created_at ?? new Date().toISOString(),
+    automatica:
+      (cab('auto-submitted') !== '' && cab('auto-submitted').toLowerCase() !== 'no') ||
+      cab('x-autoreply') !== '' ||
+      cab('x-autorespond') !== '' ||
+      /auto_reply|bulk|junk/i.test(cab('precedence')),
+    devolucao:
+      /^(mailer-daemon|postmaster)@/.test(de.email) ||
+      /(delivery status notification|undeliver|não foi possível entregar|falha na entrega|returned mail)/i.test(
         assunto,
-        texto: textoNovo(p.text ?? ''),
-        data: (p.date ?? new Date()).toISOString(),
-        automatica:
-          (cab('auto-submitted') !== '' && cab('auto-submitted') !== 'no') ||
-          cab('x-autoreply') !== '' ||
-          cab('x-autorespond') !== '' ||
-          /auto_reply|bulk|junk/.test(cab('precedence')),
-        devolucao:
-          /^(mailer-daemon|postmaster)@/.test(remetente) ||
-          /(delivery status notification|undeliver|não foi possível entregar|falha na entrega|returned mail)/i.test(
-            assunto,
-          ),
-      });
-    }
-  } finally {
-    trava.release();
-    await cliente.logout().catch(() => undefined);
-  }
-  return { itens, ultimoUid };
+      ),
+  };
+}
+
+/**
+ * Confere a assinatura do webhook do Resend (padrão Svix): HMAC-SHA256 de "id.timestamp.corpo"
+ * com o segredo (whsec_…), comparado a uma das assinaturas "v1,…" do cabeçalho. Recusa
+ * mensagens com mais de 5 minutos (evita reenvio de uma mensagem antiga capturada).
+ */
+export function assinaturaValida(
+  segredo: string,
+  cab: { id?: string; timestamp?: string; assinatura?: string },
+  corpo: Buffer | string,
+  agora = Date.now(),
+): boolean {
+  if (!cab.id || !cab.timestamp || !cab.assinatura) return false;
+  const ts = Number(cab.timestamp);
+  if (!Number.isFinite(ts) || Math.abs(agora / 1000 - ts) > 300) return false;
+  const chave = Buffer.from(segredo.replace(/^whsec_/, ''), 'base64');
+  const esperado = createHmac('sha256', chave)
+    .update(`${cab.id}.${cab.timestamp}.${Buffer.isBuffer(corpo) ? corpo.toString('utf8') : corpo}`)
+    .digest();
+  return cab.assinatura.split(' ').some((parte) => {
+    const [versao, valor] = parte.split(',');
+    if (versao !== 'v1' || !valor) return false;
+    const recebido = Buffer.from(valor, 'base64');
+    return recebido.length === esperado.length && timingSafeEqual(recebido, esperado);
+  });
 }

@@ -19,9 +19,8 @@ export const HOJE_SP = `(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo
 /* ───────────── Configuração ───────────── */
 
 export interface ConfigEmail extends ConfigEmailEntrada {
-  imapUltimoUid: number | null;
-  imapLidoEm: string | null;
-  imapErro: string | null;
+  /** Último aviso do Resend recebido (mostra se o webhook está configurado e chegando). */
+  webhookEm: string | null;
 }
 
 export async function obterConfig(db: Executor): Promise<ConfigEmail> {
@@ -29,7 +28,7 @@ export async function obterConfig(db: Executor): Promise<ConfigEmail> {
     `SELECT ligado, remetente_nome AS "remetenteNome", responder_para AS "responderPara", assinatura,
             limite_dia AS "limiteDia", intervalo_seg AS "intervaloSeg", hora_inicio AS "horaInicio",
             hora_fim AS "horaFim", dias_semana AS "diasSemana", rastrear_abertura AS "rastrearAbertura",
-            imap_ultimo_uid::float8 AS "imapUltimoUid", imap_lido_em AS "imapLidoEm", imap_erro AS "imapErro"
+            webhook_em AS "webhookEm"
        FROM comercial.config_email LIMIT 1`,
   );
   const c = rows[0];

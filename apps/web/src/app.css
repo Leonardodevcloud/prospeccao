@@ -2851,11 +2851,15 @@ a.botao-icone {
   font-size: 13px;
 }
 .lista-status li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
   color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+.lista-status li .pp-icon {
+  margin-top: 2px;
 }
 .lista-status li[data-ok] {
   color: var(--ink);

@@ -71,11 +71,10 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
     mutationFn: (ligado: boolean) => api('/email/config', { metodo: 'PUT', corpo: { ...v.config, ligado } }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['email'] }),
   });
-  if (!v.status.smtp)
+  if (!v.status.resend)
     return (
       <Mensagem tipo="aviso">
-        O e-mail ainda não está conectado. Configure a caixa da empresa na API do Railway (EMAIL_SMTP_HOST,
-        EMAIL_USUARIO, EMAIL_SENHA e, para ler as respostas, EMAIL_IMAP_HOST).{' '}
+        O Resend ainda não está conectado. Coloque RESEND_API_KEY e EMAIL_REMETENTE na API do Railway.{' '}
         <button type="button" className="link-botao" onClick={props.aoConfigurar}>
           Ver como
         </button>
@@ -118,13 +117,11 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
       <div className="status-email__item">
         <span className="quieto">Leitura das respostas</span>
         <b>
-          {!v.status.imap
+          {!v.status.dominioRespostas || !v.status.webhook
             ? 'Não configurada'
-            : v.config.imapErro
-              ? 'Com erro'
-              : v.config.imapLidoEm
-                ? `Lida ${fmtQuando(v.config.imapLidoEm)}`
-                : 'Aguardando'}
+            : v.config.webhookEm
+              ? `Último aviso ${fmtQuando(v.config.webhookEm)}`
+              : 'Aguardando o 1º aviso'}
         </b>
       </div>
       <ErroDaApi erro={ligar.error} />
@@ -435,7 +432,8 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean }) {
       )}
       {!props.ligado && q.data?.some((c) => c.status === 'enviando' && c.naFila > 0) && (
         <Mensagem tipo="aviso">
-          Há e-mails na fila, mas o envio automático está desligado. Ligue no topo da página para começarem a sair.
+          Há e-mails na fila, mas o envio automático está desligado. Ligue no topo da página para começarem a
+          sair.
         </Mensagem>
       )}
       <ErroDaApi erro={q.error ?? acao.error} />
@@ -1252,8 +1250,8 @@ function Respostas(props: { aoAbrirLead: (id: number) => void }) {
         <div className="esqueleto" />
       ) : !q.data?.length ? (
         <p className="quieto">
-          Nenhuma resposta {classe ? 'nesta classificação' : 'ainda'}. As respostas chegam na caixa da empresa
-          e aparecem aqui em até 2 minutos; quem tem interesse entra sozinho no SDR em “Respondeu”.
+          Nenhuma resposta {classe ? 'nesta classificação' : 'ainda'}. As respostas chegam pelo Resend e
+          aparecem aqui na hora; quem tem interesse entra sozinho no SDR em “Respondeu”.
         </p>
       ) : (
         <ul className="respostas-email">
@@ -1286,7 +1284,7 @@ function Configuracao(props: { v: VisaoEmail }) {
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['email'] }),
   });
   const verificar = useMutation({
-    mutationFn: () => api<{ smtp: string; imap: string }>('/email/verificar', { metodo: 'POST' }),
+    mutationFn: () => api<{ resend: string; respostas: string }>('/email/verificar', { metodo: 'POST' }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['email'] }),
   });
   const num = (k: keyof ConfigEmail, v: string) => setF({ ...f, [k]: Number(v.replace(/\D/g, '')) || 0 });
@@ -1322,16 +1320,35 @@ function Configuracao(props: { v: VisaoEmail }) {
             <span className="campo__dica">Ex.: “Leonardo | Tutts”. Aparece na caixa de entrada do lead.</span>
           </div>
           <div className="campo">
-            <label htmlFor="cfe-resp">Respostas vão para (opcional)</label>
-            <input
-              id="cfe-resp"
-              className="filtro"
-              type="email"
-              placeholder={props.v.status.remetente ?? ''}
-              value={f.responderPara ?? ''}
-              onChange={(e) => setF({ ...f, responderPara: e.target.value || null })}
-            />
-            <span className="campo__dica">Deixe vazio para o sistema ler as respostas na mesma caixa.</span>
+            <label htmlFor="cfe-resp">Respostas vão para</label>
+            {props.v.status.dominioRespostas ? (
+              <>
+                <input
+                  id="cfe-resp"
+                  className="filtro mono"
+                  disabled
+                  value={`r-…@${props.v.status.dominioRespostas}`}
+                />
+                <span className="campo__dica">
+                  Cada e-mail leva um endereço de resposta próprio no seu domínio de recebimento do Resend: a
+                  resposta volta para o sistema já ligada ao lead certo.
+                </span>
+              </>
+            ) : (
+              <>
+                <input
+                  id="cfe-resp"
+                  className="filtro"
+                  type="email"
+                  placeholder={props.v.status.remetente ?? ''}
+                  value={f.responderPara ?? ''}
+                  onChange={(e) => setF({ ...f, responderPara: e.target.value || null })}
+                />
+                <span className="campo__dica">
+                  Sem o domínio de recebimento do Resend, a resposta vai para esta caixa e o sistema não lê.
+                </span>
+              </>
+            )}
           </div>
         </div>
         <div className="campo">
@@ -1433,23 +1450,49 @@ function Configuracao(props: { v: VisaoEmail }) {
             Conexão
           </h3>
           <ul className="lista-status">
-            <li data-ok={props.v.status.smtp || undefined}>
-              <Icon name={props.v.status.smtp ? 'check' : 'circle-x'} size={14} /> Envio (SMTP){' '}
-              {props.v.status.remetente && <span className="quieto">· {props.v.status.remetente}</span>}
+            <li data-ok={props.v.status.resend || undefined}>
+              <Icon name={props.v.status.resend ? 'check' : 'circle-x'} size={14} />
+              <span>
+                Envio pelo Resend
+                {props.v.status.remetente && <span className="quieto"> · {props.v.status.remetente}</span>}
+              </span>
             </li>
-            <li data-ok={props.v.status.imap || undefined}>
-              <Icon name={props.v.status.imap ? 'check' : 'circle-x'} size={14} /> Leitura das respostas
-              (IMAP)
-              {props.v.config.imapErro && <span className="erro-texto"> · {props.v.config.imapErro}</span>}
+            <li data-ok={props.v.status.dominioRespostas || undefined}>
+              <Icon name={props.v.status.dominioRespostas ? 'check' : 'circle-x'} size={14} />
+              <span>
+                Domínio de recebimento
+                <span className="quieto"> · {props.v.status.dominioRespostas ?? 'falta configurar'}</span>
+              </span>
+            </li>
+            <li data-ok={(props.v.status.webhook && !!props.v.config.webhookEm) || undefined}>
+              <Icon
+                name={props.v.status.webhook ? (props.v.config.webhookEm ? 'check' : 'clock') : 'circle-x'}
+                size={14}
+              />
+              <span>
+                Webhook
+                <span className="quieto">
+                  {' · '}
+                  {!props.v.status.webhook
+                    ? 'falta o segredo'
+                    : props.v.config.webhookEm
+                      ? `último aviso ${fmtQuando(props.v.config.webhookEm)}`
+                      : 'nenhum aviso ainda'}
+                </span>
+              </span>
             </li>
             <li data-ok={props.v.status.ia || undefined}>
-              <Icon name={props.v.status.ia ? 'check' : 'circle-help'} size={14} /> IA que lê as respostas{' '}
-              <span className="quieto">
-                {props.v.status.ia ? '(Gemini)' : '(sem ela, uma regra de palavras decide)'}
+              <Icon name={props.v.status.ia ? 'check' : 'circle-help'} size={14} />
+              <span>
+                IA que lê as respostas
+                <span className="quieto">
+                  {' '}
+                  · {props.v.status.ia ? 'Gemini' : 'sem ela, uma regra de palavras decide'}
+                </span>
               </span>
             </li>
           </ul>
-          {props.v.status.smtp && (
+          {props.v.status.resend && (
             <div className="acoes" style={{ marginTop: 12 }}>
               <Button
                 size="sm"
@@ -1463,29 +1506,53 @@ function Configuracao(props: { v: VisaoEmail }) {
           )}
           {verificar.data && (
             <Mensagem
-              tipo={verificar.data.smtp === 'ok' && !/erro|fail/i.test(verificar.data.imap) ? 'ok' : 'aviso'}
+              tipo={
+                /^ok/.test(verificar.data.resend) && /^ok/.test(verificar.data.respostas) ? 'ok' : 'aviso'
+              }
             >
-              Envio: {verificar.data.smtp} · Leitura: {verificar.data.imap}
+              Resend: {verificar.data.resend} · Respostas: {verificar.data.respostas}
             </Mensagem>
           )}
           <ErroDaApi erro={verificar.error} />
         </div>
         <div className="pp-panel" style={{ padding: 16 }}>
           <h3 className="subtitulo" style={{ marginTop: 0 }}>
-            Como conectar a caixa
+            Como ligar o Resend
           </h3>
-          <p className="quieto" style={{ margin: '0 0 8px', fontSize: 13 }}>
-            No Railway, na API, preencha (a senha fica só no servidor):
-          </p>
-          <pre className="bloco-codigo">{`EMAIL_SMTP_HOST=smtp.gmail.com
-EMAIL_SMTP_PORTA=587
-EMAIL_IMAP_HOST=imap.gmail.com
-EMAIL_USUARIO=comercial@suaempresa.com.br
-EMAIL_SENHA=senha de app`}</pre>
+          <ol className="passos-curtos">
+            <li>
+              <b>Domínio de envio:</b> o domínio do remetente verificado no Resend (Domains). Use um
+              subdomínio só para prospecção (ex.: contato.tutts.com.br) para proteger o domínio principal.
+            </li>
+            <li>
+              <b>Recebimento:</b> em Receiving, ative um domínio para receber (ex.: respostas.tutts.com.br,
+              com o registro MX que o Resend mostrar) ou use o endereço .resend.app que ele já dá.
+            </li>
+            <li>
+              <b>Webhook:</b> em Webhooks → Add endpoint, cole o endereço abaixo e marque os eventos de e-mail
+              (received, delivered, opened, clicked, bounced, complained, failed). Copie o “Signing secret”.
+            </li>
+            <li>
+              <b>No Railway (API):</b>
+            </li>
+          </ol>
+          <pre className="bloco-codigo">{`RESEND_API_KEY=re_…
+EMAIL_REMETENTE=comercial@contato.tutts.com.br
+RESEND_DOMINIO_RESPOSTAS=respostas.tutts.com.br
+RESEND_WEBHOOK_SEGREDO=whsec_…`}</pre>
+          <div className="campo" style={{ marginTop: 12 }}>
+            <label htmlFor="cfe-webhook">Endereço do webhook</label>
+            <input
+              id="cfe-webhook"
+              className="filtro mono"
+              readOnly
+              value={props.v.status.webhookUrl}
+              onFocus={(e) => e.target.select()}
+            />
+          </div>
           <p className="quieto" style={{ margin: '8px 0 0', fontSize: 13 }}>
-            Google: use uma “senha de app” (Conta Google → Segurança → Verificação em duas etapas → Senhas de
-            app). Zoho, Hostinger e Outlook funcionam igual, com os servidores deles. Use um endereço só para
-            prospecção: protege a caixa principal.
+            No Resend, deixe o rastreio de abertura e clique do domínio desligado: o sistema já conta sozinho
+            (assim os links não são trocados duas vezes).
           </p>
         </div>
       </aside>

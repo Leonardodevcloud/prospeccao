@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { criarPool } from '@prospeccao/db';
 import { classificarRespostaEmail, decidirComGemini } from '@prospeccao/integrations/agente';
-import { criarEnvioSmtp, lerNovos } from '@prospeccao/integrations/email';
+import { buscarRecebido, enviarEmail, verificarResend } from '@prospeccao/integrations/email';
 import * as ors from '@prospeccao/integrations/ors';
 import { baixarMidia, enviarMidia, enviarTexto } from '@prospeccao/integrations/whatsapp';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
@@ -42,32 +42,15 @@ const ia = env.GEMINI_API_KEY
     }
   : null;
 
-const smtp =
-  env.EMAIL_SMTP_HOST && env.EMAIL_USUARIO && env.EMAIL_SENHA
-    ? criarEnvioSmtp({
-        host: env.EMAIL_SMTP_HOST,
-        porta: env.EMAIL_SMTP_PORTA,
-        usuario: env.EMAIL_USUARIO,
-        senha: env.EMAIL_SENHA,
-      })
-    : null;
-const email = smtp
+const resend = env.RESEND_API_KEY && env.EMAIL_REMETENTE ? { apiKey: env.RESEND_API_KEY } : null;
+const email = resend
   ? {
-      remetente: env.EMAIL_REMETENTE ?? env.EMAIL_USUARIO!,
-      enviar: smtp.enviar,
-      verificar: smtp.verificar,
-      lerNovos: env.EMAIL_IMAP_HOST
-        ? (desde: number | null) =>
-            lerNovos(
-              {
-                host: env.EMAIL_IMAP_HOST!,
-                porta: env.EMAIL_IMAP_PORTA,
-                usuario: env.EMAIL_USUARIO!,
-                senha: env.EMAIL_SENHA!,
-              },
-              desde,
-            )
-        : undefined,
+      remetente: env.EMAIL_REMETENTE!,
+      dominioRespostas: env.RESEND_DOMINIO_RESPOSTAS ?? null,
+      segredoWebhook: env.RESEND_WEBHOOK_SEGREDO ?? null,
+      enviar: (e: Parameters<typeof enviarEmail>[1]) => enviarEmail(resend, e),
+      verificar: () => verificarResend(resend, env.EMAIL_REMETENTE!),
+      buscarRecebido: (id: string) => buscarRecebido(resend, id),
     }
   : null;
 const classificarEmail = env.GEMINI_API_KEY
