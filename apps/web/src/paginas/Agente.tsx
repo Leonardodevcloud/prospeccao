@@ -160,7 +160,7 @@ function FormConfig(props: { config: ConfigAgente }) {
         </div>
       </fieldset>
       <div className="campo">
-        <label htmlFor="ag-sobre">O que a IA sabe da Tutts</label>
+        <label htmlFor="ag-sobre">O que a IA sabe da sua empresa</label>
         <textarea
           id="ag-sobre"
           rows={6}

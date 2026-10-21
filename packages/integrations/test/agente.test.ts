@@ -116,15 +116,17 @@ describe('decisão do agente', () => {
 
   it('o prompt leva a base de conhecimento, as regras e a conversa', () => {
     const p = promptAgente({
-      sobreEmpresa: 'A Tutts faz entregas.',
+      empresa: 'Rota Norte',
+      sobreEmpresa: 'A Rota Norte distribui peças.',
       regras: 'Não prometa preço.',
       horariosReuniao: 'seg a sex 9h-17h',
-      remetente: 'Leonardo',
+      remetente: 'Paulo',
       agora: 'segunda',
       lead: { empresa: 'Ceave', cidade: 'Salvador', contato: 'Marcos', etapa: 'respondeu' },
       conversa: [{ de: 'lead', texto: 'Quanto custa?', em: '' }],
     });
-    expect(p).toContain('Você é Leonardo da Tutts');
+    expect(p).toContain('Você é Paulo da Rota Norte');
+    expect(p).toContain('SOBRE A ROTA NORTE');
     expect(p).toContain('Não prometa preço.');
     expect(p).toContain('LEAD: Quanto custa?');
   });

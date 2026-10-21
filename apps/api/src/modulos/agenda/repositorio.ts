@@ -333,7 +333,7 @@ export async function calendario(db: Executor, token: string): Promise<string | 
   const linhas = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Tutts//Prospeccao//PT-BR',
+    'PRODID:-//Prospect Team//Agenda//PT-BR',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escaparIcs(`Prospect Team · ${u.nome}`)}`,

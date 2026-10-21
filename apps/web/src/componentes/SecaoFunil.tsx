@@ -162,9 +162,7 @@ function PedirMotivo(props: {
           // biome-ignore lint/a11y/noAutofocus: o campo aparece por ação do usuário
           autoFocus
           placeholder={
-            props.etapa === 'perdido'
-              ? 'Ex.: já tem motoboy próprio, achou caro'
-              : 'Ex.: atacadista, não entrega'
+            props.etapa === 'perdido' ? 'Ex.: já tem fornecedor, achou caro' : 'Ex.: atacadista, não entrega'
           }
           onChange={(e) => setMotivo(e.target.value)}
           onKeyDown={(e) => {
@@ -670,7 +668,7 @@ export function SecaoFunil(props: {
                 placeholder={
                   tipo === 'nota'
                     ? 'Ex.: dono só atende depois das 14h'
-                    : 'Ex.: apresentei a Tutts, pediu tabela de preço'
+                    : 'Ex.: apresentei a empresa, pediu tabela de preço'
                 }
                 onChange={(e) => setTexto(e.target.value)}
               />

@@ -548,6 +548,9 @@ export async function enriquecerEmpresa(
       try {
         avaliacao = await fontes.ia.avaliar({
           nicho: campanha.nicho_nome,
+          vendedor: campanha.conta_nome
+            ? { nome: campanha.conta_nome, oferta: campanha.oferta || null }
+            : undefined,
           empresa: {
             nome: empresa.nome,
             razaoSocial: empresa.razao_social,

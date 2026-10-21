@@ -662,7 +662,7 @@ export function Funil() {
               id="motivo-perda"
               className="filtro"
               style={{ flex: '1 1 260px' }}
-              placeholder="Ex.: já tem motoboy próprio, achou caro, fechou com concorrente"
+              placeholder="Ex.: já tem fornecedor, achou caro, fechou com concorrente"
               value={motivo}
               // biome-ignore lint/a11y/noAutofocus: aparece por ação do usuário
               autoFocus

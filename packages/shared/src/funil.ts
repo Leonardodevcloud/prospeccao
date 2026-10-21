@@ -165,7 +165,7 @@ export interface ConfigCadencia {
   encerrarSemResposta: boolean;
   /** Dias para cobrar a proposta: [3, 7] = cobra 2 vezes. */
   diasCobrarProposta: number[];
-  /** Seu nome nas mensagens ("Aqui é {remetente} da Tutts"). */
+  /** Seu nome nas mensagens ("Aqui é {remetente}, da sua empresa"). */
   remetente: string;
   modelos: Record<ModeloMensagem, string>;
 }
@@ -318,7 +318,7 @@ export const configAgenteEntrada = z
     limiteDia: z.number().int().min(1).max(500),
     intervaloSeg: z.number().int().min(20).max(3600),
     respostasDiaLead: z.number().int().min(1).max(30),
-    sobreEmpresa: z.string().trim().min(20, 'Conte um pouco da Tutts para a IA.').max(6000),
+    sobreEmpresa: z.string().trim().min(20, 'Conte um pouco da sua empresa para a IA.').max(6000),
     regras: z.string().trim().max(3000),
     horariosReuniao: z.string().trim().min(3).max(300),
   })

@@ -238,79 +238,6 @@ function iniciarTour() {
   }
 }
 
-/* ---------- simulador de ganho ---------- */
-const reais = (v) => `R$ ${Math.round(v).toLocaleString('pt-BR')}`;
-const inteiro = (v) => Math.round(v).toLocaleString('pt-BR');
-
-function iniciarSimulador() {
-  const raiz = $('[data-simulador]');
-  if (!raiz) return;
-  const form = $('form', raiz);
-  const mostrar = {
-    pessoas: (v) => `${v} ${v === 1 ? 'pessoa' : 'pessoas'}`,
-    leads: (v) => `${v} leads`,
-    minutos: (v) => `${v} min`,
-    fecha: (v) => `${String(v).replace('.', ',')}%`,
-    ticket: (v) => reais(v),
-  };
-  const formatos = {
-    horas: (v) => `${inteiro(v)} h`,
-    abordagens: inteiro,
-    clientes: (v) => (Math.round(v * 10) / 10).toLocaleString('pt-BR'),
-    receita: reais,
-    ano: reais,
-  };
-  const anterior = {};
-  const animacoes = {};
-
-  const animar = (chave, alvo) => {
-    const el = $(`[data-saida="${chave}"]`, raiz);
-    if (!el) return;
-    const de = anterior[chave] ?? 0;
-    anterior[chave] = alvo;
-    cancelAnimationFrame(animacoes[chave]);
-    if (reduzMovimento || de === alvo) {
-      el.textContent = formatos[chave](alvo);
-      return;
-    }
-    const inicio = performance.now();
-    const dur = 450;
-    const passo = (agora) => {
-      const t = Math.min(1, (agora - inicio) / dur);
-      const suave = 1 - (1 - t) ** 3;
-      el.textContent = formatos[chave](de + (alvo - de) * suave);
-      if (t < 1) animacoes[chave] = requestAnimationFrame(passo);
-    };
-    animacoes[chave] = requestAnimationFrame(passo);
-  };
-
-  const calcular = () => {
-    const v = Object.fromEntries([...new FormData(form)].map(([k, x]) => [k, Number(x)]));
-    for (const [k, fn] of Object.entries(mostrar)) {
-      const out = $(`[data-mostra="${k}"]`, raiz);
-      if (out) out.textContent = fn(v[k]);
-    }
-    const DIAS_UTEIS = 22;
-    const MIN_REVISAO = 1;
-    const PARTE_EM_ABORDAGEM = 0.5; // metade do tempo devolvido vira abordagem nova
-    const MIN_ABORDAGEM = 10; // primeira mensagem + follow-ups de um lead
-    const horas = (v.pessoas * v.leads * Math.max(0, v.minutos - MIN_REVISAO) * DIAS_UTEIS) / 60;
-    const abordagens = (horas * PARTE_EM_ABORDAGEM * 60) / MIN_ABORDAGEM;
-    const clientes = (abordagens * v.fecha) / 100;
-    const receita = clientes * v.ticket;
-    // clientes novos todo mês: ao fim de 12 meses, a receita mensal nova é 12 vezes a de um mês
-    const ano = receita * 12;
-    animar('horas', horas);
-    animar('abordagens', abordagens);
-    animar('clientes', clientes);
-    animar('receita', receita);
-    animar('ano', ano);
-  };
-  form.addEventListener('input', calcular);
-  form.addEventListener('submit', (e) => e.preventDefault());
-  calcular();
-}
-
 /* ---------- contato: abre WhatsApp ou e-mail com a mensagem pronta ---------- */
 function iniciarContato() {
   const form = $('[data-contato]');
@@ -385,7 +312,6 @@ function iniciar() {
   iniciarRevelar();
   iniciarParalaxe();
   iniciarTour();
-  iniciarSimulador();
   iniciarContato();
 }
 

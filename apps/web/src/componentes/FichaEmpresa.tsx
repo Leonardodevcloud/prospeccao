@@ -552,8 +552,8 @@ export function FichaEmpresa({
           <div className="drawer__corpo">
             {e.mei && (
               <Mensagem tipo="aviso">
-                MEI (microempreendedor individual): não costuma ter volume para contratar entregas. Fica fora
-                da lista de leads por padrão.
+                MEI (microempreendedor individual): costuma ter pouco volume de compra. Fica fora da lista de
+                leads por padrão.
               </Mensagem>
             )}
             {(e.mapsFechada || en?.mapsAberto === false) && (

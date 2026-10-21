@@ -2,7 +2,7 @@ import { type ConfigIa, type EsquemaIa, gerarJson } from '../ia/index.js';
 
 /**
  * Cérebro do agente de abordagem: lê a conversa com o lead e decide o próximo passo (responder,
- * marcar reunião, passar para você, encerrar). Só sabe o que está na base de conhecimento da Tutts
+ * marcar reunião, passar para você, encerrar). Só sabe o que está na base de conhecimento da conta
  * e na conversa; o resto é passado para um humano.
  */
 
@@ -22,6 +22,8 @@ export interface DecisaoAgente {
 }
 
 export interface ContextoAgente {
+  /** Nome da empresa que vende (a conta). */
+  empresa: string;
   sobreEmpresa: string;
   regras: string;
   horariosReuniao: string;
@@ -47,8 +49,8 @@ const ESQUEMA: EsquemaIa = {
 
 export function promptAgente(c: ContextoAgente): string {
   return [
-    `Você é ${c.remetente || 'o atendente'} da Tutts, conversando pelo WhatsApp com uma loja que prospectamos.`,
-    'SOBRE A TUTTS (use só isto; não invente nada fora daqui):',
+    `Você é ${c.remetente || 'o atendente'} da ${c.empresa}, conversando pelo WhatsApp com uma empresa que prospectamos.`,
+    `SOBRE A ${c.empresa.toUpperCase()} (use só isto; não invente nada fora daqui):`,
     c.sobreEmpresa,
     '',
     'REGRAS:',

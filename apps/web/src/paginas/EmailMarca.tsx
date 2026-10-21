@@ -205,11 +205,11 @@ const TEXTO_EXEMPLO = `{saudacao}
 
 {abertura}
 
-Somos especialistas em entregas rápidas para lojas de autopeças: o pedido sai do balcão e chega ao cliente em até 1 hora, com rastreio em tempo real.
+Distribuímos peças para lojas de autopeças: o pedido feito até as 16h chega no dia seguinte, com prazo para pagar.
 
-- Motoboys dedicados no horário comercial
-- Sem custo fixo: paga só pelo que entregar
-- Relatório semanal de prazos
+- Reposição em até 24 horas na sua região
+- Catálogo com mais de 18 mil itens
+- Vendedor dedicado, que conhece a sua loja
 
 [[Ver a proposta|https://exemplo.com.br/proposta]]
 
@@ -432,7 +432,7 @@ function EditorMarca(props: {
                 id="mc-nome"
                 className="filtro"
                 maxLength={80}
-                placeholder="Ex.: Tutts Autopeças"
+                placeholder="Ex.: Rota Norte Distribuidora"
                 value={f.nome}
                 onChange={(e) => texto('nome', e.target.value)}
               />
@@ -444,7 +444,7 @@ function EditorMarca(props: {
                 id="mc-rem"
                 className="filtro"
                 maxLength={80}
-                placeholder="Ex.: Leonardo | Tutts"
+                placeholder="Ex.: Paulo | Rota Norte"
                 value={f.remetenteNome}
                 onChange={(e) => texto('remetenteNome', e.target.value)}
               />

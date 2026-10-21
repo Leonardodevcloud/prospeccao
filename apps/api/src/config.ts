@@ -51,9 +51,9 @@ export const esquemaEnvApi = envBase.extend({
   GOOGLE_PLACES_KEY: opcional(z.string().min(10)),
   /** E-mail de prospecção pelo Resend. */
   RESEND_API_KEY: opcional(z.string().startsWith('re_', 'RESEND_API_KEY começa com re_')),
-  /** Remetente, de um domínio verificado no Resend (ex.: comercial@tutts.com.br). */
+  /** Remetente, de um domínio verificado no Resend (ex.: comercial@suaempresa.com.br). */
   EMAIL_REMETENTE: opcional(z.string().email()),
-  /** Domínio de recebimento no Resend (ex.: respostas.tutts.com.br ou xxxx.resend.app). */
+  /** Domínio de recebimento no Resend (ex.: respostas.suaempresa.com.br ou xxxx.resend.app). */
   RESEND_DOMINIO_RESPOSTAS: opcional(
     z
       .string()

@@ -1440,122 +1440,6 @@ p {
   gap: 8px;
 }
 
-/* ---------- simulador ---------- */
-.simulador {
-  margin-top: 40px;
-  display: flex;
-  flex-wrap: wrap;
-  overflow: hidden;
-}
-.simulador:hover {
-  transform: none;
-}
-.simulador__entradas {
-  flex: 1 1 420px;
-  padding: 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  border-right: 1px solid var(--line);
-}
-.controle__topo {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-}
-.controle label {
-  font-size: 14px;
-  font-weight: 500;
-}
-.controle output {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--brand);
-  white-space: nowrap;
-}
-.controle input[type="range"] {
-  width: 100%;
-  height: 28px;
-  margin: 4px 0 0;
-  accent-color: var(--brand);
-  cursor: pointer;
-}
-.simulador__saida {
-  flex: 1 1 420px;
-  padding: 32px;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.simulador__saida .chapeu {
-  color: var(--ink-muted);
-  margin: 0;
-}
-.numeros {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.numero {
-  padding: 18px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-}
-.numero__rotulo {
-  font-size: 13px;
-  color: var(--ink-muted);
-}
-.numero strong {
-  display: block;
-  margin-top: 6px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 30px;
-  line-height: 38px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
-}
-.numero--forte {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: #fff;
-}
-.numero--forte .numero__rotulo {
-  color: #d6efeb;
-}
-.numero-ano {
-  padding: 18px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.numero-ano .numero__rotulo {
-  font-size: 14px;
-  color: var(--ink-muted);
-}
-.numero-ano strong {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 24px;
-  font-weight: 500;
-  color: var(--brand);
-}
-.premissas {
-  font-size: 12.5px;
-  line-height: 19px;
-  color: var(--ink-muted);
-}
 .ganhos {
   margin-top: 56px;
   display: grid;
@@ -1879,10 +1763,6 @@ p {
   .bloco--largo {
     grid-column: auto;
   }
-  .simulador__entradas {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
 }
 @media (max-width: 640px) {
   .topo__acoes .btn--pri {
@@ -1939,13 +1819,6 @@ p {
   .aba {
     width: auto;
     white-space: nowrap;
-  }
-  .numeros {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .simulador__entradas,
-  .simulador__saida {
-    padding: 24px 20px;
   }
   .regua {
     padding: 28px 20px 24px;

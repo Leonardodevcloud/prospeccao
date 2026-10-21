@@ -177,9 +177,13 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
     [empresaId],
   );
   const cad = await configCadencia(pool);
+  const { rows: contaRows } = await pool.query<{ nome: string }>(
+    `SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`,
+  );
   let decisao: Awaited<ReturnType<NonNullable<ServicosConta['ia']>['decidir']>>;
   try {
     decisao = await deps.ia.decidir({
+      empresa: contaRows[0]?.nome ?? 'nossa empresa',
       sobreEmpresa: cfg.sobreEmpresa,
       regras: cfg.regras,
       horariosReuniao: cfg.horariosReuniao,

@@ -128,6 +128,8 @@ export async function detalhesDoLugar(cfg: ConfigPlaces, placeId: string): Promi
 
 export interface EntradaAvaliacao {
   nicho: string;
+  /** Quem está prospectando (a conta) e o que ela vende, para a nota olhar o cliente ideal dela. */
+  vendedor?: { nome: string; oferta: string | null };
   empresa: {
     nome: string;
     razaoSocial: string | null;
@@ -191,12 +193,13 @@ const ESQUEMA: EsquemaIa = {
 
 export function montarPrompt(e: EntradaAvaliacao): string {
   return [
-    'Você qualifica empresas para a Central Tutts, que vende entregas de última milha por motoboy (B2B).',
-    `Nicho da campanha: ${e.nicho}. Cliente ideal: faz ou quer fazer entregas locais com frequência, tem movimento (avaliações no Google, Instagram ativo), porte pequeno a médio, já estabelecida.`,
+    `Você qualifica empresas como possíveis clientes B2B${e.vendedor?.nome ? ` da ${e.vendedor.nome}` : ''}.`,
+    e.vendedor?.oferta ? `O que ela vende: ${e.vendedor.oferta.slice(0, 1200)}` : '',
+    `Nicho da campanha: ${e.nicho}. Cliente ideal: combina com o que é vendido, tem movimento (avaliações no Google, Instagram ativo), porte pequeno a médio, já estabelecida.`,
     'Responda em português, em JSON, com:',
     '- faixa: A (prioridade alta, abordar já), B (vale abordar), C (baixa prioridade ou fora do perfil);',
     '- score: 0 a 100, coerente com a faixa (A ≥ 70, B 40–69, C < 40);',
-    '- motivo: uma frase objetiva com os sinais que pesaram (ex.: "faz entrega pelo WhatsApp, 380 avaliações, 12 anos");',
+    '- motivo: uma frase objetiva com os sinais que pesaram (ex.: "vende pelo WhatsApp, 380 avaliações, 12 anos");',
     '- resumo: uma frase dizendo o que a empresa faz;',
     '- entrega: true se o site/Instagram indicar que entrega, false se indicar que não, null se não der para saber;',
     '- pessoas: SOMENTE quem o texto apresenta como da equipe da empresa, com o cargo escrito no texto (ex.: "Carlos Lima – gerente de compras", "fundada por Ana Souza"). Para cada uma, "trecho" é a frase copiada do texto que mostra nome e cargo juntos.',
