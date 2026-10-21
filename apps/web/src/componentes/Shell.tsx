@@ -9,6 +9,7 @@ import { useVisaoEmail } from '../paginas/Email';
 import { useFollowupsPendentes } from '../paginas/Funil';
 import { useMeuDiaResumo } from '../paginas/MeuDia';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
+import { Logo } from './Marca';
 import { MinhaConta } from './MinhaConta';
 import { Dono, useSessao } from './Sessao';
 
@@ -122,11 +123,9 @@ export function Shell() {
     <div className="app">
       <nav className="nav" aria-label="Navegação principal">
         <div className="nav__marca">
-          <span className="nav__logo" aria-hidden="true">
-            P
-          </span>
+          <Logo tamanho={30} />
           <span className="nav__marca-texto">
-            Prospecção
+            Prospect Team
             {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
           </span>
         </div>

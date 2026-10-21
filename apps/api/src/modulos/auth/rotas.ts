@@ -221,15 +221,15 @@ export function rotasAuth(deps: DepsApi): Router {
       const primeiro = u.nome.trim().split(/\s+/)[0] ?? '';
       const e = montarEmail(
         {
-          assunto: 'Criar uma senha nova na Prospecção',
-          corpo: `{saudacao}\n\nRecebemos um pedido para criar uma senha nova para ${u.email} na Prospecção da ${u.conta}.\n\n[[Criar senha nova|${link}]]\n\nO link vale ${HORAS_REDEFINIR} hora e só funciona uma vez. Se não foi você, ignore este e-mail: sua senha atual continua a mesma.`,
+          assunto: 'Criar uma senha nova no Prospect Team',
+          corpo: `{saudacao}\n\nRecebemos um pedido para criar uma senha nova para ${u.email} no Prospect Team da ${u.conta}.\n\n[[Criar senha nova|${link}]]\n\nO link vale ${HORAS_REDEFINIR} hora e só funciona uma vez. Se não foi você, ignore este e-mail: sua senha atual continua a mesma.`,
         },
         { nome: primeiro, empresa: u.conta },
         {
           marca: {
-            nome: 'Prospecção',
+            nome: 'Prospect Team',
             estilo: 'cartao',
-            corPrimaria: '#0f766e',
+            corPrimaria: '#0b6b63',
             corFundo: '#f4f4f5',
             corTexto: '#1f2933',
             corCabecalho: '#ffffff',
@@ -238,7 +238,7 @@ export function rotasAuth(deps: DepsApi): Router {
       );
       try {
         await sistema.email.enviar({
-          de: { nome: `Prospecção · ${sistema.plataforma}`, email: sistema.email.remetente },
+          de: { nome: `Prospect Team · ${sistema.plataforma}`, email: sistema.email.remetente },
           para: u.email,
           assunto: e.assunto,
           html: e.html,

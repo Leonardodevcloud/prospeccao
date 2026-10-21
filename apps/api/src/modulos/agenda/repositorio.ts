@@ -336,7 +336,7 @@ export async function calendario(db: Executor, token: string): Promise<string | 
     'PRODID:-//Tutts//Prospeccao//PT-BR',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    `X-WR-CALNAME:${escaparIcs(`Prospecção · ${u.nome}`)}`,
+    `X-WR-CALNAME:${escaparIcs(`Prospect Team · ${u.nome}`)}`,
     'X-WR-TIMEZONE:America/Sao_Paulo',
     'REFRESH-INTERVAL;VALUE=DURATION:PT1H',
     'X-PUBLISHED-TTL:PT1H',

@@ -1,4 +1,4 @@
-/* Service worker da Prospecção: só notificações (não guarda páginas em cache: a tela é sempre a
+/* Service worker do Prospect Team: só notificações (não guarda páginas em cache: a tela é sempre a
    mais nova). Recebe o aviso do servidor (Web Push) e, no toque, abre a tela certa. */
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -9,14 +9,14 @@ self.addEventListener('push', (e) => {
   try {
     d = e.data ? e.data.json() : {};
   } catch {
-    d = { titulo: e.data ? e.data.text() : 'Prospecção' };
+    d = { titulo: e.data ? e.data.text() : 'Prospect Team' };
   }
-  const titulo = d.titulo || 'Prospecção';
+  const titulo = d.titulo || 'Prospect Team';
   e.waitUntil(
     self.registration.showNotification(titulo, {
       body: d.texto || '',
       icon: '/icone-192.png',
-      badge: '/icone-192.png',
+      badge: '/badge-96.png',
       tag: d.tag || undefined,
       renotify: !!d.tag,
       data: { link: d.link || '/' },

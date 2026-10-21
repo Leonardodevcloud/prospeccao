@@ -40,7 +40,7 @@ export function useAvisosNoNavegador(itens: Notificacao[] | undefined, naoLidas:
   const vistos = useRef<Set<number> | null>(null);
   const navegar = useNavigate();
   useEffect(() => {
-    document.title = naoLidas > 0 ? `(${naoLidas}) Prospecção` : 'Prospecção';
+    document.title = naoLidas > 0 ? `(${naoLidas}) Prospect Team` : 'Prospect Team';
   }, [naoLidas]);
   useEffect(() => {
     if (!itens) return;

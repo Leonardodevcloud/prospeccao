@@ -4,6 +4,7 @@ import { type FormEvent, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { TelaAcesso } from '../componentes/Marca';
 
 /** "Esqueci minha senha": o link para criar uma nova chega por e-mail. */
 export function EsqueciSenha() {
@@ -17,7 +18,7 @@ export function EsqueciSenha() {
     pedir.mutate();
   };
   return (
-    <main className="login">
+    <TelaAcesso>
       <form className="login__caixa" onSubmit={enviar} noValidate>
         <div>
           <h1>Esqueci minha senha</h1>
@@ -50,7 +51,7 @@ export function EsqueciSenha() {
           Voltar para o login
         </Link>
       </form>
-    </main>
+    </TelaAcesso>
   );
 }
 
@@ -82,7 +83,7 @@ export function RedefinirSenha() {
   };
 
   return (
-    <main className="login">
+    <TelaAcesso>
       <form className="login__caixa" onSubmit={enviar} noValidate>
         {link.isPending ? (
           <div className="esqueleto" />
@@ -99,7 +100,7 @@ export function RedefinirSenha() {
             <div>
               <h1>Senha nova</h1>
               <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-                {link.data.nome.split(' ')[0]}, crie a senha nova para {link.data.email} na Prospecção da{' '}
+                {link.data.nome.split(' ')[0]}, crie a senha nova para {link.data.email} no Prospect Team da{' '}
                 {link.data.conta}.
               </p>
             </div>
@@ -126,6 +127,6 @@ export function RedefinirSenha() {
           </>
         )}
       </form>
-    </main>
+    </TelaAcesso>
   );
 }

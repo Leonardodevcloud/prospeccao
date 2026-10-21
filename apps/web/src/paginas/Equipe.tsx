@@ -150,7 +150,7 @@ export function LinkConvite(props: {
   const [copiado, setCopiado] = useState(false);
   const sessao = useSessao();
   const conta = props.conta ?? sessao.data?.conta?.nome;
-  const texto = `Oi, ${props.nome.split(' ')[0]}! Seu acesso à Prospecção${conta ? ` da ${conta}` : ''}: crie sua senha neste link (vale ${props.dias} dias): ${props.link}`;
+  const texto = `Oi, ${props.nome.split(' ')[0]}! Seu acesso ao Prospect Team${conta ? ` da ${conta}` : ''}: crie sua senha neste link (vale ${props.dias} dias): ${props.link}`;
   return (
     <div className="pilha" style={{ gap: 8 }}>
       <Mensagem tipo="ok">

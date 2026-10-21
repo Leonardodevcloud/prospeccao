@@ -1,7 +1,7 @@
 {
-  "name": "Prospecção",
-  "short_name": "Prospecção",
-  "description": "CRM de prospecção: leads, funil, conversas e sequências.",
+  "name": "Prospect Team",
+  "short_name": "Prospect Team",
+  "description": "Prospect Team: CRM de prospecção com leads, funil, conversas e sequências.",
   "start_url": "/hoje",
   "scope": "/",
   "display": "standalone",
@@ -11,6 +11,6 @@
   "icons": [
     { "src": "/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

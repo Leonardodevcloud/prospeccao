@@ -1,9 +1,10 @@
-import { Button, TextField } from '@prospeccao/ui';
+import { Button, Icon, TextField } from '@prospeccao/ui';
 import { useMutation } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { ErroDaApi } from '../componentes/Formulario';
+import { TelaAcesso } from '../componentes/Marca';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -25,38 +26,52 @@ export function Login() {
   };
 
   return (
-    <main className="login">
+    <TelaAcesso>
       <form className="login__caixa" onSubmit={enviar} noValidate>
-        <div>
-          <h1>Entrar na Prospecção</h1>
-          <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-            Use seu e-mail e senha. Primeiro acesso? Abra o link do convite que você recebeu.
-          </p>
+        <div className="login__cabeca">
+          <h1>Bom te ver de novo</h1>
+          <p>Entre com seu e-mail e senha para continuar de onde parou.</p>
         </div>
         <TextField
           rotulo="E-mail"
           type="email"
           autoComplete="username"
           required
+          autoFocus
           value={email}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
         />
-        <TextField
-          rotulo="Senha"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={senha}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSenha(e.target.value)}
-        />
+        <div className="login__senha">
+          <TextField
+            rotulo="Senha"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={senha}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSenha(e.target.value)}
+          />
+          <Link className="login__link" to={`/esqueci${email ? `?email=${encodeURIComponent(email)}` : ''}`}>
+            Esqueci minha senha
+          </Link>
+        </div>
         <ErroDaApi erro={entrar.error} />
-        <Button variant="primary" type="submit" disabled={entrar.isPending || !email || !senha}>
+        <Button
+          className="login__entrar"
+          variant="primary"
+          type="submit"
+          disabled={entrar.isPending || !email || !senha}
+        >
           {entrar.isPending ? 'Entrando…' : 'Entrar'}
+          {!entrar.isPending && (
+            <span className="login__seta">
+              <Icon name="arrow-right" size={16} />
+            </span>
+          )}
         </Button>
-        <Link className="login__link" to={`/esqueci${email ? `?email=${encodeURIComponent(email)}` : ''}`}>
-          Esqueci minha senha
-        </Link>
+        <p className="login__nota">
+          Primeiro acesso? Abra o link do convite que você recebeu para criar a sua senha.
+        </p>
       </form>
-    </main>
+    </TelaAcesso>
   );
 }

@@ -4,6 +4,7 @@ import { type FormEvent, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { api } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { TelaAcesso } from '../componentes/Marca';
 
 /** Link do convite: a pessoa cria a senha e já entra. */
 export function Convite() {
@@ -33,7 +34,7 @@ export function Convite() {
   };
 
   return (
-    <main className="login">
+    <TelaAcesso>
       <form className="login__caixa" onSubmit={enviar} noValidate>
         {convite.isPending ? (
           <div className="esqueleto" />
@@ -50,7 +51,7 @@ export function Convite() {
             <div>
               <h1>Olá, {convite.data.nome.split(' ')[0]}!</h1>
               <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-                Crie sua senha para entrar na Prospecção
+                Crie sua senha para entrar no Prospect Team
                 {convite.data.conta ? ` da ${convite.data.conta}` : ''} com {convite.data.email}.
               </p>
             </div>
@@ -77,6 +78,6 @@ export function Convite() {
           </>
         )}
       </form>
-    </main>
+    </TelaAcesso>
   );
 }
