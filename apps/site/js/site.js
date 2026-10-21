@@ -66,6 +66,36 @@ function iniciarTopo() {
   for (const s of secoes) obs.observe(s);
 }
 
+/* ---------- logo: o time dá pulinhos em onda ao carregar e ao passar o mouse ---------- */
+function pular(el) {
+  if (reduzMovimento || el.classList.contains('pulando')) return;
+  el.classList.add('pulando');
+  const ultima = $$('.logo__fig', el).at(-1);
+  const fim = () => el.classList.remove('pulando');
+  ultima?.addEventListener('animationend', fim, { once: true });
+  setTimeout(fim, 1200); // garantia, se a animação não rodar
+}
+
+function iniciarLogo() {
+  for (const marca of $$('.marca')) {
+    marca.addEventListener('pointerenter', () => pular(marca));
+    marca.addEventListener('focus', () => pular(marca));
+  }
+  const topo = $('.topo .marca');
+  if (topo) setTimeout(() => pular(topo), 450);
+  // o do rodapé pula quando aparece
+  const rodape = $('.rodape .marca');
+  if (rodape && 'IntersectionObserver' in window) {
+    const obs = new IntersectionObserver(([en]) => {
+      if (en.isIntersecting) {
+        pular(rodape);
+        obs.disconnect();
+      }
+    });
+    obs.observe(rodape);
+  }
+}
+
 /* ---------- revelar ao rolar ---------- */
 function iniciarRevelar() {
   const itens = $$('.revela');
@@ -351,6 +381,7 @@ function iniciar() {
   const ano = $('[data-ano]');
   if (ano) ano.textContent = String(new Date().getFullYear());
   iniciarTopo();
+  iniciarLogo();
   iniciarRevelar();
   iniciarParalaxe();
   iniciarTour();
