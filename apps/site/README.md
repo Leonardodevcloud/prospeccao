@@ -42,3 +42,12 @@ Não precisa de variável de ambiente. O `vercel.json` desta pasta aplica os cab
 
 As imagens em `img/` são capturas do sistema rodando com dados de demonstração (1440×900, 2x, convertidas para WebP).
 Para trocar uma, mantenha o mesmo nome de arquivo e a mesma proporção.
+
+## Domínio e prévia de links
+
+As URLs absolutas (canonical, og:url, og:image, twitter:image, sitemap.xml e robots.txt) apontam para `https://prospectteam.com.br`. Se o domínio mudar, troque nesses quatro arquivos: `index.html`, `sitemap.xml`, `robots.txt` e este README.
+
+Para testar a prévia depois do deploy:
+- Facebook/Instagram/WhatsApp: https://developers.facebook.com/tools/debug/ (clique em "Extrair novamente" para limpar o cache)
+- LinkedIn: https://www.linkedin.com/post-inspector/
+- Telegram: mande o link para @WebpageBot para atualizar o cache
