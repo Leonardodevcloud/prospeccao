@@ -4,18 +4,21 @@ import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useStat
 import { useSearchParams } from 'react-router';
 import {
   api,
+  type ContatoLead,
   type ConversaAberta,
   type ConversaResumo,
   type MensagemConversa,
   type RespostaRapida,
   type TipoMidia,
 } from '../api';
+import { EnviarPara, FaixaIndicacoes, PainelContatos } from '../componentes/ContatosNegociacao';
 import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { Dono } from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
 import { fmtCidade, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
+import { ListaNaoIdentificados, PainelNaoIdentificado, useNaoIdentificados } from './NaoIdentificados';
 
 const LIMITE = 10 * 1024 * 1024;
 
@@ -96,6 +99,21 @@ function ItemLista(props: { c: ConversaResumo; ativo: boolean; aoAbrir: () => vo
           </span>
           {c.naoLidas > 0 && <span className="conversa-item__conta">{c.naoLidas}</span>}
         </span>
+        {(c.falandoCom || c.sugestoes > 0) && (
+          <span className="conversa-item__quem">
+            {c.falandoCom && (
+              <span>
+                <Icon name="users" size={12} /> com {c.falandoCom}
+              </span>
+            )}
+            {c.sugestoes > 0 && (
+              <span className="etiqueta etiqueta--nova">
+                <Icon name="user-plus" size={10} />{' '}
+                {c.sugestoes === 1 ? '1 indicação' : `${c.sugestoes} indicações`}
+              </span>
+            )}
+          </span>
+        )}
         <span className="conversa-item__rodape">
           <span className="ponto-etapa" style={{ background: c.etapaCor ?? '#94a3b8' }} aria-hidden="true" />
           <span>{c.etapaNome ?? c.etapa}</span>
@@ -180,7 +198,16 @@ const diaSP = new Intl.DateTimeFormat('pt-BR', {
   month: 'long',
 });
 
-function Bolhas(props: { mensagens: MensagemConversa[] }) {
+/** Quem falou ou para quem foi, quando a conversa tem mais de uma pessoa da empresa. */
+function participante(m: MensagemConversa): string | null {
+  if (m.canal !== 'whatsapp' || !m.telefone) return null;
+  const quem = m.contatoNome
+    ? `${fmtNome(m.contatoNome)}${m.contatoCargo ? ` · ${m.contatoCargo}` : ''}`
+    : 'Número da empresa';
+  return m.direcao === 'enviada' ? `Para ${quem}` : quem;
+}
+
+function Bolhas(props: { mensagens: MensagemConversa[]; variasPessoas: boolean }) {
   const fim = useRef<HTMLDivElement>(null);
   const ultima = props.mensagens.at(-1)?.id;
   // biome-ignore lint/correctness/useExhaustiveDependencies: rola só quando chega mensagem nova
@@ -205,6 +232,11 @@ function Bolhas(props: { mensagens: MensagemConversa[] }) {
               data-origem={m.origem}
               data-canal={m.canal}
             >
+              {props.variasPessoas && participante(m) && (
+                <span className="bolha__pessoa" title={m.telefone ? formatarTelefone(m.telefone) : undefined}>
+                  {participante(m)}
+                </span>
+              )}
               {m.canal === 'email' && (
                 <span className="bolha__canal">
                   <Icon name="mail" size={12} /> E-mail
@@ -663,10 +695,18 @@ function RespostasRapidas(props: { aoFechar: () => void }) {
   );
 }
 
-function Conversa(props: { empresaId: number; aoVoltar: () => void; aoAbrirFicha: () => void }) {
+function Conversa(props: {
+  empresaId: number;
+  abrirPessoas?: boolean;
+  aoVoltar: () => void;
+  aoAbrirFicha: () => void;
+}) {
   const cliente = useQueryClient();
   const [marcando, setMarcando] = useState(false);
   const [respostas, setRespostas] = useState(false);
+  const [pessoas, setPessoas] = useState<{ editar: ContatoLead | null } | null>(
+    props.abrirPessoas ? { editar: null } : null,
+  );
   const chave = ['conversa', props.empresaId];
   const q = useQuery({
     queryKey: chave,
@@ -699,6 +739,17 @@ function Conversa(props: { empresaId: number; aoVoltar: () => void; aoAbrirFicha
       </div>
     );
   const c = q.data;
+  const atualizar = (nova: ConversaAberta) => {
+    cliente.setQueryData(chave, nova);
+    cliente.invalidateQueries({ queryKey: ['conversas'] });
+    cliente.invalidateQueries({ queryKey: ['quadro'] });
+    cliente.invalidateQueries({ queryKey: ['contatos-lead', props.empresaId] });
+  };
+  const confirmados = c.contatos.filter((x) => x.status === 'confirmado').length;
+  const numeros = new Set(
+    c.mensagens.filter((m) => m.canal === 'whatsapp' && m.telefone).map((m) => m.telefone!.slice(-8)),
+  );
+  const variasPessoas = numeros.size > 1 || c.mensagens.some((m) => m.contatoId);
   return (
     <div className="chat">
       <header className="chat__topo">
@@ -724,9 +775,18 @@ function Conversa(props: { empresaId: number; aoVoltar: () => void; aoAbrirFicha
             {c.cidade && ` · ${fmtCidade(c.cidade)}`}
             {c.telefone && <span className="mono"> · {formatarTelefone(c.telefone)}</span>}
           </span>
+          <EnviarPara
+            empresaId={c.empresaId}
+            telefone={c.telefone}
+            opcoes={c.opcoesEnvio}
+            aoMudar={atualizar}
+          />
         </div>
         <Dono id={c.responsavelId} nome={c.responsavelNome} tamanho={26} />
         <div className="acoes">
+          <Button size="sm" variant="ghost" icon="users" onClick={() => setPessoas({ editar: null })}>
+            Pessoas{confirmados ? ` (${confirmados})` : ''}
+          </Button>
           <Button size="sm" variant="ghost" icon="calendar-plus" onClick={() => setMarcando(true)}>
             Marcar reunião
           </Button>
@@ -760,8 +820,9 @@ function Conversa(props: { empresaId: number; aoVoltar: () => void; aoAbrirFicha
           )}
         </div>
       )}
+      <FaixaIndicacoes conversa={c} aoRevisar={(x) => setPessoas({ editar: x })} aoMudar={atualizar} />
       {c.mensagens.length ? (
-        <Bolhas mensagens={c.mensagens} />
+        <Bolhas mensagens={c.mensagens} variasPessoas={variasPessoas} />
       ) : (
         <div className="bolhas">
           <EmptyState
@@ -789,14 +850,27 @@ function Conversa(props: { empresaId: number; aoVoltar: () => void; aoAbrirFicha
         />
       )}
       {respostas && <RespostasRapidas aoFechar={() => setRespostas(false)} />}
+      {pessoas && (
+        <PainelContatos
+          conversa={c}
+          editarInicial={pessoas.editar}
+          aoMudar={atualizar}
+          aoFechar={() => setPessoas(null)}
+        />
+      )}
     </div>
   );
 }
 
 export function Conversas() {
   const [params, setParams] = useSearchParams();
-  const filtro = (params.get('filtro') as 'todas' | 'nao_lidas' | 'minhas' | null) ?? 'todas';
+  const filtro =
+    (params.get('filtro') as 'todas' | 'nao_lidas' | 'minhas' | 'nao_identificados' | null) ?? 'todas';
+  const soltos = filtro === 'nao_identificados';
   const lead = Number(params.get('lead')) || null;
+  const numero = params.get('numero');
+  const naoIdentificados = useNaoIdentificados();
+  const totalSoltos = naoIdentificados.data?.length ?? 0;
   const ficha = params.get('empresa');
   const [busca, setBusca] = useState('');
   const [buscaFeita, setBuscaFeita] = useState('');
@@ -817,6 +891,7 @@ export function Conversas() {
       api<ConversaResumo[]>(
         `/conversas?filtro=${filtro}${buscaFeita ? `&busca=${encodeURIComponent(buscaFeita)}` : ''}`,
       ),
+    enabled: !soltos,
     refetchInterval: 10_000,
     placeholderData: keepPreviousData,
   });
@@ -825,11 +900,15 @@ export function Conversas() {
     { id: 'todas', rotulo: 'Todas' },
     { id: 'nao_lidas', rotulo: 'Não lidas' },
     { id: 'minhas', rotulo: 'Meus leads' },
+    ...(totalSoltos || soltos
+      ? [{ id: 'nao_identificados' as const, rotulo: `Sem lead${totalSoltos ? ` (${totalSoltos})` : ''}` }]
+      : []),
   ];
+  const aberta = soltos ? !!numero : !!lead;
 
   return (
     <>
-      <div className="inbox" data-aberta={lead ? true : undefined}>
+      <div className="inbox" data-aberta={aberta || undefined}>
         <aside className="inbox__lista" aria-label="Conversas">
           <div className="inbox__cabeca">
             <h1>Conversas</h1>
@@ -842,25 +921,36 @@ export function Conversas() {
                   aria-selected={filtro === f.id}
                   className="segmento"
                   data-ativo={filtro === f.id || undefined}
-                  onClick={() => mudar({ filtro: f.id === 'todas' ? null : f.id })}
+                  title={
+                    f.id === 'nao_identificados'
+                      ? 'Mensagens de números que não são de nenhum lead (ex.: a pessoa indicada que escreveu primeiro)'
+                      : undefined
+                  }
+                  onClick={() => mudar({ filtro: f.id === 'todas' ? null : f.id, lead: null, numero: null })}
                 >
                   {f.rotulo}
                 </button>
               ))}
             </div>
-            <label className="pp-sr" htmlFor="conversas-busca">
-              Buscar conversa
-            </label>
-            <input
-              id="conversas-busca"
-              className="filtro"
-              placeholder="Buscar por empresa ou telefone"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-            />
+            {!soltos && (
+              <>
+                <label className="pp-sr" htmlFor="conversas-busca">
+                  Buscar conversa
+                </label>
+                <input
+                  id="conversas-busca"
+                  className="filtro"
+                  placeholder="Buscar por empresa, pessoa ou telefone"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                />
+              </>
+            )}
           </div>
           <ErroDaApi erro={lista.error} />
-          {lista.isPending ? (
+          {soltos ? (
+            <ListaNaoIdentificados ativo={numero} aoAbrir={(t) => mudar({ numero: t })} />
+          ) : lista.isPending ? (
             <div className="esqueleto" />
           ) : !lista.data?.length ? (
             <p className="quieto inbox__vazia">
@@ -884,10 +974,26 @@ export function Conversas() {
           )}
         </aside>
         <section className="inbox__chat">
-          {lead ? (
+          {soltos && numero ? (
+            <PainelNaoIdentificado
+              key={numero}
+              telefone={numero}
+              aoVoltar={() => mudar({ numero: null })}
+              aoVinculado={(id) => mudar({ filtro: null, numero: null, lead: String(id) })}
+            />
+          ) : soltos ? (
+            <div className="chat chat--vazio">
+              <EmptyState
+                icone="inbox"
+                titulo="Mensagens sem lead"
+                texto="Escolha um número para ver as mensagens e vincular a um lead. Ele vira um contato da negociação e a conversa continua no mesmo card."
+              />
+            </div>
+          ) : lead ? (
             <Conversa
               key={lead}
               empresaId={lead}
+              abrirPessoas={params.get('pessoas') === '1'}
               aoVoltar={() => mudar({ lead: null })}
               aoAbrirFicha={() => mudar({ empresa: String(lead) })}
             />

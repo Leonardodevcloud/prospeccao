@@ -134,9 +134,15 @@ export async function criarMensagem(
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO comercial.mensagens
        (conta_id, empresa_id, direcao, texto, telefone, status, origem, id_externo, nota, enviado_em,
-        usuario_id, midia_tipo, midia_id, lida_em, chip_id)
+        usuario_id, midia_tipo, midia_id, lida_em, chip_id, contato_id)
      VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'enviada' THEN now() END,
-             $9, $10, $11, CASE WHEN $2 = 'enviada' OR $12 THEN now() END, $13)
+             $9, $10, $11, CASE WHEN $2 = 'enviada' OR $12 THEN now() END, $13,
+             -- com quem foi: o contato da negociação dono deste número (null = número da empresa)
+             (SELECT cl.id FROM comercial.contatos_lead cl
+               WHERE cl.conta_id = ${contaSql()} AND cl.empresa_id = $1 AND cl.status = 'confirmado'
+                 AND $4::text IS NOT NULL AND left(cl.telefone, 2) = left($4::text, 2)
+                 AND right(cl.telefone, 8) = right($4::text, 8)
+               LIMIT 1))
      ON CONFLICT (conta_id, id_externo) WHERE id_externo IS NOT NULL DO NOTHING
      RETURNING id`,
     [
@@ -198,24 +204,35 @@ export async function ligarEmMassa(db: Executor, etapas: string[]): Promise<numb
 
 /**
  * Lead pelo telefone que mandou mensagem. Compara DDD + 8 últimos dígitos (o 9 do celular às
- * vezes vem, às vezes não). Só leads que estão no funil.
+ * vezes vem, às vezes não). Só leads que estão no funil. Vale o número da empresa e o de quem
+ * entrou na negociação por indicação (contatoId diz quem é).
  */
-export async function leadPorTelefone(db: Executor, telefone: string): Promise<number | null> {
+export async function leadPorTelefone(
+  db: Executor,
+  telefone: string,
+): Promise<{ empresaId: number; contatoId: number | null } | null> {
   const d = telefone.replace(/\D/g, '');
   if (d.length < 10) return null;
   const ddd = d.slice(0, 2);
   const fim = d.slice(-8);
-  const { rows } = await db.query<{ empresa_id: number }>(
+  const C = contaSql();
+  const { rows } = await db.query<{ empresa_id: number; contato_id: number | null }>(
     `WITH tel AS (
-       SELECT c.empresa_id, c.valor FROM enriquecimento.contatos c WHERE c.canal IN ('whatsapp', 'telefone')
-       UNION ALL SELECT e.id, e.maps_telefone FROM descoberta.empresas e WHERE e.maps_telefone IS NOT NULL
+       SELECT cl.empresa_id, cl.telefone AS valor, cl.id AS contato_id, 0 AS ordem
+         FROM comercial.contatos_lead cl
+        WHERE cl.conta_id = ${C} AND cl.status = 'confirmado' AND cl.telefone IS NOT NULL
+          AND left(cl.telefone, 2) = $1 AND right(cl.telefone, 8) = $2
+       UNION ALL
+       SELECT c.empresa_id, c.valor, NULL, 1 FROM enriquecimento.contatos c WHERE c.canal IN ('whatsapp', 'telefone')
+       UNION ALL SELECT e.id, e.maps_telefone, NULL, 1 FROM descoberta.empresas e WHERE e.maps_telefone IS NOT NULL
      )
-     SELECT o.empresa_id::int FROM tel
-       JOIN comercial.oportunidades o ON o.conta_id = ${contaSql()} AND o.empresa_id = tel.empresa_id
+     SELECT o.empresa_id::int, tel.contato_id::int FROM tel
+       JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = tel.empresa_id
       WHERE left(tel.valor, 2) = $1 AND right(tel.valor, 8) = $2
-      ORDER BY (o.etapa IN ('ganho', 'perdido', 'descartado')), o.atualizado_em DESC
+      ORDER BY (o.etapa IN ('ganho', 'perdido', 'descartado')), tel.ordem, o.atualizado_em DESC
       LIMIT 1`,
     [ddd, fim],
   );
-  return rows[0]?.empresa_id ?? null;
+  const r = rows[0];
+  return r ? { empresaId: r.empresa_id, contatoId: r.contato_id } : null;
 }

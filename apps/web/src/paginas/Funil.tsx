@@ -102,8 +102,16 @@ function Card(props: {
               <Dono id={c.responsavelId} nome={c.responsavelNome} />
             </span>
           </span>
-          {(c.naoLidas > 0 || c.reuniaoEm) && (
+          {(c.naoLidas > 0 || c.reuniaoEm || c.indicacoesNovas > 0) && (
             <span className="cartao__alertas">
+              {c.indicacoesNovas > 0 && (
+                <span className="etiqueta etiqueta--nova">
+                  <Icon name="user-plus" size={12} />{' '}
+                  {c.indicacoesNovas === 1
+                    ? '1 indicação para confirmar'
+                    : `${c.indicacoesNovas} indicações para confirmar`}
+                </span>
+              )}
               {c.naoLidas > 0 && (
                 <span className="etiqueta etiqueta--nova">
                   <Icon name="message-circle" size={12} /> {c.naoLidas}{' '}
@@ -139,7 +147,7 @@ function Card(props: {
           </span>
 
           {/* Contato e decisor */}
-          {(c.decisorNome || fone) && (
+          {(c.decisorNome || fone || c.falandoCom) && (
             <span className="cartao__contato">
               {c.decisorNome && (
                 <span className="cartao__linha">
@@ -147,6 +155,17 @@ function Card(props: {
                   <span>
                     {fmtNome(c.decisorNome)}
                     {c.decisorCargo && <span className="quieto"> · {c.decisorCargo}</span>}
+                  </span>
+                </span>
+              )}
+              {c.falandoCom && (
+                <span className="cartao__linha">
+                  <Icon name="users" size={14} />
+                  <span>
+                    Falando com {c.falandoCom}
+                    {c.contatosNegociacao > 1 && (
+                      <span className="quieto"> · {c.contatosNegociacao} pessoas na negociação</span>
+                    )}
                   </span>
                 </span>
               )}

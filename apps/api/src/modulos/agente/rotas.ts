@@ -6,6 +6,7 @@ import {
   chipAtualizar,
   chipEntrada,
   configAgenteEntrada,
+  indicacoesNoTexto,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
@@ -13,10 +14,11 @@ import { comConta, conta, contaSql } from '../../contexto.js';
 import type { DepsApi, WhatsappConta } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
+import * as contatos from '../contatos/repositorio.js';
 import { guardarMidia } from '../conversas/repositorio.js';
 import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
 import * as funil from '../funil/repositorio.js';
-import { notificarDono } from '../notificacoes/repositorio.js';
+import { notificar, notificarDono } from '../notificacoes/repositorio.js';
 import * as chips from './chips.js';
 import * as repo from './repositorio.js';
 
@@ -159,6 +161,21 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
 
   type Recebida = NonNullable<ReturnType<typeof interpretarWebhook>>;
 
+  /** Primeira mensagem de um número desconhecido: avisa os administradores (uma vez por número). */
+  async function avisarNaoIdentificado(m: Recebida) {
+    const { rows } = await pool.query<{ id: number }>(
+      `SELECT id FROM cadastro.usuarios WHERE conta_id = ${contaSql()} AND papel = 'admin' AND ativo`,
+    );
+    const tel = m.telefone.replace(/^(\d{2})(\d+)(\d{4})$/, '($1) $2-$3');
+    for (const u of rows)
+      await notificar(pool, u.id, {
+        tipo: 'sistema',
+        titulo: `Mensagem de um número fora dos leads: ${m.nome ? `${m.nome} · ` : ''}${tel}`,
+        texto: m.texto,
+        link: '/conversas?filtro=nao_identificados',
+      });
+  }
+
   /** Guarda o arquivo da mensagem: o que veio no webhook, ou baixa da Evolution (em segundo plano). */
   async function anexar(db: Executor, mensagemId: number, m: Recebida, whatsapp: WhatsappConta | null) {
     if (!m.midia) return;
@@ -192,10 +209,26 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
   }
 
   async function registrarRecebida(m: Recebida, whatsapp: WhatsappConta | null) {
-    const empresaId = await repo.leadPorTelefone(pool, m.telefone);
-    if (!empresaId) return;
-    // Por qual chip chegou: o lead passa a conversar sempre por ele.
     const chipId = await chips.porInstancia(pool, m.instancia);
+    const achado = await repo.leadPorTelefone(pool, m.telefone);
+    if (!achado) {
+      // Número que não é de nenhum lead (a pessoa indicada que escreveu primeiro, por exemplo):
+      // fica guardado em "Não identificados" até alguém vincular a um lead.
+      const { primeira } = await contatos.guardarNaoIdentificada(pool, {
+        telefone: m.telefone,
+        nome: m.nome,
+        deMim: m.deMim,
+        texto: m.texto,
+        midiaTipo: m.midia?.tipo ?? null,
+        idExterno: m.idExterno,
+        chipId,
+        em: m.em,
+      });
+      if (primeira && !m.deMim) await avisarNaoIdentificado(m);
+      return;
+    }
+    const { empresaId, contatoId } = achado;
+    // Por qual chip chegou: o lead passa a conversar sempre por ele.
     if (chipId) await chips.fixarChip(pool, empresaId, chipId);
     if (m.deMim) {
       // Mensagem que você mandou pelo celular: entra no histórico (as do sistema já estão lá).
@@ -217,6 +250,8 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
         chipId,
       });
       if (id) await anexar(pool, id, m, whatsapp);
+      // Você escreveu para este número pelo celular: a conversa segue com ele.
+      if (id) await contatos.definirDestino(pool, empresaId, m.telefone);
       if (id)
         await funil.registrarAtividade(
           pool,
@@ -238,6 +273,21 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
     });
     if (!id) return; // a Evolution mandou a mesma mensagem duas vezes
     await anexar(pool, id, m, whatsapp);
+    // A resposta vai para quem escreveu por último (a empresa ou a pessoa indicada).
+    await contatos.definirDestino(pool, empresaId, m.telefone);
+    // Indicação: cartão de contato ou telefone no texto vira sugestão de contato (alguém confirma).
+    const achadas = [
+      ...m.contatos.flatMap((x) =>
+        x.telefones.map((telefone) => ({
+          nome: x.nome,
+          cargo: null,
+          telefone,
+          evidencia: `Cartão de contato: ${x.nome ?? telefone}`,
+        })),
+      ),
+      ...indicacoesNoTexto(m.contatos.length ? '' : m.texto, m.telefone),
+    ];
+    const sugeridas = achadas.length ? await contatos.sugerir(pool, empresaId, achadas, id, contatoId) : 0;
     // Respondeu: a sequência automática para (nenhum e-mail ou WhatsApp a mais).
     await pararSequencia(pool, empresaId, RESPONDEU_WHATSAPP);
     await funil.registrarAtividade(
@@ -254,7 +304,9 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
     );
     await notificarDono(pool, empresaId, {
       tipo: 'mensagem',
-      titulo: `${rows[0]?.nome ?? 'Lead'} mandou mensagem${rows[0]?.ia ? ' (a IA está respondendo)' : ''}`,
+      titulo: sugeridas
+        ? `${rows[0]?.nome ?? 'Lead'} indicou ${sugeridas === 1 ? 'um contato' : `${sugeridas} contatos`}`
+        : `${rows[0]?.nome ?? 'Lead'} mandou mensagem${rows[0]?.ia ? ' (a IA está respondendo)' : ''}`,
       texto: m.texto,
     });
     log.info({ empresaId }, 'agente: lead respondeu no WhatsApp');

@@ -1229,6 +1229,162 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     );
   });
 
+  it('indicações: número desconhecido, vincular, cadeia até o decisor, enviar para e sugestão', async () => {
+    const enviados: { tel: string; texto?: string }[] = [];
+    const appZap = criarApp({
+      pool,
+      log: criarLogger('teste', 'silent'),
+      filas: {
+        publicar: async () => 'x',
+        publicarVarios: async () => 0,
+        cancelarPendentes: async () => 0,
+        tamanhos: async () => ({}),
+      },
+      auth: {
+        jwtSegredo: 'x'.repeat(40),
+        adminEmail: 'ops@exemplo.com',
+        adminSenhaHash: 'x',
+        sessaoHoras: 1,
+        cookieSeguro: false,
+      },
+      origens: [ORIGEM],
+      credenciais: CREDENCIAIS,
+      servicos: async (conta) => ({
+        ...semServicos(conta),
+        whatsapp: {
+          instancia: 'teste',
+          async enviar(tel: string, texto: string) {
+            enviados.push({ tel, texto });
+            return { idExterno: `ind-${enviados.length}` };
+          },
+        },
+      }),
+    });
+    const z = {
+      ler: (rota: string) => request(appZap).get(rota).set('Cookie', cookie),
+      enviar: (metodo: 'post' | 'patch' | 'put' | 'delete', rota: string, corpo?: object) =>
+        request(appZap)[metodo](rota).set('Origin', ORIGEM).set('Cookie', cookie).send(corpo),
+    };
+    const token = (await ler('/agente')).body.webhook.split('/').at(-1);
+    const chega = (tel: string, texto: string, id: string, extra: object = {}) =>
+      request(appZap)
+        .post(`/webhooks/evolution/${token}`)
+        .send({
+          event: 'messages.upsert',
+          data: {
+            key: { remoteJid: `55${tel}@s.whatsapp.net`, fromMe: false, id },
+            pushName: 'Carlos',
+            message: { conversation: texto, ...extra },
+          },
+        });
+
+    // 1. A atendente (número da empresa) indica o comprador: vira sugestão, nada entra sozinho.
+    await chega('7130002222', 'Quem compra é o Carlos das compras, fala com ele no (71) 99876-5432', 'ind-a');
+    let c = (await z.ler('/conversas/92')).body;
+    const sugestao = c.contatos.find((x: { status: string }) => x.status === 'sugerido');
+    expect(sugestao).toMatchObject({
+      nome: 'Carlos',
+      cargo: 'Compras',
+      telefone: '71998765432',
+      origem: 'ia',
+    });
+    expect(c.opcoesEnvio.some((o: { telefone: string }) => o.telefone === '71998765432')).toBe(false);
+
+    // 2. O Carlos escreve antes de alguém confirmar: número fora dos leads, nada se perde.
+    await chega('71998765432', 'Oi, a Joana me passou seu contato', 'ind-b');
+    const soltos = (await z.ler('/conversas/nao-identificados')).body;
+    expect(soltos[0]).toMatchObject({ telefone: '71998765432', nome: 'Carlos', quantidade: 1 });
+    // Já tinha sido indicado na conversa da loja: a tela sugere vincular a ela.
+    expect(soltos[0].indicadoEm).toMatchObject({ empresaId: 92, contatoNome: 'Carlos' });
+    expect((await z.ler('/conversas/leads?busca=Agenda')).body[0]).toMatchObject({ empresaId: 92 });
+    expect(
+      (await ler('/notificacoes')).body.itens.some(
+        (a: { link: string }) => a.link === '/conversas?filtro=nao_identificados',
+      ),
+    ).toBe(true);
+
+    // 3. Vincular ao lead: a sugestão vira o contato, indicado pela atendente; a conversa segue com ele.
+    const atendente = await z.enviar('post', '/conversas/92/contatos', {
+      nome: 'Joana',
+      cargo: 'Atendente',
+      telefone: '7130002222',
+    });
+    expect(atendente.status).toBe(201);
+    const joanaId = atendente.body.contatos.find((x: { nome: string }) => x.nome === 'Joana').id;
+    const v = await z.enviar('post', '/conversas/nao-identificados/71998765432/vincular', {
+      empresaId: 92,
+      nome: 'Carlos Lima',
+      cargo: 'Compras',
+      indicadoPorId: joanaId,
+    });
+    expect(v.status).toBe(201);
+    c = v.body;
+    const carlos = c.contatos.find((x: { telefone: string }) => x.telefone === '71998765432');
+    expect(carlos).toMatchObject({ nome: 'Carlos Lima', status: 'confirmado', indicadoPorNome: 'Joana' });
+    expect(c.contatos.filter((x: { telefone: string }) => x.telefone === '71998765432')).toHaveLength(1);
+    expect(c.telefone).toBe('71998765432');
+    expect(c.mensagens.at(-1)).toMatchObject({
+      texto: 'Oi, a Joana me passou seu contato',
+      contatoNome: 'Carlos Lima',
+    });
+    expect((await z.ler('/conversas/nao-identificados')).body).toHaveLength(0);
+
+    // 4. Responder pela tela vai para o Carlos (mesmo card, mesma conversa).
+    await z.enviar('post', '/conversas/92/mensagens', { texto: 'Oi Carlos, tudo bem?' });
+    expect(enviados.at(-1)).toEqual({ tel: '71998765432', texto: 'Oi Carlos, tudo bem?' });
+
+    // 5. O Carlos manda o cartão do sócio: sugestão já indicada por ele; confirmar e marcar decisor.
+    await chega('71998765432', '', 'ind-c', {
+      conversation: undefined,
+      contactMessage: {
+        displayName: 'Manoel Sócio',
+        vcard: 'BEGIN:VCARD\nFN:Manoel Andrade\nitem1.TEL;waid=5571991112233:+55 71 99111-2233\nEND:VCARD',
+      },
+    });
+    c = (await z.ler('/conversas/92')).body;
+    expect(c.mensagens.at(-1)).toMatchObject({ contatoNome: 'Carlos Lima' });
+    const manoel = c.contatos.find((x: { telefone: string }) => x.telefone === '71991112233');
+    expect(manoel).toMatchObject({
+      status: 'sugerido',
+      nome: 'Manoel Sócio',
+      indicadoPorNome: 'Carlos Lima',
+    });
+    c = (
+      await z.enviar('patch', `/conversas/92/contatos/${manoel.id}`, {
+        confirmar: true,
+        cargo: 'Sócio',
+        decisor: true,
+        conversarCom: true,
+      })
+    ).body;
+    expect(c.contatos.find((x: { id: number }) => x.id === manoel.id)).toMatchObject({
+      status: 'confirmado',
+      decisor: true,
+    });
+    expect(c.telefone).toBe('71991112233');
+    // Mensagem que já veio do número dele passa a mostrar o nome (o próprio cartão veio do Carlos).
+    await z.enviar('post', '/conversas/92/mensagens', { texto: 'Olá, Manoel!' });
+    expect(enviados.at(-1)?.tel).toBe('71991112233');
+
+    // 6. Enviar para: só números do lead; voltar para a empresa.
+    expect((await z.enviar('put', '/conversas/92/destino', { telefone: '71900000000' })).status).toBe(422);
+    c = (await z.enviar('put', '/conversas/92/destino', { telefone: '7130002222' })).body;
+    expect(c.telefone).toBe('7130002222');
+    // Um card só: continua um lead no funil, com os três contatos.
+    expect(c.contatos.filter((x: { status: string }) => x.status === 'confirmado')).toHaveLength(3);
+    const lista = (await z.ler('/conversas?busca=Manoel')).body;
+    expect(lista.map((x: { empresaId: number }) => x.empresaId)).toEqual([92]);
+
+    // Indicado por ele mesmo não pode; número repetido não pode.
+    expect(
+      (await z.enviar('patch', `/conversas/92/contatos/${joanaId}`, { indicadoPorId: joanaId })).status,
+    ).toBe(422);
+    expect(
+      (await z.enviar('post', '/conversas/92/contatos', { nome: 'Outro', telefone: '(71) 99876-5432' }))
+        .status,
+    ).toBe(422);
+  });
+
   it('agenda: tarefas, meu dia, calendário para o Google e lembretes da reunião', async () => {
     const diaAmanha = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(
       new Date(Date.now() + 86_400_000),

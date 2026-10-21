@@ -1,3 +1,4 @@
+import { formatarTelefone, lerVcard } from '@prospeccao/shared';
 import { requisitarJson } from '../http.js';
 
 /**
@@ -123,6 +124,8 @@ export interface MensagemRecebida {
   instancia: string | null;
   /** Foto, áudio, vídeo ou documento; base64 quando a Evolution já manda junto. */
   midia: { tipo: TipoMidiaWhatsapp; mime: string | null; nome: string | null; base64: string | null } | null;
+  /** Cartões de contato compartilhados na mensagem (uma indicação, quase sempre). */
+  contatos: { nome: string | null; telefones: string[] }[];
 }
 
 /** Lê o webhook "messages.upsert" da Evolution. null para o que não é mensagem de texto de pessoa. */
@@ -149,7 +152,18 @@ export function interpretarWebhook(corpo: unknown): MensagemRecebida | null {
   ];
   const achada = tipos.find(([, v]) => v && typeof v === 'object');
   const info = (achada?.[1] ?? {}) as Record<string, unknown>;
-  const texto = String(msg.conversation ?? ext.text ?? info.caption ?? '').trim();
+  // Cartão de contato: um (contactMessage) ou vários (contactsArrayMessage).
+  const cartoes = [
+    msg.contactMessage,
+    ...(((msg.contactsArrayMessage as { contacts?: unknown[] } | undefined)?.contacts ?? []) as unknown[]),
+  ]
+    .filter((x): x is { displayName?: string; vcard?: string } => !!x && typeof x === 'object')
+    .map((x) => lerVcard(String(x.vcard ?? ''), x.displayName ?? null))
+    .filter((x) => x.telefones.length);
+  const textoCartoes = cartoes
+    .map((x) => `[contato] ${x.nome ?? 'sem nome'} ${x.telefones.map((t) => formatarTelefone(t)).join(', ')}`)
+    .join('\n');
+  const texto = String(msg.conversation ?? ext.text ?? info.caption ?? '').trim() || textoCartoes;
   if (!texto && !achada) return null;
   const rotulo: Record<TipoMidiaWhatsapp, string> = {
     imagem: '[foto]',
@@ -181,5 +195,6 @@ export function interpretarWebhook(corpo: unknown): MensagemRecebida | null {
           base64,
         }
       : null,
+    contatos: cartoes,
   };
 }

@@ -555,14 +555,28 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
             (SELECT count(*)::int FROM comercial.mensagens m
               WHERE m.conta_id = ${C} AND m.empresa_id = o.empresa_id AND m.direcao = 'recebida'
                 AND m.lida_em IS NULL) AS "naoLidas",
+            -- negociação com pessoas indicadas: com quem a conversa segue e quantos contatos
+            (SELECT cl.nome || coalesce(' · ' || cl.cargo, '') FROM comercial.contatos_lead cl
+              WHERE cl.conta_id = ${C} AND cl.empresa_id = o.empresa_id AND cl.status = 'confirmado'
+                AND o.whatsapp_destino IS NOT NULL AND left(cl.telefone, 2) = left(o.whatsapp_destino, 2)
+                AND right(cl.telefone, 8) = right(o.whatsapp_destino, 8) LIMIT 1) AS "falandoCom",
+            (SELECT count(*) FILTER (WHERE cl.status = 'confirmado')::int FROM comercial.contatos_lead cl
+              WHERE cl.conta_id = ${C} AND cl.empresa_id = o.empresa_id) AS "contatosNegociacao",
+            (SELECT count(*) FILTER (WHERE cl.status = 'sugerido')::int FROM comercial.contatos_lead cl
+              WHERE cl.conta_id = ${C} AND cl.empresa_id = o.empresa_id) AS "indicacoesNovas",
             (SELECT min(t.inicio) FROM comercial.tarefas t
               WHERE t.conta_id = ${C} AND t.empresa_id = o.empresa_id AND t.tipo IN ('reuniao', 'visita')
                 AND t.concluida_em IS NULL
                 AND t.inicio > now() - interval '2 hours') AS "reuniaoEm",
             e.nome, e.cidade, e.uf, coalesce(e.maps_categoria, l.maps_categoria) AS "categoria",
-            l.faixa, l.score, dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
+            l.faixa, l.score,
+            -- decisor confirmado na negociação vale mais que o do enriquecimento
+            coalesce((SELECT cl.nome FROM comercial.contatos_lead cl
+                       WHERE cl.conta_id = ${C} AND cl.empresa_id = o.empresa_id AND cl.decisor LIMIT 1), dec.nome) AS "decisorNome",
+            coalesce((SELECT cl.cargo FROM comercial.contatos_lead cl
+                       WHERE cl.conta_id = ${C} AND cl.empresa_id = o.empresa_id AND cl.decisor LIMIT 1), dec.cargo) AS "decisorCargo",
             pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
-            coalesce(pc.valor, e.maps_telefone) AS "telefone",
+            coalesce(o.whatsapp_destino, pc.valor, e.maps_telefone) AS "telefone",
             (SELECT count(*)::int FROM comercial.atividades a
               WHERE a.conta_id = ${C} AND a.empresa_id = o.empresa_id AND a.tipo NOT IN ('etapa', 'nota')) AS contatos,
             ult.texto AS "ultimaDoLead", ult.criado_em AS "ultimaDoLeadEm"

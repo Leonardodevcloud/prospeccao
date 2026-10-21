@@ -92,6 +92,33 @@ const REGRAS: Record<string, Regra | null> = {
   'POST /conversas/:empresaId/mensagens': { acao: 'conversa', texto: 'Mandou mensagem no WhatsApp' },
   'POST /conversas/:empresaId/midia': { acao: 'conversa', texto: 'Mandou arquivo no WhatsApp' },
   'POST /conversas/:empresaId/email': { acao: 'conversa', texto: 'Mandou e-mail pela conversa' },
+  'POST /conversas/:empresaId/contatos': {
+    acao: 'conversa',
+    texto: (b) =>
+      `Adicionou o contato ${txt(b.nome)}${b.indicadoPorId || b.indicadoPorTexto ? ' (indicação)' : ''}`,
+  },
+  'PATCH /conversas/:empresaId/contatos/:id': {
+    acao: 'conversa',
+    texto: (b) =>
+      b.confirmar
+        ? `Confirmou o contato sugerido ${txt(b.nome)}`
+        : b.decisor
+          ? 'Marcou o contato como decisor'
+          : 'Editou um contato da negociação',
+  },
+  'DELETE /conversas/:empresaId/contatos/:id': {
+    acao: 'conversa',
+    texto: 'Removeu um contato da negociação',
+  },
+  'PUT /conversas/:empresaId/destino': { acao: 'conversa', texto: 'Mudou com quem a conversa segue' },
+  'POST /conversas/nao-identificados/:telefone/vincular': {
+    acao: 'conversa',
+    texto: (b, p) => `Vinculou o número ${p.telefone} ao lead como ${txt(b.nome)}`,
+  },
+  'POST /conversas/nao-identificados/:telefone/descartar': {
+    acao: 'conversa',
+    texto: (_b, p) => `Descartou as mensagens do número ${p.telefone}`,
+  },
   'POST /conversas/respostas': { acao: 'configuração', texto: 'Criou uma resposta rápida' },
   'PUT /conversas/respostas/:id': { acao: 'configuração', texto: 'Editou uma resposta rápida' },
   'DELETE /conversas/respostas/:id': { acao: 'configuração', texto: 'Apagou uma resposta rápida' },

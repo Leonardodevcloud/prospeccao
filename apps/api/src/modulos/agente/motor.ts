@@ -172,7 +172,14 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
   const m = await mensagemDoLead(pool, empresaId);
   const { rows: lead } = await pool.query<{ nome: string; cidade: string | null; decisor: string | null }>(
     `SELECT e.nome, e.cidade,
-            (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor LIMIT 1) AS decisor
+            -- com quem a conversa está (pessoa indicada, com o cargo), senão o decisor do enriquecimento
+            coalesce(
+              (SELECT cl.nome || coalesce(' (' || cl.cargo || ')', '') FROM comercial.contatos_lead cl
+                 JOIN comercial.oportunidades o ON o.conta_id = cl.conta_id AND o.empresa_id = cl.empresa_id
+                WHERE cl.conta_id = ${contaSql()} AND cl.empresa_id = e.id AND cl.status = 'confirmado'
+                  AND o.whatsapp_destino IS NOT NULL AND left(cl.telefone, 2) = left(o.whatsapp_destino, 2)
+                  AND right(cl.telefone, 8) = right(o.whatsapp_destino, 8) LIMIT 1),
+              (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor LIMIT 1)) AS decisor
        FROM descoberta.empresas e WHERE e.id = $1`,
     [empresaId],
   );

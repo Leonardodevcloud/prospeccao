@@ -1,10 +1,31 @@
-import { filtrosConversas, mensagemEntrada, midiaEntrada, respostaRapidaEntrada } from '@prospeccao/shared';
-import { Router } from 'express';
+import {
+  AppError,
+  contatoLeadAtualizar,
+  contatoLeadEntrada,
+  destinoEntrada,
+  filtrosConversas,
+  mensagemEntrada,
+  midiaEntrada,
+  respostaRapidaEntrada,
+  vincularEntrada,
+} from '@prospeccao/shared';
+import { type Request, Router } from 'express';
 import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
+import * as contatos from '../contatos/repositorio.js';
 import * as motorEmail from '../email/motor.js';
+import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
+import { dadosDoLead } from '../funil/cadencia.js';
+import * as funil from '../funil/repositorio.js';
 import * as repo from './repositorio.js';
+
+/** Telefone na rota: só dígitos (10 a 13). */
+function telefoneDaRota(req: Request): string {
+  const t = String(req.params.telefone ?? '').replace(/\D/g, '');
+  if (t.length < 10 || t.length > 13) throw AppError.invalido('Telefone inválido.');
+  return t;
+}
 
 export function rotasConversas(deps: DepsApi): Router {
   const { pool } = deps;
@@ -51,6 +72,99 @@ export function rotasConversas(deps: DepsApi): Router {
       .set('Content-Security-Policy', "default-src 'none'; img-src 'self'; media-src 'self'; sandbox")
       .set('X-Content-Type-Options', 'nosniff')
       .send(m.dados);
+  });
+
+  /* ───────── Números fora dos leads (a pessoa indicada que escreveu primeiro, por exemplo) ───────── */
+
+  /** Leads para vincular um número (nome da empresa, de um contato ou telefone). */
+  r.get('/leads', async (req, res) => {
+    const { busca } = consulta(req, z.object({ busca: z.string().trim().min(2).max(80) }));
+    res.json(await contatos.buscarLeads(pool, busca));
+  });
+
+  r.get('/nao-identificados', async (_req, res) => {
+    res.json(await contatos.listarNaoIdentificados(pool));
+  });
+
+  /** Vincula o número a um lead: vira contato da negociação e as mensagens vão para a conversa dele. */
+  r.post('/nao-identificados/:telefone/vincular', async (req, res) => {
+    const d = corpo(req, vincularEntrada);
+    const v = await contatos.vincular(pool, telefoneDaRota(req), d);
+    if (v.recebidas) {
+      // Mensagem dele é resposta: a etapa anda e a sequência automática para.
+      await pararSequencia(pool, d.empresaId, RESPONDEU_WHATSAPP);
+      // Resposta pelo WhatsApp sem texto (as mensagens já estão na conversa): a etapa anda.
+      await funil.registrarAtividade(
+        pool,
+        d.empresaId,
+        { tipo: 'whatsapp', direcao: 'recebida', texto: null, contato: telefoneDaRota(req) },
+        d.nome,
+      );
+      await funil.registrarAtividade(
+        pool,
+        d.empresaId,
+        {
+          tipo: 'nota',
+          direcao: null,
+          texto: `${d.nome}${d.cargo ? ` (${d.cargo})` : ''} entrou na negociação: ${v.recebidas} mensagem(ns) do número ${telefoneDaRota(req)} vieram para esta conversa.`,
+        },
+        req.usuario!.nome,
+      );
+    }
+    res.status(201).json(await repo.abrir(pool, d.empresaId));
+  });
+
+  r.post('/nao-identificados/:telefone/descartar', async (req, res) => {
+    await contatos.descartarNaoIdentificado(pool, telefoneDaRota(req));
+    res.json({ ok: true });
+  });
+
+  /* ───────── Contatos da negociação e "enviar para" ───────── */
+
+  /** Só os contatos da negociação (a ficha usa; não marca mensagens como lidas). */
+  r.get('/:empresaId/contatos', async (req, res) => {
+    const id = idDaRota(req, 'empresaId');
+    const [lista, opcoes, lead] = await Promise.all([
+      contatos.listar(pool, id),
+      contatos.opcoesDeEnvio(pool, id),
+      dadosDoLead(pool, id),
+    ]);
+    res.json({ contatos: lista, opcoesEnvio: opcoes, telefone: lead.telefone });
+  });
+
+  r.post('/:empresaId/contatos', async (req, res) => {
+    const id = idDaRota(req, 'empresaId');
+    await contatos.criar(pool, id, corpo(req, contatoLeadEntrada));
+    res.status(201).json(await repo.abrir(pool, id));
+  });
+
+  r.patch('/:empresaId/contatos/:id', async (req, res) => {
+    const id = idDaRota(req, 'empresaId');
+    await contatos.atualizar(pool, id, idDaRota(req), corpo(req, contatoLeadAtualizar));
+    res.json(await repo.abrir(pool, id));
+  });
+
+  r.delete('/:empresaId/contatos/:id', async (req, res) => {
+    const id = idDaRota(req, 'empresaId');
+    await contatos.remover(pool, id, idDaRota(req));
+    res.json(await repo.abrir(pool, id));
+  });
+
+  r.put('/:empresaId/destino', async (req, res) => {
+    const id = idDaRota(req, 'empresaId');
+    const { telefone } = corpo(req, destinoEntrada);
+    if (telefone) {
+      const opcoes = await contatos.opcoesDeEnvio(pool, id);
+      if (
+        !opcoes.some(
+          (o) =>
+            o.telefone.slice(0, 2) === telefone.slice(0, 2) && o.telefone.slice(-8) === telefone.slice(-8),
+        )
+      )
+        throw AppError.invalido('Escolha um número da empresa ou um contato da negociação.');
+    }
+    await contatos.definirDestino(pool, id, telefone);
+    res.json(await repo.abrir(pool, id));
   });
 
   /** Abre a conversa (e marca as mensagens dele como lidas). */

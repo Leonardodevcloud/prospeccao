@@ -134,9 +134,17 @@ export async function dadosDoLead(db: Executor, empresaId: number) {
     telefone: string | null;
   }>(
     `SELECT o.etapa, o.tentativas, e.nome, e.cidade,
-            (SELECT p.nome FROM enriquecimento.pessoas p
-              WHERE p.empresa_id = e.id AND p.decisor ORDER BY p.id LIMIT 1) AS decisor,
+            -- conversando com uma pessoa indicada: o {nome} das mensagens é o dela
             coalesce(
+              (SELECT cl.nome FROM comercial.contatos_lead cl
+                WHERE cl.conta_id = o.conta_id AND cl.empresa_id = o.empresa_id AND cl.status = 'confirmado'
+                  AND o.whatsapp_destino IS NOT NULL AND left(cl.telefone, 2) = left(o.whatsapp_destino, 2)
+                  AND right(cl.telefone, 8) = right(o.whatsapp_destino, 8) LIMIT 1),
+              (SELECT p.nome FROM enriquecimento.pessoas p
+                WHERE p.empresa_id = e.id AND p.decisor ORDER BY p.id LIMIT 1)) AS decisor,
+            coalesce(
+              -- com quem a conversa segue ("enviar para")
+              o.whatsapp_destino,
               (SELECT c.valor FROM enriquecimento.contatos c
                 WHERE c.empresa_id = e.id AND c.status <> 'invalido'
                   AND (c.canal = 'whatsapp' OR (c.canal = 'telefone' AND c.whatsapp))

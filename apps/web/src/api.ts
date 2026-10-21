@@ -298,6 +298,12 @@ export interface CardFunil {
   naoLidas: number;
   /** Próxima reunião/visita marcada na agenda. */
   reuniaoEm: string | null;
+  /** Conversa seguindo com uma pessoa indicada ("Carlos Lima · Compras"). */
+  falandoCom: string | null;
+  /** Pessoas na negociação (indicações confirmadas). */
+  contatosNegociacao: number;
+  /** Indicações vistas nas mensagens, esperando confirmação. */
+  indicacoesNovas: number;
 }
 
 export interface Quadro {
@@ -852,6 +858,10 @@ export interface ConversaResumo {
   /** Canal da última mensagem (WhatsApp ou e-mail). */
   ultimoCanal: 'whatsapp' | 'email' | null;
   naoLidas: number;
+  /** Conversa seguindo com uma pessoa indicada (nome dela). */
+  falandoCom: string | null;
+  /** Contatos sugeridos esperando confirmação. */
+  sugestoes: number;
 }
 
 export interface MensagemConversa {
@@ -869,6 +879,12 @@ export interface MensagemConversa {
   midiaId: number | null;
   em: string;
   autor: string | null;
+  /** Número com quem foi trocada (WhatsApp). */
+  telefone: string | null;
+  /** Contato da negociação dono do número (null = número da empresa). */
+  contatoId: number | null;
+  contatoNome: string | null;
+  contatoCargo: string | null;
 }
 
 export interface ConversaAberta {
@@ -889,6 +905,61 @@ export interface ConversaAberta {
   telefone: string | null;
   variaveis: { nome: string | null; empresa: string; cidade: string | null; remetente: string };
   mensagens: MensagemConversa[];
+  /** Contatos da negociação: cadeia de indicações e sugestões a confirmar. */
+  contatos: ContatoLead[];
+  /** Números para o "enviar para" (telefone é o escolhido). */
+  opcoesEnvio: OpcaoEnvio[];
+}
+
+export interface ContatoLead {
+  id: number;
+  nome: string;
+  cargo: string | null;
+  telefone: string | null;
+  email: string | null;
+  indicadoPorId: number | null;
+  indicadoPorNome: string | null;
+  indicadoPorTexto: string | null;
+  decisor: boolean;
+  status: 'sugerido' | 'confirmado';
+  origem: 'manual' | 'ia' | 'nao_identificado';
+  evidencia: string | null;
+  criadoEm: string;
+  criadoPorNome: string | null;
+  mensagens: number;
+}
+
+export interface OpcaoEnvio {
+  telefone: string;
+  nome: string;
+  detalhe: string | null;
+  tipo: 'empresa' | 'contato';
+  contatoId: number | null;
+  whatsapp: boolean | null;
+}
+
+export interface NaoIdentificado {
+  telefone: string;
+  nome: string | null;
+  ultima: string;
+  ultimaDirecao: 'enviada' | 'recebida';
+  ultimaEm: string;
+  quantidade: number;
+  mensagens: {
+    id: number;
+    direcao: 'enviada' | 'recebida';
+    texto: string;
+    midiaTipo: TipoMidia | null;
+    em: string;
+  }[];
+  /** O número já foi indicado na conversa de um lead (o vínculo provável). */
+  indicadoEm: {
+    empresaId: number;
+    empresa: string;
+    contatoId: number;
+    contatoNome: string;
+    indicadoPorId: number | null;
+  } | null;
 }
 
 export interface RespostaRapida {

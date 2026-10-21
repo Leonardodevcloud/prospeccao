@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import {
   type AtividadeFunil,
   api,
+  type ContatoLead,
   type DetalheFunil,
   type EtapaFunil,
   type ResultadoAdicionar,
@@ -13,6 +14,7 @@ import {
 } from '../api';
 import { diaDaqui, diaDoInput, fmtHora, fmtNome, fmtPrazo, formatarTelefone } from '../formatar';
 import { ProximaMensagem } from './Cadencia';
+import { CadeiaContatos } from './ContatosNegociacao';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { usePipelines } from './Pipelines';
 import { useEquipe } from './Sessao';
@@ -195,6 +197,35 @@ function PedirMotivo(props: {
  * O que foi feito com o lead: etapa, próximo passo, contatos registrados e histórico.
  * Antes de entrar no funil, oferece "Mandar para o funil" ou "Descartar".
  */
+/** Quem indicou quem nesta empresa (gerenciado na conversa). */
+function PessoasNaNegociacao(props: { empresaId: number }) {
+  const q = useQuery({
+    queryKey: ['contatos-lead', props.empresaId],
+    queryFn: () =>
+      api<{ contatos: ContatoLead[]; telefone: string | null }>(`/conversas/${props.empresaId}/contatos`),
+  });
+  const sugeridos = q.data?.contatos.filter((c) => c.status === 'sugerido').length ?? 0;
+  return (
+    <Panel
+      titulo="Pessoas na negociação"
+      contagem={q.data?.contatos.filter((c) => c.status === 'confirmado').length}
+      acoes={
+        <Button size="sm" variant="ghost" icon="users" href={`/conversas?lead=${props.empresaId}&pessoas=1`}>
+          {sugeridos
+            ? `Confirmar ${sugeridos === 1 ? 'indicação' : `${sugeridos} indicações`}`
+            : 'Adicionar indicado'}
+        </Button>
+      }
+    >
+      {q.data ? (
+        <CadeiaContatos contatos={q.data.contatos} telefoneAtual={q.data.telefone} />
+      ) : (
+        <ErroDaApi erro={q.error} />
+      )}
+    </Panel>
+  );
+}
+
 export function SecaoFunil(props: {
   empresaId: number;
   /** Contato principal (para pré-preencher o registro e abrir o WhatsApp). */
@@ -587,6 +618,8 @@ export function SecaoFunil(props: {
         >
           <AgendaDoLead empresaId={empresaId} empresaNome={props.empresaNome ?? 'o lead'} />
         </Panel>
+
+        <PessoasNaNegociacao empresaId={empresaId} />
 
         {['a_abordar', 'abordado', 'respondeu', 'proposta'].includes(op.etapa) && !op.encerrarEm && (
           <Panel titulo="Próxima mensagem">
