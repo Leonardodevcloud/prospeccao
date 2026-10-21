@@ -32,8 +32,7 @@ Abra http://localhost:4321.
 Novo projeto no Vercel apontando para o mesmo repositório:
 
 - **Root Directory:** `apps/site`
-- **Framework Preset:** Other
-- **Build Command:** vazio · **Output Directory:** `.` (padrão)
+- **Framework Preset:** Other (o `vercel.json` desta pasta já desliga instalação e build e publica a própria pasta)
 
 Não precisa de variável de ambiente. O `vercel.json` desta pasta aplica os cabeçalhos.
 
