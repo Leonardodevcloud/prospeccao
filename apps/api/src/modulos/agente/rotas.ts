@@ -3,7 +3,8 @@ import { interpretarWebhook } from '@prospeccao/integrations/whatsapp';
 import { AppError, aprovarRascunho, configAgenteEntrada } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
-import type { DepsApi } from '../../dependencias.js';
+import { comConta, conta, contaSql } from '../../contexto.js';
+import type { DepsApi, WhatsappConta } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { guardarMidia } from '../conversas/repositorio.js';
@@ -23,10 +24,11 @@ function enderecoPublico(req: Request): string {
 }
 
 /** Tela do Agente: configuração, mensagens para revisar e leads que a IA passou para você. */
-export function rotasAgente({ pool, log, whatsapp, ia }: DepsApi): Router {
+export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
   const r = Router();
 
   r.get('/', async (req: Request, res) => {
+    const { whatsapp, ia, iaDescricao, origem } = await servicos(conta());
     const [config, resumo, rascunhos, pausados] = await Promise.all([
       repo.obterConfig(pool),
       repo.resumo(pool),
@@ -38,7 +40,12 @@ export function rotasAgente({ pool, log, whatsapp, ia }: DepsApi): Router {
       config: resto,
       // Endereço para colar na Evolution (Webhook → MESSAGES_UPSERT).
       webhook: `${enderecoPublico(req)}/webhooks/evolution/${webhookToken}`,
-      status: { whatsapp: !!whatsapp, ia: !!ia },
+      status: {
+        whatsapp: !!whatsapp,
+        ia: !!ia,
+        iaDescricao,
+        origem: { whatsapp: origem.evolution, ia: origem.ia },
+      },
       resumo,
       rascunhos,
       pausados,
@@ -84,16 +91,25 @@ export function rotasAgente({ pool, log, whatsapp, ia }: DepsApi): Router {
  * registra no funil (o lead vai para "Respondeu"); quem responde é o motor do agente, alguns
  * segundos depois, para juntar mensagens em sequência.
  */
-export function rotasWebhook({ pool, log, whatsapp }: DepsApi): Router {
+export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
   const r = Router();
   r.post('/evolution/:token', async (req, res) => {
-    const cfg = await repo.obterConfig(pool);
-    if (req.params.token !== cfg.webhookToken) throw AppError.naoEncontrado('Webhook');
+    // O token diz de qual conta é o chip (cada conta tem o seu endereço de webhook).
+    const { rows } = await pool.query<{ conta_id: number }>(
+      `SELECT a.conta_id FROM comercial.config_agente a JOIN cadastro.contas c ON c.id = a.conta_id
+        WHERE a.webhook_token = $1 AND c.ativa`,
+      [req.params.token],
+    );
+    const contaId = rows[0]?.conta_id;
+    if (!contaId) throw AppError.naoEncontrado('Webhook');
     const m = interpretarWebhook(req.body);
     // Grava antes de responder (é rápido). Falha fica no log; responde 200 para a Evolution não repetir sem fim.
     if (m)
-      await registrarRecebida(m).catch((erro) =>
-        log.error({ err: erro }, 'webhook da Evolution: falha ao registrar'),
+      await comConta(contaId, async () => {
+        const { whatsapp } = await servicos(contaId);
+        await registrarRecebida(m, whatsapp);
+      }).catch((erro) =>
+        log.error({ err: erro, conta: contaId }, 'webhook da Evolution: falha ao registrar'),
       );
     res.json({ ok: true });
   });
@@ -101,22 +117,23 @@ export function rotasWebhook({ pool, log, whatsapp }: DepsApi): Router {
   type Recebida = NonNullable<ReturnType<typeof interpretarWebhook>>;
 
   /** Guarda o arquivo da mensagem: o que veio no webhook, ou baixa da Evolution (em segundo plano). */
-  async function anexar(db: Executor, mensagemId: number, m: Recebida) {
+  async function anexar(db: Executor, mensagemId: number, m: Recebida, whatsapp: WhatsappConta | null) {
     if (!m.midia) return;
+    const C = contaSql();
+    const contaId = conta();
     const salvar = async (base64: string, mime: string | null) => {
       const id = await guardarMidia(db, {
         mime: (mime ?? m.midia?.mime ?? 'application/octet-stream').split(';')[0]!.trim(),
         nome: m.midia?.nome,
         base64,
       });
-      await db.query('UPDATE comercial.mensagens SET midia_tipo = $2, midia_id = $3 WHERE id = $1', [
-        mensagemId,
-        m.midia?.tipo,
-        id,
-      ]);
+      await db.query(
+        `UPDATE comercial.mensagens SET midia_tipo = $2, midia_id = $3 WHERE id = $1 AND conta_id = ${C}`,
+        [mensagemId, m.midia?.tipo, id],
+      );
     };
     if (m.midia.base64) return salvar(m.midia.base64, m.midia.mime);
-    await db.query('UPDATE comercial.mensagens SET midia_tipo = $2 WHERE id = $1', [
+    await db.query(`UPDATE comercial.mensagens SET midia_tipo = $2 WHERE id = $1 AND conta_id = ${C}`, [
       mensagemId,
       m.midia.tipo,
     ]);
@@ -124,21 +141,23 @@ export function rotasWebhook({ pool, log, whatsapp }: DepsApi): Router {
     const id = m.idExterno;
     void whatsapp
       .baixarMidia(id)
-      .then((r) => (r ? salvar(r.base64, r.mime) : undefined))
+      // Em segundo plano: a conta precisa ir junto (o contexto da requisição já terminou).
+      .then((r) => (r ? comConta(contaId, () => salvar(r.base64, r.mime)) : undefined))
       .catch((erro) =>
         log.warn({ err: erro, mensagem: mensagemId }, 'webhook: não consegui baixar o arquivo'),
       );
   }
 
-  async function registrarRecebida(m: Recebida) {
+  async function registrarRecebida(m: Recebida, whatsapp: WhatsappConta | null) {
     const empresaId = await repo.leadPorTelefone(pool, m.telefone);
     if (!empresaId) return;
     if (m.deMim) {
       // Mensagem que você mandou pelo celular: entra no histórico (as do sistema já estão lá).
       if (m.idExterno) {
-        const { rows } = await pool.query('SELECT 1 FROM comercial.mensagens WHERE id_externo = $1', [
-          m.idExterno,
-        ]);
+        const { rows } = await pool.query(
+          `SELECT 1 FROM comercial.mensagens WHERE conta_id = ${contaSql()} AND id_externo = $1`,
+          [m.idExterno],
+        );
         if (rows.length) return;
       }
       const id = await repo.criarMensagem(pool, {
@@ -150,7 +169,7 @@ export function rotasWebhook({ pool, log, whatsapp }: DepsApi): Router {
         origem: 'humano',
         idExterno: m.idExterno,
       });
-      if (id) await anexar(pool, id, m);
+      if (id) await anexar(pool, id, m, whatsapp);
       if (id)
         await funil.registrarAtividade(
           pool,
@@ -170,7 +189,7 @@ export function rotasWebhook({ pool, log, whatsapp }: DepsApi): Router {
       idExterno: m.idExterno,
     });
     if (!id) return; // a Evolution mandou a mesma mensagem duas vezes
-    await anexar(pool, id, m);
+    await anexar(pool, id, m, whatsapp);
     await funil.registrarAtividade(
       pool,
       empresaId,
@@ -179,7 +198,8 @@ export function rotasWebhook({ pool, log, whatsapp }: DepsApi): Router {
     );
     const { rows } = await pool.query<{ nome: string; ia: boolean }>(
       `SELECT e.nome, (o.agente AND o.agente_pausa IS NULL) AS ia
-         FROM descoberta.empresas e JOIN comercial.oportunidades o ON o.empresa_id = e.id WHERE e.id = $1`,
+         FROM descoberta.empresas e JOIN comercial.oportunidades o ON o.conta_id = ${contaSql()} AND o.empresa_id = e.id
+        WHERE e.id = $1`,
       [empresaId],
     );
     await notificarDono(pool, empresaId, {

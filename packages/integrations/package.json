@@ -12,7 +12,8 @@
     "./places": "./src/places/index.ts",
     "./whatsapp": "./src/whatsapp/index.ts",
     "./agente": "./src/agente/index.ts",
-    "./email": "./src/email/index.ts"
+    "./email": "./src/email/index.ts",
+    "./ia": "./src/ia/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

@@ -1,5 +1,6 @@
 import type { Pool } from '@prospeccao/db';
 import type { Logger } from '@prospeccao/shared';
+import { paraCadaConta } from '../../rotinas.js';
 import { encerrarSemResposta } from './repositorio.js';
 
 /** Chave do lock: só uma instância da API roda a automação por vez. */
@@ -13,8 +14,10 @@ export async function rodarAutomacaoFunil(pool: Pool, log: Logger): Promise<void
     const { rows } = await cliente.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [LOCK]);
     if (!rows[0]?.ok) return;
     try {
-      const n = await encerrarSemResposta(pool);
-      if (n) log.info({ encerrados: n }, 'funil: leads sem resposta foram para Perdido');
+      await paraCadaConta(pool, log, 'funil', async (conta) => {
+        const n = await encerrarSemResposta(pool);
+        if (n) log.info({ conta, encerrados: n }, 'funil: leads sem resposta foram para Perdido');
+      });
     } finally {
       await cliente.query('SELECT pg_advisory_unlock($1)', [LOCK]);
     }

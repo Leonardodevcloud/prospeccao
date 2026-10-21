@@ -18,6 +18,7 @@ import { Equipe } from './paginas/Equipe';
 import { Funil } from './paginas/Funil';
 import { Leads } from './paginas/Leads';
 import { Login } from './paginas/Login';
+import { Master } from './paginas/Master';
 import { MeuDia } from './paginas/MeuDia';
 import { Nichos } from './paginas/Nichos';
 import { Relatorios } from './paginas/Relatorios';
@@ -45,6 +46,7 @@ const roteador = createBrowserRouter([
       { path: 'atividade', element: <Atividade /> },
       { path: 'nichos', element: <Nichos /> },
       { path: 'base-cnpj', element: <BaseCnpj /> },
+      { path: 'master', element: <Master /> },
       { path: 'configuracoes', element: <Navigate to="/base-cnpj" replace /> },
     ],
   },

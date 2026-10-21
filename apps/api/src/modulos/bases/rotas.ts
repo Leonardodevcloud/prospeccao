@@ -1,19 +1,21 @@
 import { AppError, baseEntrada } from '@prospeccao/shared';
 import { Router } from 'express';
 import { z } from 'zod';
+import { conta, contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
 
 const CAMPOS = `id, nome, endereco, lat, lng, ativa, criado_em AS "criadoEm"`;
 
-export function rotasBases({ pool, geocodificar }: DepsApi): Router {
+export function rotasBases({ pool, servicos }: DepsApi): Router {
   const r = Router();
 
   async function resolverCoordenadas(b: { endereco?: string; lat?: number; lng?: number }) {
     if (b.lat != null && b.lng != null) return { lat: b.lat, lng: b.lng };
+    const { geocodificar } = await servicos(conta());
     if (!geocodificar) {
       throw AppError.invalido(
-        'Informe latitude e longitude: a busca por endereço precisa da ORS_API_KEY na API.',
+        'Informe latitude e longitude: a busca por endereço precisa da chave do OpenRouteService (painel master).',
       );
     }
     const geo = await geocodificar(b.endereco!);
@@ -22,7 +24,9 @@ export function rotasBases({ pool, geocodificar }: DepsApi): Router {
   }
 
   r.get('/', async (_req, res) => {
-    const { rows } = await pool.query(`SELECT ${CAMPOS} FROM cadastro.bases ORDER BY ativa DESC, nome`);
+    const { rows } = await pool.query(
+      `SELECT ${CAMPOS} FROM cadastro.bases WHERE conta_id = ${contaSql()} ORDER BY ativa DESC, nome`,
+    );
     res.json(rows);
   });
 
@@ -30,7 +34,8 @@ export function rotasBases({ pool, geocodificar }: DepsApi): Router {
     const b = corpo(req, baseEntrada);
     const { lat, lng } = await resolverCoordenadas(b);
     const { rows } = await pool.query(
-      `INSERT INTO cadastro.bases (nome, endereco, lat, lng, ativa) VALUES ($1, $2, $3, $4, $5) RETURNING ${CAMPOS}`,
+      `INSERT INTO cadastro.bases (conta_id, nome, endereco, lat, lng, ativa)
+       VALUES (${contaSql()}, $1, $2, $3, $4, $5) RETURNING ${CAMPOS}`,
       [b.nome, b.endereco ?? null, lat, lng, b.ativa],
     );
     res.status(201).json(rows[0]);
@@ -46,7 +51,8 @@ export function rotasBases({ pool, geocodificar }: DepsApi): Router {
       }),
     );
     const { rows } = await pool.query(
-      `UPDATE cadastro.bases SET nome = coalesce($2, nome), ativa = coalesce($3, ativa) WHERE id = $1 RETURNING ${CAMPOS}`,
+      `UPDATE cadastro.bases SET nome = coalesce($2, nome), ativa = coalesce($3, ativa)
+        WHERE id = $1 AND conta_id = ${contaSql()} RETURNING ${CAMPOS}`,
       [id, b.nome ?? null, b.ativa ?? null],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Base');
@@ -54,9 +60,10 @@ export function rotasBases({ pool, geocodificar }: DepsApi): Router {
   });
 
   r.delete('/:id', async (req, res) => {
-    const { rowCount } = await pool.query('UPDATE cadastro.bases SET ativa = false WHERE id = $1', [
-      idDaRota(req),
-    ]);
+    const { rowCount } = await pool.query(
+      `UPDATE cadastro.bases SET ativa = false WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [idDaRota(req)],
+    );
     if (!rowCount) throw AppError.naoEncontrado('Base');
     res.status(204).end();
   });

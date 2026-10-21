@@ -6,9 +6,32 @@ import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
+import { comConta } from '../src/contexto.js';
+import type { ServicosConta } from '../src/servicos.js';
 
 const URL_TESTE = process.env.TEST_DATABASE_URL;
 const ORIGEM = 'http://localhost:5173';
+
+/** Conta sem nada configurado (cada teste liga o que precisa). */
+const semServicos = (contaId: number): ServicosConta => ({
+  contaId,
+  whatsapp: null,
+  ia: null,
+  classificarEmail: null,
+  personalizarAbertura: null,
+  email: null,
+  geocodificar: null,
+  origem: { places: null, ors: null, resend: null, evolution: null, ia: null },
+  iaDescricao: null,
+  erro: null,
+});
+const CREDENCIAIS = {
+  chave: 'chave-de-teste-das-credenciais-com-32-ou-mais',
+  ambiente: {},
+  invalidar() {},
+};
+/** Motores e rotinas rodam dentro de uma conta (a 1 é a principal, onde está tudo dos testes antigos). */
+const naConta = <T>(fn: () => Promise<T>, conta = 1) => comConta(conta, fn);
 
 describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
   let pool: Pool;
@@ -63,7 +86,11 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
         cookieSeguro: false,
       },
       origens: [ORIGEM],
-      geocodificar: async () => ({ lat: -12.97, lng: -38.51 }),
+      servicos: async (conta) => ({
+        ...semServicos(conta),
+        geocodificar: async () => ({ lat: -12.97, lng: -38.51 }),
+      }),
+      credenciais: CREDENCIAIS,
     });
   });
 
@@ -519,7 +546,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       "UPDATE comercial.oportunidades SET encerrar_em = now() - interval '1 minute' WHERE empresa_id = 2",
     );
     const { encerrarSemResposta } = await import('../src/modulos/funil/repositorio.js');
-    expect(await encerrarSemResposta(pool)).toBe(1);
+    expect(await naConta(() => encerrarSemResposta(pool))).toBe(1);
     d = (await ler('/funil/2')).body;
     expect(d.oportunidade).toMatchObject({
       etapa: 'perdido',
@@ -527,7 +554,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       proximaAcao: null,
     });
     expect(d.atividades[0]).toMatchObject({ tipo: 'etapa', paraEtapa: 'perdido', autor: 'sistema' });
-    expect(await encerrarSemResposta(pool)).toBe(0);
+    expect(await naConta(() => encerrarSemResposta(pool))).toBe(0);
 
     // Arrastar de volta para Abordado conta como 1ª mensagem; resposta zera e pede retorno hoje.
     d = (await enviar('patch', '/funil/2', { etapa: 'abordado' })).body;
@@ -648,8 +675,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect((await enviar('put', '/places/config', { franquiaMensal: -1 })).status).toBe(422);
 
     await pool.query(
-      `INSERT INTO descoberta.uso_places (mes, paga, custo_usd)
-       SELECT descoberta.mes_places(), false, 0 FROM generate_series(1, 90)`,
+      `INSERT INTO descoberta.uso_places (conta_id, mes, paga, custo_usd)
+       SELECT 1, descoberta.mes_places(), false, 0 FROM generate_series(1, 90)`,
     );
     const uso = await ler('/places/uso');
     expect(uso.body).toMatchObject({ franquia: 100, usados: 90, gratisRestantes: 10, pagos: 0, gastoUsd: 0 });
@@ -695,6 +722,9 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
        ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (2, 77, 'maps') ON CONFLICT DO NOTHING`,
+    );
+    await pool.query(
       `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, whatsapp, principal)
        VALUES (77, 'whatsapp', '71988776655', 'site', '{site}', 'verificado', true, true)`,
     );
@@ -704,7 +734,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
 
     const tela = await ler('/agente');
-    expect(tela.body.status).toEqual({ whatsapp: false, ia: false });
+    expect(tela.body.status).toMatchObject({ whatsapp: false, ia: false });
     expect(tela.body.webhook).toMatch(/\/webhooks\/evolution\/[0-9a-f]{32}$/);
     const token = tela.body.webhook.split('/').at(-1);
     const salvo = await enviar('put', '/agente/config', {
@@ -717,7 +747,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       intervaloSeg: 20,
     });
     expect(salvo.status).toBe(200);
-    const cfg = await repoAgente.obterConfig(pool);
+    const cfg = await naConta(() => repoAgente.obterConfig(pool));
 
     const enviados: { tel: string; texto: string }[] = [];
     const decisoes: object[] = [];
@@ -738,15 +768,19 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     };
 
     // 1) Abordagem da cadência vira rascunho; você aprova; o motor envia e o lead vai para "Abordado".
-    expect(await motor.gerarAbordagens(deps, cfg)).toBe(1);
-    expect(await motor.gerarAbordagens(deps, cfg)).toBe(0); // não duplica enquanto há rascunho
+    // O 1º passo da cadência vence às 9h de hoje: adianta para o teste não depender da hora.
+    await pool.query(
+      `UPDATE comercial.oportunidades SET proxima_acao_em = now() - interval '1 minute' WHERE empresa_id = 77`,
+    );
+    expect(await naConta(() => motor.gerarAbordagens(deps, cfg))).toBe(1);
+    expect(await naConta(() => motor.gerarAbordagens(deps, cfg))).toBe(0); // não duplica enquanto há rascunho
     const [rascunho] = (await ler('/agente')).body.rascunhos;
     expect(rascunho).toMatchObject({ empresaId: 77, origem: 'cadencia' });
     expect((await enviar('post', `/agente/rascunhos/${rascunho.id}/aprovar`, {})).status).toBe(200);
-    expect(await motor.enviarProxima(deps, cfg)).toBe(true);
+    expect(await naConta(() => motor.enviarProxima(deps, cfg))).toBe(true);
     expect(enviados[0]?.tel).toBe('71988776655');
     expect((await ler('/funil/77')).body.oportunidade.etapa).toBe('abordado');
-    expect(await motor.enviarProxima(deps, cfg)).toBe(false); // nada aprovado (e respeita o intervalo)
+    expect(await naConta(() => motor.enviarProxima(deps, cfg))).toBe(false); // nada aprovado (e respeita o intervalo)
 
     // 2) O lead responde (sem o 9 no número): webhook acha o lead, registra e move para "Respondeu".
     const webhook = (texto: string, id: string) =>
@@ -770,7 +804,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       pool.query(
         `UPDATE comercial.atividades SET criado_em = criado_em - interval '2 minutes' WHERE empresa_id = 77`,
       );
-    expect(await motor.gerarRespostas(deps, cfg)).toBe(0);
+    expect(await naConta(() => motor.gerarRespostas(deps, cfg))).toBe(0);
     await envelhecer();
     decisoes.push({
       acao: 'responder',
@@ -778,7 +812,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       reuniaoEm: null,
       motivo: 'Pediu preço',
     });
-    expect(await motor.gerarRespostas(deps, cfg)).toBe(1);
+    expect(await naConta(() => motor.gerarRespostas(deps, cfg))).toBe(1);
     const resp = (await ler('/agente')).body.rascunhos[0];
     expect(resp).toMatchObject({ origem: 'agente', nota: 'Pediu preço', ultimaDoLead: 'Quanto custa?' });
 
@@ -797,7 +831,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       reuniaoEm: amanha,
       motivo: 'Confirmou horário',
     });
-    await motor.gerarRespostas(deps, cfg);
+    await naConta(() => motor.gerarRespostas(deps, cfg));
     const op = (await ler('/funil/77')).body.oportunidade;
     // A reunião entra na agenda e vira o próximo passo do card, com data e hora.
     expect(op).toMatchObject({ etapa: 'reuniao', proximaAcao: 'Reunião' });
@@ -812,7 +846,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     );
     await webhook('Por favor pare de mandar mensagem', 'in-3');
     await envelhecer();
-    await motor.gerarRespostas(deps, cfg);
+    await naConta(() => motor.gerarRespostas(deps, cfg));
     expect((await ler('/funil/77')).body.oportunidade).toMatchObject({ etapa: 'descartado', agente: false });
     expect(decisoes).toHaveLength(0);
     await enviar('put', '/agente/config', { ...tela.body.config, ligado: false });
@@ -831,6 +865,9 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
 
     await pool.query(
       `INSERT INTO descoberta.empresas (id, nome, cidade, uf) VALUES (88, 'Pipe Peças', 'SALVADOR', 'BA') ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (2, 88, 'maps') ON CONFLICT DO NOTHING`,
     );
     await enviar('post', '/funil', { empresaIds: [88], forcar: true });
     let q = (await ler(`/funil?pipelineId=${sdr.id}`)).body;
@@ -969,6 +1006,10 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
          (92, 'Peças Agenda', 'SALVADOR', 'BA', '7130002222')
        ON CONFLICT (id) DO NOTHING`,
     );
+    await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem)
+       VALUES (2, 91, 'maps'), (2, 92, 'maps') ON CONFLICT DO NOTHING`,
+    );
     expect((await enviar('post', '/funil', { empresaIds: [91, 92], forcar: true })).body.adicionadas).toBe(2);
     const d91 = (await ler('/funil/91')).body;
     expect(d91.oportunidade).toMatchObject({ responsavelId: sdr.body.id, responsavelNome: 'Ana SDR' });
@@ -1073,16 +1114,20 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
         cookieSeguro: false,
       },
       origens: [ORIGEM],
-      whatsapp: {
-        async enviar(tel, texto) {
-          enviados.push({ tel, texto });
-          return { idExterno: `z-${enviados.length}` };
+      credenciais: CREDENCIAIS,
+      servicos: async (conta) => ({
+        ...semServicos(conta),
+        whatsapp: {
+          async enviar(tel: string, texto: string) {
+            enviados.push({ tel, texto });
+            return { idExterno: `z-${enviados.length}` };
+          },
+          async enviarMidia(tel: string, m: { tipo: string }) {
+            enviados.push({ tel, tipo: m.tipo });
+            return { idExterno: `zm-${enviados.length}` };
+          },
         },
-        async enviarMidia(tel, m) {
-          enviados.push({ tel, tipo: m.tipo });
-          return { idExterno: `zm-${enviados.length}` };
-        },
-      },
+      }),
     });
     const z = {
       ler: (rota: string) => request(appZap).get(rota).set('Cookie', cookie),
@@ -1228,12 +1273,15 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     const deps = {
       pool,
       log: criarLogger('teste', 'silent'),
-      whatsapp: {
-        async enviar(tel: string, texto: string) {
-          enviados.push({ tel, texto });
-          return { idExterno: `l-${enviados.length}` };
+      servicos: async (conta: number) => ({
+        ...semServicos(conta),
+        whatsapp: {
+          async enviar(tel: string, texto: string) {
+            enviados.push({ tel, texto });
+            return { idExterno: `l-${enviados.length}` };
+          },
         },
-      },
+      }),
     };
     await rodarLembretes(deps);
     expect(enviados).toHaveLength(1);
@@ -1258,8 +1306,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
   it('e-mail: quem recebe, modelo com anexo e prévia, envio rastreado, follow-up, resposta com interesse vai para o SDR', async () => {
     const motor = await import('../src/modulos/email/motor.js');
     await pool.query(
-      `INSERT INTO cadastro.campanhas (id, nome, nicho_id, cidades) VALUES
-         (95, 'Campanha e-mail', (SELECT id FROM cadastro.nichos ORDER BY id LIMIT 1), '[{"nome":"Salvador","uf":"BA"}]')
+      `INSERT INTO cadastro.campanhas (id, conta_id, nome, nicho_id, cidades) VALUES
+         (95, 1, 'Campanha e-mail', (SELECT id FROM cadastro.nichos ORDER BY id LIMIT 1), '[{"nome":"Salvador","uf":"BA"}]')
        ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
@@ -1301,6 +1349,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(anexo.status).toBe(201);
     const salvo = await enviar('put', `/email/modelos/${modelos[0].id}`, {
       ...modelos[0],
+      // A abertura que a IA escreve para cada lead entra logo depois da saudação.
+      corpo: modelos[0].corpo.replace('{saudacao}\n\n', '{saudacao}\n\n{abertura}\n\n'),
       anexos: [anexo.body.id],
     });
     expect(salvo.body.modelos[0].arquivos[0]).toMatchObject({
@@ -1315,11 +1365,106 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(previa.body.assunto).toBe('Oi Auto Pecas Email');
     expect(previa.body.html).toMatch(/href="https:\/\/www\.tutts\.com\.br"/);
 
+    // Identidade visual da conta (white label): imagem pública, cores e estilo.
+    const marcas = (await ler('/email/marcas')).body;
+    expect(marcas).toHaveLength(1);
+    expect(marcas[0]).toMatchObject({ nome: 'Tutts', remetenteNome: 'Tutts', estilo: 'cartao' });
+    const png = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4c40000000049454e44ae426082',
+      'hex',
+    ).toString('base64');
+    const logo = await enviar('post', '/email/imagens', { nome: 'logo.png', mime: 'image/png', base64: png });
+    expect(logo.status).toBe(201);
+    expect(logo.body.url).toMatch(/\/e\/i\/[\w-]{20,}$/);
+    expect(
+      (await enviar('post', '/email/imagens', { nome: 'x.svg', mime: 'image/svg+xml', base64: png })).status,
+    ).toBe(422);
+    const imagem = await request(app).get(`/e/i/${logo.body.url.split('/').at(-1)}`);
+    expect(imagem.headers['content-type']).toBe('image/png');
+    const marca = await enviar('put', `/email/marcas/${marcas[0].id}`, {
+      ...marcas[0],
+      corPrimaria: '#e11d48',
+      corCabecalho: '#0f172a',
+      logoId: logo.body.id,
+      rodape: 'Tutts Entregas Rápidas',
+    });
+    expect(marca.status).toBe(200);
+    expect(marca.body.marcas[0]).toMatchObject({ corPrimaria: '#e11d48', logoUrl: logo.body.url });
+
+    // Prévia real com a marca e a abertura escrita pela IA para o lead.
+    const pedidosIa: { instrucoes: string; lead: { empresa: string } }[] = [];
+    const appIa = criarApp({
+      pool,
+      log: criarLogger('teste', 'silent'),
+      filas: {
+        publicar: async () => 'x',
+        publicarVarios: async () => 0,
+        cancelarPendentes: async () => 0,
+        tamanhos: async () => ({}),
+      },
+      auth: {
+        jwtSegredo: 'x'.repeat(40),
+        adminEmail: 'ops@exemplo.com',
+        adminSenhaHash: 'x',
+        sessaoHoras: 1,
+        cookieSeguro: false,
+      },
+      origens: [ORIGEM],
+      credenciais: CREDENCIAIS,
+      servicos: async (conta) => ({
+        ...semServicos(conta),
+        async personalizarAbertura(e: { instrucoes: string; lead: { empresa: string } }) {
+          pedidosIa.push(e);
+          return `Vi que a ${e.lead.empresa} entrega em Salvador.`;
+        },
+      }),
+    });
+    const previaIa = await request(appIa)
+      .post('/email/previa')
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie)
+      .send({
+        assunto: 'Oi {empresa}',
+        corpo: '{saudacao}\n\n{abertura}\n\n[[Ver proposta|https://tutts.com.br/proposta]]',
+        empresaId: 95,
+        marcaId: marcas[0].id,
+        personalizarIa: true,
+        instrucoesIa: 'Fale de venda perdida por demora.',
+      });
+    expect(previaIa.status).toBe(200);
+    expect(previaIa.body.abertura).toBe('Vi que a Auto Pecas Email entrega em Salvador.');
+    expect(previaIa.body.html).toContain('Vi que a Auto Pecas Email entrega em Salvador.');
+    expect(previaIa.body.html).toContain(`src="${logo.body.url}"`);
+    expect(previaIa.body.html).toContain('background:#e11d48');
+    expect(previaIa.body.de).toMatchObject({ nome: 'Tutts' });
+    expect(pedidosIa[0]?.instrucoes).toBe('Fale de venda perdida por demora.');
+    // Sem IA na conta: a prévia avisa e a linha some.
+    const semIa = await enviar('post', '/email/previa', {
+      assunto: 'x',
+      corpo: '{saudacao}\n\n{abertura}\n\nFim',
+      empresaId: 95,
+      personalizarIa: true,
+    });
+    expect(semIa.body.aviso).toMatch(/IA não está configurada/);
+    expect(semIa.body.texto).toMatch(/^Olá, Joao!\n\nFim/);
+
     // Campanha em sequência: 1º e-mail (com anexo) e follow-up 3 dias depois sem resposta.
+    expect(
+      (
+        await enviar('post', '/email/campanhas', {
+          nome: 'Sem marca',
+          campanhaId: 95,
+          passos: [{ modeloId: modelos[0].id, dias: 0 }],
+        })
+      ).status,
+    ).toBe(422);
     const camp = await enviar('post', '/email/campanhas', {
       nome: 'Teste',
       campanhaId: 95,
       incluirContador: true,
+      marcaId: marcas[0].id,
+      personalizarIa: true,
+      instrucoesIa: 'Fale de venda perdida por demora.',
       passos: [
         { modeloId: modelos[0].id, dias: 0 },
         { modeloId: modelos[1].id, dias: 3 },
@@ -1371,6 +1516,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       log: criarLogger('teste', 'silent'),
       origens: [ORIGEM],
       classificarEmail: null,
+      personalizarAbertura: async (e: { lead: { empresa: string } }) => `Abertura para ${e.lead.empresa}.`,
       email,
     };
     const appResend = criarApp({
@@ -1390,7 +1536,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
         cookieSeguro: false,
       },
       origens: [ORIGEM],
-      email,
+      credenciais: CREDENCIAIS,
+      servicos: async (conta) => ({ ...semServicos(conta), email: email as never }),
     });
     const { createHmac } = await import('node:crypto');
     const aviso = (evento: object, segredo = SEGREDO) => {
@@ -1409,21 +1556,35 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
         .send(corpo);
     };
 
-    const conf = await (await import('../src/modulos/email/repositorio.js')).obterConfig(pool);
+    const repoEmail = await import('../src/modulos/email/repositorio.js');
+    const conf = await naConta(() => repoEmail.obterConfig(pool));
     const agora = Date.now();
-    expect(await motor.enviarProximo(deps as never, conf, new Date(agora))).toBe(true);
-    expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 1000))).toBe(false); // intervalo
-    expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 20_000))).toBe(true);
+    expect(await naConta(() => motor.enviarProximo(deps as never, conf, new Date(agora)))).toBe(true);
+    expect(await naConta(() => motor.enviarProximo(deps as never, conf, new Date(agora + 1000)))).toBe(false); // intervalo
+    expect(await naConta(() => motor.enviarProximo(deps as never, conf, new Date(agora + 20_000)))).toBe(
+      true,
+    );
     const primeiro = enviados.find((e) => e.para === 'compras@autopecasemail.com.br')!;
     expect(primeiro.assunto).toBe('Entregas mais rápidas para a Auto Pecas Email');
     expect(primeiro.html).toMatch(/Olá, Joao!/);
+    // Abertura da IA no e-mail de verdade, guardada no envio; a marca vai junto.
+    expect(primeiro.html).toContain('Abertura para Auto Pecas Email.');
+    expect(primeiro.html).toContain(`src="${logo.body.url}"`);
+    expect((primeiro as unknown as { de: { nome: string } }).de).toEqual({
+      nome: 'Tutts',
+      email: 'comercial@tutts.com.br',
+    });
     expect(primeiro.html).toMatch(/<ul[^>]*><li[^>]*>Motoboy dedicado/);
     expect(primeiro.anexos).toHaveLength(1);
     expect(primeiro.descadastro).toMatch(/\/e\/sair\/[0-9a-f]{32}$/);
     const {
       rows: [envio95],
     } = await pool.query(`SELECT * FROM comercial.envios_email WHERE empresa_id = 95`);
-    expect(envio95).toMatchObject({ status: 'enviado', resend_id: expect.stringMatching(/^re-/) });
+    expect(envio95).toMatchObject({
+      status: 'enviado',
+      resend_id: expect.stringMatching(/^re-/),
+      personalizacao: 'Abertura para Auto Pecas Email.',
+    });
     expect(primeiro.html).toContain(`/e/a/${envio95.token}.gif`);
     // A resposta do lead vai para um endereço só deste envio, no domínio de recebimento do Resend.
     expect(primeiro.responderPara).toMatch(new RegExp(`<r-${envio95.token}@respostas\\.tutts\\.com\\.br>$`));
@@ -1488,8 +1649,10 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       `UPDATE comercial.envios_email SET enviado_em = now() - interval '4 days' WHERE campanha_email_id = $1`,
       [camp.body.id],
     );
-    expect(await motor.agendarSeguimentos(deps as never)).toBe(1);
-    expect(await motor.enviarProximo(deps as never, conf, new Date(agora + 60_000))).toBe(true);
+    expect(await naConta(() => motor.agendarSeguimentos(deps as never))).toBe(1);
+    expect(await naConta(() => motor.enviarProximo(deps as never, conf, new Date(agora + 60_000)))).toBe(
+      true,
+    );
     expect(enviados.at(-1)).toMatchObject({
       para: 'compras@autopecasemail.com.br',
       emRespostaA: '<msg-1@resend>',
@@ -1529,7 +1692,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
     expect((await ler('/email/lead/95')).body.respostas).toHaveLength(1);
     expect((await ler('/email')).body.status).toMatchObject({
-      webhookUrl: expect.stringMatching(/\/e\/resend$/),
+      webhookUrl: expect.stringMatching(/\/e\/resend\/[0-9a-f]{32}$/),
     });
 
     // Sair da lista pelo link do e-mail: GET só pergunta, POST tira.
@@ -1553,6 +1716,178 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await pool.query('DELETE FROM enriquecimento.pessoas WHERE empresa_id IN (95, 96, 97, 98)');
     await pool.query('DELETE FROM enriquecimento.contatos WHERE empresa_id IN (95, 96, 97, 98)');
     await pool.query('DELETE FROM cadastro.campanhas WHERE id = 95');
+  });
+
+  it('master: cria a conta da parceira, guarda as credenciais cifradas e uma conta não vê nada da outra', async () => {
+    // Só o master chega ao painel.
+    const conta = await enviar('post', '/master/contas', {
+      nome: 'Fiix Peças',
+      admin: { nome: 'Bia Fiix', email: 'bia@fiix.com.br' },
+    });
+    expect(conta.status).toBe(201);
+    expect(conta.body.convite).toMatch(/\/convite\//);
+    const id = conta.body.id as number;
+    expect(
+      (
+        await enviar('post', '/master/contas', {
+          nome: 'fiix peças',
+          admin: { nome: 'Xis', email: 'x@x.com' },
+        })
+      ).status,
+    ).toBe(409);
+    const lista = (await ler('/master/contas')).body as { id: number; nome: string; principal: boolean }[];
+    expect(lista.map((c) => c.nome)).toEqual(['Tutts', 'Fiix Peças']);
+
+    // Credenciais: o segredo vai cifrado para o banco; a tela só vê o final.
+    const cred = await enviar('put', `/master/contas/${id}/credenciais`, {
+      emailRemetente: 'comercial@fiix.com.br',
+      resendDominioRespostas: 'respostas.fiix.com.br',
+      iaProvedor: 'deepseek',
+      segredos: {
+        placesKey: 'AIza-chave-places-1234',
+        resendKey: 're_chave_resend_9876',
+        iaKey: 'sk-deepseek-5555',
+      },
+    });
+    expect(cred.status).toBe(200);
+    expect(cred.body.segredos).toMatchObject({
+      placesKey: '…1234',
+      resendKey: '…9876',
+      iaKey: '…5555',
+      evolutionKey: null,
+    });
+    expect(cred.body.emUso).toMatchObject({ places: 'conta', resend: 'conta', ia: 'conta', evolution: null });
+    const { rows: bruto } = await pool.query(
+      'SELECT segredos FROM cadastro.credenciais_conta WHERE conta_id = $1',
+      [id],
+    );
+    expect(bruto[0].segredos).toMatch(/^v1:/);
+    expect(bruto[0].segredos).not.toContain('AIza-chave-places');
+    expect(
+      (await enviar('put', `/master/contas/${id}/credenciais`, { segredos: { resendKey: 'chave-errada' } }))
+        .status,
+    ).toBe(422);
+    // Apagar um segredo: '' tira; o resto fica.
+    const sem = await enviar('put', `/master/contas/${id}/credenciais`, { segredos: { placesKey: '' } });
+    expect(sem.body.segredos).toMatchObject({ placesKey: null, resendKey: '…9876' });
+    const detalhe = (await ler(`/master/contas/${id}`)).body;
+    expect(detalhe.webhooks.resend).toMatch(/\/e\/resend\/[0-9a-f]{32}$/);
+    expect(detalhe.webhooks.evolution).toMatch(/\/webhooks\/evolution\/[0-9a-f]{32}$/);
+    expect(detalhe.usuarios).toEqual([
+      expect.objectContaining({ email: 'bia@fiix.com.br', papel: 'admin', convitePendente: true }),
+    ]);
+
+    // A administradora da parceira entra pelo convite e vê a conta dela vazia, com tudo pronto para usar.
+    const token = conta.body.convite.split('/').at(-1);
+    expect((await request(app).get(`/auth/convite/${token}`)).body).toMatchObject({ conta: 'Fiix Peças' });
+    const entrou = await request(app)
+      .post(`/auth/convite/${token}`)
+      .set('Origin', ORIGEM)
+      .send({ senha: 'senha-da-bia-1' });
+    const cookieBia = (entrou.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    const bia = {
+      ler: (rota: string) => request(app).get(rota).set('Cookie', cookieBia),
+      enviar: (metodo: 'post' | 'put' | 'patch' | 'delete', rota: string, corpo?: object) =>
+        request(app)[metodo](rota).set('Origin', ORIGEM).set('Cookie', cookieBia).send(corpo),
+    };
+    expect((await bia.ler('/auth/eu')).body).toMatchObject({
+      conta: { id, nome: 'Fiix Peças' },
+      master: false,
+      papel: 'admin',
+    });
+    expect((await bia.ler('/master/contas')).status).toBe(403);
+
+    // Nada da Tutts aparece para ela (empresas, funil, campanhas, nichos, equipe, relatórios...).
+    expect((await bia.ler('/empresas?situacao=todos')).body.total).toBe(0);
+    expect((await bia.ler('/empresas/1')).status).toBe(404);
+    expect((await bia.ler('/funil/1')).body.oportunidade).toBeNull();
+    expect((await bia.ler('/funil')).body.cards).toEqual([]);
+    expect((await bia.ler('/campanhas')).body).toEqual([]);
+    expect((await bia.ler('/campanhas/2')).status).toBe(404);
+    expect((await bia.ler('/nichos')).body).toEqual([]);
+    expect((await bia.ler('/equipe')).body.usuarios.map((u: { email: string }) => u.email)).toEqual([
+      'bia@fiix.com.br',
+    ]);
+    expect((await bia.ler('/conversas')).body).toEqual([]);
+    expect((await bia.ler('/email/campanhas')).body).toEqual([]);
+    expect((await bia.ler('/email/marcas')).body.map((m: { nome: string }) => m.nome)).toEqual([
+      'Fiix Peças',
+    ]);
+    expect((await bia.ler('/relatorios?dias=0')).body.kpis).toMatchObject({
+      encontrados: 0,
+      entraramNoFunil: 0,
+    });
+    expect((await bia.ler('/funil/pipelines')).body.map((p: { nome: string }) => p.nome)).toEqual([
+      'SDR',
+      'Closer',
+    ]);
+    // Tentar puxar uma empresa da outra conta para o funil não funciona.
+    const puxar = await bia.enviar('post', '/funil', { empresaIds: [1], forcar: true });
+    expect(puxar.body).toMatchObject({ adicionadas: 0, naoEncontradas: 1 });
+    expect((await bia.enviar('post', '/funil/1/atividades', { tipo: 'nota', texto: 'x' })).status).toBe(404);
+    expect((await bia.enviar('patch', '/campanhas/2', { nome: 'roubada' })).status).toBe(404);
+    expect(
+      (await bia.enviar('post', '/empresas/1/feedback', { tipo: 'nao_decisor', valor: 'Maria Souza' }))
+        .status,
+    ).toBe(404);
+    // Base da Receita é da plataforma: só o master importa.
+    expect((await bia.enviar('post', '/importacoes/cnpj', {})).status).toBe(403);
+    // O mesmo nome de nicho pode existir em contas diferentes.
+    const nicho = await bia.enviar('post', '/nichos', {
+      nome: 'Autopeças varejo',
+      cnaes: ['4530703'],
+      termosMaps: ['autopeças'],
+    });
+    expect(nicho.status).toBe(201);
+    // E a Tutts não vê o nicho da parceira.
+    expect((await ler('/nichos')).body.map((n: { nome: string }) => n.nome)).toEqual(['Autopeças varejo']);
+    expect((await ler(`/nichos/${nicho.body.id}`)).status).toBe(404);
+    // A equipe da parceira é dela: convidar com o e-mail de alguém da Tutts não passa.
+    expect(
+      (await bia.enviar('post', '/equipe', { nome: 'Ops', email: 'ops@exemplo.com', papel: 'sdr' })).status,
+    ).toBe(409);
+    const sdrFiix = await bia.enviar('post', '/equipe', {
+      nome: 'Davi',
+      email: 'davi@fiix.com.br',
+      papel: 'sdr',
+    });
+    expect(sdrFiix.status).toBe(201);
+    expect(
+      (await ler('/equipe')).body.usuarios.some((u: { email: string }) => u.email === 'davi@fiix.com.br'),
+    ).toBe(false);
+
+    // O master entra na conta da parceira (vira admin dela) e volta.
+    const dentro = await enviar('post', `/master/contas/${id}/entrar`);
+    const cookieDentro = (dentro.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    const eu = (await request(app).get('/auth/eu').set('Cookie', cookieDentro)).body;
+    expect(eu).toMatchObject({
+      conta: { id, nome: 'Fiix Peças' },
+      master: true,
+      foraDaPropria: true,
+      papel: 'admin',
+    });
+    expect(
+      (await request(app).get('/nichos').set('Cookie', cookieDentro)).body.map((n: { id: number }) => n.id),
+    ).toEqual([nicho.body.id]);
+    const fora = await request(app).post('/master/sair').set('Origin', ORIGEM).set('Cookie', cookieDentro);
+    const cookieFora = (fora.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    expect((await request(app).get('/auth/eu').set('Cookie', cookieFora)).body).toMatchObject({
+      conta: { id: 1 },
+      foraDaPropria: false,
+    });
+
+    // Desativar a conta corta o acesso de quem é dela (o master continua).
+    expect((await enviar('patch', '/master/contas/1', { ativa: false })).status).toBe(422);
+    await enviar('patch', `/master/contas/${id}`, { ativa: false });
+    expect((await bia.ler('/funil')).status).toBe(401);
+    const login = await request(app)
+      .post('/auth/login')
+      .set('Origin', ORIGEM)
+      .send({ email: 'bia@fiix.com.br', senha: 'senha-da-bia-1' });
+    expect(login.status).toBe(403);
+    expect(login.body.erro.codigo).toBe('conta_desativada');
+    await enviar('patch', `/master/contas/${id}`, { ativa: true });
+    expect((await bia.ler('/funil')).status).toBe(200);
   });
 
   it('para o enriquecimento e apaga a campanha com os leads só dela (base de CNPJ fica)', async () => {

@@ -29,6 +29,7 @@ export function rotasEmpresas({ pool, filas }: DepsApi): Router {
   /** Seu retorno: "número errado" ou "não é quem decide". Vale na hora e na próxima rodada. */
   r.post('/:id/feedback', async (req: Request, res) => {
     const id = idDaRota(req);
+    if (!(await repo.campanhaDaEmpresa(pool, id))) throw AppError.naoEncontrado('Empresa');
     await repo.registrarFeedback(pool, id, corpo(req, feedbackEntrada), req.usuario?.email ?? 'sistema');
     res.json(await repo.obter(pool, id));
   });
@@ -36,6 +37,7 @@ export function rotasEmpresas({ pool, filas }: DepsApi): Router {
   /** Desfaz o retorno (marcou errado sem querer). */
   r.delete('/:id/feedback', async (req: Request, res) => {
     const id = idDaRota(req);
+    if (!(await repo.campanhaDaEmpresa(pool, id))) throw AppError.naoEncontrado('Empresa');
     await repo.desfazerFeedback(pool, id, corpo(req, feedbackEntrada));
     res.json(await repo.obter(pool, id));
   });

@@ -1,8 +1,10 @@
 import { jobsAbertos } from '@prospeccao/queue';
 import { AppError, importacaoEntrada, planilhaMapsEntrada } from '@prospeccao/shared';
 import { Router } from 'express';
+import { contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo } from '../../middlewares/http.js';
+import { exigirMaster } from '../../middlewares/seguranca.js';
 
 /**
  * Importações da base de CNPJ. A API só lê (view publicada) e pede uma
@@ -34,9 +36,10 @@ export function rotasImportacoes({ pool, filas, log }: DepsApi): Router {
    */
   r.post('/planilha-maps', async (req, res) => {
     const d = corpo(req, planilhaMapsEntrada);
-    const { rows } = await pool.query<{ id: number }>('SELECT id FROM cadastro.campanhas WHERE id = $1', [
-      d.campanhaId,
-    ]);
+    const { rows } = await pool.query<{ id: number }>(
+      `SELECT id FROM cadastro.campanhas WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [d.campanhaId],
+    );
     if (!rows[0]) throw AppError.naoEncontrado('Campanha');
     const lotes = [];
     for (let i = 0; i < d.itens.length; i += 500)
@@ -61,7 +64,8 @@ export function rotasImportacoes({ pool, filas, log }: DepsApi): Router {
     res.json(rows);
   });
 
-  r.post('/cnpj', async (req, res) => {
+  // A base da Receita é uma só para todas as contas: só o master pede importação.
+  r.post('/cnpj', exigirMaster, async (req, res) => {
     const { mes } = corpo(req, importacaoEntrada);
     const { rows } = await pool.query(`SELECT status FROM base_cnpj.v_ultima_importacao`);
     if (rows[0] && ['na_fila', 'rodando'].includes(rows[0].status)) {

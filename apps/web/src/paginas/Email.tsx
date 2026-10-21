@@ -1,6 +1,6 @@
 import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
   type ArquivoEmail,
@@ -11,6 +11,8 @@ import {
   type ConfigEmail,
   type EnvioEmail,
   type ModeloEmail,
+  type Nicho,
+  type PreviaEmail,
   type RespostaEmail,
   ROTULO_CLASSE,
   ROTULO_ETAPA,
@@ -21,13 +23,23 @@ import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin, useSessao } from '../componentes/Sessao';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, fmtPct, fmtQuando } from '../formatar';
+import {
+  EscolherLead,
+  fmtTamanho,
+  JanelaEmail,
+  lerBase64,
+  Marcas,
+  PreviaCampanha,
+  useMarcas,
+} from './EmailMarca';
 
-type Aba = 'campanhas' | 'modelos' | 'enviados' | 'respostas' | 'config';
+type Aba = 'campanhas' | 'modelos' | 'marca' | 'enviados' | 'respostas' | 'config';
 const ABAS: { id: Aba; rotulo: string; admin?: boolean }[] = [
   { id: 'campanhas', rotulo: 'Campanhas' },
   { id: 'respostas', rotulo: 'Respostas' },
   { id: 'enviados', rotulo: 'Enviados' },
   { id: 'modelos', rotulo: 'Modelos' },
+  { id: 'marca', rotulo: 'Identidade visual' },
   { id: 'config', rotulo: 'Configuração', admin: true },
 ];
 
@@ -49,17 +61,9 @@ export function useVisaoEmail() {
   return useQuery({ queryKey: ['email'], queryFn: () => api<VisaoEmail>('/email'), refetchInterval: 30_000 });
 }
 
-function lerBase64(arquivo: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(arquivo);
-  });
+function useNichos() {
+  return useQuery({ queryKey: ['nichos'], queryFn: () => api<Nicho[]>('/nichos'), staleTime: 60_000 });
 }
-
-const fmtTamanho = (b: number) =>
-  b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
 /* ───────────────────────── Status (topo) ───────────────────────── */
 
@@ -74,10 +78,13 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
   if (!v.status.resend)
     return (
       <Mensagem tipo="aviso">
-        O Resend ainda não está conectado. Coloque RESEND_API_KEY e EMAIL_REMETENTE na API do Railway.{' '}
-        <button type="button" className="link-botao" onClick={props.aoConfigurar}>
-          Ver como
-        </button>
+        O envio de e-mail desta conta ainda não está configurado: quem administra o sistema cadastra a chave e
+        o remetente do Resend no painel master.{' '}
+        {admin && (
+          <button type="button" className="link-botao" onClick={props.aoConfigurar}>
+            Ver o que falta
+          </button>
+        )}
       </Mensagem>
     );
   return (
@@ -109,10 +116,8 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
         <b className="mono">{fmtNumero(v.resumo.naFila)}</b>
       </div>
       <div className="status-email__item">
-        <span className="quieto">Remetente</span>
-        <b>
-          {v.config.remetenteNome} &lt;{v.status.remetente}&gt;
-        </b>
+        <span className="quieto">Remetente padrão</span>
+        <b>{v.status.remetente}</b>
       </div>
       <div className="status-email__item">
         <span className="quieto">Leitura das respostas</span>
@@ -131,7 +136,181 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
 
 /* ───────────────────────── Campanhas ───────────────────────── */
 
-function NovaCampanha(props: { modelos: ModeloEmail[]; aoFechar: () => void }) {
+type Passo = { modeloId: number; dias: number };
+
+/** Modelos do nicho da campanha primeiro (os outros continuam na lista). */
+function ordenarModelos(modelos: ModeloEmail[], nichoId: number | null | undefined): ModeloEmail[] {
+  if (!nichoId) return modelos;
+  return [...modelos].sort((a, b) => Number(b.nichoId === nichoId) - Number(a.nichoId === nichoId));
+}
+
+/** A sequência: 1º e-mail e até 3 follow-ups. */
+function EditorPassos(props: { passos: Passo[]; modelos: ModeloEmail[]; aoMudar: (p: Passo[]) => void }) {
+  const { passos, aoMudar } = props;
+  return (
+    <fieldset className="opcoes opcoes--pilha">
+      <legend>Sequência</legend>
+      {passos.map((p, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a posição é o próprio passo
+        <div key={i} className="passo-email">
+          <span className="passo-email__n mono">{i + 1}º</span>
+          <label className="pp-sr" htmlFor={`passo-modelo-${i}`}>
+            Modelo do {i + 1}º e-mail
+          </label>
+          <select
+            id={`passo-modelo-${i}`}
+            className="filtro"
+            value={p.modeloId}
+            onChange={(e) =>
+              aoMudar(passos.map((x, j) => (j === i ? { ...x, modeloId: Number(e.target.value) } : x)))
+            }
+          >
+            {props.modelos.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nome}
+                {m.nichoNome ? ` · ${m.nichoNome}` : ''}
+                {m.arquivos.length
+                  ? ` (${m.arquivos.length} anexo${m.arquivos.length === 1 ? '' : 's'})`
+                  : ''}
+              </option>
+            ))}
+          </select>
+          {i === 0 ? (
+            <span className="quieto">logo que começar</span>
+          ) : (
+            <span className="passo-email__dias">
+              <input
+                className="filtro"
+                inputMode="numeric"
+                aria-label={`Dias sem resposta antes do ${i + 1}º e-mail`}
+                value={p.dias}
+                onChange={(e) =>
+                  aoMudar(
+                    passos.map((x, j) =>
+                      j === i ? { ...x, dias: Number(e.target.value.replace(/\D/g, '')) || 0 } : x,
+                    ),
+                  )
+                }
+              />
+              dias sem resposta
+              <button
+                type="button"
+                className="botao-icone"
+                aria-label={`Tirar o ${i + 1}º e-mail`}
+                onClick={() => aoMudar(passos.filter((_, j) => j !== i))}
+              >
+                <Icon name="x" size={16} />
+              </button>
+            </span>
+          )}
+        </div>
+      ))}
+      {passos.length < 4 && (
+        <div>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon="plus"
+            onClick={() =>
+              aoMudar([
+                ...passos,
+                { modeloId: props.modelos.at(-1)?.id ?? 0, dias: passos.length === 1 ? 3 : 5 },
+              ])
+            }
+          >
+            Follow-up se não responder
+          </Button>
+        </div>
+      )}
+      <span className="campo__dica">
+        Respondeu, pediu para sair ou o e-mail voltou: a sequência para na hora para aquele lead.
+      </span>
+    </fieldset>
+  );
+}
+
+interface CamposCampanha {
+  marcaId: number;
+  instrucoesIa: string;
+  personalizarIa: boolean;
+}
+
+/** Identidade visual e o que a IA precisa saber do nicho. */
+function EditorMarcaIa(props: {
+  v: CamposCampanha;
+  aoMudar: (v: CamposCampanha) => void;
+  nichoNome?: string | null;
+  iaLigada: boolean;
+}) {
+  const marcas = useMarcas();
+  const { v } = props;
+  useEffect(() => {
+    if (!v.marcaId && marcas.data?.[0]) props.aoMudar({ ...v, marcaId: marcas.data[0].id });
+  }, [marcas.data, v, props.aoMudar]);
+  return (
+    <fieldset className="opcoes opcoes--pilha">
+      <legend>Cara e conteúdo</legend>
+      <div className="campo">
+        <label htmlFor="ce-marca">Identidade visual</label>
+        <select
+          id="ce-marca"
+          className="filtro"
+          value={v.marcaId || ''}
+          onChange={(e) => props.aoMudar({ ...v, marcaId: Number(e.target.value) })}
+        >
+          {!marcas.data?.length && <option value="">Crie uma na aba Identidade visual</option>}
+          {marcas.data?.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.nome} · {m.remetenteNome}
+            </option>
+          ))}
+        </select>
+        <span className="campo__dica">Cores, logo, remetente e assinatura que o lead vê.</span>
+      </div>
+      <label className="opcao">
+        <input
+          type="checkbox"
+          checked={v.personalizarIa}
+          onChange={(e) => props.aoMudar({ ...v, personalizarIa: e.target.checked })}
+        />
+        A IA escreve a abertura de cada e-mail olhando o lead (onde o modelo tiver {'{abertura}'})
+      </label>
+      {v.personalizarIa && !props.iaLigada && (
+        <Mensagem tipo="aviso">
+          A IA não está configurada nesta conta: a abertura fica vazia até ela ser cadastrada no painel
+          master.
+        </Mensagem>
+      )}
+      <div className="campo">
+        <label htmlFor="ce-instr">
+          Instruções para a IA{props.nichoNome ? ` (nicho ${props.nichoNome})` : ''}
+        </label>
+        <textarea
+          id="ce-instr"
+          rows={5}
+          maxLength={3000}
+          placeholder={
+            'Ex.: São lojas de autopeças que vendem no balcão e por WhatsApp. A dor é o cliente da oficina que não espera. Cite o bairro ou a especialidade da loja quando der; nunca invente número. Tom direto, de quem conhece o ramo.'
+          }
+          value={v.instrucoesIa}
+          onChange={(e) => props.aoMudar({ ...v, instrucoesIa: e.target.value })}
+        />
+        <span className="campo__dica">
+          O que vale para este nicho: a dor, o que funciona, o que evitar. A IA usa isso e os dados do lead
+          (nome, cidade, avaliações, site) para escrever uma ou duas frases; o resto do e-mail é o modelo.
+        </span>
+      </div>
+    </fieldset>
+  );
+}
+
+function NovaCampanha(props: {
+  modelos: ModeloEmail[];
+  iaLigada: boolean;
+  aoFechar: () => void;
+  /** Salva como rascunho: abre a prévia da campanha criada. */
+  aoSalvarRascunho: (id: number) => void;
+}) {
   const cliente = useQueryClient();
   const campanhas = useQuery({ queryKey: ['campanhas'], queryFn: () => api<Campanha[]>('/campanhas') });
   const [f, setF] = useState({
@@ -140,7 +319,10 @@ function NovaCampanha(props: { modelos: ModeloEmail[]; aoFechar: () => void }) {
     faixas: [] as ('A' | 'B' | 'C')[],
     pularNoFunil: true,
     incluirContador: false,
-    passos: [{ modeloId: props.modelos[0]?.id ?? 0, dias: 0 }] as { modeloId: number; dias: number }[],
+    passos: [{ modeloId: props.modelos[0]?.id ?? 0, dias: 0 }] as Passo[],
+    marcaId: 0,
+    instrucoesIa: '',
+    personalizarIa: props.iaLigada,
   });
   const filtro = {
     campanhaId: f.campanhaId,
@@ -164,15 +346,19 @@ function NovaCampanha(props: { modelos: ModeloEmail[]; aoFechar: () => void }) {
     mutationFn: async (iniciar: boolean) => {
       const { id } = await api<{ id: number }>('/email/campanhas', { metodo: 'POST', corpo: f });
       if (iniciar) await api(`/email/campanhas/${id}/iniciar`, { metodo: 'POST' });
+      return id;
     },
-    onSuccess: () => {
-      cliente.invalidateQueries({ queryKey: ['email'] });
-      props.aoFechar();
+    onSuccess: async (id, iniciar) => {
+      await cliente.invalidateQueries({ queryKey: ['email'] });
+      if (iniciar) props.aoFechar();
+      else props.aoSalvarRascunho(id);
     },
   });
   const faixa = (x: 'A' | 'B' | 'C') =>
     setF({ ...f, faixas: f.faixas.includes(x) ? f.faixas.filter((y) => y !== x) : [...f.faixas, x] });
   const campanha = campanhas.data?.find((c) => c.id === f.campanhaId);
+  const modelos = ordenarModelos(props.modelos, campanha?.nichoId);
+  const aoMudarIa = useCallback((v: CamposCampanha) => setF((x) => ({ ...x, ...v })), []);
 
   return (
     <Drawer titulo="Nova campanha de e-mail" barra="E-mail" aoFechar={props.aoFechar}>
@@ -193,13 +379,20 @@ function NovaCampanha(props: { modelos: ModeloEmail[]; aoFechar: () => void }) {
               onChange={(e) => {
                 const id = Number(e.target.value);
                 const c = campanhas.data?.find((x) => x.id === id);
-                setF({ ...f, campanhaId: id, nome: f.nome || (c ? `E-mail · ${c.nome}` : '') });
+                // O 1º e-mail passa a ser o modelo do nicho da campanha, se houver.
+                const doNicho = props.modelos.find((m) => c && m.nichoId === c.nichoId);
+                setF({
+                  ...f,
+                  campanhaId: id,
+                  nome: f.nome || (c ? `E-mail · ${c.nome}` : ''),
+                  passos: doNicho && f.passos.length === 1 ? [{ modeloId: doNicho.id, dias: 0 }] : f.passos,
+                });
               }}
             >
               <option value="">Escolha a campanha de prospecção</option>
               {campanhas.data?.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.nome}
+                  {c.nome} · {c.nichoNome}
                 </option>
               ))}
             </select>
@@ -287,121 +480,185 @@ function NovaCampanha(props: { modelos: ModeloEmail[]; aoFechar: () => void }) {
             </div>
           )}
 
-          <fieldset className="opcoes">
-            <legend>Sequência</legend>
-            {f.passos.map((p, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: a posição é o próprio passo
-              <div key={i} className="passo-email">
-                <span className="passo-email__n mono">{i + 1}º</span>
-                <label className="pp-sr" htmlFor={`passo-modelo-${i}`}>
-                  Modelo do {i + 1}º e-mail
-                </label>
-                <select
-                  id={`passo-modelo-${i}`}
-                  className="filtro"
-                  value={p.modeloId}
-                  onChange={(e) =>
-                    setF({
-                      ...f,
-                      passos: f.passos.map((x, j) =>
-                        j === i ? { ...x, modeloId: Number(e.target.value) } : x,
-                      ),
-                    })
-                  }
-                >
-                  {props.modelos.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nome}
-                      {m.arquivos.length
-                        ? ` (${m.arquivos.length} anexo${m.arquivos.length === 1 ? '' : 's'})`
-                        : ''}
-                    </option>
-                  ))}
-                </select>
-                {i === 0 ? (
-                  <span className="quieto">logo que começar</span>
-                ) : (
-                  <span className="passo-email__dias">
-                    <input
-                      className="filtro"
-                      inputMode="numeric"
-                      aria-label={`Dias sem resposta antes do ${i + 1}º e-mail`}
-                      value={p.dias}
-                      onChange={(e) =>
-                        setF({
-                          ...f,
-                          passos: f.passos.map((x, j) =>
-                            j === i ? { ...x, dias: Number(e.target.value.replace(/\D/g, '')) || 0 } : x,
-                          ),
-                        })
-                      }
-                    />
-                    dias sem resposta
-                    <button
-                      type="button"
-                      className="botao-icone"
-                      aria-label={`Tirar o ${i + 1}º e-mail`}
-                      onClick={() => setF({ ...f, passos: f.passos.filter((_, j) => j !== i) })}
-                    >
-                      <Icon name="x" size={16} />
-                    </button>
-                  </span>
-                )}
-              </div>
-            ))}
-            {f.passos.length < 4 && (
-              <div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon="plus"
-                  onClick={() =>
-                    setF({
-                      ...f,
-                      passos: [
-                        ...f.passos,
-                        { modeloId: props.modelos.at(-1)?.id ?? 0, dias: f.passos.length === 1 ? 3 : 5 },
-                      ],
-                    })
-                  }
-                >
-                  Follow-up se não responder
-                </Button>
-              </div>
-            )}
-            <span className="campo__dica">
-              Respondeu, pediu para sair ou o e-mail voltou: a sequência para na hora para aquele lead.
-            </span>
-          </fieldset>
+          <EditorMarcaIa
+            v={{ marcaId: f.marcaId, instrucoesIa: f.instrucoesIa, personalizarIa: f.personalizarIa }}
+            aoMudar={aoMudarIa}
+            nichoNome={campanha?.nichoNome}
+            iaLigada={props.iaLigada}
+          />
+          <EditorPassos passos={f.passos} modelos={modelos} aoMudar={(passos) => setF({ ...f, passos })} />
 
           <ErroDaApi erro={criar.error} />
           <div className="acoes">
             <Button
-              type="submit"
               variant="primary"
-              icon="send"
-              disabled={criar.isPending || !f.campanhaId || !f.nome.trim() || !estimativa.data?.elegiveis}
-            >
-              Criar e começar a enviar
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={criar.isPending || !f.campanhaId || !f.nome.trim()}
+              disabled={criar.isPending || !f.campanhaId || !f.nome.trim() || !f.marcaId}
               onClick={() => criar.mutate(false)}
             >
-              Salvar sem enviar
+              Salvar e ver a prévia
+            </Button>
+            <Button
+              type="submit"
+              variant="ghost"
+              icon="send"
+              disabled={
+                criar.isPending ||
+                !f.campanhaId ||
+                !f.nome.trim() ||
+                !f.marcaId ||
+                !estimativa.data?.elegiveis
+              }
+            >
+              Criar e já começar a enviar
             </Button>
           </div>
+          <span className="campo__dica">
+            “Salvar e ver a prévia” guarda como rascunho: confira o e-mail com leads de verdade antes de
+            enviar.
+          </span>
         </form>
       </div>
     </Drawer>
   );
 }
 
-function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean }) {
+type SecaoCampanha = 'previa' | 'ajustes';
+
+/** Campanha de e-mail aberta: prévia real (lead, marca, IA) e ajustes (marca, instruções, sequência). */
+function CampanhaAberta(props: {
+  campanha: CampanhaEmail;
+  modelos: ModeloEmail[];
+  iaLigada: boolean;
+  secao: SecaoCampanha;
+  aoFechar: () => void;
+}) {
+  const c = props.campanha;
   const cliente = useQueryClient();
   const admin = useEhAdmin();
-  const [, setParams] = useSearchParams();
+  const sessao = useSessao();
+  const [secao, setSecao] = useState<SecaoCampanha>(props.secao);
+  const campanhas = useQuery({ queryKey: ['campanhas'], queryFn: () => api<Campanha[]>('/campanhas') });
+  const nicho = campanhas.data?.find((x) => x.id === c.campanhaId);
+  const inicial = () => ({
+    nome: c.nome,
+    passos: c.passos,
+    marcaId: c.marcaId ?? 0,
+    instrucoesIa: c.instrucoesIa ?? '',
+    personalizarIa: c.personalizarIa,
+  });
+  const [f, setF] = useState(inicial);
+  const salvar = useMutation({
+    mutationFn: () => api(`/email/campanhas/${c.id}`, { metodo: 'PATCH', corpo: f }),
+    onSuccess: async () => {
+      await cliente.invalidateQueries({ queryKey: ['email'] });
+      setSecao('previa');
+    },
+  });
+  const mudou = JSON.stringify(f) !== JSON.stringify(inicial());
+  const aoMudarIa = useCallback((v: CamposCampanha) => setF((x) => ({ ...x, ...v })), []);
+
+  return (
+    <Drawer titulo={c.nome} barra="Campanha de e-mail" aoFechar={props.aoFechar} largo>
+      <div className="drawer__corpo">
+        <div className="pilha" style={{ gap: 16 }}>
+          <header>
+            <h2 style={{ margin: 0, fontSize: 18 }}>{c.nome}</h2>
+            <span className="quieto" style={{ fontSize: 13 }}>
+              {c.campanhaNome} · {c.marcaNome ?? 'sem identidade visual'} ·{' '}
+              {c.personalizarIa ? 'abertura pela IA' : 'sem IA'}
+            </span>
+          </header>
+          {admin && (
+            <div className="pipelines" role="tablist" aria-label="Seções da campanha">
+              {(
+                [
+                  ['previa', 'Prévia e teste'],
+                  ['ajustes', 'Ajustes'],
+                ] as [SecaoCampanha, string][]
+              ).map(([id, rotulo]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={secao === id}
+                  className="pipelines__aba"
+                  onClick={() => setSecao(id)}
+                >
+                  {rotulo}
+                </button>
+              ))}
+            </div>
+          )}
+          {secao === 'previa' || !admin ? (
+            <PreviaCampanha
+              key={JSON.stringify([c.passos, c.marcaId, c.instrucoesIa, c.personalizarIa])}
+              campanhaEmailId={c.id}
+              campanhaId={c.campanhaId}
+              passos={c.passos.length}
+              emailPadrao={sessao.data?.email ?? ''}
+              admin={admin}
+            />
+          ) : (
+            <form
+              className="form"
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                salvar.mutate();
+              }}
+            >
+              <div className="campo">
+                <label htmlFor="ca-nome">Nome</label>
+                <input
+                  id="ca-nome"
+                  className="filtro"
+                  maxLength={120}
+                  value={f.nome}
+                  onChange={(e) => setF({ ...f, nome: e.target.value })}
+                />
+              </div>
+              <EditorMarcaIa
+                v={{ marcaId: f.marcaId, instrucoesIa: f.instrucoesIa, personalizarIa: f.personalizarIa }}
+                aoMudar={aoMudarIa}
+                nichoNome={nicho?.nichoNome}
+                iaLigada={props.iaLigada}
+              />
+              <EditorPassos
+                passos={f.passos}
+                modelos={ordenarModelos(props.modelos, nicho?.nichoId)}
+                aoMudar={(passos) => setF({ ...f, passos })}
+              />
+              {c.enviados > 0 && (
+                <span className="campo__dica">
+                  Vale para os próximos envios; quem já recebeu não recebe de novo.
+                </span>
+              )}
+              <ErroDaApi erro={salvar.error} />
+              <div className="acoes">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={salvar.isPending || !mudou || !f.nome.trim()}
+                >
+                  {salvar.isPending ? 'Salvando…' : 'Salvar e ver a prévia'}
+                </Button>
+                {mudou && (
+                  <Button variant="ghost" onClick={() => setF(inicial())}>
+                    Descartar mudanças
+                  </Button>
+                )}
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </Drawer>
+  );
+}
+
+function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean; iaLigada: boolean }) {
+  const cliente = useQueryClient();
+  const admin = useEhAdmin();
+  const [params, setParams] = useSearchParams();
   const [nova, setNova] = useState(false);
   const q = useQuery({
     queryKey: ['email', 'campanhas'],
@@ -415,6 +672,19 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean }) {
         : api(`/email/campanhas/${d.id}/${d.acao}`, { metodo: 'POST' }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['email'] }),
   });
+  const abertaId = Number(params.get('abrir')) || null;
+  const aberta = q.data?.find((c) => c.id === abertaId) ?? null;
+  const abrir = (id: number | null, secao?: SecaoCampanha) => {
+    const p = new URLSearchParams(params);
+    if (id) {
+      p.set('abrir', String(id));
+      secao === 'ajustes' ? p.set('secao', 'ajustes') : p.delete('secao');
+    } else {
+      p.delete('abrir');
+      p.delete('secao');
+    }
+    setParams(p, { replace: true });
+  };
 
   return (
     <section className="pilha" style={{ gap: 12 }}>
@@ -444,7 +714,7 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean }) {
           <EmptyState
             icone="mail"
             titulo="Nenhuma campanha de e-mail ainda"
-            texto="Escolha uma campanha de prospecção: todo lead com e-mail recebe sua apresentação e a proposta em anexo, com follow-up automático. Quem responder com interesse entra sozinho no SDR."
+            texto="Escolha uma campanha de prospecção, a identidade visual e o texto do nicho: todo lead com e-mail recebe sua apresentação e a proposta em anexo, com follow-up automático. Quem responder com interesse entra sozinho no SDR."
           />
         </div>
       ) : (
@@ -459,6 +729,10 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean }) {
                     <span className="quieto card-email__sub">
                       {c.campanhaNome} · {c.passos.length}{' '}
                       {c.passos.length === 1 ? 'e-mail' : 'e-mails na sequência'}
+                    </span>
+                    <span className="quieto card-email__sub">
+                      {c.marcaNome ?? 'Sem identidade visual'}
+                      {c.personalizarIa && ' · abertura pela IA'}
                     </span>
                   </div>
                   <Badge
@@ -495,6 +769,14 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean }) {
                   {c.ultimoEnvio ? `último envio ${fmtHora(c.ultimoEnvio)}` : 'nada enviado ainda'}
                 </p>
                 <div className="acoes">
+                  <Button size="sm" icon="mail" onClick={() => abrir(c.id)}>
+                    Prévia e teste
+                  </Button>
+                  {admin && (
+                    <Button size="sm" variant="ghost" icon="settings" onClick={() => abrir(c.id, 'ajustes')}>
+                      Ajustes
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -535,52 +817,58 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean }) {
         “Abriram” conta quem carregou as imagens do e-mail: o Gmail carrega sozinho e o Outlook às vezes
         bloqueia, então é uma estimativa. Clique e resposta são certeza.
       </p>
-      {nova && <NovaCampanha modelos={props.modelos} aoFechar={() => setNova(false)} />}
+      {nova && (
+        <NovaCampanha
+          modelos={props.modelos}
+          iaLigada={props.iaLigada}
+          aoFechar={() => setNova(false)}
+          aoSalvarRascunho={(id) => {
+            setNova(false);
+            abrir(id);
+          }}
+        />
+      )}
+      {aberta && (
+        <CampanhaAberta
+          key={aberta.id}
+          campanha={aberta}
+          modelos={props.modelos}
+          iaLigada={props.iaLigada}
+          secao={params.get('secao') === 'ajustes' ? 'ajustes' : 'previa'}
+          aoFechar={() => abrir(null)}
+        />
+      )}
     </section>
   );
 }
 
 /* ───────────────────────── Modelos (editor com prévia) ───────────────────────── */
 
-function Previa(props: { assunto: string; corpo: string }) {
+/** Prévia do modelo: com a identidade visual escolhida e um lead de verdade (sem a IA, para não gastar). */
+function Previa(props: {
+  assunto: string;
+  corpo: string;
+  marcaId: number | null;
+  empresaId: number | null;
+  anexos: number[];
+}) {
   const [atraso, setAtraso] = useState(props);
   useEffect(() => {
     const t = setTimeout(() => setAtraso(props), 400);
     return () => clearTimeout(t);
   }, [props]);
   const q = useQuery({
-    queryKey: ['email', 'previa', atraso.assunto, atraso.corpo],
+    queryKey: ['email', 'previa', 'modelo', atraso],
     queryFn: () =>
-      api<{
-        assunto: string;
-        html: string;
-        remetente: string;
-        lead: { empresa: string; nome: string | null };
-      }>('/email/previa', {
-        metodo: 'POST',
-        corpo: atraso,
-      }),
+      api<PreviaEmail>('/email/previa', { metodo: 'POST', corpo: { ...atraso, personalizarIa: false } }),
     placeholderData: keepPreviousData,
-    enabled: !!atraso.corpo.trim(),
+    enabled: !!atraso.corpo.trim() && !!atraso.marcaId,
   });
   return (
-    <div className="previa-email">
-      <div className="previa-email__cabeca">
-        <span className="quieto">
-          De: <b>{q.data?.remetente ?? '—'}</b>
-        </span>
-        <span className="quieto">
-          Para:{' '}
-          <b>{q.data ? `${q.data.lead.empresa}${q.data.lead.nome ? ` (${q.data.lead.nome})` : ''}` : '—'}</b>
-        </span>
-        <span className="previa-email__assunto">{q.data?.assunto || 'Sem assunto'}</span>
-      </div>
-      {q.data ? (
-        <iframe title="Prévia do e-mail" className="previa-email__corpo" sandbox="" srcDoc={q.data.html} />
-      ) : (
-        <div className="esqueleto" />
-      )}
-    </div>
+    <>
+      <ErroDaApi erro={q.error} />
+      <JanelaEmail previa={q.data} carregando={q.isFetching} />
+    </>
   );
 }
 
@@ -593,14 +881,24 @@ function EditorModelo(props: {
   const sessao = useSessao();
   const admin = useEhAdmin();
   const m = props.modelo;
-  const [f, setF] = useState({ nome: '', assunto: '', corpo: '' });
+  const [f, setF] = useState({ nome: '', assunto: '', corpo: '', nichoId: null as number | null });
   const [arquivos, setArquivos] = useState<ArquivoEmail[]>([]);
+  const marcas = useMarcas();
+  const nichos = useNichos();
+  const [marcaId, setMarcaId] = useState<number | null>(null);
+  const [leadPrevia, setLeadPrevia] = useState<number | null>(null);
+  const marcaPrevia = marcaId ?? marcas.data?.[0]?.id ?? null;
   const [para, setPara] = useState('');
   const [testeOk, setTesteOk] = useState(false);
   const corpoRef = useRef<HTMLTextAreaElement>(null);
   const arquivoRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    setF({ nome: m?.nome ?? '', assunto: m?.assunto ?? '', corpo: m?.corpo ?? '' });
+    setF({
+      nome: m?.nome ?? '',
+      assunto: m?.assunto ?? '',
+      corpo: m?.corpo ?? '',
+      nichoId: m?.nichoId ?? null,
+    });
     setArquivos(m?.arquivos ?? []);
     setTesteOk(false);
   }, [m]);
@@ -639,7 +937,17 @@ function EditorModelo(props: {
   });
   const teste = useMutation({
     mutationFn: () =>
-      api('/email/teste', { metodo: 'POST', corpo: { ...f, anexos: arquivos.map((a) => a.id), para } }),
+      api('/email/teste', {
+        metodo: 'POST',
+        corpo: {
+          assunto: f.assunto,
+          corpo: f.corpo,
+          marcaId: marcaPrevia,
+          empresaId: leadPrevia,
+          anexos: arquivos.map((a) => a.id),
+          para,
+        },
+      }),
     onSuccess: () => setTesteOk(true),
   });
 
@@ -661,6 +969,7 @@ function EditorModelo(props: {
     f.nome !== m.nome ||
     f.assunto !== m.assunto ||
     f.corpo !== m.corpo ||
+    f.nichoId !== m.nichoId ||
     arquivos.map((a) => a.id).join() !== m.anexos.join();
 
   return (
@@ -684,6 +993,26 @@ function EditorModelo(props: {
           />
         </div>
         <div className="campo">
+          <label htmlFor="me-nicho">Nicho</label>
+          <select
+            id="me-nicho"
+            className="filtro"
+            disabled={!admin}
+            value={f.nichoId ?? ''}
+            onChange={(e) => setF({ ...f, nichoId: e.target.value ? Number(e.target.value) : null })}
+          >
+            <option value="">Qualquer nicho</option>
+            {nichos.data
+              ?.filter((n) => n.ativo || n.id === f.nichoId)
+              .map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.nome}
+                </option>
+              ))}
+          </select>
+          <span className="campo__dica">Na campanha desse nicho, este modelo aparece primeiro.</span>
+        </div>
+        <div className="campo">
           <label htmlFor="me-assunto">Assunto</label>
           <input
             id="me-assunto"
@@ -703,6 +1032,7 @@ function EditorModelo(props: {
               ['{empresa}', 'nome da loja'],
               ['{cidade}', 'cidade'],
               ['{remetente}', 'seu nome'],
+              ['{abertura}', 'uma ou duas frases que a IA escreve para cada lead (liga na campanha)'],
             ].map(([v, dica]) => (
               <button
                 key={v}
@@ -726,8 +1056,9 @@ function EditorModelo(props: {
             onChange={(e) => setF({ ...f, corpo: e.target.value })}
           />
           <span className="campo__dica">
-            Linha em branco separa parágrafos. Comece a linha com “- ” para lista e use **assim** para
-            negrito. Links viram clicáveis. A assinatura e o “sair da lista” entram sozinhos no fim.
+            Linha em branco separa parágrafos. “- ” no começo da linha faz lista, **assim** fica em negrito e
+            links viram clicáveis. Uma linha só com [[Ver a proposta|https://…]] vira botão. A assinatura, o
+            rodapé e o “sair da lista” vêm da identidade visual.
           </span>
         </div>
 
@@ -833,7 +1164,39 @@ function EditorModelo(props: {
           </div>
         )}
       </form>
-      <Previa assunto={f.assunto} corpo={f.corpo} />
+      <div className="pilha" style={{ gap: 8 }}>
+        <div className="barra-previa">
+          <div className="campo">
+            <label htmlFor="me-marca">Ver com a identidade</label>
+            <select
+              id="me-marca"
+              className="filtro"
+              value={marcaPrevia ?? ''}
+              onChange={(e) => setMarcaId(Number(e.target.value) || null)}
+            >
+              {marcas.data?.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <EscolherLead valor={leadPrevia} aoMudar={setLeadPrevia} />
+        </div>
+        <Previa
+          assunto={f.assunto}
+          corpo={f.corpo}
+          marcaId={marcaPrevia}
+          empresaId={leadPrevia}
+          anexos={arquivos.map((a) => a.id)}
+        />
+        {/\{abertura\}/.test(f.corpo) && (
+          <p className="nota-rodape" style={{ margin: 0 }}>
+            Aqui o {'{abertura}'} fica vazio. Na campanha com a IA ligada, “Prévia e teste” mostra o que ela
+            escreve para cada lead.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -1276,11 +1639,14 @@ const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 function Configuracao(props: { v: VisaoEmail }) {
   const cliente = useQueryClient();
+  const master = !!useSessao().data?.master;
   const [f, setF] = useState<ConfigEmail>(props.v.config);
   useEffect(() => setF(props.v.config), [props.v.config]);
   const salvar = useMutation({
-    mutationFn: () =>
-      api('/email/config', { metodo: 'PUT', corpo: { ...f, responderPara: f.responderPara ?? '' } }),
+    mutationFn: () => {
+      const { webhookEm: _, ...corpo } = f;
+      return api('/email/config', { metodo: 'PUT', corpo });
+    },
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['email'] }),
   });
   const verificar = useMutation({
@@ -1288,7 +1654,7 @@ function Configuracao(props: { v: VisaoEmail }) {
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['email'] }),
   });
   const num = (k: keyof ConfigEmail, v: string) => setF({ ...f, [k]: Number(v.replace(/\D/g, '')) || 0 });
-  const assinaturaPrevia = useMemo(() => f.assinatura, [f.assinatura]);
+  const st = props.v.status;
 
   return (
     <div className="grade-config-email">
@@ -1307,60 +1673,9 @@ function Configuracao(props: { v: VisaoEmail }) {
           />
           <b>Envio automático ligado</b>
         </label>
-        <div className="form__duas">
-          <div className="campo">
-            <label htmlFor="cfe-nome">Nome do remetente</label>
-            <input
-              id="cfe-nome"
-              className="filtro"
-              maxLength={80}
-              value={f.remetenteNome}
-              onChange={(e) => setF({ ...f, remetenteNome: e.target.value })}
-            />
-            <span className="campo__dica">Ex.: “Leonardo | Tutts”. Aparece na caixa de entrada do lead.</span>
-          </div>
-          <div className="campo">
-            <label htmlFor="cfe-resp">Respostas vão para</label>
-            {props.v.status.dominioRespostas ? (
-              <>
-                <input
-                  id="cfe-resp"
-                  className="filtro mono"
-                  disabled
-                  value={`r-…@${props.v.status.dominioRespostas}`}
-                />
-                <span className="campo__dica">
-                  Cada e-mail leva um endereço de resposta próprio no seu domínio de recebimento do Resend: a
-                  resposta volta para o sistema já ligada ao lead certo.
-                </span>
-              </>
-            ) : (
-              <>
-                <input
-                  id="cfe-resp"
-                  className="filtro"
-                  type="email"
-                  placeholder={props.v.status.remetente ?? ''}
-                  value={f.responderPara ?? ''}
-                  onChange={(e) => setF({ ...f, responderPara: e.target.value || null })}
-                />
-                <span className="campo__dica">
-                  Sem o domínio de recebimento do Resend, a resposta vai para esta caixa e o sistema não lê.
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="campo">
-          <label htmlFor="cfe-ass">Assinatura</label>
-          <textarea
-            id="cfe-ass"
-            rows={4}
-            value={assinaturaPrevia}
-            onChange={(e) => setF({ ...f, assinatura: e.target.value })}
-          />
-          <span className="campo__dica">Uma informação por linha. Vale {'{remetente}'}.</span>
-        </div>
+        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+          Remetente, assinatura, cores e logo ficam na aba Identidade visual (cada campanha escolhe a sua).
+        </p>
         <h3 className="subtitulo">Ritmo</h3>
         <div className="form__duas">
           <div className="campo">
@@ -1450,30 +1765,34 @@ function Configuracao(props: { v: VisaoEmail }) {
             Conexão
           </h3>
           <ul className="lista-status">
-            <li data-ok={props.v.status.resend || undefined}>
-              <Icon name={props.v.status.resend ? 'check' : 'circle-x'} size={14} />
+            <li data-ok={st.resend || undefined}>
+              <Icon name={st.resend ? 'check' : 'circle-x'} size={14} />
               <span>
                 Envio pelo Resend
-                {props.v.status.remetente && <span className="quieto"> · {props.v.status.remetente}</span>}
+                <span className="quieto">
+                  {' · '}
+                  {st.remetente ?? 'falta a chave e o remetente'}
+                  {st.origem === 'plataforma' && ' (chaves da plataforma)'}
+                </span>
               </span>
             </li>
-            <li data-ok={props.v.status.dominioRespostas || undefined}>
-              <Icon name={props.v.status.dominioRespostas ? 'check' : 'circle-x'} size={14} />
+            <li data-ok={st.dominioRespostas || undefined}>
+              <Icon name={st.dominioRespostas ? 'check' : 'circle-x'} size={14} />
               <span>
-                Domínio de recebimento
-                <span className="quieto"> · {props.v.status.dominioRespostas ?? 'falta configurar'}</span>
+                Domínio de respostas
+                <span className="quieto"> · {st.dominioRespostas ?? 'falta configurar'}</span>
               </span>
             </li>
-            <li data-ok={(props.v.status.webhook && !!props.v.config.webhookEm) || undefined}>
+            <li data-ok={(st.webhook && !!props.v.config.webhookEm) || undefined}>
               <Icon
-                name={props.v.status.webhook ? (props.v.config.webhookEm ? 'check' : 'clock') : 'circle-x'}
+                name={st.webhook ? (props.v.config.webhookEm ? 'check' : 'clock') : 'circle-x'}
                 size={14}
               />
               <span>
                 Webhook
                 <span className="quieto">
                   {' · '}
-                  {!props.v.status.webhook
+                  {!st.webhook
                     ? 'falta o segredo'
                     : props.v.config.webhookEm
                       ? `último aviso ${fmtQuando(props.v.config.webhookEm)}`
@@ -1481,18 +1800,18 @@ function Configuracao(props: { v: VisaoEmail }) {
                 </span>
               </span>
             </li>
-            <li data-ok={props.v.status.ia || undefined}>
-              <Icon name={props.v.status.ia ? 'check' : 'circle-help'} size={14} />
+            <li data-ok={st.ia || undefined}>
+              <Icon name={st.ia ? 'check' : 'circle-help'} size={14} />
               <span>
-                IA que lê as respostas
+                IA (lê as respostas e escreve a abertura)
                 <span className="quieto">
-                  {' '}
-                  · {props.v.status.ia ? 'Gemini' : 'sem ela, uma regra de palavras decide'}
+                  {' · '}
+                  {st.ia ? (st.iaDescricao ?? 'ligada') : 'sem ela, uma regra de palavras lê as respostas'}
                 </span>
               </span>
             </li>
           </ul>
-          {props.v.status.resend && (
+          {st.resend && (
             <div className="acoes" style={{ marginTop: 12 }}>
               <Button
                 size="sm"
@@ -1517,42 +1836,34 @@ function Configuracao(props: { v: VisaoEmail }) {
         </div>
         <div className="pp-panel" style={{ padding: 16 }}>
           <h3 className="subtitulo" style={{ marginTop: 0 }}>
-            Como ligar o Resend
+            Chaves desta conta
           </h3>
-          <ol className="passos-curtos">
-            <li>
-              <b>Domínio de envio:</b> o domínio do remetente verificado no Resend (Domains). Use um
-              subdomínio só para prospecção (ex.: contato.tutts.com.br) para proteger o domínio principal.
-            </li>
-            <li>
-              <b>Recebimento:</b> em Receiving, ative um domínio para receber (ex.: respostas.tutts.com.br,
-              com o registro MX que o Resend mostrar) ou use o endereço .resend.app que ele já dá.
-            </li>
-            <li>
-              <b>Webhook:</b> em Webhooks → Add endpoint, cole o endereço abaixo e marque os eventos de e-mail
-              (received, delivered, opened, clicked, bounced, complained, failed). Copie o “Signing secret”.
-            </li>
-            <li>
-              <b>No Railway (API):</b>
-            </li>
-          </ol>
-          <pre className="bloco-codigo">{`RESEND_API_KEY=re_…
-EMAIL_REMETENTE=comercial@contato.tutts.com.br
-RESEND_DOMINIO_RESPOSTAS=respostas.tutts.com.br
-RESEND_WEBHOOK_SEGREDO=whsec_…`}</pre>
+          <p className="quieto" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            A chave do Resend, o remetente padrão, o domínio de respostas e o segredo do webhook ficam no
+            painel master (cada conta tem os seus).
+            {!master && ' Peça para quem administra o sistema.'}
+          </p>
+          {master && (
+            <Button size="sm" icon="building-2" href="/master">
+              Abrir o painel master
+            </Button>
+          )}
           <div className="campo" style={{ marginTop: 12 }}>
-            <label htmlFor="cfe-webhook">Endereço do webhook</label>
+            <label htmlFor="cfe-webhook">Endereço do webhook desta conta</label>
             <input
               id="cfe-webhook"
               className="filtro mono"
               readOnly
-              value={props.v.status.webhookUrl}
+              value={st.webhookUrl}
               onFocus={(e) => e.target.select()}
             />
+            <span className="campo__dica">
+              No Resend: Webhooks → Add endpoint, com os eventos de e-mail (received, delivered, opened,
+              clicked, bounced, complained, failed).
+            </span>
           </div>
           <p className="quieto" style={{ margin: '8px 0 0', fontSize: 13 }}>
-            No Resend, deixe o rastreio de abertura e clique do domínio desligado: o sistema já conta sozinho
-            (assim os links não são trocados duas vezes).
+            Deixe o rastreio de abertura e clique do domínio desligado no Resend: o sistema já conta sozinho.
           </p>
         </div>
       </aside>
@@ -1609,7 +1920,14 @@ export function Email() {
           </button>
         ))}
       </div>
-      {aba === 'campanhas' && <Campanhas modelos={modelos.data ?? []} ligado={!!visao.data?.config.ligado} />}
+      {aba === 'campanhas' && (
+        <Campanhas
+          modelos={modelos.data ?? []}
+          ligado={!!visao.data?.config.ligado}
+          iaLigada={!!visao.data?.status.ia}
+        />
+      )}
+      {aba === 'marca' && <Marcas remetenteConta={visao.data?.status.remetente ?? null} />}
       {aba === 'modelos' && <Modelos modelos={modelos.data ?? []} carregando={modelos.isPending} />}
       {aba === 'enviados' && <Enviados aoAbrirLead={(id) => mudar('empresa', String(id))} />}
       {aba === 'respostas' && <Respostas aoAbrirLead={(id) => mudar('empresa', String(id))} />}

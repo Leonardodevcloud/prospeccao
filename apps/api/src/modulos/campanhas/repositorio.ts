@@ -1,5 +1,6 @@
 import { comTransacao, type Executor, type Pool } from '@prospeccao/db';
 import type { CampanhaEntrada, EscopoReenriquecer, StatusCampanha } from '@prospeccao/shared';
+import { contaSql } from '../../contexto.js';
 
 /** Campanha com o progresso da descoberta (lido das views publicadas pelo domínio descoberta). */
 const SELECT = `
@@ -42,7 +43,7 @@ const SELECT = `
              count(*) FILTER (WHERE o.etapa = 'descartado')::int AS descartados
         FROM descoberta.campanha_empresas ce
         JOIN descoberta.empresas e ON e.id = ce.empresa_id
-        LEFT JOIN comercial.oportunidades o ON o.empresa_id = ce.empresa_id
+        LEFT JOIN comercial.oportunidades o ON o.conta_id = c.conta_id AND o.empresa_id = ce.empresa_id
        WHERE ce.campanha_id = c.id
     ) f ON true`;
 
@@ -109,7 +110,8 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
          JOIN descoberta.empresas e ON e.id = ce.empresa_id AND NOT e.mei
          LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
         WHERE ce.campanha_id = ANY($1::bigint[])
-          AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = e.id)
+          AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d
+                           WHERE d.empresa_id = e.id AND d.conta_id = ${contaSql()})
         GROUP BY 1`,
       [ids],
     ),
@@ -159,25 +161,31 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
 
 export async function listar(db: Executor) {
   const { rows } = await db.query<ComProgresso>(
-    `${SELECT} ORDER BY CASE c.status WHEN 'ativa' THEN 0 WHEN 'pausada' THEN 1 WHEN 'rascunho' THEN 2 ELSE 3 END, c.criado_em DESC`,
+    `${SELECT} WHERE c.conta_id = ${contaSql()} ORDER BY CASE c.status WHEN 'ativa' THEN 0 WHEN 'pausada' THEN 1 WHEN 'rascunho' THEN 2 ELSE 3 END, c.criado_em DESC`,
   );
   return comAndamento(db, rows);
 }
 
 export async function obter(db: Executor, id: number) {
-  const { rows } = await db.query<ComProgresso>(`${SELECT} WHERE c.id = $1`, [id]);
+  const { rows } = await db.query<ComProgresso>(`${SELECT} WHERE c.id = $1 AND c.conta_id = ${contaSql()}`, [
+    id,
+  ]);
   return (await comAndamento(db, rows))[0] ?? null;
 }
 
 export async function nichoAtivo(db: Executor, nichoId: number): Promise<boolean> {
-  const { rows } = await db.query('SELECT 1 FROM cadastro.nichos WHERE id = $1 AND ativo', [nichoId]);
+  const { rows } = await db.query(
+    `SELECT 1 FROM cadastro.nichos WHERE id = $1 AND ativo AND conta_id = ${contaSql()}`,
+    [nichoId],
+  );
   return rows.length > 0;
 }
 
 export async function criar(db: Executor, c: CampanhaEntrada): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, meta_diaria, limite_envios_dia, cadencia, modo, max_por_busca)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    `INSERT INTO cadastro.campanhas
+       (conta_id, nome, nicho_id, cidades, raio_km, meta_diaria, limite_envios_dia, cadencia, modo, max_por_busca)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
     [
       c.nome,
       c.nichoId,
@@ -214,12 +222,16 @@ export async function atualizar(db: Executor, id: number, dados: Record<string, 
     valores.push(campo === 'cidades' ? JSON.stringify(valor) : valor);
     sets.push(`${coluna} = $${valores.length}`);
   }
-  if (sets.length) await db.query(`UPDATE cadastro.campanhas SET ${sets.join(', ')} WHERE id = $1`, valores);
+  if (sets.length)
+    await db.query(
+      `UPDATE cadastro.campanhas SET ${sets.join(', ')} WHERE id = $1 AND conta_id = ${contaSql()}`,
+      valores,
+    );
 }
 
 export async function statusAtual(db: Executor, id: number): Promise<StatusCampanha | null> {
   const { rows } = await db.query<{ status: StatusCampanha }>(
-    'SELECT status FROM cadastro.campanhas WHERE id = $1',
+    `SELECT status FROM cadastro.campanhas WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id],
   );
   return rows[0]?.status ?? null;
@@ -229,7 +241,7 @@ export async function mudarStatus(db: Executor, id: number, status: StatusCampan
   await db.query(
     `UPDATE cadastro.campanhas
         SET status = $2, iniciada_em = CASE WHEN $2 = 'ativa' THEN coalesce(iniciada_em, now()) ELSE iniciada_em END
-      WHERE id = $1`,
+      WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id, status],
   );
 }
@@ -240,15 +252,16 @@ export async function baseCnpjImportada(db: Executor): Promise<boolean> {
 }
 
 /** Leads da campanha que podem voltar ao enriquecimento: sem MEI (se o nicho exclui) e sem descartados. */
-const ELEGIVEIS = `
+const elegiveis = () => `
   FROM descoberta.campanha_empresas ce
   JOIN descoberta.empresas e ON e.id = ce.empresa_id
   JOIN cadastro.campanhas cp ON cp.id = ce.campanha_id
   JOIN cadastro.nichos n ON n.id = cp.nicho_id
   LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
- WHERE ce.campanha_id = $1
+ WHERE ce.campanha_id = $1 AND cp.conta_id = ${contaSql()}
    AND NOT (e.mei AND n.excluir_mei)
-   AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = e.id)`;
+   AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d
+                    WHERE d.empresa_id = e.id AND d.conta_id = cp.conta_id)`;
 
 const SEM_DECISOR = `NOT EXISTS (SELECT 1 FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor)`;
 
@@ -263,7 +276,7 @@ export async function previaReenriquecer(db: Executor, campanhaId: number) {
     `SELECT count(*) FILTER (WHERE ${FILTRO_ESCOPO.ab})::int AS ab,
             count(*) FILTER (WHERE ${SEM_DECISOR})::int AS "semDecisor",
             count(*)::int AS todos
-       ${ELEGIVEIS}`,
+       ${elegiveis()}`,
     [campanhaId],
   );
   return rows[0] ?? { ab: 0, semDecisor: 0, todos: 0 };
@@ -276,7 +289,7 @@ export async function empresasParaReenriquecer(
 ): Promise<number[]> {
   // Notas A primeiro: o que mais importa fica pronto antes.
   const { rows } = await db.query<{ id: number }>(
-    `SELECT e.id::int ${ELEGIVEIS} AND ${FILTRO_ESCOPO[escopo]}
+    `SELECT e.id::int ${elegiveis()} AND ${FILTRO_ESCOPO[escopo]}
       ORDER BY l.score DESC NULLS LAST, e.id`,
     [campanhaId],
   );
@@ -286,7 +299,7 @@ export async function empresasParaReenriquecer(
 /** Buscas no Maps da campanha (para tirar da fila as que ainda não rodaram). */
 export async function buscasDaCampanha(db: Executor, campanhaId: number): Promise<number[]> {
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id::int FROM descoberta.buscas_maps WHERE campanha_id = $1',
+    `SELECT id::int FROM descoberta.buscas_maps WHERE campanha_id = $1 AND conta_id = ${contaSql()}`,
     [campanhaId],
   );
   return rows.map((r) => r.id);
@@ -301,6 +314,11 @@ export async function buscasDaCampanha(db: Executor, campanhaId: number): Promis
  */
 export async function apagarComLeads(pool: Pool, campanhaId: number) {
   return comTransacao(pool, async (tx) => {
+    const { rows: dona } = await tx.query(
+      `SELECT 1 FROM cadastro.campanhas WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [campanhaId],
+    );
+    if (!dona.length) return { leadsApagados: 0 };
     const { rows } = await tx.query<{ id: number }>(
       `SELECT ce.empresa_id::int AS id FROM descoberta.campanha_empresas ce
         WHERE ce.campanha_id = $1
@@ -309,7 +327,10 @@ export async function apagarComLeads(pool: Pool, campanhaId: number) {
       [campanhaId],
     );
     const ids = rows.map((r) => r.id);
-    await tx.query('DELETE FROM comercial.oportunidades WHERE empresa_id = ANY($1::bigint[])', [ids]);
+    await tx.query(
+      `DELETE FROM comercial.oportunidades WHERE conta_id = ${contaSql()} AND empresa_id = ANY($1::bigint[])`,
+      [ids],
+    );
     for (const t of ['contatos', 'pessoas', 'etapas', 'leads'])
       await tx.query(`DELETE FROM enriquecimento.${t} WHERE empresa_id = ANY($1::bigint[])`, [ids]);
     await tx.query('DELETE FROM descoberta.campanha_empresas WHERE campanha_id = $1', [campanhaId]);
@@ -320,12 +341,15 @@ export async function apagarComLeads(pool: Pool, campanhaId: number) {
       await tx.query(
         `DELETE FROM enriquecimento.${t} x WHERE NOT EXISTS (SELECT 1 FROM descoberta.empresas e WHERE e.id = x.empresa_id)`,
       );
-    await tx.query('DELETE FROM cadastro.campanhas WHERE id = $1', [campanhaId]);
+    await tx.query(`DELETE FROM cadastro.campanhas WHERE id = $1 AND conta_id = ${contaSql()}`, [campanhaId]);
     return { leadsApagados: ids.length };
   });
 }
 
 /** Teto de gasto da campanha em buscas pagas no Google. null = sem teto; 0 = só a franquia grátis. */
 export async function mudarTetoPlaces(db: Executor, id: number, teto: number | null) {
-  await db.query('UPDATE cadastro.campanhas SET teto_places_usd = $2 WHERE id = $1', [id, teto]);
+  await db.query(
+    `UPDATE cadastro.campanhas SET teto_places_usd = $2 WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [id, teto],
+  );
 }

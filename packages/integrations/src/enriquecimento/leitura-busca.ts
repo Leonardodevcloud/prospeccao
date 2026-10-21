@@ -1,8 +1,7 @@
 import { normalizarTelefone } from '@prospeccao/shared';
-import { requisitarJson } from '../http.js';
+import { type ConfigIa, type EsquemaIa, gerarJson } from '../ia/index.js';
 import type { ResultadoGoogle } from './apify.js';
 import { provarPessoa } from './pessoas.js';
-import type { ConfigGemini } from './servicos.js';
 import { normalizarSite, usuarioInstagram } from './site.js';
 
 /**
@@ -31,7 +30,7 @@ export interface EntradaLeituraBusca {
 const DIRETORIOS =
   /(^|\.)(econodata|cnpj\.biz|cnpja|casadosdados|serasaexperian|serasa|autoguiabr|lavrale|solutudo|guiamais|apontador|telelistas|empresaqui|consultasocio|cnpj\.info|cnpj\.services|infoplex|guiafacil|encontra[a-z]*|listamais|achei[a-z]*|google|facebook|instagram|linkedin|youtube|tiktok|twitter|x|wa|whatsapp|mercadolivre|olx|reclameaqui|jusbrasil|escavador)\.[a-z.]+$/i;
 
-const ESQUEMA_LEITURA = {
+const ESQUEMA_LEITURA: EsquemaIa = {
   type: 'OBJECT',
   properties: {
     mesmaEmpresa: { type: 'BOOLEAN' },
@@ -142,25 +141,15 @@ export function conferirLeitura(bruto: unknown, resultados: ResultadoGoogle[]): 
   };
 }
 
-export async function lerBuscaComGemini(cfg: ConfigGemini, e: EntradaLeituraBusca): Promise<LeituraBusca> {
-  const r = await requisitarJson<{ candidates?: { content?: { parts?: { text?: string }[] } }[] }>(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`,
-    {
-      servico: 'Gemini',
-      method: 'POST',
-      headers: { 'x-goog-api-key': cfg.apiKey },
-      body: {
-        contents: [{ role: 'user', parts: [{ text: promptLeituraBusca(e) }] }],
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: 'application/json',
-          responseSchema: ESQUEMA_LEITURA,
-        },
-      },
+export async function lerBuscaComIa(cfg: ConfigIa, e: EntradaLeituraBusca): Promise<LeituraBusca> {
+  const texto =
+    (await gerarJson(cfg, {
+      prompt: promptLeituraBusca(e),
+      esquema: ESQUEMA_LEITURA,
+      temperatura: 0,
       timeoutMs: 45_000,
-    },
-  );
-  const texto = r.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+      maxTokens: 1500,
+    })) || '{}';
   let bruto: unknown = {};
   try {
     bruto = JSON.parse(texto);

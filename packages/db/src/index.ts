@@ -1,3 +1,23 @@
+export {
+  type AlteracaoCredenciais,
+  CAMPOS_SEGREDO,
+  type CampoSegredo,
+  type CredenciaisAmbiente,
+  type CredenciaisConta,
+  type CredenciaisEfetivas,
+  cacheDeCredenciais,
+  chaveDoAmbiente,
+  cifrar,
+  contaDaCampanha,
+  contasAtivas,
+  credenciaisEfetivas,
+  decifrar,
+  dicaDoSegredo,
+  lerCredenciais,
+  type Origem,
+  resolverCredenciais,
+  salvarCredenciais,
+} from './credenciais.js';
 export { migrar, PASTA_MIGRATIONS, type StatusMigration, statusMigrations } from './migrar.js';
 export {
   comTransacao,

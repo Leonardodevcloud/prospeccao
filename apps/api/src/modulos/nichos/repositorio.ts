@@ -1,5 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import type { NichoEntrada } from '@prospeccao/shared';
+import { contaSql } from '../../contexto.js';
 
 const CAMPOS = `
   n.id, n.nome, n.cnaes, n.termos_maps AS "termosMaps", n.palavras_positivas AS "palavrasPositivas",
@@ -24,21 +25,27 @@ export interface Nicho {
 
 export async function listar(db: Executor, incluirInativos: boolean): Promise<Nicho[]> {
   const { rows } = await db.query<Nicho>(
-    `SELECT ${CAMPOS} FROM cadastro.nichos n WHERE $1 OR n.ativo ORDER BY n.ativo DESC, n.nome`,
+    `SELECT ${CAMPOS} FROM cadastro.nichos n WHERE n.conta_id = ${contaSql()} AND ($1 OR n.ativo)
+      ORDER BY n.ativo DESC, n.nome`,
     [incluirInativos],
   );
   return rows;
 }
 
 export async function obter(db: Executor, id: number): Promise<Nicho | null> {
-  const { rows } = await db.query<Nicho>(`SELECT ${CAMPOS} FROM cadastro.nichos n WHERE n.id = $1`, [id]);
+  const { rows } = await db.query<Nicho>(
+    `SELECT ${CAMPOS} FROM cadastro.nichos n WHERE n.id = $1 AND n.conta_id = ${contaSql()}`,
+    [id],
+  );
   return rows[0] ?? null;
 }
 
 export async function criar(db: Executor, n: NichoEntrada): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO cadastro.nichos (nome, cnaes, termos_maps, palavras_positivas, palavras_negativas, cargos_alvo, portes, idade_minima_anos, excluir_mei)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    `INSERT INTO cadastro.nichos
+       (conta_id, nome, cnaes, termos_maps, palavras_positivas, palavras_negativas, cargos_alvo, portes,
+        idade_minima_anos, excluir_mei)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
     [
       n.nome,
       n.cnaes,
@@ -76,7 +83,16 @@ export async function atualizar(db: Executor, id: number, dados: Record<string, 
     valores.push(valor);
     sets.push(`${coluna} = $${valores.length}`);
   }
-  if (!sets.length) return true;
-  const { rowCount } = await db.query(`UPDATE cadastro.nichos SET ${sets.join(', ')} WHERE id = $1`, valores);
+  if (!sets.length) {
+    const { rows } = await db.query(
+      `SELECT 1 FROM cadastro.nichos WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [id],
+    );
+    return rows.length > 0;
+  }
+  const { rowCount } = await db.query(
+    `UPDATE cadastro.nichos SET ${sets.join(', ')} WHERE id = $1 AND conta_id = ${contaSql()}`,
+    valores,
+  );
   return (rowCount ?? 0) > 0;
 }

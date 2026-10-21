@@ -59,6 +59,8 @@ export const JOBS = {
   /** worker-descoberta (interno): achar coordenadas e distância até a base. */
   'empresa.localizar': z.object({
     empresaId: z.number().int().positive(),
+    /** Campanha que pediu: a geocodificação usa a chave do ORS da conta dela. */
+    campanhaId: z.number().int().positive().optional(),
   }),
 
   /**

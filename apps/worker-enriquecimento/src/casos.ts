@@ -610,7 +610,7 @@ export async function enriquecerEmpresa(
         : '';
       await etapa('ia', 'encontrado', `Nota ${faixa} (${score}): ${motivo.replace(/\.$/, '')}.${descarte}`);
     } else if (!fontes.ia) {
-      await etapa('ia', 'pulada', `Sem GEMINI_API_KEY. ${motivo}`);
+      await etapa('ia', 'pulada', `IA não configurada nesta conta. ${motivo}`);
     }
 
     // 6. LinkedIn: pessoas de compras/gestão e os sócios-administradores, só para leads que valem a

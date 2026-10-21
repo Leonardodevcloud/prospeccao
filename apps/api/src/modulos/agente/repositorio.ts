@@ -1,5 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import type { ConfigAgenteEntrada } from '@prospeccao/shared';
+import { contaSql } from '../../contexto.js';
 
 /** Agente de abordagem (schema comercial, só a API escreve). */
 
@@ -13,7 +14,7 @@ export async function obterConfig(db: Executor): Promise<ConfigAgente> {
             dias_semana AS "diasSemana", limite_dia AS "limiteDia", intervalo_seg AS "intervaloSeg",
             respostas_dia_lead AS "respostasDiaLead", sobre_empresa AS "sobreEmpresa", regras,
             horarios_reuniao AS "horariosReuniao", webhook_token AS "webhookToken"
-       FROM comercial.config_agente LIMIT 1`,
+       FROM comercial.config_agente WHERE conta_id = ${contaSql()}`,
   );
   const c = rows[0];
   if (!c) throw new Error('config_agente vazia: a migration 023 não rodou');
@@ -25,7 +26,8 @@ export async function salvarConfig(db: Executor, c: ConfigAgenteEntrada): Promis
     `UPDATE comercial.config_agente
         SET ligado = $1, revisar_antes = $2, hora_inicio = $3, hora_fim = $4, dias_semana = $5,
             limite_dia = $6, intervalo_seg = $7, respostas_dia_lead = $8, sobre_empresa = $9, regras = $10,
-            horarios_reuniao = $11, atualizado_em = now()`,
+            horarios_reuniao = $11, atualizado_em = now()
+      WHERE conta_id = ${contaSql()}`,
     [
       c.ligado,
       c.revisarAntes,
@@ -46,6 +48,7 @@ export async function salvarConfig(db: Executor, c: ConfigAgenteEntrada): Promis
 export const HOJE_SP = `(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')`;
 
 export async function resumo(db: Executor) {
+  const C = contaSql();
   const { rows } = await db.query<{
     rascunhos: number;
     enviadasHoje: number;
@@ -53,14 +56,14 @@ export async function resumo(db: Executor) {
     leadsComIa: number;
     pausados: number;
   }>(
-    `SELECT (SELECT count(*) FROM comercial.mensagens WHERE status = 'rascunho')::int AS rascunhos,
-            (SELECT count(*) FROM comercial.mensagens WHERE status = 'enviada' AND origem IN ('agente', 'cadencia')
-               AND enviado_em >= ${HOJE_SP})::int AS "enviadasHoje",
-            (SELECT count(*) FROM comercial.mensagens WHERE direcao = 'recebida' AND criado_em >= ${HOJE_SP})::int
-              AS "recebidasHoje",
-            (SELECT count(*) FROM comercial.oportunidades WHERE agente AND agente_pausa IS NULL
+    `SELECT (SELECT count(*) FROM comercial.mensagens WHERE conta_id = ${C} AND status = 'rascunho')::int AS rascunhos,
+            (SELECT count(*) FROM comercial.mensagens WHERE conta_id = ${C} AND status = 'enviada'
+               AND origem IN ('agente', 'cadencia') AND enviado_em >= ${HOJE_SP})::int AS "enviadasHoje",
+            (SELECT count(*) FROM comercial.mensagens WHERE conta_id = ${C} AND direcao = 'recebida'
+               AND criado_em >= ${HOJE_SP})::int AS "recebidasHoje",
+            (SELECT count(*) FROM comercial.oportunidades WHERE conta_id = ${C} AND agente AND agente_pausa IS NULL
                AND etapa NOT IN ('ganho', 'perdido', 'descartado'))::int AS "leadsComIa",
-            (SELECT count(*) FROM comercial.oportunidades WHERE agente AND agente_pausa IS NOT NULL
+            (SELECT count(*) FROM comercial.oportunidades WHERE conta_id = ${C} AND agente AND agente_pausa IS NOT NULL
                AND etapa NOT IN ('ganho', 'perdido', 'descartado'))::int AS pausados`,
   );
   return rows[0]!;
@@ -68,16 +71,18 @@ export async function resumo(db: Executor) {
 
 /** Mensagens esperando sua revisão, com o lead e o motivo da IA. */
 export async function rascunhos(db: Executor) {
+  const C = contaSql();
   const { rows } = await db.query(
     `SELECT m.id, m.empresa_id::int AS "empresaId", e.nome, e.cidade, m.texto, m.telefone, m.origem, m.nota,
             m.criado_em AS "criadoEm", o.etapa,
             (SELECT a.texto FROM comercial.atividades a
-              WHERE a.empresa_id = m.empresa_id AND a.direcao = 'recebida' AND a.texto IS NOT NULL
+              WHERE a.conta_id = ${C} AND a.empresa_id = m.empresa_id AND a.direcao = 'recebida'
+                AND a.texto IS NOT NULL
               ORDER BY a.criado_em DESC LIMIT 1) AS "ultimaDoLead"
        FROM comercial.mensagens m
        JOIN descoberta.empresas e ON e.id = m.empresa_id
-       LEFT JOIN comercial.oportunidades o ON o.empresa_id = m.empresa_id
-      WHERE m.status = 'rascunho'
+       LEFT JOIN comercial.oportunidades o ON o.conta_id = m.conta_id AND o.empresa_id = m.empresa_id
+      WHERE m.conta_id = ${C} AND m.status = 'rascunho'
       ORDER BY m.criado_em
       LIMIT 200`,
   );
@@ -90,7 +95,8 @@ export async function pausados(db: Executor) {
     `SELECT o.empresa_id::int AS "empresaId", e.nome, e.cidade, o.agente_pausa AS motivo, o.etapa,
             o.atualizado_em AS "em"
        FROM comercial.oportunidades o JOIN descoberta.empresas e ON e.id = o.empresa_id
-      WHERE o.agente AND o.agente_pausa IS NOT NULL AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
+      WHERE o.conta_id = ${contaSql()} AND o.agente AND o.agente_pausa IS NOT NULL
+        AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
       ORDER BY o.atualizado_em DESC LIMIT 200`,
   );
   return rows;
@@ -99,7 +105,7 @@ export async function pausados(db: Executor) {
 export async function conversa(db: Executor, empresaId: number) {
   const { rows } = await db.query(
     `SELECT id, direcao, texto, status, origem, nota, erro, criado_em AS "criadoEm", enviado_em AS "enviadoEm"
-       FROM comercial.mensagens WHERE empresa_id = $1 ORDER BY criado_em, id`,
+       FROM comercial.mensagens WHERE conta_id = ${contaSql()} AND empresa_id = $1 ORDER BY criado_em, id`,
     [empresaId],
   );
   return rows;
@@ -125,11 +131,11 @@ export async function criarMensagem(
 ): Promise<number | null> {
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO comercial.mensagens
-       (empresa_id, direcao, texto, telefone, status, origem, id_externo, nota, enviado_em,
+       (conta_id, empresa_id, direcao, texto, telefone, status, origem, id_externo, nota, enviado_em,
         usuario_id, midia_tipo, midia_id, lida_em)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'enviada' THEN now() END,
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'enviada' THEN now() END,
              $9, $10, $11, CASE WHEN $2 = 'enviada' OR $12 THEN now() END)
-     ON CONFLICT (id_externo) WHERE id_externo IS NOT NULL DO NOTHING
+     ON CONFLICT (conta_id, id_externo) WHERE id_externo IS NOT NULL DO NOTHING
      RETURNING id`,
     [
       m.empresaId,
@@ -152,7 +158,7 @@ export async function criarMensagem(
 export async function aprovar(db: Executor, id: number, texto?: string): Promise<boolean> {
   const { rowCount } = await db.query(
     `UPDATE comercial.mensagens SET status = 'aprovada', texto = coalesce($2, texto)
-      WHERE id = $1 AND status = 'rascunho'`,
+      WHERE id = $1 AND conta_id = ${contaSql()} AND status = 'rascunho'`,
     [id, texto ?? null],
   );
   return (rowCount ?? 0) > 0;
@@ -161,7 +167,8 @@ export async function aprovar(db: Executor, id: number, texto?: string): Promise
 /** Descartar a resposta da IA passa o lead para você (senão ela escreveria a mesma coisa de novo). */
 export async function descartar(db: Executor, id: number): Promise<boolean> {
   const { rows } = await db.query<{ empresa_id: number; origem: string }>(
-    `UPDATE comercial.mensagens SET status = 'descartada' WHERE id = $1 AND status = 'rascunho'
+    `UPDATE comercial.mensagens SET status = 'descartada'
+      WHERE id = $1 AND conta_id = ${contaSql()} AND status = 'rascunho'
      RETURNING empresa_id::int, origem`,
     [id],
   );
@@ -170,7 +177,7 @@ export async function descartar(db: Executor, id: number): Promise<boolean> {
   if (m.origem === 'agente')
     await db.query(
       `UPDATE comercial.oportunidades SET agente_pausa = 'Você descartou a resposta da IA: responda você.'
-        WHERE empresa_id = $1`,
+        WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
       [m.empresa_id],
     );
   return true;
@@ -180,7 +187,7 @@ export async function descartar(db: Executor, id: number): Promise<boolean> {
 export async function ligarEmMassa(db: Executor, etapas: string[]): Promise<number> {
   const { rowCount } = await db.query(
     `UPDATE comercial.oportunidades SET agente = true, agente_pausa = NULL
-      WHERE etapa = ANY($1::text[]) AND NOT agente`,
+      WHERE conta_id = ${contaSql()} AND etapa = ANY($1::text[]) AND NOT agente`,
     [etapas],
   );
   return rowCount ?? 0;
@@ -201,7 +208,7 @@ export async function leadPorTelefone(db: Executor, telefone: string): Promise<n
        UNION ALL SELECT e.id, e.maps_telefone FROM descoberta.empresas e WHERE e.maps_telefone IS NOT NULL
      )
      SELECT o.empresa_id::int FROM tel
-       JOIN comercial.oportunidades o ON o.empresa_id = tel.empresa_id
+       JOIN comercial.oportunidades o ON o.conta_id = ${contaSql()} AND o.empresa_id = tel.empresa_id
       WHERE left(tel.valor, 2) = $1 AND right(tel.valor, 8) = $2
       ORDER BY (o.etapa IN ('ganho', 'perdido', 'descartado')), o.atualizado_em DESC
       LIMIT 1`,

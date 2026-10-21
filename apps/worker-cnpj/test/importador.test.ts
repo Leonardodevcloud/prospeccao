@@ -85,11 +85,11 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     );
     await pool.query('TRUNCATE cadastro.campanhas, cadastro.nichos RESTART IDENTITY CASCADE');
     await pool.query(
-      `INSERT INTO cadastro.nichos (nome, cnaes, termos_maps) VALUES ('Autopeças', '{4530703}', '{autopeças}')`,
+      `INSERT INTO cadastro.nichos (conta_id, nome, cnaes, termos_maps) VALUES (1, 'Autopeças', '{4530703}', '{autopeças}')`,
     );
     await pool.query(
-      `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, status)
-       VALUES ('Teste', 1, '[{"cidade":"Salvador","uf":"BA"}]', 'ativa')`,
+      `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, status)
+       VALUES (1, 'Teste', 1, '[{"cidade":"Salvador","uf":"BA"}]', 'ativa')`,
     );
 
     pasta = await mkdtemp(join(tmpdir(), 'cnpj-teste-'));

@@ -14,30 +14,72 @@ declare global {
   }
 }
 
-/** Usuário ativo da sessão (consulta o banco: desativar alguém derruba a sessão na hora). */
-export async function carregarUsuario(db: Executor, id: number): Promise<UsuarioSessao | null> {
-  const { rows } = await db.query<UsuarioSessao>(
-    'SELECT id, nome, email, papel FROM cadastro.usuarios WHERE id = $1 AND ativo',
+/**
+ * Usuário ativo da sessão e a conta em que está (consulta o banco: desativar alguém, ou a conta,
+ * derruba a sessão na hora). O master pode estar "dentro" de outra conta (escolhida no painel);
+ * lá ele age como administrador.
+ */
+export async function carregarUsuario(
+  db: Executor,
+  id: number,
+  contaEscolhida?: number | null,
+): Promise<UsuarioSessao | null> {
+  const { rows } = await db.query<{
+    id: number;
+    nome: string;
+    email: string;
+    papel: UsuarioSessao['papel'];
+    master: boolean;
+    conta_id: number;
+    conta_ativa: boolean;
+  }>(
+    `SELECT u.id, u.nome, u.email, u.papel, u.master, u.conta_id, c.ativa AS conta_ativa
+       FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+      WHERE u.id = $1 AND u.ativo`,
     [id],
   );
-  return rows[0] ?? null;
+  const u = rows[0];
+  if (!u) return null;
+  if (!u.conta_ativa && !u.master) return null;
+  const { rows: contas } = await db.query<{ id: number; nome: string }>(
+    'SELECT id, nome FROM cadastro.contas WHERE id = ANY($1::int[])',
+    [[u.conta_id, contaEscolhida ?? u.conta_id]],
+  );
+  const escolhida = u.master && contaEscolhida ? contas.find((c) => c.id === contaEscolhida) : undefined;
+  const conta = escolhida ?? contas.find((c) => c.id === u.conta_id);
+  if (!conta) return null;
+  const contaId = conta.id;
+  const nomeConta = conta.nome;
+  return {
+    id: u.id,
+    nome: u.nome,
+    email: u.email,
+    // Dentro de outra conta, o master age como administrador dela.
+    papel: u.master && contaId !== u.conta_id ? 'admin' : u.papel,
+    contaId,
+    contaNome: nomeConta,
+    master: u.master,
+    contaPropria: u.conta_id,
+  };
 }
 
-/** Exige o cookie de sessão válido de um usuário ativo. */
+/** Exige o cookie de sessão válido de um usuário ativo (de uma conta ativa). */
 export function exigirSessao(jwtSegredo: string, db: Executor): RequestHandler {
   return (req, _res, next) => {
     const token = req.cookies?.[COOKIE_SESSAO] as string | undefined;
     if (!token) return next(AppError.naoAutorizado());
     let id: number;
+    let contaEscolhida: number | null = null;
     try {
       const dados = jwt.verify(token, jwtSegredo, { algorithms: ['HS256'] }) as jwt.JwtPayload;
       id = Number(dados.sub);
       // Sessão do tempo de um usuário só (sub = e-mail): faz login de novo.
       if (!Number.isInteger(id) || id <= 0) return next(AppError.naoAutorizado());
+      if (Number.isInteger(dados.c) && dados.c > 0) contaEscolhida = dados.c as number;
     } catch {
       return next(AppError.naoAutorizado('Sua sessão expirou. Faça login de novo.'));
     }
-    carregarUsuario(db, id).then(
+    carregarUsuario(db, id, contaEscolhida).then(
       (u) => {
         if (!u) return next(AppError.naoAutorizado('Seu acesso foi desativado.'));
         req.usuario = u;
@@ -47,6 +89,11 @@ export function exigirSessao(jwtSegredo: string, db: Executor): RequestHandler {
     );
   };
 }
+
+/** Só quem administra a plataforma (painel master). */
+export const exigirMaster: RequestHandler = (req, _res, next) => {
+  next(req.usuario?.master ? undefined : AppError.proibido());
+};
 
 /** Só administrador. */
 export const exigirAdmin: RequestHandler = (req, _res, next) => {

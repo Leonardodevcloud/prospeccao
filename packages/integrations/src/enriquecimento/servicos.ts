@@ -1,4 +1,5 @@
 import { requisitarJson } from '../http.js';
+import { type ConfigIa, type EsquemaIa, gerarJson } from '../ia/index.js';
 
 export { acharLugar, type EmpresaParaAchar, type LugarAchado, mesmoLugar } from '../places/index.js';
 
@@ -123,12 +124,7 @@ export async function detalhesDoLugar(cfg: ConfigPlaces, placeId: string): Promi
   };
 }
 
-/* ---------------- Gemini ---------------- */
-
-export interface ConfigGemini {
-  apiKey: string;
-  modelo: string;
-}
+/* ---------------- IA: nota do lead ---------------- */
 
 export interface EntradaAvaliacao {
   nicho: string;
@@ -168,7 +164,7 @@ export interface AvaliacaoIa {
   }[];
 }
 
-const ESQUEMA = {
+const ESQUEMA: EsquemaIa = {
   type: 'OBJECT',
   properties: {
     faixa: { type: 'STRING', enum: ['A', 'B', 'C'] },
@@ -218,23 +214,14 @@ export function montarPrompt(e: EntradaAvaliacao): string {
   ].join('\n');
 }
 
-export async function avaliarComGemini(cfg: ConfigGemini, entrada: EntradaAvaliacao): Promise<AvaliacaoIa> {
-  const r = await requisitarJson<{
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  }>(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`,
-    {
-      servico: 'Gemini',
-      method: 'POST',
-      headers: { 'x-goog-api-key': cfg.apiKey },
-      body: {
-        contents: [{ role: 'user', parts: [{ text: montarPrompt(entrada) }] }],
-        generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: ESQUEMA },
-      },
-      timeoutMs: 60_000,
-    },
-  );
-  const texto = r.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+export async function avaliarComIa(cfg: ConfigIa, entrada: EntradaAvaliacao): Promise<AvaliacaoIa> {
+  const texto = await gerarJson(cfg, {
+    prompt: montarPrompt(entrada),
+    esquema: ESQUEMA,
+    temperatura: 0.2,
+    timeoutMs: 60_000,
+    maxTokens: 1500,
+  });
   return lerAvaliacao(texto);
 }
 

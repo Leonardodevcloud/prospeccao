@@ -1,6 +1,7 @@
 import { booleano, carregarEnv, envBase, listaCsv, opcional } from '@prospeccao/config';
-import { criarPool } from '@prospeccao/db';
+import { cacheDeCredenciais, chaveDoAmbiente, contaDaCampanha, criarPool } from '@prospeccao/db';
 import * as enriq from '@prospeccao/integrations/enriquecimento';
+import { configIa } from '@prospeccao/integrations/ia';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger, normalizarTelefone } from '@prospeccao/shared';
 import { z } from 'zod';
@@ -16,16 +17,29 @@ const env = carregarEnv(
     APIFY_ATOR_INSTAGRAM: z.string().default('apify~instagram-profile-scraper'),
     /** Busca no Google pelo Serper (LinkedIn e Instagram). Com ela, o Apify só lê perfis do Instagram. */
     SERPER_API_KEY: opcional(z.string().min(10)),
-    /** Nota de ICP e leitura do site. Sem ela, a nota sai por regras. */
+    /**
+     * Nota de ICP e leitura do site: IA da plataforma (deepseek, gemini ou openai). Contas com IA
+     * própria (painel master) usam a delas. Sem nenhuma, a nota sai por regras.
+     */
+    IA_PROVEDOR: z.enum(['deepseek', 'gemini', 'openai']).optional().catch(undefined),
+    IA_API_KEY: opcional(z.string().min(10)),
+    IA_MODELO: opcional(z.string().min(2)),
+    IA_BASE_URL: opcional(z.string().url()),
+    /** Legado: sem IA_API_KEY, a IA é o Gemini com esta chave. */
     GEMINI_API_KEY: opcional(z.string().min(10)),
     GEMINI_MODELO: z.string().default('gemini-3.5-flash-lite'),
-    /** Validação de WhatsApp pelo chip (só consulta, não envia). As três juntas ou nenhuma. */
+    /** Lê as credenciais das contas (a mesma CHAVE_CREDENCIAIS da api). */
+    CHAVE_CREDENCIAIS: opcional(z.string().min(32)),
+    /**
+     * Validação de WhatsApp pelo chip da conta principal (só consulta, não envia). As três juntas
+     * ou nenhuma. As outras contas usam o chip cadastrado no painel master.
+     */
     EVOLUTION_URL: opcional(z.string().url()),
     EVOLUTION_API_KEY: opcional(z.string().min(4)),
     EVOLUTION_INSTANCIA: opcional(z.string().min(1)),
     /** Pausa entre consultas de WhatsApp, para não pesar no chip. */
     EVOLUTION_INTERVALO_MS: z.coerce.number().int().min(0).default(3_000),
-    /** Validação no Google Places (opcional). */
+    /** Google Places da conta principal (opcional; as outras usam a chave do painel master). */
     GOOGLE_PLACES_KEY: opcional(z.string().min(10)),
     ENRIQ_FAIXAS_LINKEDIN: listaCsv.default(['A', 'B']),
     ENRIQ_FAIXAS_PLACES: listaCsv.default(['A', 'B']),
@@ -58,57 +72,32 @@ const filas = await conectarFilas({
 const apify: enriq.ConfigApifyEnriq | null = env.APIFY_TOKEN
   ? { token: env.APIFY_TOKEN, atorGoogle: env.APIFY_ATOR_GOOGLE, atorInstagram: env.APIFY_ATOR_INSTAGRAM }
   : null;
-const evolution =
-  env.EVOLUTION_URL && env.EVOLUTION_API_KEY && env.EVOLUTION_INSTANCIA
-    ? { url: env.EVOLUTION_URL, apiKey: env.EVOLUTION_API_KEY, instancia: env.EVOLUTION_INSTANCIA }
-    : null;
 const espera = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 const serper = env.SERPER_API_KEY ? { apiKey: env.SERPER_API_KEY } : null;
 
-const fontes: Fontes = {
+// Credenciais: as de cada conta (painel master) e as do ambiente (conta principal; a IA vale para todas).
+const iaLegada = !env.IA_API_KEY && env.GEMINI_API_KEY;
+const credenciais = cacheDeCredenciais(pool, chaveDoAmbiente(), {
+  placesKey: env.GOOGLE_PLACES_KEY ?? null,
+  evolutionUrl: env.EVOLUTION_URL ?? null,
+  evolutionKey: env.EVOLUTION_API_KEY ?? null,
+  evolutionInstancia: env.EVOLUTION_INSTANCIA ?? null,
+  iaProvedor: iaLegada ? 'gemini' : (env.IA_PROVEDOR ?? null),
+  iaKey: env.IA_API_KEY ?? env.GEMINI_API_KEY ?? null,
+  iaModelo: iaLegada ? env.GEMINI_MODELO : (env.IA_MODELO ?? null),
+  iaBaseUrl: env.IA_BASE_URL ?? null,
+});
+
+/** Fontes da plataforma: as mesmas para todas as contas (Serper, Apify, base paga, sites). */
+const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'instagram' | 'diretorios' | 'basePaga'> = {
   site: { ler: (url) => enriq.lerSite(url) },
   // Serper é mais barato e rápido; o Apify fica de reserva quando não há a chave do Serper.
-  google: env.SERPER_API_KEY
-    ? {
-        nome: 'Serper',
-        buscar: (consultas) => enriq.buscarNoGoogleSerper({ apiKey: env.SERPER_API_KEY! }, consultas),
-      }
+  google: serper
+    ? { nome: 'Serper', buscar: (consultas) => enriq.buscarNoGoogleSerper(serper, consultas) }
     : apify
       ? { nome: 'Apify', buscar: (consultas) => enriq.buscarNoGoogle(apify, consultas) }
       : null,
   instagram: apify ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) } : null,
-  ia: env.GEMINI_API_KEY
-    ? {
-        avaliar: (e) => enriq.avaliarComGemini({ apiKey: env.GEMINI_API_KEY!, modelo: env.GEMINI_MODELO }, e),
-        lerBusca: (e) =>
-          enriq.lerBuscaComGemini({ apiKey: env.GEMINI_API_KEY!, modelo: env.GEMINI_MODELO }, e),
-      }
-    : null,
-  places: env.GOOGLE_PLACES_KEY
-    ? { detalhes: (id) => enriq.detalhesDoLugar({ apiKey: env.GOOGLE_PLACES_KEY! }, id) }
-    : null,
-  // Achar no Maps pelo nome e endereço: Google Places enquanto houver cota GRÁTIS no mês
-  // (somando o que as campanhas já usaram); acabou a cota, Serper (centavos). Sem Serper, o
-  // Places segue e passa a cobrar.
-  lugar:
-    serper || env.GOOGLE_PLACES_KEY
-      ? {
-          async achar(e) {
-            const pedidos = e.razaoSocial && e.razaoSocial !== e.nome ? 2 : 1;
-            const places = env.GOOGLE_PLACES_KEY ? { apiKey: env.GOOGLE_PLACES_KEY } : null;
-            if (places && (!serper || (await repo.reservarPlacesGratis(pool, pedidos)))) {
-              try {
-                const r = await enriq.acharLugar(places, e);
-                if (r.lugar || !serper) return r;
-              } catch (erro) {
-                if (!serper) throw erro;
-                log.warn({ err: erro }, 'Google Places falhou ao achar o lugar; tentando o Serper');
-              }
-            }
-            return enriq.acharLugarSerper(serper!, e);
-          },
-        }
-      : null,
   diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
   basePaga: env.DIRECTD_TOKEN
     ? {
@@ -118,35 +107,66 @@ const fontes: Fontes = {
           enriq.consultarDirectData({ token: env.DIRECTD_TOKEN! }, cnpj, normalizarTelefone),
       }
     : null,
-  whatsapp: evolution
-    ? {
-        async verificar(numeros) {
-          const r = await enriq.verificarWhatsapp(evolution, numeros);
-          await espera(env.EVOLUTION_INTERVALO_MS);
-          return r;
-        },
-        async perfil(numero) {
-          const p = await enriq.perfilComercialWhatsapp(evolution, numero);
-          await espera(env.EVOLUTION_INTERVALO_MS);
-          return p;
-        },
-      }
-    : null,
 };
 
-const deps: Deps = {
-  pool,
-  log,
-  fontes,
-  ajustes: {
-    faixasLinkedin: new Set(env.ENRIQ_FAIXAS_LINKEDIN),
-    faixasPlaces: new Set(env.ENRIQ_FAIXAS_PLACES),
-    buscarInstagram: env.ENRIQ_BUSCAR_INSTAGRAM,
-    acharNoGoogle: env.ENRIQ_ACHAR_NO_GOOGLE,
-    faixasBasePaga: new Set(env.ENRIQ_FAIXAS_BASE_PAGA),
-    refazerDias: env.ENRIQ_REFAZER_DIAS,
-    limiteContador: env.ENRIQ_LIMITE_CONTADOR,
-  },
+/** Fontes de uma conta: a IA, o Google Places e o chip do WhatsApp são os dela. */
+async function fontesDa(contaId: number): Promise<Fontes> {
+  const c = await credenciais.obter(contaId);
+  const ia = c.ia ? configIa(c.ia) : null;
+  const places = c.places;
+  const evolution = c.evolution;
+  return {
+    ...fontesDaPlataforma,
+    ia: ia
+      ? { avaliar: (e) => enriq.avaliarComIa(ia, e), lerBusca: (e) => enriq.lerBuscaComIa(ia, e) }
+      : null,
+    places: places ? { detalhes: (id) => enriq.detalhesDoLugar(places, id) } : null,
+    // Achar no Maps pelo nome e endereço: Google Places da conta enquanto houver cota GRÁTIS no mês
+    // (somando o que as campanhas dela já usaram); acabou a cota, Serper (centavos). Sem Serper, o
+    // Places segue e passa a cobrar.
+    lugar:
+      serper || places
+        ? {
+            async achar(e) {
+              const pedidos = e.razaoSocial && e.razaoSocial !== e.nome ? 2 : 1;
+              if (places && (!serper || (await repo.reservarPlacesGratis(pool, pedidos, contaId)))) {
+                try {
+                  const r = await enriq.acharLugar(places, e);
+                  if (r.lugar || !serper) return r;
+                } catch (erro) {
+                  if (!serper) throw erro;
+                  log.warn({ err: erro }, 'Google Places falhou ao achar o lugar; tentando o Serper');
+                }
+              }
+              return enriq.acharLugarSerper(serper!, e);
+            },
+          }
+        : null,
+    whatsapp: evolution
+      ? {
+          async verificar(numeros) {
+            const r = await enriq.verificarWhatsapp(evolution, numeros);
+            await espera(env.EVOLUTION_INTERVALO_MS);
+            return r;
+          },
+          async perfil(numero) {
+            const p = await enriq.perfilComercialWhatsapp(evolution, numero);
+            await espera(env.EVOLUTION_INTERVALO_MS);
+            return p;
+          },
+        }
+      : null,
+  };
+}
+
+const ajustes: Deps['ajustes'] = {
+  faixasLinkedin: new Set(env.ENRIQ_FAIXAS_LINKEDIN),
+  faixasPlaces: new Set(env.ENRIQ_FAIXAS_PLACES),
+  buscarInstagram: env.ENRIQ_BUSCAR_INSTAGRAM,
+  acharNoGoogle: env.ENRIQ_ACHAR_NO_GOOGLE,
+  faixasBasePaga: new Set(env.ENRIQ_FAIXAS_BASE_PAGA),
+  refazerDias: env.ENRIQ_REFAZER_DIAS,
+  limiteContador: env.ENRIQ_LIMITE_CONTADOR,
 };
 
 // Sobras de um processo anterior que morreu no meio (deploy): voltam para a fila.
@@ -168,27 +188,24 @@ const batimento = setInterval(sinalDeVida, 60_000);
 if (env.ENRIQ_PAUSADO) {
   log.warn('ENRIQ_PAUSADO=true: enriquecimento parado, a fila fica esperando (nada é gasto)');
 } else {
-  await filas.consumir('enriquecimento.solicitar', (p) => enriquecerEmpresa(deps, p).then(() => undefined), {
-    concorrencia: env.ENRIQ_CONCORRENCIA,
-  });
+  await filas.consumir(
+    'enriquecimento.solicitar',
+    async (p) => {
+      // O enriquecimento é comum a todas as contas, mas gasta a IA, o Places e o chip da conta que pediu.
+      const contaId = (await contaDaCampanha(pool, p.campanhaId)) ?? 1;
+      await enriquecerEmpresa({ pool, log, fontes: await fontesDa(contaId), ajustes }, p);
+    },
+    { concorrencia: env.ENRIQ_CONCORRENCIA },
+  );
 }
 
 const ligado = (v: unknown) => (v ? 'ligado' : 'desligado');
 log.info(
   {
-    busca_no_google: env.SERPER_API_KEY ? 'Serper' : apify ? 'Apify' : 'desligada',
+    busca_no_google: serper ? 'Serper' : apify ? 'Apify' : 'desligada',
     perfis_instagram: ligado(apify),
-    ia: env.GEMINI_API_KEY ? env.GEMINI_MODELO : 'desligada (nota por regras)',
-    whatsapp: ligado(evolution),
-    places: ligado(env.GOOGLE_PLACES_KEY),
-    achar_no_maps:
-      env.GOOGLE_PLACES_KEY && serper
-        ? 'Places na cota grátis, depois Serper'
-        : env.GOOGLE_PLACES_KEY
-          ? 'Places'
-          : serper
-            ? 'Serper'
-            : 'desligado',
+    ia: 'a de cada conta (ou a da plataforma: IA_API_KEY)',
+    places_whatsapp: 'os de cada conta (painel master)',
     diretorios: ligado(serper),
     base_paga: env.DIRECTD_TOKEN
       ? `Direct Data (faixas ${env.ENRIQ_FAIXAS_BASE_PAGA.join(', ')})`

@@ -94,9 +94,9 @@ describe.skipIf(!URL_TESTE)(
           return 'job';
         },
       },
-      places: { buscar },
+      placesDa: async () => ({ buscar }),
       maps: null,
-      geo: null,
+      geoDa: async () => null,
       ajustes: { rebuscaDias: 30, esperaColetaSegundos: 60, maxVerificacoes: 5, confiancaMinimaGeo: 0.6 },
     });
 
@@ -135,12 +135,12 @@ describe.skipIf(!URL_TESTE)(
               ('14000000000100', '14000000', true, 'D', '02', '2010-01-01', '5611201', 'Barra', '40140000', 'BA', '3849')`,
       );
       await pool.query(
-        `INSERT INTO cadastro.nichos (nome, cnaes, termos_maps) VALUES ('Autopeças', '{4530703}', '{autopeças}')`,
+        `INSERT INTO cadastro.nichos (conta_id, nome, cnaes, termos_maps) VALUES (1, 'Autopeças', '{4530703}', '{autopeças}')`,
       );
       await pool.query(`UPDATE cadastro.config_places SET franquia_mensal = 70`);
       await pool.query(
-        `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, status)
-       VALUES ('Places Salvador', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa')`,
+        `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status)
+       VALUES (1, 'Places Salvador', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa')`,
       );
     });
 
@@ -182,8 +182,8 @@ describe.skipIf(!URL_TESTE)(
       // Sobra 1 pedido grátis (franquia 6, já usados 5).
       await pool.query(`UPDATE cadastro.config_places SET franquia_mensal = 6`);
       await pool.query(
-        `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, status, teto_places_usd)
-       VALUES ('Só grátis', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa', 0)`,
+        `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status, teto_places_usd)
+       VALUES (1, 'Só grátis', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa', 0)`,
       );
       const d = deps();
       chamadas.length = 0;
@@ -212,8 +212,8 @@ describe.skipIf(!URL_TESTE)(
 
     it('teto da campanha em dinheiro bloqueia no pedido que passaria do valor', async () => {
       await pool.query(
-        `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, status, teto_places_usd)
-       VALUES ('Teto curto', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa', 0.07)`,
+        `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status, teto_places_usd)
+       VALUES (1, 'Teto curto', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa', 0.07)`,
       );
       const d = deps();
       chamadas.length = 0;
@@ -231,18 +231,18 @@ describe.skipIf(!URL_TESTE)(
     it('pedido que falha no Google não conta no uso e a busca volta para pendente', async () => {
       await pool.query(`UPDATE cadastro.config_places SET franquia_mensal = 1000`);
       await pool.query(
-        `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, status)
-       VALUES ('Falha', 1, '[{"cidade":"Lauro de Freitas","uf":"BA"}]', NULL, 'ativa')`,
+        `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status)
+       VALUES (1, 'Falha', 1, '[{"cidade":"Lauro de Freitas","uf":"BA"}]', NULL, 'ativa')`,
       );
       const antes = (await uso()).pedidos;
       const d = deps();
-      d.places = {
+      d.placesDa = async () => ({
         async buscar() {
           throw new Error(
             'Google Places: HTTP 403 {"error":{"status":"PERMISSION_DENIED","message":"SERVICE_DISABLED"}}',
           );
         },
-      };
+      });
       await casos.iniciarCampanha(d, 4);
       const job = publicados.find((p) => p.nome === 'maps.buscar')!;
       const buscaId = (job.payload as { buscaId: number }).buscaId;

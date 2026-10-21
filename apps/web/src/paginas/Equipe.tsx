@@ -12,7 +12,7 @@ import {
 import { linkWhatsapp } from '../componentes/Cadencia';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { Dono, useEhAdmin, useEquipe } from '../componentes/Sessao';
+import { Dono, useEhAdmin, useEquipe, useSessao } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando, fmtReais, formatarTelefone } from '../formatar';
 
 const PAPEIS: PapelUsuario[] = ['sdr', 'closer', 'admin'];
@@ -139,9 +139,18 @@ function Desempenho() {
 }
 
 /** Link do convite pronto para mandar. */
-function LinkConvite(props: { link: string; nome: string; telefone?: string | null; dias: number }) {
+export function LinkConvite(props: {
+  link: string;
+  nome: string;
+  telefone?: string | null;
+  dias: number;
+  /** Nome da conta (empresa) para a mensagem; sem ele, a conta de quem está logado. */
+  conta?: string;
+}) {
   const [copiado, setCopiado] = useState(false);
-  const texto = `Oi, ${props.nome.split(' ')[0]}! Seu acesso à Prospecção da Tutts: crie sua senha neste link (vale ${props.dias} dias): ${props.link}`;
+  const sessao = useSessao();
+  const conta = props.conta ?? sessao.data?.conta?.nome;
+  const texto = `Oi, ${props.nome.split(' ')[0]}! Seu acesso à Prospecção${conta ? ` da ${conta}` : ''}: crie sua senha neste link (vale ${props.dias} dias): ${props.link}`;
   return (
     <div className="pilha" style={{ gap: 8 }}>
       <Mensagem tipo="ok">

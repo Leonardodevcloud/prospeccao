@@ -1,7 +1,9 @@
 import type { Pool } from '@prospeccao/db';
 import { pediuParaParar } from '@prospeccao/integrations/agente';
 import type { Logger } from '@prospeccao/shared';
-import type { DepsApi } from '../../dependencias.js';
+import { contaSql } from '../../contexto.js';
+import type { DepsApi, ServicosConta } from '../../dependencias.js';
+import { paraCadaConta } from '../../rotinas.js';
 import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { obterConfig as configCadencia, mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
@@ -19,7 +21,8 @@ import * as repo from './repositorio.js';
 const AUTOR = 'agente';
 const LOCK = 7_301_023;
 
-type DepsMotor = Pick<DepsApi, 'pool' | 'log' | 'whatsapp' | 'ia'>;
+/** O motor de uma conta: banco, log e o WhatsApp e a IA dela. */
+type DepsMotor = Pick<DepsApi, 'pool' | 'log'> & Pick<ServicosConta, 'whatsapp' | 'ia'>;
 
 function agoraSP(agora = new Date()) {
   const p = Object.fromEntries(
@@ -48,14 +51,15 @@ export function dentroDoHorario(
 export async function gerarAbordagens(deps: DepsMotor, cfg: repo.ConfigAgente, limite = 20): Promise<number> {
   const { rows } = await deps.pool.query<{ empresa_id: number }>(
     `SELECT o.empresa_id::int FROM comercial.oportunidades o
-      WHERE o.agente AND o.agente_pausa IS NULL
+      WHERE o.conta_id = ${contaSql()} AND o.agente AND o.agente_pausa IS NULL
         AND o.etapa IN ('a_abordar', 'abordado', 'respondeu', 'proposta')
         AND o.proxima_acao_em <= now() AND o.encerrar_em IS NULL
         AND NOT EXISTS (SELECT 1 FROM comercial.mensagens m
-                         WHERE m.empresa_id = o.empresa_id AND m.status IN ('rascunho', 'aprovada'))
+                         WHERE m.conta_id = o.conta_id AND m.empresa_id = o.empresa_id
+                           AND m.status IN ('rascunho', 'aprovada'))
         -- quem escreveu por último foi o lead: isso é resposta, não abordagem
         AND coalesce((SELECT a.direcao FROM comercial.atividades a
-                       WHERE a.empresa_id = o.empresa_id AND a.direcao IS NOT NULL
+                       WHERE a.conta_id = o.conta_id AND a.empresa_id = o.empresa_id AND a.direcao IS NOT NULL
                        ORDER BY a.criado_em DESC, a.id DESC LIMIT 1), 'enviada') = 'enviada'
       ORDER BY o.proxima_acao_em
       LIMIT $1`,
@@ -83,12 +87,14 @@ export async function gerarAbordagens(deps: DepsMotor, cfg: repo.ConfigAgente, l
 export async function gerarRespostas(deps: DepsMotor, cfg: repo.ConfigAgente, limite = 5): Promise<number> {
   const { rows } = await deps.pool.query<{ empresa_id: number; etapa: string }>(
     `SELECT o.empresa_id::int, o.etapa FROM comercial.oportunidades o
-      WHERE o.agente AND o.agente_pausa IS NULL AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
+      WHERE o.conta_id = ${contaSql()} AND o.agente AND o.agente_pausa IS NULL
+        AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
         AND NOT EXISTS (SELECT 1 FROM comercial.mensagens m
-                         WHERE m.empresa_id = o.empresa_id AND m.status IN ('rascunho', 'aprovada'))
+                         WHERE m.conta_id = o.conta_id AND m.empresa_id = o.empresa_id
+                           AND m.status IN ('rascunho', 'aprovada'))
         AND EXISTS (SELECT 1 FROM (
               SELECT a.direcao, a.criado_em FROM comercial.atividades a
-               WHERE a.empresa_id = o.empresa_id AND a.direcao IS NOT NULL
+               WHERE a.conta_id = o.conta_id AND a.empresa_id = o.empresa_id AND a.direcao IS NOT NULL
                ORDER BY a.criado_em DESC, a.id DESC LIMIT 1) ult
              WHERE ult.direcao = 'recebida' AND ult.criado_em < now() - interval '40 seconds')
       ORDER BY o.atualizado_em
@@ -104,10 +110,10 @@ export async function gerarRespostas(deps: DepsMotor, cfg: repo.ConfigAgente, li
 }
 
 async function pausar(pool: Pool, empresaId: number, motivo: string) {
-  await pool.query('UPDATE comercial.oportunidades SET agente_pausa = $2 WHERE empresa_id = $1', [
-    empresaId,
-    motivo.slice(0, 300),
-  ]);
+  await pool.query(
+    `UPDATE comercial.oportunidades SET agente_pausa = $2 WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
+    [empresaId, motivo.slice(0, 300)],
+  );
   await funil.atualizar(
     pool,
     empresaId,
@@ -120,15 +126,20 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
   const { pool } = deps;
   const { rows: conversa } = await pool.query<{ direcao: string; texto: string; em: string }>(
     `SELECT direcao, texto, criado_em AS em FROM comercial.atividades
-      WHERE empresa_id = $1 AND direcao IS NOT NULL AND texto IS NOT NULL
+      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND direcao IS NOT NULL AND texto IS NOT NULL
       ORDER BY criado_em DESC, id DESC LIMIT 20`,
     [empresaId],
   );
   conversa.reverse();
   const ultima = conversa.at(-1)?.texto ?? '';
 
+  const desligarIa = () =>
+    pool.query(
+      `UPDATE comercial.oportunidades SET agente = false WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
+      [empresaId],
+    );
   if (pediuParaParar(ultima)) {
-    await pool.query('UPDATE comercial.oportunidades SET agente = false WHERE empresa_id = $1', [empresaId]);
+    await desligarIa();
     await funil.atualizar(
       pool,
       empresaId,
@@ -139,7 +150,7 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
   }
   const { rows: hoje } = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM comercial.mensagens
-      WHERE empresa_id = $1 AND origem = 'agente' AND criado_em >= ${repo.HOJE_SP}`,
+      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND origem = 'agente' AND criado_em >= ${repo.HOJE_SP}`,
     [empresaId],
   );
   if ((hoje[0]?.n ?? 0) >= cfg.respostasDiaLead) {
@@ -147,7 +158,7 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
     return;
   }
   if (!deps.ia) {
-    await pausar(pool, empresaId, 'O lead respondeu e a IA não está configurada (GEMINI_API_KEY na API).');
+    await pausar(pool, empresaId, 'O lead respondeu e a IA não está configurada para esta conta.');
     return;
   }
 
@@ -159,7 +170,7 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
     [empresaId],
   );
   const cad = await configCadencia(pool);
-  let decisao: Awaited<ReturnType<NonNullable<DepsApi['ia']>['decidir']>>;
+  let decisao: Awaited<ReturnType<NonNullable<ServicosConta['ia']>['decidir']>>;
   try {
     decisao = await deps.ia.decidir({
       sobreEmpresa: cfg.sobreEmpresa,
@@ -226,9 +237,7 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
       break;
     case 'encerrar_sem_interesse':
       if (decisao.resposta) await nova(decisao.resposta);
-      await pool.query('UPDATE comercial.oportunidades SET agente = false WHERE empresa_id = $1', [
-        empresaId,
-      ]);
+      await desligarIa();
       await funil.atualizar(
         pool,
         empresaId,
@@ -237,9 +246,7 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
       );
       break;
     case 'optout':
-      await pool.query('UPDATE comercial.oportunidades SET agente = false WHERE empresa_id = $1', [
-        empresaId,
-      ]);
+      await desligarIa();
       await funil.atualizar(
         pool,
         empresaId,
@@ -260,9 +267,10 @@ export async function enviarProxima(
   agora = new Date(),
 ): Promise<boolean> {
   if (!deps.whatsapp || !dentroDoHorario(cfg, agora)) return false;
+  const C = contaSql();
   const { rows: uso } = await deps.pool.query<{ hoje: number; ultima: string | null }>(
     `SELECT count(*) FILTER (WHERE enviado_em >= ${repo.HOJE_SP})::int AS hoje, max(enviado_em) AS ultima
-       FROM comercial.mensagens WHERE status = 'enviada' AND origem IN ('agente', 'cadencia')`,
+       FROM comercial.mensagens WHERE conta_id = ${C} AND status = 'enviada' AND origem IN ('agente', 'cadencia')`,
   );
   if ((uso[0]?.hoje ?? 0) >= cfg.limiteDia) return false;
   const ultima = uso[0]?.ultima ? new Date(uso[0].ultima).getTime() : 0;
@@ -275,8 +283,8 @@ export async function enviarProxima(
     telefone: string | null;
   }>(
     `UPDATE comercial.mensagens SET status = 'enviada', enviado_em = now()
-      WHERE id = (SELECT id FROM comercial.mensagens WHERE status = 'aprovada' ORDER BY criado_em, id
-                   LIMIT 1 FOR UPDATE SKIP LOCKED)
+      WHERE id = (SELECT id FROM comercial.mensagens WHERE conta_id = ${C} AND status = 'aprovada'
+                   ORDER BY criado_em, id LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING id, empresa_id::int, texto, telefone`,
   );
   const msg = rows[0];
@@ -312,17 +320,27 @@ export async function enviarProxima(
   }
 }
 
-export async function rodarAgente(deps: DepsMotor): Promise<void> {
+/** Uma rodada do agente numa conta (já dentro do contexto dela). */
+export async function rodarAgenteDaConta(deps: DepsMotor): Promise<void> {
+  const cfg = await repo.obterConfig(deps.pool);
+  if (!cfg.ligado) return;
+  await gerarRespostas(deps, cfg);
+  if (dentroDoHorario(cfg)) await gerarAbordagens(deps, cfg);
+  await enviarProxima(deps, cfg);
+}
+
+type DepsRodada = Pick<DepsApi, 'pool' | 'log' | 'servicos'>;
+
+export async function rodarAgente(deps: DepsRodada): Promise<void> {
   const cliente = await deps.pool.connect();
   try {
     const { rows } = await cliente.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [LOCK]);
     if (!rows[0]?.ok) return;
     try {
-      const cfg = await repo.obterConfig(deps.pool);
-      if (!cfg.ligado) return;
-      await gerarRespostas(deps, cfg);
-      if (dentroDoHorario(cfg)) await gerarAbordagens(deps, cfg);
-      await enviarProxima(deps, cfg);
+      await paraCadaConta(deps.pool, deps.log, 'agente', async (conta) => {
+        const { whatsapp, ia } = await deps.servicos(conta);
+        await rodarAgenteDaConta({ pool: deps.pool, log: deps.log, whatsapp, ia });
+      });
     } finally {
       await cliente.query('SELECT pg_advisory_unlock($1)', [LOCK]);
     }
@@ -333,12 +351,9 @@ export async function rodarAgente(deps: DepsMotor): Promise<void> {
   }
 }
 
-export function iniciarAgente(deps: DepsMotor, log: Logger): () => void {
+export function iniciarAgente(deps: DepsRodada, log: Logger): () => void {
   const t = setInterval(() => void rodarAgente(deps), 30_000);
   t.unref();
-  log.info(
-    { whatsapp: !!deps.whatsapp, ia: !!deps.ia },
-    'agente de abordagem pronto (liga e desliga na tela)',
-  );
+  log.info('agente de abordagem pronto (liga e desliga na tela de cada conta)');
   return () => clearInterval(t);
 }

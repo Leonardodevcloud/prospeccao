@@ -252,8 +252,8 @@ export function Agente() {
       {(!d.status.whatsapp || !d.status.ia) && (
         <Mensagem tipo="aviso">
           {!d.status.whatsapp &&
-            'Falta o WhatsApp: coloque EVOLUTION_URL, EVOLUTION_API_KEY e EVOLUTION_INSTANCIA na API (Railway). '}
-          {!d.status.ia && 'Falta a IA: coloque GEMINI_API_KEY na API (Railway). '}
+            'Falta o WhatsApp (endereço, chave e instância da Evolution) desta conta, no painel master. '}
+          {!d.status.ia && 'Falta a IA (DeepSeek, Gemini…) desta conta, no painel master. '}
           Sem isso o agente prepara as mensagens mas não envia nem responde.
         </Mensagem>
       )}
@@ -343,8 +343,8 @@ export function Agente() {
       <Panel titulo="Conectar o WhatsApp">
         <ol className="passos">
           <li>
-            No Railway, na <b>API</b>, coloque <code>EVOLUTION_URL</code>, <code>EVOLUTION_API_KEY</code>,{' '}
-            <code>EVOLUTION_INSTANCIA</code> (o mesmo chip do enriquecimento) e <code>GEMINI_API_KEY</code>.
+            No <b>painel master</b>, na conta, preencha o WhatsApp (endereço, chave e instância da Evolution)
+            e a IA. Cada conta usa o próprio chip.
           </li>
           <li>
             Na Evolution, em <b>Webhook</b> da instância, cole o endereço abaixo, marque o evento{' '}

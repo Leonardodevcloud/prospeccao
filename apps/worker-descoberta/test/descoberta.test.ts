@@ -78,7 +78,7 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
         return 'job';
       },
     },
-    places: null, // este teste cobre o caminho do Apify (legado); o Places está em places.test.ts
+    placesDa: async () => null, // este teste cobre o caminho do Apify (legado); o Places está em places.test.ts
     maps: {
       async iniciar(): Promise<Run> {
         return { id: 'run1', status: 'RUNNING', datasetId: 'ds1' };
@@ -91,12 +91,12 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
         return { itens: itensMaps, ignorados: 0 };
       },
     },
-    geo: {
+    geoDa: async () => ({
       // Só a empresa C (sem Maps) chega aqui: fica a ~80 km da base.
       async geocodificar() {
         return { lat: -12.4, lng: -38.0, confianca: 0.9, rotulo: 'longe' };
       },
-    },
+    }),
     ajustes: { rebuscaDias: 30, esperaColetaSegundos: 60, maxVerificacoes: 5, confiancaMinimaGeo: 0.6 },
   });
 
@@ -147,14 +147,16 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
       `INSERT INTO base_cnpj.empresas (cnpj_basico, razao_social, natureza_juridica, porte, mei, mei_fonte)
        VALUES ('55666777', '55.666.777 JOSE DA SILVA', '2135', 'me', true, 'nome')`,
     );
-    await pool.query(`INSERT INTO cadastro.bases (nome, lat, lng) VALUES ('Base Centro', -12.97, -38.51)`);
     await pool.query(
-      `INSERT INTO cadastro.nichos (nome, cnaes, termos_maps, palavras_negativas)
-       VALUES ('Autopeças', '{4530703}', '{autopeças}', '{oficina}')`,
+      `INSERT INTO cadastro.bases (conta_id, nome, lat, lng) VALUES (1, 'Base Centro', -12.97, -38.51)`,
     );
     await pool.query(
-      `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, status)
-       VALUES ('Autopeças Salvador', 1, '[{"cidade":"Salvador","uf":"BA"}]', 12, 'ativa')`,
+      `INSERT INTO cadastro.nichos (conta_id, nome, cnaes, termos_maps, palavras_negativas)
+       VALUES (1, 'Autopeças', '{4530703}', '{autopeças}', '{oficina}')`,
+    );
+    await pool.query(
+      `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status)
+       VALUES (1, 'Autopeças Salvador', 1, '[{"cidade":"Salvador","uf":"BA"}]', 12, 'ativa')`,
     );
   });
 
@@ -232,10 +234,10 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
 
   it('campanha nacional (sem raio) libera tudo e não geocodifica', async () => {
     await pool.query(
-      `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, status)
-       VALUES ('Autopeças nacional', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa')`,
+      `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status)
+       VALUES (1, 'Autopeças nacional', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa')`,
     );
-    const d = { ...deps(), geo: null };
+    const d: Deps = { ...deps(), geoDa: async () => null };
     const localizar = () => publicados.filter((p) => p.nome === 'empresa.localizar').length;
     const antesLocalizar = localizar();
 
@@ -253,7 +255,7 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
   });
 
   it('planilha do Maps: cruza com a base pelo nome e CEP, cria os novos e manda enriquecer', async () => {
-    const d = { ...deps(), geo: null };
+    const d: Deps = { ...deps(), geoDa: async () => null };
     const antes = enriquecer.length;
     await casos.importarPlanilha(d, {
       campanhaId: 2,

@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./dominio": "./src/dominio.ts",
+    "./email": "./src/email.ts",
     "./normalizar": "./src/normalizar.ts",
     "./planilha": "./src/planilha.ts"
   },

@@ -766,6 +766,12 @@ export interface Sessao {
   papel: PapelUsuario;
   telefone: string | null;
   agendaToken: string;
+  /** Conta (empresa) em que a pessoa está agora. */
+  conta: { id: number; nome: string };
+  /** Administra a plataforma (painel master). */
+  master: boolean;
+  /** Master dentro de outra conta (suporte/configuração). */
+  foraDaPropria: boolean;
 }
 
 export interface Metas {
@@ -960,9 +966,6 @@ export const ROTULO_CLASSE: Record<ClasseResposta, string> = {
 
 export interface ConfigEmail {
   ligado: boolean;
-  remetenteNome: string;
-  responderPara: string | null;
-  assinatura: string;
   limiteDia: number;
   intervaloSeg: number;
   horaInicio: number;
@@ -983,7 +986,56 @@ export interface VisaoEmail {
     webhook: boolean;
     webhookUrl: string;
     ia: boolean;
+    /** "DeepSeek · deepseek-flash", por exemplo. */
+    iaDescricao: string | null;
+    /** De onde vem o Resend: da conta (painel master) ou da plataforma. */
+    origem: OrigemCredencial;
   };
+}
+
+export type OrigemCredencial = 'conta' | 'plataforma' | null;
+
+/** Identidade visual do e-mail (white label). */
+export interface MarcaEmail {
+  id: number;
+  nome: string;
+  remetenteNome: string;
+  remetenteEmail: string | null;
+  responderPara: string | null;
+  estilo: 'cartao' | 'simples';
+  corPrimaria: string;
+  corFundo: string;
+  corTexto: string;
+  corCabecalho: string;
+  logoId: number | null;
+  larguraLogo: number;
+  capaId: number | null;
+  assinatura: string;
+  rodape: string;
+  logoUrl: string | null;
+  capaUrl: string | null;
+  campanhas: number;
+}
+
+/** O e-mail exatamente como o lead recebe. */
+export interface PreviaEmail {
+  assunto: string;
+  html: string;
+  texto: string;
+  de: { nome: string; email: string | null };
+  responderPara: string | null;
+  lead: { empresaId: number | null; empresa: string; contato: string | null; cidade: string | null };
+  /** O que a IA escreveu no lugar de {abertura}. */
+  abertura: string | null;
+  aviso: string | null;
+  anexos: { id: number; nome: string; tamanho: number }[];
+}
+
+export interface LeadPrevia {
+  empresaId: number;
+  nome: string;
+  cidade: string | null;
+  email: string | null;
 }
 
 export interface ArquivoEmail {
@@ -1000,6 +1052,9 @@ export interface ModeloEmail {
   corpo: string;
   anexos: number[];
   arquivos: ArquivoEmail[];
+  /** Nicho para o qual o modelo foi escrito (só organização). */
+  nichoId: number | null;
+  nichoNome: string | null;
   atualizadoEm: string;
 }
 
@@ -1013,6 +1068,10 @@ export interface CampanhaEmail {
   incluirContador: boolean;
   campanhaId: number;
   campanhaNome: string;
+  marcaId: number | null;
+  marcaNome: string | null;
+  instrucoesIa: string;
+  personalizarIa: boolean;
   criadoEm: string;
   iniciadaEm: string | null;
   concluidaEm: string | null;
@@ -1065,4 +1124,77 @@ export interface RespostaEmail {
   lidaEm: string | null;
   etapaFunil: EtapaFunil | null;
   campanhaNome: string | null;
+}
+
+/* ───────── Painel master ───────── */
+
+export interface ContaResumo {
+  id: number;
+  nome: string;
+  ativa: boolean;
+  principal: boolean;
+  observacoes: string | null;
+  criadoEm: string;
+  usuarios: number;
+  ultimoAcesso: string | null;
+  campanhasAtivas: number;
+  leadsNoFunil: number;
+  emails30d: number;
+  whatsapp30d: number;
+}
+
+export type CampoSegredo =
+  | 'placesKey'
+  | 'resendKey'
+  | 'resendWebhookSegredo'
+  | 'evolutionKey'
+  | 'iaKey'
+  | 'orsKey';
+export type ProvedorIa = 'deepseek' | 'gemini' | 'openai';
+export type ServicoTestavel = 'resend' | 'evolution' | 'ia' | 'places' | 'ors';
+
+export interface CredenciaisTela {
+  emailRemetente: string | null;
+  resendDominioRespostas: string | null;
+  evolutionUrl: string | null;
+  evolutionInstancia: string | null;
+  iaProvedor: ProvedorIa | null;
+  iaModelo: string | null;
+  iaBaseUrl: string | null;
+  /** Final de cada segredo guardado (…a1b2) ou null. */
+  segredos: Record<CampoSegredo, string | null>;
+  atualizadoEm: string | null;
+  erro: string | null;
+  /** false: falta CHAVE_CREDENCIAIS no servidor. */
+  podeGuardar: boolean;
+  emUso: {
+    places: OrigemCredencial;
+    ors: OrigemCredencial;
+    resend: OrigemCredencial;
+    evolution: OrigemCredencial;
+    ia: OrigemCredencial;
+    remetente: string | null;
+    iaModelo: string | null;
+  };
+}
+
+export interface UsuarioConta {
+  id: number;
+  nome: string;
+  email: string;
+  papel: PapelUsuario;
+  ativo: boolean;
+  master: boolean;
+  convitePendente: boolean;
+  ultimoAcesso: string | null;
+}
+
+export interface ContaDetalhe
+  extends Omit<
+    ContaResumo,
+    'usuarios' | 'ultimoAcesso' | 'campanhasAtivas' | 'leadsNoFunil' | 'emails30d' | 'whatsapp30d'
+  > {
+  usuarios: UsuarioConta[];
+  credenciais: CredenciaisTela;
+  webhooks: { resend: string; evolution: string | null };
 }

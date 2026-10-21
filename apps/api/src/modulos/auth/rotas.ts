@@ -1,11 +1,11 @@
 import { AppError, aceitarConvite, loginEntrada, perfilEntrada, trocarSenha } from '@prospeccao/shared';
 import bcrypt from 'bcryptjs';
-import { type CookieOptions, type Response, Router } from 'express';
+import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
-import jwt from 'jsonwebtoken';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo } from '../../middlewares/http.js';
 import { COOKIE_SESSAO, exigirSessao } from '../../middlewares/seguranca.js';
+import { abrirSessao, opcoesCookie } from './sessao.js';
 
 /** Hash qualquer para comparar quando o e-mail não existe (o tempo não revela se o e-mail existe). */
 const HASH_FALSO = bcrypt.hashSync('senha-que-ninguem-tem', 10);
@@ -18,13 +18,6 @@ export function rotasAuth(deps: DepsApi): Router {
   const r = Router();
   const { auth, pool } = deps;
 
-  const opcoesCookie: CookieOptions = {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: auth.cookieSeguro,
-    path: '/',
-  };
-
   const limitarLogin = rateLimit({
     windowMs: 15 * 60_000,
     limit: 10,
@@ -34,21 +27,15 @@ export function rotasAuth(deps: DepsApi): Router {
       next(new AppError(429, 'muitas_tentativas', 'Muitas tentativas de login. Espere 15 minutos.')),
   });
 
-  function abrirSessao(res: Response, id: number) {
-    const token = jwt.sign({}, auth.jwtSegredo, {
-      algorithm: 'HS256',
-      subject: String(id),
-      expiresIn: `${auth.sessaoHoras}h`,
-    });
-    res.cookie(COOKIE_SESSAO, token, { ...opcoesCookie, maxAge: auth.sessaoHoras * 3600_000 });
-  }
-
-  /** O administrador do ambiente vira (ou continua) usuário admin ativo. */
+  /**
+   * O administrador do ambiente vira (ou continua) usuário admin ativo da conta principal e master
+   * da plataforma: é o acesso de emergência e quem cria as outras contas.
+   */
   async function garantirAdminDoAmbiente(email: string): Promise<number> {
     const { rows } = await pool.query<{ id: number }>(
-      `INSERT INTO cadastro.usuarios (nome, email, papel, ativo)
-       VALUES ($1, $2, 'admin', true)
-       ON CONFLICT ((lower(email))) DO UPDATE SET papel = 'admin', ativo = true
+      `INSERT INTO cadastro.usuarios (nome, email, papel, ativo, master, conta_id)
+       VALUES ($1, $2, 'admin', true, true, (SELECT id FROM cadastro.contas WHERE principal))
+       ON CONFLICT ((lower(email))) DO UPDATE SET papel = 'admin', ativo = true, master = true
        RETURNING id`,
       [email.split('@')[0] ?? 'Administrador', email],
     );
@@ -59,8 +46,16 @@ export function rotasAuth(deps: DepsApi): Router {
 
   r.post('/login', limitarLogin, async (req, res) => {
     const { email, senha } = corpo(req, loginEntrada);
-    const { rows } = await pool.query<{ id: number; senha_hash: string | null; ativo: boolean }>(
-      'SELECT id, senha_hash, ativo FROM cadastro.usuarios WHERE lower(email) = $1',
+    const { rows } = await pool.query<{
+      id: number;
+      senha_hash: string | null;
+      ativo: boolean;
+      master: boolean;
+      conta_ativa: boolean;
+    }>(
+      `SELECT u.id, u.senha_hash, u.ativo, u.master, c.ativa AS conta_ativa
+         FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+        WHERE lower(u.email) = $1`,
       [email],
     );
     const u = rows[0];
@@ -69,22 +64,28 @@ export function rotasAuth(deps: DepsApi): Router {
     if (!id && email === auth.adminEmail.toLowerCase() && (await bcrypt.compare(senha, auth.adminSenhaHash)))
       id = await garantirAdminDoAmbiente(auth.adminEmail);
     if (!id) throw new AppError(401, 'credenciais_invalidas', 'E-mail ou senha incorretos.');
+    if (id === u?.id && !u.conta_ativa && !u.master)
+      throw new AppError(
+        403,
+        'conta_desativada',
+        'O acesso desta empresa está desativado. Fale com o administrador.',
+      );
     await pool.query('UPDATE cadastro.usuarios SET ultimo_acesso = now() WHERE id = $1', [id]);
-    abrirSessao(res, id);
+    abrirSessao(res, auth, id);
     deps.log.info({ usuario: id }, 'login');
     res.json({ ok: true });
   });
 
   r.post('/logout', (_req, res) => {
-    res.clearCookie(COOKIE_SESSAO, opcoesCookie);
+    res.clearCookie(COOKIE_SESSAO, opcoesCookie(auth));
     res.status(204).end();
   });
 
   /** Convite: mostra de quem é o link (para a tela de criar senha). */
   r.get('/convite/:token', async (req, res) => {
-    const { rows } = await pool.query<{ nome: string; email: string }>(
-      `SELECT nome, email FROM cadastro.usuarios
-        WHERE convite_token = $1 AND convite_expira > now() AND ativo`,
+    const { rows } = await pool.query<{ nome: string; email: string; conta: string }>(
+      `SELECT u.nome, u.email, c.nome AS conta FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+        WHERE u.convite_token = $1 AND u.convite_expira > now() AND u.ativo`,
       [req.params.token],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Convite (o link expirou ou já foi usado)');
@@ -103,19 +104,30 @@ export function rotasAuth(deps: DepsApi): Router {
       [req.params.token, hash],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Convite (o link expirou ou já foi usado)');
-    abrirSessao(res, rows[0].id);
+    abrirSessao(res, auth, rows[0].id);
     res.json({ ok: true });
   });
 
   const sessao = exigirSessao(auth.jwtSegredo, pool);
 
   r.get('/eu', sessao, async (req, res) => {
-    const { rows } = await pool.query(
-      `SELECT id, nome, email, papel, telefone, agenda_token AS "agendaToken"
-         FROM cadastro.usuarios WHERE id = $1`,
-      [req.usuario!.id],
+    const u = req.usuario!;
+    const { rows } = await pool.query<{ telefone: string | null; agendaToken: string }>(
+      `SELECT telefone, agenda_token AS "agendaToken" FROM cadastro.usuarios WHERE id = $1`,
+      [u.id],
     );
-    res.json(rows[0]);
+    res.json({
+      id: u.id,
+      nome: u.nome,
+      email: u.email,
+      papel: u.papel,
+      telefone: rows[0]?.telefone ?? null,
+      agendaToken: rows[0]?.agendaToken ?? null,
+      conta: { id: u.contaId, nome: u.contaNome },
+      master: u.master,
+      // O master dentro de outra conta (a tela mostra a faixa "você está na conta X").
+      foraDaPropria: u.contaId !== u.contaPropria,
+    });
   });
 
   r.patch('/eu', sessao, async (req, res) => {

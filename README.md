@@ -157,10 +157,10 @@ A variável `SERVICO` escolhe o que a imagem empacota.
 
 | Serviço | `SERVICO` | Pre-deploy | Healthcheck | Variáveis além de `DATABASE_URL` |
 | --- | --- | --- | --- | --- |
-| api | `api` | `node dist/migrar.js` | `/saude` | `APP_ORIGENS`, `JWT_SEGREDO`, `ADMIN_EMAIL`, `ADMIN_SENHA_HASH`, `ORS_API_KEY` (opcional) |
-| worker-descoberta | `worker-descoberta` | — | — | `GOOGLE_PLACES_KEY` (ou `APIFY_TOKEN`, legado); opcionais: `ORS_API_KEY` (campanhas com raio) e ajustes (ver `.env.example`) |
+| api | `api` | `node dist/migrar.js` | `/saude` | `APP_ORIGENS`, `JWT_SEGREDO`, `ADMIN_EMAIL`, `ADMIN_SENHA_HASH`, `CHAVE_CREDENCIAIS`; opcionais: `IA_PROVEDOR` + `IA_API_KEY` (+ `IA_MODELO`, `IA_BASE_URL`), Resend, Evolution e `ORS_API_KEY` da conta principal |
+| worker-descoberta | `worker-descoberta` | — | — | `CHAVE_CREDENCIAIS`; `GOOGLE_PLACES_KEY` da conta principal (ou `APIFY_TOKEN`, legado); opcionais: `ORS_API_KEY` (campanhas com raio) e ajustes (ver `.env.example`) |
 | worker-cnpj | `worker-cnpj` | — | — | opcionais: `CNPJ_UFS_EXTRAS`, `CNPJ_AGENDA` |
-| worker-enriquecimento | `worker-enriquecimento` | — | — | opcionais: `APIFY_TOKEN`, `GEMINI_API_KEY`, `EVOLUTION_URL` + `EVOLUTION_API_KEY` + `EVOLUTION_INSTANCIA`, `GOOGLE_PLACES_KEY` |
+| worker-enriquecimento | `worker-enriquecimento` | — | — | `CHAVE_CREDENCIAIS`; opcionais: `IA_*`, `APIFY_TOKEN`, `SERPER_API_KEY`, `DIRECTD_TOKEN`, e Evolution + `GOOGLE_PLACES_KEY` da conta principal |
 
 - As migrations rodam só no pre-deploy da `api`, antes da nova versão subir. Os workers não migram.
 - Em "Watch paths", limite cada serviço a `apps/<serviço>/**`, `packages/**` e `pnpm-lock.yaml`, para um deploy não reiniciar os outros.
@@ -175,9 +175,39 @@ cookie de sessão (`HttpOnly`, `SameSite=Strict`) funciona sem CORS.
 
 Depois, coloque o domínio do Vercel em `APP_ORIGENS` da api.
 
+## Contas (várias empresas na mesma instalação)
+
+O sistema atende várias empresas (contas) numa instalação só. O **painel master** (`/master`,
+só para quem tem `master`; o `ADMIN_EMAIL` do ambiente é master da conta principal) cria contas,
+convida o primeiro administrador (que convida a equipe dele em Equipe), guarda as chaves de API
+de cada conta e permite **entrar na conta** para configurar ou dar suporte.
+
+- **Separado por conta:** nichos, bases, campanhas, funil, conversas, agente, agenda, e-mail
+  (modelos, identidades visuais, campanhas, respostas, descadastros), equipe e relatórios. Toda
+  consulta filtra por `conta_id` da sessão (`apps/api/src/contexto.ts`).
+- **Compartilhado:** a base de empresas (CNPJ, Maps, enriquecimento). Uma conta só enxerga a
+  empresa que uma campanha dela encontrou; a busca já feita por outra conta não é paga de novo.
+- **Chaves:** Resend, Evolution, IA, Google Places e ORS por conta, cifradas com
+  `CHAVE_CREDENCIAIS` (mesmo valor na api e nos workers). A tela só mostra o final de cada chave.
+  O que a conta principal deixar em branco vem do ambiente; a IA do ambiente vale para todas.
+- **Webhooks por conta:** Resend em `<API>/e/resend/<token>` e Evolution em
+  `<API>/webhooks/evolution/<token>` (os dois aparecem no painel, prontos para copiar).
+- **IA:** DeepSeek por padrão (bem mais barato que o Gemini para ler respostas, conversar e
+  escrever a abertura do e-mail); Gemini ou qualquer API compatível com OpenAI também servem.
+
+### E-mail por campanha (white label)
+
+Cada campanha de e-mail escolhe uma **identidade visual** (remetente, cores, logo, capa,
+assinatura, rodapé; estilo "cartão" ou "pessoal"), as **instruções da IA para o nicho** e se a IA
+escreve a `{abertura}` de cada e-mail olhando o lead. Os modelos aceitam anexos (proposta em PDF)
+e botões (`[[Ver a proposta|https://…]]`). "Prévia e teste" mostra o e-mail exatamente como o
+lead recebe — com um lead de verdade, a abertura da IA, os anexos, no computador ou no celular —
+e manda um teste para a sua caixa.
+
 ## Segurança
 
-- Um usuário: e-mail e hash bcrypt vêm do ambiente; sessão em JWT num cookie `HttpOnly`, `SameSite=Strict`, `Secure` em produção.
+- Usuários por conta com papéis (administrador, SDR, closer); o master vem do ambiente. Sessão em JWT num cookie `HttpOnly`, `SameSite=Strict`, `Secure` em produção.
+- Chaves de API das contas cifradas no banco (AES-256-GCM); nunca voltam para a tela.
 - Escritas exigem `Origin` conhecida (`APP_ORIGENS`), além do SameSite.
 - Login limitado a 10 tentativas a cada 15 min por IP; `helmet` nos cabeçalhos.
 - Todo SQL é parametrizado; corpo e query validados com zod antes de chegar ao banco.

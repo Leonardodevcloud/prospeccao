@@ -38,11 +38,14 @@ export interface Deps {
   pool: Pool;
   filas: Pick<Filas, 'publicar'>;
   log: Logger;
-  /** Provedor das buscas novas. Sem GOOGLE_PLACES_KEY, cai no Apify (se houver APIFY_TOKEN). */
-  places: BuscadorPlaces | null;
-  /** Apify: só para buscas novas sem Places e para coletar runs que já estavam rodando. */
+  /**
+   * Google Places da conta (cada conta usa a sua chave, cadastrada no painel master; a conta
+   * principal pode usar GOOGLE_PLACES_KEY). null: a conta não tem, cai no Apify (se houver).
+   */
+  placesDa(contaId: number): Promise<BuscadorPlaces | null>;
+  /** Apify (plataforma): só para buscas novas sem Places e para coletar runs que já estavam rodando. */
   maps: BuscadorMaps | null;
-  /** null sem ORS_API_KEY: só campanhas com raio precisam localizar quem não veio do Maps. */
-  geo: Geocodificador | null;
+  /** ORS da conta. null: só campanhas com raio precisam localizar quem não veio do Maps. */
+  geoDa(contaId: number): Promise<Geocodificador | null>;
   ajustes: Ajustes;
 }

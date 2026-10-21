@@ -1,5 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import type { ConfigPlacesEntrada } from '@prospeccao/shared';
+import { contaSql } from '../../contexto.js';
 
 /**
  * Uso do Google Places: o Google não informa a franquia restante por API, então tudo aqui vem
@@ -21,7 +22,7 @@ export async function obterConfig(db: Executor): Promise<ConfigPlaces> {
     `SELECT franquia_mensal AS "franquiaMensal", preco_mil_usd::float8 AS "precoMilUsd",
             cotacao_brl::float8 AS "cotacaoBrl", teto_mensal_usd::float8 AS "tetoMensalUsd",
             max_bairros AS "maxBairros", atualizado_em AS "atualizadoEm"
-       FROM cadastro.config_places WHERE id = 1`,
+       FROM cadastro.config_places WHERE conta_id = ${contaSql()}`,
   );
   return (
     rows[0] ?? {
@@ -37,9 +38,9 @@ export async function obterConfig(db: Executor): Promise<ConfigPlaces> {
 
 export async function salvarConfig(db: Executor, c: ConfigPlacesEntrada) {
   await db.query(
-    `INSERT INTO cadastro.config_places (id, franquia_mensal, preco_mil_usd, cotacao_brl, teto_mensal_usd, max_bairros)
-     VALUES (1, $1, $2, $3, $4, $5)
-     ON CONFLICT (id) DO UPDATE SET franquia_mensal = $1, preco_mil_usd = $2, cotacao_brl = $3,
+    `INSERT INTO cadastro.config_places (conta_id, franquia_mensal, preco_mil_usd, cotacao_brl, teto_mensal_usd, max_bairros)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5)
+     ON CONFLICT (conta_id) DO UPDATE SET franquia_mensal = $1, preco_mil_usd = $2, cotacao_brl = $3,
                                     teto_mensal_usd = $4, max_bairros = $5`,
     [c.franquiaMensal, c.precoMilUsd, c.cotacaoBrl, c.tetoMensalUsd, c.maxBairros],
   );
@@ -72,8 +73,8 @@ export async function resumoDoMes(db: Executor) {
             (coalesce(u.pedidos, 0) + coalesce(eu.pedidos, 0))::int AS pedidos, coalesce(u.pagos, 0) AS pagos,
             coalesce(u.gasto_usd, 0) AS gasto_usd, coalesce(u.lugares, 0) AS lugares
        FROM t
-       LEFT JOIN descoberta.v_uso_places_mes u ON u.mes = t.mes
-       LEFT JOIN enriquecimento.v_uso_places_mes eu ON eu.mes = t.mes`,
+       LEFT JOIN descoberta.v_uso_places_mes u ON u.mes = t.mes AND u.conta_id = ${contaSql()}
+       LEFT JOIN enriquecimento.v_uso_places_mes eu ON eu.mes = t.mes AND eu.conta_id = ${contaSql()}`,
   );
   const r = rows[0]!;
   const precoPorPedido = cfg.precoMilUsd / 1000;
@@ -141,7 +142,9 @@ export async function estimativaCampanha(db: Executor, campanhaId: number) {
     cnaes: string[];
     max_por_busca: number;
     teto_places_usd: number | null;
-  }>('SELECT * FROM cadastro.v_campanhas_descoberta WHERE id = $1', [campanhaId]);
+  }>(`SELECT * FROM cadastro.v_campanhas_descoberta WHERE id = $1 AND conta_id = ${contaSql()}`, [
+    campanhaId,
+  ]);
   const c = cs[0];
   if (!c) return null;
   const cfg = await obterConfig(db);
@@ -151,7 +154,7 @@ export async function estimativaCampanha(db: Executor, campanhaId: number) {
   const divideBairro = paginasMax >= MAX_PAGINAS;
   const { rows: hist } = await db.query<{ media: number | null }>(
     `SELECT avg(paginas)::float8 AS media FROM descoberta.buscas_maps
-      WHERE fonte = 'places' AND bairro IS NOT NULL AND status = 'concluida' AND paginas > 0
+      WHERE conta_id = ${contaSql()} AND fonte = 'places' AND bairro IS NOT NULL AND status = 'concluida' AND paginas > 0
         AND concluido_em > now() - interval '120 days'`,
   );
   const mediaBairro = Math.min(MAX_PAGINAS, hist[0]?.media ?? MEDIA_BAIRRO_PADRAO);

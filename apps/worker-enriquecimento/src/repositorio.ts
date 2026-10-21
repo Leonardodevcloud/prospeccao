@@ -270,16 +270,22 @@ export async function marcarErro(db: Executor, empresaId: number, erro: string) 
  * já usou). Devolve false quando não cabe: aí o enriquecimento usa o Serper e não paga o Google.
  * Conta para mais quando a segunda tentativa (razão social) não acontece: nunca para menos.
  */
-export async function reservarPlacesGratis(pool: Pool, n: number): Promise<boolean> {
+export async function reservarPlacesGratis(pool: Pool, n: number, contaId: number): Promise<boolean> {
   const cliente = await pool.connect();
   try {
     await cliente.query('BEGIN');
-    await cliente.query("SELECT pg_advisory_xact_lock(hashtext('enriquecimento.uso_places'))");
+    // A cota é da chave do Google de cada conta.
+    await cliente.query(`SELECT pg_advisory_xact_lock(hashtext('enriquecimento.uso_places:' || $1))`, [
+      contaId,
+    ]);
     const { rows } = await cliente.query<{ franquia: number; usados: number }>(
-      `SELECT coalesce((SELECT franquia_mensal FROM cadastro.v_config_places), 1000)::int AS franquia,
-              (coalesce((SELECT pedidos FROM descoberta.v_uso_places_mes WHERE mes = descoberta.mes_places()), 0)
-               + coalesce((SELECT pedidos FROM enriquecimento.uso_places WHERE mes = descoberta.mes_places()), 0))::int
+      `SELECT coalesce((SELECT franquia_mensal FROM cadastro.v_config_places WHERE conta_id = $1), 1000)::int AS franquia,
+              (coalesce((SELECT pedidos FROM descoberta.v_uso_places_mes
+                          WHERE conta_id = $1 AND mes = descoberta.mes_places()), 0)
+               + coalesce((SELECT pedidos FROM enriquecimento.uso_places
+                            WHERE conta_id = $1 AND mes = descoberta.mes_places()), 0))::int
                 AS usados`,
+      [contaId],
     );
     const { franquia = 1000, usados = 0 } = rows[0] ?? {};
     if (usados + n > franquia) {
@@ -287,9 +293,9 @@ export async function reservarPlacesGratis(pool: Pool, n: number): Promise<boole
       return false;
     }
     await cliente.query(
-      `INSERT INTO enriquecimento.uso_places (mes, pedidos) VALUES (descoberta.mes_places(), $1)
-       ON CONFLICT (mes) DO UPDATE SET pedidos = enriquecimento.uso_places.pedidos + EXCLUDED.pedidos`,
-      [n],
+      `INSERT INTO enriquecimento.uso_places (conta_id, mes, pedidos) VALUES ($2, descoberta.mes_places(), $1)
+       ON CONFLICT (conta_id, mes) DO UPDATE SET pedidos = enriquecimento.uso_places.pedidos + EXCLUDED.pedidos`,
+      [n, contaId],
     );
     await cliente.query('COMMIT');
     return true;

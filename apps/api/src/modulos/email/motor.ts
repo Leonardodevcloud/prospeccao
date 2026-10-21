@@ -1,8 +1,9 @@
 import type { EmailRecebido } from '@prospeccao/integrations/email';
 import { AppError, type ClasseResposta, classificarRespostaSimples, montarEmail } from '@prospeccao/shared';
-import { usuarioAtual } from '../../contexto.js';
-import type { DepsApi } from '../../dependencias.js';
+import { conta, contaSql, usuarioAtual } from '../../contexto.js';
+import type { DepsApi, EmailConta, ServicosConta } from '../../dependencias.js';
 import { urlPublicaApi } from '../../endereco.js';
+import { paraCadaConta } from '../../rotinas.js';
 import { dentroDoHorario } from '../agente/motor.js';
 import * as funil from '../funil/repositorio.js';
 import { notificarDono } from '../notificacoes/repositorio.js';
@@ -17,7 +18,22 @@ import * as repo from './repositorio.js';
 
 const LOCK = 7_301_028;
 const AUTOR = 'e-mail automático';
-type Deps = Pick<DepsApi, 'pool' | 'log' | 'email' | 'classificarEmail' | 'origens'>;
+/** O e-mail de uma conta: banco, log, endereço público e os serviços (Resend e IA) dela. */
+export type Deps = Pick<DepsApi, 'pool' | 'log' | 'origens'> &
+  Pick<ServicosConta, 'email' | 'classificarEmail' | 'personalizarAbertura'>;
+
+/** Monta os serviços de e-mail da conta da requisição. */
+export async function depsDaConta(deps: DepsApi): Promise<Deps> {
+  const s = await deps.servicos(conta());
+  return {
+    pool: deps.pool,
+    log: deps.log,
+    origens: deps.origens,
+    email: s.email,
+    classificarEmail: s.classificarEmail,
+    personalizarAbertura: s.personalizarAbertura,
+  };
+}
 
 /** Endereços dos links rastreados (pixel, clique, descadastro). */
 export function enderecosDoEnvio(origens: string[], token: string) {
@@ -31,18 +47,20 @@ export function enderecosDoEnvio(origens: string[], token: string) {
 
 /** 1. Próximo passo da sequência para quem não respondeu no prazo. */
 export async function agendarSeguimentos(deps: Pick<Deps, 'pool'>): Promise<number> {
+  const C = contaSql();
   const { rowCount } = await deps.pool.query(
-    `INSERT INTO comercial.envios_email (campanha_email_id, empresa_id, email, passo)
-     SELECT en.campanha_email_id, en.empresa_id, en.email, en.passo + 1
+    `INSERT INTO comercial.envios_email (conta_id, campanha_email_id, empresa_id, email, passo)
+     SELECT en.conta_id, en.campanha_email_id, en.empresa_id, en.email, en.passo + 1
        FROM comercial.envios_email en
        JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
-      WHERE ce.status = 'enviando' AND en.status = 'enviado'
+      WHERE ce.conta_id = ${C} AND ce.status = 'enviando' AND en.status = 'enviado'
         AND en.passo < jsonb_array_length(ce.passos)
         AND en.enviado_em < now() - make_interval(days => (ce.passos -> en.passo ->> 'dias')::int)
         AND NOT EXISTS (SELECT 1 FROM comercial.envios_email x
                          WHERE x.campanha_email_id = en.campanha_email_id AND x.empresa_id = en.empresa_id
                            AND (x.respondido_em IS NOT NULL OR x.passo > en.passo))
-        AND NOT EXISTS (SELECT 1 FROM comercial.descadastros_email d WHERE d.email = lower(en.email))
+        AND NOT EXISTS (SELECT 1 FROM comercial.descadastros_email d
+                         WHERE d.conta_id = ${C} AND d.email = lower(en.email))
      ON CONFLICT DO NOTHING`,
   );
   return rowCount ?? 0;
@@ -50,9 +68,10 @@ export async function agendarSeguimentos(deps: Pick<Deps, 'pool'>): Promise<numb
 
 /** Campanha sem nada na fila e sem follow-up por vir: concluída. */
 export async function concluirCampanhas(deps: Pick<Deps, 'pool'>): Promise<void> {
+  const C = contaSql();
   await deps.pool.query(
     `UPDATE comercial.campanhas_email ce SET status = 'concluida', concluida_em = now()
-      WHERE ce.status = 'enviando'
+      WHERE ce.conta_id = ${C} AND ce.status = 'enviando'
         AND NOT EXISTS (SELECT 1 FROM comercial.envios_email x WHERE x.campanha_email_id = ce.id AND x.status = 'na_fila')
         AND NOT EXISTS (
           SELECT 1 FROM comercial.envios_email x
@@ -60,7 +79,8 @@ export async function concluirCampanhas(deps: Pick<Deps, 'pool'>): Promise<void>
              AND NOT EXISTS (SELECT 1 FROM comercial.envios_email y
                               WHERE y.campanha_email_id = ce.id AND y.empresa_id = x.empresa_id
                                 AND (y.passo > x.passo OR y.respondido_em IS NOT NULL))
-             AND NOT EXISTS (SELECT 1 FROM comercial.descadastros_email d WHERE d.email = lower(x.email)))`,
+             AND NOT EXISTS (SELECT 1 FROM comercial.descadastros_email d
+                              WHERE d.conta_id = ${C} AND d.email = lower(x.email)))`,
   );
 }
 
@@ -69,13 +89,21 @@ export async function concluirCampanhas(deps: Pick<Deps, 'pool'>): Promise<void>
  * envio (r-<token>@…), assim a resposta volta para o sistema e já se sabe de quem é.
  */
 export function enderecoDeResposta(
-  deps: Pick<Deps, 'email'>,
-  cfg: Pick<repo.ConfigEmail, 'remetenteNome' | 'responderPara'>,
+  email: Pick<EmailConta, 'dominioRespostas'> | null,
+  marca: { remetenteNome: string; responderPara: string | null },
   token: string | null,
 ): string | null {
-  const dominio = deps.email?.dominioRespostas;
-  if (dominio) return `${cfg.remetenteNome.replace(/["<>]/g, '')} <r-${token ?? 'geral'}@${dominio}>`;
-  return cfg.responderPara;
+  const dominio = email?.dominioRespostas;
+  if (dominio) return `${marca.remetenteNome.replace(/["<>]/g, '')} <r-${token ?? 'geral'}@${dominio}>`;
+  return marca.responderPara;
+}
+
+/** Quem aparece como remetente: o nome da marca e o endereço dela (ou o da conta). */
+export function remetenteDa(
+  email: EmailConta,
+  marca: { remetenteNome: string; remetenteEmail: string | null },
+) {
+  return { nome: marca.remetenteNome, email: marca.remetenteEmail || email.remetente };
 }
 
 /** Erro do servidor de e-mail que quer dizer "esse endereço não existe". */
@@ -97,12 +125,52 @@ async function marcarEmailInvalido(deps: Pick<Deps, 'pool'>, empresaId: number, 
   );
 }
 
+/**
+ * Abertura escrita pela IA para este lead. Só quando o modelo tem {abertura} e a campanha pediu.
+ * Fica guardada no envio (uma nova tentativa não gasta IA de novo). Falha da IA não segura o envio:
+ * a linha sai vazia.
+ */
+async function aberturaDoEnvio(
+  deps: Deps,
+  en: {
+    id: number;
+    empresa_id: number;
+    personalizar_ia: boolean;
+    instrucoes_ia: string;
+    personalizacao: string | null;
+  },
+  corpo: string,
+): Promise<string | null> {
+  if (!/\{abertura\}/.test(corpo) || !en.personalizar_ia) return null;
+  if (en.personalizacao) return en.personalizacao;
+  if (!deps.personalizarAbertura) return null;
+  try {
+    const abertura = await deps.personalizarAbertura({
+      sobreEmpresa: await repo.sobreEmpresa(deps.pool),
+      instrucoes: en.instrucoes_ia,
+      corpo,
+      lead: await repo.fatosDoLead(deps.pool, en.empresa_id),
+    });
+    if (abertura)
+      await deps.pool.query('UPDATE comercial.envios_email SET personalizacao = $2 WHERE id = $1', [
+        en.id,
+        abertura,
+      ]);
+    return abertura;
+  } catch (erro) {
+    deps.log.warn({ err: erro, envio: en.id }, 'e-mail: a IA não escreveu a abertura (vai sem)');
+    return null;
+  }
+}
+
 /** 2. Envia o próximo e-mail da fila, se o horário, o limite e o intervalo deixarem. */
 export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = new Date()): Promise<boolean> {
   if (!deps.email || !cfg.ligado || !dentroDoHorario(cfg, agora)) return false;
+  const email = deps.email;
+  const C = contaSql();
   const { rows: uso } = await deps.pool.query<{ hoje: number; ultima: string | null }>(
     `SELECT count(*) FILTER (WHERE enviado_em >= ${repo.HOJE_SP})::int AS hoje, max(enviado_em) AS ultima
-       FROM comercial.envios_email WHERE status = 'enviado'`,
+       FROM comercial.envios_email WHERE conta_id = ${C} AND status = 'enviado'`,
   );
   if ((uso[0]?.hoje ?? 0) >= cfg.limiteDia) return false;
   const ultima = uso[0]?.ultima ? new Date(uso[0].ultima).getTime() : 0;
@@ -118,11 +186,16 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
       token: string;
       campanha: number;
       passos: { modeloId: number }[];
+      marca_id: number | null;
+      instrucoes_ia: string;
+      personalizar_ia: boolean;
+      personalizacao: string | null;
     }>(
-      `SELECT en.id::int, en.empresa_id::int, en.email, en.passo, en.token, ce.id AS campanha, ce.passos
+      `SELECT en.id::int, en.empresa_id::int, en.email, en.passo, en.token, ce.id AS campanha, ce.passos,
+              ce.marca_id, ce.instrucoes_ia, ce.personalizar_ia, en.personalizacao
          FROM comercial.envios_email en
          JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
-        WHERE en.status = 'na_fila' AND ce.status = 'enviando'
+        WHERE en.conta_id = ${C} AND en.status = 'na_fila' AND ce.status = 'enviando'
         ORDER BY en.passo DESC, en.id
         LIMIT 1`,
     );
@@ -130,12 +203,14 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
     if (!en) return false;
 
     const { rows: bloqueio } = await deps.pool.query<{ motivo: string }>(
-      `SELECT 'Pediu para sair da lista' AS motivo FROM comercial.descadastros_email WHERE email = lower($2)
+      `SELECT 'Pediu para sair da lista' AS motivo FROM comercial.descadastros_email
+        WHERE conta_id = ${C} AND email = lower($2)
        UNION ALL
        SELECT 'Já respondeu' FROM comercial.envios_email
         WHERE campanha_email_id = $3 AND empresa_id = $1 AND respondido_em IS NOT NULL
        UNION ALL
-       SELECT 'Descartado no funil' FROM comercial.oportunidades WHERE empresa_id = $1 AND etapa = 'descartado'
+       SELECT 'Descartado no funil' FROM comercial.oportunidades
+        WHERE conta_id = ${C} AND empresa_id = $1 AND etapa = 'descartado'
        LIMIT 1`,
       [en.empresa_id, en.email, en.campanha],
     );
@@ -151,14 +226,21 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
       const passo = en.passos[en.passo - 1];
       if (!passo) throw AppError.invalido('Passo da sequência não existe');
       const modelo = await repo.obterModelo(deps.pool, passo.modeloId);
-      const v = await repo.variaveisDoLead(deps.pool, en.empresa_id);
+      const marca = await repo.obterMarca(deps.pool, en.marca_id, deps.origens);
+      const v = await repo.variaveisDoLead(deps.pool, en.empresa_id, marca.remetenteNome);
+      const abertura = await aberturaDoEnvio(deps, en, modelo.corpo);
       const end = enderecosDoEnvio(deps.origens, en.token);
-      const e = montarEmail(modelo, v, {
-        assinatura: cfg.assinatura,
-        descadastro: end.descadastro,
-        pixel: cfg.rastrearAbertura ? end.pixel : null,
-        rastrearLink: cfg.rastrearAbertura ? (i) => end.clique(i) : null,
-      });
+      const e = montarEmail(
+        modelo,
+        { ...v, abertura },
+        {
+          assinatura: marca.assinatura,
+          descadastro: end.descadastro,
+          pixel: cfg.rastrearAbertura ? end.pixel : null,
+          rastrearLink: cfg.rastrearAbertura ? (i) => end.clique(i) : null,
+          marca: repo.visualDaMarca(marca),
+        },
+      );
       // Follow-up vai na mesma conversa do e-mail anterior.
       const { rows: anteriores } = await deps.pool.query<{ message_id: string }>(
         `SELECT message_id FROM comercial.envios_email
@@ -167,10 +249,10 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
         [en.campanha, en.empresa_id, en.passo],
       );
       const refs = anteriores.map((a) => a.message_id);
-      const r = await deps.email.enviar({
-        de: { nome: cfg.remetenteNome, email: deps.email.remetente },
+      const r = await email.enviar({
+        de: remetenteDa(email, marca),
         para: en.email,
-        responderPara: enderecoDeResposta(deps, cfg, en.token),
+        responderPara: enderecoDeResposta(email, marca, en.token),
         assunto: e.assunto,
         html: e.html,
         texto: e.texto,
@@ -189,8 +271,9 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
       );
       // Lead que já está no funil: o e-mail entra no histórico (sem mudar a etapa).
       await deps.pool.query(
-        `INSERT INTO comercial.atividades (empresa_id, tipo, direcao, texto, contato, autor)
-         SELECT $1, 'email', 'enviada', $2, $3, $4 FROM comercial.oportunidades WHERE empresa_id = $1`,
+        `INSERT INTO comercial.atividades (conta_id, empresa_id, tipo, direcao, texto, contato, autor)
+         SELECT conta_id, $1, 'email', 'enviada', $2, $3, $4 FROM comercial.oportunidades
+          WHERE conta_id = ${C} AND empresa_id = $1`,
         [en.empresa_id, `E-mail: ${e.assunto}`, en.email, AUTOR],
       );
       return true;
@@ -219,11 +302,8 @@ async function classificar(
   if (r.automatica) return { classe: 'automatica', resumo: null, por: 'regra' };
   if (deps.classificarEmail && r.texto.trim()) {
     try {
-      const { rows } = await deps.pool.query<{ sobre: string }>(
-        'SELECT sobre_empresa AS sobre FROM comercial.config_agente LIMIT 1',
-      );
       const a = await deps.classificarEmail({
-        sobreEmpresa: rows[0]?.sobre ?? '',
+        sobreEmpresa: await repo.sobreEmpresa(deps.pool),
         assunto: r.assunto,
         texto: r.texto,
       });
@@ -248,13 +328,15 @@ export async function agirPelaResposta(
   },
 ): Promise<void> {
   const { pool } = deps;
+  const C = contaSql();
   if (resposta.classe === 'descadastro') {
     await repo.descadastrar(pool, resposta.deEmail, 'Pediu na resposta do e-mail');
     return;
   }
   if (!resposta.empresaId || resposta.classe === 'automatica') return;
   const { rows } = await pool.query<{ etapa: string | null; nome: string }>(
-    `SELECT o.etapa, e.nome FROM descoberta.empresas e LEFT JOIN comercial.oportunidades o ON o.empresa_id = e.id
+    `SELECT o.etapa, e.nome FROM descoberta.empresas e
+       LEFT JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = e.id
       WHERE e.id = $1`,
     [resposta.empresaId],
   );
@@ -287,8 +369,8 @@ export async function agirPelaResposta(
   // Sem interesse: fica registrado no histórico de quem já está no funil (não move etapa).
   if (lead.etapa)
     await pool.query(
-      `INSERT INTO comercial.atividades (empresa_id, tipo, direcao, texto, contato, autor)
-       VALUES ($1, 'email', 'recebida', $2, $3, $3)`,
+      `INSERT INTO comercial.atividades (conta_id, empresa_id, tipo, direcao, texto, contato, autor)
+       VALUES (${C}, $1, 'email', 'recebida', $2, $3, $3)`,
       [resposta.empresaId, texto, resposta.deEmail],
     );
 }
@@ -298,12 +380,14 @@ export async function processarRecebido(
   r: EmailRecebido,
 ): Promise<'ignorado' | 'devolucao' | 'resposta'> {
   const { pool } = deps;
+  const C = contaSql();
   if (!r.de || r.de === deps.email?.remetente.toLowerCase()) return 'ignorado';
 
   if (r.devolucao) {
     const { rows } = await pool.query<{ id: number; empresa_id: number; email: string }>(
       `SELECT id::int, empresa_id::int, email FROM comercial.envios_email
-        WHERE status = 'enviado' AND enviado_em > now() - interval '14 days' AND position(lower(email) in lower($1)) > 0`,
+        WHERE conta_id = ${C} AND status = 'enviado' AND enviado_em > now() - interval '14 days'
+          AND position(lower(email) in lower($1)) > 0`,
       [r.texto],
     );
     for (const en of rows) {
@@ -322,8 +406,9 @@ export async function processarRecebido(
   const ids = [r.emRespostaA, ...r.referencias].filter(Boolean) as string[];
   const { rows: envios } = await pool.query<{ id: number; empresa_id: number; campanha_email_id: number }>(
     `SELECT id::int, empresa_id::int, campanha_email_id FROM comercial.envios_email
-      WHERE token = ANY($3::text[]) OR (message_id = ANY($1::text[]))
-         OR (lower(email) = $2 AND status = 'enviado' AND enviado_em > now() - interval '60 days')
+      WHERE conta_id = ${C}
+        AND (token = ANY($3::text[]) OR (message_id = ANY($1::text[]))
+             OR (lower(email) = $2 AND status = 'enviado' AND enviado_em > now() - interval '60 days'))
       ORDER BY (token = ANY($3::text[])) DESC, (message_id = ANY($1::text[])) DESC, enviado_em DESC LIMIT 1`,
     [ids, r.de, tokens],
   );
@@ -333,7 +418,7 @@ export async function processarRecebido(
     // Lead do funil que respondeu um e-mail mandado à mão.
     const { rows } = await pool.query<{ empresa_id: number }>(
       `SELECT c.empresa_id::int FROM enriquecimento.contatos c
-         JOIN comercial.oportunidades o ON o.empresa_id = c.empresa_id
+         JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = c.empresa_id
         WHERE c.canal = 'email' AND lower(c.valor) = $1 LIMIT 1`,
       [r.de],
     );
@@ -344,9 +429,9 @@ export async function processarRecebido(
   const c = await classificar(deps, r);
   const { rows: ins } = await pool.query<{ id: number }>(
     `INSERT INTO comercial.respostas_email
-       (envio_id, empresa_id, de_email, de_nome, assunto, texto, message_id, recebido_em, classe, resumo,
+       (conta_id, envio_id, empresa_id, de_email, de_nome, assunto, texto, message_id, recebido_em, classe, resumo,
         classificado_por, resend_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     VALUES (${C}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT DO NOTHING
      RETURNING id::int`,
     [
@@ -391,17 +476,34 @@ export async function processarRecebido(
   return 'resposta';
 }
 
-export async function rodarEmail(deps: Deps): Promise<void> {
+/** Uma rodada do e-mail numa conta (já dentro do contexto dela). */
+export async function rodarEmailDaConta(deps: Deps): Promise<void> {
+  const cfg = await repo.obterConfig(deps.pool);
+  if (!cfg.ligado) return;
+  await agendarSeguimentos(deps);
+  await enviarProximo(deps, cfg);
+  await concluirCampanhas(deps);
+}
+
+type DepsRodada = Pick<DepsApi, 'pool' | 'log' | 'origens' | 'servicos'>;
+
+export async function rodarEmail(deps: DepsRodada): Promise<void> {
   const cliente = await deps.pool.connect();
   try {
     const { rows } = await cliente.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [LOCK]);
     if (!rows[0]?.ok) return;
     try {
-      const cfg = await repo.obterConfig(deps.pool);
-      if (!cfg.ligado) return;
-      await agendarSeguimentos(deps);
-      await enviarProximo(deps, cfg);
-      await concluirCampanhas(deps);
+      await paraCadaConta(deps.pool, deps.log, 'e-mail', async (id) => {
+        const s = await deps.servicos(id);
+        await rodarEmailDaConta({
+          pool: deps.pool,
+          log: deps.log,
+          origens: deps.origens,
+          email: s.email,
+          classificarEmail: s.classificarEmail,
+          personalizarAbertura: s.personalizarAbertura,
+        });
+      });
     } finally {
       await cliente.query('SELECT pg_advisory_unlock($1)', [LOCK]);
     }
@@ -412,25 +514,21 @@ export async function rodarEmail(deps: Deps): Promise<void> {
   }
 }
 
-export function iniciarEmail(deps: Deps): () => void {
+export function iniciarEmail(deps: DepsRodada): () => void {
   const t = setInterval(() => void rodarEmail(deps), 30_000);
   t.unref();
-  deps.log.info(
-    {
-      resend: !!deps.email,
-      respostas: !!deps.email?.dominioRespostas,
-      webhook: !!deps.email?.segredoWebhook,
-      ia: !!deps.classificarEmail,
-    },
-    'e-mail de prospecção pronto (liga e desliga na tela)',
-  );
+  deps.log.info('e-mail de prospecção pronto (liga e desliga na tela de cada conta)');
   return () => clearInterval(t);
 }
 
-/** Responde o lead de dentro do sistema (na mesma conversa do e-mail dele). */
+/** Responde o lead de dentro do sistema (na mesma conversa do e-mail dele, com a marca da campanha). */
 export async function responder(deps: Deps, respostaId: number, texto: string): Promise<void> {
   if (!deps.email)
-    throw AppError.invalido('O e-mail não está configurado na API (RESEND_API_KEY e EMAIL_REMETENTE).');
+    throw AppError.invalido(
+      'O e-mail desta conta não está configurado (o administrador configura o Resend no painel master).',
+    );
+  const email = deps.email;
+  const C = contaSql();
   const { rows } = await deps.pool.query<{
     empresa_id: number | null;
     de_email: string;
@@ -438,28 +536,35 @@ export async function responder(deps: Deps, respostaId: number, texto: string): 
     message_id: string | null;
     refs: string[];
     token: string | null;
+    marca_id: number | null;
   }>(
-    `SELECT r.empresa_id::int, r.de_email, r.assunto, r.message_id,
-            (SELECT token FROM comercial.envios_email WHERE id = r.envio_id) AS token,
+    `SELECT r.empresa_id::int, r.de_email, r.assunto, r.message_id, en.token, ce.marca_id,
             coalesce((SELECT array_agg(x.message_id ORDER BY x.passo) FROM comercial.envios_email x
-                       WHERE x.id = r.envio_id OR (x.campanha_email_id = (SELECT campanha_email_id FROM comercial.envios_email WHERE id = r.envio_id)
+                       WHERE x.id = r.envio_id OR (x.campanha_email_id = en.campanha_email_id
                                                   AND x.empresa_id = r.empresa_id AND x.message_id IS NOT NULL)), '{}') AS refs
-       FROM comercial.respostas_email r WHERE r.id = $1`,
+       FROM comercial.respostas_email r
+       LEFT JOIN comercial.envios_email en ON en.id = r.envio_id
+       LEFT JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
+      WHERE r.id = $1 AND r.conta_id = ${C}`,
     [respostaId],
   );
   const r = rows[0];
   if (!r) throw AppError.naoEncontrado('Resposta');
-  const cfg = await repo.obterConfig(deps.pool);
+  const marca = await repo.obterMarca(deps.pool, r.marca_id, deps.origens);
   const v = r.empresa_id
-    ? await repo.variaveisDoLead(deps.pool, r.empresa_id)
-    : { empresa: '', nome: null, remetente: cfg.remetenteNome };
+    ? await repo.variaveisDoLead(deps.pool, r.empresa_id, marca.remetenteNome)
+    : { empresa: '', nome: null, remetente: marca.remetenteNome };
   const assunto = r.assunto ? (/^re:/i.test(r.assunto) ? r.assunto : `Re: ${r.assunto}`) : 'Re:';
-  const e = montarEmail({ assunto, corpo: texto }, v, { assinatura: cfg.assinatura });
+  // Resposta é conversa: sai no estilo simples (sem cabeçalho e capa), com as cores e a assinatura da marca.
+  const e = montarEmail({ assunto, corpo: texto }, v, {
+    assinatura: marca.assinatura,
+    marca: { ...repo.visualDaMarca(marca), estilo: 'simples' },
+  });
   const refs = [...new Set([...r.refs.filter(Boolean), ...(r.message_id ? [r.message_id] : [])])];
-  await deps.email.enviar({
-    de: { nome: cfg.remetenteNome, email: deps.email.remetente },
+  await email.enviar({
+    de: remetenteDa(email, marca),
     para: r.de_email,
-    responderPara: enderecoDeResposta(deps, cfg, r.token),
+    responderPara: enderecoDeResposta(email, marca, r.token),
     assunto: e.assunto,
     html: e.html,
     texto: e.texto,
@@ -467,13 +572,14 @@ export async function responder(deps: Deps, respostaId: number, texto: string): 
     referencias: refs,
   });
   await deps.pool.query(
-    'UPDATE comercial.respostas_email SET lida_em = coalesce(lida_em, now()) WHERE id = $1',
+    `UPDATE comercial.respostas_email SET lida_em = coalesce(lida_em, now()) WHERE id = $1 AND conta_id = ${C}`,
     [respostaId],
   );
   if (r.empresa_id)
     await deps.pool.query(
-      `INSERT INTO comercial.atividades (empresa_id, tipo, direcao, texto, contato, autor, usuario_id)
-       SELECT $1, 'email', 'enviada', $2, $3, $4, $5 FROM comercial.oportunidades WHERE empresa_id = $1`,
+      `INSERT INTO comercial.atividades (conta_id, empresa_id, tipo, direcao, texto, contato, autor, usuario_id)
+       SELECT conta_id, $1, 'email', 'enviada', $2, $3, $4, $5 FROM comercial.oportunidades
+        WHERE conta_id = ${C} AND empresa_id = $1`,
       [
         r.empresa_id,
         texto.slice(0, 4000),
@@ -509,7 +615,8 @@ async function envioDoEvento(deps: Pick<Deps, 'pool'>, d: NonNullable<EventoRese
   const id = Number(tags.envio);
   const { rows } = await deps.pool.query<{ id: number; empresa_id: number; email: string }>(
     `SELECT id::int, empresa_id::int, email FROM comercial.envios_email
-      WHERE ($1::bigint IS NOT NULL AND id = $1) OR ($2::text IS NOT NULL AND resend_id = $2)
+      WHERE conta_id = ${contaSql()}
+        AND (($1::bigint IS NOT NULL AND id = $1) OR ($2::text IS NOT NULL AND resend_id = $2))
       LIMIT 1`,
     [Number.isInteger(id) && id > 0 ? id : null, d.email_id ?? null],
   );
@@ -523,13 +630,15 @@ async function envioDoEvento(deps: Pick<Deps, 'pool'>, d: NonNullable<EventoRese
 export async function processarEvento(deps: Deps, ev: EventoResend): Promise<string> {
   const { pool } = deps;
   const d = ev.data ?? {};
-  await pool.query('UPDATE comercial.config_email SET webhook_em = now()');
+  const C = contaSql();
+  await pool.query(`UPDATE comercial.config_email SET webhook_em = now() WHERE conta_id = ${C}`);
 
   if (ev.type === 'email.received') {
     if (!deps.email?.buscarRecebido || !d.email_id) return 'ignorado';
-    const { rows } = await pool.query('SELECT 1 FROM comercial.respostas_email WHERE resend_id = $1', [
-      d.email_id,
-    ]);
+    const { rows } = await pool.query(
+      `SELECT 1 FROM comercial.respostas_email WHERE conta_id = ${C} AND resend_id = $1`,
+      [d.email_id],
+    );
     if (rows.length) return 'repetido';
     const recebido = await deps.email.buscarRecebido(d.email_id);
     return processarRecebido(deps, recebido);

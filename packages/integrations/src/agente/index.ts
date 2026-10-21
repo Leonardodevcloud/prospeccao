@@ -1,15 +1,10 @@
-import { requisitarJson } from '../http.js';
+import { type ConfigIa, type EsquemaIa, gerarJson } from '../ia/index.js';
 
 /**
  * Cérebro do agente de abordagem: lê a conversa com o lead e decide o próximo passo (responder,
  * marcar reunião, passar para você, encerrar). Só sabe o que está na base de conhecimento da Tutts
  * e na conversa; o resto é passado para um humano.
  */
-
-export interface ConfigGeminiAgente {
-  apiKey: string;
-  modelo: string;
-}
 
 export type AcaoAgente =
   | 'responder'
@@ -36,7 +31,7 @@ export interface ContextoAgente {
   conversa: { de: 'nos' | 'lead'; texto: string; em: string }[];
 }
 
-const ESQUEMA = {
+const ESQUEMA: EsquemaIa = {
   type: 'OBJECT',
   properties: {
     acao: {
@@ -118,21 +113,15 @@ export function pediuParaParar(texto: string): boolean {
   );
 }
 
-export async function decidirComGemini(cfg: ConfigGeminiAgente, c: ContextoAgente): Promise<DecisaoAgente> {
-  const r = await requisitarJson<{ candidates?: { content?: { parts?: { text?: string }[] } }[] }>(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`,
-    {
-      servico: 'Gemini',
-      method: 'POST',
-      headers: { 'x-goog-api-key': cfg.apiKey },
-      body: {
-        contents: [{ role: 'user', parts: [{ text: promptAgente(c) }] }],
-        generationConfig: { temperature: 0.4, responseMimeType: 'application/json', responseSchema: ESQUEMA },
-      },
-      timeoutMs: 45_000,
-    },
-  );
-  return lerDecisao(r.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
+export async function decidirComIa(cfg: ConfigIa, c: ContextoAgente): Promise<DecisaoAgente> {
+  const texto = await gerarJson(cfg, {
+    prompt: promptAgente(c),
+    esquema: ESQUEMA,
+    temperatura: 0.4,
+    timeoutMs: 45_000,
+    maxTokens: 800,
+  });
+  return lerDecisao(texto);
 }
 
 /* ───────────── Resposta de e-mail: o lead tem interesse? ───────────── */
@@ -145,7 +134,7 @@ export interface AnaliseRespostaEmail {
   resumo: string;
 }
 
-const ESQUEMA_EMAIL = {
+const ESQUEMA_EMAIL: EsquemaIa = {
   type: 'OBJECT',
   properties: {
     classe: { type: 'STRING', enum: ['interessado', 'sem_interesse', 'descadastro', 'automatica'] },
@@ -189,25 +178,110 @@ export function lerAnaliseEmail(bruto: string): AnaliseRespostaEmail | null {
 }
 
 export async function classificarRespostaEmail(
-  cfg: ConfigGeminiAgente,
+  cfg: ConfigIa,
   c: { sobreEmpresa: string; assunto: string; texto: string },
 ): Promise<AnaliseRespostaEmail | null> {
-  const r = await requisitarJson<{ candidates?: { content?: { parts?: { text?: string }[] } }[] }>(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`,
-    {
-      servico: 'Gemini',
-      method: 'POST',
-      headers: { 'x-goog-api-key': cfg.apiKey },
-      body: {
-        contents: [{ role: 'user', parts: [{ text: promptRespostaEmail(c) }] }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-          responseSchema: ESQUEMA_EMAIL,
-        },
-      },
-      timeoutMs: 30_000,
-    },
-  );
-  return lerAnaliseEmail(r.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
+  const texto = await gerarJson(cfg, {
+    prompt: promptRespostaEmail(c),
+    esquema: ESQUEMA_EMAIL,
+    temperatura: 0.1,
+    timeoutMs: 30_000,
+    maxTokens: 300,
+  });
+  return lerAnaliseEmail(texto);
+}
+
+/* ───────────── Abertura do e-mail escrita para cada lead ───────────── */
+
+export interface EntradaAbertura {
+  /** Quem manda: o que a empresa faz (base de conhecimento do agente). */
+  sobreEmpresa: string;
+  /** O que a campanha pede: dor do nicho, tom, o que destacar, o que evitar. */
+  instrucoes: string;
+  /** Texto do e-mail (para a abertura combinar com o resto e não repetir). */
+  corpo: string;
+  lead: {
+    empresa: string;
+    cidade: string | null;
+    contato: string | null;
+    categoria: string | null;
+    /** O que a empresa faz, em uma frase (do enriquecimento). */
+    resumo: string | null;
+    notaGoogle: number | null;
+    avaliacoesGoogle: number | null;
+    site: string | null;
+    instagram: string | null;
+    anosDeEmpresa: number | null;
+  };
+}
+
+export interface Abertura {
+  abertura: string;
+}
+
+const ESQUEMA_ABERTURA: EsquemaIa = {
+  type: 'OBJECT',
+  properties: { abertura: { type: 'STRING' } },
+  required: ['abertura'],
+};
+
+export function promptAbertura(e: EntradaAbertura): string {
+  const l = e.lead;
+  const fatos = [
+    `Empresa: ${l.empresa}${l.cidade ? ` (${l.cidade})` : ''}`,
+    l.contato && `Pessoa: ${l.contato}`,
+    l.categoria && `Categoria no Google: ${l.categoria}`,
+    l.resumo && `O que faz: ${l.resumo}`,
+    l.notaGoogle != null && `Nota no Google: ${l.notaGoogle} (${l.avaliacoesGoogle ?? 0} avaliações)`,
+    l.anosDeEmpresa != null && `Tempo de empresa: ${l.anosDeEmpresa} anos`,
+    l.site && `Site: ${l.site}`,
+    l.instagram && `Instagram: @${l.instagram}`,
+  ].filter(Boolean);
+  return [
+    'Você escreve a abertura de um e-mail de prospecção B2B em português do Brasil.',
+    'A abertura vem logo depois da saudação ("Olá, Fulano!") e antes da apresentação: 1 ou 2 frases curtas, no máximo 45 palavras, que mostram que olhamos a empresa dele e ligam isso ao que oferecemos.',
+    'Use SOMENTE os fatos abaixo; não invente números, clientes, prêmios nem elogios genéricos ("empresa incrível"). Sem saudação, sem assinatura, sem emojis, sem links.',
+    '',
+    `QUEM ESCREVE: ${e.sobreEmpresa.slice(0, 1500) || 'não informado'}`,
+    `INSTRUÇÕES DA CAMPANHA: ${e.instrucoes.slice(0, 2000) || 'nenhuma'}`,
+    '',
+    'FATOS DO LEAD:',
+    ...fatos,
+    '',
+    'RESTO DO E-MAIL (para não repetir):',
+    e.corpo.slice(0, 2500),
+    '',
+    'Responda em JSON com "abertura".',
+  ].join('\n');
+}
+
+/** Abertura conferida: tira saudação/assinatura que a IA tenha posto e limita o tamanho. */
+export function lerAbertura(texto: string): string | null {
+  let j: Partial<Abertura> = {};
+  try {
+    j = JSON.parse(texto) as Partial<Abertura>;
+  } catch {
+    return null;
+  }
+  let a = String(j.abertura ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^(ol[áa]|oi|bom dia|boa tarde|boa noite|prezad[oa])(?=[\s,!.?])[^.!?]{0,40}[.!?]\s*/i, '')
+    .replace(/^(ol[áa]|oi|bom dia|boa tarde|boa noite|prezad[oa])(?=[\s,!.?])[^,]{0,40},\s*/i, '')
+    .trim();
+  a = a.charAt(0).toUpperCase() + a.slice(1);
+  if (!a) return null;
+  if (a.length > 400) a = `${a.slice(0, 400).replace(/\s+\S*$/, '')}…`;
+  return a;
+}
+
+export async function personalizarAbertura(cfg: ConfigIa, e: EntradaAbertura): Promise<string | null> {
+  const texto = await gerarJson(cfg, {
+    prompt: promptAbertura(e),
+    esquema: ESQUEMA_ABERTURA,
+    temperatura: 0.6,
+    timeoutMs: 30_000,
+    maxTokens: 300,
+  });
+  return lerAbertura(texto);
 }

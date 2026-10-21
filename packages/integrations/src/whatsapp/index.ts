@@ -36,6 +36,18 @@ export async function enviarTexto(
   return { idExterno: r.key?.id ?? null };
 }
 
+/** Estado do chip na Evolution ("open" = conectado). Serve para o botão "Testar" do painel. */
+export async function estadoConexao(cfg: ConfigEvolution): Promise<string> {
+  const r = await requisitarJson<{ instance?: { state?: string }; state?: string }>(
+    `${cfg.url.replace(/\/$/, '')}/instance/connectionState/${encodeURIComponent(cfg.instancia)}`,
+    { servico: 'Evolution API', headers: { apikey: cfg.apiKey }, timeoutMs: 15_000 },
+  );
+  const estado = r.instance?.state ?? r.state ?? 'desconhecido';
+  return estado === 'open'
+    ? 'ok (WhatsApp conectado)'
+    : `instância ${cfg.instancia}: ${estado} (leia o QR Code na Evolution)`;
+}
+
 export type TipoMidiaWhatsapp = 'imagem' | 'audio' | 'video' | 'documento';
 
 /**

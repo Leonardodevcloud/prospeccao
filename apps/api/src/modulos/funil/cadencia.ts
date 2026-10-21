@@ -12,6 +12,7 @@ import {
   proximoPasso,
   totalTentativas,
 } from '@prospeccao/shared';
+import { contaSql } from '../../contexto.js';
 
 /**
  * Cadência de follow-up: depois de cada acontecimento (entrou no funil, mandou mensagem, ele
@@ -19,6 +20,7 @@ import {
  */
 
 export async function obterConfig(db: Executor): Promise<ConfigCadencia> {
+  const C = contaSql();
   const [cfg, modelos] = await Promise.all([
     db.query<{
       diasFollowup: number[];
@@ -30,9 +32,11 @@ export async function obterConfig(db: Executor): Promise<ConfigCadencia> {
       `SELECT dias_followup AS "diasFollowup", dias_encerrar AS "diasEncerrar",
               encerrar_sem_resposta AS "encerrarSemResposta", dias_cobrar_proposta AS "diasCobrarProposta",
               remetente
-         FROM comercial.config_cadencia LIMIT 1`,
+         FROM comercial.config_cadencia WHERE conta_id = ${C}`,
     ),
-    db.query<{ chave: ModeloMensagem; texto: string }>('SELECT chave, texto FROM comercial.modelos_mensagem'),
+    db.query<{ chave: ModeloMensagem; texto: string }>(
+      `SELECT chave, texto FROM comercial.modelos_mensagem WHERE conta_id = ${C}`,
+    ),
   ]);
   const c = cfg.rows[0] ?? {
     diasFollowup: [2, 3, 5],
@@ -52,16 +56,18 @@ export async function obterConfig(db: Executor): Promise<ConfigCadencia> {
 }
 
 export async function salvarConfig(db: Executor, c: ConfigCadencia): Promise<void> {
+  const C = contaSql();
   await db.query(
     `UPDATE comercial.config_cadencia
         SET dias_followup = $1, dias_encerrar = $2, encerrar_sem_resposta = $3,
-            dias_cobrar_proposta = $4, remetente = $5, atualizado_em = now()`,
+            dias_cobrar_proposta = $4, remetente = $5, atualizado_em = now()
+      WHERE conta_id = ${C}`,
     [c.diasFollowup, c.diasEncerrar, c.encerrarSemResposta, c.diasCobrarProposta, c.remetente],
   );
   for (const chave of MODELOS_MENSAGEM)
     await db.query(
-      `INSERT INTO comercial.modelos_mensagem (chave, texto) VALUES ($1, $2)
-       ON CONFLICT (chave) DO UPDATE SET texto = EXCLUDED.texto, atualizado_em = now()`,
+      `INSERT INTO comercial.modelos_mensagem (conta_id, chave, texto) VALUES (${C}, $1, $2)
+       ON CONFLICT (conta_id, chave) DO UPDATE SET texto = EXCLUDED.texto, atualizado_em = now()`,
       [chave, c.modelos[chave]],
     );
 }
@@ -73,7 +79,7 @@ export async function aplicarCadencia(
   evento: EventoCadencia,
 ): Promise<void> {
   const { rows } = await db.query<{ etapa: EtapaFunil; tentativas: number }>(
-    'SELECT etapa, tentativas FROM comercial.oportunidades WHERE empresa_id = $1',
+    `SELECT etapa, tentativas FROM comercial.oportunidades WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
     [empresaId],
   );
   const op = rows[0];
@@ -83,7 +89,7 @@ export async function aplicarCadencia(
   await db.query(
     `UPDATE comercial.oportunidades
         SET proxima_acao = $2, proxima_acao_em = $3, tentativas = $4, encerrar_em = $5
-      WHERE empresa_id = $1`,
+      WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
     [
       empresaId,
       passo.acao,
@@ -130,7 +136,7 @@ export async function dadosDoLead(db: Executor, empresaId: number) {
               e.maps_telefone) AS telefone
        FROM comercial.oportunidades o
        JOIN descoberta.empresas e ON e.id = o.empresa_id
-      WHERE o.empresa_id = $1`,
+      WHERE o.conta_id = ${contaSql()} AND o.empresa_id = $1`,
     [empresaId],
   );
   const l = rows[0];

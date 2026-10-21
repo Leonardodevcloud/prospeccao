@@ -10,6 +10,8 @@ export function Drawer(props: {
   barra?: ReactNode;
   aoFechar: () => void;
   children: ReactNode;
+  /** Mais largo (prévia de e-mail, painel da conta). */
+  largo?: boolean;
 }) {
   const painel = useRef<HTMLElement>(null);
   // Guarda a função mais recente sem reexecutar o efeito (o foco não pode pular a cada render).
@@ -51,7 +53,7 @@ export function Drawer(props: {
       <div className="scrim" onClick={aoFechar} aria-hidden="true" />
       <aside
         ref={painel}
-        className="drawer"
+        className={props.largo ? 'drawer drawer--largo' : 'drawer'}
         role="dialog"
         aria-modal="true"
         aria-label={props.titulo}

@@ -1,5 +1,6 @@
 import { assinaturaValida } from '@prospeccao/integrations/email';
-import express, { Router } from 'express';
+import express, { type Request, type Response, Router } from 'express';
+import { comConta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { type EventoResend, processarEvento } from './motor.js';
 import * as repo from './repositorio.js';
@@ -61,17 +62,37 @@ export function rotasEmailPublico({ pool, log }: DepsApi): Router {
     res.redirect(302, link);
   });
 
-  async function emailDoToken(t: string): Promise<string | null> {
-    const { rows } = await pool.query<{ email: string }>(
-      'SELECT email FROM comercial.envios_email WHERE token = $1',
+  async function envioDoToken(t: string): Promise<{ email: string; conta_id: number } | null> {
+    const { rows } = await pool.query<{ email: string; conta_id: number }>(
+      'SELECT email, conta_id FROM comercial.envios_email WHERE token = $1',
       [token(t)],
     );
-    return rows[0]?.email ?? null;
+    return rows[0] ?? null;
   }
+
+  /** Logo e capa da marca (o endereço tem um token aleatório; só imagens marcadas como públicas). */
+  r.get('/i/:token', async (req, res) => {
+    const { rows } = await pool.query<{ mime: string; dados: Buffer }>(
+      'SELECT mime, dados FROM comercial.midias WHERE publico_token = $1',
+      [req.params.token.replace(/[^\w-]/g, '').slice(0, 64)],
+    );
+    const img = rows[0];
+    if (!img || !/^image\/(png|jpe?g|gif|webp)$/i.test(img.mime)) {
+      res.status(404).type('text/plain').send('Imagem não encontrada.');
+      return;
+    }
+    res
+      .type(img.mime)
+      .set('Cache-Control', 'public, max-age=31536000, immutable')
+      .set('Cross-Origin-Resource-Policy', 'cross-origin')
+      .set('Content-Security-Policy', "default-src 'none'; sandbox")
+      .set('X-Content-Type-Options', 'nosniff')
+      .send(img.dados);
+  });
 
   // GET só pergunta (antivírus e pré-visualizações abrem links sozinhos); quem tira da lista é o POST.
   r.get('/sair/:token', async (req, res) => {
-    const email = await emailDoToken(req.params.token);
+    const email = (await envioDoToken(req.params.token))?.email ?? null;
     res.type('html').send(
       email
         ? pagina(
@@ -85,8 +106,10 @@ export function rotasEmailPublico({ pool, log }: DepsApi): Router {
   });
 
   r.post('/sair/:token', async (req, res) => {
-    const email = await emailDoToken(req.params.token);
-    if (email) await repo.descadastrar(pool, email, 'Clicou em "sair da lista"');
+    const envio = await envioDoToken(req.params.token);
+    // Sai da lista da empresa que mandou (cada conta tem a sua).
+    if (envio)
+      await comConta(envio.conta_id, () => repo.descadastrar(pool, envio.email, 'Clicou em "sair da lista"'));
     res
       .type('html')
       .send(
@@ -101,17 +124,25 @@ export function rotasEmailPublico({ pool, log }: DepsApi): Router {
 }
 
 /**
- * Webhook do Resend (entregue, abriu, clicou, voltou, spam, resposta recebida). Só aceita aviso
- * assinado com o segredo do webhook; precisa do corpo cru para conferir a assinatura.
+ * Webhook do Resend (entregue, abriu, clicou, voltou, spam, resposta recebida). Cada conta tem o seu
+ * endereço (/e/resend/<token da conta>) e o seu segredo; /e/resend sem token é da conta principal.
+ * Só aceita aviso assinado com o segredo do webhook da conta; precisa do corpo cru para conferir.
  */
 export function rotasWebhookResend(deps: DepsApi): Router {
   const r = Router();
-  r.post('/', express.raw({ type: '*/*', limit: '2mb' }), async (req, res) => {
-    const segredo = deps.email?.segredoWebhook;
-    if (!deps.email || !segredo) {
-      res
-        .status(404)
-        .json({ erro: { codigo: 'nao_configurado', mensagem: 'Webhook do Resend não configurado.' } });
+  const cru = express.raw({ type: '*/*', limit: '2mb' });
+
+  async function receber(req: Request, res: Response, contaId: number | null) {
+    if (!contaId) {
+      res.status(404).json({ erro: { codigo: 'nao_encontrado', mensagem: 'Webhook não encontrado.' } });
+      return;
+    }
+    const { email } = await deps.servicos(contaId);
+    const segredo = email?.segredoWebhook;
+    if (!email || !segredo) {
+      res.status(404).json({
+        erro: { codigo: 'nao_configurado', mensagem: 'Webhook do Resend não configurado nesta conta.' },
+      });
       return;
     }
     const corpo = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
@@ -132,16 +163,44 @@ export function rotasWebhookResend(deps: DepsApi): Router {
       return;
     }
     try {
-      const feito = await processarEvento(deps, evento);
-      deps.log.info({ tipo: evento.type, feito }, 'resend: aviso processado');
+      const s = await deps.servicos(contaId);
+      const feito = await comConta(contaId, () =>
+        processarEvento(
+          {
+            pool: deps.pool,
+            log: deps.log,
+            origens: deps.origens,
+            email: s.email,
+            classificarEmail: s.classificarEmail,
+            personalizarAbertura: s.personalizarAbertura,
+          },
+          evento,
+        ),
+      );
+      deps.log.info({ conta: contaId, tipo: evento.type, feito }, 'resend: aviso processado');
       res.json({ ok: true, feito });
     } catch (erro) {
       // 500 faz o Resend tentar de novo mais tarde.
-      deps.log.error({ err: erro, tipo: evento.type }, 'resend: falha ao processar aviso');
+      deps.log.error({ err: erro, conta: contaId, tipo: evento.type }, 'resend: falha ao processar aviso');
       res
         .status(500)
         .json({ erro: { codigo: 'falha', mensagem: 'Falha ao processar; o Resend vai tentar de novo.' } });
     }
+  }
+
+  r.post('/', cru, async (req, res) => {
+    const { rows } = await deps.pool.query<{ id: number }>(
+      'SELECT id FROM cadastro.contas WHERE principal AND ativa',
+    );
+    await receber(req, res, rows[0]?.id ?? null);
+  });
+
+  r.post('/:token', cru, async (req, res) => {
+    const { rows } = await deps.pool.query<{ id: number }>(
+      'SELECT id FROM cadastro.contas WHERE webhook_token = $1 AND ativa',
+      [req.params.token],
+    );
+    await receber(req, res, rows[0]?.id ?? null);
   });
   return r;
 }

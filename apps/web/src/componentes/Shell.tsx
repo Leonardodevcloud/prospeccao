@@ -12,8 +12,15 @@ import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Av
 import { MinhaConta } from './MinhaConta';
 import { Dono, useSessao } from './Sessao';
 
-/** Itens do menu; "admin" só aparece para o administrador. */
-const ITENS: { para: string; rotulo: string; icone: string; fim?: boolean; admin?: boolean }[] = [
+/** Itens do menu; "admin" só aparece para o administrador e "master" só para quem administra a plataforma. */
+const ITENS: {
+  para: string;
+  rotulo: string;
+  icone: string;
+  fim?: boolean;
+  admin?: boolean;
+  master?: boolean;
+}[] = [
   { para: '/hoje', rotulo: 'Meu dia', icone: 'calendar' },
   { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle' },
   { para: '/email', rotulo: 'E-mail', icone: 'mail' },
@@ -25,7 +32,8 @@ const ITENS: { para: string; rotulo: string; icone: string; fim?: boolean; admin
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
   { para: '/atividade', rotulo: 'Atividade', icone: 'clock', admin: true },
   { para: '/nichos', rotulo: 'Nichos', icone: 'store', admin: true },
-  { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', admin: true },
+  { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', master: true },
+  { para: '/master', rotulo: 'Painel master', icone: 'building-2', master: true },
 ];
 
 /** Conversas com mensagem não lida (para o menu). */
@@ -54,6 +62,14 @@ export function Shell() {
   const ativo = temAtividade(useAtividade(60_000).data);
   const pendentes = useFollowupsPendentes().data?.pendentes ?? 0;
   const doAgente = useAgentePendente().data ?? 0;
+  const voltar = useMutation({
+    mutationFn: () => api('/master/sair', { metodo: 'POST' }),
+    onSuccess: () => {
+      // Tudo que estava na tela era da outra conta.
+      cliente.clear();
+      navegar('/master');
+    },
+  });
   const sair = useMutation({
     mutationFn: () => api('/auth/logout', { metodo: 'POST' }),
     onSettled: () => {
@@ -74,9 +90,14 @@ export function Shell() {
           <span className="nav__logo" aria-hidden="true">
             P
           </span>
-          Prospecção
+          <span className="nav__marca-texto">
+            Prospecção
+            {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
+          </span>
         </div>
-        {ITENS.filter((i) => !i.admin || sessao.data?.papel === 'admin').map((i) => (
+        {ITENS.filter((i) =>
+          i.master ? !!sessao.data?.master : !i.admin || sessao.data?.papel === 'admin',
+        ).map((i) => (
           <NavLink key={i.para} to={i.para} end={i.fim} className="nav__link">
             <Icon name={i.icone} size={16} />
             {i.rotulo}
@@ -132,6 +153,18 @@ export function Shell() {
         </div>
       </nav>
       <main className="conteudo">
+        {sessao.data?.foraDaPropria && (
+          <div className="faixa-conta" role="status">
+            <Icon name="building-2" size={16} />
+            <span>
+              Você está na conta <b>{sessao.data.conta.nome}</b> como administrador. O que fizer aqui vale
+              para ela.
+            </span>
+            <Button size="sm" variant="ghost" disabled={voltar.isPending} onClick={() => voltar.mutate()}>
+              Voltar para a minha conta
+            </Button>
+          </div>
+        )}
         <Outlet />
       </main>
       {conta && <MinhaConta aoFechar={() => setConta(false)} />}

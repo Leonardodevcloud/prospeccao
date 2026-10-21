@@ -257,10 +257,10 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
        VALUES ('11222333', 'pf', 'JOAO DA SILVA', '49', '2012-05-02'), ('11222333', 'pf', 'ANA SILVA', '22', '2015-01-01')`,
     );
     await pool.query(
-      `INSERT INTO cadastro.nichos (nome, cnaes, termos_maps, cargos_alvo) VALUES ('Autopeças', '{4530703}', '{autopeças}', '{comprador,compras}')`,
+      `INSERT INTO cadastro.nichos (conta_id, nome, cnaes, termos_maps, cargos_alvo) VALUES (1, 'Autopeças', '{4530703}', '{autopeças}', '{comprador,compras}')`,
     );
     await pool.query(
-      `INSERT INTO cadastro.campanhas (nome, nicho_id, cidades, raio_km, status) VALUES ('Teste', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa')`,
+      `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status) VALUES (1, 'Teste', 1, '[{"cidade":"Salvador","uf":"BA"}]', NULL, 'ativa')`,
     );
     await pool.query(
       `INSERT INTO descoberta.empresas (cnpj, cnpj_basico, nome, razao_social, porte, data_abertura, cidade, uf,
@@ -649,13 +649,17 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
 
   it('Google Places só enquanto a cota grátis do mês não acabou (campanhas + enriquecimento)', async () => {
     const { reservarPlacesGratis } = await import('../src/repositorio.js');
-    await pool.query('UPDATE cadastro.config_places SET franquia_mensal = 3 WHERE id = 1');
+    await pool.query('UPDATE cadastro.config_places SET franquia_mensal = 3 WHERE conta_id = 1');
     await pool.query('TRUNCATE enriquecimento.uso_places');
-    expect(await reservarPlacesGratis(pool, 2)).toBe(true);
-    expect(await reservarPlacesGratis(pool, 2)).toBe(false); // passaria de 3: vai para o Serper
-    expect(await reservarPlacesGratis(pool, 1)).toBe(true);
-    expect(await reservarPlacesGratis(pool, 1)).toBe(false);
-    await pool.query('UPDATE cadastro.config_places SET franquia_mensal = 1000 WHERE id = 1');
+    expect(await reservarPlacesGratis(pool, 2, 1)).toBe(true);
+    expect(await reservarPlacesGratis(pool, 2, 1)).toBe(false); // passaria de 3: vai para o Serper
+    expect(await reservarPlacesGratis(pool, 1, 1)).toBe(true);
+    expect(await reservarPlacesGratis(pool, 1, 1)).toBe(false);
+    // Outra conta tem a sua chave e a sua cota (não conta o que a conta 1 gastou).
+    await pool.query(`INSERT INTO cadastro.contas (id, nome) VALUES (2, 'Parceira') ON CONFLICT DO NOTHING`);
+    await pool.query('SELECT cadastro.preparar_conta(2)');
+    expect(await reservarPlacesGratis(pool, 2, 2)).toBe(true);
+    await pool.query('UPDATE cadastro.config_places SET franquia_mensal = 1000 WHERE conta_id = 1');
   });
 
   it('CNPJ antigo: telefone só da Receita sem WhatsApp vira "desativado"; base paga só quando falta WhatsApp atual', async () => {

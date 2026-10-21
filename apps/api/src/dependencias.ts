@@ -1,8 +1,14 @@
-import type { Pool } from '@prospeccao/db';
-import type { AnaliseRespostaEmail, ContextoAgente, DecisaoAgente } from '@prospeccao/integrations/agente';
-import type { EmailParaEnviar, EmailRecebido } from '@prospeccao/integrations/email';
+import type { CredenciaisAmbiente, Pool } from '@prospeccao/db';
 import type { Filas } from '@prospeccao/queue';
 import type { Logger } from '@prospeccao/shared';
+import type { ResolverServicos } from './servicos.js';
+
+export type {
+  EmailConta,
+  ResolverServicos,
+  ServicosConta,
+  WhatsappConta,
+} from './servicos.js';
 
 export interface DepsApi {
   pool: Pool;
@@ -16,41 +22,14 @@ export interface DepsApi {
     cookieSeguro: boolean;
   };
   origens: string[];
-  /** Geocodificação de endereço de base; ausente quando não há chave do ORS. */
-  geocodificar?: (endereco: string) => Promise<{ lat: number; lng: number } | null>;
-  /** Envio pelo WhatsApp (Evolution). Sem ele, o agente prepara mas não envia. */
-  whatsapp?: {
-    enviar(telefone: string, texto: string): Promise<{ idExterno: string | null }>;
-    /** Foto, vídeo, documento ou áudio (base64). */
-    enviarMidia?(
-      telefone: string,
-      m: {
-        tipo: 'imagem' | 'audio' | 'video' | 'documento';
-        mime: string;
-        base64: string;
-        nome?: string;
-        legenda?: string;
-      },
-    ): Promise<{ idExterno: string | null }>;
-    /** Arquivo de mensagem recebida, quando não vem junto no webhook. */
-    baixarMidia?(idExterno: string): Promise<{ base64: string; mime: string | null } | null>;
-  } | null;
-  /** E-mail pelo Resend: envia e busca as respostas recebidas. */
-  email?: {
-    /** Endereço que aparece como remetente (domínio verificado no Resend). */
-    remetente: string;
-    /** Domínio de recebimento do Resend: a resposta do lead vai para r-<token>@este domínio. */
-    dominioRespostas: string | null;
-    /** Segredo do webhook (whsec_…): só aceita avisos assinados pelo Resend. */
-    segredoWebhook: string | null;
-    enviar(e: EmailParaEnviar): Promise<{ id: string }>;
-    verificar?(): Promise<string>;
-    buscarRecebido?(id: string): Promise<EmailRecebido>;
-  } | null;
-  /** IA que lê a resposta do e-mail (tem interesse?). Sem ela, uma regra de palavras decide. */
-  classificarEmail?:
-    | ((c: { sobreEmpresa: string; assunto: string; texto: string }) => Promise<AnaliseRespostaEmail | null>)
-    | null;
-  /** IA do agente (Gemini). Sem ela, resposta do lead vai direto para você. */
-  ia?: { decidir(contexto: ContextoAgente): Promise<DecisaoAgente> } | null;
+  /** WhatsApp, IA, e-mail e geocodificação de cada conta, com as credenciais dela. */
+  servicos: ResolverServicos;
+  /** Credenciais das contas (painel master): chave de cifra, o que o ambiente tem e o cache. */
+  credenciais: {
+    /** CHAVE_CREDENCIAIS (sem ela, não dá para guardar chaves de API das contas). */
+    chave: string | null;
+    ambiente: CredenciaisAmbiente;
+    /** Esquece as credenciais lembradas (depois de salvar no painel). */
+    invalidar(contaId?: number): void;
+  };
 }

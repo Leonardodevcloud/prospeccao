@@ -15,6 +15,12 @@ import * as repo from './repositorio.js';
 /** Tentativas de geocodificação por empresa antes de desistir. */
 const MAX_TENTATIVAS_GEO = 2;
 
+/** Pedido antigo (sem a campanha): usa a conta principal. */
+async function contaPrincipal(deps: Deps): Promise<number> {
+  const { rows } = await deps.pool.query<{ id: number }>('SELECT id FROM cadastro.contas WHERE principal');
+  return rows[0]?.id ?? 1;
+}
+
 /** Campanha iniciada ou retomada: base de CNPJ + buscas no Maps. */
 export async function iniciarCampanha(deps: Deps, campanhaId: number) {
   const campanha = await repo.obterCampanha(deps.pool, campanhaId);
@@ -70,13 +76,17 @@ async function cruzarPendentes(deps: Deps, campanha: repo.CampanhaDescoberta, bu
 export async function dispararBuscaMaps(deps: Deps, buscaId: number) {
   const busca = await repo.obterBusca(deps.pool, buscaId);
   if (!busca) throw new ErroDefinitivo(`Busca ${buscaId} não existe`);
-  if (deps.places) return buscarNoPlaces(deps, busca);
+  // Cada conta busca com a sua chave do Google.
+  const places = await deps.placesDa(busca.conta_id);
+  if (places) return buscarNoPlaces(deps, busca, places);
 
   if (busca.status !== 'pendente') return; // já disparada (job repetido)
   const campanha = await repo.obterCampanha(deps.pool, busca.campanha_id);
   if (campanha?.status !== 'ativa') return; // fica pendente até a campanha voltar
   if (!deps.maps)
-    throw new ErroDefinitivo('Sem provedor de busca: configure GOOGLE_PLACES_KEY no worker-descoberta.');
+    throw new ErroDefinitivo(
+      'Sem Google Places para esta conta: o administrador do sistema cadastra a chave no painel master.',
+    );
 
   const local = `${busca.bairro ? `${busca.bairro}, ` : ''}${busca.cidade}, ${busca.uf}, Brasil`;
   const run = await deps.maps.iniciar({ termo: busca.termo, local, max: campanha.max_por_busca });
@@ -95,8 +105,11 @@ export async function dispararBuscaMaps(deps: Deps, buscaId: number) {
  * bater, a busca fica "bloqueada" com o motivo e a campanha segue com o que já achou.
  * A busca da cidade inteira que enche (60 lugares) é dividida por bairro.
  */
-async function buscarNoPlaces(deps: Deps, inicial: repo.Busca) {
-  const places = deps.places!;
+async function buscarNoPlaces(
+  deps: Deps,
+  inicial: repo.Busca,
+  places: NonNullable<Awaited<ReturnType<Deps['placesDa']>>>,
+) {
   const campanha = await repo.obterCampanha(deps.pool, inicial.campanha_id);
   if (campanha?.status !== 'ativa') return; // fica pendente até a campanha voltar
   const busca = await repo.reivindicarBuscaPlaces(deps.pool, inicial.id);
@@ -112,6 +125,7 @@ async function buscarNoPlaces(deps: Deps, inicial: repo.Busca) {
       campanhaId: campanha.id,
       buscaId: busca.id,
       tetoCampanhaUsd: campanha.teto_places_usd,
+      contaId: campanha.conta_id,
     });
     if (!reserva.ok) {
       await cruzarPendentes(deps, campanha, busca);
@@ -152,7 +166,7 @@ async function buscarNoPlaces(deps: Deps, inicial: repo.Busca) {
   // Encheu? O Google não entrega mais que isso por texto: divide a cidade por bairro.
   let porBairro = 0;
   if (!busca.bairro && paginas >= MAX_PAGINAS && itens >= MAX_PAGINAS * POR_PAGINA) {
-    const cfg = await repo.configPlaces(deps.pool);
+    const cfg = await repo.configPlaces(deps.pool, campanha.conta_id);
     const bairros = await repo.bairrosParaBusca(deps.pool, {
       cidade: busca.cidade,
       uf: busca.uf,
@@ -238,11 +252,11 @@ async function aoConcluirBusca(deps: Deps, campanhaId: number) {
  */
 export async function finalizarDescoberta(deps: Deps, campanhaId: number) {
   await repo.recalcularDistancias(deps.pool, { campanhaId });
-  // Só campanhas com raio precisam de coordenada; sem geocodificador, fica com o que veio do Maps.
-  const semLocal = deps.geo
-    ? await repo.empresasSemLocalizacao(deps.pool, campanhaId, MAX_TENTATIVAS_GEO)
-    : [];
-  for (const empresaId of semLocal) await deps.filas.publicar('empresa.localizar', { empresaId });
+  // Só campanhas com raio precisam de coordenada; sem geocodificador (ORS da conta), fica com o que veio do Maps.
+  const campanha = await repo.obterCampanha(deps.pool, campanhaId);
+  const geo = campanha ? await deps.geoDa(campanha.conta_id) : null;
+  const semLocal = geo ? await repo.empresasSemLocalizacao(deps.pool, campanhaId, MAX_TENTATIVAS_GEO) : [];
+  for (const empresaId of semLocal) await deps.filas.publicar('empresa.localizar', { empresaId, campanhaId });
   const prontas = await repo.reservarParaEnriquecimento(deps.pool, { campanhaId });
   for (const p of prontas) {
     await deps.filas.publicar('enriquecimento.solicitar', {
@@ -267,15 +281,17 @@ function montarEndereco(e: repo.EmpresaLocalizar): string[] {
   return [...new Set(tentativas.filter((t): t is string => !!t && t !== cidade))];
 }
 
-/** Coordenada pelo ORS para quem não veio do Maps; depois distância e enriquecimento. */
-export async function localizarEmpresa(deps: Deps, empresaId: number) {
+/** Coordenada pelo ORS (da conta da campanha) para quem não veio do Maps; depois distância e enriquecimento. */
+export async function localizarEmpresa(deps: Deps, empresaId: number, campanhaId?: number) {
   const e = await repo.obterEmpresaLocalizar(deps.pool, empresaId);
   if (!e) return;
+  const campanha = campanhaId ? await repo.obterCampanha(deps.pool, campanhaId) : null;
+  const geo = await deps.geoDa(campanha?.conta_id ?? (await contaPrincipal(deps)));
 
-  if (deps.geo && e.lat == null && e.geo_tentativas < MAX_TENTATIVAS_GEO) {
+  if (geo && e.lat == null && e.geo_tentativas < MAX_TENTATIVAS_GEO) {
     let achado: { lat: number; lng: number } | null = null;
     for (const endereco of montarEndereco(e)) {
-      const r = await deps.geo.geocodificar(endereco);
+      const r = await geo.geocodificar(endereco);
       if (r && r.confianca >= deps.ajustes.confiancaMinimaGeo) {
         achado = r;
         break;
@@ -321,11 +337,11 @@ export function explicarFalhaBusca(erro: unknown): string {
   const msg = erro instanceof Error ? erro.message : String(erro);
   if (/^Google Places/i.test(msg)) {
     if (/BILLING|billing/.test(msg))
-      return 'O Google pediu faturamento: ative o faturamento no projeto do Google Cloud da GOOGLE_PLACES_KEY.';
+      return 'O Google pediu faturamento: ative o faturamento no projeto do Google Cloud da chave do Places desta conta.';
     if (/SERVICE_DISABLED|has not been used|not been enabled|API_KEY_SERVICE_BLOCKED/i.test(msg))
-      return 'A "Places API (New)" não está ativa no Google Cloud para a GOOGLE_PLACES_KEY: ative e use "Tentar de novo".';
+      return 'A "Places API (New)" não está ativa no Google Cloud para a chave desta conta: ative e use "Tentar de novo".';
     if (/HTTP 401|HTTP 403|API_KEY_INVALID|API key not valid|PERMISSION_DENIED/i.test(msg))
-      return 'O Google recusou a GOOGLE_PLACES_KEY: confira a chave e as restrições dela no Google Cloud.';
+      return 'O Google recusou a chave do Places desta conta: confira a chave e as restrições dela no Google Cloud.';
     if (/HTTP 429|RESOURCE_EXHAUSTED|quota/i.test(msg))
       return 'Limite de pedidos do Google (por minuto ou cota diária): a busca tenta de novo sozinha.';
     if (/sem resposta|timeout/i.test(msg))

@@ -14,7 +14,8 @@ export function Convite() {
   const [repetir, setRepetir] = useState('');
   const convite = useQuery({
     queryKey: ['convite', token],
-    queryFn: () => api<{ nome: string; email: string }>(`/auth/convite/${encodeURIComponent(token)}`),
+    queryFn: () =>
+      api<{ nome: string; email: string; conta?: string }>(`/auth/convite/${encodeURIComponent(token)}`),
     retry: false,
   });
   const criar = useMutation({
@@ -49,7 +50,8 @@ export function Convite() {
             <div>
               <h1>Olá, {convite.data.nome.split(' ')[0]}!</h1>
               <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-                Crie sua senha para entrar na Prospecção com {convite.data.email}.
+                Crie sua senha para entrar na Prospecção
+                {convite.data.conta ? ` da ${convite.data.conta}` : ''} com {convite.data.email}.
               </p>
             </div>
             <TextField

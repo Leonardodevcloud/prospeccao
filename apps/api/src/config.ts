@@ -25,12 +25,30 @@ export const esquemaEnvApi = envBase.extend({
   SESSAO_HORAS: z.coerce.number().int().min(1).max(720).default(12),
   /** Opcional: geocodifica o endereço das bases de operação. */
   ORS_API_KEY: opcional(z.string().min(10)),
-  /** Agente de abordagem: envio pelo chip (Evolution) e IA (Gemini). Sem eles, o agente não envia/responde. */
+  /**
+   * Chave que cifra as credenciais das contas no banco (32+ caracteres; a mesma no worker-descoberta
+   * e no worker-enriquecimento). Sem ela, só a conta principal funciona, pelas variáveis abaixo.
+   */
+  CHAVE_CREDENCIAIS: opcional(z.string().min(32, 'CHAVE_CREDENCIAIS precisa ter pelo menos 32 caracteres')),
+  /*
+   * As variáveis abaixo são as credenciais da conta principal (as outras contas cadastram as suas
+   * no painel master). A conta principal também pode cadastrar no painel: o painel vale mais.
+   */
+  /** WhatsApp pelo chip (Evolution). */
   EVOLUTION_URL: opcional(z.string().url()),
   EVOLUTION_API_KEY: opcional(z.string().min(4)),
   EVOLUTION_INSTANCIA: opcional(z.string().min(1)),
+  /** IA da plataforma (vale para todas as contas que não têm a sua): deepseek, gemini ou openai. */
+  IA_PROVEDOR: z.enum(['deepseek', 'gemini', 'openai']).optional().catch(undefined),
+  IA_API_KEY: opcional(z.string().min(10)),
+  IA_MODELO: opcional(z.string().min(2)),
+  /** Só para IA_PROVEDOR=openai (OpenRouter, Groq…): endereço da API. */
+  IA_BASE_URL: opcional(z.string().url()),
+  /** Legado: sem IA_API_KEY, a IA é o Gemini com esta chave. */
   GEMINI_API_KEY: opcional(z.string().min(10)),
   GEMINI_MODELO: z.string().default('gemini-3.5-flash-lite'),
+  /** Google Places da conta principal (a API só usa para o botão "Testar" do painel). */
+  GOOGLE_PLACES_KEY: opcional(z.string().min(10)),
   /** E-mail de prospecção pelo Resend. */
   RESEND_API_KEY: opcional(z.string().startsWith('re_', 'RESEND_API_KEY começa com re_')),
   /** Remetente, de um domínio verificado no Resend (ex.: comercial@tutts.com.br). */
@@ -47,6 +65,26 @@ export const esquemaEnvApi = envBase.extend({
 });
 
 export type EnvApi = z.infer<typeof esquemaEnvApi>;
+
+/** Credenciais do ambiente: as da conta principal (e a IA da plataforma, para todas). */
+export function credenciaisDoAmbiente(env: EnvApi) {
+  const iaLegada = !env.IA_API_KEY && env.GEMINI_API_KEY;
+  return {
+    placesKey: env.GOOGLE_PLACES_KEY ?? null,
+    orsKey: env.ORS_API_KEY ?? null,
+    resendKey: env.RESEND_API_KEY ?? null,
+    emailRemetente: env.EMAIL_REMETENTE ?? null,
+    resendDominioRespostas: env.RESEND_DOMINIO_RESPOSTAS ?? null,
+    resendWebhookSegredo: env.RESEND_WEBHOOK_SEGREDO ?? null,
+    evolutionUrl: env.EVOLUTION_URL ?? null,
+    evolutionKey: env.EVOLUTION_API_KEY ?? null,
+    evolutionInstancia: env.EVOLUTION_INSTANCIA ?? null,
+    iaProvedor: iaLegada ? 'gemini' : (env.IA_PROVEDOR ?? null),
+    iaKey: env.IA_API_KEY ?? env.GEMINI_API_KEY ?? null,
+    iaModelo: iaLegada ? env.GEMINI_MODELO : (env.IA_MODELO ?? null),
+    iaBaseUrl: env.IA_BASE_URL ?? null,
+  };
+}
 
 export function carregarEnvApi(): EnvApi {
   return carregarEnv(esquemaEnvApi);

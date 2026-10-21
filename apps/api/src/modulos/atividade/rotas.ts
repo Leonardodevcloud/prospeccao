@@ -1,5 +1,6 @@
 import { jobsAbertos } from '@prospeccao/queue';
 import { Router } from 'express';
+import { contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 
 /**
@@ -24,6 +25,7 @@ export function rotasAtividade({ pool, filas }: DepsApi): Router {
                 b.criado_em AS "criadoEm", b.iniciado_em AS "iniciadoEm", b.concluido_em AS "concluidoEm"
            FROM descoberta.buscas_maps b
            LEFT JOIN cadastro.campanhas c ON c.id = b.campanha_id
+          WHERE b.conta_id = ${contaSql()}
           ORDER BY (b.status IN ('rodando', 'pendente')) DESC,
                    coalesce(b.concluido_em, b.iniciado_em, b.criado_em) DESC
           LIMIT 40`,

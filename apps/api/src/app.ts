@@ -4,7 +4,12 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import type { DepsApi } from './dependencias.js';
 import { rotaNaoEncontrada, tratarErros } from './middlewares/erros.js';
-import { adminParaAlterar, exigirOrigemConhecida, exigirSessao } from './middlewares/seguranca.js';
+import {
+  adminParaAlterar,
+  exigirMaster,
+  exigirOrigemConhecida,
+  exigirSessao,
+} from './middlewares/seguranca.js';
 import { rotasAgenda, rotasCalendario } from './modulos/agenda/rotas.js';
 import { rotasAgente, rotasWebhook } from './modulos/agente/rotas.js';
 import { rotasAtividade } from './modulos/atividade/rotas.js';
@@ -18,6 +23,7 @@ import { rotasEmpresas } from './modulos/empresas/rotas.js';
 import { rotasEquipe } from './modulos/equipe/rotas.js';
 import { rotasFunil } from './modulos/funil/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
+import { rotasMaster } from './modulos/master/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
 import { rotasNotificacoes } from './modulos/notificacoes/rotas.js';
 import { rotasPlaces } from './modulos/places/rotas.js';
@@ -36,11 +42,12 @@ export function criarApp(deps: DepsApi): Express {
   app.use('/webhooks', express.json({ limit: '10mb' }), rotasWebhook(deps));
   // Webhook do Resend: corpo cru (a assinatura é conferida sobre os bytes exatos).
   app.use('/e/resend', rotasWebhookResend(deps));
-  // Anexo da conversa (até 10 MB em base64) é o único corpo grande; o resto fica em 200 kb.
+  // Anexo da conversa e do e-mail (até 10 MB em base64) e imagem da marca são os corpos grandes;
+  // o resto fica em 200 kb.
   const jsonGrande = express.json({ limit: '15mb' });
   const jsonPequeno = express.json({ limit: '200kb' });
   app.use((req, res, next) =>
-    /^\/conversas\/\d+\/midia$|^\/email\/anexos$/.test(req.path)
+    /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$/.test(req.path)
       ? jsonGrande(req, res, next)
       : jsonPequeno(req, res, next),
   );
@@ -89,6 +96,8 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/atividade', rotasAtividade(deps));
   protegidas.use('/places', rotasPlaces(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
+  // Painel master: contas, credenciais e acesso a qualquer conta.
+  protegidas.use('/master', exigirMaster, rotasMaster(deps));
   app.use(protegidas);
 
   app.use(rotaNaoEncontrada);

@@ -1,6 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import { AppError, LIMITE_MIDIA_BYTES, type MidiaEntrada } from '@prospeccao/shared';
-import { usuarioAtual } from '../../contexto.js';
+import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import * as agente from '../agente/repositorio.js';
 import { dadosDoLead } from '../funil/cadencia.js';
@@ -13,18 +13,19 @@ import { lerAvisosDoLead } from '../notificacoes/repositorio.js';
  */
 
 /** Tudo de WhatsApp de um lead, sem repetir o que aparece nos dois lugares. */
-const CONVERSA = `
+const conversa = () => `
   SELECT m.empresa_id, 'm' || m.id AS id, m.direcao, m.texto, m.status, m.origem, m.erro, m.nota,
          m.midia_tipo, m.midia_id, coalesce(m.enviado_em, m.criado_em) AS em, m.usuario_id
     FROM comercial.mensagens m
-   WHERE m.status <> 'descartada'
+   WHERE m.conta_id = ${contaSql()} AND m.status <> 'descartada'
   UNION ALL
   SELECT a.empresa_id, 'a' || a.id, a.direcao, a.texto, 'registrada', 'registro', NULL, NULL,
          NULL, NULL, a.criado_em, a.usuario_id
     FROM comercial.atividades a
-   WHERE a.tipo = 'whatsapp' AND a.direcao IS NOT NULL AND a.texto IS NOT NULL
+   WHERE a.conta_id = ${contaSql()} AND a.tipo = 'whatsapp' AND a.direcao IS NOT NULL AND a.texto IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM comercial.mensagens m
-                      WHERE m.empresa_id = a.empresa_id AND m.direcao = a.direcao AND m.texto = a.texto
+                      WHERE m.conta_id = a.conta_id AND m.empresa_id = a.empresa_id AND m.direcao = a.direcao
+                        AND m.texto = a.texto
                         AND abs(extract(epoch FROM coalesce(m.enviado_em, m.criado_em) - a.criado_em)) < 600)`;
 
 export async function listar(
@@ -32,6 +33,7 @@ export async function listar(
   f: { filtro: 'todas' | 'nao_lidas' | 'minhas'; busca?: string },
   usuarioId: number,
 ) {
+  const C = contaSql();
   const where = ['true'];
   const valores: unknown[] = [];
   const p = (v: unknown) => {
@@ -45,7 +47,7 @@ export async function listar(
       `(e.nome ILIKE ${p(`%${f.busca}%`)} OR e.maps_telefone LIKE ${p(`%${f.busca.replace(/\D/g, '') || '§'}%`)})`,
     );
   const { rows } = await db.query(
-    `WITH c AS (${CONVERSA}),
+    `WITH c AS (${conversa()}),
      ult AS (
        SELECT DISTINCT ON (empresa_id) empresa_id, texto, direcao, em, midia_tipo, status, origem
          FROM c ORDER BY empresa_id, em DESC)
@@ -55,13 +57,14 @@ export async function listar(
             ult.em AS "ultimaEm", ult.midia_tipo AS "ultimaMidia", ult.origem AS "ultimaOrigem",
             coalesce(nl.n, 0) AS "naoLidas"
        FROM ult
-       JOIN comercial.oportunidades o ON o.empresa_id = ult.empresa_id
+       JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = ult.empresa_id
        JOIN descoberta.empresas e ON e.id = ult.empresa_id
        LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
        LEFT JOIN cadastro.usuarios u ON u.id = o.responsavel_id
        LEFT JOIN LATERAL (
          SELECT count(*)::int AS n FROM comercial.mensagens m
-          WHERE m.empresa_id = ult.empresa_id AND m.direcao = 'recebida' AND m.lida_em IS NULL) nl ON true
+          WHERE m.conta_id = ${C} AND m.empresa_id = ult.empresa_id AND m.direcao = 'recebida'
+            AND m.lida_em IS NULL) nl ON true
       WHERE ${where.join(' AND ')}
       ORDER BY ult.em DESC
       LIMIT 300`,
@@ -75,7 +78,7 @@ export async function abrir(db: Executor, empresaId: number) {
   const [lead, msgs] = await Promise.all([
     dadosDoLead(db, empresaId),
     db.query(
-      `WITH c AS (${CONVERSA})
+      `WITH c AS (${conversa()})
        SELECT c.id, c.direcao, c.texto, c.status, c.origem, c.erro, c.nota, c.midia_tipo AS "midiaTipo",
               c.midia_id::int AS "midiaId", c.em,
               CASE WHEN c.origem = 'agente' THEN 'IA'
@@ -97,7 +100,7 @@ export async function abrir(db: Executor, empresaId: number) {
        JOIN descoberta.empresas e ON e.id = o.empresa_id
        LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
        LEFT JOIN cadastro.usuarios u ON u.id = o.responsavel_id
-      WHERE o.empresa_id = $1`,
+      WHERE o.conta_id = ${contaSql()} AND o.empresa_id = $1`,
     [empresaId],
   );
   return {
@@ -112,7 +115,7 @@ export async function abrir(db: Executor, empresaId: number) {
 export async function marcarLidas(db: Executor, empresaId: number): Promise<void> {
   await db.query(
     `UPDATE comercial.mensagens SET lida_em = now()
-      WHERE empresa_id = $1 AND direcao = 'recebida' AND lida_em IS NULL`,
+      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND direcao = 'recebida' AND lida_em IS NULL`,
     [empresaId],
   );
   const u = usuarioAtual();
@@ -123,23 +126,24 @@ export async function marcarLidas(db: Executor, empresaId: number): Promise<void
 async function assumir(db: Executor, empresaId: number) {
   await db.query(
     `UPDATE comercial.oportunidades SET agente_pausa = 'Você assumiu a conversa.'
-      WHERE empresa_id = $1 AND agente AND agente_pausa IS NULL`,
+      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND agente AND agente_pausa IS NULL`,
     [empresaId],
   );
 }
 
-type Deps = Pick<DepsApi, 'pool' | 'whatsapp'>;
+type Deps = Pick<DepsApi, 'pool' | 'servicos'>;
 
-function exigirWhatsapp(deps: Deps) {
-  if (!deps.whatsapp)
+async function exigirWhatsapp(deps: Deps) {
+  const { whatsapp } = await deps.servicos(conta());
+  if (!whatsapp)
     throw AppError.invalido(
-      'O WhatsApp não está conectado: configure a Evolution (EVOLUTION_URL, EVOLUTION_API_KEY e EVOLUTION_INSTANCIA) na API.',
+      'O WhatsApp desta conta não está conectado: o administrador do sistema configura a Evolution no painel master.',
     );
-  return deps.whatsapp;
+  return whatsapp;
 }
 
 export async function enviarTexto(deps: Deps, empresaId: number, texto: string): Promise<void> {
-  const whatsapp = exigirWhatsapp(deps);
+  const whatsapp = await exigirWhatsapp(deps);
   const lead = await dadosDoLead(deps.pool, empresaId);
   if (!lead.telefone) throw AppError.invalido('Este lead não tem telefone.');
   const quem = usuarioAtual();
@@ -179,14 +183,15 @@ export async function guardarMidia(
   if (!dados.length) throw AppError.invalido('Arquivo vazio.');
   if (dados.length > LIMITE_MIDIA_BYTES) throw AppError.invalido('Arquivo grande demais (até 10 MB).');
   const { rows } = await db.query<{ id: number }>(
-    'INSERT INTO comercial.midias (mime, nome, tamanho, dados) VALUES ($1, $2, $3, $4) RETURNING id::int',
+    `INSERT INTO comercial.midias (conta_id, mime, nome, tamanho, dados)
+     VALUES (${contaSql()}, $1, $2, $3, $4) RETURNING id::int`,
     [m.mime, m.nome ?? null, dados.length, dados],
   );
   return rows[0]!.id;
 }
 
 export async function enviarMidia(deps: Deps, empresaId: number, m: MidiaEntrada): Promise<void> {
-  const whatsapp = exigirWhatsapp(deps);
+  const whatsapp = await exigirWhatsapp(deps);
   if (!whatsapp.enviarMidia) throw AppError.invalido('Envio de arquivos não disponível.');
   const lead = await dadosDoLead(deps.pool, empresaId);
   if (!lead.telefone) throw AppError.invalido('Este lead não tem telefone.');
@@ -225,7 +230,7 @@ export async function enviarMidia(deps: Deps, empresaId: number, m: MidiaEntrada
 
 export async function midia(db: Executor, id: number) {
   const { rows } = await db.query<{ mime: string; nome: string | null; dados: Buffer }>(
-    'SELECT mime, nome, dados FROM comercial.midias WHERE id = $1',
+    `SELECT mime, nome, dados FROM comercial.midias WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id],
   );
   if (!rows[0]) throw AppError.naoEncontrado('Arquivo');
@@ -236,8 +241,8 @@ export async function midia(db: Executor, id: number) {
 export async function resumo(db: Executor, usuarioId: number | null): Promise<{ naoLidas: number }> {
   const { rows } = await db.query<{ n: number }>(
     `SELECT count(DISTINCT m.empresa_id)::int AS n FROM comercial.mensagens m
-       JOIN comercial.oportunidades o ON o.empresa_id = m.empresa_id
-      WHERE m.direcao = 'recebida' AND m.lida_em IS NULL
+       JOIN comercial.oportunidades o ON o.conta_id = m.conta_id AND o.empresa_id = m.empresa_id
+      WHERE m.conta_id = ${contaSql()} AND m.direcao = 'recebida' AND m.lida_em IS NULL
         AND ($1::int IS NULL OR o.responsavel_id = $1 OR o.responsavel_id IS NULL)`,
     [usuarioId],
   );
@@ -248,7 +253,7 @@ export async function resumo(db: Executor, usuarioId: number | null): Promise<{ 
 
 export async function respostas(db: Executor) {
   const { rows } = await db.query(
-    'SELECT id, atalho, texto FROM comercial.respostas_rapidas ORDER BY atalho',
+    `SELECT id, atalho, texto FROM comercial.respostas_rapidas WHERE conta_id = ${contaSql()} ORDER BY atalho`,
   );
   return rows;
 }
@@ -256,18 +261,18 @@ export async function respostas(db: Executor) {
 export async function salvarResposta(db: Executor, d: { atalho: string; texto: string }, id?: number) {
   if (id) {
     const { rowCount } = await db.query(
-      'UPDATE comercial.respostas_rapidas SET atalho = $2, texto = $3 WHERE id = $1',
+      `UPDATE comercial.respostas_rapidas SET atalho = $2, texto = $3 WHERE id = $1 AND conta_id = ${contaSql()}`,
       [id, d.atalho, d.texto],
     );
     if (!rowCount) throw AppError.naoEncontrado('Resposta rápida');
     return;
   }
-  await db.query('INSERT INTO comercial.respostas_rapidas (atalho, texto) VALUES ($1, $2)', [
-    d.atalho,
-    d.texto,
-  ]);
+  await db.query(
+    `INSERT INTO comercial.respostas_rapidas (conta_id, atalho, texto) VALUES (${contaSql()}, $1, $2)`,
+    [d.atalho, d.texto],
+  );
 }
 
 export async function apagarResposta(db: Executor, id: number) {
-  await db.query('DELETE FROM comercial.respostas_rapidas WHERE id = $1', [id]);
+  await db.query(`DELETE FROM comercial.respostas_rapidas WHERE id = $1 AND conta_id = ${contaSql()}`, [id]);
 }

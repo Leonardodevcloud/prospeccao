@@ -10,6 +10,7 @@ import {
   pipelineEntrada,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
+import { contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
@@ -39,7 +40,8 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
 
   r.get('/etiquetas', async (_req, res) => {
     const { rows } = await pool.query<{ e: string }>(
-      'SELECT DISTINCT unnest(etiquetas) AS e FROM comercial.oportunidades ORDER BY 1 LIMIT 200',
+      `SELECT DISTINCT unnest(etiquetas) AS e FROM comercial.oportunidades WHERE conta_id = ${contaSql()}
+        ORDER BY 1 LIMIT 200`,
     );
     res.json(rows.map((x) => x.e));
   });

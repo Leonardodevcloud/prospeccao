@@ -1,5 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import type { FiltrosEmpresas } from '@prospeccao/shared';
+import { contaSql } from '../../contexto.js';
 
 /**
  * Leitura das empresas descobertas. Tudo vem de views publicadas pelos domínios
@@ -12,15 +13,23 @@ const CAMPOS_LISTA = `
   coalesce(e.maps_nota, l.maps_nota)::float8 AS "mapsNota", coalesce(e.maps_avaliacoes, l.maps_avaliacoes) AS "mapsAvaliacoes",
   coalesce(e.maps_categoria, l.maps_categoria) AS "mapsCategoria", e.maps_site AS "mapsSite", e.maps_telefone AS "mapsTelefone",
   e.telefones_receita AS "telefonesReceita", e.sinal_entrega AS "sinalEntrega",
-  e.distancia_base_km AS "distanciaBaseKm", e.maps_fechada AS "mapsFechada",
+  ce.distancia_base_km::float8 AS "distanciaBaseKm", e.maps_fechada AS "mapsFechada",
   (e.place_id IS NOT NULL OR l.maps_url IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm", e.mei,
   l.status AS "enriqStatus", l.faixa, l.score, l.motivo,
   dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
   pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
   op.etapa AS "funilEtapa", op.proxima_acao_em AS "funilProximaAcaoEm"`;
 
+/**
+ * A empresa é da conta: alguma campanha da conta a achou. A base de empresas é de todas as contas;
+ * cada conta só enxerga (e só trabalha) o que as campanhas dela acharam.
+ */
+export function daConta(coluna: string): string {
+  return `EXISTS (SELECT 1 FROM descoberta.campanha_empresas cx WHERE cx.empresa_id = ${coluna} AND cx.conta_id = ${contaSql()})`;
+}
+
 /** Nota, decisor e melhor contato do enriquecimento (schema do worker-enriquecimento, só leitura). */
-export const JUNCOES_ENRIQ = `
+export const juncoesEnriq = () => `
   LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
   LEFT JOIN LATERAL (
     SELECT nome, cargo FROM enriquecimento.pessoas p
@@ -38,12 +47,12 @@ export const JUNCOES_ENRIQ = `
      ORDER BY c.principal DESC, (c.status = 'verificado') DESC, c.confianca DESC
      LIMIT 1
   ) pc ON true
-  LEFT JOIN comercial.oportunidades op ON op.empresa_id = e.id`;
+  LEFT JOIN comercial.oportunidades op ON op.conta_id = ${contaSql()} AND op.empresa_id = e.id`;
 
 const ORDENS: Record<FiltrosEmpresas['ordem'], string> = {
   nota: 'l.score DESC NULLS LAST, e.maps_avaliacoes DESC NULLS LAST, e.nome',
   avaliacoes: 'e.maps_avaliacoes DESC NULLS LAST, e.nome',
-  distancia: 'e.distancia_base_km ASC NULLS LAST, e.nome',
+  distancia: 'ce.distancia_base_km ASC NULLS LAST, e.nome',
   recentes: 'e.criado_em DESC, e.id DESC',
   nome: 'e.nome',
 };
@@ -56,11 +65,14 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
     return `$${valores.length}`;
   };
 
-  // Uma linha por empresa: com campanha, as colunas de vínculo vêm dela; sem, da mais recente.
+  // Uma linha por empresa: com campanha, as colunas de vínculo vêm dela; sem, da mais recente da conta.
+  const C = contaSql();
   const vinculo = f.campanhaId
-    ? `JOIN descoberta.campanha_empresas ce ON ce.empresa_id = e.id AND ce.campanha_id = ${p(f.campanhaId)}`
+    ? `JOIN descoberta.campanha_empresas ce
+         ON ce.empresa_id = e.id AND ce.conta_id = ${C} AND ce.campanha_id = ${p(f.campanhaId)}`
     : `JOIN LATERAL (
-         SELECT * FROM descoberta.campanha_empresas c2 WHERE c2.empresa_id = e.id ORDER BY c2.adicionada_em DESC LIMIT 1
+         SELECT * FROM descoberta.campanha_empresas c2 WHERE c2.empresa_id = e.id AND c2.conta_id = ${C}
+          ORDER BY c2.adicionada_em DESC LIMIT 1
        ) ce ON true`;
 
   if (f.busca) {
@@ -99,7 +111,7 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
   }
 
   const filtro = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const base = `FROM descoberta.empresas e ${vinculo} ${JUNCOES_ENRIQ} ${filtro}`;
+  const base = `FROM descoberta.empresas e ${vinculo} ${juncoesEnriq()} ${filtro}`;
 
   const total = await db.query<{ n: number }>(`SELECT count(*)::int AS n ${base}`, valores);
   const pagina = await db.query(
@@ -113,6 +125,7 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
 }
 
 export async function obter(db: Executor, id: number) {
+  const C = contaSql();
   const { rows } = await db.query(
     `SELECT ${CAMPOS_LISTA}, e.cnpj_basico AS "cnpjBasico", e.situacao, e.data_abertura AS "dataAbertura",
             e.logradouro, e.numero, e.cep, e.email_receita AS "emailReceita",
@@ -121,8 +134,12 @@ export async function obter(db: Executor, id: number) {
             e.sinal_entrega_fonte AS "sinalEntregaFonte",
             b.nome AS "baseNome"
        FROM descoberta.empresas e
-       LEFT JOIN cadastro.v_bases_ativas b ON b.id = e.base_id
-       ${JUNCOES_ENRIQ}
+       JOIN LATERAL (
+         SELECT * FROM descoberta.campanha_empresas c2 WHERE c2.empresa_id = e.id AND c2.conta_id = ${C}
+          ORDER BY c2.adicionada_em DESC LIMIT 1
+       ) ce ON true
+       LEFT JOIN cadastro.v_bases_ativas b ON b.id = ce.base_id AND b.conta_id = ${C}
+       ${juncoesEnriq()}
       WHERE e.id = $1`,
     [id],
   );
@@ -143,7 +160,7 @@ export async function obter(db: Executor, id: number) {
               ce.adicionada_em AS "adicionadaEm", ce.enriquecimento_solicitado_em AS "enriquecimentoSolicitadoEm"
          FROM descoberta.campanha_empresas ce
          JOIN cadastro.campanhas c ON c.id = ce.campanha_id
-        WHERE ce.empresa_id = $1 ORDER BY ce.adicionada_em DESC`,
+        WHERE ce.empresa_id = $1 AND ce.conta_id = ${C} ORDER BY ce.adicionada_em DESC`,
       [id],
     ),
     db.query(
@@ -219,7 +236,8 @@ export async function obter(db: Executor, id: number) {
 /** Campanha mais recente da empresa: para onde vai o pedido de "enriquecer de novo". */
 export async function campanhaDaEmpresa(db: Executor, id: number): Promise<number | null> {
   const { rows } = await db.query<{ campanha_id: number }>(
-    `SELECT campanha_id FROM descoberta.campanha_empresas WHERE empresa_id = $1 ORDER BY adicionada_em DESC LIMIT 1`,
+    `SELECT campanha_id FROM descoberta.campanha_empresas WHERE empresa_id = $1 AND conta_id = ${contaSql()}
+      ORDER BY adicionada_em DESC LIMIT 1`,
     [id],
   );
   return rows[0]?.campanha_id ?? null;

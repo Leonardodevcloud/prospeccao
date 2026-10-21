@@ -2,14 +2,17 @@ import {
   AppError,
   anexoEmailEntrada,
   CLASSES_RESPOSTA,
+  campanhaEmailAtualizar,
   campanhaEmailEntrada,
   configEmailEntrada,
+  imagemEmailEntrada,
+  marcaEmailEntrada,
   modeloEmailEntrada,
-  montarEmail,
   responderEmailEntrada,
 } from '@prospeccao/shared';
 import { Router } from 'express';
 import { z } from 'zod';
+import { conta, contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
@@ -18,24 +21,57 @@ import { guardarMidia } from '../conversas/repositorio.js';
 import * as motor from './motor.js';
 import * as repo from './repositorio.js';
 
+const NAO_CONFIGURADO =
+  'O e-mail desta conta não está configurado: o administrador do sistema cadastra o Resend no painel master.';
+
+const textoPrevia = z.object({
+  assunto: z.string().max(200),
+  corpo: z.string().max(20_000),
+  marcaId: z.number().int().positive().nullable().optional(),
+  empresaId: z.number().int().positive().nullable().optional(),
+  campanhaId: z.number().int().positive().nullable().optional(),
+  instrucoesIa: z.string().max(3000).optional(),
+  personalizarIa: z.boolean().optional(),
+  anexos: z.array(z.number().int().positive()).max(5).optional(),
+});
+
 export function rotasEmail(deps: DepsApi): Router {
   const { pool } = deps;
   const r = Router();
 
+  const servicos = () => deps.servicos(conta());
+  const contextoPrevia = async () => {
+    const s = await servicos();
+    return {
+      origens: deps.origens,
+      remetenteConta: s.email?.remetente ?? null,
+      personalizar: s.personalizarAbertura,
+    };
+  };
+
   /** Visão geral: configuração, o que está conectado no Resend e os números do dia. */
   r.get('/', async (_req, res) => {
-    const [config, resumo] = await Promise.all([repo.obterConfig(pool), repo.resumo(pool)]);
+    const [config, resumo, s, token] = await Promise.all([
+      repo.obterConfig(pool),
+      repo.resumo(pool),
+      servicos(),
+      pool.query<{ webhook_token: string }>(
+        `SELECT webhook_token FROM cadastro.contas WHERE id = ${contaSql()}`,
+      ),
+    ]);
     res.json({
       config,
       resumo,
       status: {
-        resend: !!deps.email,
-        remetente: deps.email?.remetente ?? null,
-        dominioRespostas: deps.email?.dominioRespostas ?? null,
-        webhook: !!deps.email?.segredoWebhook,
-        // Endereço para colar no Resend (Webhooks → Add endpoint).
-        webhookUrl: `${urlPublicaApi(deps.origens)}/e/resend`,
-        ia: !!deps.classificarEmail,
+        resend: !!s.email,
+        remetente: s.email?.remetente ?? null,
+        dominioRespostas: s.email?.dominioRespostas ?? null,
+        webhook: !!s.email?.segredoWebhook,
+        // Endereço para colar no Resend da conta (Webhooks → Add endpoint).
+        webhookUrl: `${urlPublicaApi(deps.origens)}/e/resend/${token.rows[0]?.webhook_token ?? ''}`,
+        ia: !!s.personalizarAbertura,
+        iaDescricao: s.iaDescricao,
+        origem: s.origem.resend,
       },
     });
   });
@@ -47,25 +83,49 @@ export function rotasEmail(deps: DepsApi): Router {
 
   /** Confere a chave do Resend e o domínio do remetente. */
   r.post('/verificar', exigirAdmin, async (_req, res) => {
-    if (!deps.email)
-      throw AppError.invalido('O Resend não está configurado na API (RESEND_API_KEY e EMAIL_REMETENTE).');
+    const { email } = await servicos();
+    if (!email) throw AppError.invalido(NAO_CONFIGURADO);
     let resend: string;
     try {
-      resend = (await deps.email.verificar?.()) ?? 'ok';
+      resend = (await email.verificar?.()) ?? 'ok';
     } catch (erro) {
       resend = erro instanceof Error ? erro.message : String(erro);
     }
     const cfg = await repo.obterConfig(pool);
     res.json({
       resend,
-      respostas: deps.email.dominioRespostas
-        ? deps.email.segredoWebhook
+      respostas: email.dominioRespostas
+        ? email.segredoWebhook
           ? cfg.webhookEm
             ? `ok (último aviso do Resend ${new Date(cfg.webhookEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })})`
             : 'configurado; nenhum aviso do Resend chegou ainda (confira o webhook no Resend)'
-          : 'falta RESEND_WEBHOOK_SEGREDO'
-        : 'falta RESEND_DOMINIO_RESPOSTAS',
+          : 'falta o segredo do webhook (painel master)'
+        : 'falta o domínio de respostas (painel master)',
     });
+  });
+
+  /* Identidade visual (white label) */
+  r.get('/marcas', async (_req, res) => {
+    res.json(await repo.listarMarcas(pool, deps.origens));
+  });
+  r.post('/marcas', exigirAdmin, async (req, res) => {
+    const id = await repo.salvarMarca(pool, corpo(req, marcaEmailEntrada));
+    res.status(201).json({ id, marcas: await repo.listarMarcas(pool, deps.origens) });
+  });
+  r.put('/marcas/:id', exigirAdmin, async (req, res) => {
+    const id = await repo.salvarMarca(pool, corpo(req, marcaEmailEntrada), idDaRota(req));
+    res.json({ id, marcas: await repo.listarMarcas(pool, deps.origens) });
+  });
+  r.delete('/marcas/:id', exigirAdmin, async (req, res) => {
+    await repo.apagarMarca(pool, idDaRota(req));
+    res.json(await repo.listarMarcas(pool, deps.origens));
+  });
+
+  /** Logo ou capa: fica num endereço público (o e-mail do lead precisa abrir a imagem). */
+  r.post('/imagens', exigirAdmin, async (req, res) => {
+    const d = corpo(req, imagemEmailEntrada);
+    const { id, token } = await repo.guardarImagem(pool, d);
+    res.status(201).json({ id, url: repo.urlImagem(deps.origens, token) });
   });
 
   /* Modelos */
@@ -92,48 +152,73 @@ export function rotasEmail(deps: DepsApi): Router {
     res.status(201).json({ id, nome: a.nome, mime: a.mime, tamanho: Buffer.byteLength(a.base64, 'base64') });
   });
 
-  /** Prévia: o e-mail como o lead vai ver (com um lead de verdade, se informado). */
-  r.post('/previa', async (req, res) => {
-    const d = corpo(
+  /** Leads para escolher na prévia (os que a campanha alcança, com e-mail primeiro). */
+  r.get('/leads', async (req, res) => {
+    const f = consulta(
       req,
       z.object({
-        assunto: z.string().max(200),
-        corpo: z.string().max(20_000),
-        empresaId: z.number().int().positive().nullable().optional(),
+        campanhaId: z.coerce.number().int().positive().optional(),
+        busca: z.string().trim().max(120).optional(),
       }),
     );
-    res.json(await repo.previa(pool, d, d.empresaId));
+    const { rows } = await pool.query(
+      `SELECT e.id::int AS "empresaId", e.nome, e.cidade,
+              (SELECT c.valor FROM enriquecimento.contatos c
+                WHERE c.empresa_id = e.id AND c.canal = 'email' AND c.status <> 'invalido'
+                ORDER BY c.principal DESC, c.confianca DESC LIMIT 1) AS email
+         FROM descoberta.empresas e
+        WHERE EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce
+                       WHERE ce.empresa_id = e.id AND ce.conta_id = ${contaSql()}
+                         AND ($1::bigint IS NULL OR ce.campanha_id = $1))
+          AND ($2::text IS NULL OR e.nome ILIKE $2 OR e.razao_social ILIKE $2)
+        ORDER BY (EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.empresa_id = e.id AND c.canal = 'email'
+                           AND c.status <> 'invalido')) DESC, e.nome
+        LIMIT 20`,
+      [f.campanhaId ?? null, f.busca ? `%${f.busca}%` : null],
+    );
+    res.json(rows);
   });
 
-  /** Envia o modelo para você (ou outro endereço) ver na caixa de entrada de verdade. */
+  /** Prévia real: o e-mail como o lead vai ver (marca, lead de verdade, abertura da IA). */
+  r.post('/previa', async (req, res) => {
+    const d = corpo(req, textoPrevia);
+    res.json(await repo.previa(pool, { ...d, marcaId: d.marcaId ?? null }, await contextoPrevia()));
+  });
+
+  async function enviarTeste(
+    p: Awaited<ReturnType<typeof repo.previa>>,
+    marcaId: number | null,
+    para: string,
+    anexos: number[],
+  ) {
+    const { email } = await servicos();
+    if (!email) throw AppError.invalido(NAO_CONFIGURADO);
+    const marca = await repo.obterMarca(pool, marcaId, deps.origens);
+    await email.enviar({
+      de: motor.remetenteDa(email, marca),
+      para,
+      responderPara: motor.enderecoDeResposta(email, marca, null),
+      assunto: `[TESTE] ${p.assunto}`,
+      html: p.html,
+      texto: p.texto,
+      anexos: await repo.anexosDoModelo(pool, anexos),
+    });
+  }
+
+  /** Envia para você (ou outro endereço) ver na caixa de entrada de verdade. */
   r.post('/teste', exigirAdmin, async (req, res) => {
     const d = corpo(
       req,
-      z.object({
+      textoPrevia.extend({
         assunto: z.string().trim().min(1).max(200),
         corpo: z.string().trim().min(1).max(20_000),
         anexos: z.array(z.number().int().positive()).max(5).default([]),
         para: z.string().trim().toLowerCase().email('E-mail inválido.'),
       }),
     );
-    if (!deps.email)
-      throw AppError.invalido('O Resend não está configurado na API (RESEND_API_KEY e EMAIL_REMETENTE).');
-    const cfg = await repo.obterConfig(pool);
-    const p = await repo.previa(pool, d);
-    const e = montarEmail({ assunto: `[TESTE] ${d.assunto}`, corpo: d.corpo }, p.lead, {
-      assinatura: cfg.assinatura,
-      descadastro: '#',
-    });
-    await deps.email.enviar({
-      de: { nome: cfg.remetenteNome, email: deps.email.remetente },
-      para: d.para,
-      responderPara: motor.enderecoDeResposta(deps, cfg, null),
-      assunto: e.assunto,
-      html: e.html,
-      texto: e.texto,
-      anexos: await repo.anexosDoModelo(pool, d.anexos),
-    });
-    res.json({ ok: true });
+    const p = await repo.previa(pool, { ...d, marcaId: d.marcaId ?? null }, await contextoPrevia());
+    await enviarTeste(p, d.marcaId ?? null, d.para, d.anexos);
+    res.json({ ok: true, abertura: p.abertura });
   });
 
   /* Campanhas de e-mail */
@@ -165,6 +250,54 @@ export function rotasEmail(deps: DepsApi): Router {
     const id = await repo.criarCampanha(pool, corpo(req, campanhaEmailEntrada));
     res.status(201).json({ id });
   });
+  r.patch('/campanhas/:id', exigirAdmin, async (req, res) => {
+    await repo.atualizarCampanha(pool, idDaRota(req), corpo(req, campanhaEmailAtualizar));
+    res.json({ ok: true });
+  });
+
+  /** Prévia de um passo da campanha (com a marca, as instruções e a IA dela), para um lead. */
+  const previaDaCampanha = z.object({
+    passo: z.number().int().min(1).max(4).default(1),
+    empresaId: z.number().int().positive().nullable().optional(),
+  });
+  async function previaDoPasso(id: number, passo: number, empresaId: number | null | undefined) {
+    const c = await repo.obterCampanhaRow(pool, id);
+    const p = c.passos[passo - 1];
+    if (!p) throw AppError.naoEncontrado('Passo da sequência');
+    const modelo = await repo.obterModelo(pool, p.modeloId);
+    return {
+      campanha: c,
+      modelo,
+      previa: await repo.previa(
+        pool,
+        {
+          assunto: modelo.assunto,
+          corpo: modelo.corpo,
+          marcaId: c.marcaId,
+          empresaId,
+          campanhaId: c.campanhaId,
+          instrucoesIa: c.instrucoesIa,
+          personalizarIa: c.personalizarIa,
+          anexos: modelo.anexos,
+        },
+        await contextoPrevia(),
+      ),
+    };
+  }
+  r.post('/campanhas/:id/previa', async (req, res) => {
+    const d = corpo(req, previaDaCampanha);
+    res.json((await previaDoPasso(idDaRota(req), d.passo, d.empresaId)).previa);
+  });
+  r.post('/campanhas/:id/teste', exigirAdmin, async (req, res) => {
+    const d = corpo(
+      req,
+      previaDaCampanha.extend({ para: z.string().trim().toLowerCase().email('E-mail inválido.') }),
+    );
+    const { campanha, modelo, previa } = await previaDoPasso(idDaRota(req), d.passo, d.empresaId);
+    await enviarTeste(previa, campanha.marcaId, d.para, modelo.anexos);
+    res.json({ ok: true, abertura: previa.abertura });
+  });
+
   r.post('/campanhas/:id/iniciar', exigirAdmin, async (req, res) => {
     res.json(await repo.iniciarCampanha(pool, idDaRota(req)));
   });
@@ -206,7 +339,8 @@ export function rotasEmail(deps: DepsApi): Router {
 
   r.post('/respostas/:id/lida', async (req, res) => {
     await pool.query(
-      'UPDATE comercial.respostas_email SET lida_em = coalesce(lida_em, now()) WHERE id = $1',
+      `UPDATE comercial.respostas_email SET lida_em = coalesce(lida_em, now())
+        WHERE id = $1 AND conta_id = ${contaSql()}`,
       [idDaRota(req)],
     );
     res.json({ ok: true });
@@ -225,7 +359,7 @@ export function rotasEmail(deps: DepsApi): Router {
       classe: string;
     }>(
       `UPDATE comercial.respostas_email SET classe = $2, classificado_por = 'voce', lida_em = coalesce(lida_em, now())
-        WHERE id = $1
+        WHERE id = $1 AND conta_id = ${contaSql()}
         RETURNING id::int, empresa_id::int AS "empresaId", de_email AS "deEmail", texto, resumo, classe`,
       [id, classe],
     );
@@ -236,7 +370,11 @@ export function rotasEmail(deps: DepsApi): Router {
   });
 
   r.post('/respostas/:id/responder', async (req, res) => {
-    await motor.responder(deps, idDaRota(req), corpo(req, responderEmailEntrada).texto);
+    await motor.responder(
+      await motor.depsDaConta(deps),
+      idDaRota(req),
+      corpo(req, responderEmailEntrada).texto,
+    );
     res.json({ ok: true });
   });
 

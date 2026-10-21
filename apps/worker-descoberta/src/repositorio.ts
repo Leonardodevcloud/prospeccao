@@ -22,6 +22,8 @@ export interface CampanhaDescoberta {
   excluir_mei: boolean;
   /** Teto de gasto em buscas pagas no Google. null = sem teto; 0 = só a franquia grátis. */
   teto_places_usd: number | null;
+  /** Conta dona da campanha (credenciais, bases, funil). */
+  conta_id: number;
 }
 
 export async function obterCampanha(db: Executor, id: number): Promise<CampanhaDescoberta | null> {
@@ -197,7 +199,8 @@ export async function tirarMeiDaCampanha(db: Executor, campanhaId: number): Prom
     `DELETE FROM descoberta.campanha_empresas ce
       USING descoberta.empresas e
       WHERE e.id = ce.empresa_id AND ce.campanha_id = $1 AND e.mei
-        AND NOT EXISTS (SELECT 1 FROM comercial.oportunidades o WHERE o.empresa_id = e.id)`,
+        AND NOT EXISTS (SELECT 1 FROM comercial.oportunidades o
+                         WHERE o.empresa_id = e.id AND o.conta_id = ce.conta_id)`,
     [campanhaId],
   );
   return rowCount ?? 0;
@@ -216,6 +219,7 @@ export interface Busca {
   /** null = cidade inteira. */
   bairro: string | null;
   fonte: 'apify' | 'places' | 'planilha';
+  conta_id: number;
   paginas: number;
   proxima_pagina: string | null;
 }
@@ -320,8 +324,13 @@ const CONFIG_PADRAO: ConfigPlaces = {
   max_bairros: 150,
 };
 
-export async function configPlaces(db: Executor): Promise<ConfigPlaces> {
-  const { rows } = await db.query<ConfigPlaces>('SELECT * FROM cadastro.v_config_places');
+/** Tabela de preços e tetos da conta (cada conta tem a sua chave do Google, a sua franquia). */
+export async function configPlaces(db: Executor, contaId: number): Promise<ConfigPlaces> {
+  const { rows } = await db.query<ConfigPlaces>(
+    `SELECT franquia_mensal, preco_mil_usd, cotacao_brl, teto_mensal_usd, max_bairros
+       FROM cadastro.v_config_places WHERE conta_id = $1`,
+    [contaId],
+  );
   return rows[0] ?? CONFIG_PADRAO;
 }
 
@@ -336,14 +345,16 @@ export type ReservaPlaces = { ok: true; usoId: number; paga: boolean } | { ok: f
  */
 export async function reservarUsoPlaces(
   pool: Pool,
-  r: { campanhaId: number; buscaId: number; tetoCampanhaUsd: number | null },
+  r: { campanhaId: number; buscaId: number; tetoCampanhaUsd: number | null; contaId: number },
 ): Promise<ReservaPlaces> {
   return comTransacao(pool, async (db) => {
-    await db.query(`SELECT pg_advisory_xact_lock(hashtext('descoberta.uso_places'))`);
-    const cfg = await configPlaces(db);
+    // Um pedido de cada vez por conta (a franquia e os tetos são de cada conta).
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext('descoberta.uso_places:' || $1))`, [r.contaId]);
+    const cfg = await configPlaces(db, r.contaId);
     const { rows: mes } = await db.query<{ pedidos: number; gasto: number }>(
       `SELECT count(*)::int AS pedidos, coalesce(sum(custo_usd), 0)::float8 AS gasto
-         FROM descoberta.uso_places WHERE mes = descoberta.mes_places()`,
+         FROM descoberta.uso_places WHERE conta_id = $1 AND mes = descoberta.mes_places()`,
+      [r.contaId],
     );
     const usados = mes[0]?.pedidos ?? 0;
     const paga = usados >= cfg.franquia_mensal;
@@ -378,9 +389,9 @@ export async function reservarUsoPlaces(
       };
     }
     const { rows } = await db.query<{ id: number }>(
-      `INSERT INTO descoberta.uso_places (mes, campanha_id, busca_id, paga, custo_usd)
-       VALUES (descoberta.mes_places(), $1, $2, $3, $4) RETURNING id`,
-      [r.campanhaId, r.buscaId, paga, custo],
+      `INSERT INTO descoberta.uso_places (conta_id, mes, campanha_id, busca_id, paga, custo_usd)
+       VALUES ($5, descoberta.mes_places(), $1, $2, $3, $4) RETURNING id`,
+      [r.campanhaId, r.buscaId, paga, custo, r.contaId],
     );
     return { ok: true as const, usoId: Number(rows[0]!.id), paga };
   });
@@ -469,44 +480,42 @@ export async function gravarLocalizacao(db: Executor, id: number, geo: { lat: nu
 }
 
 /**
- * Recalcula a base mais próxima, a distância e o "dentro do raio" de cada
- * campanha. Campanha nacional (sem raio) ou sem bases cadastradas: ninguém
- * fica de fora por distância.
+ * Recalcula, para cada campanha da empresa, a base mais próxima (das bases da conta dona da
+ * campanha), a distância e o "dentro do raio". Campanha nacional (sem raio) ou conta sem bases
+ * cadastradas: ninguém fica de fora por distância.
  */
 export async function recalcularDistancias(
   db: Executor,
   filtro: { empresaId?: number; campanhaId?: number },
 ) {
-  const params = [filtro.empresaId ?? null, filtro.campanhaId ?? null];
   await db.query(
-    `UPDATE descoberta.empresas e
-        SET base_id = p.base_id, distancia_base_km = round(p.km::numeric, 2)
-       FROM (
-         SELECT e2.id, b.id AS base_id, b.km
-           FROM descoberta.empresas e2
-           CROSS JOIN LATERAL (
-             SELECT ba.id, public.distancia_km(e2.lat, e2.lng, ba.lat, ba.lng) AS km
-               FROM cadastro.v_bases_ativas ba ORDER BY 2 LIMIT 1
-           ) b
-          WHERE e2.lat IS NOT NULL
-            AND ($1::bigint IS NULL OR e2.id = $1)
-            AND ($2::bigint IS NULL OR e2.id IN (SELECT empresa_id FROM descoberta.campanha_empresas WHERE campanha_id = $2))
-       ) p
-      WHERE e.id = p.id`,
-    params,
-  );
-  await db.query(
-    `UPDATE descoberta.campanha_empresas ce
-        SET dentro_do_raio = CASE
-              WHEN c.raio_km IS NULL THEN true
-              WHEN NOT EXISTS (SELECT 1 FROM cadastro.v_bases_ativas) THEN true
-              WHEN e.distancia_base_km IS NULL THEN NULL
-              ELSE e.distancia_base_km <= c.raio_km END
-       FROM descoberta.empresas e, cadastro.v_campanhas_descoberta c
-      WHERE e.id = ce.empresa_id AND c.id = ce.campanha_id
-        AND ($1::bigint IS NULL OR ce.empresa_id = $1)
-        AND ($2::bigint IS NULL OR ce.campanha_id = $2)`,
-    params,
+    `WITH alvo AS (
+       SELECT ce.campanha_id, ce.empresa_id, c.raio_km, b.id AS base_id, b.km,
+              EXISTS (SELECT 1 FROM cadastro.v_bases_ativas x WHERE x.conta_id = c.conta_id) AS tem_bases,
+              e.lat IS NOT NULL AS localizada
+         FROM descoberta.campanha_empresas ce
+         JOIN descoberta.empresas e ON e.id = ce.empresa_id
+         JOIN cadastro.v_campanhas_descoberta c ON c.id = ce.campanha_id
+         LEFT JOIN LATERAL (
+           SELECT ba.id, public.distancia_km(e.lat, e.lng, ba.lat, ba.lng) AS km
+             FROM cadastro.v_bases_ativas ba
+            WHERE ba.conta_id = c.conta_id AND e.lat IS NOT NULL
+            ORDER BY 2 LIMIT 1
+         ) b ON true
+        WHERE ($1::bigint IS NULL OR ce.empresa_id = $1)
+          AND ($2::bigint IS NULL OR ce.campanha_id = $2)
+     )
+     UPDATE descoberta.campanha_empresas ce
+        SET base_id = a.base_id,
+            distancia_base_km = round(a.km::numeric, 2),
+            dentro_do_raio = CASE
+              WHEN a.raio_km IS NULL THEN true
+              WHEN NOT a.tem_bases THEN true
+              WHEN a.km IS NULL THEN NULL
+              ELSE a.km <= a.raio_km END
+       FROM alvo a
+      WHERE ce.campanha_id = a.campanha_id AND ce.empresa_id = a.empresa_id`,
+    [filtro.empresaId ?? null, filtro.campanhaId ?? null],
   );
 }
 
@@ -546,7 +555,8 @@ export async function reservarParaEnriquecimento(
         -- MEI não contrata o serviço: não gasta enriquecimento (se o nicho excluir MEI).
         AND NOT (e.mei AND c.excluir_mei)
         -- Achada de novo, mas já marcada como fora do perfil no funil: não gasta enriquecimento.
-        AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d WHERE d.empresa_id = e.id)
+        AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d
+                         WHERE d.empresa_id = e.id AND d.conta_id = c.conta_id)
         AND ($1::bigint IS NULL OR ce.campanha_id = $1)
         AND ($2::bigint IS NULL OR ce.empresa_id = $2)
       RETURNING ce.empresa_id, ce.campanha_id`,

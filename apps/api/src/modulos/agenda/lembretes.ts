@@ -1,5 +1,7 @@
 import { montarMensagem } from '@prospeccao/shared';
-import type { DepsApi } from '../../dependencias.js';
+import { contaSql } from '../../contexto.js';
+import type { DepsApi, WhatsappConta } from '../../dependencias.js';
+import { paraCadaConta } from '../../rotinas.js';
 import * as agente from '../agente/repositorio.js';
 import { dadosDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
@@ -14,7 +16,7 @@ import { obterConfig } from './repositorio.js';
  */
 
 const LOCK = 7_301_027;
-type Deps = Pick<DepsApi, 'pool' | 'log' | 'whatsapp'>;
+type Deps = Pick<DepsApi, 'pool' | 'log' | 'servicos'>;
 
 const fmtHora = new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Sao_Paulo',
@@ -39,14 +41,15 @@ export function quando(inicio: Date, agora = new Date()): string {
   return `dia ${fmtDia.format(inicio)} às ${h}`;
 }
 
-async function lembrarLeads(deps: Deps): Promise<number> {
+async function lembrarLeads(deps: Deps, whatsapp: WhatsappConta | null): Promise<number> {
   const cfg = await obterConfig(deps.pool);
-  if (!cfg.lembreteLead || !deps.whatsapp) return 0;
+  if (!cfg.lembreteLead || !whatsapp) return 0;
+  const C = contaSql();
   const { rows } = await deps.pool.query<{ id: number; empresa_id: number; inicio: Date }>(
     `UPDATE comercial.tarefas t SET lembrete_lead_em = now()
       WHERE t.id IN (
         SELECT id FROM comercial.tarefas
-         WHERE concluida_em IS NULL AND lembrete_lead_em IS NULL AND empresa_id IS NOT NULL
+         WHERE conta_id = ${C} AND concluida_em IS NULL AND lembrete_lead_em IS NULL AND empresa_id IS NOT NULL
            AND tipo IN ('reuniao', 'visita') AND inicio > now()
            AND inicio - make_interval(mins => $1) <= now()
            -- marcada já dentro da janela do lembrete (ex.: para daqui a 1 h): não manda
@@ -64,7 +67,7 @@ async function lembrarLeads(deps: Deps): Promise<number> {
         cfg.textoLembreteLead.replace(/\{quando\}/g, quando(new Date(t.inicio))),
         l.variaveis,
       );
-      const r = await deps.whatsapp!.enviar(l.telefone, texto);
+      const r = await whatsapp.enviar(l.telefone, texto);
       await agente.criarMensagem(deps.pool, {
         empresaId: t.empresa_id,
         direcao: 'enviada',
@@ -89,8 +92,9 @@ async function lembrarLeads(deps: Deps): Promise<number> {
   return n;
 }
 
-async function lembrarEquipe(deps: Deps): Promise<number> {
+async function lembrarEquipe(deps: Deps, whatsapp: WhatsappConta | null): Promise<number> {
   const cfg = await obterConfig(deps.pool);
+  const C = contaSql();
   const { rows } = await deps.pool.query<{
     id: number;
     usuario_id: number;
@@ -105,7 +109,7 @@ async function lembrarEquipe(deps: Deps): Promise<number> {
        FROM cadastro.usuarios u
       WHERE u.id = t.usuario_id AND u.ativo AND t.id IN (
         SELECT id FROM comercial.tarefas
-         WHERE concluida_em IS NULL AND lembrete_usuario_em IS NULL AND usuario_id IS NOT NULL
+         WHERE conta_id = ${C} AND concluida_em IS NULL AND lembrete_usuario_em IS NULL AND usuario_id IS NOT NULL
            AND inicio > now() - interval '1 hour'
            AND inicio - CASE WHEN tipo IN ('reuniao', 'visita') THEN make_interval(mins => $1)
                              ELSE interval '0' END <= now()
@@ -122,8 +126,8 @@ async function lembrarEquipe(deps: Deps): Promise<number> {
       texto: t.local,
       empresaId: t.empresa_id,
     });
-    if (cfg.lembreteUsuarioWhatsapp && t.telefone && deps.whatsapp)
-      await deps.whatsapp
+    if (cfg.lembreteUsuarioWhatsapp && t.telefone && whatsapp)
+      await whatsapp
         .enviar(t.telefone, `📅 ${titulo}${t.local ? `\n${t.local}` : ''}`)
         .catch((erro) =>
           deps.log.warn({ err: erro, tarefa: t.id }, 'agenda: aviso no WhatsApp do vendedor falhou'),
@@ -138,8 +142,11 @@ export async function rodarLembretes(deps: Deps): Promise<void> {
     const { rows } = await cliente.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [LOCK]);
     if (!rows[0]?.ok) return;
     try {
-      await lembrarLeads(deps);
-      await lembrarEquipe(deps);
+      await paraCadaConta(deps.pool, deps.log, 'agenda', async (conta) => {
+        const { whatsapp } = await deps.servicos(conta);
+        await lembrarLeads(deps, whatsapp);
+        await lembrarEquipe(deps, whatsapp);
+      });
     } finally {
       await cliente.query('SELECT pg_advisory_unlock($1)', [LOCK]);
     }

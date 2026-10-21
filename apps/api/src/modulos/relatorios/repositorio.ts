@@ -1,5 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import type { FiltrosRelatorio } from '@prospeccao/shared';
+import { contaSql } from '../../contexto.js';
 
 /**
  * Relatórios (só leitura): o que as campanhas acharam, como os leads andaram no funil e se a
@@ -12,6 +13,9 @@ const ORDEM_SQL = `CASE para_etapa WHEN 'a_abordar' THEN 0 WHEN 'abordado' THEN 
 
 export async function relatorio(db: Executor, f: FiltrosRelatorio) {
   const v = [f.dias, f.campanhaId ?? null];
+  const C = contaSql();
+  const daConta = (col: string) =>
+    `EXISTS (SELECT 1 FROM descoberta.campanha_empresas cc WHERE cc.empresa_id = ${col} AND cc.conta_id = ${C})`;
   const noPeriodo = (col: string) => `($1::int = 0 OR ${col} >= now() - make_interval(days => $1::int))`;
   const daCampanha = (col: string) =>
     `($2::bigint IS NULL OR EXISTS (SELECT 1 FROM descoberta.campanha_empresas cx WHERE cx.empresa_id = ${col} AND cx.campanha_id = $2))`;
@@ -26,22 +30,23 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
       FROM descoberta.empresas e
       LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
      WHERE NOT e.mei AND EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce WHERE ce.empresa_id = e.id
+                     AND ce.conta_id = ${C}
                      AND ($2::bigint IS NULL OR ce.campanha_id = $2) AND ${noPeriodo('ce.adicionada_em')})`;
 
   // Até onde cada oportunidade chegou (pelo histórico de etapas), mesmo que depois tenha perdido.
   const ALCANCE = `
     SELECT o.empresa_id, o.etapa, o.faixa_entrada, o.valor_mensal, o.criado_em,
            coalesce((SELECT max(${ORDEM_SQL}) FROM comercial.atividades a
-                      WHERE a.empresa_id = o.empresa_id AND a.tipo = 'etapa'), 0) AS alcance
+                      WHERE a.conta_id = o.conta_id AND a.empresa_id = o.empresa_id AND a.tipo = 'etapa'), 0) AS alcance
       FROM comercial.oportunidades o
-     WHERE o.etapa <> 'descartado' AND ${noPeriodo('o.criado_em')} AND ${daCampanha('o.empresa_id')}`;
+     WHERE o.conta_id = ${C} AND o.etapa <> 'descartado' AND ${noPeriodo('o.criado_em')} AND ${daCampanha('o.empresa_id')}`;
 
   const [kpis, funil, campanhas, faixas, decisores, motivos, diario] = await Promise.all([
     db.query(
       `WITH leads AS (${LEADS}), alc AS (${ALCANCE}),
             atv AS (
               SELECT a.* FROM comercial.atividades a
-               WHERE ${noPeriodo('a.criado_em')} AND ${daCampanha('a.empresa_id')})
+               WHERE a.conta_id = ${C} AND ${noPeriodo('a.criado_em')} AND ${daCampanha('a.empresa_id')})
        SELECT (SELECT count(*) FROM leads)::int AS encontrados,
               (SELECT count(*) FROM leads WHERE status = 'concluido')::int AS enriquecidos,
               (SELECT count(*) FROM leads WHERE faixa = 'A')::int AS "faixaA",
@@ -59,11 +64,13 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
               (SELECT count(DISTINCT empresa_id) FROM atv WHERE tipo = 'etapa' AND para_etapa = 'perdido')::int AS perdidos,
               (SELECT count(*) FROM atv WHERE tipo NOT IN ('nota', 'etapa'))::int AS contatos,
               (SELECT coalesce(sum(o.valor_mensal), 0)::float8 FROM comercial.oportunidades o
-                WHERE o.etapa = 'ganho' AND o.empresa_id IN (SELECT empresa_id FROM atv
+                WHERE o.conta_id = ${C} AND o.etapa = 'ganho' AND o.empresa_id IN (SELECT empresa_id FROM atv
                   WHERE tipo = 'etapa' AND para_etapa = 'ganho')) AS "valorGanho",
-              (SELECT count(*) FROM comercial.oportunidades o WHERE o.etapa NOT IN ('ganho', 'perdido', 'descartado')
+              (SELECT count(*) FROM comercial.oportunidades o WHERE o.conta_id = ${C}
+                 AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
                  AND o.proxima_acao_em < now())::int AS "followupsAtrasados",
-              (SELECT count(*) FROM comercial.oportunidades o WHERE o.etapa NOT IN ('ganho', 'perdido', 'descartado')
+              (SELECT count(*) FROM comercial.oportunidades o WHERE o.conta_id = ${C}
+                 AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
                  AND o.proxima_acao_em IS NULL AND ${daCampanha('o.empresa_id')})::int AS "semProximoPasso"`,
       v,
     ),
@@ -95,14 +102,15 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
                                  OR o.ultimo_contato_em IS NOT NULL)::int AS abordados,
               count(*) FILTER (WHERE o.etapa IN ('respondeu', 'reuniao', 'proposta', 'ganho')
                                  OR (o.etapa = 'perdido' AND EXISTS (SELECT 1 FROM comercial.atividades a
-                                     WHERE a.empresa_id = o.empresa_id AND a.para_etapa = 'respondeu')))::int AS responderam,
+                                     WHERE a.conta_id = o.conta_id AND a.empresa_id = o.empresa_id
+                                       AND a.para_etapa = 'respondeu')))::int AS responderam,
               count(*) FILTER (WHERE o.etapa = 'ganho')::int AS ganhos
          FROM cadastro.campanhas c
          JOIN descoberta.campanha_empresas ce ON ce.campanha_id = c.id AND ${noPeriodo('ce.adicionada_em')}
           AND NOT EXISTS (SELECT 1 FROM descoberta.empresas m WHERE m.id = ce.empresa_id AND m.mei)
          LEFT JOIN enriquecimento.leads l ON l.empresa_id = ce.empresa_id
-         LEFT JOIN comercial.oportunidades o ON o.empresa_id = ce.empresa_id
-        WHERE ($2::bigint IS NULL OR c.id = $2)
+         LEFT JOIN comercial.oportunidades o ON o.conta_id = c.conta_id AND o.empresa_id = ce.empresa_id
+        WHERE c.conta_id = ${C} AND ($2::bigint IS NULL OR c.id = $2)
         GROUP BY c.id ORDER BY count(ce.empresa_id) DESC`,
       v,
     ),
@@ -135,7 +143,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
     db.query(
       `SELECT o.etapa, coalesce(nullif(btrim(o.motivo), ''), 'Sem motivo informado') AS motivo, count(*)::int AS quantidade
          FROM comercial.oportunidades o
-        WHERE o.etapa IN ('perdido', 'descartado') AND ${noPeriodo('o.etapa_desde')} AND ${daCampanha('o.empresa_id')}
+        WHERE o.conta_id = ${C} AND o.etapa IN ('perdido', 'descartado') AND ${noPeriodo('o.etapa_desde')} AND ${daCampanha('o.empresa_id')}
         GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20`,
       v,
     ),
@@ -151,7 +159,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
               count(a.id) FILTER (WHERE a.tipo = 'etapa' AND a.de_etapa IS NULL AND a.para_etapa = 'a_abordar')::int AS "novosNoFunil"
          FROM dias d
          LEFT JOIN comercial.atividades a ON (a.criado_em AT TIME ZONE 'America/Sao_Paulo')::date = d.dia
-              AND ${daCampanha('a.empresa_id')}
+              AND a.conta_id = ${C} AND ${daCampanha('a.empresa_id')}
         GROUP BY d.dia ORDER BY d.dia`,
       v,
     ),
@@ -163,10 +171,12 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
        SELECT unnest(CASE WHEN cardinality(f.fontes) = 0 THEN ARRAY['desconhecida'] ELSE f.fontes END) AS fonte
          FROM comercial.feedback f
         WHERE f.tipo = 'numero_errado' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}
+          AND ${daConta('f.empresa_id')}
      ),
      total AS (
        SELECT unnest(c.fontes) AS fonte, count(*)::int AS n
          FROM enriquecimento.contatos c WHERE c.canal IN ('whatsapp', 'telefone', 'email')
+          AND ${daConta('c.empresa_id')}
         GROUP BY 1
      )
      SELECT m.fonte, count(*)::int AS erros, coalesce(max(t.n), 0)::int AS contatos
@@ -176,17 +186,20 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
   );
   const naoDecisores = await db.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM comercial.feedback f
-      WHERE f.tipo = 'nao_decisor' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}`,
+      WHERE f.tipo = 'nao_decisor' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}
+        AND ${daConta('f.empresa_id')}`,
     v,
   );
   // Custos do mês corrente (horário do Google para o Places; calendário para a base paga).
   const custos = await db
     .query<{ basePagaBrl: number; basePagaConsultas: number; placesEnriquecimento: number }>(
-      `SELECT coalesce((SELECT sum(custo_brl) FROM enriquecimento.uso_base_paga
-                         WHERE criado_em >= date_trunc('month', now())), 0)::float8 AS "basePagaBrl",
-              (SELECT count(*) FROM enriquecimento.uso_base_paga
-                WHERE criado_em >= date_trunc('month', now()))::int AS "basePagaConsultas",
-              coalesce((SELECT pedidos FROM enriquecimento.uso_places WHERE mes = descoberta.mes_places()), 0)::int
+      `SELECT coalesce((SELECT sum(b.custo_brl) FROM enriquecimento.uso_base_paga b
+                         WHERE b.criado_em >= date_trunc('month', now()) AND ${daConta('b.empresa_id')}), 0)::float8
+                AS "basePagaBrl",
+              (SELECT count(*) FROM enriquecimento.uso_base_paga b
+                WHERE b.criado_em >= date_trunc('month', now()) AND ${daConta('b.empresa_id')})::int AS "basePagaConsultas",
+              coalesce((SELECT pedidos FROM enriquecimento.uso_places
+                         WHERE conta_id = ${C} AND mes = descoberta.mes_places()), 0)::int
                 AS "placesEnriquecimento"`,
     )
     .then((r) => r.rows[0])

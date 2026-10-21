@@ -1,6 +1,6 @@
 import { setTimeout as esperar } from 'node:timers/promises';
 import { carregarEnv, envBase, opcional } from '@prospeccao/config';
-import { criarPool } from '@prospeccao/db';
+import { cacheDeCredenciais, chaveDoAmbiente, criarPool } from '@prospeccao/db';
 import * as apify from '@prospeccao/integrations/apify';
 import * as ors from '@prospeccao/integrations/ors';
 import * as places from '@prospeccao/integrations/places';
@@ -12,8 +12,12 @@ import type { Deps } from './dependencias.js';
 
 const env = carregarEnv(
   envBase.extend({
-    /** Google Places API (New): provedor das buscas no Maps. Ative a "Places API (New)" no Google Cloud. */
+    /**
+     * Google Places API (New) da conta principal. As outras contas usam a chave cadastrada no
+     * painel master (lida com CHAVE_CREDENCIAIS, a mesma da api).
+     */
     GOOGLE_PLACES_KEY: opcional(z.string().min(10)),
+    CHAVE_CREDENCIAIS: opcional(z.string().min(32)),
     /** "apify" força o Apify mesmo com a chave do Google (para voltar atrás sem mexer em código). */
     MAPS_PROVEDOR: z.enum(['places', 'apify']).default('places'),
     /** Opcional (legado): Apify, usado só sem GOOGLE_PLACES_KEY ou com MAPS_PROVEDOR=apify. */
@@ -43,11 +47,12 @@ const env = carregarEnv(
 );
 
 const log = criarLogger('worker-descoberta', env.LOG_LEVEL);
-const usarPlaces = !!env.GOOGLE_PLACES_KEY && env.MAPS_PROVEDOR === 'places';
-if (!usarPlaces && !env.APIFY_TOKEN) {
-  log.fatal('Configure GOOGLE_PLACES_KEY (Google Places) ou APIFY_TOKEN no worker-descoberta.');
-  process.exit(1);
-}
+const usarPlaces = env.MAPS_PROVEDOR === 'places';
+const chave = chaveDoAmbiente();
+if (!chave)
+  log.warn(
+    'CHAVE_CREDENCIAIS não configurada: só a conta principal busca no Google (com GOOGLE_PLACES_KEY).',
+  );
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-descoberta', max: 6 });
 const filas = await conectarFilas({
   url: env.DATABASE_URL,
@@ -68,13 +73,22 @@ const filas = await conectarFilas({
 const cfgApify: apify.ConfigApify | null = env.APIFY_TOKEN
   ? { token: env.APIFY_TOKEN, atorMaps: env.APIFY_MAPS_ATOR, inputExtra: env.APIFY_MAPS_INPUT_EXTRA }
   : null;
-const cfgPlaces: places.ConfigPlaces | null = usarPlaces ? { apiKey: env.GOOGLE_PLACES_KEY! } : null;
+// Credenciais de cada conta (painel master) e as do ambiente, que valem para a conta principal.
+const credenciais = cacheDeCredenciais(pool, chave, {
+  placesKey: env.GOOGLE_PLACES_KEY ?? null,
+  orsKey: env.ORS_API_KEY ?? null,
+});
 
 const deps: Deps = {
   pool,
   filas,
   log,
-  places: cfgPlaces ? { buscar: (busca) => places.buscarTexto(cfgPlaces, busca) } : null,
+  async placesDa(contaId) {
+    if (!usarPlaces) return null;
+    const c = await credenciais.obter(contaId);
+    const cfg = c.places;
+    return cfg ? { buscar: (busca) => places.buscarTexto(cfg, busca) } : null;
+  },
   maps: cfgApify
     ? {
         iniciar: (busca) => apify.iniciarBuscaMaps(cfgApify, busca),
@@ -82,15 +96,18 @@ const deps: Deps = {
         itens: (datasetId) => apify.listarItensMaps(cfgApify, datasetId),
       }
     : null,
-  geo: env.ORS_API_KEY
-    ? {
-        async geocodificar(endereco) {
-          const r = await ors.geocodificar({ apiKey: env.ORS_API_KEY! }, endereco);
-          await esperar(env.ORS_INTERVALO_MS);
-          return r;
-        },
-      }
-    : null,
+  async geoDa(contaId) {
+    const cfg = (await credenciais.obter(contaId)).ors;
+    return cfg
+      ? {
+          async geocodificar(endereco) {
+            const r = await ors.geocodificar(cfg, endereco);
+            await esperar(env.ORS_INTERVALO_MS);
+            return r;
+          },
+        }
+      : null;
+  },
   ajustes: {
     rebuscaDias: env.MAPS_REBUSCA_DIAS,
     esperaColetaSegundos: env.MAPS_ESPERA_SEGUNDOS,
@@ -124,7 +141,7 @@ await filas.consumir(
   { concorrencia: 2 },
 );
 // Concorrência 1: respeita o limite do ORS.
-await filas.consumir('empresa.localizar', (p) => casos.localizarEmpresa(deps, p.empresaId), {
+await filas.consumir('empresa.localizar', (p) => casos.localizarEmpresa(deps, p.empresaId, p.campanhaId), {
   concorrencia: 1,
 });
 await filas.consumir('cnpj.importacao_concluida', () => casos.aoAtualizarBaseCnpj(deps));
@@ -135,8 +152,8 @@ await casos
   .catch((erro) => log.warn({ err: erro }, 'não consegui retomar buscas'));
 log.info(
   {
-    buscas: usarPlaces ? 'Google Places' : 'Apify',
-    geocodificacao: deps.geo ? 'ligada' : 'desligada (sem ORS_API_KEY)',
+    buscas: usarPlaces ? 'Google Places (chave de cada conta)' : 'Apify',
+    apify: cfgApify ? 'ligado (reserva)' : 'desligado',
   },
   'worker-descoberta pronto',
 );
