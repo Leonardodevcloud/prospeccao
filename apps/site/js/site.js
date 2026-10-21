@@ -96,6 +96,279 @@ function iniciarLogo() {
   }
 }
 
+/* ---------- barra de leitura ---------- */
+function iniciarProgresso() {
+  const barra = $('.progresso');
+  if (!barra) return;
+  let pedido = 0;
+  const atualizar = () => {
+    pedido = 0;
+    const total = document.documentElement.scrollHeight - window.innerHeight;
+    barra.style.setProperty('--lido', String(total > 0 ? Math.min(1, window.scrollY / total) : 0));
+  };
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (!pedido) pedido = requestAnimationFrame(atualizar);
+    },
+    { passive: true },
+  );
+  atualizar();
+}
+
+/* ---------- nichos: o console monta a busca do nicho escolhido ---------- */
+const NICHOS = {
+  autopecas: {
+    nome: 'Autopeças',
+    cidades: 'Salvador, Feira de Santana e Lauro de Freitas',
+    cnaes: '4530-7/03 · 4530-7/01',
+    termos: '“autopeças”, “peças automotivas”',
+    decisor: 'sócio-administrador, gerente de compras',
+  },
+  farmacias: {
+    nome: 'Farmácias',
+    cidades: 'Recife, Olinda e Jaboatão dos Guararapes',
+    cnaes: '4771-7/01 · 4771-7/02',
+    termos: '“farmácia”, “drogaria”',
+    decisor: 'sócio, farmacêutico responsável',
+  },
+  petshops: {
+    nome: 'Pet shops',
+    cidades: 'Curitiba, São José dos Pinhais e Colombo',
+    cnaes: '4789-0/04 · 9609-2/08',
+    termos: '“pet shop”, “banho e tosa”',
+    decisor: 'sócio-administrador, gerente da loja',
+  },
+  construcao: {
+    nome: 'Materiais de construção',
+    cidades: 'Goiânia, Aparecida de Goiânia e Anápolis',
+    cnaes: '4744-0/99 · 4744-0/01',
+    termos: '“material de construção”, “home center”',
+    decisor: 'sócio, comprador',
+  },
+  restaurantes: {
+    nome: 'Restaurantes',
+    cidades: 'São Paulo, Santo André e Guarulhos',
+    cnaes: '5611-2/01 · 5611-2/03',
+    termos: '“restaurante”, “lanchonete”',
+    decisor: 'sócio, gerente geral',
+  },
+  clinicas: {
+    nome: 'Clínicas',
+    cidades: 'Belo Horizonte, Contagem e Betim',
+    cnaes: '8630-5/03 · 8630-5/04',
+    termos: '“clínica”, “consultório odontológico”',
+    decisor: 'sócio, gestor administrativo',
+  },
+  supermercados: {
+    nome: 'Supermercados',
+    cidades: 'Fortaleza, Caucaia e Maracanaú',
+    cnaes: '4711-3/02 · 4712-1/00',
+    termos: '“supermercado”, “mercadinho”',
+    decisor: 'sócio, gerente de compras',
+  },
+  oticas: {
+    nome: 'Óticas',
+    cidades: 'Porto Alegre, Canoas e Novo Hamburgo',
+    cnaes: '4774-1/00',
+    termos: '“ótica”, “óculos”',
+    decisor: 'sócio-administrador',
+  },
+  academias: {
+    nome: 'Academias',
+    cidades: 'Rio de Janeiro, Niterói e São Gonçalo',
+    cnaes: '9313-1/00',
+    termos: '“academia”, “estúdio de pilates”',
+    decisor: 'sócio, gerente da unidade',
+  },
+  contabilidade: {
+    nome: 'Contabilidade',
+    cidades: 'Brasília, Taguatinga e Águas Claras',
+    cnaes: '6920-6/01',
+    termos: '“escritório de contabilidade”, “contador”',
+    decisor: 'sócio, contador responsável',
+  },
+  distribuidores: {
+    nome: 'Distribuidores',
+    cidades: 'Campinas, Sorocaba e Jundiaí',
+    cnaes: '4639-7/01 · 4691-5/00',
+    termos: '“distribuidora”, “atacado”',
+    decisor: 'diretor comercial, gerente de compras',
+  },
+  motopecas: {
+    nome: 'Motopeças',
+    cidades: 'Manaus, Belém e São Luís',
+    cnaes: '4541-2/03',
+    termos: '“motopeças”, “peças para moto”',
+    decisor: 'sócio-administrador',
+  },
+};
+
+function iniciarNichos() {
+  const raiz = $('[data-nichos]');
+  if (!raiz) return;
+  const botoes = $$('.nicho', raiz);
+  const linhas = $$('.console__linhas li', raiz);
+  const campos = Object.fromEntries($$('[data-campo]', raiz).map((el) => [el.dataset.campo, el]));
+  let atual = 0;
+  let relogio = 0;
+  let digitando = 0;
+  let automatico = true;
+  let visivel = false;
+
+  const escrever = (el, texto, depois) => {
+    if (reduzMovimento) {
+      el.textContent = texto;
+      depois();
+      return;
+    }
+    let i = 0;
+    el.textContent = '';
+    el.classList.add('console__cursor');
+    const passo = () => {
+      i += Math.max(1, Math.round(texto.length / 22));
+      el.textContent = texto.slice(0, i);
+      if (i < texto.length) digitando = window.setTimeout(passo, 18);
+      else {
+        el.classList.remove('console__cursor');
+        depois();
+      }
+    };
+    passo();
+  };
+
+  const mostrar = (k, foco = false) => {
+    atual = (k + botoes.length) % botoes.length;
+    botoes.forEach((b, j) => {
+      b.setAttribute('aria-selected', String(j === atual));
+      b.tabIndex = j === atual ? 0 : -1;
+    });
+    if (foco) botoes[atual].focus();
+    const d = NICHOS[botoes[atual].dataset.nicho];
+    window.clearTimeout(digitando);
+    for (const el of $$('.console__cursor', raiz)) el.classList.remove('console__cursor');
+    for (const l of linhas) l.classList.add('apagada');
+    const ordem = ['nome', 'cidades', 'cnaes', 'termos', 'decisor'];
+    const proxima = (n) => {
+      if (n >= ordem.length) {
+        linhas[linhas.length - 1].classList.remove('apagada');
+        agendar();
+        return;
+      }
+      linhas[n].classList.remove('apagada');
+      escrever(campos[ordem[n]], d[ordem[n]], () => {
+        digitando = window.setTimeout(() => proxima(n + 1), reduzMovimento ? 0 : 140);
+      });
+    };
+    proxima(0);
+  };
+  const agendar = () => {
+    window.clearTimeout(relogio);
+    if (automatico && visivel && !reduzMovimento) relogio = window.setTimeout(() => mostrar(atual + 1), 3800);
+  };
+  const parar = () => {
+    automatico = false;
+    window.clearTimeout(relogio);
+  };
+  botoes.forEach((b, j) => {
+    b.addEventListener('click', () => {
+      parar();
+      mostrar(j);
+    });
+    b.addEventListener('keydown', (e) => {
+      const teclas = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+      if (e.key in teclas) {
+        e.preventDefault();
+        parar();
+        mostrar(atual + teclas[e.key], true);
+      }
+    });
+  });
+  if ('IntersectionObserver' in window) {
+    let primeira = true;
+    new IntersectionObserver(
+      ([en]) => {
+        visivel = en.isIntersecting;
+        if (visivel && primeira) {
+          primeira = false;
+          mostrar(0);
+        } else if (visivel) agendar();
+        else window.clearTimeout(relogio);
+      },
+      { threshold: 0.3 },
+    ).observe(raiz);
+  }
+}
+
+/* ---------- o dia do vendedor: vira sozinho para "com" quando aparece ---------- */
+function iniciarDia() {
+  const lista = $('[data-dia]');
+  const grupo = $('.alternador');
+  if (!lista || !grupo) return;
+  const botoes = $$('.alternador__botao', grupo);
+  let mexeu = false;
+  const lado = (l) => {
+    lista.dataset.lado = l;
+    grupo.dataset.lado = l;
+    for (const b of botoes) b.setAttribute('aria-pressed', String(b.dataset.lado === l));
+  };
+  for (const b of botoes)
+    b.addEventListener('click', () => {
+      mexeu = true;
+      lado(b.dataset.lado);
+    });
+  if (!('IntersectionObserver' in window)) return;
+  const obs = new IntersectionObserver(
+    ([en]) => {
+      if (!en.isIntersecting) return;
+      obs.disconnect();
+      window.setTimeout(() => {
+        if (!mexeu) lado('com');
+      }, 2600);
+    },
+    { threshold: 0.5 },
+  );
+  obs.observe(lista);
+}
+
+/* ---------- jornada: o cartão do lead anda conforme a rolagem ---------- */
+function iniciarJornada() {
+  const raiz = $('[data-jornada]');
+  if (!raiz) return;
+  const passos = $$('.jornada__passo', raiz);
+  const blocos = $$('.lead-vivo__bloco', raiz);
+  const rotulo = $('[data-rotulo]', raiz);
+  const trilho = $('.lead-vivo__trilho span', raiz);
+  const NOMES = ['Encontrada', 'Enriquecida', 'Abordada', 'Respondeu', 'Reunião', 'Cliente'];
+  const ir = (n) => {
+    raiz.dataset.etapa = String(n);
+    passos.forEach((p, i) => {
+      p.classList.toggle('ativo', i === n);
+    });
+    blocos.forEach((b) => {
+      const a = Number(b.dataset.a);
+      b.classList.toggle('feito', a <= n);
+      b.classList.toggle('atual', a === n);
+    });
+    if (rotulo) rotulo.textContent = NOMES[n];
+    if (trilho) trilho.style.setProperty('--andou', String((n + 1) / NOMES.length));
+  };
+  ir(0);
+  if (!('IntersectionObserver' in window)) {
+    ir(NOMES.length - 1);
+    return;
+  }
+  const obs = new IntersectionObserver(
+    (entradas) => {
+      for (const en of entradas) if (en.isIntersecting) ir(Number(en.target.dataset.passo));
+    },
+    {
+      rootMargin: window.matchMedia('(max-width: 960px)').matches ? '-58% 0px -32% 0px' : '-45% 0px -45% 0px',
+    },
+  );
+  for (const p of passos) obs.observe(p);
+}
+
 /* ---------- revelar ao rolar ---------- */
 function iniciarRevelar() {
   const itens = $$('.revela');
@@ -308,6 +581,10 @@ function iniciar() {
   const ano = $('[data-ano]');
   if (ano) ano.textContent = String(new Date().getFullYear());
   iniciarTopo();
+  iniciarProgresso();
+  iniciarNichos();
+  iniciarDia();
+  iniciarJornada();
   iniciarLogo();
   iniciarRevelar();
   iniciarParalaxe();

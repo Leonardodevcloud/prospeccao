@@ -70,6 +70,7 @@
 <symbol id="i-kanban" viewBox="0 0 24 24"><path d="M5 3v14"/><path d="M12 3v8"/><path d="M19 3v18"/></symbol>
 </svg>
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
+<div class="progresso" aria-hidden="true"><span></span></div>
 
 <header class="topo" id="topo-fixo">
   <div class="wrap topo__linha">
@@ -78,9 +79,9 @@
       <span class="marca__nome"><b>Prospect Team</b><span>dados + time</span></span>
     </a>
     <nav class="menu" id="menu" aria-label="Seções">
+      <a href="#nichos">Nichos</a>
       <a href="#como">Como funciona</a>
       <a href="#recursos">Recursos</a>
-      <a href="#ia">IA</a>
       <a href="#ganhos">Ganhos</a>
       <a href="#parceiros">Parceiros</a>
       <a href="#planos">Planos</a>
@@ -143,49 +144,120 @@
   </div>
 </section>
 
-<!-- ===== Nichos ===== -->
-<section class="nichos" aria-label="Nichos atendidos">
-  <p>Para quem vende para empresas de um nicho, em qualquer cidade do Brasil</p>
-  <div class="esteira">
-    <ul class="esteira__trilho">
-      <li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Autopeças</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Distribuidores</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Farmácias</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Pet shops</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Materiais de construção</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Restaurantes</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Clínicas</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Óticas</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Supermercados</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Motopeças</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Atacarejos</li><li class="pilula"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Floriculturas</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Autopeças</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Distribuidores</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Farmácias</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Pet shops</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Materiais de construção</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Restaurantes</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Clínicas</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Óticas</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Supermercados</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Motopeças</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Atacarejos</li><li class="pilula" aria-hidden="true"><svg class="ic ic--14" aria-hidden="true"><use href="#i-store"></use></svg>Floriculturas</li>
-    </ul>
+<!-- ===== Nichos e cidades (destaque) ===== -->
+<section class="mundo" id="nichos" aria-labelledby="mundo-titulo">
+  <div class="mundo__grade" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="mundo__cabeca revela">
+      <p class="chapeu">Feito para o seu mercado</p>
+      <h2 id="mundo-titulo" class="mundo__titulo">Qualquer nicho.<br><em>Qualquer cidade do Brasil.</em></h2>
+      <p class="mundo__sub">Você diz para quem vende e onde. O Prospect Team transforma isso numa busca na base da Receita, que cobre os 5.570 municípios do país, e no Google Maps, e devolve empresas de verdade, com quem decide e como falar com essa pessoa.</p>
+    </div>
+    <div class="mundo__corpo revela" data-nichos>
+      <div class="nichos-grade" role="tablist" aria-label="Escolha um nicho">
+<button class="nicho" type="button" role="tab" aria-selected="true" tabindex="0" data-nicho="autopecas"><svg class="ic" aria-hidden="true"><use href="#i-store"></use></svg><span>Autopeças</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="farmacias"><svg class="ic" aria-hidden="true"><use href="#i-package"></use></svg><span>Farmácias</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="petshops"><svg class="ic" aria-hidden="true"><use href="#i-store"></use></svg><span>Pet shops</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="construcao"><svg class="ic" aria-hidden="true"><use href="#i-layers"></use></svg><span>Materiais de construção</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="restaurantes"><svg class="ic" aria-hidden="true"><use href="#i-store"></use></svg><span>Restaurantes</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="clinicas"><svg class="ic" aria-hidden="true"><use href="#i-building-2"></use></svg><span>Clínicas</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="supermercados"><svg class="ic" aria-hidden="true"><use href="#i-store"></use></svg><span>Supermercados</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="oticas"><svg class="ic" aria-hidden="true"><use href="#i-store"></use></svg><span>Óticas</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="academias"><svg class="ic" aria-hidden="true"><use href="#i-users"></use></svg><span>Academias</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="contabilidade"><svg class="ic" aria-hidden="true"><use href="#i-file-text"></use></svg><span>Contabilidade</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="distribuidores"><svg class="ic" aria-hidden="true"><use href="#i-package"></use></svg><span>Distribuidores</span></button>
+<button class="nicho" type="button" role="tab" aria-selected="false" tabindex="-1" data-nicho="motopecas"><svg class="ic" aria-hidden="true"><use href="#i-store"></use></svg><span>Motopeças</span></button>
+      </div>
+      <div class="console" role="tabpanel" aria-live="polite" aria-label="Como o Prospect Team monta a busca">
+        <div class="console__barra" aria-hidden="true"><i></i><i></i><i></i><span>nova campanha</span></div>
+        <ol class="console__linhas">
+          <li data-linha="0"><span class="console__rot">Nicho</span><span class="console__val" data-campo="nome">Autopeças</span></li>
+          <li data-linha="1"><span class="console__rot">Cidades</span><span class="console__val" data-campo="cidades">Salvador, Feira de Santana e Lauro de Freitas</span></li>
+          <li data-linha="2"><span class="console__rot">CNAEs na Receita</span><span class="console__val console__mono" data-campo="cnaes">4530-7/03 · 4530-7/01</span></li>
+          <li data-linha="3"><span class="console__rot">Busca no Maps</span><span class="console__val" data-campo="termos">“autopeças”, “peças automotivas”</span></li>
+          <li data-linha="4"><span class="console__rot">Quem decide</span><span class="console__val" data-campo="decisor">sócio-administrador, gerente de compras</span></li>
+          <li data-linha="5" class="console__fim"><svg class="ic" aria-hidden="true"><use href="#i-badge-check"></use></svg><span data-campo="fim">Empresas reais, com nota, decisor e contato confirmado. Prontas para abordar.</span></li>
+        </ol>
+      </div>
+    </div>
+    <p class="mundo__nota revela">Não achou o seu nicho aqui? Ele é configurável: você escolhe os CNAEs, os termos de busca e os cargos de quem decide.</p>
+  </div>
+  <div class="cidades revela">
+    <ul class="cidades__trilho" aria-hidden="true"><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Salvador</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>São Paulo</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Recife</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Fortaleza</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Belo Horizonte</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Curitiba</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Porto Alegre</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Goiânia</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Manaus</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Belém</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Brasília</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Rio de Janeiro</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Natal</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>João Pessoa</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Maceió</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Aracaju</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Teresina</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>São Luís</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Vitória</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Florianópolis</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Salvador</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>São Paulo</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Recife</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Fortaleza</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Belo Horizonte</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Curitiba</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Porto Alegre</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Goiânia</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Manaus</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Belém</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Brasília</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Rio de Janeiro</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Natal</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>João Pessoa</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Maceió</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Aracaju</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Teresina</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>São Luís</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Vitória</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Florianópolis</li></ul>
+    <ul class="cidades__trilho cidades__trilho--volta" aria-hidden="true"><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Campinas</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Ribeirão Preto</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Uberlândia</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Londrina</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Joinville</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Caxias do Sul</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Feira de Santana</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Vitória da Conquista</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Petrolina</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Juiz de Fora</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Campo Grande</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Cuiabá</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Porto Velho</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Palmas</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Macapá</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Boa Vista</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Rio Branco</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Santos</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Sorocaba</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Maringá</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Campinas</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Ribeirão Preto</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Uberlândia</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Londrina</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Joinville</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Caxias do Sul</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Feira de Santana</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Vitória da Conquista</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Petrolina</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Juiz de Fora</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Campo Grande</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Cuiabá</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Porto Velho</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Palmas</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Macapá</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Boa Vista</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Rio Branco</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Santos</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Sorocaba</li><li><svg class="ic ic--14" aria-hidden="true"><use href="#i-map-pin"></use></svg>Maringá</li></ul>
   </div>
 </section>
 
-<!-- ===== Como funciona ===== -->
-<section class="secao" id="como" style="padding-bottom:40px">
+<!-- ===== O dia do vendedor: antes e depois ===== -->
+<section class="secao dia" id="dia" aria-labelledby="dia-titulo">
+  <div class="wrap">
+    <div class="dia__cabeca revela">
+      <div class="cabeca">
+        <p class="chapeu">O dia do seu vendedor</p>
+        <h2 id="dia-titulo" class="titulo">A mesma pessoa. Um dia completamente diferente.</h2>
+      </div>
+      <fieldset class="alternador">
+        <legend class="sr">Comparar o dia</legend>
+        <button type="button" class="alternador__botao" data-lado="hoje" aria-pressed="true">Hoje</button>
+        <button type="button" class="alternador__botao" data-lado="com" aria-pressed="false">Com Prospect Team</button>
+        <span class="alternador__marca" aria-hidden="true"></span>
+      </fieldset>
+    </div>
+    <ol class="dia__lista revela" data-dia data-lado="hoje">
+      <li><span class="dia__hora mono">08:30</span><span class="dia__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-search"></use></svg></span><p><span class="dia__hoje">Procura empresas no Google, uma por uma, e copia para a planilha.</span><span class="dia__com">Abre a lista do dia: empresas do nicho, já com nota e com o motivo.</span></p></li>
+      <li><span class="dia__hora mono">10:00</span><span class="dia__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-phone"></use></svg></span><p><span class="dia__hoje">Liga para o número do cadastro e cai na recepção ou na contabilidade.</span><span class="dia__com">Fala direto com o sócio, no WhatsApp confirmado em mais de uma fonte.</span></p></li>
+      <li><span class="dia__hora mono">14:00</span><span class="dia__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-clock"></use></svg></span><p><span class="dia__hoje">Esquece o follow-up de quem pediu para retornar semana que vem.</span><span class="dia__com">A sequência manda o próximo e-mail e o WhatsApp sozinha, no dia certo.</span></p></li>
+      <li><span class="dia__hora mono">16:30</span><span class="dia__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-message-circle"></use></svg></span><p><span class="dia__hoje">Perde a resposta que chegou no e-mail enquanto olhava o WhatsApp.</span><span class="dia__com">Toda resposta cai em Conversas e avisa no celular, de qualquer canal.</span></p></li>
+      <li><span class="dia__hora mono">18:00</span><span class="dia__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-trending-up"></use></svg></span><p><span class="dia__hoje">O gestor só descobre no fim do mês o que não andou.</span><span class="dia__com">O gestor vê o funil, as reuniões e quem está rendendo, no mesmo dia.</span></p></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ===== Jornada de um lead (rolagem) ===== -->
+<section class="secao jornada" id="como" aria-labelledby="jornada-titulo">
   <div class="wrap">
     <div class="cabeca revela">
       <p class="chapeu">Como funciona</p>
-      <h2 class="titulo">Da lista de CNAEs à reunião marcada, em quatro movimentos.</h2>
+      <h2 id="jornada-titulo" class="titulo">Acompanhe um lead do zero ao contrato.</h2>
+      <p class="texto">Role a página e veja a Nova Faísca Autoelétrica sair de um CNPJ qualquer e virar cliente. Tudo isso acontece dentro do Prospect Team.</p>
     </div>
-    <ol class="passos" style="list-style:none;padding:0">
-      <li class="cartao passo revela" style="--atraso:0ms">
-        <div class="passo__barra" aria-hidden="true"><span></span></div>
-        <div class="passo__topo"><span class="passo__n">01 · DESCOBRIR</span><span class="icone-caixa"><svg class="ic ic--20" aria-hidden="true"><use href="#i-search"></use></svg></span></div>
-        <h3>Empresas reais do seu nicho</h3>
-        <p>Você escolhe CNAEs, termos de busca e cidades. O sistema cruza a base de CNPJ da Receita com o Google Maps e traz quem existe e atende de verdade.</p>
-      </li>
-      <li class="cartao passo revela" style="--atraso:120ms">
-        <div class="passo__barra" aria-hidden="true"><span></span></div>
-        <div class="passo__topo"><span class="passo__n">02 · ENRIQUECER</span><span class="icone-caixa"><svg class="ic ic--20" aria-hidden="true"><use href="#i-layers"></use></svg></span></div>
-        <h3>Quem decide e como falar</h3>
-        <p>Sócios do quadro societário, site, Instagram e LinkedIn. Cada contato com a fonte e se foi confirmado. A nota A, B ou C vem com o motivo.</p>
-      </li>
-      <li class="cartao passo revela" style="--atraso:240ms">
-        <div class="passo__barra" aria-hidden="true"><span></span></div>
-        <div class="passo__topo"><span class="passo__n">03 · ABORDAR</span><span class="icone-caixa"><svg class="ic ic--20" aria-hidden="true"><use href="#i-send"></use></svg></span></div>
-        <h3>Sequência em três canais</h3>
-        <p>E-mail com a sua marca, WhatsApp pelo chip do lead e ligação como tarefa. A IA escreve a abertura e responde dentro das suas regras.</p>
-      </li>
-      <li class="cartao passo revela" style="--atraso:360ms">
-        <div class="passo__barra" aria-hidden="true"><span></span></div>
-        <div class="passo__topo"><span class="passo__n">04 · FECHAR</span><span class="icone-caixa"><svg class="ic ic--20" aria-hidden="true"><use href="#i-kanban"></use></svg></span></div>
-        <h3>Funil até o contrato</h3>
-        <p>Quem respondeu entra no funil com próximo passo e prazo. Reunião na agenda, proposta, ganho ou perdido com motivo.</p>
-      </li>
-    </ol>
+    <div class="jornada__corpo" data-jornada data-etapa="0">
+      <div class="jornada__palco" aria-hidden="true">
+        <div class="lead-vivo">
+          <div class="lead-vivo__topo">
+            <span class="lead-vivo__loja"><svg class="ic ic--20" aria-hidden="true"><use href="#i-store"></use></svg></span>
+            <div><b>Nova Faísca Autoelétrica</b><small class="mono">98.007.919/0001-01 · Salvador, BA</small></div>
+            <span class="lead-vivo__etapa" data-rotulo>Encontrada</span>
+          </div>
+          <div class="lead-vivo__bloco" data-a="0"><span class="pp-source">CNPJ</span><span class="pp-source">Maps</span><span>Ativa desde 2011 · 4,8 com 289 avaliações</span></div>
+          <div class="lead-vivo__bloco" data-a="1">
+            <span class="pp-score pp-score--A"><span class="pp-score__faixa">A</span><span class="pp-score__num">90</span></span>
+            <span><b>Ricardo Almeida Prado</b> · sócio · WhatsApp confirmado em 3 fontes</span>
+          </div>
+          <div class="lead-vivo__bloco" data-a="2"><svg class="ic ic--14" aria-hidden="true"><use href="#i-mail"></use></svg><span>E-mail com a proposta enviado</span><span class="lead-vivo__seta">→</span><svg class="ic ic--14" aria-hidden="true"><use href="#i-message-circle"></use></svg><span>WhatsApp em 2 dias</span></div>
+          <div class="lead-vivo__bloco lead-vivo__msg" data-a="3"><span class="lead-vivo__bolha">“Hoje compro de 3 fornecedores, mas sempre falta peça. Pode me ligar amanhã?”</span><small>Respondeu no WhatsApp · a sequência parou sozinha</small></div>
+          <div class="lead-vivo__bloco" data-a="4"><svg class="ic ic--14" aria-hidden="true"><use href="#i-calendar"></use></svg><span><b>Reunião quinta, 10h</b> · já na agenda do closer e no Google Agenda</span></div>
+          <div class="lead-vivo__bloco lead-vivo__ganho" data-a="5"><svg class="ic ic--20" aria-hidden="true"><use href="#i-badge-check"></use></svg><span><b>Fechou.</b> Contrato mensal, e o motivo da vitória fica registrado.</span></div>
+          <div class="lead-vivo__trilho"><span></span></div>
+        </div>
+      </div>
+      <ol class="jornada__passos">
+        <li class="jornada__passo" data-passo="0"><span class="jornada__n mono">01</span><h3>Encontrada</h3><p>A campanha cruza a base da Receita com o Google Maps e acha a loja: CNPJ ativo, endereço, 289 avaliações. Sem planilha, sem copiar e colar.</p></li>
+        <li class="jornada__passo" data-passo="1"><span class="jornada__n mono">02</span><h3>Enriquecida</h3><p>O sistema descobre o sócio no quadro societário, confirma o WhatsApp dele no site e no Maps e dá nota A, com o motivo escrito.</p></li>
+        <li class="jornada__passo" data-passo="2"><span class="jornada__n mono">03</span><h3>Abordada</h3><p>Sai o primeiro e-mail com a sua marca e a proposta em PDF. Se ninguém responder, o WhatsApp vai dois dias depois, pelo chip do lead.</p></li>
+        <li class="jornada__passo" data-passo="3"><span class="jornada__n mono">04</span><h3>Respondeu</h3><p>Ricardo responde no WhatsApp. A sequência para na hora, o lead vai para “Respondeu” e o seu celular avisa.</p></li>
+        <li class="jornada__passo" data-passo="4"><span class="jornada__n mono">05</span><h3>Reunião marcada</h3><p>A conversa vira reunião em um clique. O lead passa do SDR para o closer, com todo o histórico junto.</p></li>
+        <li class="jornada__passo" data-passo="5"><span class="jornada__n mono">06</span><h3>Cliente</h3><p>Proposta aceita. O ganho entra nos relatórios, a meta do time anda e você sabe exatamente de onde veio esse cliente.</p></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Chamada no meio ===== -->
+<section class="faixa-cta revela" aria-label="Agendar demonstração">
+  <div class="wrap faixa-cta__linha">
+    <p><b>Quer ver isso com o seu nicho e a sua cidade?</b> Em 30 minutos montamos a primeira campanha junto com você.</p>
+    <a class="btn btn--pri" href="#contato">Agendar demonstração <svg class="ic ic--seta" aria-hidden="true"><use href="#i-arrow-right"></use></svg></a>
   </div>
 </section>
 
