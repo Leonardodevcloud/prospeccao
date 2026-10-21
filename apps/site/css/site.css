@@ -2792,3 +2792,187 @@ p {
     animation: none;
   }
 }
+
+/* ---------- funções (lista curta) ---------- */
+.funcoes {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+.funcao {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+.funcao h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.funcao p {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-muted);
+}
+.funcao__ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.funcao__selo {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.funcao--modulo {
+  background: var(--surface);
+  border-color: #cfe4df;
+}
+#funcoes .cta-linha {
+  margin-top: 28px;
+}
+
+/* ---------- planos: preço e módulos ---------- */
+.plano__de {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-muted);
+}
+.plano__preco small {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+.modulos {
+  margin-top: 28px;
+  padding: 24px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.modulos__titulo {
+  font-size: 15px;
+  font-weight: 600;
+}
+.modulos__grade {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+.modulo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.modulo > div {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 15px;
+  line-height: 20px;
+}
+.modulo small {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+.modulo--destaque {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.modulo__preco {
+  flex: none;
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-align: right;
+}
+.modulo__preco small {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+}
+.modulos__nota {
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink-muted);
+}
+@media (max-width: 480px) {
+  .modulo {
+    flex-wrap: wrap;
+  }
+  .modulo > div {
+    flex-basis: calc(100% - 56px);
+  }
+  .modulo__preco {
+    margin-left: 52px;
+    text-align: left;
+  }
+  .modulo__preco small {
+    display: inline;
+  }
+}
+
+/* ---------- planos: limites e o que vem em todos ---------- */
+.plano .plano__limites {
+  flex: 1;
+  font-size: 15px;
+}
+.em-todos {
+  margin-top: 16px;
+  padding: 20px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--brand-soft);
+}
+.em-todos__titulo {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--brand);
+}
+.em-todos__lista {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 8px 20px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.em-todos__lista li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.em-todos__lista .ic {
+  flex: none;
+  margin-top: 2px;
+  color: var(--brand);
+}
