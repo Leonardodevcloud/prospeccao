@@ -216,6 +216,10 @@ e manda um teste para a sua caixa.
 - **Alertas:** a cada 5 min a api confere e-mail, webhooks, chips, IA, tetos e se os workers estão vivos; abre uma faixa no topo e avisa os administradores.
 - **Notificações no celular:** PWA + Web Push. As chaves VAPID são geradas e guardadas no banco; nada a configurar. No iPhone, só com o sistema na Tela de Início.
 
+### Site institucional
+
+`apps/site` é a página de apresentação (HTML/CSS/JS puros, sem build), publicada como um projeto separado no Vercel com **Root Directory** `apps/site`. Detalhes em `apps/site/README.md`.
+
 ## Segurança
 
 - Usuários por conta com papéis (administrador, SDR, closer); o master vem do ambiente. Sessão em JWT num cookie `HttpOnly`, `SameSite=Strict`, `Secure` em produção.
