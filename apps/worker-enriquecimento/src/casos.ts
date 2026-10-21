@@ -11,6 +11,7 @@ import {
   provarPessoa,
   type ResultadoGoogle,
   type ResultadoSite,
+  siteProprioNosResultados,
 } from '@prospeccao/integrations/enriquecimento';
 import { ErroDefinitivo } from '@prospeccao/queue';
 import { formatarTelefone, normalizarTelefone } from '@prospeccao/shared';
@@ -169,6 +170,7 @@ export async function enriquecerEmpresa(
           cep: empresa.cep,
           cidade: empresa.cidade,
           uf: empresa.uf,
+          telefones: empresa.telefones_receita,
         });
         if (r.lugar) {
           achadaPorNome = true;
@@ -190,6 +192,9 @@ export async function enriquecerEmpresa(
         falhaMaps = true;
         semMaps = explicarFalhaPlaces(erro);
       }
+    } else if (!empresa.place_id && fontes.lugar && !ajustes.acharNoGoogle) {
+      semMaps +=
+        ' A busca pelo nome e endereço está desligada (ENRIQ_ACHAR_NO_GOOGLE=false no worker-enriquecimento).';
     } else if (!empresa.place_id && !fontes.lugar) {
       semMaps +=
         ' Com SERPER_API_KEY ou GOOGLE_PLACES_KEY no worker-enriquecimento, o sistema procura pelo nome e endereço.';
@@ -261,6 +266,11 @@ export async function enriquecerEmpresa(
             rotulo: 'Painel do Google',
           });
         instagramBusca = instagramNosResultados(d.resultados, empresa.nome);
+        // O próprio site aparece entre os resultados (alcoolmaq.com.br): não depende da IA apontar.
+        siteBusca = siteProprioNosResultados(
+          d.resultados,
+          palavrasDaEmpresa(empresa.nome, empresa.razao_social),
+        );
 
         // A IA lê os resultados; o que ela devolve só vale se estiver escrito na busca.
         const daIa: string[] = [];
@@ -284,7 +294,7 @@ export async function enriquecerEmpresa(
                 instagramBusca = l.instagram;
                 daIa.push(`Instagram @${l.instagram}`);
               }
-              if (l.site) {
+              if (l.site && !siteBusca) {
                 siteBusca = l.site;
                 daIa.push(`site ${l.site}`);
               }
@@ -328,6 +338,7 @@ export async function enriquecerEmpresa(
           instagramBusca && !daIa.includes(`Instagram @${instagramBusca}`)
             ? `Instagram @${instagramBusca}`
             : null,
+          siteBusca && !daIa.includes(`site ${siteBusca}`) ? `site ${siteBusca}` : null,
           d.painel?.telefone ? `telefone ${formatarTelefone(d.painel.telefone)} no painel do Google` : null,
           ...achados
             .slice(0, 4)
@@ -444,7 +455,7 @@ export async function enriquecerEmpresa(
     let perfil: PerfilInstagram | null = null;
     let falhaBuscaInstagram: string | null = null;
     const consultaInstagram = `"${empresa.nome}" ${empresa.cidade.toLowerCase()} instagram`;
-    if (!instagram && fontes.google && ajustes.buscarInstagram && !consultaDiretorios) {
+    if (!instagram && fontes.google && ajustes.buscarInstagram) {
       try {
         const r = await fontes.google.buscar([consultaInstagram]);
         instagram = instagramNosResultados(r.get(consultaInstagram) ?? [], empresa.nome);
@@ -506,10 +517,70 @@ export async function enriquecerEmpresa(
           c.contato({ canal: 'email', valor: e, fonte: 'instagram', confianca: 70, urlOrigem: url });
         }
         if (!empresa.cnpj) cnpjAchado ??= perfil.cnpjs[0] ?? null;
+
+        // Link da bio: abre a página (Linktree, Beacons, site…) e pega os botões de WhatsApp,
+        // telefones e e-mails, seja qual for o modelo da página. Pula se for o site já lido.
+        const daBio: string[] = [];
+        const hostDe = (u: string | null | undefined) => {
+          try {
+            return u ? new URL(u).hostname.replace(/^www\./, '') : null;
+          } catch {
+            return null;
+          }
+        };
+        const linkBio = perfil.link;
+        if (linkBio && fontes.site.lerLinks && hostDe(linkBio) !== hostDe(site?.urlFinal)) {
+          try {
+            const pagina = await fontes.site.lerLinks(linkBio);
+            if (pagina) {
+              const origem = pagina.urlFinal || linkBio;
+              for (const w of pagina.whatsapps) {
+                c.contato({
+                  canal: 'whatsapp',
+                  valor: w,
+                  fonte: 'instagram',
+                  confianca: 80,
+                  rotulo: 'Botão no link da bio',
+                  urlOrigem: origem,
+                });
+              }
+              for (const t of pagina.telefones.slice(0, 5)) {
+                c.contato({
+                  canal: 'telefone',
+                  valor: t,
+                  fonte: 'instagram',
+                  confianca: 60,
+                  rotulo: 'No link da bio',
+                  urlOrigem: origem,
+                });
+              }
+              for (const e of pagina.emails.slice(0, 5)) {
+                c.contato({
+                  canal: 'email',
+                  valor: e,
+                  fonte: 'instagram',
+                  confianca: 60,
+                  rotulo: 'No link da bio',
+                  urlOrigem: origem,
+                });
+              }
+              if (pagina.whatsapps.length) daBio.push(`${pagina.whatsapps.length} WhatsApp`);
+              if (pagina.telefones.length) daBio.push(`${pagina.telefones.length} telefone(s)`);
+              if (pagina.emails.length) daBio.push(`${pagina.emails.length} e-mail(s)`);
+            }
+          } catch (erro) {
+            log.warn({ err: erro, link: linkBio }, 'não consegui abrir o link da bio');
+          }
+        }
+        const bioTexto = linkBio
+          ? daBio.length
+            ? ` Link da bio (${hostDe(linkBio) ?? linkBio}): ${daBio.join(', ')}.`
+            : ` Link da bio (${hostDe(linkBio) ?? linkBio}) sem contatos legíveis.`
+          : '';
         await etapa(
           'instagram',
           'encontrado',
-          `@${perfil.usuario}${perfil.seguidores != null ? `, ${perfil.seguidores} seguidores` : ''}${perfil.whatsapps.length ? ', WhatsApp na bio' : ''}.`,
+          `@${perfil.usuario}${perfil.seguidores != null ? `, ${perfil.seguidores} seguidores` : ''}${perfil.whatsapps.length ? ', WhatsApp na bio' : ''}.${bioTexto}`,
           url,
         );
       }
@@ -527,7 +598,7 @@ export async function enriquecerEmpresa(
       await etapa(
         'instagram',
         'sem_resultado',
-        'O site não indica e a busca da razão social no Google não trouxe um perfil desta empresa.',
+        'Nem o site, nem a busca da razão social, nem a busca pelo nome com "instagram" trouxeram um perfil desta empresa.',
         linkGoogle(consultaInstagram),
       );
     } else {
@@ -568,6 +639,17 @@ export async function enriquecerEmpresa(
           },
           socios: socios.map((s) => ({ nome: s.nome, qualificacao: s.qualificacao })),
           cargosAlvo: campanha.cargos_alvo,
+          contatos: (() => {
+            const todos = [...c.contatos.values()];
+            const n = (canal: string) => todos.filter((x) => x.canal === canal).length;
+            return {
+              whatsapp: n('whatsapp'),
+              telefones: n('telefone'),
+              emails: n('email'),
+              instagram: !!perfil,
+              site: !!site,
+            };
+          })(),
           textoSite: site?.texto ?? null,
           bioInstagram: perfil?.bio ?? null,
         });
@@ -626,6 +708,8 @@ export async function enriquecerEmpresa(
       // Busca ampla, como uma pessoa digitaria: nome da loja + cidade no LinkedIn. Traz perfis
       // sem o cargo no título e a página da empresa.
       const consultaAmpla = `site:linkedin.com "${nomeBusca}" ${empresa.cidade.toLowerCase()}`;
+      // Funcionários de qualquer cargo, sem a cidade: muitos perfis dizem só "Brasil".
+      const consultaPessoas = `site:linkedin.com/in "${nomeBusca}"`;
       const admins = socios.filter((s) => s.prioridade === 1).slice(0, 2);
       const consultasSocios = admins.map((s) => `site:linkedin.com/in "${s.nome}" ${nomeBusca}`);
       const palavras = palavrasDaEmpresa(empresa.nome, empresa.razao_social);
@@ -641,12 +725,17 @@ export async function enriquecerEmpresa(
           const r = await buscarComRetentativa(fontes.google, [
             consultaEmpresa,
             consultaAmpla,
+            consultaPessoas,
             ...consultasSocios,
           ]);
           let achadas = 0;
           const aceitos: string[] = [];
           const urlsAceitas = new Set<string>();
-          const resultadosEmpresa = [...(r.get(consultaEmpresa) ?? []), ...(r.get(consultaAmpla) ?? [])];
+          const resultadosEmpresa = [
+            ...(r.get(consultaEmpresa) ?? []),
+            ...(r.get(consultaAmpla) ?? []),
+            ...(r.get(consultaPessoas) ?? []),
+          ];
           for (const p of pessoasDaEmpresa(resultadosEmpresa, palavras)) {
             if (urlsAceitas.has(p.url)) continue;
             urlsAceitas.add(p.url);
@@ -730,7 +819,10 @@ export async function enriquecerEmpresa(
               : vistos.size
                 ? `O Google trouxe ${vistos.size} perfil(is), nenhum desta empresa: ${motivoIgnorados}.${pagina}`
                 : `Nenhum perfil do LinkedIn no Google com o nome desta empresa.${pagina}`,
-            linkGoogle(consultaAmpla),
+            // Achou a página da empresa: o link leva direto para ela, não para a busca.
+            paginaEmpresa
+              ? (paginaEmpresa.url.split('?')[0] ?? paginaEmpresa.url)
+              : linkGoogle(consultaAmpla),
           );
         }
       } catch (erro) {

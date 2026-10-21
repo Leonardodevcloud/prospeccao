@@ -99,7 +99,7 @@ const credenciais = cacheDeCredenciais(pool, chaveDoAmbiente(), {
 
 /** Fontes da plataforma: as mesmas para todas as contas (Serper, Apify, base paga, sites). */
 const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'instagram' | 'diretorios' | 'basePaga'> = {
-  site: { ler: (url) => enriq.lerSite(url) },
+  site: { ler: (url) => enriq.lerSite(url), lerLinks: (url) => enriq.lerPaginaDeLinks(url) },
   // Serper é mais barato e rápido; o Apify fica de reserva quando não há a chave do Serper.
   google: serper
     ? { nome: 'Serper', buscar: (consultas) => enriq.buscarNoGoogleSerper(serper, consultas) }

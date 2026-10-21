@@ -125,6 +125,17 @@ export async function acharLugarSerper(cfg: ConfigSerper, e: EmpresaParaAchar): 
     lugar = outros.find((l) => mesmoLugar(l, e)) ?? null;
     candidatos += outros.length;
   }
+  // Nome e endereço da Receita às vezes estão desatualizados: tenta pelo telefone, que
+  // só vale se o lugar tiver exatamente o mesmo número.
+  for (const tel of (e.telefones ?? []).slice(0, 2)) {
+    if (lugar) break;
+    const d = tel.replace(/\D/g, '');
+    if (d.length < 10) continue;
+    const formatado = `(${d.slice(0, 2)}) ${d.slice(2, -4)}-${d.slice(-4)}`;
+    const porTelefone = await lugaresSerper(cfg, `${formatado} ${e.cidade}`);
+    candidatos += porTelefone.length;
+    lugar = porTelefone.find((l) => l.telefone && l.telefone.slice(-8) === d.slice(-8)) ?? null;
+  }
   return { lugar, candidatos, texto, fonte: 'serper' };
 }
 
@@ -175,13 +186,40 @@ export function contatosDosDiretorios(
     }
     for (const em of achados.emails) {
       const dominioEmail = em.split('@')[1] ?? '';
-      if (!dominioEmail || dominio.endsWith(dominioEmail) || dominioEmail.endsWith(dominio)) continue;
+      // E-mail do próprio diretório (contato@econodata) sai; o do site da empresa
+      // (vendas@alcoolmaq.com.br em alcoolmaq.com.br) fica.
+      const doDiretorio = dominio.endsWith(dominioEmail) || dominioEmail.endsWith(dominio);
+      if (!dominioEmail || (doDiretorio && !dominioDaEmpresa(dominio, palavras))) continue;
       if (vistos.has(`e:${em}`)) continue;
       vistos.add(`e:${em}`);
       saida.push({ canal: 'email', valor: em, dominio, url: r.url });
     }
   }
   return saida;
+}
+
+/** Domínio com uma palavra própria da empresa ("alcoolmaq.com.br" para "Alcoolmaq"). */
+export function dominioDaEmpresa(dominio: string, palavras: string[]): boolean {
+  const nome = semAcento(dominio.split('.')[0] ?? '').replace(/[^a-z0-9]/g, '');
+  return !!nome && palavras.some((p) => nome === p || (p.length > 4 && nome.includes(p)));
+}
+
+/** Sites que listam empresas (ou redes sociais): nunca são o site da própria empresa. */
+const NAO_E_SITE_PROPRIO =
+  /instagram\.com|facebook\.com|linkedin\.com|youtube\.com|tiktok\.com|twitter\.com|x\.com|wa\.me|whatsapp\.com|google\.|econodata|cnpj|casadosdados|serasa|solutudo|guiamais|apontador|telelistas|autoguia|lavrale|empresaqui|consultas|reclameaqui|mercadolivre|olx|ifood|jusbrasil/i;
+
+/**
+ * O site da própria empresa entre os resultados da razão social: o domínio tem o nome dela
+ * (alcoolmaq.com.br). Diretórios e redes sociais ficam de fora.
+ */
+export function siteProprioNosResultados(resultados: ResultadoGoogle[], palavras: string[]): string | null {
+  if (!palavras.length) return null;
+  for (const r of resultados) {
+    const dominio = dominioDe(r.url);
+    if (!dominio || NAO_E_SITE_PROPRIO.test(dominio)) continue;
+    if (dominioDaEmpresa(dominio, palavras)) return `https://${dominio}`;
+  }
+  return null;
 }
 
 export interface BuscaDiretorios {

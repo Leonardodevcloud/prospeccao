@@ -147,6 +147,8 @@ export interface EntradaAvaliacao {
   };
   socios: { nome: string; qualificacao: string }[];
   cargosAlvo: string[];
+  /** O que já foi achado para falar com a empresa (quanto mais canais, mais fácil abordar). */
+  contatos?: { whatsapp: number; telefones: number; emails: number; instagram: boolean; site: boolean };
   textoSite: string | null;
   bioInstagram: string | null;
 }
@@ -206,9 +208,18 @@ export function montarPrompt(e: EntradaAvaliacao): string {
     '  NÃO inclua: clientes, autores de depoimentos ou avaliações ("o que dizem nossos clientes", estrelas, "recomendo"), quem comentou ou marcou o perfil, fornecedores, marcas, nomes sem cargo no texto. Na dúvida, deixe de fora: lista vazia é melhor que nome errado. Não repita os sócios.',
     `Cargos que mais interessam: ${e.cargosAlvo.join(', ') || 'dono, sócio, gerente, comprador'}.`,
     '',
+    'COMO DAR A NOTA (siga à risca):',
+    '- Só pese contra a empresa o que estiver ESCRITO nos dados (ex.: "não fazemos entrega", nota baixa, empresa fechada, ramo diferente). Um assunto que o site ou a bio não citam não é sinal negativo: é "não dá para saber" e não muda a nota.',
+    '- Mais dados encontrados (site, Instagram, telefones, e-mails) nunca diminuem a nota; só podem aumentar ou manter.',
+    '- Peso maior para: aderência ao que é vendido, tempo de mercado, movimento (avaliações, seguidores) e canais para falar com a empresa.',
+    '- No motivo, cite só sinais que estão nos dados; não escreva o que faltou.',
+    '',
     'DADOS DA EMPRESA',
     JSON.stringify(e.empresa),
     `Sócios (Receita): ${e.socios.map((s) => `${s.nome} (${s.qualificacao})`).join('; ') || 'não informado'}`,
+    e.contatos
+      ? `Canais encontrados: ${e.contatos.whatsapp} WhatsApp, ${e.contatos.telefones} telefone(s), ${e.contatos.emails} e-mail(s)${e.contatos.instagram ? ', Instagram' : ''}${e.contatos.site ? ', site' : ''}.`
+      : '',
     '',
     `BIO DO INSTAGRAM: ${e.bioInstagram ?? 'sem Instagram'}`,
     '',
@@ -221,7 +232,8 @@ export async function avaliarComIa(cfg: ConfigIa, entrada: EntradaAvaliacao): Pr
   const texto = await gerarJson(cfg, {
     prompt: montarPrompt(entrada),
     esquema: ESQUEMA,
-    temperatura: 0.2,
+    // Mesma empresa, mesma nota: sem variação de uma rodada para outra.
+    temperatura: 0,
     timeoutMs: 60_000,
     maxTokens: 1500,
   });

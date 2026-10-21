@@ -45,6 +45,10 @@ const EMAIL = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const EMAIL_LIXO =
   /\.(png|jpe?g|gif|webp|svg)$|@(example|exemplo|sentry|wixpress|domain|email)\.|^(nome|seu|your)@/i;
 const TELEFONE = /(?:\+?55[\s.-]?)?\(?\b([1-9]{2})\)?[\s.-]?(9?\d{4})[\s.-]?(\d{4})\b/g;
+const WHATSAPP_URL = /wa\.me\/\+?(\d{10,13})|whatsapp\.com\/send\/?\?(?:[^"'\s<>]*&)?phone=\+?(\d{10,13})/gi;
+/** Encurtadores que costumam esconder o link do WhatsApp (wa.link/xyz → wa.me/55…). */
+const ENCURTADOR =
+  /^https?:\/\/(www\.)?(wa\.link|bit\.ly|tinyurl\.com|abre\.ai|abrir\.link|encurtador\.com\.br|cutt\.ly|l\.ead\.me|whts\.co|zap\.link|linkwhats\.app)\//i;
 const CNPJ = /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g;
 /** Caminhos do próprio Instagram que não são perfis (páginas de tópico, posts, ajuda...). */
 const RESERVADOS_INSTAGRAM = new Set([
@@ -123,14 +127,15 @@ export function extrairContatos(conteudo: string): ContatosExtraidos {
     [...(decodificado.match(EMAIL) ?? [])].map((e) => e.toLowerCase().replace(/^mailto:/, '')),
   ).filter((e) => !EMAIL_LIXO.test(e));
 
-  const whatsapps = unicos(
-    hrefs
+  // Botões de WhatsApp em qualquer formato: href comum, JSON da página (páginas de links
+  // como Linktree guardam os botões num JSON, com "\/" escapado) ou texto corrido.
+  const semEscape = decodificado.replace(/\\\//g, '/').replace(/%3D/gi, '=').replace(/%3F/gi, '?');
+  const whatsapps = unicos([
+    ...hrefs
       .filter((h) => /wa\.me|whatsapp\.com/i.test(h))
-      .map((h) => {
-        const n = h.match(/wa\.me\/(\d+)/i)?.[1] ?? h.match(/phone=(\d+)/i)?.[1];
-        return normalizarTelefone(n);
-      }),
-  );
+      .map((h) => normalizarTelefone(h.match(/wa\.me\/(\d+)/i)?.[1] ?? h.match(/phone=(\d+)/i)?.[1])),
+    ...[...semEscape.matchAll(WHATSAPP_URL)].map((m) => normalizarTelefone(m[1] ?? m[2])),
+  ]);
 
   const telefones = unicos([
     ...hrefs.filter((h) => /^tel:/i.test(h)).map((h) => normalizarTelefone(h.slice(4))),
@@ -245,4 +250,61 @@ export function variacoesDoSite(url: string): string[] {
 function tituloDe(html: string): string | null {
   const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
   return t ? textoVisivel(t).slice(0, 160) : null;
+}
+
+/** Para onde um link curto leva (segue os redirecionamentos). */
+async function destinoFinal(url: string, timeoutMs: number): Promise<string | null> {
+  try {
+    const r = await fetch(url, {
+      headers: { 'user-agent': UA },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    await r.body?.cancel();
+    return r.url || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Página do link da bio do Instagram (Linktree, Beacons, Taplink, página própria…). Não depende
+ * do modelo da página: junta todos os links e o texto e tira WhatsApp, telefone e e-mail, e
+ * segue os links curtos (wa.link, bit.ly) até o destino.
+ */
+export async function lerPaginaDeLinks(
+  link: string,
+  opcoes: { timeoutMs?: number } = {},
+): Promise<ResultadoSite | null> {
+  const timeoutMs = opcoes.timeoutMs ?? 12_000;
+  const url = normalizarSite(link) ?? link;
+  // Link direto para o WhatsApp: nem precisa abrir.
+  const direto = extrairContatos(`<a href="${url}">`);
+  if (direto.whatsapps.length) {
+    return { urlFinal: url, paginas: [], texto: '', ...direto };
+  }
+  if (ENCURTADOR.test(url)) {
+    const destino = await destinoFinal(url, timeoutMs);
+    const doDestino = destino ? extrairContatos(`<a href="${destino}">`) : null;
+    if (doDestino?.whatsapps.length)
+      return { urlFinal: destino ?? url, paginas: [], texto: '', ...doDestino };
+  }
+  const pagina = await baixarHtml(url, timeoutMs);
+  if (!pagina) return null;
+  const contatos = extrairContatos(pagina.html);
+  const hrefs = [...pagina.html.replace(/\\\//g, '/').matchAll(/https?:\/\/[^"'\s<>\\]+/gi)].map((m) => m[0]);
+  const curtos = [...new Set(hrefs.filter((h) => ENCURTADOR.test(h)))].slice(0, 5);
+  for (const curto of curtos) {
+    const destino = await destinoFinal(curto, timeoutMs);
+    if (!destino) continue;
+    for (const w of extrairContatos(`<a href="${destino}">`).whatsapps)
+      if (!contatos.whatsapps.includes(w)) contatos.whatsapps.push(w);
+  }
+  contatos.telefones = contatos.telefones.filter((t) => !contatos.whatsapps.includes(t));
+  return {
+    urlFinal: pagina.urlFinal,
+    paginas: [{ url: pagina.urlFinal, titulo: tituloDe(pagina.html) }],
+    texto: textoVisivel(pagina.html).slice(0, LIMITE_TEXTO),
+    ...contatos,
+  };
 }

@@ -52,19 +52,47 @@ export function palavrasDaEmpresa(nome: string, razaoSocial?: string | null): st
   return [...new Set(todas.filter((p) => !SUFIXOS.has(p) && !/^\d+$/.test(p)))];
 }
 
-/** Trecho do resultado que fala do emprego ATUAL: empresa no título e "Experiência: X" do resumo. */
+/**
+ * Primeira linha do trecho do Google, no formato do LinkedIn: "Localidade · Cargo · Empresa"
+ * ("Brasil · Assistente administrativo · Alcoolmaq Rolamentos e Peças LTDA"). É o emprego ATUAL.
+ * Linha com "Experiência:" ou texto corrido não é cabeçalho e fica de fora.
+ */
+export function cabecalhoDoTrecho(descricao: string): { cargo: string | null; empresa: string } | null {
+  const linha = (descricao.split(/\n|\.\s/)[0] ?? '').trim();
+  const partes = linha
+    .split(/\s+·\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (partes.length < 2 || partes.length > 3) return null;
+  if (partes.some((p) => p.includes(':') || p.length > 80)) return null;
+  const empresa = partes[partes.length - 1] ?? '';
+  const cargo = partes.length === 3 ? (partes[1] ?? null) : null;
+  return empresa ? { cargo, empresa } : null;
+}
+
+/** Trecho do resultado que fala do emprego ATUAL: título, cabeçalho e "Experiência: X" do resumo. */
 function textoDoEmprego(perfil: PessoaLinkedin, r: ResultadoGoogle): string {
   const experiencia = r.descricao.match(/experi[eê]ncia:\s*([^·|\n]+)/i)?.[1] ?? '';
-  return comparavel(`${perfil.empresa ?? ''} ${experiencia}`);
+  const cabecalho = cabecalhoDoTrecho(r.descricao)?.empresa ?? '';
+  return comparavel(`${perfil.empresa ?? ''} ${cabecalho} ${experiencia}`);
+}
+
+/** "Alcoolmaq Rolamentos e Peças LTDA. fev. de 2018 - o momento": a empresa com emprego em aberto. */
+function empregoEmAberto(r: ResultadoGoogle, palavras: string[]): boolean {
+  const texto = comparavel(r.descricao);
+  return palavras.some((p) =>
+    new RegExp(`\\b${p}\\b[a-z0-9 ]{0,80}?\\b(19|20)\\d{2} (o momento|presente|atual|hoje)\\b`).test(texto),
+  );
 }
 
 /**
  * O perfil diz que a pessoa trabalha nesta empresa? Precisa de uma palavra própria da empresa
- * (não "auto", "peças") no emprego atual do título ou na experiência do resumo. Sem palavra própria
- * para comparar, não dá para confirmar: recusa.
+ * (não "auto", "peças") no emprego atual: título, cabeçalho do trecho, "Experiência: X" ou um
+ * período "desde 2018 - o momento". Quem só passou pela empresa (período fechado) fica de fora.
  */
 export function trabalhaNaEmpresa(perfil: PessoaLinkedin, r: ResultadoGoogle, palavras: string[]): boolean {
   if (!palavras.length) return false;
+  if (empregoEmAberto(r, palavras)) return true;
   const texto = textoDoEmprego(perfil, r);
   if (!texto) return false;
   const juntos = texto.replace(/\s+/g, '');
@@ -81,7 +109,9 @@ export function pessoasDaEmpresa(resultados: ResultadoGoogle[], palavras: string
     const p = interpretarLinkedin(r);
     if (!p || vistos.has(p.url) || !trabalhaNaEmpresa(p, r, palavras)) continue;
     vistos.add(p.url);
-    saida.push(p);
+    // Título só com o nome ("Tatiane Santos Rocha"): cargo e empresa vêm do cabeçalho do trecho.
+    const cab = cabecalhoDoTrecho(r.descricao);
+    saida.push({ ...p, cargo: p.cargo ?? cab?.cargo ?? null, empresa: p.empresa ?? cab?.empresa ?? null });
   }
   return saida;
 }

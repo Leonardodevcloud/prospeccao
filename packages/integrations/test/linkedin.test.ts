@@ -105,4 +105,29 @@ describe('MEI', () => {
       mei: true,
     });
   });
+
+  it('caso Alcoolmaq: título só com o nome; empresa no cabeçalho do trecho ou no período em aberto', () => {
+    const alcoolmaq = palavrasDaEmpresa('Alcoolmaq', 'ALCOOLMAQ ROLAMENTOS E PECAS LTDA');
+    const tatiane = r(
+      'Tatiane Santos Rocha',
+      'https://br.linkedin.com/in/tatiane-santos-rocha-926577a9',
+      'Brasil · Assistente administrativo · Alcoolmaq Rolamentos e Peças LTDA. Experiência. Assistente administrativo. Alcoolmaq Rolamentos e Peças LTDA. fev. de 2018 - o momento 8 anos 8 meses. Salvador, Bahia, Brasil.',
+    );
+    // Ex-funcionária: a empresa só aparece num período fechado.
+    const ceyle = r(
+      'Ceyle Brandão - Assistente Administrativo',
+      'https://br.linkedin.com/in/ceyle',
+      'Salvador, Bahia, Brasil · Assistente Administrativo · Empresa. Assistente Administrativo · Experiência: Empresa · Formação acadêmica ... Alcoolmaq Rolamentos e Peças LTDA. jan. de 2021 - ago. de 2022 1 ano 8 meses.',
+    );
+    const achadas = pessoasDaEmpresa([tatiane, ceyle], alcoolmaq);
+    expect(achadas.map((p) => p.nome)).toEqual(['Tatiane Santos Rocha']);
+    expect(achadas[0]?.cargo).toBe('Assistente administrativo');
+    // Só o período em aberto, sem cabeçalho, também vale.
+    const soPeriodo = r(
+      'Marcos Lima',
+      'https://br.linkedin.com/in/marcos',
+      'Experiência. Vendedor. Alcoolmaq Rolamentos e Peças. mar. de 2020 - o momento',
+    );
+    expect(pessoasDaEmpresa([soPeriodo], alcoolmaq)).toHaveLength(1);
+  });
 });

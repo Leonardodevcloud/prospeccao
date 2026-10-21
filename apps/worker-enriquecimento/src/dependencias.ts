@@ -21,7 +21,11 @@ import type { Logger } from '@prospeccao/shared';
  * pula aquela fonte e registra o motivo na trilha. Nos testes, dublês.
  */
 export interface Fontes {
-  site: { ler(url: string): Promise<ResultadoSite | null> };
+  site: {
+    ler(url: string): Promise<ResultadoSite | null>;
+    /** Página do link da bio do Instagram (Linktree, Beacons…): botões de WhatsApp e contatos. */
+    lerLinks?(url: string): Promise<ResultadoSite | null>;
+  };
   google: {
     /** Quem faz a busca ("Serper" ou "Apify"), para as mensagens de erro. */
     nome?: string;

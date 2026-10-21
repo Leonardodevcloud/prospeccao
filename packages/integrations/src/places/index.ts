@@ -156,6 +156,8 @@ export interface EmpresaParaAchar {
   cep?: string | null;
   cidade: string;
   uf: string;
+  /** Telefones já conhecidos (Receita): última tentativa, achar o lugar pelo número. */
+  telefones?: string[];
 }
 
 const semAcento = (t: string) =>
