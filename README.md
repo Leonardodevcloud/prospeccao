@@ -204,6 +204,18 @@ e botões (`[[Ver a proposta|https://…]]`). "Prévia e teste" mostra o e-mail 
 lead recebe — com um lead de verdade, a abertura da IA, os anexos, no computador ou no celular —
 e manda um teste para a sua caixa.
 
+### Operação (v12)
+
+- **Sequência multicanal:** cada passo é e-mail, WhatsApp ou ligação (até 6), com "dias sem resposta" entre eles. Resposta em qualquer canal, descadastro ou mover o lead no funil para depois de "abordado" para a sequência. WhatsApp sai pelo motor do agente (mesmo com o agente desligado), ligação vira tarefa para o dono do lead.
+- **Chips:** várias instâncias da Evolution por conta (tela Agente), cada uma com limite diário. O lead novo vai para o chip menos usado e fica sempre no mesmo. Todas as instâncias usam **o mesmo webhook** da conta; o campo `instance` diz o chip.
+- **Conversas com e-mail:** respostas de e-mail aparecem na conversa do lead e dá para responder por e-mail dali.
+- **Consumo e tetos (painel master):** IA (chamadas e tokens), e-mails, WhatsApp automático e Places por mês; tetos mensais por conta e a chave "pode usar a IA da plataforma".
+- **Esqueci minha senha:** link de 1 h, uso único, enviado pelo Resend da conta principal.
+- **Auditoria:** toda alteração feita pela tela (POST/PUT/PATCH/DELETE), acessos e exportações, sem senhas nem chaves.
+- **Exportar:** leads, funil e relatórios em .xlsx (`write-excel-file`), só administrador.
+- **Alertas:** a cada 5 min a api confere e-mail, webhooks, chips, IA, tetos e se os workers estão vivos; abre uma faixa no topo e avisa os administradores.
+- **Notificações no celular:** PWA + Web Push. As chaves VAPID são geradas e guardadas no banco; nada a configurar. No iPhone, só com o sistema na Tela de Início.
+
 ## Segurança
 
 - Usuários por conta com papéis (administrador, SDR, closer); o master vem do ambiente. Sessão em JWT num cookie `HttpOnly`, `SameSite=Strict`, `Secure` em produção.

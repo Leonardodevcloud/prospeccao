@@ -9,6 +9,7 @@ import {
   contaAtualizar,
   contaNova,
   credenciaisEntrada,
+  limitesConta,
   SERVICOS_TESTAVEIS,
   usuarioNovo,
 } from '@prospeccao/shared';
@@ -16,18 +17,13 @@ import { type Request, Router } from 'express';
 import { z } from 'zod';
 import { comConta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
-import { urlPublicaApi } from '../../endereco.js';
+import { enderecoDoApp, urlPublicaApi } from '../../endereco.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
+import * as auditoria from '../auditoria/repositorio.js';
 import { abrirSessao } from '../auth/sessao.js';
+import * as consumo from '../consumo/repositorio.js';
 import * as equipe from '../equipe/repositorio.js';
 import * as repo from './repositorio.js';
-
-/** Endereço da tela (para o link do convite): a origem do navegador ou a primeira configurada. */
-function enderecoDoApp(req: Request, origens: string[]): string {
-  const origem = req.get('origin');
-  if (origem && origens.includes(origem.toLowerCase())) return origem;
-  return origens[0] ?? '';
-}
 
 /**
  * Painel master (só quem administra a plataforma): cria contas, guarda as credenciais de cada uma,
@@ -36,10 +32,12 @@ function enderecoDoApp(req: Request, origens: string[]): string {
 export function rotasMaster(deps: DepsApi): Router {
   const { pool, credenciais, origens, log } = deps;
   const r = Router();
-  const link = (req: Request, token: string) => `${enderecoDoApp(req, origens)}/convite/${token}`;
+  const link = (req: Request, token: string) =>
+    `${enderecoDoApp(req.get('origin'), origens)}/convite/${token}`;
 
   r.get('/contas', async (_req, res) => {
-    res.json(await repo.listar(pool));
+    const [contas, ia] = await Promise.all([repo.listar(pool), consumo.iaPlataformaPorConta(pool)]);
+    res.json(contas.map((c) => ({ ...c, iaPlataformaMes: ia.get(c.id as number) ?? 0 })));
   });
 
   r.post('/contas', async (req, res) => {
@@ -69,6 +67,24 @@ export function rotasMaster(deps: DepsApi): Router {
         evolution: conta.webhookWhatsapp ? `${api}/webhooks/evolution/${conta.webhookWhatsapp}` : null,
       },
     });
+  });
+
+  /** Consumo do mês (IA, e-mails, WhatsApp, Places) e os tetos da conta. */
+  r.get('/contas/:id/consumo', async (req, res) => {
+    res.json(await consumo.consumoDaConta(pool, idDaRota(req)));
+  });
+
+  /** O que aconteceu na conta (inclusive o que o master fez nela). */
+  r.get('/contas/:id/auditoria', async (req, res) => {
+    res.json(await auditoria.daConta(pool, idDaRota(req)));
+  });
+
+  r.put('/contas/:id/limites', async (req, res) => {
+    const id = idDaRota(req);
+    await consumo.salvarLimites(pool, id, corpo(req, limitesConta));
+    // Ligar ou desligar a IA da plataforma muda o que a conta usa: esquece o que estava lembrado.
+    credenciais.invalidar(id);
+    res.json(await consumo.consumoDaConta(pool, id));
   });
 
   r.patch('/contas/:id', async (req, res) => {

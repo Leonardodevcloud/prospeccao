@@ -2,6 +2,7 @@ import type { Executor } from '@prospeccao/db';
 import { AppError, LIMITE_MIDIA_BYTES, type MidiaEntrada } from '@prospeccao/shared';
 import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
+import { chipParaEquipe, emUso as chipsEmUso } from '../agente/chips.js';
 import * as agente from '../agente/repositorio.js';
 import { dadosDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
@@ -12,21 +13,50 @@ import { lerAvisosDoLead } from '../notificacoes/repositorio.js';
  * pela tela, o lead pelo webhook) e o que foi registrado à mão como contato de WhatsApp.
  */
 
-/** Tudo de WhatsApp de um lead, sem repetir o que aparece nos dois lugares. */
+/**
+ * A conversa do lead nos dois canais: WhatsApp (mensagens do sistema e o que foi registrado à
+ * mão, sem repetir) e e-mail (os da sequência, as respostas dele e o que a equipe respondeu).
+ */
 const conversa = () => `
-  SELECT m.empresa_id, 'm' || m.id AS id, m.direcao, m.texto, m.status, m.origem, m.erro, m.nota,
-         m.midia_tipo, m.midia_id, coalesce(m.enviado_em, m.criado_em) AS em, m.usuario_id
+  SELECT m.empresa_id, 'm' || m.id AS id, 'whatsapp' AS canal, NULL::text AS assunto, m.direcao, m.texto, m.status,
+         m.origem, m.erro, m.nota, m.midia_tipo, m.midia_id, coalesce(m.enviado_em, m.criado_em) AS em, m.usuario_id
     FROM comercial.mensagens m
    WHERE m.conta_id = ${contaSql()} AND m.status <> 'descartada'
   UNION ALL
-  SELECT a.empresa_id, 'a' || a.id, a.direcao, a.texto, 'registrada', 'registro', NULL, NULL,
+  SELECT a.empresa_id, 'a' || a.id, 'whatsapp', NULL, a.direcao, a.texto, 'registrada', 'registro', NULL, NULL,
          NULL, NULL, a.criado_em, a.usuario_id
     FROM comercial.atividades a
    WHERE a.conta_id = ${contaSql()} AND a.tipo = 'whatsapp' AND a.direcao IS NOT NULL AND a.texto IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM comercial.mensagens m
                       WHERE m.conta_id = a.conta_id AND m.empresa_id = a.empresa_id AND m.direcao = a.direcao
                         AND m.texto = a.texto
-                        AND abs(extract(epoch FROM coalesce(m.enviado_em, m.criado_em) - a.criado_em)) < 600)`;
+                        AND abs(extract(epoch FROM coalesce(m.enviado_em, m.criado_em) - a.criado_em)) < 600)
+  UNION ALL
+  -- E-mails da sequência (o assunto; o texto completo fica na aba E-mail)
+  SELECT en.empresa_id, 'e' || en.id, 'email', en.assunto, 'enviada', coalesce(en.assunto, '(e-mail)'), 'enviada',
+         'sequencia', NULL, ce.nome, NULL, NULL, en.enviado_em, NULL
+    FROM comercial.envios_email en JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
+   WHERE en.conta_id = ${contaSql()} AND en.canal = 'email' AND en.status = 'enviado'
+  UNION ALL
+  -- Respostas do lead por e-mail
+  SELECT r.empresa_id, 'r' || r.id, 'email', r.assunto, 'recebida', r.texto, 'recebida', 'lead', NULL,
+         r.resumo, NULL, NULL, r.recebido_em, NULL
+    FROM comercial.respostas_email r
+   WHERE r.conta_id = ${contaSql()} AND r.empresa_id IS NOT NULL AND r.classe <> 'automatica'
+  UNION ALL
+  -- O que a equipe respondeu por e-mail (pela tela)
+  SELECT a.empresa_id, 'a' || a.id, 'email', NULL, 'enviada', a.texto, 'enviada', 'humano', NULL, NULL,
+         NULL, NULL, a.criado_em, a.usuario_id
+    FROM comercial.atividades a
+   WHERE a.conta_id = ${contaSql()} AND a.tipo = 'email' AND a.direcao = 'enviada' AND a.texto IS NOT NULL
+     AND a.usuario_id IS NOT NULL`;
+
+/** Mensagens e e-mails do lead ainda não lidos. */
+const naoLidasSql = (C: string, empresa: string) => `
+  (SELECT count(*) FROM comercial.mensagens m
+    WHERE m.conta_id = ${C} AND m.empresa_id = ${empresa} AND m.direcao = 'recebida' AND m.lida_em IS NULL)
+  + (SELECT count(*) FROM comercial.respostas_email r
+    WHERE r.conta_id = ${C} AND r.empresa_id = ${empresa} AND r.lida_em IS NULL AND r.classe <> 'automatica')`;
 
 export async function listar(
   db: Executor,
@@ -49,22 +79,20 @@ export async function listar(
   const { rows } = await db.query(
     `WITH c AS (${conversa()}),
      ult AS (
-       SELECT DISTINCT ON (empresa_id) empresa_id, texto, direcao, em, midia_tipo, status, origem
-         FROM c ORDER BY empresa_id, em DESC)
+       SELECT DISTINCT ON (empresa_id) empresa_id, texto, direcao, em, midia_tipo, status, origem, canal
+         FROM c WHERE em IS NOT NULL ORDER BY empresa_id, em DESC)
      SELECT ult.empresa_id::int AS "empresaId", e.nome, e.cidade, o.etapa, et.nome AS "etapaNome",
             et.cor AS "etapaCor", o.responsavel_id AS "responsavelId", u.nome AS "responsavelNome",
             o.agente, o.agente_pausa AS "agentePausa", ult.texto AS "ultima", ult.direcao AS "ultimaDirecao",
             ult.em AS "ultimaEm", ult.midia_tipo AS "ultimaMidia", ult.origem AS "ultimaOrigem",
+            ult.canal AS "ultimoCanal",
             coalesce(nl.n, 0) AS "naoLidas"
        FROM ult
        JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = ult.empresa_id
        JOIN descoberta.empresas e ON e.id = ult.empresa_id
        LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
        LEFT JOIN cadastro.usuarios u ON u.id = o.responsavel_id
-       LEFT JOIN LATERAL (
-         SELECT count(*)::int AS n FROM comercial.mensagens m
-          WHERE m.conta_id = ${C} AND m.empresa_id = ult.empresa_id AND m.direcao = 'recebida'
-            AND m.lida_em IS NULL) nl ON true
+       LEFT JOIN LATERAL (SELECT (${naoLidasSql(C, 'ult.empresa_id')})::int AS n) nl ON true
       WHERE ${where.join(' AND ')}
       ORDER BY ult.em DESC
       LIMIT 300`,
@@ -79,14 +107,15 @@ export async function abrir(db: Executor, empresaId: number) {
     dadosDoLead(db, empresaId),
     db.query(
       `WITH c AS (${conversa()})
-       SELECT c.id, c.direcao, c.texto, c.status, c.origem, c.erro, c.nota, c.midia_tipo AS "midiaTipo",
-              c.midia_id::int AS "midiaId", c.em,
+       SELECT c.id, c.canal, c.assunto, c.direcao, c.texto, c.status, c.origem, c.erro, c.nota,
+              c.midia_tipo AS "midiaTipo", c.midia_id::int AS "midiaId", c.em,
               CASE WHEN c.origem = 'agente' THEN 'IA'
                    WHEN c.origem = 'cadencia' THEN coalesce(u.nome, 'Cadência')
+                   WHEN c.origem = 'sequencia' THEN 'Sequência'
                    WHEN c.direcao = 'recebida' THEN NULL
                    ELSE coalesce(u.nome, 'Você') END AS autor
          FROM c LEFT JOIN cadastro.usuarios u ON u.id = c.usuario_id
-        WHERE c.empresa_id = $1
+        WHERE c.empresa_id = $1 AND c.em IS NOT NULL
         ORDER BY c.em, c.id
         LIMIT 1000`,
       [empresaId],
@@ -103,9 +132,20 @@ export async function abrir(db: Executor, empresaId: number) {
       WHERE o.conta_id = ${contaSql()} AND o.empresa_id = $1`,
     [empresaId],
   );
+  const { rows: email } = await db.query<{ email: string | null; temConversa: boolean }>(
+    `SELECT (SELECT c.valor FROM enriquecimento.contatos c
+              WHERE c.empresa_id = $1 AND c.canal = 'email' AND c.status <> 'invalido'
+              ORDER BY c.principal DESC, c.confianca DESC LIMIT 1) AS email,
+            EXISTS (SELECT 1 FROM comercial.respostas_email r
+                     WHERE r.conta_id = ${contaSql()} AND r.empresa_id = $1 AND r.classe <> 'automatica') AS "temConversa"`,
+    [empresaId],
+  );
   return {
     empresaId,
     ...info[0],
+    email: email[0]?.email ?? null,
+    /** O lead já respondeu por e-mail: a resposta vai na mesma conversa. */
+    emailEmConversa: email[0]?.temConversa ?? false,
     telefone: lead.telefone,
     variaveis: lead.variaveis,
     mensagens: msgs.rows,
@@ -116,6 +156,11 @@ export async function marcarLidas(db: Executor, empresaId: number): Promise<void
   await db.query(
     `UPDATE comercial.mensagens SET lida_em = now()
       WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND direcao = 'recebida' AND lida_em IS NULL`,
+    [empresaId],
+  );
+  await db.query(
+    `UPDATE comercial.respostas_email SET lida_em = now()
+      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND lida_em IS NULL`,
     [empresaId],
   );
   const u = usuarioAtual();
@@ -147,8 +192,10 @@ export async function enviarTexto(deps: Deps, empresaId: number, texto: string):
   const lead = await dadosDoLead(deps.pool, empresaId);
   if (!lead.telefone) throw AppError.invalido('Este lead não tem telefone.');
   const quem = usuarioAtual();
-  const r = await whatsapp.enviar(lead.telefone, texto);
+  const chip = await chipParaEquipe(deps.pool, empresaId, await chipsEmUso(deps.pool, whatsapp));
+  const r = await whatsapp.enviar(lead.telefone, texto, chip?.instancia);
   await agente.criarMensagem(deps.pool, {
+    chipId: chip?.id ?? null,
     empresaId,
     direcao: 'enviada',
     texto,
@@ -197,13 +244,18 @@ export async function enviarMidia(deps: Deps, empresaId: number, m: MidiaEntrada
   if (!lead.telefone) throw AppError.invalido('Este lead não tem telefone.');
   const midiaId = await guardarMidia(deps.pool, m);
   const quem = usuarioAtual();
-  const r = await whatsapp.enviarMidia(lead.telefone, {
-    tipo: m.tipo,
-    mime: m.mime,
-    base64: m.base64,
-    nome: m.nome,
-    legenda: m.legenda,
-  });
+  const chip = await chipParaEquipe(deps.pool, empresaId, await chipsEmUso(deps.pool, whatsapp));
+  const r = await whatsapp.enviarMidia(
+    lead.telefone,
+    {
+      tipo: m.tipo,
+      mime: m.mime,
+      base64: m.base64,
+      nome: m.nome,
+      legenda: m.legenda,
+    },
+    chip?.instancia,
+  );
   const texto =
     m.legenda || (m.tipo === 'documento' && m.nome ? `[documento] ${m.nome}` : ROTULO_MIDIA[m.tipo]);
   await agente.criarMensagem(deps.pool, {
@@ -217,6 +269,7 @@ export async function enviarMidia(deps: Deps, empresaId: number, m: MidiaEntrada
     usuarioId: quem?.id ?? null,
     midiaTipo: m.tipo,
     midiaId,
+    chipId: chip?.id ?? null,
   });
   await funil.registrarAtividade(
     deps.pool,
@@ -239,11 +292,16 @@ export async function midia(db: Executor, id: number) {
 
 /** Conversas com mensagem não lida (dos seus leads; o administrador vê todas). */
 export async function resumo(db: Executor, usuarioId: number | null): Promise<{ naoLidas: number }> {
+  const C = contaSql();
   const { rows } = await db.query<{ n: number }>(
-    `SELECT count(DISTINCT m.empresa_id)::int AS n FROM comercial.mensagens m
-       JOIN comercial.oportunidades o ON o.conta_id = m.conta_id AND o.empresa_id = m.empresa_id
-      WHERE m.conta_id = ${contaSql()} AND m.direcao = 'recebida' AND m.lida_em IS NULL
-        AND ($1::int IS NULL OR o.responsavel_id = $1 OR o.responsavel_id IS NULL)`,
+    `SELECT count(DISTINCT x.empresa_id)::int AS n FROM (
+       SELECT m.empresa_id FROM comercial.mensagens m
+        WHERE m.conta_id = ${C} AND m.direcao = 'recebida' AND m.lida_em IS NULL
+       UNION ALL
+       SELECT r.empresa_id FROM comercial.respostas_email r
+        WHERE r.conta_id = ${C} AND r.lida_em IS NULL AND r.classe <> 'automatica' AND r.empresa_id IS NOT NULL) x
+       JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = x.empresa_id
+      WHERE ($1::int IS NULL OR o.responsavel_id = $1 OR o.responsavel_id IS NULL)`,
     [usuarioId],
   );
   return { naoLidas: rows[0]?.n ?? 0 };

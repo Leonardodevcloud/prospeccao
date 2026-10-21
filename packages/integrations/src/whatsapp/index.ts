@@ -119,6 +119,8 @@ export interface MensagemRecebida {
   deMim: boolean;
   nome: string | null;
   em: string;
+  /** Instância (chip) que recebeu: com vários chips na conta, diz por qual número foi. */
+  instancia: string | null;
   /** Foto, áudio, vídeo ou documento; base64 quando a Evolution já manda junto. */
   midia: { tipo: TipoMidiaWhatsapp; mime: string | null; nome: string | null; base64: string | null } | null;
 }
@@ -165,6 +167,12 @@ export function interpretarWebhook(corpo: unknown): MensagemRecebida | null {
     deMim: chave.fromMe === true,
     nome: d.pushName ? String(d.pushName) : null,
     em: Number.isFinite(ts) && ts > 0 ? new Date(ts * 1000).toISOString() : new Date().toISOString(),
+    instancia:
+      typeof c.instance === 'string'
+        ? c.instance
+        : typeof c.instanceName === 'string'
+          ? c.instanceName
+          : null,
     midia: achada
       ? {
           tipo: achada[0],

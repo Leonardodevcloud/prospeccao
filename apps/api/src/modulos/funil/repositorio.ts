@@ -10,6 +10,7 @@ import {
 } from '@prospeccao/shared';
 import { contaSql, usuarioAtual } from '../../contexto.js';
 import { criarReuniaoDoLead } from '../agenda/repositorio.js';
+import { pararSequencia } from '../email/sequencia.js';
 import { daConta, juncoesEnriq } from '../empresas/repositorio.js';
 import { atribuirNaEntrada, atribuirNaReuniao, definirResponsavel } from '../equipe/repositorio.js';
 import { aplicarCadencia, obterConfig } from './cadencia.js';
@@ -275,6 +276,9 @@ async function mover(
     ],
   );
   await registrarEtapa(db, empresaId, de, para, autor, motivo, { de: deNome, para: alvo?.nome });
+  // Lead que respondeu, avançou ou fechou sai da sequência automática (e-mail, WhatsApp, ligação).
+  if (ORDEM_ETAPA[para] > ORDEM_ETAPA.abordado || fechando)
+    await pararSequencia(db, empresaId, `Foi para ${alvo?.nome ?? para}`);
   // Dono: reunião marcada passa para o closer; quem volta do descarte entra no rodízio de novo.
   if ((para === 'reuniao' || para === 'proposta') && ORDEM_ETAPA[de] < ORDEM_ETAPA.reuniao)
     await atribuirNaReuniao(db, empresaId);

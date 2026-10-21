@@ -272,17 +272,35 @@ export const anexoEmailEntrada = z.object({
     .max(Math.ceil((LIMITE_ANEXOS_EMAIL * 4) / 3) + 8, 'Arquivo grande demais (até 10 MB).'),
 });
 
-export const passoEmail = z.object({
-  modeloId: z.number().int().positive(),
-  /** Dias depois do passo anterior, sem resposta (o 1º passo usa 0). */
-  dias: z.number().int().min(0).max(60),
-});
+/** Canais de um passo da sequência. */
+export const CANAIS_SEQUENCIA = ['email', 'whatsapp', 'ligacao'] as const;
+export type CanalSequencia = (typeof CANAIS_SEQUENCIA)[number];
+
+/**
+ * Um passo da sequência: e-mail (com o modelo), WhatsApp (texto com as variáveis {saudacao},
+ * {nome}, {empresa}, {cidade}, {remetente}) ou ligação (tarefa para o dono do lead, com o roteiro).
+ */
+export const passoEmail = z
+  .object({
+    canal: z.enum(CANAIS_SEQUENCIA).default('email'),
+    modeloId: z.number().int().positive().optional(),
+    texto: z.string().trim().max(2000).optional(),
+    /** Dias depois do passo anterior, sem resposta (o 1º passo usa 0). */
+    dias: z.number().int().min(0).max(60),
+  })
+  .superRefine((p, ctx) => {
+    if (p.canal === 'email' && !p.modeloId)
+      ctx.addIssue({ code: 'custom', message: 'Escolha o modelo do e-mail.', path: ['modeloId'] });
+    if (p.canal === 'whatsapp' && !p.texto)
+      ctx.addIssue({ code: 'custom', message: 'Escreva a mensagem do WhatsApp.', path: ['texto'] });
+  });
+export type PassoSequencia = z.infer<typeof passoEmail>;
 
 export const campanhaEmailEntrada = z.object({
   nome: z.string().trim().min(1, 'Dê um nome.').max(120),
   /** Campanha de prospecção de onde vêm os leads. */
   campanhaId: z.number().int().positive(),
-  passos: z.array(passoEmail).min(1, 'Escolha o modelo do 1º e-mail.').max(4),
+  passos: z.array(passoEmail).min(1, 'Monte o 1º passo da sequência.').max(6),
   /** Só estas notas (vazio = todas, inclusive sem nota). */
   faixas: z.array(z.enum(['A', 'B', 'C'])).default([]),
   /** Pula quem já está no funil (abordado, em conversa, cliente…). */
@@ -302,7 +320,7 @@ export type CampanhaEmailEntrada = z.infer<typeof campanhaEmailEntrada>;
 export const campanhaEmailAtualizar = z
   .object({
     nome: z.string().trim().min(1).max(120).optional(),
-    passos: z.array(passoEmail).min(1).max(4).optional(),
+    passos: z.array(passoEmail).min(1).max(6).optional(),
     marcaId: z.number().int().positive().optional(),
     instrucoesIa: z.string().trim().max(3000).optional(),
     personalizarIa: z.boolean().optional(),

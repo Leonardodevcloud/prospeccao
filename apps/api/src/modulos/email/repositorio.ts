@@ -12,11 +12,13 @@ import {
   type MarcaEmailVisual,
   type ModeloEmailEntrada,
   montarEmail,
+  type PassoSequencia,
   type VariaveisEmail,
 } from '@prospeccao/shared';
 import { contaSql, usuarioAtual } from '../../contexto.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { obterConfig as configCadencia } from '../funil/cadencia.js';
+import { emSequenciaSql, RESPONDEU_EMAIL, RESPONDEU_WHATSAPP } from './sequencia.js';
 
 /** Prospecção por e-mail (schema comercial, só a API escreve). Tudo é da conta da sessão. */
 
@@ -530,12 +532,34 @@ export async function previa(
 
 /* ───────────── Quem recebe ───────────── */
 
+/** WhatsApp do lead (o mesmo critério da mensagem pronta do funil). */
+const SQL_TEM_WHATSAPP = (empresa: string) => `EXISTS (
+  SELECT 1 FROM enriquecimento.contatos c
+   WHERE c.empresa_id = ${empresa} AND c.status <> 'invalido'
+     AND (c.canal = 'whatsapp' OR (c.canal = 'telefone' AND c.whatsapp)))`;
+const SQL_TEM_TELEFONE = (empresa: string) => `(EXISTS (
+  SELECT 1 FROM enriquecimento.contatos c
+   WHERE c.empresa_id = ${empresa} AND c.status <> 'invalido' AND c.canal IN ('whatsapp', 'telefone'))
+  OR (SELECT e2.maps_telefone FROM descoberta.empresas e2 WHERE e2.id = ${empresa}) IS NOT NULL)`;
+
+type FiltroQuem = Pick<CampanhaEmailEntrada, 'faixas' | 'pularNoFunil' | 'incluirContador'> & {
+  /** Canais da sequência: decide quem pode entrar (sem e-mail entra se houver passo de WhatsApp…). */
+  canais?: Set<string>;
+};
+
 /**
- * Leads da campanha de prospecção que podem receber: têm e-mail válido, não pediram para sair
- * (desta conta), não foram descartados e (se pedido) ainda não estão sendo trabalhados no funil.
+ * Leads da campanha de prospecção que podem entrar na sequência: têm algum canal que ela usa
+ * (e-mail válido, WhatsApp ou telefone), não pediram para sair (desta conta), não foram descartados,
+ * não estão em outra sequência e (se pedido) ainda não estão sendo trabalhados no funil.
  */
-function sqlElegiveis(c: Pick<CampanhaEmailEntrada, 'faixas' | 'pularNoFunil' | 'incluirContador'>) {
+function sqlElegiveis(c: FiltroQuem) {
   const C = contaSql();
+  const canais = c.canais ?? new Set(['email']);
+  const condicoes = [
+    canais.has('email') ? 'alvo.email IS NOT NULL' : null,
+    canais.has('whatsapp') ? 'alvo.whatsapp' : null,
+    canais.has('ligacao') ? 'alvo.telefone' : null,
+  ].filter(Boolean);
   return `
     WITH alvo AS (
       SELECT ce.empresa_id, e.nome, e.cidade, l.faixa, o.etapa,
@@ -543,17 +567,20 @@ function sqlElegiveis(c: Pick<CampanhaEmailEntrada, 'faixas' | 'pularNoFunil' | 
                WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email' AND c.status <> 'invalido'
                  ${c.incluirContador ? '' : `AND NOT (c.status = 'atencao' AND coalesce(c.rotulo, '') ILIKE '%contador%')`}
                ORDER BY c.principal DESC, (c.fontes <@ ARRAY['receita']::text[]), c.confianca DESC
-               LIMIT 1) AS email
+               LIMIT 1) AS email,
+             ${SQL_TEM_WHATSAPP('ce.empresa_id')} AS whatsapp,
+             ${SQL_TEM_TELEFONE('ce.empresa_id')} AS telefone
         FROM descoberta.campanha_empresas ce
         JOIN cadastro.campanhas cp ON cp.id = ce.campanha_id AND cp.conta_id = ${C}
         JOIN descoberta.empresas e ON e.id = ce.empresa_id
         LEFT JOIN enriquecimento.leads l ON l.empresa_id = ce.empresa_id
         LEFT JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = ce.empresa_id
        WHERE ce.campanha_id = $1)
-    SELECT DISTINCT ON (lower(alvo.email)) alvo.empresa_id::int AS "empresaId", alvo.nome, alvo.cidade,
-           alvo.faixa, lower(alvo.email) AS email
+    SELECT DISTINCT ON (coalesce(lower(alvo.email), 'lead:' || alvo.empresa_id))
+           alvo.empresa_id::int AS "empresaId", alvo.nome, alvo.cidade,
+           alvo.faixa, lower(alvo.email) AS email, alvo.whatsapp, alvo.telefone
       FROM alvo
-     WHERE alvo.email IS NOT NULL
+     WHERE (${condicoes.join(' OR ') || 'false'})
        AND alvo.etapa IS DISTINCT FROM 'descartado'
        ${c.pularNoFunil ? `AND (alvo.etapa IS NULL OR alvo.etapa = 'a_abordar')` : ''}
        ${c.faixas.length ? 'AND alvo.faixa = ANY($2::text[])' : ''}
@@ -561,15 +588,14 @@ function sqlElegiveis(c: Pick<CampanhaEmailEntrada, 'faixas' | 'pularNoFunil' | 
                         WHERE d.conta_id = ${C} AND d.email = lower(alvo.email))
        -- quem já recebeu e-mail de outra campanha da conta nos últimos 30 dias fica de fora
        AND NOT EXISTS (SELECT 1 FROM comercial.envios_email x
-                        WHERE x.conta_id = ${C} AND lower(x.email) = lower(alvo.email) AND x.status = 'enviado'
-                          AND x.enviado_em > now() - interval '30 days')
-     ORDER BY lower(alvo.email), alvo.faixa NULLS LAST`;
+                        WHERE x.conta_id = ${C} AND lower(x.email) = lower(alvo.email) AND x.canal = 'email'
+                          AND x.status = 'enviado' AND x.enviado_em > now() - interval '30 days')
+       -- nem quem já está no meio de outra sequência
+       AND NOT ${emSequenciaSql(C, 'alvo.empresa_id')}
+     ORDER BY coalesce(lower(alvo.email), 'lead:' || alvo.empresa_id), alvo.faixa NULLS LAST`;
 }
 
-export async function elegiveis(
-  db: Executor,
-  c: Pick<CampanhaEmailEntrada, 'campanhaId' | 'faixas' | 'pularNoFunil' | 'incluirContador'>,
-) {
+export async function elegiveis(db: Executor, c: FiltroQuem & Pick<CampanhaEmailEntrada, 'campanhaId'>) {
   const valores: unknown[] = [c.campanhaId];
   if (c.faixas.length) valores.push(c.faixas);
   const { rows } = await db.query<{
@@ -577,17 +603,25 @@ export async function elegiveis(
     nome: string;
     cidade: string | null;
     faixa: string | null;
-    email: string;
+    email: string | null;
+    whatsapp: boolean;
+    telefone: boolean;
   }>(sqlElegiveis(c), valores);
-  const { rows: total } = await db.query<{ leads: number; comEmail: number }>(
+  const { rows: total } = await db.query<{ leads: number; comEmail: number; comWhatsapp: number }>(
     `SELECT count(*)::int AS leads,
             count(*) FILTER (WHERE EXISTS (SELECT 1 FROM enriquecimento.contatos c
                                             WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email'
-                                              AND c.status <> 'invalido'))::int AS "comEmail"
+                                              AND c.status <> 'invalido'))::int AS "comEmail",
+            count(*) FILTER (WHERE ${SQL_TEM_WHATSAPP('ce.empresa_id')})::int AS "comWhatsapp"
        FROM descoberta.campanha_empresas ce WHERE ce.campanha_id = $1 AND ce.conta_id = ${contaSql()}`,
     [c.campanhaId],
   );
-  return { leads: total[0]?.leads ?? 0, comEmail: total[0]?.comEmail ?? 0, elegiveis: rows };
+  return {
+    leads: total[0]?.leads ?? 0,
+    comEmail: total[0]?.comEmail ?? 0,
+    comWhatsapp: total[0]?.comWhatsapp ?? 0,
+    elegiveis: rows,
+  };
 }
 
 /* ───────────── Campanhas de e-mail ───────────── */
@@ -600,12 +634,29 @@ async function conferirMarca(db: Executor, marcaId: number) {
   if (!rows.length) throw AppError.naoEncontrado('Identidade visual do e-mail');
 }
 
-const normalizarPassos = (passos: { modeloId: number; dias: number }[]) =>
-  passos.map((p, i) => ({ modeloId: p.modeloId, dias: i === 0 ? 0 : Math.max(1, p.dias) }));
+/** Passo guardado: o canal, o que ele usa (modelo do e-mail ou texto) e a espera (o 1º não espera). */
+const normalizarPassos = (passos: PassoSequencia[]) =>
+  passos.map((p, i) => ({
+    canal: p.canal ?? 'email',
+    ...(p.canal === 'email' || !p.canal ? { modeloId: p.modeloId } : {}),
+    ...(p.canal !== 'email' && p.texto ? { texto: p.texto } : {}),
+    dias: i === 0 ? 0 : Math.max(1, p.dias),
+  }));
+
+/** Os modelos de e-mail dos passos existem e são da conta. */
+async function conferirPassos(db: Executor, passos: PassoSequencia[]) {
+  for (const p of passos)
+    if ((p.canal ?? 'email') === 'email' && p.modeloId) await obterModelo(db, p.modeloId);
+}
+
+/** Canais que a sequência usa (decide quem pode entrar). */
+export function canaisDe(passos: { canal?: string }[]): Set<string> {
+  return new Set(passos.map((p) => p.canal ?? 'email'));
+}
 
 export async function criarCampanha(db: Executor, d: CampanhaEmailEntrada): Promise<number> {
   const C = contaSql();
-  for (const p of d.passos) await obterModelo(db, p.modeloId);
+  await conferirPassos(db, d.passos);
   await conferirMarca(db, d.marcaId);
   const { rows: camp } = await db.query(
     `SELECT 1 FROM cadastro.campanhas WHERE id = $1 AND conta_id = ${C}`,
@@ -636,7 +687,7 @@ export async function criarCampanha(db: Executor, d: CampanhaEmailEntrada): Prom
 export async function atualizarCampanha(db: Executor, id: number, d: CampanhaEmailAtualizar): Promise<void> {
   const c = await obterCampanhaRow(db, id);
   if (c.status === 'concluida') throw AppError.invalido('Esta campanha já terminou.');
-  if (d.passos) for (const p of d.passos) await obterModelo(db, p.modeloId);
+  if (d.passos) await conferirPassos(db, d.passos);
   if (d.marcaId) await conferirMarca(db, d.marcaId);
   const sets: string[] = [];
   const valores: unknown[] = [id];
@@ -660,7 +711,7 @@ export interface CampanhaEmailRow {
   id: number;
   nome: string;
   campanhaId: number;
-  passos: { modeloId: number; dias: number }[];
+  passos: { canal?: 'email' | 'whatsapp' | 'ligacao'; modeloId?: number; texto?: string; dias: number }[];
   faixas: ('A' | 'B' | 'C')[];
   pularNoFunil: boolean;
   incluirContador: boolean;
@@ -688,13 +739,14 @@ export async function iniciarCampanha(pool: Pool, id: number): Promise<{ naFila:
     const c = await obterCampanhaRow(tx, id);
     if (c.status === 'concluida') throw AppError.invalido('Esta campanha já terminou.');
     const C = contaSql();
-    const { elegiveis: lista } = await elegiveis(tx, c);
+    const { elegiveis: lista } = await elegiveis(tx, { ...c, canais: canaisDe(c.passos) });
+    const canal = c.passos[0]?.canal ?? 'email';
     let naFila = 0;
     for (const l of lista) {
       const { rowCount } = await tx.query(
-        `INSERT INTO comercial.envios_email (conta_id, campanha_email_id, empresa_id, email, passo)
-         VALUES (${C}, $1, $2, $3, 1) ON CONFLICT DO NOTHING`,
-        [id, l.empresaId, l.email],
+        `INSERT INTO comercial.envios_email (conta_id, campanha_email_id, empresa_id, email, passo, canal)
+         VALUES (${C}, $1, $2, $3, 1, $4) ON CONFLICT DO NOTHING`,
+        [id, l.empresaId, l.email, canal],
       );
       naFila += rowCount ?? 0;
     }
@@ -737,10 +789,16 @@ export async function listarCampanhas(db: Executor) {
             count(DISTINCT en.empresa_id)::int AS leads,
             count(*) FILTER (WHERE en.status = 'na_fila')::int AS "naFila",
             count(*) FILTER (WHERE en.status = 'enviado')::int AS enviados,
+            count(*) FILTER (WHERE en.status = 'enviado' AND en.canal = 'email')::int AS "enviadosEmail",
+            count(*) FILTER (WHERE en.status = 'enviado' AND en.canal = 'whatsapp')::int AS "enviadosWhatsapp",
+            count(*) FILTER (WHERE en.status = 'enviado' AND en.canal = 'ligacao')::int AS "ligacoes",
+            count(*) FILTER (WHERE en.status = 'pulado')::int AS pulados,
             count(*) FILTER (WHERE en.status IN ('erro', 'devolvido'))::int AS erros,
             count(DISTINCT en.empresa_id) FILTER (WHERE en.aberto_em IS NOT NULL)::int AS abriram,
             count(DISTINCT en.empresa_id) FILTER (WHERE en.clicado_em IS NOT NULL)::int AS clicaram,
-            count(DISTINCT en.empresa_id) FILTER (WHERE en.respondido_em IS NOT NULL)::int AS responderam,
+            count(DISTINCT en.empresa_id) FILTER (
+              WHERE en.respondido_em IS NOT NULL OR en.parado_motivo IN ('${RESPONDEU_EMAIL}', '${RESPONDEU_WHATSAPP}'))::int AS responderam,
+            count(DISTINCT en.empresa_id) FILTER (WHERE en.parado_motivo = '${RESPONDEU_WHATSAPP}')::int AS "responderamWhatsapp",
             (SELECT count(DISTINCT r.empresa_id)::int FROM comercial.respostas_email r
                JOIN comercial.envios_email x ON x.id = r.envio_id
               WHERE x.campanha_email_id = ce.id AND r.classe = 'interessado') AS interessados,
@@ -776,9 +834,13 @@ export async function envios(
   if (f.filtro === 'responderam') where.push('en.respondido_em IS NOT NULL');
   if (f.filtro === 'erros') where.push(`en.status IN ('erro', 'devolvido')`);
   if (f.filtro === 'fila') where.push(`en.status = 'na_fila'`);
-  if (f.busca) where.push(`(e.nome ILIKE ${p(`%${f.busca}%`)} OR en.email ILIKE ${p(`%${f.busca}%`)})`);
+  if (f.busca)
+    where.push(
+      `(e.nome ILIKE ${p(`%${f.busca}%`)} OR en.email ILIKE ${p(`%${f.busca}%`)} OR en.telefone LIKE ${p(`%${f.busca.replace(/\D/g, '') || '§'}%`)})`,
+    );
   const { rows } = await db.query(
     `SELECT en.id::int, en.empresa_id::int AS "empresaId", e.nome, e.cidade, en.email, en.passo, en.status,
+            en.canal, en.telefone, en.parado_motivo AS "paradoMotivo",
             en.assunto, en.erro, en.enviado_em AS "enviadoEm", en.aberto_em AS "abertoEm", en.aberturas,
             en.clicado_em AS "clicadoEm", en.cliques, en.respondido_em AS "respondidoEm",
             en.personalizacao, ce.nome AS "campanhaNome", ce.id AS "campanhaEmailId",
@@ -834,7 +896,7 @@ export async function doLead(db: Executor, empresaId: number) {
   const C = contaSql();
   const [env, resp] = await Promise.all([
     db.query(
-      `SELECT en.id::int, en.email, en.passo, en.status, en.assunto, en.enviado_em AS "enviadoEm",
+      `SELECT en.id::int, en.email, en.passo, en.status, en.canal, en.assunto, en.enviado_em AS "enviadoEm",
               en.aberto_em AS "abertoEm", en.aberturas, en.clicado_em AS "clicadoEm", en.respondido_em AS "respondidoEm",
               ce.nome AS "campanhaNome"
          FROM comercial.envios_email en JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id

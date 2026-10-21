@@ -5,6 +5,7 @@ import { api, ROTULO_PAPEL_USUARIO } from '../api';
 import { formatarTelefone } from '../formatar';
 import { Drawer } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
+import { NotificacoesCelular } from './NotificacoesCelular';
 import { useSessao } from './Sessao';
 
 /** Endereço da agenda para o Google Agenda assinar (passa pelo /api do próprio site). */
@@ -143,6 +144,8 @@ export function MinhaConta(props: { aoFechar: () => void }) {
               <h3 className="subtitulo">Sua agenda no Google Agenda</h3>
               <ConectarGoogle token={u.agendaToken} />
             </section>
+
+            <NotificacoesCelular />
 
             <form
               className="form"

@@ -1,6 +1,7 @@
 import {
   AppError,
   anexoEmailEntrada,
+  CANAIS_SEQUENCIA,
   CLASSES_RESPOSTA,
   campanhaEmailAtualizar,
   campanhaEmailEntrada,
@@ -8,6 +9,7 @@ import {
   imagemEmailEntrada,
   marcaEmailEntrada,
   modeloEmailEntrada,
+  montarMensagem,
   responderEmailEntrada,
 } from '@prospeccao/shared';
 import { Router } from 'express';
@@ -18,6 +20,7 @@ import { urlPublicaApi } from '../../endereco.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { guardarMidia } from '../conversas/repositorio.js';
+import { obterConfig as configCadencia } from '../funil/cadencia.js';
 import * as motor from './motor.js';
 import * as repo from './repositorio.js';
 
@@ -230,17 +233,20 @@ export function rotasEmail(deps: DepsApi): Router {
   r.post('/campanhas/estimar', async (req, res) => {
     const d = corpo(
       req,
-      campanhaEmailEntrada.pick({
-        campanhaId: true,
-        faixas: true,
-        pularNoFunil: true,
-        incluirContador: true,
-      }),
+      campanhaEmailEntrada
+        .pick({
+          campanhaId: true,
+          faixas: true,
+          pularNoFunil: true,
+          incluirContador: true,
+        })
+        .extend({ canais: z.array(z.enum(CANAIS_SEQUENCIA)).max(3).optional() }),
     );
-    const e = await repo.elegiveis(pool, d);
+    const e = await repo.elegiveis(pool, { ...d, canais: new Set(d.canais?.length ? d.canais : ['email']) });
     res.json({
       leads: e.leads,
       comEmail: e.comEmail,
+      comWhatsapp: e.comWhatsapp,
       elegiveis: e.elegiveis.length,
       exemplos: e.elegiveis.slice(0, 8),
     });
@@ -257,13 +263,38 @@ export function rotasEmail(deps: DepsApi): Router {
 
   /** Prévia de um passo da campanha (com a marca, as instruções e a IA dela), para um lead. */
   const previaDaCampanha = z.object({
-    passo: z.number().int().min(1).max(4).default(1),
+    passo: z.number().int().min(1).max(6).default(1),
     empresaId: z.number().int().positive().nullable().optional(),
   });
+  /** Passo de WhatsApp ou ligação: o texto pronto para o lead (sem marca, é mensagem). */
+  async function previaDeTexto(
+    c: repo.CampanhaEmailRow,
+    p: { canal?: string; texto?: string },
+    empresaId: number | null | undefined,
+  ) {
+    const lead = await repo.leadDaPrevia(pool, { empresaId, campanhaId: c.campanhaId });
+    const cad = await configCadencia(pool);
+    const v = lead
+      ? await repo.variaveisDoLead(pool, lead, cad.remetente)
+      : {
+          nome: repo.LEAD_INVENTADO.contato,
+          empresa: repo.LEAD_INVENTADO.empresa,
+          cidade: repo.LEAD_INVENTADO.cidade,
+          remetente: cad.remetente,
+        };
+    return {
+      canal: p.canal,
+      texto: montarMensagem(p.texto ?? '', v),
+      lead: { empresaId: lead, empresa: v.empresa, contato: v.nome ?? null, cidade: v.cidade ?? null },
+    };
+  }
+
   async function previaDoPasso(id: number, passo: number, empresaId: number | null | undefined) {
     const c = await repo.obterCampanhaRow(pool, id);
     const p = c.passos[passo - 1];
     if (!p) throw AppError.naoEncontrado('Passo da sequência');
+    if ((p.canal ?? 'email') !== 'email' || !p.modeloId)
+      return { campanha: c, modelo: null, previa: null, texto: await previaDeTexto(c, p, empresaId) };
     const modelo = await repo.obterModelo(pool, p.modeloId);
     return {
       campanha: c,
@@ -282,11 +313,13 @@ export function rotasEmail(deps: DepsApi): Router {
         },
         await contextoPrevia(),
       ),
+      texto: null,
     };
   }
   r.post('/campanhas/:id/previa', async (req, res) => {
     const d = corpo(req, previaDaCampanha);
-    res.json((await previaDoPasso(idDaRota(req), d.passo, d.empresaId)).previa);
+    const p = await previaDoPasso(idDaRota(req), d.passo, d.empresaId);
+    res.json(p.previa ? { canal: 'email', ...p.previa } : p.texto);
   });
   r.post('/campanhas/:id/teste', exigirAdmin, async (req, res) => {
     const d = corpo(
@@ -294,6 +327,7 @@ export function rotasEmail(deps: DepsApi): Router {
       previaDaCampanha.extend({ para: z.string().trim().toLowerCase().email('E-mail inválido.') }),
     );
     const { campanha, modelo, previa } = await previaDoPasso(idDaRota(req), d.passo, d.empresaId);
+    if (!previa || !modelo) throw AppError.invalido('O teste por e-mail é só para os passos de e-mail.');
     await enviarTeste(previa, campanha.marcaId, d.para, modelo.anexos);
     res.json({ ok: true, abertura: previa.abertura });
   });

@@ -2,7 +2,7 @@ import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
-import { api, ErroApi, ROTULO_PAPEL_USUARIO } from '../api';
+import { type Alerta, api, ErroApi, ROTULO_PAPEL_USUARIO } from '../api';
 import { useAgentePendente } from '../paginas/Agente';
 import { temAtividade, useAtividade } from '../paginas/Atividade';
 import { useVisaoEmail } from '../paginas/Email';
@@ -32,9 +32,44 @@ const ITENS: {
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
   { para: '/atividade', rotulo: 'Atividade', icone: 'clock', admin: true },
   { para: '/nichos', rotulo: 'Nichos', icone: 'store', admin: true },
+  { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', admin: true },
   { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', master: true },
   { para: '/master', rotulo: 'Painel master', icone: 'building-2', master: true },
 ];
+
+/** O que está quebrado (e-mail não sai, chip caiu…): a faixa no topo, para o administrador. */
+function FaixaAlertas() {
+  const admin = useSessao().data?.papel === 'admin';
+  const navegar = useNavigate();
+  const q = useQuery({
+    queryKey: ['alertas'],
+    queryFn: () => api<Alerta[]>('/alertas'),
+    enabled: admin,
+    refetchInterval: 60_000,
+  });
+  if (!admin || !q.data?.length) return null;
+  return (
+    <ul className="faixa-alertas" aria-label="Alertas">
+      {q.data.map((a) => (
+        <li key={a.id} className="faixa-alerta" data-nivel={a.nivel}>
+          <span className="faixa-alerta__icone">
+            <Icon name={a.nivel === 'erro' ? 'circle-x' : 'circle-help'} size={16} />
+          </span>
+          <span className="faixa-alerta__texto">
+            <b>{a.titulo}</b>
+            {a.contaId === null && <span className="quieto"> · plataforma</span>}
+            {a.texto && <span className="faixa-alerta__detalhe">{a.texto}</span>}
+          </span>
+          {a.link && (
+            <Button size="sm" variant="ghost" onClick={() => navegar(a.link!)}>
+              Ver
+            </Button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /** Conversas com mensagem não lida (para o menu). */
 function useConversasNaoLidas() {
@@ -165,6 +200,7 @@ export function Shell() {
             </Button>
           </div>
         )}
+        <FaixaAlertas />
         <Outlet />
       </main>
       {conta && <MinhaConta aoFechar={() => setConta(false)} />}

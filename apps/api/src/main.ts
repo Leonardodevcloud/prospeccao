@@ -1,13 +1,15 @@
 import { createServer } from 'node:http';
-import { criarPool } from '@prospeccao/db';
+import { criarPool, manterSinalDeVida } from '@prospeccao/db';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { criarApp } from './app.js';
 import { carregarEnvApi, credenciaisDoAmbiente } from './config.js';
 import { iniciarLembretes } from './modulos/agenda/lembretes.js';
 import { iniciarAgente } from './modulos/agente/motor.js';
+import { iniciarAlertas } from './modulos/alertas/rotina.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
+import { iniciarPush } from './modulos/push/servico.js';
 import { criarServicos } from './servicos.js';
 
 const env = carregarEnvApi();
@@ -26,6 +28,8 @@ const filas = await conectarFilas({
 const ambiente = credenciaisDoAmbiente(env);
 const chave = env.CHAVE_CREDENCIAIS ?? null;
 const { servicos, invalidar } = criarServicos(pool, chave, ambiente);
+// Notificação no celular: as chaves são geradas e guardadas pelo próprio sistema.
+await iniciarPush(pool, log, chave, env.ADMIN_EMAIL);
 if (!chave)
   log.warn(
     'CHAVE_CREDENCIAIS não configurada: só a conta principal funciona (pelas variáveis do ambiente); o painel master não guarda chaves de outras contas.',
@@ -57,12 +61,17 @@ const pararAgente = iniciarAgente({ pool, log, servicos }, log);
 const pararLembretes = iniciarLembretes({ pool, log, servicos });
 // E-mail de prospecção: envia as campanhas de cada conta pelo Resend dela.
 const pararEmail = iniciarEmail({ pool, log, servicos, origens: env.APP_ORIGENS });
+// Alertas: confere o que costuma quebrar (e-mail, chips, IA, workers) e avisa quem cuida.
+const pararAlertas = iniciarAlertas({ pool, log, servicos });
+const pararSinal = manterSinalDeVida(pool, 'api');
 
 encerrarAoReceberSinal(log, async () => {
   pararAutomacao();
   pararAgente();
   pararLembretes();
   pararEmail();
+  pararAlertas();
+  pararSinal();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
   await filas.parar();
   await pool.end();

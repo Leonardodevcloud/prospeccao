@@ -1,6 +1,12 @@
 import type { Executor } from '@prospeccao/db';
 import { interpretarWebhook } from '@prospeccao/integrations/whatsapp';
-import { AppError, aprovarRascunho, configAgenteEntrada } from '@prospeccao/shared';
+import {
+  AppError,
+  aprovarRascunho,
+  chipAtualizar,
+  chipEntrada,
+  configAgenteEntrada,
+} from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
 import { comConta, conta, contaSql } from '../../contexto.js';
@@ -8,8 +14,10 @@ import type { DepsApi, WhatsappConta } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { guardarMidia } from '../conversas/repositorio.js';
+import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
 import * as funil from '../funil/repositorio.js';
 import { notificarDono } from '../notificacoes/repositorio.js';
+import * as chips from './chips.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -50,6 +58,41 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
       rascunhos,
       pausados,
     });
+  });
+
+  /* Chips de WhatsApp (instâncias da Evolution da conta) */
+  r.get('/chips', async (_req, res) => {
+    const { whatsapp } = await servicos(conta());
+    res.json({ chips: await chips.listar(pool), padrao: whatsapp?.instancia ?? null, conectado: !!whatsapp });
+  });
+  r.post('/chips', exigirAdmin, async (req, res) => {
+    const id = await chips.criar(pool, corpo(req, chipEntrada));
+    res.status(201).json({ id, chips: await chips.listar(pool) });
+  });
+  r.patch('/chips/:id', exigirAdmin, async (req, res) => {
+    await chips.atualizar(pool, idDaRota(req), corpo(req, chipAtualizar));
+    res.json(await chips.listar(pool));
+  });
+  r.delete('/chips/:id', exigirAdmin, async (req, res) => {
+    await chips.apagar(pool, idDaRota(req));
+    res.json(await chips.listar(pool));
+  });
+  /** Lê na Evolution se o chip está conectado (e guarda para a tela e os alertas). */
+  r.post('/chips/:id/testar', async (req, res) => {
+    const chip = await chips.obter(pool, idDaRota(req));
+    const { whatsapp } = await servicos(conta());
+    if (!whatsapp?.estado)
+      throw AppError.invalido(
+        'O WhatsApp desta conta não está configurado (endereço e chave da Evolution no painel master).',
+      );
+    let resultado: string;
+    try {
+      resultado = await whatsapp.estado(chip.instancia);
+    } catch (erro) {
+      resultado = erro instanceof Error ? erro.message : String(erro);
+    }
+    await chips.guardarEstado(pool, chip.id, resultado);
+    res.json({ ok: resultado.startsWith('ok'), resultado: resultado.slice(0, 300) });
   });
 
   r.put('/config', exigirAdmin, async (req, res) => {
@@ -140,7 +183,7 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
     if (!whatsapp?.baixarMidia || !m.idExterno) return;
     const id = m.idExterno;
     void whatsapp
-      .baixarMidia(id)
+      .baixarMidia(id, m.instancia ?? undefined)
       // Em segundo plano: a conta precisa ir junto (o contexto da requisição já terminou).
       .then((r) => (r ? comConta(contaId, () => salvar(r.base64, r.mime)) : undefined))
       .catch((erro) =>
@@ -151,6 +194,9 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
   async function registrarRecebida(m: Recebida, whatsapp: WhatsappConta | null) {
     const empresaId = await repo.leadPorTelefone(pool, m.telefone);
     if (!empresaId) return;
+    // Por qual chip chegou: o lead passa a conversar sempre por ele.
+    const chipId = await chips.porInstancia(pool, m.instancia);
+    if (chipId) await chips.fixarChip(pool, empresaId, chipId);
     if (m.deMim) {
       // Mensagem que você mandou pelo celular: entra no histórico (as do sistema já estão lá).
       if (m.idExterno) {
@@ -168,6 +214,7 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
         status: 'enviada',
         origem: 'humano',
         idExterno: m.idExterno,
+        chipId,
       });
       if (id) await anexar(pool, id, m, whatsapp);
       if (id)
@@ -187,9 +234,12 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
       status: 'recebida',
       origem: 'lead',
       idExterno: m.idExterno,
+      chipId,
     });
     if (!id) return; // a Evolution mandou a mesma mensagem duas vezes
     await anexar(pool, id, m, whatsapp);
+    // Respondeu: a sequência automática para (nenhum e-mail ou WhatsApp a mais).
+    await pararSequencia(pool, empresaId, RESPONDEU_WHATSAPP);
     await funil.registrarAtividade(
       pool,
       empresaId,

@@ -12,7 +12,10 @@ import {
 } from './middlewares/seguranca.js';
 import { rotasAgenda, rotasCalendario } from './modulos/agenda/rotas.js';
 import { rotasAgente, rotasWebhook } from './modulos/agente/rotas.js';
+import { rotasAlertas } from './modulos/alertas/rotas.js';
 import { rotasAtividade } from './modulos/atividade/rotas.js';
+import { auditar } from './modulos/auditoria/middleware.js';
+import { rotasAuditoria } from './modulos/auditoria/rotas.js';
 import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
 import { rotasCampanhas } from './modulos/campanhas/rotas.js';
@@ -21,6 +24,7 @@ import { rotasEmailPublico, rotasWebhookResend } from './modulos/email/publico.j
 import { rotasEmail } from './modulos/email/rotas.js';
 import { rotasEmpresas } from './modulos/empresas/rotas.js';
 import { rotasEquipe } from './modulos/equipe/rotas.js';
+import { rotasExportar } from './modulos/exportar/rotas.js';
 import { rotasFunil } from './modulos/funil/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasMaster } from './modulos/master/rotas.js';
@@ -79,6 +83,8 @@ export function criarApp(deps: DepsApi): Express {
 
   const protegidas = Router();
   protegidas.use(exigirSessao(deps.auth.jwtSegredo, deps.pool));
+  // Quem fez o quê: toda alteração que deu certo fica registrada (depois da resposta).
+  protegidas.use(auditar(deps.pool, deps.log));
   // Configuração que gasta dinheiro ou muda a operação: todos veem, só o administrador altera.
   protegidas.use('/nichos', adminParaAlterar, rotasNichos(deps));
   protegidas.use('/campanhas', adminParaAlterar, rotasCampanhas(deps));
@@ -95,6 +101,9 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/email', rotasEmail(deps));
   protegidas.use('/atividade', rotasAtividade(deps));
   protegidas.use('/places', rotasPlaces(deps));
+  protegidas.use('/auditoria', rotasAuditoria(deps));
+  protegidas.use('/exportar', rotasExportar(deps));
+  protegidas.use('/alertas', rotasAlertas(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
   // Painel master: contas, credenciais e acesso a qualquer conta.
   protegidas.use('/master', exigirMaster, rotasMaster(deps));

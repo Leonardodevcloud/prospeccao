@@ -849,15 +849,20 @@ export interface ConversaResumo {
   ultimaEm: string;
   ultimaMidia: TipoMidia | null;
   ultimaOrigem: string | null;
+  /** Canal da última mensagem (WhatsApp ou e-mail). */
+  ultimoCanal: 'whatsapp' | 'email' | null;
   naoLidas: number;
 }
 
 export interface MensagemConversa {
   id: string;
+  canal: 'whatsapp' | 'email';
+  /** Assunto, quando é e-mail. */
+  assunto: string | null;
   direcao: 'enviada' | 'recebida';
   texto: string;
   status: 'rascunho' | 'aprovada' | 'enviada' | 'erro' | 'recebida' | 'registrada';
-  origem: 'agente' | 'cadencia' | 'humano' | 'lead' | 'registro';
+  origem: 'agente' | 'cadencia' | 'humano' | 'lead' | 'registro' | 'sequencia';
   erro: string | null;
   nota: string | null;
   midiaTipo: TipoMidia | null;
@@ -877,6 +882,10 @@ export interface ConversaAberta {
   responsavelNome: string | null;
   agente: boolean;
   agentePausa: string | null;
+  /** Melhor e-mail do lead. */
+  email: string | null;
+  /** O lead já respondeu por e-mail: a resposta vai na mesma conversa. */
+  emailEmConversa: boolean;
   telefone: string | null;
   variaveis: { nome: string | null; empresa: string; cidade: string | null; remetente: string };
   mensagens: MensagemConversa[];
@@ -1062,7 +1071,7 @@ export interface CampanhaEmail {
   id: number;
   nome: string;
   status: 'rascunho' | 'enviando' | 'pausada' | 'concluida';
-  passos: { modeloId: number; dias: number }[];
+  passos: PassoSequencia[];
   faixas: ('A' | 'B' | 'C')[];
   pularNoFunil: boolean;
   incluirContador: boolean;
@@ -1078,12 +1087,27 @@ export interface CampanhaEmail {
   leads: number;
   naFila: number;
   enviados: number;
+  enviadosEmail: number;
+  enviadosWhatsapp: number;
+  ligacoes: number;
+  pulados: number;
   erros: number;
   abriram: number;
   clicaram: number;
   responderam: number;
+  responderamWhatsapp: number;
   interessados: number;
   ultimoEnvio: string | null;
+}
+
+export type CanalSequencia = 'email' | 'whatsapp' | 'ligacao';
+
+/** Passo da sequência: e-mail (modelo), WhatsApp (texto) ou ligação (roteiro). */
+export interface PassoSequencia {
+  canal?: CanalSequencia;
+  modeloId?: number;
+  texto?: string;
+  dias: number;
 }
 
 export interface EnvioEmail {
@@ -1091,9 +1115,12 @@ export interface EnvioEmail {
   empresaId: number;
   nome: string;
   cidade: string | null;
-  email: string;
+  email: string | null;
+  canal: CanalSequencia;
+  telefone: string | null;
+  paradoMotivo: string | null;
   passo: number;
-  status: 'na_fila' | 'enviado' | 'erro' | 'devolvido' | 'cancelado';
+  status: 'na_fila' | 'enviado' | 'erro' | 'devolvido' | 'cancelado' | 'pulado';
   assunto: string | null;
   erro: string | null;
   enviadoEm: string | null;
@@ -1133,6 +1160,10 @@ export interface ContaResumo {
   nome: string;
   ativa: boolean;
   principal: boolean;
+  /** Chamadas à IA da plataforma neste mês e o teto (null = sem teto). */
+  iaPlataformaMes: number;
+  limiteIaMes: number | null;
+  usaIaPlataforma: boolean;
   observacoes: string | null;
   criadoEm: string;
   usuarios: number;
@@ -1192,9 +1223,84 @@ export interface UsuarioConta {
 export interface ContaDetalhe
   extends Omit<
     ContaResumo,
-    'usuarios' | 'ultimoAcesso' | 'campanhasAtivas' | 'leadsNoFunil' | 'emails30d' | 'whatsapp30d'
+    | 'usuarios'
+    | 'ultimoAcesso'
+    | 'campanhasAtivas'
+    | 'leadsNoFunil'
+    | 'emails30d'
+    | 'whatsapp30d'
+    | 'iaPlataformaMes'
+    | 'limiteIaMes'
+    | 'usaIaPlataforma'
   > {
   usuarios: UsuarioConta[];
   credenciais: CredenciaisTela;
   webhooks: { resend: string; evolution: string | null };
+}
+
+export interface UsoIa {
+  chamadas: number;
+  tokensEntrada: number;
+  tokensSaida: number;
+  erros: number;
+  bloqueadas: number;
+}
+
+export interface ConsumoConta {
+  mes: string;
+  limites: {
+    usaIaPlataforma: boolean;
+    iaMes: number | null;
+    emailsMes: number | null;
+    whatsappMes: number | null;
+  };
+  ia: { conta: UsoIa; plataforma: UsoIa };
+  iaPorDia: { dia: string; chamadas: number }[];
+  emails: { enviados: number; naFila: number };
+  whatsapp: { automaticas: number; equipe: number; recebidas: number };
+  places: { pedidos: number; pagos: number; gastoUsd: number; enriquecimento: number };
+}
+
+export interface ItemAuditoria {
+  id: number;
+  usuarioId?: number | null;
+  usuarioNome: string | null;
+  comoMaster: boolean;
+  acao: string;
+  descricao: string;
+  metodo?: string | null;
+  caminho?: string | null;
+  empresaId: number | null;
+  empresaNome: string | null;
+  detalhes?: { params?: Record<string, string>; corpo?: unknown; filtros?: unknown } | null;
+  ip?: string | null;
+  criadoEm: string;
+}
+
+/* ───────── Chips de WhatsApp ───────── */
+
+export interface Chip {
+  id: number;
+  nome: string;
+  instancia: string;
+  ativo: boolean;
+  limiteDia: number;
+  estado: string | null;
+  estadoEm: string | null;
+  enviadosHoje: number;
+  leads: number;
+}
+
+/* ───────── Alertas ───────── */
+
+export interface Alerta {
+  id: number;
+  contaId: number | null;
+  chave: string;
+  nivel: 'erro' | 'aviso';
+  titulo: string;
+  texto: string | null;
+  link: string | null;
+  primeiraVez: string;
+  ultimaVez: string;
 }

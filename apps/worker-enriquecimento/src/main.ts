@@ -1,5 +1,12 @@
 import { booleano, carregarEnv, envBase, listaCsv, opcional } from '@prospeccao/config';
-import { cacheDeCredenciais, chaveDoAmbiente, contaDaCampanha, criarPool } from '@prospeccao/db';
+import {
+  cacheDeCredenciais,
+  chaveDoAmbiente,
+  contaDaCampanha,
+  criarPool,
+  manterSinalDeVida,
+  medidorDeIa,
+} from '@prospeccao/db';
 import * as enriq from '@prospeccao/integrations/enriquecimento';
 import { configIa } from '@prospeccao/integrations/ia';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
@@ -62,6 +69,8 @@ const env = carregarEnv(
 
 const log = criarLogger('worker-enriquecimento', env.LOG_LEVEL);
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-enriquecimento', max: 4 });
+// Sinal de vida para o painel de alertas (worker parado aparece para o master).
+const pararSinal = manterSinalDeVida(pool, 'worker-enriquecimento');
 const filas = await conectarFilas({
   url: env.DATABASE_URL,
   aplicacao: 'worker-enriquecimento',
@@ -112,7 +121,8 @@ const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'instagram' | 'direto
 /** Fontes de uma conta: a IA, o Google Places e o chip do WhatsApp são os dela. */
 async function fontesDa(contaId: number): Promise<Fontes> {
   const c = await credenciais.obter(contaId);
-  const ia = c.ia ? configIa(c.ia) : null;
+  // Cada chamada à IA conta no consumo da conta (e para no teto do mês da IA da plataforma).
+  const ia = c.ia && c.origem.ia ? configIa(c.ia, medidorDeIa(pool, contaId, c.origem.ia)) : null;
   const places = c.places;
   const evolution = c.evolution;
   return {
@@ -215,6 +225,7 @@ log.info(
 );
 
 encerrarAoReceberSinal(log, async () => {
+  pararSinal();
   clearInterval(batimento);
   await filas.parar();
   await pool.end();

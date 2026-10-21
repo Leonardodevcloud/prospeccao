@@ -13,6 +13,7 @@ import {
   totalTentativas,
 } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
+import { estaEmSequencia } from '../email/sequencia.js';
 
 /**
  * Cadência de follow-up: depois de cada acontecimento (entrou no funil, mandou mensagem, ele
@@ -84,6 +85,16 @@ export async function aplicarCadencia(
   );
   const op = rows[0];
   if (!op) return;
+  // Na sequência automática, quem decide o próximo toque é ela: o follow-up do funil espera.
+  if (evento !== 'recebida' && (await estaEmSequencia(db, empresaId))) {
+    await db.query(
+      `UPDATE comercial.oportunidades
+          SET proxima_acao = $2, proxima_acao_em = NULL, encerrar_em = NULL
+        WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
+      [empresaId, NA_SEQUENCIA],
+    );
+    return;
+  }
   const passo = proximoPasso(op.etapa, op.tentativas, evento, await obterConfig(db));
   if (!passo) return;
   await db.query(
@@ -99,6 +110,9 @@ export async function aplicarCadencia(
     ],
   );
 }
+
+/** Próximo passo de quem está numa sequência (o funil volta a cuidar quando ela acaba). */
+export const NA_SEQUENCIA = 'Na sequência automática';
 
 export interface MensagemPronta {
   modelo: ModeloMensagem | null;

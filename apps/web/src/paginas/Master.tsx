@@ -5,9 +5,11 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router';
 import {
   api,
   type CampoSegredo,
+  type ConsumoConta,
   type ContaDetalhe,
   type ContaResumo,
   type CredenciaisTela,
+  type ItemAuditoria,
   type OrigemCredencial,
   type PapelUsuario,
   type ProvedorIa,
@@ -17,7 +19,7 @@ import {
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useSessao } from '../componentes/Sessao';
-import { fmtNumero, fmtQuando } from '../formatar';
+import { fmtMes, fmtNumero, fmtQuando } from '../formatar';
 import { LinkConvite } from './Equipe';
 
 /* ───────────────────────── Peças ───────────────────────── */
@@ -561,9 +563,262 @@ function Usuarios(props: { conta: ContaDetalhe }) {
   );
 }
 
+/* ───────────────────────── Consumo e tetos ───────────────────────── */
+
+const fmtTokens = (n: number) =>
+  n >= 1_000_000
+    ? `${(n / 1_000_000).toFixed(1).replace('.', ',')} mi`
+    : n >= 1000
+      ? `${Math.round(n / 1000)} mil`
+      : String(n);
+
+/** Barra de uso contra o teto (sem teto, só o número). */
+function Uso(props: { rotulo: string; usado: number; teto: number | null; detalhe?: ReactNode }) {
+  const pct = props.teto ? Math.min(100, Math.round((props.usado / Math.max(1, props.teto)) * 100)) : null;
+  return (
+    <div
+      className="uso"
+      data-cheio={pct != null && pct >= 100 ? true : undefined}
+      data-alto={pct != null && pct >= 80 ? true : undefined}
+    >
+      <span className="uso__rotulo">{props.rotulo}</span>
+      <b className="mono uso__numero">
+        {fmtNumero(props.usado)}
+        {props.teto != null && <span className="quieto"> / {fmtNumero(props.teto)}</span>}
+      </b>
+      {pct != null && (
+        <span className="barra-uso" aria-hidden="true">
+          <span style={{ width: `${pct}%` }} />
+        </span>
+      )}
+      {props.detalhe && <span className="quieto uso__detalhe">{props.detalhe}</span>}
+    </div>
+  );
+}
+
+/** Campo de teto: vazio = sem teto. */
+function Teto(props: {
+  id: string;
+  rotulo: string;
+  valor: string;
+  aoMudar: (v: string) => void;
+  dica: string;
+}) {
+  return (
+    <div className="campo">
+      <label htmlFor={props.id}>{props.rotulo}</label>
+      <input
+        id={props.id}
+        className="filtro"
+        inputMode="numeric"
+        placeholder="sem teto"
+        value={props.valor}
+        onChange={(e) => props.aoMudar(e.target.value.replace(/\D/g, ''))}
+      />
+      <span className="campo__dica">{props.dica}</span>
+    </div>
+  );
+}
+
+function Consumo(props: { conta: ContaDetalhe }) {
+  const cliente = useQueryClient();
+  const q = useQuery({
+    queryKey: ['master', 'consumo', props.conta.id],
+    queryFn: () => api<ConsumoConta>(`/master/contas/${props.conta.id}/consumo`),
+  });
+  const [f, setF] = useState({ usaIaPlataforma: true, iaMes: '', emailsMes: '', whatsappMes: '' });
+  const l = q.data?.limites;
+  useEffect(() => {
+    if (l)
+      setF({
+        usaIaPlataforma: l.usaIaPlataforma,
+        iaMes: l.iaMes == null ? '' : String(l.iaMes),
+        emailsMes: l.emailsMes == null ? '' : String(l.emailsMes),
+        whatsappMes: l.whatsappMes == null ? '' : String(l.whatsappMes),
+      });
+  }, [l]);
+  const num = (v: string) => (v === '' ? null : Number(v));
+  const mudou =
+    !!l &&
+    (f.usaIaPlataforma !== l.usaIaPlataforma ||
+      num(f.iaMes) !== l.iaMes ||
+      num(f.emailsMes) !== l.emailsMes ||
+      num(f.whatsappMes) !== l.whatsappMes);
+  const salvar = useMutation({
+    mutationFn: () =>
+      api<ConsumoConta>(`/master/contas/${props.conta.id}/limites`, {
+        metodo: 'PUT',
+        corpo: {
+          usaIaPlataforma: f.usaIaPlataforma,
+          iaMes: num(f.iaMes),
+          emailsMes: num(f.emailsMes),
+          whatsappMes: num(f.whatsappMes),
+        },
+      }),
+    onSuccess: (d) => {
+      cliente.setQueryData(['master', 'consumo', props.conta.id], d);
+      cliente.invalidateQueries({ queryKey: ['master', 'contas'] });
+      cliente.invalidateQueries({ queryKey: ['master', 'conta', props.conta.id] });
+    },
+  });
+  const d = q.data;
+  if (q.isPending) return <div className="esqueleto" />;
+  if (!d) return <ErroDaApi erro={q.error} />;
+  const maxDia = Math.max(1, ...d.iaPorDia.map((x) => x.chamadas));
+  const iaDaConta = props.conta.credenciais.emUso.ia === 'conta';
+
+  return (
+    <div className="pilha" style={{ gap: 16 }}>
+      <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+        Consumo de {fmtMes(d.mes)} (fuso de São Paulo). Os tetos valem para o que sai sozinho; o que a equipe
+        manda à mão nunca é bloqueado.
+      </p>
+      <div className="grade-uso">
+        <Uso
+          rotulo="IA pela sua chave (plataforma)"
+          usado={d.ia.plataforma.chamadas}
+          teto={l?.iaMes ?? null}
+          detalhe={
+            <>
+              {fmtTokens(d.ia.plataforma.tokensEntrada)} tokens de entrada ·{' '}
+              {fmtTokens(d.ia.plataforma.tokensSaida)} de saída
+              {d.ia.plataforma.bloqueadas > 0 &&
+                ` · ${fmtNumero(d.ia.plataforma.bloqueadas)} barradas pelo teto`}
+              {d.ia.plataforma.erros > 0 && ` · ${fmtNumero(d.ia.plataforma.erros)} com erro`}
+            </>
+          }
+        />
+        <Uso
+          rotulo="IA pela chave da conta"
+          usado={d.ia.conta.chamadas}
+          teto={null}
+          detalhe={`${fmtTokens(d.ia.conta.tokensEntrada)} de entrada · ${fmtTokens(d.ia.conta.tokensSaida)} de saída (a conta paga)`}
+        />
+        <Uso
+          rotulo="E-mails automáticos"
+          usado={d.emails.enviados}
+          teto={l?.emailsMes ?? null}
+          detalhe={d.emails.naFila ? `${fmtNumero(d.emails.naFila)} na fila` : 'nada na fila'}
+        />
+        <Uso
+          rotulo="WhatsApp automático"
+          usado={d.whatsapp.automaticas}
+          teto={l?.whatsappMes ?? null}
+          detalhe={`${fmtNumero(d.whatsapp.equipe)} pela equipe · ${fmtNumero(d.whatsapp.recebidas)} recebidas`}
+        />
+        <Uso
+          rotulo="Google Places (buscas)"
+          usado={d.places.pedidos}
+          teto={null}
+          detalhe={`${fmtNumero(d.places.pagos)} pagas · US$ ${d.places.gastoUsd.toFixed(2).replace('.', ',')} · ${fmtNumero(d.places.enriquecimento)} no enriquecimento (a conta paga)`}
+        />
+      </div>
+      {d.iaPorDia.length > 1 && (
+        <figure className="grafico-dias" aria-label="Chamadas à IA por dia">
+          <figcaption className="quieto">Chamadas à IA por dia</figcaption>
+          <div className="grafico-dias__barras">
+            {d.iaPorDia.map((x) => (
+              <span
+                key={x.dia}
+                className="grafico-dias__barra"
+                style={{ height: `${Math.max(2, Math.round((x.chamadas / maxDia) * 100))}%` }}
+                title={`${x.dia.split('-').reverse().slice(0, 2).join('/')}: ${fmtNumero(x.chamadas)}`}
+              />
+            ))}
+          </div>
+        </figure>
+      )}
+
+      <form
+        className="form caixa"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          salvar.mutate();
+        }}
+      >
+        <h3 className="subtitulo" style={{ margin: 0 }}>
+          Tetos do mês
+        </h3>
+        {!props.conta.principal && (
+          <label className="opcao">
+            <input
+              type="checkbox"
+              checked={f.usaIaPlataforma}
+              onChange={(e) => setF({ ...f, usaIaPlataforma: e.target.checked })}
+            />
+            <span>
+              Pode usar a IA da plataforma (a sua chave) quando não tiver a própria
+              {iaDaConta && <span className="quieto"> · hoje ela usa a própria chave</span>}
+            </span>
+          </label>
+        )}
+        <div className="form__tres">
+          <Teto
+            id="teto-ia"
+            rotulo="Chamadas à IA da plataforma"
+            valor={f.iaMes}
+            aoMudar={(v) => setF({ ...f, iaMes: v })}
+            dica="Passou, a IA para até o mês virar (o resto segue por regra)."
+          />
+          <Teto
+            id="teto-emails"
+            rotulo="E-mails automáticos"
+            valor={f.emailsMes}
+            aoMudar={(v) => setF({ ...f, emailsMes: v })}
+            dica="Passou, a fila espera."
+          />
+          <Teto
+            id="teto-whatsapp"
+            rotulo="WhatsApp automático"
+            valor={f.whatsappMes}
+            aoMudar={(v) => setF({ ...f, whatsappMes: v })}
+            dica="IA, cadência e sequências."
+          />
+        </div>
+        <ErroDaApi erro={salvar.error} />
+        {salvar.isSuccess && !mudou && <Mensagem tipo="ok">Tetos salvos.</Mensagem>}
+        <div className="acoes">
+          <Button type="submit" variant="primary" disabled={salvar.isPending || !mudou}>
+            Salvar tetos
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/** O que aconteceu na conta, inclusive o que o master fez nela. */
+function HistoricoConta(props: { contaId: number }) {
+  const q = useQuery({
+    queryKey: ['master', 'auditoria', props.contaId],
+    queryFn: () => api<ItemAuditoria[]>(`/master/contas/${props.contaId}/auditoria`),
+  });
+  if (q.isPending) return <div className="esqueleto" />;
+  if (!q.data?.length)
+    return (
+      <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+        Nada registrado ainda.
+      </p>
+    );
+  return (
+    <ul className="historico-conta">
+      {q.data.map((i) => (
+        <li key={i.id} className="historico-conta__item">
+          <span className="quieto historico-conta__quando">{fmtQuando(i.criadoEm)}</span>
+          <span>
+            <b>{i.usuarioNome ?? 'sistema'}</b>
+            {i.comoMaster && <Badge tone="outline">suporte</Badge>} {i.descricao}
+            {i.empresaNome && <span className="quieto"> · {i.empresaNome}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /* ───────────────────────── Conta (drawer) ───────────────────────── */
 
-type SecaoConta = 'credenciais' | 'usuarios' | 'dados';
+type SecaoConta = 'credenciais' | 'consumo' | 'usuarios' | 'historico' | 'dados';
 
 function Conta(props: { id: number; aoFechar: () => void }) {
   const cliente = useQueryClient();
@@ -629,7 +884,9 @@ function Conta(props: { id: number; aoFechar: () => void }) {
               {(
                 [
                   ['credenciais', 'Credenciais'],
+                  ['consumo', 'Consumo e tetos'],
                   ['usuarios', `Usuários (${c.usuarios.filter((u) => u.ativo).length})`],
+                  ['historico', 'Histórico'],
                   ['dados', 'Dados da conta'],
                 ] as [SecaoConta, string][]
               ).map(([id, rotulo]) => (
@@ -646,7 +903,9 @@ function Conta(props: { id: number; aoFechar: () => void }) {
               ))}
             </div>
             {secao === 'credenciais' && <Credenciais conta={c} />}
+            {secao === 'consumo' && <Consumo conta={c} />}
             {secao === 'usuarios' && <Usuarios conta={c} />}
+            {secao === 'historico' && <HistoricoConta contaId={c.id} />}
             {secao === 'dados' && (
               <form
                 className="form"
@@ -907,6 +1166,7 @@ export function Master() {
                 <th title="Leads abertos no funil">No funil</th>
                 <th>E-mails 30d</th>
                 <th>WhatsApp 30d</th>
+                <th title="Chamadas à IA pela sua chave neste mês (e o teto)">IA da plataforma</th>
                 <th>Último acesso</th>
               </tr>
             </thead>
@@ -930,6 +1190,11 @@ export function Master() {
                   <td className="mono">{fmtNumero(c.leadsNoFunil)}</td>
                   <td className="mono">{fmtNumero(c.emails30d)}</td>
                   <td className="mono">{fmtNumero(c.whatsapp30d)}</td>
+                  <td className="mono">
+                    {fmtNumero(c.iaPlataformaMes)}
+                    {c.limiteIaMes != null && <span className="quieto"> / {fmtNumero(c.limiteIaMes)}</span>}
+                    {!c.principal && !c.usaIaPlataforma && <span className="quieto"> · bloqueada</span>}
+                  </td>
                   <td className="quieto">{c.ultimoAcesso ? fmtQuando(c.ultimoAcesso) : 'nunca'}</td>
                 </tr>
               ))}

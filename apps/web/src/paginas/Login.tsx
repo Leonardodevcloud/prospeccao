@@ -1,7 +1,7 @@
 import { Button, TextField } from '@prospeccao/ui';
 import { useMutation } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { ErroDaApi } from '../componentes/Formulario';
 
@@ -53,6 +53,9 @@ export function Login() {
         <Button variant="primary" type="submit" disabled={entrar.isPending || !email || !senha}>
           {entrar.isPending ? 'Entrando…' : 'Entrar'}
         </Button>
+        <Link className="login__link" to={`/esqueci${email ? `?email=${encodeURIComponent(email)}` : ''}`}>
+          Esqueci minha senha
+        </Link>
       </form>
     </main>
   );

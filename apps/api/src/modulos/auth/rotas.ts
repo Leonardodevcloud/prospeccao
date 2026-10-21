@@ -1,14 +1,30 @@
-import { AppError, aceitarConvite, loginEntrada, perfilEntrada, trocarSenha } from '@prospeccao/shared';
+import { createHash, randomBytes } from 'node:crypto';
+import {
+  AppError,
+  aceitarConvite,
+  esqueciSenha,
+  loginEntrada,
+  montarEmail,
+  perfilEntrada,
+  trocarSenha,
+} from '@prospeccao/shared';
 import bcrypt from 'bcryptjs';
-import { Router } from 'express';
+import { type Request, Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import type { DepsApi } from '../../dependencias.js';
+import { enderecoDoApp } from '../../endereco.js';
 import { corpo } from '../../middlewares/http.js';
 import { COOKIE_SESSAO, exigirSessao } from '../../middlewares/seguranca.js';
+import { ipDe } from '../auditoria/middleware.js';
+import * as auditoria from '../auditoria/repositorio.js';
 import { abrirSessao, opcoesCookie } from './sessao.js';
 
 /** Hash qualquer para comparar quando o e-mail não existe (o tempo não revela se o e-mail existe). */
 const HASH_FALSO = bcrypt.hashSync('senha-que-ninguem-tem', 10);
+
+/** O link de redefinição vale 1 hora e só uma vez. No banco fica só o hash do token. */
+const HORAS_REDEFINIR = 1;
+const hashDoToken = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
 
 /**
  * Login da equipe. Cada pessoa tem e-mail e senha no banco; o login do ambiente (ADMIN_EMAIL /
@@ -44,6 +60,34 @@ export function rotasAuth(deps: DepsApi): Router {
     return id;
   }
 
+  /** Evento de acesso para a auditoria (nunca atrasa nem derruba o login). */
+  const registrarAcesso = (
+    req: Request,
+    u: { id: number | null; nome: string | null; contaId: number | null },
+    acao: string,
+    descricao: string,
+  ) =>
+    auditoria
+      .registrar(pool, {
+        contaId: u.contaId,
+        usuarioId: u.id,
+        usuarioNome: u.nome,
+        acao,
+        descricao,
+        metodo: req.method,
+        caminho: req.baseUrl + req.path,
+        ip: ipDe(req),
+      })
+      .catch((erro) => deps.log.warn({ err: erro }, 'auditoria: não consegui registrar o acesso'));
+
+  const quem = async (id: number) => {
+    const { rows } = await pool.query<{ nome: string; conta_id: number }>(
+      'SELECT nome, conta_id FROM cadastro.usuarios WHERE id = $1',
+      [id],
+    );
+    return { id, nome: rows[0]?.nome ?? null, contaId: rows[0]?.conta_id ?? null };
+  };
+
   r.post('/login', limitarLogin, async (req, res) => {
     const { email, senha } = corpo(req, loginEntrada);
     const { rows } = await pool.query<{
@@ -63,7 +107,14 @@ export function rotasAuth(deps: DepsApi): Router {
     let id: number | null = u?.ativo && u.senha_hash && senhaDoBancoOk ? u.id : null;
     if (!id && email === auth.adminEmail.toLowerCase() && (await bcrypt.compare(senha, auth.adminSenhaHash)))
       id = await garantirAdminDoAmbiente(auth.adminEmail);
-    if (!id) throw new AppError(401, 'credenciais_invalidas', 'E-mail ou senha incorretos.');
+    if (!id) {
+      // Senha errada de alguém que existe: fica no histórico da conta dela.
+      if (u) {
+        const q = await quem(u.id);
+        void registrarAcesso(req, q, 'acesso', 'Tentativa de login com senha errada');
+      }
+      throw new AppError(401, 'credenciais_invalidas', 'E-mail ou senha incorretos.');
+    }
     if (id === u?.id && !u.conta_ativa && !u.master)
       throw new AppError(
         403,
@@ -72,6 +123,7 @@ export function rotasAuth(deps: DepsApi): Router {
       );
     await pool.query('UPDATE cadastro.usuarios SET ultimo_acesso = now() WHERE id = $1', [id]);
     abrirSessao(res, auth, id);
+    void registrarAcesso(req, await quem(id), 'acesso', 'Entrou no sistema');
     deps.log.info({ usuario: id }, 'login');
     res.json({ ok: true });
   });
@@ -105,6 +157,137 @@ export function rotasAuth(deps: DepsApi): Router {
     );
     if (!rows[0]) throw AppError.naoEncontrado('Convite (o link expirou ou já foi usado)');
     abrirSessao(res, auth, rows[0].id);
+    void registrarAcesso(req, await quem(rows[0].id), 'acesso', 'Criou a senha pelo convite');
+    res.json({ ok: true });
+  });
+
+  /* ───────────── Senha esquecida ───────────── */
+
+  const limitarEsqueci = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 5,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, _res, next) =>
+      next(new AppError(429, 'muitas_tentativas', 'Muitos pedidos de senha. Espere 15 minutos.')),
+  });
+
+  /** O e-mail do sistema (avisos de senha) sai pelo Resend da conta principal. */
+  async function emailDoSistema() {
+    const { rows } = await pool.query<{ id: number; nome: string }>(
+      'SELECT id, nome FROM cadastro.contas WHERE principal',
+    );
+    const principal = rows[0];
+    if (!principal) return null;
+    const { email } = await deps.servicos(principal.id);
+    return email ? { email, plataforma: principal.nome } : null;
+  }
+
+  /**
+   * Pede o link para criar uma senha nova. A resposta é sempre a mesma (não revela quem tem
+   * cadastro); a senha atual continua valendo até a nova ser criada.
+   */
+  r.post('/esqueci', limitarEsqueci, async (req, res) => {
+    const { email } = corpo(req, esqueciSenha);
+    const sistema = await emailDoSistema();
+    if (!sistema)
+      throw new AppError(
+        503,
+        'email_sistema',
+        'O envio de e-mails do sistema ainda não está configurado. Peça um link de acesso ao administrador.',
+      );
+    const { rows } = await pool.query<{
+      id: number;
+      nome: string;
+      email: string;
+      conta_id: number;
+      conta: string;
+    }>(
+      `SELECT u.id, u.nome, u.email, u.conta_id, c.nome AS conta
+         FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+        WHERE lower(u.email) = $1 AND u.ativo AND (c.ativa OR u.master)`,
+      [email],
+    );
+    const u = rows[0];
+    if (u) {
+      const token = randomBytes(32).toString('base64url');
+      await pool.query(
+        `UPDATE cadastro.usuarios
+            SET redefinir_hash = $2, redefinir_expira = now() + make_interval(hours => ${HORAS_REDEFINIR})
+          WHERE id = $1`,
+        [u.id, hashDoToken(token)],
+      );
+      const link = `${enderecoDoApp(req.get('origin'), deps.origens)}/redefinir/${token}`;
+      const primeiro = u.nome.trim().split(/\s+/)[0] ?? '';
+      const e = montarEmail(
+        {
+          assunto: 'Criar uma senha nova na Prospecção',
+          corpo: `{saudacao}\n\nRecebemos um pedido para criar uma senha nova para ${u.email} na Prospecção da ${u.conta}.\n\n[[Criar senha nova|${link}]]\n\nO link vale ${HORAS_REDEFINIR} hora e só funciona uma vez. Se não foi você, ignore este e-mail: sua senha atual continua a mesma.`,
+        },
+        { nome: primeiro, empresa: u.conta },
+        {
+          marca: {
+            nome: 'Prospecção',
+            estilo: 'cartao',
+            corPrimaria: '#0f766e',
+            corFundo: '#f4f4f5',
+            corTexto: '#1f2933',
+            corCabecalho: '#ffffff',
+          },
+        },
+      );
+      try {
+        await sistema.email.enviar({
+          de: { nome: `Prospecção · ${sistema.plataforma}`, email: sistema.email.remetente },
+          para: u.email,
+          assunto: e.assunto,
+          html: e.html,
+          texto: e.texto,
+          chave: `senha-${u.id}-${hashDoToken(token).slice(0, 12)}`,
+        });
+      } catch (erro) {
+        deps.log.error({ err: erro, usuario: u.id }, 'senha: o e-mail de redefinição não saiu');
+        throw new AppError(
+          502,
+          'email_falhou',
+          'Não consegui mandar o e-mail agora. Tente de novo em alguns minutos.',
+        );
+      }
+      void registrarAcesso(
+        req,
+        { id: u.id, nome: u.nome, contaId: u.conta_id },
+        'acesso',
+        'Pediu o link de senha nova por e-mail',
+      );
+    }
+    res.json({ ok: true });
+  });
+
+  /** De quem é o link (para a tela de criar a senha nova). */
+  r.get('/redefinir/:token', async (req, res) => {
+    const { rows } = await pool.query<{ nome: string; email: string; conta: string }>(
+      `SELECT u.nome, u.email, c.nome AS conta FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+        WHERE u.redefinir_hash = $1 AND u.redefinir_expira > now() AND u.ativo`,
+      [hashDoToken(String(req.params.token ?? ''))],
+    );
+    if (!rows[0]) throw AppError.naoEncontrado('Link de senha (expirou ou já foi usado)');
+    res.json(rows[0]);
+  });
+
+  r.post('/redefinir/:token', limitarLogin, async (req, res) => {
+    const { senha } = corpo(req, aceitarConvite);
+    const hash = await bcrypt.hash(senha, 10);
+    const { rows } = await pool.query<{ id: number }>(
+      `UPDATE cadastro.usuarios
+          SET senha_hash = $2, redefinir_hash = NULL, redefinir_expira = NULL,
+              convite_token = NULL, convite_expira = NULL, ultimo_acesso = now()
+        WHERE redefinir_hash = $1 AND redefinir_expira > now() AND ativo
+        RETURNING id`,
+      [hashDoToken(String(req.params.token ?? '')), hash],
+    );
+    if (!rows[0]) throw AppError.naoEncontrado('Link de senha (expirou ou já foi usado)');
+    abrirSessao(res, auth, rows[0].id);
+    void registrarAcesso(req, await quem(rows[0].id), 'acesso', 'Criou uma senha nova pelo link do e-mail');
     res.json({ ok: true });
   });
 
@@ -154,6 +337,7 @@ export function rotasAuth(deps: DepsApi): Router {
       req.usuario!.id,
       await bcrypt.hash(nova, 10),
     ]);
+    void registrarAcesso(req, await quem(req.usuario!.id), 'acesso', 'Trocou a própria senha');
     res.json({ ok: true });
   });
 

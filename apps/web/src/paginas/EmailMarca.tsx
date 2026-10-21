@@ -3,7 +3,14 @@ import { Button, Icon } from '@prospeccao/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { api, type LeadPrevia, type MarcaEmail, type PreviaEmail } from '../api';
+import {
+  api,
+  type CanalSequencia,
+  type LeadPrevia,
+  type MarcaEmail,
+  type PassoSequencia,
+  type PreviaEmail,
+} from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
 import { fmtCidade, fmtNome } from '../formatar';
@@ -661,20 +668,56 @@ export function Marcas(props: { remetenteConta: string | null }) {
 
 /* ───────────────────────── Campanha: prévia real e teste ───────────────────────── */
 
+/** Prévia de um passo de WhatsApp ou ligação: o texto pronto para aquele lead. */
+interface PreviaTexto {
+  canal: 'whatsapp' | 'ligacao';
+  texto: string;
+  lead: PreviaEmail['lead'];
+}
+type PreviaPasso = (PreviaEmail & { canal: 'email' }) | PreviaTexto;
+
+const ROTULO_PASSO: Record<CanalSequencia, string> = {
+  email: 'E-mail',
+  whatsapp: 'WhatsApp',
+  ligacao: 'Ligação',
+};
+
+/** Como a mensagem aparece no WhatsApp do lead. */
+function JanelaWhatsapp(props: { previa: PreviaTexto; carregando: boolean }) {
+  return (
+    <div className="previa-zap" aria-busy={props.carregando || undefined}>
+      <div className="previa-zap__topo">
+        <Icon name="message-circle" size={16} />
+        <b>{fmtNome(props.previa.lead.empresa)}</b>
+        {props.previa.lead.contato && <span className="quieto">· {props.previa.lead.contato}</span>}
+      </div>
+      <div className="previa-zap__conversa">
+        <div className="previa-zap__bolha">
+          {props.previa.texto || <span className="quieto">(sem mensagem)</span>}
+        </div>
+      </div>
+      <p className="nota-rodape" style={{ margin: 0 }}>
+        Sai pelo chip do lead (ou o menos usado hoje), no horário e no limite do WhatsApp da tela Agente.
+      </p>
+    </div>
+  );
+}
+
 export function PreviaCampanha(props: {
   campanhaEmailId: number;
   campanhaId: number;
-  passos: number;
+  passos: PassoSequencia[];
   emailPadrao: string;
   admin: boolean;
 }) {
   const [passo, setPasso] = useState(1);
   const [lead, setLead] = useState<number | null>(null);
   const [para, setPara] = useState(props.emailPadrao);
+  const canal = props.passos[passo - 1]?.canal ?? 'email';
   const q = useQuery({
     queryKey: ['email', 'previa', 'campanha', props.campanhaEmailId, passo, lead],
     queryFn: () =>
-      api<PreviaEmail>(`/email/campanhas/${props.campanhaEmailId}/previa`, {
+      api<PreviaPasso>(`/email/campanhas/${props.campanhaEmailId}/previa`, {
         metodo: 'POST',
         corpo: { passo, empresaId: lead },
       }),
@@ -693,45 +736,64 @@ export function PreviaCampanha(props: {
   return (
     <div className="pilha" style={{ gap: 12 }}>
       <div className="barra-previa">
-        {props.passos > 1 && (
+        {props.passos.length > 1 && (
           <div className="campo">
-            <span className="campo__rotulo">E-mail da sequência</span>
-            <fieldset className="segmentos" aria-label="E-mail da sequência">
-              {Array.from({ length: props.passos }, (_, i) => i + 1).map((n) => (
+            <span className="campo__rotulo">Passo da sequência</span>
+            <fieldset className="segmentos" aria-label="Passo da sequência">
+              {props.passos.map((p, i) => (
                 <button
-                  key={n}
+                  // biome-ignore lint/suspicious/noArrayIndexKey: a posição é o próprio passo
+                  key={i}
                   type="button"
                   className="segmento"
-                  aria-pressed={passo === n}
-                  data-ativo={passo === n || undefined}
-                  onClick={() => setPasso(n)}
+                  aria-pressed={passo === i + 1}
+                  data-ativo={passo === i + 1 || undefined}
+                  onClick={() => setPasso(i + 1)}
+                  title={ROTULO_PASSO[p.canal ?? 'email']}
                 >
-                  {n}º
+                  {i + 1}º · {ROTULO_PASSO[p.canal ?? 'email']}
                 </button>
               ))}
             </fieldset>
           </div>
         )}
         <EscolherLead campanhaId={props.campanhaId} valor={lead} aoMudar={setLead} />
-        <div className="campo" style={{ alignSelf: 'end' }}>
-          <Button
-            size="sm"
-            variant="ghost"
-            icon="rotate-ccw"
-            disabled={q.isFetching}
-            onClick={() => q.refetch()}
-            title="Pede uma abertura nova para a IA"
-          >
-            {q.isFetching ? 'Gerando…' : 'Gerar de novo'}
-          </Button>
-        </div>
+        {canal === 'email' && (
+          <div className="campo" style={{ alignSelf: 'end' }}>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="rotate-ccw"
+              disabled={q.isFetching}
+              onClick={() => q.refetch()}
+              title="Pede uma abertura nova para a IA"
+            >
+              {q.isFetching ? 'Gerando…' : 'Gerar de novo'}
+            </Button>
+          </div>
+        )}
       </div>
       {q.data && !q.data.lead.empresaId && (
         <Mensagem tipo="aviso">A campanha ainda não tem leads: a prévia usa uma loja de exemplo.</Mensagem>
       )}
       <ErroDaApi erro={q.error} />
-      <JanelaEmail previa={q.data} carregando={q.isFetching} />
-      {props.admin && (
+      {q.data?.canal === 'whatsapp' ? (
+        <JanelaWhatsapp previa={q.data} carregando={q.isFetching} />
+      ) : q.data?.canal === 'ligacao' ? (
+        <div className="previa-ligacao">
+          <Icon name="phone" size={18} />
+          <div>
+            <b>Ligar para {fmtNome(q.data.lead.empresa)}</b>
+            <p style={{ margin: '4px 0 0' }}>
+              Vira uma tarefa de hoje para o dono do lead, com o telefone e este roteiro:
+            </p>
+            <p className="previa-ligacao__roteiro">{q.data.texto || '(sem roteiro)'}</p>
+          </div>
+        </div>
+      ) : (
+        <JanelaEmail previa={q.data?.canal === 'email' ? q.data : undefined} carregando={q.isFetching} />
+      )}
+      {props.admin && canal === 'email' && (
         <div className="confirmar">
           <label htmlFor="pc-teste" style={{ fontWeight: 500 }}>
             Mandar este e-mail (com este lead e esta abertura) para ver na caixa de entrada de verdade
@@ -752,18 +814,25 @@ export function PreviaCampanha(props: {
           {teste.isSuccess && (
             <Mensagem tipo="ok">
               Teste enviado para {para} com “[TESTE]” no assunto. Confira também a pasta de spam.
-              {teste.data.abertura && q.data?.abertura !== teste.data.abertura && (
-                <> A IA escreveu a abertura de novo para o teste, então ela pode estar um pouco diferente.</>
-              )}
+              {teste.data.abertura &&
+                q.data?.canal === 'email' &&
+                q.data.abertura !== teste.data.abertura && (
+                  <>
+                    {' '}
+                    A IA escreveu a abertura de novo para o teste, então ela pode estar um pouco diferente.
+                  </>
+                )}
             </Mensagem>
           )}
           <ErroDaApi erro={teste.error} />
         </div>
       )}
-      <p className="nota-rodape" style={{ margin: 0 }}>
-        No envio de verdade, os links passam pelo contador de cliques e o “sair da lista” leva ao descadastro
-        do lead. O resto é exatamente isto.
-      </p>
+      {canal === 'email' && (
+        <p className="nota-rodape" style={{ margin: 0 }}>
+          No envio de verdade, os links passam pelo contador de cliques e o “sair da lista” leva ao
+          descadastro do lead. O resto é exatamente isto.
+        </p>
+      )}
     </div>
   );
 }

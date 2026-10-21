@@ -4,6 +4,7 @@ import { cifrar, decifrar, dicaDoSegredo, resolverCredenciais } from '../src/cre
 const conta = (over: Partial<Parameters<typeof resolverCredenciais>[0] & object> = {}) => ({
   contaId: 2,
   principal: false,
+  usaIaPlataforma: true,
   emailRemetente: null,
   resendDominioRespostas: null,
   evolutionUrl: null,
@@ -74,5 +75,13 @@ describe('credenciais das contas', () => {
     );
     expect(r.ia).toEqual({ provedor: 'gemini', apiKey: 'g-key', modelo: 'gemini-x', baseUrl: null });
     expect(r.origem.ia).toBe('conta');
+  });
+
+  it('conta que não pode usar a IA da plataforma fica sem IA (a principal sempre pode)', () => {
+    expect(resolverCredenciais(conta({ usaIaPlataforma: false }), ambiente, 2).ia).toBeNull();
+    expect(resolverCredenciais(conta({ usaIaPlataforma: true }), ambiente, 2).origem.ia).toBe('plataforma');
+    expect(
+      resolverCredenciais(conta({ principal: true, usaIaPlataforma: false }), ambiente, 1).origem.ia,
+    ).toBe('plataforma');
   });
 });

@@ -1,4 +1,13 @@
 export {
+  DIA_SP,
+  INICIO_MES_SP,
+  INICIO_MES_SP_TS,
+  limiteIaAtingido,
+  manterSinalDeVida,
+  medidorDeIa,
+  usoIaDoMes,
+} from './consumo.js';
+export {
   type AlteracaoCredenciais,
   CAMPOS_SEGREDO,
   type CampoSegredo,

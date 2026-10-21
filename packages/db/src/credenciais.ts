@@ -27,6 +27,8 @@ export type SegredosConta = Partial<Record<CampoSegredo, string>>;
 export interface CredenciaisConta {
   contaId: number;
   principal: boolean;
+  /** Sem IA própria, usa a da plataforma (a conta principal sempre usa). */
+  usaIaPlataforma: boolean;
   emailRemetente: string | null;
   resendDominioRespostas: string | null;
   evolutionUrl: string | null;
@@ -106,6 +108,7 @@ export function dicaDoSegredo(v: string): string {
 
 interface LinhaCredenciais {
   principal: boolean;
+  usa_ia_plataforma: boolean;
   email_remetente: string | null;
   resend_dominio_respostas: string | null;
   evolution_url: string | null;
@@ -124,7 +127,7 @@ export async function lerCredenciais(
   chave: string | null | undefined,
 ): Promise<CredenciaisConta | null> {
   const { rows } = await db.query<LinhaCredenciais>(
-    `SELECT c.principal, k.email_remetente, k.resend_dominio_respostas, k.evolution_url, k.evolution_instancia,
+    `SELECT c.principal, c.usa_ia_plataforma, k.email_remetente, k.resend_dominio_respostas, k.evolution_url, k.evolution_instancia,
             k.ia_provedor, k.ia_modelo, k.ia_base_url, k.segredos, k.dicas, k.atualizado_em
        FROM cadastro.contas c LEFT JOIN cadastro.credenciais_conta k ON k.conta_id = c.id
       WHERE c.id = $1`,
@@ -148,6 +151,7 @@ export async function lerCredenciais(
   return {
     contaId,
     principal: r.principal,
+    usaIaPlataforma: r.usa_ia_plataforma,
     emailRemetente: r.email_remetente,
     resendDominioRespostas: r.resend_dominio_respostas,
     evolutionUrl: r.evolution_url,
@@ -316,7 +320,7 @@ export function resolverCredenciais(
       baseUrl: valor(c?.iaBaseUrl),
     };
     r.origem.ia = 'conta';
-  } else if (valor(ambiente.iaKey)) {
+  } else if (valor(ambiente.iaKey) && (c?.principal || c?.usaIaPlataforma !== false)) {
     r.ia = {
       provedor: valor(ambiente.iaProvedor),
       apiKey: valor(ambiente.iaKey)!,

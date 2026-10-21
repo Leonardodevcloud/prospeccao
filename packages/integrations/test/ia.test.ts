@@ -81,6 +81,37 @@ describe('IA com provedor escolhível', () => {
     expect(usuario).toContain('"faixa": "A | B | C"');
   });
 
+  it('mede cada pedido (tokens somados nas tentativas) e o teto bloqueia antes de pedir', async () => {
+    let chamadas = 0;
+    vi.stubGlobal('fetch', async () => {
+      chamadas++;
+      return respostaFetch({
+        choices: [{ message: { content: chamadas === 1 ? '' : '{"ok":true}' } }],
+        usage: { prompt_tokens: 100, completion_tokens: 10 },
+      });
+    });
+    const usos: { uso: unknown; ok: boolean }[] = [];
+    let bloquear = false;
+    const medidor = {
+      async antes() {
+        if (bloquear) throw new Error('teto do mês');
+      },
+      async depois(uso: unknown, ok: boolean) {
+        usos.push({ uso, ok });
+      },
+    };
+    const cfg = configIa({ apiKey: 'sk-1' }, medidor)!;
+    const pedido = {
+      prompt: 'x',
+      esquema: { type: 'OBJECT' as const, properties: { ok: { type: 'BOOLEAN' as const } } },
+    };
+    expect(await gerarJson(cfg, pedido)).toBe('{"ok":true}');
+    expect(usos).toEqual([{ uso: { tokensEntrada: 200, tokensSaida: 20 }, ok: true }]);
+    bloquear = true;
+    await expect(gerarJson(cfg, pedido)).rejects.toThrow('teto do mês');
+    expect(chamadas).toBe(2);
+  });
+
   it('compatível com OpenAI: usa a URL base e tenta sem response_format quando o serviço recusa', async () => {
     const corpos: Record<string, unknown>[] = [];
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {

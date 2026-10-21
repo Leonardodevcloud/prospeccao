@@ -9,6 +9,7 @@ import { ErroDaTela } from './componentes/ErroDaTela';
 import { Shell } from './componentes/Shell';
 import { Agente } from './paginas/Agente';
 import { Atividade } from './paginas/Atividade';
+import { Auditoria } from './paginas/Auditoria';
 import { BaseCnpj } from './paginas/BaseCnpj';
 import { Campanhas } from './paginas/Campanhas';
 import { Conversas } from './paginas/Conversas';
@@ -22,6 +23,7 @@ import { Master } from './paginas/Master';
 import { MeuDia } from './paginas/MeuDia';
 import { Nichos } from './paginas/Nichos';
 import { Relatorios } from './paginas/Relatorios';
+import { EsqueciSenha, RedefinirSenha } from './paginas/Senha';
 
 // Tema claro sempre (preferência da operação).
 document.documentElement.setAttribute('data-theme', 'light');
@@ -29,6 +31,8 @@ document.documentElement.setAttribute('data-theme', 'light');
 const roteador = createBrowserRouter([
   { path: '/login', element: <Login /> },
   { path: '/convite/:token', element: <Convite /> },
+  { path: '/esqueci', element: <EsqueciSenha /> },
+  { path: '/redefinir/:token', element: <RedefinirSenha /> },
   {
     path: '/',
     element: <Shell />,
@@ -47,6 +51,7 @@ const roteador = createBrowserRouter([
       { path: 'nichos', element: <Nichos /> },
       { path: 'base-cnpj', element: <BaseCnpj /> },
       { path: 'master', element: <Master /> },
+      { path: 'auditoria', element: <Auditoria /> },
       { path: 'configuracoes', element: <Navigate to="/base-cnpj" replace /> },
     ],
   },
@@ -76,3 +81,9 @@ createRoot(document.getElementById('raiz')!).render(
     </QueryClientProvider>
   </StrictMode>,
 );
+
+// Service worker: notificações no celular (e o sistema pode ser instalado como app).
+if ('serviceWorker' in navigator && import.meta.env.PROD)
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+  });

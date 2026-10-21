@@ -119,7 +119,7 @@ export async function criarMensagem(
     texto: string;
     telefone: string | null;
     status: 'rascunho' | 'aprovada' | 'enviada' | 'recebida';
-    origem: 'agente' | 'cadencia' | 'humano' | 'lead';
+    origem: 'agente' | 'cadencia' | 'humano' | 'lead' | 'sequencia';
     idExterno?: string | null;
     nota?: string | null;
     usuarioId?: number | null;
@@ -127,14 +127,16 @@ export async function criarMensagem(
     midiaId?: number | null;
     /** Mensagem do lead já lida (ex.: você mesmo mandou pelo celular). */
     lida?: boolean;
+    /** Chip (instância) por onde saiu ou chegou. */
+    chipId?: number | null;
   },
 ): Promise<number | null> {
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO comercial.mensagens
        (conta_id, empresa_id, direcao, texto, telefone, status, origem, id_externo, nota, enviado_em,
-        usuario_id, midia_tipo, midia_id, lida_em)
+        usuario_id, midia_tipo, midia_id, lida_em, chip_id)
      VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'enviada' THEN now() END,
-             $9, $10, $11, CASE WHEN $2 = 'enviada' OR $12 THEN now() END)
+             $9, $10, $11, CASE WHEN $2 = 'enviada' OR $12 THEN now() END, $13)
      ON CONFLICT (conta_id, id_externo) WHERE id_externo IS NOT NULL DO NOTHING
      RETURNING id`,
     [
@@ -150,6 +152,7 @@ export async function criarMensagem(
       m.midiaTipo ?? null,
       m.midiaId ?? null,
       m.lida ?? false,
+      m.chipId ?? null,
     ],
   );
   return rows[0]?.id ?? null;

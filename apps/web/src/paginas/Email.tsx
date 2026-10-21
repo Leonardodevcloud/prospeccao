@@ -7,11 +7,13 @@ import {
   api,
   type Campanha,
   type CampanhaEmail,
+  type CanalSequencia,
   type ClasseResposta,
   type ConfigEmail,
   type EnvioEmail,
   type ModeloEmail,
   type Nicho,
+  type PassoSequencia,
   type PreviaEmail,
   type RespostaEmail,
   ROTULO_CLASSE,
@@ -35,7 +37,7 @@ import {
 
 type Aba = 'campanhas' | 'modelos' | 'marca' | 'enviados' | 'respostas' | 'config';
 const ABAS: { id: Aba; rotulo: string; admin?: boolean }[] = [
-  { id: 'campanhas', rotulo: 'Campanhas' },
+  { id: 'campanhas', rotulo: 'Sequências' },
   { id: 'respostas', rotulo: 'Respostas' },
   { id: 'enviados', rotulo: 'Enviados' },
   { id: 'modelos', rotulo: 'Modelos' },
@@ -136,7 +138,26 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
 
 /* ───────────────────────── Campanhas ───────────────────────── */
 
-type Passo = { modeloId: number; dias: number };
+type Passo = PassoSequencia;
+
+const ROTULO_CANAL: Record<CanalSequencia, string> = {
+  email: 'E-mail',
+  whatsapp: 'WhatsApp',
+  ligacao: 'Ligação',
+};
+const ICONE_CANAL: Record<CanalSequencia, string> = {
+  email: 'mail',
+  whatsapp: 'message-circle',
+  ligacao: 'phone',
+};
+const TEXTO_PADRAO: Record<'whatsapp' | 'ligacao', string> = {
+  whatsapp:
+    '{saudacao} Aqui é {remetente}. Te mandei um e-mail sobre entregas para a {empresa}: conseguiu ver?',
+  ligacao: 'Confirme se recebeu o e-mail e pergunte quantas entregas a {empresa} faz por dia.',
+};
+
+/** Canais que a sequência usa (para a estimativa de quem pode entrar). */
+const canaisDe = (passos: Passo[]) => [...new Set(passos.map((p) => p.canal ?? 'email'))];
 
 /** Modelos do nicho da campanha primeiro (os outros continuam na lista). */
 function ordenarModelos(modelos: ModeloEmail[], nichoId: number | null | undefined): ModeloEmail[] {
@@ -144,90 +165,166 @@ function ordenarModelos(modelos: ModeloEmail[], nichoId: number | null | undefin
   return [...modelos].sort((a, b) => Number(b.nichoId === nichoId) - Number(a.nichoId === nichoId));
 }
 
-/** A sequência: 1º e-mail e até 3 follow-ups. */
+/**
+ * A sequência: até 6 passos, cada um num canal (e-mail, WhatsApp ou ligação), com os dias de espera
+ * sem resposta. Respondeu em qualquer canal, a sequência para para aquele lead.
+ */
 function EditorPassos(props: { passos: Passo[]; modelos: ModeloEmail[]; aoMudar: (p: Passo[]) => void }) {
   const { passos, aoMudar } = props;
+  const mudar = (i: number, p: Partial<Passo>) =>
+    aoMudar(passos.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  const trocarCanal = (i: number, canal: CanalSequencia) =>
+    mudar(
+      i,
+      canal === 'email'
+        ? { canal, modeloId: passos[i]?.modeloId ?? props.modelos[0]?.id, texto: undefined }
+        : { canal, texto: passos[i]?.texto || TEXTO_PADRAO[canal], modeloId: undefined },
+    );
   return (
     <fieldset className="opcoes opcoes--pilha">
       <legend>Sequência</legend>
-      {passos.map((p, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a posição é o próprio passo
-        <div key={i} className="passo-email">
-          <span className="passo-email__n mono">{i + 1}º</span>
-          <label className="pp-sr" htmlFor={`passo-modelo-${i}`}>
-            Modelo do {i + 1}º e-mail
-          </label>
-          <select
-            id={`passo-modelo-${i}`}
-            className="filtro"
-            value={p.modeloId}
-            onChange={(e) =>
-              aoMudar(passos.map((x, j) => (j === i ? { ...x, modeloId: Number(e.target.value) } : x)))
-            }
-          >
-            {props.modelos.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.nome}
-                {m.nichoNome ? ` · ${m.nichoNome}` : ''}
-                {m.arquivos.length
-                  ? ` (${m.arquivos.length} anexo${m.arquivos.length === 1 ? '' : 's'})`
-                  : ''}
-              </option>
-            ))}
-          </select>
-          {i === 0 ? (
-            <span className="quieto">logo que começar</span>
-          ) : (
-            <span className="passo-email__dias">
-              <input
-                className="filtro"
-                inputMode="numeric"
-                aria-label={`Dias sem resposta antes do ${i + 1}º e-mail`}
-                value={p.dias}
-                onChange={(e) =>
-                  aoMudar(
-                    passos.map((x, j) =>
-                      j === i ? { ...x, dias: Number(e.target.value.replace(/\D/g, '')) || 0 } : x,
-                    ),
-                  )
-                }
-              />
-              dias sem resposta
-              <button
-                type="button"
-                className="botao-icone"
-                aria-label={`Tirar o ${i + 1}º e-mail`}
-                onClick={() => aoMudar(passos.filter((_, j) => j !== i))}
-              >
-                <Icon name="x" size={16} />
-              </button>
-            </span>
-          )}
-        </div>
-      ))}
-      {passos.length < 4 && (
-        <div>
+      <ol className="passos-sequencia">
+        {passos.map((p, i) => {
+          const canal = p.canal ?? 'email';
+          return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: a posição é o próprio passo
+            <li key={i} className="passo-sequencia" data-canal={canal}>
+              <div className="passo-sequencia__topo">
+                <span className="passo-sequencia__n mono">{i + 1}º</span>
+                <fieldset className="segmentos segmentos--mini" aria-label={`Canal do ${i + 1}º passo`}>
+                  {(['email', 'whatsapp', 'ligacao'] as CanalSequencia[]).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className="segmento"
+                      aria-pressed={canal === c}
+                      data-ativo={canal === c || undefined}
+                      onClick={() => trocarCanal(i, c)}
+                    >
+                      <Icon name={ICONE_CANAL[c]} size={12} /> {ROTULO_CANAL[c]}
+                    </button>
+                  ))}
+                </fieldset>
+                {i === 0 ? (
+                  <span className="quieto passo-sequencia__quando">logo que começar</span>
+                ) : (
+                  <span className="passo-email__dias passo-sequencia__quando">
+                    <input
+                      className="filtro"
+                      inputMode="numeric"
+                      aria-label={`Dias sem resposta antes do ${i + 1}º passo`}
+                      value={p.dias}
+                      onChange={(e) => mudar(i, { dias: Number(e.target.value.replace(/\D/g, '')) || 0 })}
+                    />
+                    dias sem resposta
+                    <button
+                      type="button"
+                      className="botao-icone"
+                      aria-label={`Tirar o ${i + 1}º passo`}
+                      onClick={() => aoMudar(passos.filter((_, j) => j !== i))}
+                    >
+                      <Icon name="x" size={16} />
+                    </button>
+                  </span>
+                )}
+              </div>
+              {canal === 'email' ? (
+                <>
+                  <label className="pp-sr" htmlFor={`passo-modelo-${i}`}>
+                    Modelo do {i + 1}º passo
+                  </label>
+                  <select
+                    id={`passo-modelo-${i}`}
+                    className="filtro"
+                    value={p.modeloId ?? ''}
+                    onChange={(e) => mudar(i, { modeloId: Number(e.target.value) })}
+                  >
+                    {!p.modeloId && <option value="">Escolha o modelo</option>}
+                    {props.modelos.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.nome}
+                        {m.nichoNome ? ` · ${m.nichoNome}` : ''}
+                        {m.arquivos.length
+                          ? ` (${m.arquivos.length} anexo${m.arquivos.length === 1 ? '' : 's'})`
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <>
+                  <label className="pp-sr" htmlFor={`passo-texto-${i}`}>
+                    {canal === 'whatsapp' ? 'Mensagem do WhatsApp' : 'Roteiro da ligação'}
+                  </label>
+                  <textarea
+                    id={`passo-texto-${i}`}
+                    rows={3}
+                    maxLength={2000}
+                    placeholder={
+                      canal === 'whatsapp' ? 'Mensagem do WhatsApp' : 'Roteiro da ligação (opcional)'
+                    }
+                    value={p.texto ?? ''}
+                    onChange={(e) => mudar(i, { texto: e.target.value })}
+                  />
+                  <span className="campo__dica">
+                    {canal === 'whatsapp'
+                      ? 'Sai pelo chip do lead, no horário e no limite do WhatsApp (tela Agente). Vale {saudacao}, {nome}, {empresa}, {cidade} e {remetente}.'
+                      : 'Vira uma tarefa de ligação para o dono do lead, com o telefone e este roteiro.'}
+                  </span>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {passos.length < 6 && (
+        <div className="acoes">
           <Button
             size="sm"
             variant="ghost"
-            icon="plus"
+            icon="mail"
             onClick={() =>
               aoMudar([
                 ...passos,
-                { modeloId: props.modelos.at(-1)?.id ?? 0, dias: passos.length === 1 ? 3 : 5 },
+                { canal: 'email', modeloId: props.modelos.at(-1)?.id, dias: passos.length === 1 ? 3 : 4 },
               ])
             }
           >
-            Follow-up se não responder
+            E-mail
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon="message-circle"
+            onClick={() => aoMudar([...passos, { canal: 'whatsapp', texto: TEXTO_PADRAO.whatsapp, dias: 2 }])}
+          >
+            WhatsApp
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon="phone"
+            onClick={() => aoMudar([...passos, { canal: 'ligacao', texto: TEXTO_PADRAO.ligacao, dias: 2 }])}
+          >
+            Ligação
           </Button>
         </div>
       )}
       <span className="campo__dica">
-        Respondeu, pediu para sair ou o e-mail voltou: a sequência para na hora para aquele lead.
+        Respondeu em qualquer canal, pediu para sair, avançou no funil ou o e-mail voltou: a sequência para na
+        hora para aquele lead. Quem não tem o canal de um passo pula para o próximo; o passo de WhatsApp ou de
+        ligação põe o lead no funil.
       </span>
     </fieldset>
   );
 }
+
+/** A sequência está pronta para salvar (todo passo tem o que precisa). */
+const passosValidos = (passos: Passo[]) =>
+  passos.length > 0 &&
+  passos.every((p) =>
+    (p.canal ?? 'email') === 'email' ? !!p.modeloId : p.canal === 'ligacao' || !!p.texto?.trim(),
+  );
 
 interface CamposCampanha {
   marcaId: number;
@@ -319,7 +416,7 @@ function NovaCampanha(props: {
     faixas: [] as ('A' | 'B' | 'C')[],
     pularNoFunil: true,
     incluirContador: false,
-    passos: [{ modeloId: props.modelos[0]?.id ?? 0, dias: 0 }] as Passo[],
+    passos: [{ canal: 'email', modeloId: props.modelos[0]?.id, dias: 0 }] as Passo[],
     marcaId: 0,
     instrucoesIa: '',
     personalizarIa: props.iaLigada,
@@ -329,6 +426,7 @@ function NovaCampanha(props: {
     faixas: f.faixas,
     pularNoFunil: f.pularNoFunil,
     incluirContador: f.incluirContador,
+    canais: canaisDe(f.passos),
   };
   const estimativa = useQuery({
     queryKey: ['email', 'estimar', filtro],
@@ -336,8 +434,15 @@ function NovaCampanha(props: {
       api<{
         leads: number;
         comEmail: number;
+        comWhatsapp: number;
         elegiveis: number;
-        exemplos: { empresaId: number; nome: string; email: string; faixa: string | null }[];
+        exemplos: {
+          empresaId: number;
+          nome: string;
+          email: string | null;
+          whatsapp: boolean;
+          faixa: string | null;
+        }[];
       }>('/email/campanhas/estimar', { metodo: 'POST', corpo: filtro }),
     enabled: f.campanhaId > 0,
     placeholderData: keepPreviousData,
@@ -361,7 +466,7 @@ function NovaCampanha(props: {
   const aoMudarIa = useCallback((v: CamposCampanha) => setF((x) => ({ ...x, ...v })), []);
 
   return (
-    <Drawer titulo="Nova campanha de e-mail" barra="E-mail" aoFechar={props.aoFechar}>
+    <Drawer titulo="Nova sequência" barra="Sequências" aoFechar={props.aoFechar}>
       <div className="drawer__corpo">
         <form
           className="form"
@@ -385,7 +490,10 @@ function NovaCampanha(props: {
                   ...f,
                   campanhaId: id,
                   nome: f.nome || (c ? `E-mail · ${c.nome}` : ''),
-                  passos: doNicho && f.passos.length === 1 ? [{ modeloId: doNicho.id, dias: 0 }] : f.passos,
+                  passos:
+                    doNicho && f.passos.length === 1 && (f.passos[0]?.canal ?? 'email') === 'email'
+                      ? [{ canal: 'email', modeloId: doNicho.id, dias: 0 }]
+                      : f.passos,
                 });
               }}
             >
@@ -455,25 +563,32 @@ function NovaCampanha(props: {
                     <b className="mono" style={{ fontSize: 20 }}>
                       {fmtNumero(estimativa.data.elegiveis)}
                     </b>{' '}
-                    {estimativa.data.elegiveis === 1 ? 'lead vai receber' : 'leads vão receber'}
+                    {estimativa.data.elegiveis === 1
+                      ? 'lead entra na sequência'
+                      : 'leads entram na sequência'}
                     <span className="quieto">
                       {' '}
-                      · {fmtNumero(estimativa.data.comEmail)} de {fmtNumero(estimativa.data.leads)} leads de “
-                      {campanha?.nome}” têm e-mail
+                      · dos {fmtNumero(estimativa.data.leads)} leads de “{campanha?.nome}”,{' '}
+                      {fmtNumero(estimativa.data.comEmail)} têm e-mail e{' '}
+                      {fmtNumero(estimativa.data.comWhatsapp)} têm WhatsApp
                     </span>
                   </p>
                   {estimativa.data.exemplos.length > 0 && (
                     <ul className="exemplos-email">
                       {estimativa.data.exemplos.map((x) => (
                         <li key={x.empresaId}>
-                          {fmtNome(x.nome)} <span className="quieto mono">{x.email}</span>
+                          {fmtNome(x.nome)}{' '}
+                          <span className="quieto mono">
+                            {[x.email, x.whatsapp ? 'WhatsApp' : null].filter(Boolean).join(' · ')}
+                          </span>
                         </li>
                       ))}
                     </ul>
                   )}
                   <span className="campo__dica">
-                    Fica de fora quem pediu para sair, quem foi descartado e quem já recebeu e-mail de outra
-                    campanha nos últimos 30 dias.
+                    Entra quem tem algum canal da sequência. Fica de fora quem pediu para sair, quem foi
+                    descartado, quem está em outra sequência e quem recebeu e-mail de outra campanha nos
+                    últimos 30 dias.
                   </span>
                 </>
               ) : null}
@@ -492,7 +607,9 @@ function NovaCampanha(props: {
           <div className="acoes">
             <Button
               variant="primary"
-              disabled={criar.isPending || !f.campanhaId || !f.nome.trim() || !f.marcaId}
+              disabled={
+                criar.isPending || !f.campanhaId || !f.nome.trim() || !f.marcaId || !passosValidos(f.passos)
+              }
               onClick={() => criar.mutate(false)}
             >
               Salvar e ver a prévia
@@ -506,6 +623,7 @@ function NovaCampanha(props: {
                 !f.campanhaId ||
                 !f.nome.trim() ||
                 !f.marcaId ||
+                !passosValidos(f.passos) ||
                 !estimativa.data?.elegiveis
               }
             >
@@ -513,8 +631,8 @@ function NovaCampanha(props: {
             </Button>
           </div>
           <span className="campo__dica">
-            “Salvar e ver a prévia” guarda como rascunho: confira o e-mail com leads de verdade antes de
-            enviar.
+            “Salvar e ver a prévia” guarda como rascunho: confira cada passo com leads de verdade antes de
+            começar.
           </span>
         </form>
       </div>
@@ -594,7 +712,7 @@ function CampanhaAberta(props: {
               key={JSON.stringify([c.passos, c.marcaId, c.instrucoesIa, c.personalizarIa])}
               campanhaEmailId={c.id}
               campanhaId={c.campanhaId}
-              passos={c.passos.length}
+              passos={c.passos}
               emailPadrao={sessao.data?.email ?? ''}
               admin={admin}
             />
@@ -637,7 +755,7 @@ function CampanhaAberta(props: {
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={salvar.isPending || !mudou || !f.nome.trim()}
+                  disabled={salvar.isPending || !mudou || !f.nome.trim() || !passosValidos(f.passos)}
                 >
                   {salvar.isPending ? 'Salvando…' : 'Salvar e ver a prévia'}
                 </Button>
@@ -696,7 +814,7 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean; iaLigada: b
             disabled={!props.modelos.length}
             onClick={() => setNova(true)}
           >
-            Nova campanha de e-mail
+            Nova sequência
           </Button>
         </div>
       )}
@@ -713,8 +831,8 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean; iaLigada: b
         <div className="pp-panel">
           <EmptyState
             icone="mail"
-            titulo="Nenhuma campanha de e-mail ainda"
-            texto="Escolha uma campanha de prospecção, a identidade visual e o texto do nicho: todo lead com e-mail recebe sua apresentação e a proposta em anexo, com follow-up automático. Quem responder com interesse entra sozinho no SDR."
+            titulo="Nenhuma sequência ainda"
+            texto="Escolha uma campanha de prospecção e monte os passos: e-mail com a proposta em anexo, WhatsApp e ligação, nos dias que você quiser. Respondeu em qualquer canal, a sequência para; quem tem interesse entra sozinho no SDR."
           />
         </div>
       ) : (
@@ -726,9 +844,15 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean; iaLigada: b
                 <header className="card-email__topo">
                   <div>
                     <b>{c.nome}</b>
-                    <span className="quieto card-email__sub">
-                      {c.campanhaNome} · {c.passos.length}{' '}
-                      {c.passos.length === 1 ? 'e-mail' : 'e-mails na sequência'}
+                    <span className="quieto card-email__sub">{c.campanhaNome}</span>
+                    <span className="canais-sequencia" title="Passos da sequência">
+                      {c.passos.map((p, i) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: a posição é o próprio passo
+                        <span key={i} className="canal-passo" data-canal={p.canal ?? 'email'}>
+                          <Icon name={ICONE_CANAL[p.canal ?? 'email']} size={12} />
+                          {i > 0 && <span className="mono">+{p.dias}d</span>}
+                        </span>
+                      ))}
                     </span>
                     <span className="quieto card-email__sub">
                       {c.marcaNome ?? 'Sem identidade visual'}
@@ -742,9 +866,21 @@ function Campanhas(props: { modelos: ModeloEmail[]; ligado: boolean; iaLigada: b
                   </Badge>
                 </header>
                 <div className="funil-email">
-                  <div>
+                  <div
+                    title={`${fmtNumero(c.enviadosEmail)} e-mails · ${fmtNumero(c.enviadosWhatsapp)} WhatsApp · ${fmtNumero(c.ligacoes)} ligações`}
+                  >
                     <b className="mono">{fmtNumero(c.enviados)}</b>
-                    <span>enviados</span>
+                    <span>
+                      {c.enviadosWhatsapp || c.ligacoes
+                        ? `toques (${[
+                            c.enviadosEmail ? `${c.enviadosEmail} e-mail` : null,
+                            c.enviadosWhatsapp ? `${c.enviadosWhatsapp} zap` : null,
+                            c.ligacoes ? `${c.ligacoes} lig.` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')})`
+                        : 'enviados'}
+                    </span>
                   </div>
                   <div>
                     <b className="mono">{fmtPct(c.abriram, base)}</b>
@@ -1275,10 +1411,11 @@ function Enviados(props: { aoAbrirLead: (id: number) => void }) {
   };
   const STATUS: Record<EnvioEmail['status'], string> = {
     na_fila: 'Na fila',
-    enviado: 'Enviado',
+    enviado: 'Feito',
     erro: 'Erro',
     devolvido: 'Voltou',
-    cancelado: 'Cancelado',
+    cancelado: 'Parou',
+    pulado: 'Pulado',
   };
   return (
     <section className="pilha" style={{ gap: 12 }}>
@@ -1327,7 +1464,7 @@ function Enviados(props: { aoAbrirLead: (id: number) => void }) {
           <thead>
             <tr>
               <th>Lead</th>
-              <th>E-mail</th>
+              <th>Para</th>
               <th>Passo</th>
               <th>Status</th>
               <th>Abriu</th>
@@ -1367,9 +1504,14 @@ function Enviados(props: { aoAbrirLead: (id: number) => void }) {
                     </div>
                   </td>
                   <td className="mono" style={{ fontSize: 12 }}>
-                    {e.email}
+                    {e.canal === 'email' ? e.email : (e.telefone ?? '—')}
                   </td>
-                  <td className="mono">{e.passo}º</td>
+                  <td>
+                    <span className="canal-passo" title={ROTULO_CANAL[e.canal ?? 'email']}>
+                      <Icon name={ICONE_CANAL[e.canal ?? 'email']} size={12} />
+                      <span className="mono">{e.passo}º</span>
+                    </span>
+                  </td>
                   <td>
                     <Badge
                       tone={
@@ -1389,9 +1531,9 @@ function Enviados(props: { aoAbrirLead: (id: number) => void }) {
                         {fmtHora(e.enviadoEm)}
                       </div>
                     )}
-                    {e.erro && (
-                      <div className="quieto" style={{ fontSize: 12 }} title={e.erro}>
-                        {e.erro.slice(0, 60)}
+                    {(e.erro || e.paradoMotivo) && (
+                      <div className="quieto" style={{ fontSize: 12 }} title={e.erro ?? e.paradoMotivo ?? ''}>
+                        {(e.erro ?? e.paradoMotivo ?? '').slice(0, 60)}
                       </div>
                     )}
                   </td>
@@ -1896,8 +2038,8 @@ export function Email() {
         <div>
           <h1>E-mail</h1>
           <p>
-            Apresentação e proposta por e-mail para os leads das campanhas, com follow-up e leitura das
-            respostas.
+            Sequências por e-mail, WhatsApp e ligação para os leads das campanhas, com a proposta em anexo e a
+            leitura das respostas.
           </p>
         </div>
       </div>

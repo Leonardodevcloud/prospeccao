@@ -755,6 +755,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       pool,
       log: criarLogger('teste', 'silent'),
       whatsapp: {
+        instancia: 'teste',
         async enviar(tel: string, texto: string) {
           enviados.push({ tel, texto });
           return { idExterno: `ext-${enviados.length}` };
@@ -1118,6 +1119,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       servicos: async (conta) => ({
         ...semServicos(conta),
         whatsapp: {
+          instancia: 'teste',
           async enviar(tel: string, texto: string) {
             enviados.push({ tel, texto });
             return { idExterno: `z-${enviados.length}` };
@@ -1276,6 +1278,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       servicos: async (conta: number) => ({
         ...semServicos(conta),
         whatsapp: {
+          instancia: 'teste',
           async enviar(tel: string, texto: string) {
             enviados.push({ tel, texto });
             return { idExterno: `l-${enviados.length}` };
@@ -1888,6 +1891,546 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(login.body.erro.codigo).toBe('conta_desativada');
     await enviar('patch', `/master/contas/${id}`, { ativa: true });
     expect((await bia.ler('/funil')).status).toBe(200);
+  });
+
+  it('sequência multicanal: e-mail, WhatsApp pelos chips em rodízio e ligação; para quando o lead responde em qualquer canal', async () => {
+    const motor = await import('../src/modulos/email/motor.js');
+    const agente = await import('../src/modulos/agente/motor.js');
+    const repoEmail = await import('../src/modulos/email/repositorio.js');
+    const repoAgente = await import('../src/modulos/agente/repositorio.js');
+    const sequencia = await import('../src/modulos/email/sequencia.js');
+    await pool.query(
+      `INSERT INTO cadastro.campanhas (id, conta_id, nome, nicho_id, cidades) VALUES
+         (120, 1, 'Campanha multicanal', (SELECT id FROM cadastro.nichos ORDER BY id LIMIT 1), '[{"nome":"Salvador","uf":"BA"}]')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO descoberta.empresas (id, nome, cidade, uf) VALUES
+         (120, 'Peças Dois Canais', 'SALVADOR', 'BA'), (121, 'Peças Só Zap', 'SALVADOR', 'BA'),
+         (122, 'Peças Só Email', 'SALVADOR', 'BA')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem)
+       SELECT 120, x, 'maps' FROM unnest(ARRAY[120, 121, 122]) x ON CONFLICT DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, whatsapp, principal) VALUES
+         (120, 'email', 'compras@doiscanais.com.br', 'site', '{site}', 'nao_verificado', false, true),
+         (120, 'whatsapp', '71999990120', 'site', '{site}', 'verificado', true, true),
+         (121, 'whatsapp', '71999990121', 'site', '{site}', 'verificado', true, true),
+         (122, 'email', 'loja@soemail.com.br', 'site', '{site}', 'nao_verificado', false, true)`,
+    );
+
+    // Dois chips: o 1º só manda uma automática por dia.
+    expect(
+      (await enviar('post', '/agente/chips', { nome: 'Chip 1', instancia: 'chip1', limiteDia: 1 })).status,
+    ).toBe(201);
+    const c2 = await enviar('post', '/agente/chips', { nome: 'Chip 2', instancia: 'chip2', limiteDia: 5 });
+    expect(c2.body.chips).toHaveLength(2);
+    expect((await enviar('post', '/agente/chips', { nome: 'Repetido', instancia: 'CHIP1' })).status).toBe(
+      409,
+    );
+
+    // Quem pode entrar depende dos canais da sequência.
+    const soEmail = await enviar('post', '/email/campanhas/estimar', { campanhaId: 120 });
+    expect(soEmail.body).toMatchObject({ leads: 3, comEmail: 2, comWhatsapp: 2, elegiveis: 2 });
+    const comZap = await enviar('post', '/email/campanhas/estimar', {
+      campanhaId: 120,
+      canais: ['email', 'whatsapp'],
+    });
+    expect(comZap.body.elegiveis).toBe(3);
+
+    const modelos = (await ler('/email/modelos')).body;
+    const marcas = (await ler('/email/marcas')).body;
+    // Passo de WhatsApp precisa da mensagem.
+    expect(
+      (
+        await enviar('post', '/email/campanhas', {
+          nome: 'x',
+          campanhaId: 120,
+          marcaId: marcas[0].id,
+          passos: [{ canal: 'whatsapp', dias: 0 }],
+        })
+      ).status,
+    ).toBe(422);
+    const camp = await enviar('post', '/email/campanhas', {
+      nome: 'Multicanal',
+      campanhaId: 120,
+      marcaId: marcas[0].id,
+      passos: [
+        { canal: 'email', modeloId: modelos[0].id, dias: 0 },
+        {
+          canal: 'whatsapp',
+          texto: '{saudacao} Aqui é da Tutts: viu o e-mail sobre entregas na {empresa}?',
+          dias: 2,
+        },
+        { canal: 'ligacao', texto: 'Pergunte quantas entregas a {empresa} faz por dia.', dias: 2 },
+      ],
+    });
+    expect(camp.status).toBe(201);
+    expect((await enviar('post', `/email/campanhas/${camp.body.id}/iniciar`)).body).toEqual({ naFila: 3 });
+    const cfgEmail = (await ler('/email')).body.config;
+    await enviar('put', '/email/config', {
+      ...cfgEmail,
+      ligado: true,
+      horaInicio: 0,
+      horaFim: 24,
+      diasSemana: [0, 1, 2, 3, 4, 5, 6],
+      intervaloSeg: 10,
+    });
+    const conf = await naConta(() => repoEmail.obterConfig(pool));
+
+    // 1º passo (e-mail): quem não tem e-mail pula para o próximo passo.
+    const enviadosEmail: { para: string; assunto: string }[] = [];
+    const email = {
+      remetente: 'comercial@tutts.com.br',
+      dominioRespostas: null,
+      segredoWebhook: null,
+      async enviar(e: { para: string; assunto: string }) {
+        enviadosEmail.push(e);
+        return { id: `re-mc-${enviadosEmail.length}` };
+      },
+    };
+    const depsEmail = {
+      pool,
+      log: criarLogger('teste', 'silent'),
+      origens: [ORIGEM],
+      classificarEmail: null,
+      personalizarAbertura: null,
+      email,
+    };
+    let t = Date.now();
+    for (let i = 0; i < 5; i++) {
+      await naConta(() => motor.enviarProximo(depsEmail as never, conf, new Date(t)));
+      t += 20_000;
+    }
+    expect(enviadosEmail.map((e) => e.para).sort()).toEqual([
+      'compras@doiscanais.com.br',
+      'loja@soemail.com.br',
+    ]);
+    const { rows: passo1 } = await pool.query(
+      `SELECT empresa_id::int, status, erro FROM comercial.envios_email WHERE campanha_email_id = $1 ORDER BY empresa_id`,
+      [camp.body.id],
+    );
+    expect(passo1.map((r) => r.status)).toEqual(['enviado', 'pulado', 'enviado']);
+    expect(passo1[1].erro).toBe('Sem e-mail');
+
+    // 2º passo (WhatsApp) depois de 2 dias: entra no funil e vai para a fila do WhatsApp; sem WhatsApp, pula.
+    await pool.query(
+      `UPDATE comercial.envios_email SET enviado_em = now() - interval '3 days' WHERE campanha_email_id = $1`,
+      [camp.body.id],
+    );
+    expect(await naConta(() => motor.agendarSeguimentos(depsEmail as never))).toBe(3);
+    expect(await naConta(() => motor.processarOutrosCanais(depsEmail as never, conf))).toBe(2);
+    const { rows: msgs } = await pool.query(
+      `SELECT empresa_id::int, texto, status, origem FROM comercial.mensagens WHERE empresa_id IN (120, 121) ORDER BY empresa_id`,
+    );
+    expect(msgs).toEqual([
+      expect.objectContaining({
+        empresa_id: 120,
+        status: 'aprovada',
+        origem: 'sequencia',
+        texto: expect.stringMatching(
+          /^Olá! Aqui é da Tutts: viu o e-mail sobre entregas na Peças Dois Canais\?/,
+        ),
+      }),
+      expect.objectContaining({ empresa_id: 121, status: 'aprovada', origem: 'sequencia' }),
+    ]);
+    // No funil, o follow-up espera a sequência (nada de dois toques no mesmo lead).
+    const op120 = (await ler('/funil/120')).body.oportunidade;
+    expect(op120).toMatchObject({
+      etapa: 'a_abordar',
+      proximaAcao: 'Na sequência automática',
+      proximaAcaoEm: null,
+    });
+
+    // O WhatsApp da sequência sai mesmo com o agente desligado, em rodízio entre os chips.
+    const tela = await ler('/agente');
+    await enviar('put', '/agente/config', {
+      ...tela.body.config,
+      ligado: false,
+      horaInicio: 0,
+      horaFim: 24,
+      diasSemana: [0, 1, 2, 3, 4, 5, 6],
+      intervaloSeg: 30,
+    });
+    const cfgAgente = await naConta(() => repoAgente.obterConfig(pool));
+    const zaps: { tel: string; instancia?: string }[] = [];
+    const depsZap = {
+      pool,
+      log: criarLogger('teste', 'silent'),
+      ia: null,
+      whatsapp: {
+        instancia: 'padrao',
+        async enviar(tel: string, _texto: string, instancia?: string) {
+          zaps.push({ tel, instancia });
+          return { idExterno: `mc-${zaps.length}` };
+        },
+      },
+    };
+    const agora = new Date();
+    expect(await naConta(() => agente.enviarProxima(depsZap, cfgAgente, agora, { soSequencia: true }))).toBe(
+      true,
+    );
+    // Mesmo minuto: o chip 1 está no intervalo, então o outro lead sai pelo chip 2.
+    expect(await naConta(() => agente.enviarProxima(depsZap, cfgAgente, agora, { soSequencia: true }))).toBe(
+      true,
+    );
+    expect(zaps.map((z) => z.instancia).sort()).toEqual(['chip1', 'chip2']);
+    expect(await naConta(() => agente.enviarProxima(depsZap, cfgAgente, agora, { soSequencia: true }))).toBe(
+      false,
+    );
+    const { rows: chipsDosLeads } = await pool.query(
+      `SELECT o.empresa_id::int, c.instancia FROM comercial.oportunidades o JOIN comercial.chips c ON c.id = o.chip_id
+        WHERE o.empresa_id IN (120, 121) ORDER BY o.empresa_id`,
+    );
+    expect(chipsDosLeads).toHaveLength(2);
+    const chipDo120 = chipsDosLeads.find((c) => c.empresa_id === 120)!.instancia;
+
+    // O lead 120 responde no WhatsApp: a sequência para para ele (sem ligação depois).
+    const token = tela.body.webhook.split('/').at(-1);
+    await request(app)
+      .post(`/webhooks/evolution/${token}`)
+      .send({
+        event: 'messages.upsert',
+        instance: chipDo120,
+        data: {
+          key: { remoteJid: '5571999990120@s.whatsapp.net', fromMe: false, id: 'mc-in-1' },
+          message: { conversation: 'Vi sim, me liga amanhã' },
+          pushName: 'Ana',
+        },
+      });
+    expect(await naConta(() => sequencia.estaEmSequencia(pool, 120))).toBe(false);
+    const { rows: parado } = await pool.query(
+      `SELECT DISTINCT parado_motivo FROM comercial.envios_email WHERE empresa_id = 120 AND parado_motivo IS NOT NULL`,
+    );
+    expect(parado.map((p) => p.parado_motivo)).toContain('Respondeu no WhatsApp');
+    expect((await ler('/funil/120')).body.oportunidade.etapa).toBe('respondeu');
+
+    // 3º passo (ligação) para quem não respondeu: tarefa de hoje com o roteiro e o telefone.
+    await pool.query(
+      `UPDATE comercial.envios_email SET enviado_em = now() - interval '3 days' WHERE campanha_email_id = $1`,
+      [camp.body.id],
+    );
+    expect(await naConta(() => motor.agendarSeguimentos(depsEmail as never))).toBe(2);
+    expect(await naConta(() => motor.processarOutrosCanais(depsEmail as never, conf))).toBe(2);
+    const { rows: ligacoes } = await pool.query(
+      `SELECT empresa_id::int, titulo, descricao FROM comercial.tarefas WHERE tipo = 'ligacao' AND empresa_id IN (120, 121, 122)
+        ORDER BY empresa_id`,
+    );
+    expect(ligacoes.map((l) => l.empresa_id)).toEqual([121, 122]);
+    expect(ligacoes[0]).toMatchObject({ titulo: 'Ligar para Peças Só Zap' });
+    expect(ligacoes[0].descricao).toMatch(/Telefone: 71999990121/);
+    expect(ligacoes[0].descricao).toMatch(
+      /Pergunte quantas entregas a Pecas So Zap faz por dia\.|Pergunte quantas entregas a Peças Só Zap faz por dia\./,
+    );
+
+    // Números da sequência por canal.
+    const linha = (await ler('/email/campanhas')).body.find((c: { id: number }) => c.id === camp.body.id);
+    expect(linha).toMatchObject({
+      enviadosEmail: 2,
+      enviadosWhatsapp: 2,
+      ligacoes: 2,
+      pulados: 2,
+      responderam: 1,
+      responderamWhatsapp: 1,
+    });
+    // Prévia de um passo de WhatsApp: o texto pronto para o lead.
+    const previaZap = await enviar('post', `/email/campanhas/${camp.body.id}/previa`, {
+      passo: 2,
+      empresaId: 121,
+    });
+    expect(previaZap.body).toMatchObject({
+      canal: 'whatsapp',
+      texto: expect.stringMatching(/^Olá! Aqui é da Tutts/),
+    });
+
+    // Conversas: e-mail e WhatsApp do lead no mesmo lugar.
+    const conversa = (await ler('/conversas/120')).body;
+    expect(conversa.mensagens.map((m: { canal: string }) => m.canal)).toEqual(
+      expect.arrayContaining(['email', 'whatsapp']),
+    );
+    expect(conversa.email).toBe('compras@doiscanais.com.br');
+
+    // Resposta por e-mail do 122 também para (e aparece na conversa como não lida).
+    await naConta(() =>
+      motor.processarRecebido(
+        depsEmail as never,
+        {
+          id: 'mc-r1',
+          messageId: '<mc-r1@cliente>',
+          emRespostaA: null,
+          referencias: [],
+          de: 'loja@soemail.com.br',
+          deNome: null,
+          para: ['comercial@tutts.com.br'],
+          assunto: 'Re: entregas',
+          texto: 'Pode me mandar a proposta?',
+          data: new Date().toISOString(),
+          automatica: false,
+          devolucao: false,
+        } as never,
+      ),
+    );
+    expect(await naConta(() => sequencia.estaEmSequencia(pool, 122))).toBe(false);
+    const lista = (await ler('/conversas?filtro=nao_lidas')).body;
+    expect(lista.find((c: { empresaId: number }) => c.empresaId === 122)).toMatchObject({
+      ultimoCanal: 'email',
+    });
+
+    // Responder pela conversa vai por e-mail, na mesma conversa.
+    const enviadosConversa: { para: string; assunto: string; emRespostaA?: string | null }[] = [];
+    const appEmail = criarApp({
+      pool,
+      log: criarLogger('teste', 'silent'),
+      filas: {
+        publicar: async () => 'x',
+        publicarVarios: async () => 0,
+        cancelarPendentes: async () => 0,
+        tamanhos: async () => ({}),
+      },
+      auth: {
+        jwtSegredo: 'x'.repeat(40),
+        adminEmail: 'ops@exemplo.com',
+        adminSenhaHash: 'x',
+        sessaoHoras: 1,
+        cookieSeguro: false,
+      },
+      origens: [ORIGEM],
+      credenciais: CREDENCIAIS,
+      servicos: async (conta) => ({
+        ...semServicos(conta),
+        email: {
+          remetente: 'comercial@tutts.com.br',
+          dominioRespostas: null,
+          segredoWebhook: null,
+          async enviar(e: { para: string; assunto: string; emRespostaA?: string | null }) {
+            enviadosConversa.push(e);
+            return { id: 're-conv' };
+          },
+        } as never,
+      }),
+    });
+    const resp = await request(appEmail)
+      .post('/conversas/122/email')
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie)
+      .send({ texto: 'Mando sim, segue em anexo amanhã.' });
+    expect(resp.status).toBe(201);
+    expect(enviadosConversa[0]).toMatchObject({
+      para: 'loja@soemail.com.br',
+      assunto: 'Re: Re: entregas'.replace('Re: Re:', 'Re:'),
+      emRespostaA: '<mc-r1@cliente>',
+    });
+    expect(resp.body.mensagens.at(-1)).toMatchObject({ canal: 'email', direcao: 'enviada' });
+
+    // Limpa.
+    await pool.query('DELETE FROM comercial.campanhas_email');
+    await pool.query('DELETE FROM comercial.respostas_email WHERE empresa_id IN (120, 121, 122)');
+    await pool.query('DELETE FROM comercial.mensagens WHERE empresa_id IN (120, 121, 122)');
+    await pool.query('DELETE FROM comercial.oportunidades WHERE empresa_id IN (120, 121, 122)');
+    await pool.query('DELETE FROM comercial.chips');
+    await pool.query('DELETE FROM enriquecimento.contatos WHERE empresa_id IN (120, 121, 122)');
+    await pool.query('DELETE FROM descoberta.empresas WHERE id IN (120, 121, 122)');
+    await pool.query('DELETE FROM cadastro.campanhas WHERE id = 120');
+  });
+
+  it('operação: consumo e tetos, senha esquecida pelo Resend, auditoria, alertas, exportação e celular', async () => {
+    const { medidorDeIa } = await import('@prospeccao/db');
+    // Consumo da IA da plataforma com teto de 2 chamadas no mês.
+    expect((await enviar('put', '/master/contas/1/limites', { iaMes: 2, emailsMes: 0 })).status).toBe(200);
+    const m = medidorDeIa(pool, 1, 'plataforma');
+    await m.antes();
+    await m.depois({ tokensEntrada: 1000, tokensSaida: 200 }, true);
+    await m.antes();
+    await m.depois({ tokensEntrada: 500, tokensSaida: 100 }, false);
+    await expect(m.antes()).rejects.toMatchObject({ codigo: 'limite_ia' });
+    // A chave da própria conta não tem teto.
+    await medidorDeIa(pool, 1, 'conta').antes();
+    const consumo = (await ler('/master/contas/1/consumo')).body;
+    expect(consumo.ia.plataforma).toMatchObject({
+      chamadas: 2,
+      tokensEntrada: 1500,
+      tokensSaida: 300,
+      erros: 1,
+      bloqueadas: 1,
+    });
+    expect(consumo.limites).toMatchObject({ iaMes: 2, emailsMes: 0, usaIaPlataforma: true });
+    const { limiteDoMes } = await import('../src/modulos/consumo/repositorio.js');
+    expect((await naConta(() => limiteDoMes(pool, 'emails'))).esgotado).toBe(true);
+    expect((await ler('/master/contas')).body.find((c: { id: number }) => c.id === 1)).toMatchObject({
+      iaPlataformaMes: 2,
+      limiteIaMes: 2,
+    });
+    await enviar('put', '/master/contas/1/limites', { iaMes: null, emailsMes: null });
+
+    // Senha esquecida: o link vai pelo Resend da conta principal; a senha antiga vale até trocar.
+    const bcrypt = (await import('bcryptjs')).default;
+    await pool.query(
+      `INSERT INTO cadastro.usuarios (nome, email, papel, ativo, conta_id, senha_hash)
+       VALUES ('Carla Senha', 'carla@exemplo.com', 'sdr', true, 1, $1)`,
+      [await bcrypt.hash('senha-antiga-123', 4)],
+    );
+    const emailsSistema: { para: string; html: string; texto: string }[] = [];
+    const appSenha = (comEmail: boolean) =>
+      criarApp({
+        pool,
+        log: criarLogger('teste', 'silent'),
+        filas: {
+          publicar: async () => 'x',
+          publicarVarios: async () => 0,
+          cancelarPendentes: async () => 0,
+          tamanhos: async () => ({}),
+        },
+        auth: {
+          jwtSegredo: 'x'.repeat(40),
+          adminEmail: 'ops@exemplo.com',
+          adminSenhaHash: 'x',
+          sessaoHoras: 1,
+          cookieSeguro: false,
+        },
+        origens: [ORIGEM],
+        credenciais: CREDENCIAIS,
+        servicos: async (conta) => ({
+          ...semServicos(conta),
+          email: comEmail
+            ? ({
+                remetente: 'sistema@tutts.com.br',
+                dominioRespostas: null,
+                segredoWebhook: null,
+                async enviar(e: { para: string; html: string; texto: string }) {
+                  emailsSistema.push(e);
+                  return { id: 're-senha' };
+                },
+              } as never)
+            : null,
+        }),
+      });
+    const pedir = (a: ReturnType<typeof criarApp>, email: string) =>
+      request(a).post('/auth/esqueci').set('Origin', ORIGEM).send({ email });
+    expect((await pedir(appSenha(false), 'carla@exemplo.com')).status).toBe(503);
+    const comEmail = appSenha(true);
+    expect((await pedir(comEmail, 'ninguem@exemplo.com')).body).toEqual({ ok: true });
+    expect(emailsSistema).toHaveLength(0);
+    expect((await pedir(comEmail, 'CARLA@exemplo.com')).body).toEqual({ ok: true });
+    expect(emailsSistema[0]?.para).toBe('carla@exemplo.com');
+    const link = emailsSistema[0]!.texto.match(/\/redefinir\/([\w-]+)/)!;
+    const loginCarla = (senha: string) =>
+      request(comEmail).post('/auth/login').set('Origin', ORIGEM).send({ email: 'carla@exemplo.com', senha });
+    expect((await loginCarla('senha-antiga-123')).status).toBe(200);
+    expect((await request(comEmail).get(`/auth/redefinir/${link[1]}`)).body).toMatchObject({
+      nome: 'Carla Senha',
+    });
+    const nova = await request(comEmail)
+      .post(`/auth/redefinir/${link[1]}`)
+      .set('Origin', ORIGEM)
+      .send({ senha: 'senha-nova-456' });
+    expect(nova.status).toBe(200);
+    expect((await request(comEmail).get(`/auth/redefinir/${link[1]}`)).status).toBe(404); // só uma vez
+    expect((await loginCarla('senha-antiga-123')).status).toBe(401);
+    expect((await loginCarla('senha-nova-456')).status).toBe(200);
+
+    // Auditoria: alterações pela tela, logins e a troca de senha, com quem e quando.
+    await new Promise((ok) => setTimeout(ok, 100));
+    const aud = (await ler('/auditoria')).body;
+    const descricoes = aud.itens.map((i: { descricao: string }) => i.descricao);
+    expect(descricoes).toEqual(
+      expect.arrayContaining([
+        'Entrou no sistema',
+        'Criou uma senha nova pelo link do e-mail',
+        'Tentativa de login com senha errada',
+        expect.stringMatching(/^Cadastrou o chip “Chip 1”/),
+        expect.stringMatching(/^Criou a sequência “Multicanal”/),
+      ]),
+    );
+    expect(JSON.stringify(aud.itens)).not.toMatch(/senha-nova-456|senha-antiga-123/);
+    expect((await ler('/auditoria?busca=chip')).body.itens.length).toBeGreaterThan(0);
+    expect((await ler('/master/contas/1/auditoria')).body.length).toBeGreaterThan(0);
+
+    // Alertas: chip caído abre o alerta e avisa o administrador uma vez; voltou, fecha.
+    const { verificarSaude } = await import('../src/modulos/alertas/rotina.js');
+    await pool.query(
+      `INSERT INTO comercial.chips (conta_id, nome, instancia) VALUES (1, 'Chip Loja', 'loja1')`,
+    );
+    let estado = 'instância loja1: close (leia o QR Code na Evolution)';
+    const depsSaude = {
+      pool,
+      log: criarLogger('teste', 'silent'),
+      servicos: async (conta: number) => ({
+        ...semServicos(conta),
+        whatsapp: {
+          instancia: 'loja1',
+          enviar: async () => ({ idExterno: null }),
+          estado: async () => estado,
+        },
+      }),
+    };
+    await verificarSaude(depsSaude as never);
+    await verificarSaude(depsSaude as never);
+    const alertas = (await ler('/alertas')).body;
+    expect(alertas).toEqual([
+      expect.objectContaining({ chave: 'chip:loja1', titulo: 'O chip “Chip Loja” está desconectado' }),
+    ]);
+    const { rows: avisos } = await pool.query(
+      `SELECT count(*)::int AS n FROM comercial.notificacoes WHERE titulo = 'O chip “Chip Loja” está desconectado'`,
+    );
+    expect(avisos[0].n).toBeGreaterThanOrEqual(1);
+    const antes = avisos[0].n;
+    await verificarSaude(depsSaude as never);
+    const { rows: depois } = await pool.query(
+      `SELECT count(*)::int AS n FROM comercial.notificacoes WHERE titulo = 'O chip “Chip Loja” está desconectado'`,
+    );
+    expect(depois[0].n).toBe(antes);
+    estado = 'ok (WhatsApp conectado)';
+    await verificarSaude(depsSaude as never);
+    expect((await ler('/alertas')).body).toEqual([]);
+    // Worker sem sinal de vida: alerta da plataforma (o master vê).
+    await pool.query(
+      `INSERT INTO cadastro.servicos_vivos (nome, visto_em) VALUES ('worker-descoberta', now() - interval '1 hour')
+       ON CONFLICT (nome) DO UPDATE SET visto_em = EXCLUDED.visto_em`,
+    );
+    await verificarSaude(depsSaude as never);
+    expect((await ler('/alertas')).body.map((a: { chave: string }) => a.chave)).toContain(
+      'servico:worker-descoberta',
+    );
+    await pool.query(`DELETE FROM cadastro.servicos_vivos`);
+    await pool.query(`DELETE FROM comercial.chips`);
+    await verificarSaude(depsSaude as never);
+
+    // Exportação para o Excel (só o administrador; fica na auditoria).
+    for (const rota of ['/exportar/leads', '/exportar/funil', '/exportar/relatorio']) {
+      const x = await ler(rota)
+        .buffer(true)
+        .parse((res, cb) => {
+          const partes: Buffer[] = [];
+          res.on('data', (p: Buffer) => partes.push(p));
+          res.on('end', () => cb(null, Buffer.concat(partes)));
+        });
+      expect(x.status).toBe(200);
+      expect(x.headers['content-type']).toMatch(/spreadsheetml/);
+      expect((x.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+    }
+    await new Promise((ok) => setTimeout(ok, 100));
+    expect((await ler('/auditoria?acao=exportação')).body.itens.length).toBe(3);
+
+    // Notificação no celular: as chaves são geradas pelo sistema; o aparelho se inscreve e cancela.
+    const push = await import('../src/modulos/push/servico.js');
+    await push.iniciarPush(pool, criarLogger('teste', 'silent'), CREDENCIAIS.chave, 'ops@exemplo.com');
+    const chave = (await ler('/notificacoes/push')).body.chave;
+    expect(chave).toMatch(/^[\w-]{80,}$/);
+    await push.iniciarPush(pool, criarLogger('teste', 'silent'), CREDENCIAIS.chave, 'ops@exemplo.com');
+    expect((await ler('/notificacoes/push')).body.chave).toBe(chave); // mesma chave depois de reiniciar
+    const inscricao = {
+      endpoint: 'https://push.exemplo.com/abc123',
+      keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) },
+      aparelho: 'Android · Chrome',
+    };
+    expect((await enviar('post', '/notificacoes/push', inscricao)).body.aparelhos).toHaveLength(1);
+    expect(
+      (await enviar('delete', '/notificacoes/push', { endpoint: inscricao.endpoint })).body.aparelhos,
+    ).toHaveLength(0);
+    await pool.query(`DELETE FROM cadastro.usuarios WHERE email = 'carla@exemplo.com'`);
   });
 
   it('para o enriquecimento e apaga a campanha com os leads só dela (base de CNPJ fica)', async () => {

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api, type ConfigAgente, type RascunhoAgente, ROTULO_ETAPA, type TelaAgente } from '../api';
+import { Chips } from '../componentes/Chips';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, formatarTelefone } from '../formatar';
 
@@ -126,10 +127,12 @@ function FormConfig(props: { config: ConfigAgente }) {
         <div className="campo">
           <label htmlFor="ag-limiteDia">Mensagens por dia (chip)</label>
           {numero('limiteDia')}
+          <span className="campo__dica">Com chips cadastrados, vale o limite de cada chip.</span>
         </div>
         <div className="campo">
           <label htmlFor="ag-intervaloSeg">Segundos entre mensagens</label>
           {numero('intervaloSeg')}
+          <span className="campo__dica">Em cada chip.</span>
         </div>
         <div className="campo">
           <label htmlFor="ag-respostasDiaLead">Respostas da IA por lead/dia</label>
@@ -340,15 +343,17 @@ export function Agente() {
         <FormConfig config={d.config} />
       </Panel>
 
+      <Chips />
+
       <Panel titulo="Conectar o WhatsApp">
         <ol className="passos">
           <li>
             No <b>painel master</b>, na conta, preencha o WhatsApp (endereço, chave e instância da Evolution)
-            e a IA. Cada conta usa o próprio chip.
+            e a IA. Para dividir o volume em mais de um chip, cadastre os chips acima.
           </li>
           <li>
-            Na Evolution, em <b>Webhook</b> da instância, cole o endereço abaixo, marque o evento{' '}
-            <code>MESSAGES_UPSERT</code> e ative.
+            Na Evolution, em <b>Webhook</b> de cada instância (cada chip), cole o endereço abaixo, marque o
+            evento <code>MESSAGES_UPSERT</code> e ative.
           </li>
         </ol>
         <div className="barra">

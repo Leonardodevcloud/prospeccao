@@ -2,6 +2,7 @@ import { montarMensagem } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
 import type { DepsApi, WhatsappConta } from '../../dependencias.js';
 import { paraCadaConta } from '../../rotinas.js';
+import { chipParaEquipe, emUso as chipsEmUso } from '../agente/chips.js';
 import * as agente from '../agente/repositorio.js';
 import { dadosDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
@@ -67,8 +68,11 @@ async function lembrarLeads(deps: Deps, whatsapp: WhatsappConta | null): Promise
         cfg.textoLembreteLead.replace(/\{quando\}/g, quando(new Date(t.inicio))),
         l.variaveis,
       );
-      const r = await whatsapp.enviar(l.telefone, texto);
+      // Pelo chip do lead (o número com que ele já conversa).
+      const chip = await chipParaEquipe(deps.pool, t.empresa_id, await chipsEmUso(deps.pool, whatsapp));
+      const r = await whatsapp.enviar(l.telefone, texto, chip?.instancia);
       await agente.criarMensagem(deps.pool, {
+        chipId: chip?.id ?? null,
         empresaId: t.empresa_id,
         direcao: 'enviada',
         texto,

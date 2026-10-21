@@ -1,6 +1,6 @@
 import { setTimeout as esperar } from 'node:timers/promises';
 import { carregarEnv, envBase, opcional } from '@prospeccao/config';
-import { cacheDeCredenciais, chaveDoAmbiente, criarPool } from '@prospeccao/db';
+import { cacheDeCredenciais, chaveDoAmbiente, criarPool, manterSinalDeVida } from '@prospeccao/db';
 import * as apify from '@prospeccao/integrations/apify';
 import * as ors from '@prospeccao/integrations/ors';
 import * as places from '@prospeccao/integrations/places';
@@ -54,6 +54,8 @@ if (!chave)
     'CHAVE_CREDENCIAIS não configurada: só a conta principal busca no Google (com GOOGLE_PLACES_KEY).',
   );
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-descoberta', max: 6 });
+// Sinal de vida para o painel de alertas (worker parado aparece para o master).
+const pararSinal = manterSinalDeVida(pool, 'worker-descoberta');
 const filas = await conectarFilas({
   url: env.DATABASE_URL,
   aplicacao: 'worker-descoberta',
@@ -159,6 +161,7 @@ log.info(
 );
 
 encerrarAoReceberSinal(log, async () => {
+  pararSinal();
   await filas.parar();
   await pool.end();
 });

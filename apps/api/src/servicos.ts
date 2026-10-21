@@ -3,6 +3,7 @@ import {
   type CredenciaisEfetivas,
   cacheDeCredenciais,
   type Executor,
+  medidorDeIa,
   type Origem,
 } from '@prospeccao/db';
 import {
@@ -23,7 +24,7 @@ import {
 } from '@prospeccao/integrations/email';
 import { type ConfigIa, configIa } from '@prospeccao/integrations/ia';
 import * as ors from '@prospeccao/integrations/ors';
-import { baixarMidia, enviarMidia, enviarTexto } from '@prospeccao/integrations/whatsapp';
+import { baixarMidia, enviarMidia, enviarTexto, estadoConexao } from '@prospeccao/integrations/whatsapp';
 
 /**
  * Serviços de fora de cada conta (WhatsApp, IA, e-mail, geocodificação), montados com as
@@ -31,8 +32,14 @@ import { baixarMidia, enviarMidia, enviarTexto } from '@prospeccao/integrations/
  * configurado vem null e a tela explica o que falta.
  */
 
+/**
+ * WhatsApp da conta: a Evolution dela (endereço e chave) e as instâncias (chips). Sem `instancia`,
+ * usa a das credenciais.
+ */
 export interface WhatsappConta {
-  enviar(telefone: string, texto: string): Promise<{ idExterno: string | null }>;
+  /** Instância das credenciais (o chip de quando não há chips cadastrados). */
+  instancia: string;
+  enviar(telefone: string, texto: string, instancia?: string): Promise<{ idExterno: string | null }>;
   /** Foto, vídeo, documento ou áudio (base64). */
   enviarMidia?(
     telefone: string,
@@ -43,9 +50,15 @@ export interface WhatsappConta {
       nome?: string;
       legenda?: string;
     },
+    instancia?: string,
   ): Promise<{ idExterno: string | null }>;
   /** Arquivo de mensagem recebida, quando não vem junto no webhook. */
-  baixarMidia?(idExterno: string): Promise<{ base64: string; mime: string | null } | null>;
+  baixarMidia?(
+    idExterno: string,
+    instancia?: string,
+  ): Promise<{ base64: string; mime: string | null } | null>;
+  /** "ok (WhatsApp conectado)" ou o que está errado com o chip. */
+  estado?(instancia?: string): Promise<string>;
 }
 
 export interface EmailConta {
@@ -85,18 +98,26 @@ export type ResolverServicos = (contaId: number) => Promise<ServicosConta>;
 
 const ROTULO_IA: Record<string, string> = { deepseek: 'DeepSeek', gemini: 'Gemini', openai: 'OpenAI' };
 
-/** Monta os serviços a partir das credenciais já resolvidas (também usado nos testes). */
-export function servicosDe(c: CredenciaisEfetivas): ServicosConta {
+/**
+ * Monta os serviços a partir das credenciais já resolvidas (também usado nos testes). Com o banco,
+ * cada chamada à IA é medida (e bloqueada no teto do mês, se for pela chave da plataforma).
+ */
+export function servicosDe(c: CredenciaisEfetivas, db?: Executor): ServicosConta {
   const evolution = c.evolution;
-  const iaCfg: ConfigIa | null = c.ia ? configIa(c.ia) : null;
+  // Mesma Evolution, outra instância (chip).
+  const chip = (instancia?: string) => ({ ...evolution!, instancia: instancia || evolution!.instancia });
+  const medidor = db && c.origem.ia ? medidorDeIa(db, c.contaId, c.origem.ia) : null;
+  const iaCfg: ConfigIa | null = c.ia ? configIa(c.ia, medidor) : null;
   const resend = c.resend;
   return {
     contaId: c.contaId,
     whatsapp: evolution
       ? {
-          enviar: (tel, texto) => enviarTexto(evolution, tel, texto),
-          enviarMidia: (tel, m) => enviarMidia(evolution, tel, m),
-          baixarMidia: (id) => baixarMidia(evolution, id),
+          instancia: evolution.instancia,
+          enviar: (tel, texto, inst) => enviarTexto(chip(inst), tel, texto),
+          enviarMidia: (tel, m, inst) => enviarMidia(chip(inst), tel, m),
+          baixarMidia: (id, inst) => baixarMidia(chip(inst), id),
+          estado: (inst) => estadoConexao(chip(inst)),
         }
       : null,
     ia: iaCfg ? { decidir: (ctx) => decidirComIa(iaCfg, ctx) } : null,
@@ -128,7 +149,7 @@ export function servicosDe(c: CredenciaisEfetivas): ServicosConta {
 export function criarServicos(db: Executor, chave: string | null, ambiente: CredenciaisAmbiente) {
   const cache = cacheDeCredenciais(db, chave, ambiente);
   return {
-    servicos: (async (contaId: number) => servicosDe(await cache.obter(contaId))) as ResolverServicos,
+    servicos: (async (contaId: number) => servicosDe(await cache.obter(contaId), db)) as ResolverServicos,
     invalidar: (contaId?: number) => cache.invalidar(contaId),
   };
 }

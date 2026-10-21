@@ -1,8 +1,9 @@
-import { EmptyState, Panel, Stat } from '@prospeccao/ui';
+import { Button, EmptyState, Panel, Stat } from '@prospeccao/ui';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { api, type Campanha, qs, type Relatorio } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { useEhAdmin } from '../componentes/Sessao';
 import { fmtNumero, fmtPct, fmtReais } from '../formatar';
 
 const NOME_FONTE_ERRO: Record<string, string> = {
@@ -123,6 +124,7 @@ export function Relatorios() {
   const [params, setParams] = useSearchParams();
   const dias = params.get('dias') ?? '30';
   const campanhaId = params.get('campanhaId') ?? '';
+  const admin = useEhAdmin();
   const mudar = (novos: Record<string, string | null>) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(novos)) v ? p.set(k, v) : p.delete(k);
@@ -146,6 +148,16 @@ export function Relatorios() {
           <p>Leads encontrados, andamento do funil e se a nota dos leads acerta quem fecha.</p>
         </div>
         <div className="acoes">
+          {admin && (
+            <Button
+              icon="file-down"
+              variant="ghost"
+              href={`/api/exportar/relatorio${qs(filtros)}`}
+              title="Baixa o relatório deste período numa planilha do Excel (uma aba por quadro)"
+            >
+              Exportar
+            </Button>
+          )}
           <label className="pp-sr" htmlFor="rel-periodo">
             Período
           </label>

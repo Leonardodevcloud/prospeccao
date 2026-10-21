@@ -20,6 +20,7 @@ import * as equipe from '../equipe/repositorio.js';
 export async function listar(db: Executor) {
   const { rows } = await db.query(
     `SELECT c.id, c.nome, c.ativa, c.principal, c.observacoes, c.criado_em AS "criadoEm",
+            c.limite_ia_mes AS "limiteIaMes", c.usa_ia_plataforma AS "usaIaPlataforma",
             (SELECT count(*)::int FROM cadastro.usuarios u WHERE u.conta_id = c.id AND u.ativo) AS usuarios,
             (SELECT max(u.ultimo_acesso) FROM cadastro.usuarios u WHERE u.conta_id = c.id) AS "ultimoAcesso",
             (SELECT count(*)::int FROM cadastro.campanhas cp WHERE cp.conta_id = c.id AND cp.status = 'ativa')

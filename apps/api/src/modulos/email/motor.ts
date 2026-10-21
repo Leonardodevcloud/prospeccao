@@ -1,13 +1,24 @@
 import type { EmailRecebido } from '@prospeccao/integrations/email';
-import { AppError, type ClasseResposta, classificarRespostaSimples, montarEmail } from '@prospeccao/shared';
+import {
+  AppError,
+  type ClasseResposta,
+  classificarRespostaSimples,
+  montarEmail,
+  montarMensagem,
+} from '@prospeccao/shared';
 import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import type { DepsApi, EmailConta, ServicosConta } from '../../dependencias.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { paraCadaConta } from '../../rotinas.js';
+import { criar as criarTarefa } from '../agenda/repositorio.js';
 import { dentroDoHorario } from '../agente/motor.js';
+import { criarMensagem } from '../agente/repositorio.js';
+import { limiteDoMes } from '../consumo/repositorio.js';
+import { aplicarCadencia, dadosDoLead, NA_SEQUENCIA } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
 import { notificarDono } from '../notificacoes/repositorio.js';
 import * as repo from './repositorio.js';
+import { emSequenciaSql, pararSequencia, RESPONDEU_EMAIL } from './sequencia.js';
 
 /**
  * Motor do e-mail (a cada 30 s, uma instância por vez):
@@ -45,25 +56,73 @@ export function enderecosDoEnvio(origens: string[], token: string) {
   };
 }
 
-/** 1. Próximo passo da sequência para quem não respondeu no prazo. */
+/**
+ * 1. Próximo passo da sequência para quem não respondeu no prazo. O canal vem do passo (e-mail,
+ * WhatsApp ou ligação); passo pulado (lead sem aquele canal) também abre o seguinte.
+ */
 export async function agendarSeguimentos(deps: Pick<Deps, 'pool'>): Promise<number> {
   const C = contaSql();
   const { rowCount } = await deps.pool.query(
-    `INSERT INTO comercial.envios_email (conta_id, campanha_email_id, empresa_id, email, passo)
-     SELECT en.conta_id, en.campanha_email_id, en.empresa_id, en.email, en.passo + 1
+    `INSERT INTO comercial.envios_email (conta_id, campanha_email_id, empresa_id, email, passo, canal)
+     SELECT en.conta_id, en.campanha_email_id, en.empresa_id,
+            coalesce(en.email, (SELECT x.email FROM comercial.envios_email x
+                                 WHERE x.campanha_email_id = en.campanha_email_id AND x.empresa_id = en.empresa_id
+                                   AND x.email IS NOT NULL LIMIT 1)),
+            en.passo + 1, coalesce(ce.passos -> en.passo ->> 'canal', 'email')
        FROM comercial.envios_email en
        JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
-      WHERE ce.conta_id = ${C} AND ce.status = 'enviando' AND en.status = 'enviado'
+      WHERE ce.conta_id = ${C} AND ce.status = 'enviando' AND en.status IN ('enviado', 'pulado')
+        AND en.parado_em IS NULL
         AND en.passo < jsonb_array_length(ce.passos)
         AND en.enviado_em < now() - make_interval(days => (ce.passos -> en.passo ->> 'dias')::int)
         AND NOT EXISTS (SELECT 1 FROM comercial.envios_email x
                          WHERE x.campanha_email_id = en.campanha_email_id AND x.empresa_id = en.empresa_id
-                           AND (x.respondido_em IS NOT NULL OR x.passo > en.passo))
+                           AND (x.respondido_em IS NOT NULL OR x.parado_em IS NOT NULL OR x.passo > en.passo))
         AND NOT EXISTS (SELECT 1 FROM comercial.descadastros_email d
                          WHERE d.conta_id = ${C} AND d.email = lower(en.email))
      ON CONFLICT DO NOTHING`,
   );
   return rowCount ?? 0;
+}
+
+/** Marca o passo como pulado (o lead não tem aquele canal): a sequência segue no próximo. */
+async function pular(deps: Pick<Deps, 'pool'>, envioId: number, motivo: string) {
+  await deps.pool.query(
+    `UPDATE comercial.envios_email SET status = 'pulado', erro = $2, enviado_em = now() WHERE id = $1`,
+    [envioId, motivo],
+  );
+}
+
+/**
+ * Por que este passo não deve mais sair (null = pode). Vale para todo canal: respondeu em qualquer
+ * um, já está sendo trabalhado no funil, foi descartado.
+ */
+async function motivoParaParar(
+  deps: Pick<Deps, 'pool'>,
+  en: { empresa_id: number; campanha: number; email: string | null; canal: string },
+): Promise<string | null> {
+  const C = contaSql();
+  const { rows } = await deps.pool.query<{ motivo: string }>(
+    `SELECT 'Pediu para sair da lista' AS motivo FROM comercial.descadastros_email
+      WHERE $4 = 'email' AND conta_id = ${C} AND email = lower($2)
+     UNION ALL
+     SELECT 'Já respondeu' FROM comercial.envios_email
+      WHERE campanha_email_id = $3 AND empresa_id = $1 AND (respondido_em IS NOT NULL OR parado_em IS NOT NULL)
+     UNION ALL
+     SELECT 'Foi para ' || coalesce(et.nome, o.etapa) FROM comercial.oportunidades o
+       LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
+      WHERE o.conta_id = ${C} AND o.empresa_id = $1
+        -- (quem muda de etapa durante a sequência já para na hora; aqui fica o que fecha de vez)
+        AND o.etapa IN ('ganho', 'descartado')
+     UNION ALL
+     SELECT $5 FROM comercial.atividades a
+      WHERE a.conta_id = ${C} AND a.empresa_id = $1 AND a.direcao = 'recebida'
+        AND a.criado_em > (SELECT min(x.criado_em) FROM comercial.envios_email x
+                            WHERE x.campanha_email_id = $3 AND x.empresa_id = $1)
+     LIMIT 1`,
+    [en.empresa_id, en.email, en.campanha, en.canal, 'Já respondeu'],
+  );
+  return rows[0]?.motivo ?? null;
 }
 
 /** Campanha sem nada na fila e sem follow-up por vir: concluída. */
@@ -75,10 +134,11 @@ export async function concluirCampanhas(deps: Pick<Deps, 'pool'>): Promise<void>
         AND NOT EXISTS (SELECT 1 FROM comercial.envios_email x WHERE x.campanha_email_id = ce.id AND x.status = 'na_fila')
         AND NOT EXISTS (
           SELECT 1 FROM comercial.envios_email x
-           WHERE x.campanha_email_id = ce.id AND x.status = 'enviado' AND x.passo < jsonb_array_length(ce.passos)
+           WHERE x.campanha_email_id = ce.id AND x.status IN ('enviado', 'pulado') AND x.parado_em IS NULL
+             AND x.passo < jsonb_array_length(ce.passos)
              AND NOT EXISTS (SELECT 1 FROM comercial.envios_email y
                               WHERE y.campanha_email_id = ce.id AND y.empresa_id = x.empresa_id
-                                AND (y.passo > x.passo OR y.respondido_em IS NOT NULL))
+                                AND (y.passo > x.passo OR y.respondido_em IS NOT NULL OR y.parado_em IS NOT NULL))
              AND NOT EXISTS (SELECT 1 FROM comercial.descadastros_email d
                               WHERE d.conta_id = ${C} AND d.email = lower(x.email)))`,
   );
@@ -175,13 +235,15 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
   if ((uso[0]?.hoje ?? 0) >= cfg.limiteDia) return false;
   const ultima = uso[0]?.ultima ? new Date(uso[0].ultima).getTime() : 0;
   if (agora.getTime() - ultima < cfg.intervaloSeg * 1000) return false;
+  // Teto do mês da conta (painel master): a fila espera o mês virar ou o teto subir.
+  if ((await limiteDoMes(deps.pool, 'emails')).esgotado) return false;
 
   // Até 20 tentativas: pula (cancela) quem deixou de poder receber desde que entrou na fila.
   for (let tentativa = 0; tentativa < 20; tentativa++) {
     const { rows } = await deps.pool.query<{
       id: number;
       empresa_id: number;
-      email: string;
+      email: string | null;
       passo: number;
       token: string;
       campanha: number;
@@ -195,30 +257,24 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
               ce.marca_id, ce.instrucoes_ia, ce.personalizar_ia, en.personalizacao
          FROM comercial.envios_email en
          JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
-        WHERE en.conta_id = ${C} AND en.status = 'na_fila' AND ce.status = 'enviando'
+        WHERE en.conta_id = ${C} AND en.status = 'na_fila' AND en.canal = 'email' AND ce.status = 'enviando'
         ORDER BY en.passo DESC, en.id
         LIMIT 1`,
     );
     const en = rows[0];
     if (!en) return false;
 
-    const { rows: bloqueio } = await deps.pool.query<{ motivo: string }>(
-      `SELECT 'Pediu para sair da lista' AS motivo FROM comercial.descadastros_email
-        WHERE conta_id = ${C} AND email = lower($2)
-       UNION ALL
-       SELECT 'Já respondeu' FROM comercial.envios_email
-        WHERE campanha_email_id = $3 AND empresa_id = $1 AND respondido_em IS NOT NULL
-       UNION ALL
-       SELECT 'Descartado no funil' FROM comercial.oportunidades
-        WHERE conta_id = ${C} AND empresa_id = $1 AND etapa = 'descartado'
-       LIMIT 1`,
-      [en.empresa_id, en.email, en.campanha],
-    );
-    if (bloqueio[0]) {
+    const motivo = await motivoParaParar(deps, { ...en, canal: 'email' });
+    if (motivo) {
       await deps.pool.query(
         `UPDATE comercial.envios_email SET status = 'cancelado', erro = $2 WHERE id = $1`,
-        [en.id, bloqueio[0].motivo],
+        [en.id, motivo],
       );
+      continue;
+    }
+    if (!en.email) {
+      // Lead que entrou pela parte de WhatsApp da sequência e não tem e-mail.
+      await pular(deps, en.id, 'Sem e-mail');
       continue;
     }
 
@@ -291,6 +347,145 @@ export async function enviarProximo(deps: Deps, cfg: repo.ConfigEmail, agora = n
     }
   }
   return false;
+}
+
+/**
+ * 2b. Passos de WhatsApp e de ligação da sequência. O lead entra no funil (é contato de verdade):
+ *  - WhatsApp: a mensagem do passo vai para a fila do WhatsApp (sai pelo chip, no horário, limite
+ *    e intervalo do envio automático do WhatsApp);
+ *  - ligação: vira tarefa de hoje para o dono do lead, com o roteiro e o telefone.
+ * Anda no horário do envio de e-mail (a sequência toda segue o mesmo relógio).
+ */
+export async function processarOutrosCanais(
+  deps: Deps,
+  cfg: repo.ConfigEmail,
+  agora = new Date(),
+  limite = 20,
+): Promise<number> {
+  if (!cfg.ligado || !dentroDoHorario(cfg, agora)) return 0;
+  const C = contaSql();
+  const { rows } = await deps.pool.query<{
+    id: number;
+    empresa_id: number;
+    email: string | null;
+    passo: number;
+    canal: 'whatsapp' | 'ligacao';
+    campanha: number;
+    campanha_nome: string;
+    passos: { canal?: string; texto?: string }[];
+  }>(
+    `SELECT en.id::int, en.empresa_id::int, en.email, en.passo, en.canal, ce.id AS campanha,
+            ce.nome AS campanha_nome, ce.passos
+       FROM comercial.envios_email en
+       JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
+      WHERE en.conta_id = ${C} AND en.status = 'na_fila' AND en.canal IN ('whatsapp', 'ligacao')
+        AND ce.status = 'enviando'
+      ORDER BY en.passo DESC, en.id
+      LIMIT $1`,
+    [limite],
+  );
+  let feitos = 0;
+  for (const en of rows) {
+    const motivo = await motivoParaParar(deps, en);
+    if (motivo) {
+      await deps.pool.query(
+        `UPDATE comercial.envios_email SET status = 'cancelado', erro = $2 WHERE id = $1`,
+        [en.id, motivo],
+      );
+      continue;
+    }
+    const passo = en.passos[en.passo - 1] ?? {};
+    // Entra no funil (com dono pelo rodízio), se ainda não estiver.
+    const { rows: op } = await deps.pool.query(
+      `SELECT 1 FROM comercial.oportunidades WHERE conta_id = ${C} AND empresa_id = $1`,
+      [en.empresa_id],
+    );
+    if (!op.length) {
+      const r = await funil.adicionar(
+        deps.pool,
+        { empresaIds: [en.empresa_id], etapa: 'a_abordar', forcar: false },
+        AUTOR,
+      );
+      if (!r.adicionadas) {
+        await pular(
+          deps,
+          en.id,
+          r.duplicadas.length ? 'Mesmo telefone de outro lead já trabalhado' : 'Não entrou no funil',
+        );
+        continue;
+      }
+    }
+    const lead = await dadosDoLead(deps.pool, en.empresa_id);
+    if (en.canal === 'whatsapp') {
+      if (!lead.telefone) {
+        await pular(deps, en.id, 'Sem WhatsApp');
+        continue;
+      }
+      const texto = montarMensagem(passo.texto ?? '', lead.variaveis);
+      if (!texto) {
+        await pular(deps, en.id, 'Passo sem mensagem');
+        continue;
+      }
+      const mensagemId = await criarMensagem(deps.pool, {
+        empresaId: en.empresa_id,
+        direcao: 'enviada',
+        texto,
+        telefone: lead.telefone,
+        status: 'aprovada',
+        origem: 'sequencia',
+        nota: `Sequência “${en.campanha_nome}” · passo ${en.passo}`,
+      });
+      await deps.pool.query(
+        `UPDATE comercial.envios_email SET status = 'enviado', enviado_em = now(), telefone = $2, mensagem_id = $3
+          WHERE id = $1`,
+        [en.id, lead.telefone, mensagemId],
+      );
+    } else {
+      const { rows: nome } = await deps.pool.query<{ nome: string }>(
+        'SELECT nome FROM descoberta.empresas WHERE id = $1',
+        [en.empresa_id],
+      );
+      const roteiro = passo.texto ? montarMensagem(passo.texto, lead.variaveis) : '';
+      const tarefaId = await criarTarefa(deps.pool, {
+        empresaId: en.empresa_id,
+        tipo: 'ligacao',
+        titulo: `Ligar para ${nome[0]?.nome ?? 'o lead'}`,
+        descricao:
+          [
+            `Passo ${en.passo} da sequência “${en.campanha_nome}”.`,
+            lead.telefone ? `Telefone: ${lead.telefone}` : 'Sem telefone cadastrado: veja a ficha.',
+            roteiro ? `Roteiro: ${roteiro}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n') || undefined,
+        inicio: new Date().toISOString(),
+      });
+      await deps.pool.query(
+        `UPDATE comercial.envios_email SET status = 'enviado', enviado_em = now(), telefone = $2, tarefa_id = $3
+          WHERE id = $1`,
+        [en.id, lead.telefone, tarefaId],
+      );
+    }
+    feitos++;
+  }
+  return feitos;
+}
+
+/**
+ * Lead do funil cuja sequência acabou sem resposta: o funil volta a cuidar (follow-up da cadência
+ * a partir de agora, ou encerramento, conforme a configuração).
+ */
+export async function retomarCadencia(deps: Pick<Deps, 'pool'>): Promise<number> {
+  const C = contaSql();
+  const { rows } = await deps.pool.query<{ empresa_id: number }>(
+    `SELECT o.empresa_id::int FROM comercial.oportunidades o
+      WHERE o.conta_id = ${C} AND o.proxima_acao = $1 AND o.proxima_acao_em IS NULL
+        AND o.etapa IN ('a_abordar', 'abordado') AND NOT ${emSequenciaSql(C, 'o.empresa_id')}
+      LIMIT 200`,
+    [NA_SEQUENCIA],
+  );
+  for (const r of rows) await aplicarCadencia(deps.pool, r.empresa_id, 'enviada');
+  return rows.length;
 }
 
 /* ───────────── 3. Respostas ───────────── */
@@ -458,13 +653,14 @@ export async function processarRecebido(
         WHERE id = $1`,
       [envio.id, r.data],
     );
-    // A sequência para para este lead nesta campanha.
-    await pool.query(
-      `UPDATE comercial.envios_email SET status = 'cancelado', erro = 'Já respondeu'
-        WHERE campanha_email_id = $1 AND empresa_id = $2 AND status = 'na_fila'`,
-      [envio.campanha_email_id, envio.empresa_id],
-    );
   }
+  // Respondeu (ou pediu para sair): nenhuma sequência manda mais nada para ele, em nenhum canal.
+  if (empresaId && c.classe !== 'automatica')
+    await pararSequencia(
+      pool,
+      empresaId,
+      c.classe === 'descadastro' ? 'Pediu para sair da lista' : RESPONDEU_EMAIL,
+    );
   await agirPelaResposta(deps, {
     id,
     empresaId,
@@ -481,8 +677,10 @@ export async function rodarEmailDaConta(deps: Deps): Promise<void> {
   const cfg = await repo.obterConfig(deps.pool);
   if (!cfg.ligado) return;
   await agendarSeguimentos(deps);
+  await processarOutrosCanais(deps, cfg);
   await enviarProximo(deps, cfg);
   await concluirCampanhas(deps);
+  await retomarCadencia(deps);
 }
 
 type DepsRodada = Pick<DepsApi, 'pool' | 'log' | 'origens' | 'servicos'>;
@@ -588,6 +786,68 @@ export async function responder(deps: Deps, respostaId: number, texto: string): 
         usuarioAtual()?.id ?? null,
       ],
     );
+}
+
+/**
+ * E-mail escrito na conversa do lead: se ele já respondeu algum e-mail, vai como resposta (mesma
+ * conversa, com a marca da campanha); senão, é um e-mail novo para o melhor endereço dele, com a
+ * identidade visual padrão da conta no estilo pessoal.
+ */
+export async function enviarDaConversa(
+  deps: Deps,
+  empresaId: number,
+  d: { texto: string; assunto?: string | null },
+): Promise<void> {
+  if (!deps.email)
+    throw AppError.invalido(
+      'O e-mail desta conta não está configurado (o administrador configura o Resend no painel master).',
+    );
+  const email = deps.email;
+  const C = contaSql();
+  const { rows: ultima } = await deps.pool.query<{ id: number }>(
+    `SELECT id::int FROM comercial.respostas_email
+      WHERE conta_id = ${C} AND empresa_id = $1 AND classe <> 'automatica'
+      ORDER BY recebido_em DESC LIMIT 1`,
+    [empresaId],
+  );
+  if (ultima[0]) {
+    await responder(deps, ultima[0].id, d.texto);
+    return;
+  }
+  const { rows: contato } = await deps.pool.query<{ valor: string }>(
+    `SELECT valor FROM enriquecimento.contatos
+      WHERE empresa_id = $1 AND canal = 'email' AND status <> 'invalido'
+      ORDER BY principal DESC, confianca DESC LIMIT 1`,
+    [empresaId],
+  );
+  const para = contato[0]?.valor;
+  if (!para) throw AppError.invalido('Este lead não tem e-mail.');
+  const { rows: sair } = await deps.pool.query(
+    `SELECT 1 FROM comercial.descadastros_email WHERE conta_id = ${C} AND email = lower($1)`,
+    [para],
+  );
+  if (sair.length) throw AppError.invalido('Este lead pediu para não receber e-mails.');
+  const marca = await repo.obterMarca(deps.pool, null, deps.origens);
+  const v = await repo.variaveisDoLead(deps.pool, empresaId, marca.remetenteNome);
+  const assunto = d.assunto?.trim() || `Contato · ${v.empresa}`;
+  const e = montarEmail({ assunto, corpo: d.texto }, v, {
+    assinatura: marca.assinatura,
+    marca: { ...repo.visualDaMarca(marca), estilo: 'simples' },
+  });
+  await email.enviar({
+    de: remetenteDa(email, marca),
+    para,
+    responderPara: enderecoDeResposta(email, marca, null),
+    assunto: e.assunto,
+    html: e.html,
+    texto: e.texto,
+  });
+  await funil.registrarAtividade(
+    deps.pool,
+    empresaId,
+    { tipo: 'email', direcao: 'enviada', texto: d.texto.slice(0, 4000), contato: para },
+    usuarioAtual()?.nome ?? 'sistema',
+  );
 }
 
 /* ───────────── Avisos do Resend (webhook) ───────────── */

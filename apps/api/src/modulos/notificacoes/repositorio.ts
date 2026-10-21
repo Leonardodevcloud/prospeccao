@@ -1,5 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import { contaSql } from '../../contexto.js';
+import { enviarPush } from '../push/servico.js';
 
 /** Avisos para cada pessoa da equipe (o sino do menu). */
 
@@ -11,11 +12,30 @@ export interface Aviso {
   link?: string | null;
 }
 
+/** Para onde o toque na notificação do celular leva. */
+function linkDoAviso(a: Aviso): string {
+  if (a.link) return a.link;
+  if (a.tipo === 'mensagem' && a.empresaId) return `/conversas?lead=${a.empresaId}`;
+  if (a.empresaId) return `/funil?empresa=${a.empresaId}`;
+  return a.tipo === 'reuniao' || a.tipo === 'tarefa' ? '/hoje' : '/';
+}
+
 /**
- * Cria um aviso. Mensagens do mesmo lead se juntam num aviso só enquanto ele não for lido
- * (o lead que manda cinco mensagens seguidas não gera cinco avisos).
+ * Cria um aviso (o sino) e manda para o celular de quem ativou as notificações. Mensagens do
+ * mesmo lead se juntam num aviso só enquanto ele não for lido (o lead que manda cinco mensagens
+ * seguidas não gera cinco avisos; no celular, a notificação é trocada pela nova).
  */
 export async function notificar(db: Executor, usuarioId: number, a: Aviso): Promise<void> {
+  await gravarAviso(db, usuarioId, a);
+  void enviarPush(usuarioId, {
+    titulo: a.titulo,
+    texto: a.texto ?? null,
+    link: linkDoAviso(a),
+    tag: a.tipo === 'mensagem' && a.empresaId ? `lead-${a.empresaId}` : null,
+  });
+}
+
+async function gravarAviso(db: Executor, usuarioId: number, a: Aviso): Promise<void> {
   if (a.tipo === 'mensagem' && a.empresaId) {
     const { rowCount } = await db.query(
       `UPDATE comercial.notificacoes SET titulo = $3, texto = $4, criado_em = now()

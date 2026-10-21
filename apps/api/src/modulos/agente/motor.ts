@@ -5,8 +5,11 @@ import { contaSql } from '../../contexto.js';
 import type { DepsApi, ServicosConta } from '../../dependencias.js';
 import { paraCadaConta } from '../../rotinas.js';
 import { criarReuniaoDoLead } from '../agenda/repositorio.js';
+import { limiteDoMes } from '../consumo/repositorio.js';
+import { emSequenciaSql } from '../email/sequencia.js';
 import { obterConfig as configCadencia, mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
+import * as chips from './chips.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -54,6 +57,8 @@ export async function gerarAbordagens(deps: DepsMotor, cfg: repo.ConfigAgente, l
       WHERE o.conta_id = ${contaSql()} AND o.agente AND o.agente_pausa IS NULL
         AND o.etapa IN ('a_abordar', 'abordado', 'respondeu', 'proposta')
         AND o.proxima_acao_em <= now() AND o.encerrar_em IS NULL
+        -- quem está numa sequência recebe os toques dela (nada de dois toques no mesmo lead)
+        AND NOT ${emSequenciaSql('o.conta_id', 'o.empresa_id')}
         AND NOT EXISTS (SELECT 1 FROM comercial.mensagens m
                          WHERE m.conta_id = o.conta_id AND m.empresa_id = o.empresa_id
                            AND m.status IN ('rascunho', 'aprovada'))
@@ -93,10 +98,12 @@ export async function gerarRespostas(deps: DepsMotor, cfg: repo.ConfigAgente, li
                          WHERE m.conta_id = o.conta_id AND m.empresa_id = o.empresa_id
                            AND m.status IN ('rascunho', 'aprovada'))
         AND EXISTS (SELECT 1 FROM (
-              SELECT a.direcao, a.criado_em FROM comercial.atividades a
+              SELECT a.direcao, a.tipo, a.criado_em FROM comercial.atividades a
                WHERE a.conta_id = o.conta_id AND a.empresa_id = o.empresa_id AND a.direcao IS NOT NULL
                ORDER BY a.criado_em DESC, a.id DESC LIMIT 1) ult
-             WHERE ult.direcao = 'recebida' AND ult.criado_em < now() - interval '40 seconds')
+             -- só responde no WhatsApp quem escreveu no WhatsApp (resposta de e-mail é com a equipe)
+             WHERE ult.direcao = 'recebida' AND ult.tipo = 'whatsapp'
+               AND ult.criado_em < now() - interval '40 seconds')
       ORDER BY o.atualizado_em
       LIMIT $1`,
     [limite],
@@ -260,70 +267,92 @@ async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId:
   }
 }
 
-/** 3. Envia a mensagem aprovada mais antiga, se o horário, o limite e o intervalo deixarem. */
+/**
+ * 3. Envia a próxima mensagem aprovada, pelo chip do lead (ou o menos usado hoje, para quem ainda
+ * não tem), se o horário, o limite do chip, o intervalo e o teto do mês deixarem. Com o agente
+ * desligado, só saem as mensagens das sequências (que têm o próprio liga/desliga).
+ */
 export async function enviarProxima(
   deps: DepsMotor,
   cfg: repo.ConfigAgente,
   agora = new Date(),
+  opcoes: { soSequencia?: boolean } = {},
 ): Promise<boolean> {
   if (!deps.whatsapp || !dentroDoHorario(cfg, agora)) return false;
+  const whatsapp = deps.whatsapp;
   const C = contaSql();
-  const { rows: uso } = await deps.pool.query<{ hoje: number; ultima: string | null }>(
-    `SELECT count(*) FILTER (WHERE enviado_em >= ${repo.HOJE_SP})::int AS hoje, max(enviado_em) AS ultima
-       FROM comercial.mensagens WHERE conta_id = ${C} AND status = 'enviada' AND origem IN ('agente', 'cadencia')`,
-  );
-  if ((uso[0]?.hoje ?? 0) >= cfg.limiteDia) return false;
-  const ultima = uso[0]?.ultima ? new Date(uso[0].ultima).getTime() : 0;
-  if (agora.getTime() - ultima < cfg.intervaloSeg * 1000) return false;
+  if ((await limiteDoMes(deps.pool, 'whatsapp')).esgotado) return false;
+  const disponiveis = await chips.emUso(deps.pool, whatsapp);
+  if (!disponiveis.length) return false;
 
-  const { rows } = await deps.pool.query<{
-    id: number;
-    empresa_id: number;
-    texto: string;
-    telefone: string | null;
-  }>(
-    `UPDATE comercial.mensagens SET status = 'enviada', enviado_em = now()
-      WHERE id = (SELECT id FROM comercial.mensagens WHERE conta_id = ${C} AND status = 'aprovada'
-                   ORDER BY criado_em, id LIMIT 1 FOR UPDATE SKIP LOCKED)
-      RETURNING id, empresa_id::int, texto, telefone`,
+  const { rows: fila } = await deps.pool.query<{ id: number; empresa_id: number }>(
+    `SELECT id::int, empresa_id::int FROM comercial.mensagens
+      WHERE conta_id = ${C} AND status = 'aprovada' ${opcoes.soSequencia ? `AND origem = 'sequencia'` : ''}
+      ORDER BY criado_em, id LIMIT 30`,
   );
-  const msg = rows[0];
-  if (!msg) return false;
-  if (!msg.telefone) {
-    await deps.pool.query(
-      `UPDATE comercial.mensagens SET status = 'erro', erro = 'Sem telefone' WHERE id = $1`,
-      [msg.id],
-    );
-    return false;
-  }
-  try {
-    const r = await deps.whatsapp.enviar(msg.telefone, msg.texto);
-    await deps.pool.query('UPDATE comercial.mensagens SET id_externo = $2 WHERE id = $1', [
-      msg.id,
-      r.idExterno,
-    ]);
-    await funil.registrarAtividade(
+  for (const candidata of fila) {
+    const chip = await chips.chipParaAutomatica(
       deps.pool,
-      msg.empresa_id,
-      { tipo: 'whatsapp', direcao: 'enviada', texto: msg.texto, contato: msg.telefone },
-      AUTOR,
+      candidata.empresa_id,
+      disponiveis,
+      cfg,
+      agora.getTime(),
     );
-    return true;
-  } catch (erro) {
-    const texto = erro instanceof Error ? erro.message : String(erro);
-    await deps.pool.query(
-      `UPDATE comercial.mensagens SET status = 'erro', erro = $2, enviado_em = NULL WHERE id = $1`,
-      [msg.id, texto.slice(0, 300)],
+    if (!chip) continue; // o chip deste lead está no limite ou no intervalo: tenta o próximo lead
+    const { rows } = await deps.pool.query<{
+      id: number;
+      empresa_id: number;
+      texto: string;
+      telefone: string | null;
+    }>(
+      `UPDATE comercial.mensagens SET status = 'enviada', enviado_em = now(), chip_id = $2
+        WHERE id = $1 AND conta_id = ${C} AND status = 'aprovada'
+        RETURNING id, empresa_id::int, texto, telefone`,
+      [candidata.id, chip.id],
     );
-    deps.log.warn({ err: erro, mensagem: msg.id }, 'agente: falha ao enviar no WhatsApp');
-    return false;
+    const msg = rows[0];
+    if (!msg) continue;
+    if (!msg.telefone) {
+      await deps.pool.query(
+        `UPDATE comercial.mensagens SET status = 'erro', erro = 'Sem telefone' WHERE id = $1`,
+        [msg.id],
+      );
+      continue;
+    }
+    try {
+      const r = await whatsapp.enviar(msg.telefone, msg.texto, chip.instancia);
+      await deps.pool.query('UPDATE comercial.mensagens SET id_externo = $2 WHERE id = $1', [
+        msg.id,
+        r.idExterno,
+      ]);
+      await funil.registrarAtividade(
+        deps.pool,
+        msg.empresa_id,
+        { tipo: 'whatsapp', direcao: 'enviada', texto: msg.texto, contato: msg.telefone },
+        AUTOR,
+      );
+      return true;
+    } catch (erro) {
+      const texto = erro instanceof Error ? erro.message : String(erro);
+      await deps.pool.query(
+        `UPDATE comercial.mensagens SET status = 'erro', erro = $2, enviado_em = NULL WHERE id = $1`,
+        [msg.id, texto.slice(0, 300)],
+      );
+      deps.log.warn({ err: erro, mensagem: msg.id, chip: chip.nome }, 'agente: falha ao enviar no WhatsApp');
+      return false;
+    }
   }
+  return false;
 }
 
 /** Uma rodada do agente numa conta (já dentro do contexto dela). */
 export async function rodarAgenteDaConta(deps: DepsMotor): Promise<void> {
   const cfg = await repo.obterConfig(deps.pool);
-  if (!cfg.ligado) return;
+  // Agente desligado: a IA não aborda nem responde, mas o WhatsApp das sequências continua saindo.
+  if (!cfg.ligado) {
+    await enviarProxima(deps, cfg, new Date(), { soSequencia: true });
+    return;
+  }
   await gerarRespostas(deps, cfg);
   if (dentroDoHorario(cfg)) await gerarAbordagens(deps, cfg);
   await enviarProxima(deps, cfg);

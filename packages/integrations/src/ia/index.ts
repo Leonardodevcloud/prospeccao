@@ -30,12 +30,28 @@ const URL_PADRAO: Record<'deepseek' | 'openai', string> = {
   openai: 'https://api.openai.com/v1',
 };
 
+/** Tokens de um pedido (o que a IA cobra). */
+export interface UsoIa {
+  tokensEntrada: number;
+  tokensSaida: number;
+}
+
+/**
+ * Quem paga e quanto: antes de cada pedido confere o teto do mês (lança erro para bloquear) e
+ * depois registra as chamadas e os tokens. Fica de fora quando não há medição (testes).
+ */
+export interface MedidorIa {
+  antes(): Promise<void>;
+  depois(uso: UsoIa | null, ok: boolean): Promise<void>;
+}
+
 export interface ConfigIa {
   provedor: ProvedorIa;
   apiKey: string;
   modelo: string;
   /** Só para "openai": endereço da API (ex.: https://openrouter.ai/api/v1). */
   baseUrl?: string | null;
+  medidor?: MedidorIa | null;
 }
 
 /** Esquema no formato do Gemini (OBJECT/STRING/…): vira o responseSchema ou um exemplo no texto. */
@@ -94,8 +110,16 @@ export function extrairJson(texto: string): string {
 
 const nomeServico = (cfg: ConfigIa) => ROTULO_PROVEDOR_IA[cfg.provedor] ?? 'IA';
 
-async function gemini(cfg: ConfigIa, p: PedidoJson): Promise<string> {
-  const r = await requisitarJson<{ candidates?: { content?: { parts?: { text?: string }[] } }[] }>(
+interface Resposta {
+  texto: string;
+  uso: UsoIa | null;
+}
+
+async function gemini(cfg: ConfigIa, p: PedidoJson): Promise<Resposta> {
+  const r = await requisitarJson<{
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  }>(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`,
     {
       servico: 'Gemini',
@@ -113,40 +137,61 @@ async function gemini(cfg: ConfigIa, p: PedidoJson): Promise<string> {
       timeoutMs: p.timeoutMs ?? 45_000,
     },
   );
-  return r.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  return {
+    texto: r.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
+    uso: r.usageMetadata
+      ? {
+          tokensEntrada: r.usageMetadata.promptTokenCount ?? 0,
+          tokensSaida: r.usageMetadata.candidatesTokenCount ?? 0,
+        }
+      : null,
+  };
 }
 
-async function chat(cfg: ConfigIa, p: PedidoJson, comModoJson: boolean): Promise<string> {
+async function chat(cfg: ConfigIa, p: PedidoJson, comModoJson: boolean): Promise<Resposta> {
   const base = (
     cfg.baseUrl?.trim() || URL_PADRAO[cfg.provedor === 'deepseek' ? 'deepseek' : 'openai']
   ).replace(/\/+$/, '');
   const formato = JSON.stringify(exemploDoEsquema(p.esquema), null, 1);
-  const r = await requisitarJson<{ choices?: { message?: { content?: string | null } }[] }>(
-    `${base}/chat/completions`,
-    {
-      servico: nomeServico(cfg),
-      method: 'POST',
-      headers: { authorization: `Bearer ${cfg.apiKey}` },
-      body: {
-        model: cfg.modelo,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'Responda SOMENTE com um objeto JSON válido, sem texto antes ou depois, sem ```. Use exatamente as chaves do formato pedido.',
-          },
-          { role: 'user', content: `${p.prompt}\n\nFormato da resposta (JSON):\n${formato}` },
-        ],
-        temperature: p.temperatura ?? 0.2,
-        max_tokens: p.maxTokens ?? 2000,
-        ...(comModoJson ? { response_format: { type: 'json_object' } } : {}),
-        stream: false,
-      },
-      timeoutMs: p.timeoutMs ?? 45_000,
+  const r = await requisitarJson<{
+    choices?: { message?: { content?: string | null } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  }>(`${base}/chat/completions`, {
+    servico: nomeServico(cfg),
+    method: 'POST',
+    headers: { authorization: `Bearer ${cfg.apiKey}` },
+    body: {
+      model: cfg.modelo,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Responda SOMENTE com um objeto JSON válido, sem texto antes ou depois, sem ```. Use exatamente as chaves do formato pedido.',
+        },
+        { role: 'user', content: `${p.prompt}\n\nFormato da resposta (JSON):\n${formato}` },
+      ],
+      temperature: p.temperatura ?? 0.2,
+      max_tokens: p.maxTokens ?? 2000,
+      ...(comModoJson ? { response_format: { type: 'json_object' } } : {}),
+      stream: false,
     },
-  );
-  return r.choices?.[0]?.message?.content ?? '';
+    timeoutMs: p.timeoutMs ?? 45_000,
+  });
+  return {
+    texto: r.choices?.[0]?.message?.content ?? '',
+    uso: r.usage
+      ? { tokensEntrada: r.usage.prompt_tokens ?? 0, tokensSaida: r.usage.completion_tokens ?? 0 }
+      : null,
+  };
 }
+
+const somar = (a: UsoIa | null, b: UsoIa | null): UsoIa | null =>
+  a || b
+    ? {
+        tokensEntrada: (a?.tokensEntrada ?? 0) + (b?.tokensEntrada ?? 0),
+        tokensSaida: (a?.tokensSaida ?? 0) + (b?.tokensSaida ?? 0),
+      }
+    : null;
 
 /**
  * Pede um JSON à IA e devolve o texto do JSON (quem chama valida o conteúdo). Resposta vazia
@@ -154,25 +199,43 @@ async function chat(cfg: ConfigIa, p: PedidoJson, comModoJson: boolean): Promise
  */
 export async function gerarJson(cfg: ConfigIa, p: PedidoJson): Promise<string> {
   if (!cfg.apiKey) throw AppError.invalido('IA sem chave configurada.');
-  if (cfg.provedor === 'gemini') return gemini(cfg, p);
-  let modoJson = true;
-  for (let tentativa = 0; tentativa < 2; tentativa++) {
-    let texto: string;
-    try {
-      texto = await chat(cfg, p, modoJson);
-    } catch (erro) {
-      // Serviço compatível que não conhece response_format: tenta sem (o prompt já pede JSON).
-      const status = (erro as AppError).detalhes as { status?: number } | undefined;
-      if (modoJson && cfg.provedor === 'openai' && status?.status === 400) {
-        modoJson = false;
-        continue;
-      }
-      throw erro;
+  // Teto do mês: o medidor lança erro e nada é pedido (nem cobrado).
+  await cfg.medidor?.antes();
+  let uso: UsoIa | null = null;
+  let ok = false;
+  try {
+    if (cfg.provedor === 'gemini') {
+      const r = await gemini(cfg, p);
+      uso = r.uso;
+      ok = true;
+      return r.texto;
     }
-    const json = extrairJson(texto);
-    if (json) return json;
+    let modoJson = true;
+    for (let tentativa = 0; tentativa < 2; tentativa++) {
+      let r: Resposta;
+      try {
+        r = await chat(cfg, p, modoJson);
+      } catch (erro) {
+        // Serviço compatível que não conhece response_format: tenta sem (o prompt já pede JSON).
+        const status = (erro as AppError).detalhes as { status?: number } | undefined;
+        if (modoJson && cfg.provedor === 'openai' && status?.status === 400) {
+          modoJson = false;
+          continue;
+        }
+        throw erro;
+      }
+      uso = somar(uso, r.uso);
+      const json = extrairJson(r.texto);
+      if (json) {
+        ok = true;
+        return json;
+      }
+    }
+    return '';
+  } finally {
+    // Medição nunca derruba o pedido.
+    await cfg.medidor?.depois(uso, ok).catch(() => undefined);
   }
-  return '';
 }
 
 /** Confere chave e modelo com um pedido mínimo (botão "Testar" do painel). */
@@ -193,17 +256,26 @@ export async function testarIa(cfg: ConfigIa): Promise<string> {
  * Monta a configuração da IA a partir do que foi cadastrado. Sem chave, devolve null (as
  * funções de IA ficam desligadas e o sistema usa as regras).
  */
-export function configIa(d: {
-  provedor?: string | null;
-  apiKey?: string | null;
-  modelo?: string | null;
-  baseUrl?: string | null;
-}): ConfigIa | null {
+export function configIa(
+  d: {
+    provedor?: string | null;
+    apiKey?: string | null;
+    modelo?: string | null;
+    baseUrl?: string | null;
+  },
+  medidor?: MedidorIa | null,
+): ConfigIa | null {
   if (!d.apiKey) return null;
   const provedor = (PROVEDORES_IA as readonly string[]).includes(d.provedor ?? '')
     ? (d.provedor as ProvedorIa)
     : 'deepseek';
   const modelo = d.modelo?.trim() || MODELO_PADRAO_IA[provedor];
   if (!modelo) return null;
-  return { provedor, apiKey: d.apiKey, modelo, baseUrl: d.baseUrl?.trim() || null };
+  return {
+    provedor,
+    apiKey: d.apiKey,
+    modelo,
+    baseUrl: d.baseUrl?.trim() || null,
+    ...(medidor ? { medidor } : {}),
+  };
 }

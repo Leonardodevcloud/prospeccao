@@ -90,6 +90,7 @@ function ItemLista(props: { c: ConversaResumo; ativo: boolean; aoAbrir: () => vo
         </span>
         <span className="conversa-item__linha">
           <span className="conversa-item__previa">
+            {c.ultimoCanal === 'email' && <Icon name="mail" size={12} />}
             {prefixo(c)}
             {c.ultimaMidia && <Icon name={ICONE_MIDIA[c.ultimaMidia]} size={12} />} {c.ultima ?? ''}
           </span>
@@ -197,12 +198,27 @@ function Bolhas(props: { mensagens: MensagemConversa[] }) {
         return (
           <div key={m.id} className="bolhas__grupo">
             {separador && <div className="bolhas__dia">{dia}</div>}
-            <div className="bolha" data-lado={m.direcao} data-status={m.status} data-origem={m.origem}>
+            <div
+              className="bolha"
+              data-lado={m.direcao}
+              data-status={m.status}
+              data-origem={m.origem}
+              data-canal={m.canal}
+            >
+              {m.canal === 'email' && (
+                <span className="bolha__canal">
+                  <Icon name="mail" size={12} /> E-mail
+                  {m.assunto ? ` · ${m.assunto}` : ''}
+                </span>
+              )}
               <Midia m={m} />
-              {!soRotulo && (
+              {!soRotulo && !(m.canal === 'email' && m.origem === 'sequencia') && (
                 <p className="bolha__texto">
                   <TextoComLinks texto={m.texto} />
                 </p>
+              )}
+              {m.canal === 'email' && m.origem === 'sequencia' && m.nota && (
+                <p className="bolha__texto quieto">Sequência “{m.nota}”</p>
               )}
               <span className="bolha__meta">
                 {m.autor && <span>{m.autor}</span>}
@@ -230,6 +246,12 @@ function Compositor(props: {
   aoGerenciarRespostas: () => void;
 }) {
   const { conversa } = props;
+  // Canal: WhatsApp, ou e-mail (o lead respondeu por e-mail ou não tem WhatsApp).
+  const ultimaDoLead = [...conversa.mensagens].reverse().find((m) => m.direcao === 'recebida');
+  const [canal, setCanal] = useState<'whatsapp' | 'email'>(
+    !conversa.telefone || ultimaDoLead?.canal === 'email' ? 'email' : 'whatsapp',
+  );
+  const [assunto, setAssunto] = useState('');
   const [texto, setTexto] = useState('');
   const [escolhida, setEscolhida] = useState(0);
   const [gravando, setGravando] = useState<{ rec: MediaRecorder; inicio: number } | null>(null);
@@ -251,6 +273,18 @@ function Compositor(props: {
       }),
     onSuccess: (c) => {
       setTexto('');
+      props.aoEnviado(c);
+    },
+  });
+  const enviarEmail = useMutation({
+    mutationFn: (t: string) =>
+      api<ConversaAberta>(`/conversas/${conversa.empresaId}/email`, {
+        metodo: 'POST',
+        corpo: { texto: t, assunto: assunto.trim() || undefined },
+      }),
+    onSuccess: (c) => {
+      setTexto('');
+      setAssunto('');
       props.aoEnviado(c);
     },
   });
@@ -285,8 +319,9 @@ function Compositor(props: {
   const enviar = (e?: FormEvent) => {
     e?.preventDefault();
     const t = texto.trim();
-    if (!t || enviarTexto.isPending) return;
-    enviarTexto.mutate(t);
+    if (!t || enviarTexto.isPending || enviarEmail.isPending) return;
+    if (canal === 'email') enviarEmail.mutate(t);
+    else enviarTexto.mutate(t);
   };
 
   const tecla = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -307,7 +342,8 @@ function Compositor(props: {
         return;
       }
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // No e-mail, Enter quebra a linha (texto mais longo); Ctrl+Enter envia.
+    if (e.key === 'Enter' && (canal === 'email' ? e.ctrlKey || e.metaKey : !e.shiftKey)) {
       e.preventDefault();
       enviar();
     }
@@ -359,11 +395,57 @@ function Compositor(props: {
     }
   };
 
-  const ocupado = enviarTexto.isPending || enviarMidia.isPending;
-  if (!conversa.telefone) return <Mensagem tipo="aviso">Este lead não tem telefone de WhatsApp.</Mensagem>;
+  const ocupado = enviarTexto.isPending || enviarMidia.isPending || enviarEmail.isPending;
+  if (!conversa.telefone && !conversa.email)
+    return <Mensagem tipo="aviso">Este lead não tem WhatsApp nem e-mail.</Mensagem>;
+  const porEmail = canal === 'email';
 
   return (
-    <form className="compositor" onSubmit={enviar}>
+    <form className="compositor" onSubmit={enviar} data-canal={canal}>
+      {conversa.telefone && conversa.email && (
+        <fieldset className="segmentos segmentos--mini compositor__canal" aria-label="Responder por">
+          {(
+            [
+              ['whatsapp', 'message-circle', 'WhatsApp'],
+              ['email', 'mail', 'E-mail'],
+            ] as const
+          ).map(([id, icone, rotulo]) => (
+            <button
+              key={id}
+              type="button"
+              className="segmento"
+              aria-pressed={canal === id}
+              data-ativo={canal === id || undefined}
+              onClick={() => setCanal(id)}
+            >
+              <Icon name={icone} size={12} /> {rotulo}
+            </button>
+          ))}
+        </fieldset>
+      )}
+      {porEmail && (
+        <div className="compositor__email">
+          <span className="quieto">
+            Para <b>{conversa.email}</b>
+            {conversa.emailEmConversa ? ' · resposta na mesma conversa do e-mail dele' : ''}
+          </span>
+          {!conversa.emailEmConversa && (
+            <>
+              <label className="pp-sr" htmlFor="compositor-assunto">
+                Assunto
+              </label>
+              <input
+                id="compositor-assunto"
+                className="filtro"
+                placeholder={`Assunto (em branco: Contato · ${conversa.nome})`}
+                maxLength={200}
+                value={assunto}
+                onChange={(e) => setAssunto(e.target.value)}
+              />
+            </>
+          )}
+        </div>
+      )}
       {sugestoes.length > 0 && (
         <ul className="sugestoes" aria-label="Respostas rápidas">
           {sugestoes.map((r, i) => (
@@ -384,7 +466,7 @@ function Compositor(props: {
           </button>
         </div>
       )}
-      <ErroDaApi erro={enviarTexto.error ?? enviarMidia.error} />
+      <ErroDaApi erro={enviarTexto.error ?? enviarMidia.error ?? enviarEmail.error} />
       {erroLocal && <Mensagem tipo="erro">{erroLocal}</Mensagem>}
       <div className="compositor__linha">
         <input
@@ -400,9 +482,13 @@ function Compositor(props: {
         <button
           type="button"
           className="botao-icone"
-          title="Anexar foto ou arquivo (até 10 MB)"
+          title={
+            porEmail
+              ? 'Anexo só pelo WhatsApp (no e-mail, use os modelos)'
+              : 'Anexar foto ou arquivo (até 10 MB)'
+          }
           aria-label="Anexar arquivo"
-          disabled={ocupado || !!gravando}
+          disabled={ocupado || !!gravando || porEmail}
           onClick={() => arquivo.current?.click()}
         >
           <Icon name="paperclip" size={18} />
@@ -420,9 +506,13 @@ function Compositor(props: {
             <textarea
               id="compositor-texto"
               ref={campo}
-              rows={1}
+              rows={porEmail ? 4 : 1}
               className="compositor__texto"
-              placeholder="Escreva… ( / para respostas rápidas, Shift+Enter quebra a linha)"
+              placeholder={
+                porEmail
+                  ? 'Escreva o e-mail… (Ctrl+Enter envia; a assinatura da sua identidade visual vai junto)'
+                  : 'Escreva… ( / para respostas rápidas, Shift+Enter quebra a linha)'
+              }
               value={texto}
               maxLength={4000}
               onChange={(e) => {
@@ -433,13 +523,13 @@ function Compositor(props: {
             />
           </>
         )}
-        {texto.trim() && !gravando ? (
+        {(texto.trim() || porEmail) && !gravando ? (
           <button
             type="submit"
             className="botao-enviar"
             aria-label="Enviar"
-            title="Enviar (Enter)"
-            disabled={ocupado}
+            title={porEmail ? 'Enviar e-mail (Ctrl+Enter)' : 'Enviar (Enter)'}
+            disabled={ocupado || !texto.trim()}
           >
             <Icon name={ocupado ? 'loader' : 'send'} size={18} spin={ocupado} />
           </button>

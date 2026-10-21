@@ -439,6 +439,14 @@ export function Funil() {
         </div>
         {sessao.data?.papel === 'admin' && (
           <div className="acoes">
+            <Button
+              icon="file-down"
+              variant="ghost"
+              href={`/api/exportar/funil${qs(filtros)}`}
+              title="Baixa os leads deste pipeline, com os filtros da tela, numa planilha do Excel"
+            >
+              Exportar
+            </Button>
             <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
               Cadência e mensagens
             </Button>

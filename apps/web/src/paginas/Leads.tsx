@@ -15,6 +15,7 @@ import {
 } from '../api';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { useEhAdmin } from '../componentes/Sessao';
 import { fmtCidade, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO_ORIGEM } from '../formatar';
 
 const ABAS = [
@@ -98,6 +99,7 @@ export function Leads() {
   const pagina = Number(params.get('pagina') ?? '1');
   const empresaAberta = params.get('empresa');
   const situacao = params.get('situacao') ?? 'novos';
+  const admin = useEhAdmin();
   const [busca, setBusca] = useState(params.get('busca') ?? '');
   const [marcados, setMarcados] = useState<Set<number>>(new Set());
   const [descartando, setDescartando] = useState(false);
@@ -191,6 +193,16 @@ export function Leads() {
           </p>
         </div>
         <div className="acoes">
+          {admin && (
+            <Button
+              variant="ghost"
+              icon="file-down"
+              href={`/api/exportar/leads${qs({ ...filtros, pagina: undefined, porPagina: undefined })}`}
+              title="Baixa os leads com os filtros desta tela, numa planilha do Excel"
+            >
+              Exportar
+            </Button>
+          )}
           <label className="pp-sr" htmlFor="filtro-campanha">
             Campanha
           </label>

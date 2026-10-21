@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { carregarEnv, envBase, listaCsv, opcional } from '@prospeccao/config';
-import { criarPool } from '@prospeccao/db';
+import { criarPool, manterSinalDeVida } from '@prospeccao/db';
 import { receita } from '@prospeccao/integrations';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
@@ -25,6 +25,8 @@ const env = carregarEnv(
 
 const log = criarLogger('worker-cnpj', env.LOG_LEVEL);
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-cnpj', max: 4 });
+// Sinal de vida para o painel de alertas (worker parado aparece para o master).
+const pararSinal = manterSinalDeVida(pool, 'worker-cnpj');
 const filas = await conectarFilas({
   url: env.DATABASE_URL,
   aplicacao: 'worker-cnpj',
@@ -82,6 +84,7 @@ if (await repo.faltaLerSimples(pool)) {
 log.info({ agenda: env.CNPJ_AGENDA }, 'worker-cnpj pronto');
 
 encerrarAoReceberSinal(log, async () => {
+  pararSinal();
   // Deploy no meio da importação: a tela mostra na hora o que houve, e a fila retoma no serviço novo.
   if (emAndamento != null) {
     await repo
