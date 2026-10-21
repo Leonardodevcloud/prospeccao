@@ -146,7 +146,7 @@ export function TelaAcesso(props: { children: ReactNode }) {
         <Assinatura escuro tamanho={44} />
         <div className="acesso__chamada">
           <h2>
-            Seu time falando com <em>quem decide</em>.
+            Seu comercial mais perto de <em>quem decide</em>.
           </h2>
           <p>Empresas do seu nicho, o decisor certo e a conversa no canal certo. Tudo em um lugar.</p>
         </div>

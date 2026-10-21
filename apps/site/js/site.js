@@ -369,6 +369,46 @@ function iniciarJornada() {
   for (const p of passos) obs.observe(p);
 }
 
+/* ---------- chamadas: botão flutuante e a do nicho escolhido ---------- */
+function iniciarChamadas() {
+  const flutuante = $('[data-cta-flutuante]');
+  const inicio = $('#inicio');
+  const contato = $('#contato');
+  if (flutuante && inicio && contato && 'IntersectionObserver' in window) {
+    let passouDoTopo = false;
+    let noContato = false;
+    const atualizar = () => {
+      const mostrar = passouDoTopo && !noContato;
+      flutuante.classList.toggle('visivel', mostrar);
+      flutuante.tabIndex = mostrar ? 0 : -1;
+    };
+    new IntersectionObserver(([en]) => {
+      passouDoTopo = !en.isIntersecting;
+      atualizar();
+    }).observe(inicio);
+    new IntersectionObserver(([en]) => {
+      noContato = en.isIntersecting;
+      atualizar();
+    }).observe(contato);
+  }
+  // a chamada da seção de nichos acompanha o nicho escolhido e já preenche o formulário
+  const nome = $('[data-cta-nicho-nome]');
+  const botao = $('[data-cta-nicho]');
+  const escolhido = () => $('.nicho[aria-selected="true"] span')?.textContent?.trim() ?? '';
+  if (nome) {
+    const obs = new MutationObserver(() => {
+      const n = escolhido();
+      if (n) nome.textContent = `nicho de ${n.toLowerCase()}`;
+    });
+    for (const b of $$('.nicho')) obs.observe(b, { attributes: true, attributeFilter: ['aria-selected'] });
+  }
+  botao?.addEventListener('click', () => {
+    const campo = $('#ct-nicho');
+    const n = escolhido();
+    if (campo && n && !campo.value) campo.value = n;
+  });
+}
+
 /* ---------- revelar ao rolar ---------- */
 function iniciarRevelar() {
   const itens = $$('.revela');
@@ -585,6 +625,7 @@ function iniciar() {
   iniciarNichos();
   iniciarDia();
   iniciarJornada();
+  iniciarChamadas();
   iniciarLogo();
   iniciarRevelar();
   iniciarParalaxe();
