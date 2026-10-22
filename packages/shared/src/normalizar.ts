@@ -17,6 +17,8 @@ export function normalizarTelefone(valor: string | null | undefined): string | n
   if (d.length !== 10 && d.length !== 11) return null;
   if (d[0] === '0' || d[1] === '0') return null; // DDD válido nunca tem zero
   if (d.length === 11 && d[2] !== '9') return null; // 11 dígitos só para celular
+  // Celular escrito sem o 9 da frente ("71 9955-7040"): fixo começa com 2 a 5, celular com 6 a 9.
+  if (d.length === 10 && /[6-9]/.test(d[2] ?? '')) d = `${d.slice(0, 2)}9${d.slice(2)}`;
   return d;
 }
 

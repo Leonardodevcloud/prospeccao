@@ -401,8 +401,8 @@ var FONTES_LONGAS = {
 };
 
 var STATUS = {
-  verificado: { icone: 'badge-check', rotulo: 'Verificado' },
-  nao_verificado: { icone: 'circle-help', rotulo: 'Não verificado' },
+  verificado: { icone: 'badge-check', rotulo: 'Confirmado' },
+  nao_verificado: { icone: 'circle-dashed', rotulo: 'Fonte única' },
   atencao: { icone: 'circle-help', rotulo: 'Verificar' },
   invalido: { icone: 'circle-x', rotulo: 'Inválido' },
 };

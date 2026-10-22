@@ -63,6 +63,16 @@ export function papelPeloCargo(cargo: string | null | undefined): Papel {
   return 'outro';
 }
 
+/** Quantas fontes independentes viram o contato (Maps e Places contam como uma; IA não conta). */
+export function fontesIndependentes(fontes: Iterable<string>): number {
+  const grupos = new Set<string>();
+  for (const f of fontes) {
+    if (f === 'ia') continue;
+    grupos.add(f === 'places' ? 'maps' : f);
+  }
+  return grupos.size;
+}
+
 export class Coletor {
   readonly contatos = new Map<string, Contato>();
   readonly pessoas = new Map<string, Pessoa>();
@@ -86,6 +96,7 @@ export class Coletor {
       atual.confianca = Math.min(100, Math.max(atual.confianca, c.confianca) + 10);
       atual.rotulo ??= c.rotulo ?? null;
       if (atual.status === 'atencao' && c.status !== 'atencao') atual.status = c.status ?? 'nao_verificado';
+      if (c.status === 'verificado' && atual.status === 'nao_verificado') atual.status = 'verificado';
       return;
     }
     this.contatos.set(chave, {
@@ -302,9 +313,22 @@ export class Coletor {
       .map((c) => c.valor);
   }
 
+  /**
+   * Contato visto em duas ou mais fontes independentes vira confirmado (o mesmo telefone no Google
+   * Maps e no site da empresa é bem mais confiável que um só). Maps e Places são a mesma fonte
+   * (o perfil da loja no Google); a IA não conta como fonte.
+   */
+  confirmarPorFontes(): void {
+    for (const c of this.contatos.values()) {
+      if (c.status !== 'nao_verificado') continue;
+      if (fontesIndependentes(c.fontes) >= 2) c.status = 'verificado';
+    }
+  }
+
   /** Melhor contato da empresa para a primeira abordagem. */
   escolherPrincipal(): Contato | null {
     this.juntarTelefonesDeWhatsapp();
+    this.confirmarPorFontes();
     const peso = (c: Contato): number => {
       if (c.status === 'invalido' || c.deContador) return -1;
       const base =

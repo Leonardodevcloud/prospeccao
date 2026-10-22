@@ -63,9 +63,9 @@ const NOME_FONTE: Record<FonteEnriq, string> = {
   site: 'site',
   instagram: 'Instagram',
   linkedin: 'LinkedIn',
-  google: 'Google',
+  google: 'busca no Google',
   ia: 'IA',
-  places: 'Google',
+  places: 'Google Maps',
   manual: 'cadastro manual',
   whatsapp: 'WhatsApp Business',
   base_paga: 'base paga',
@@ -112,10 +112,10 @@ function paraContactRow(c: ContatoEnriq): ContactRowProps {
         : c.canal === 'linkedin'
           ? c.valor.replace(/^https?:\/\/([a-z]{2}\.)?(www\.)?/, '')
           : c.valor;
+  // Maps e Places são o mesmo perfil do Google; a IA não é fonte: conta cada origem uma vez.
+  const nomesFontes = [...new Set(c.fontes.filter((f) => f !== 'ia').map((f) => NOME_FONTE[f]))];
   const vistoEm =
-    c.fontes.length > 1
-      ? `Confirmado em ${c.fontes.length} fontes: ${c.fontes.map((f) => NOME_FONTE[f]).join(', ')}`
-      : null;
+    nomesFontes.length > 1 ? `Confirmado em ${nomesFontes.length} fontes: ${nomesFontes.join(', ')}` : null;
   return {
     canal: c.canal === 'facebook' ? 'site' : c.canal,
     valor,

@@ -21,6 +21,9 @@ describe('telefones', () => {
     expect(normalizarTelefone('(71) 99812-4410')).toBe('71998124410');
     expect(normalizarTelefone('+55 71 99812-4410')).toBe('71998124410');
     expect(normalizarTelefone('071 3241-0098')).toBe('7132410098');
+    // Celular sem o 9 da frente: é o mesmo número (não pode virar dois contatos).
+    expect(normalizarTelefone('(71) 9955-7040')).toBe('71999557040');
+    expect(normalizarTelefone('7188776655')).toBe('71988776655');
     expect(normalizarTelefone('5571998124410')).toBe('71998124410');
   });
 

@@ -43,7 +43,7 @@ const NAO_E_SITE =
 
 const EMAIL = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const EMAIL_LIXO =
-  /\.(png|jpe?g|gif|webp|svg)$|@(example|exemplo|sentry|wixpress|domain|email)\.|^(nome|seu|your)@/i;
+  /\.(png|jpe?g|gif|webp|svg)$|@(example|exemplo|sentry|wixpress|domain|email|seudominio|dominio|empresa)\.|^(nome|seu|your|exemplo|example|seuemail|seu\.email|seu-email|email|teste|test|usuario|fulano|name|user)@/i;
 const TELEFONE = /(?:\+?55[\s.-]?)?\(?\b([1-9]{2})\)?[\s.-]?(9?\d{4})[\s.-]?(\d{4})\b/g;
 const WHATSAPP_URL = /wa\.me\/\+?(\d{10,13})|whatsapp\.com\/send\/?\?(?:[^"'\s<>]*&)?phone=\+?(\d{10,13})/gi;
 /** Encurtadores que costumam esconder o link do WhatsApp (wa.link/xyz → wa.me/55…). */

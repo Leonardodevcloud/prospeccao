@@ -384,6 +384,8 @@ export async function enriquecerEmpresa(
         fonte: 'site',
         confianca: 90,
         urlOrigem: url,
+        // O site abriu e foi lido: existe e está no ar.
+        status: 'verificado',
       });
       for (const w of site.whatsapps) {
         c.contato({
@@ -405,15 +407,25 @@ export async function enriquecerEmpresa(
           urlOrigem: url,
         });
       }
+      const dominioSite = (() => {
+        try {
+          return new URL(url).hostname.replace(/^www\./, '');
+        } catch {
+          return '';
+        }
+      })();
       for (const e of site.emails.slice(0, 5)) {
         const setor = e.split('@')[0] ?? '';
+        const doDominio = !!dominioSite && (e.split('@')[1] ?? '') === dominioSite;
         c.contato({
           canal: 'email',
           valor: e,
           fonte: 'site',
-          confianca: /compr/.test(setor) ? 80 : 65,
-          rotulo: /compr/.test(setor) ? 'Compras' : null,
+          confianca: /compr/.test(setor) ? 80 : doDominio ? 75 : 65,
+          rotulo: /compr/.test(setor) ? 'Compras' : doDominio ? 'E-mail do domínio da empresa' : null,
           urlOrigem: url,
+          // Publicado no próprio site, com o domínio da empresa: é dela.
+          status: doDominio ? 'verificado' : undefined,
         });
       }
       instagram = site.instagram;
@@ -483,6 +495,8 @@ export async function enriquecerEmpresa(
           confianca: 85,
           rotulo: `@${perfil.usuario}`,
           urlOrigem: url,
+          // O perfil abriu e foi lido.
+          status: 'verificado',
         });
         for (const w of perfil.whatsapps) {
           c.contato({
