@@ -2963,4 +2963,154 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     );
     expect(rows[0]).toEqual({ vinculos: 0, funil: 0, leads: 0, socios: antes[0].n });
   });
+  it('planos: plano e módulos por conta, vaga de usuário, limite de leads e serviços travados', async () => {
+    // Cliente novo já com o plano Start (2 usuários, 5 mil leads) e só o módulo de e-mail.
+    const criada = await enviar('post', '/master/contas', {
+      nome: 'Cliente Plano Teste',
+      admin: { nome: 'Ana Admin', email: 'ana@clienteplano.com.br' },
+      plano: { plano: 'start', modulos: ['email'] },
+    });
+    expect(criada.status).toBe(201);
+    const contaId = criada.body.id as number;
+    let p = (await ler(`/master/contas/${contaId}/plano`)).body;
+    expect(p).toMatchObject({
+      plano: 'start',
+      usuarios: 2,
+      leadsMes: 5000,
+      modulos: ['email'],
+      mensalidade: 497,
+      uso: { usuarios: 1, leadsMes: 0 },
+    });
+    // A lista do master traz o plano de cada cliente.
+    const lista = (await ler('/master/contas')).body;
+    expect(lista.find((c: { id: number }) => c.id === contaId).plano.mensalidade).toBe(497);
+
+    // Vaga de usuário: o 2º entra, o 3º não (até o master aumentar).
+    expect(
+      (
+        await enviar('post', `/master/contas/${contaId}/usuarios`, {
+          nome: 'Bia',
+          email: 'bia@clienteplano.com.br',
+          papel: 'sdr',
+        })
+      ).status,
+    ).toBe(201);
+    const terceiro = await enviar('post', `/master/contas/${contaId}/usuarios`, {
+      nome: 'Caio',
+      email: 'caio@clienteplano.com.br',
+      papel: 'sdr',
+    });
+    expect(terceiro.status).toBe(422);
+    expect(terceiro.body.erro.mensagem).toMatch(/permite 2 usuários/);
+
+    // Personaliza: 3 usuários (1 adicional), 8 mil leads, WhatsApp + IA, mensalidade com desconto.
+    expect(
+      (
+        await enviar('put', `/master/contas/${contaId}/plano`, {
+          plano: 'start',
+          limiteUsuarios: 3,
+          limiteLeadsMes: 8000,
+          modulos: ['agente_ia'],
+        })
+      ).status,
+    ).toBe(422); // IA sem WhatsApp
+    p = (
+      await enviar('put', `/master/contas/${contaId}/plano`, {
+        plano: 'start',
+        limiteUsuarios: 3,
+        limiteLeadsMes: 8000,
+        modulos: ['whatsapp', 'agente_ia'],
+        mensalidadeManual: 650,
+      })
+    ).body;
+    expect(p).toMatchObject({
+      usuarios: 3,
+      leadsMes: 8000,
+      mensalidadeCalculada: 297 + 59 + 250 + 150,
+      mensalidade: 650,
+    });
+    expect(
+      (
+        await enviar('post', `/master/contas/${contaId}/usuarios`, {
+          nome: 'Caio',
+          email: 'caio@clienteplano.com.br',
+          papel: 'sdr',
+        })
+      ).status,
+    ).toBe(201);
+
+    // Master gerencia os usuários do cliente: desativa e reativa (reativar respeita a vaga).
+    const usuarios = (await ler(`/master/contas/${contaId}`)).body.usuarios as {
+      id: number;
+      email: string;
+    }[];
+    const caio = usuarios.find((u) => u.email === 'caio@clienteplano.com.br')!;
+    expect((await enviar('patch', `/master/usuarios/${caio.id}`, { ativo: false })).status).toBe(200);
+    expect(
+      (await enviar('patch', `/master/usuarios/${caio.id}`, { papel: 'closer', ativo: true })).status,
+    ).toBe(200);
+    expect(
+      (
+        await enviar('post', `/master/contas/${contaId}/usuarios`, {
+          nome: 'Davi',
+          email: 'davi@clienteplano.com.br',
+          papel: 'sdr',
+        })
+      ).status,
+    ).toBe(422);
+
+    // Limite de leads: leads que esperaram voltam para a fila quando há vaga.
+    await pool.query(
+      `INSERT INTO cadastro.campanhas (id, nome, nicho_id, cidades, conta_id)
+       SELECT 9901, 'Campanha plano', nicho_id, cidades, $1 FROM cadastro.campanhas LIMIT 1
+       ON CONFLICT (id) DO NOTHING`,
+      [contaId],
+    );
+    await pool.query(
+      `INSERT INTO descoberta.empresas (id, nome, cidade, uf) VALUES (9901, 'Lead Esperando', 'SALVADOR', 'BA') ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.leads (empresa_id, campanha_id, status) VALUES (9901, 9901, 'limite')
+       ON CONFLICT (empresa_id) DO UPDATE SET status = 'limite', campanha_id = 9901`,
+    );
+    expect((await ler(`/master/contas/${contaId}/plano`)).body.uso.leadsEsperando).toBe(1);
+    const { conferirLimitesDeLeads } = await import('../src/modulos/plano/rotina.js');
+    const antes = publicados.length;
+    const fila = {
+      publicar: async () => 'x',
+      publicarVarios: async (nome: NomeJob, payloads: unknown[]) => {
+        for (const payload of payloads) publicados.push({ nome, payload });
+        return payloads.length;
+      },
+      cancelarPendentes: async () => 0,
+      tamanhos: async () => ({}),
+    };
+    expect(
+      await conferirLimitesDeLeads({ pool, log: criarLogger('teste', 'silent'), filas: fila as never }),
+    ).toBe(1);
+    expect(publicados.slice(antes)).toEqual([
+      { nome: 'enriquecimento.solicitar', payload: { empresaId: 9901, campanhaId: 9901 } },
+    ]);
+
+    // Serviços: o que não está no plano fica desligado.
+    const { servicosDe } = await import('../src/servicos.js');
+    const cred = {
+      contaId,
+      places: null,
+      ors: null,
+      resend: { apiKey: 're_x', remetente: 'a@b.com', dominioRespostas: null, webhookSegredo: null },
+      evolution: { url: 'http://evo', apiKey: 'k', instancia: 'i' },
+      ia: { provedor: 'deepseek', apiKey: 'sk-x', modelo: null, baseUrl: null },
+      origem: { places: null, ors: null, resend: 'conta', evolution: 'conta', ia: 'conta' },
+      erro: null,
+    } as const;
+    const semEmail = servicosDe({ ...cred, modulos: ['whatsapp', 'agente_ia'] } as never);
+    expect([!!semEmail.email, !!semEmail.whatsapp, !!semEmail.ia]).toEqual([false, true, true]);
+    const soEmail = servicosDe({ ...cred, modulos: ['email'] } as never);
+    expect([!!soEmail.email, !!soEmail.whatsapp, !!soEmail.ia]).toEqual([true, false, false]);
+    const semPlano = servicosDe({ ...cred, modulos: null } as never);
+    expect([!!semPlano.email, !!semPlano.whatsapp, !!semPlano.ia]).toEqual([true, true, true]);
+
+    await enviar('patch', `/master/contas/${contaId}`, { ativa: false });
+  });
 });

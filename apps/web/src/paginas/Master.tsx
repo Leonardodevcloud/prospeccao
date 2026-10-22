@@ -1,4 +1,5 @@
-import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
+import { LISTA_MODULOS, MODULOS, type Modulo, PLANOS, type Plano } from '@prospeccao/shared/planos';
+import { Badge, Button, EmptyState, Icon, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
@@ -12,14 +13,16 @@ import {
   type ItemAuditoria,
   type OrigemCredencial,
   type PapelUsuario,
+  type PlanoConta,
   type ProvedorIa,
   ROTULO_PAPEL_USUARIO,
   type ServicoTestavel,
 } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { FormPlano, ResumoPlano, ROTULO_PLANO } from '../componentes/PlanoConta';
 import { useSessao } from '../componentes/Sessao';
-import { fmtMes, fmtNumero, fmtQuando } from '../formatar';
+import { fmtMes, fmtNumero, fmtQuando, fmtReais } from '../formatar';
 import { LinkConvite } from './Equipe';
 
 /* ───────────────────────── Peças ───────────────────────── */
@@ -450,6 +453,11 @@ function Usuarios(props: { conta: ContaDetalhe }) {
       cliente.invalidateQueries({ queryKey: ['master'] });
     },
   });
+  const editar = useMutation({
+    mutationFn: (d: { id: number; papel?: PapelUsuario; ativo?: boolean }) =>
+      api(`/master/usuarios/${d.id}`, { metodo: 'PATCH', corpo: { papel: d.papel, ativo: d.ativo } }),
+    onSuccess: () => cliente.invalidateQueries({ queryKey: ['master'] }),
+  });
   const convite = useMutation({
     mutationFn: (u: { id: number; nome: string }) =>
       api<{ convite: string; diasValidade: number }>(`/master/usuarios/${u.id}/convite`, {
@@ -458,8 +466,22 @@ function Usuarios(props: { conta: ContaDetalhe }) {
     onSuccess: (d) => setLink({ link: d.convite, nome: d.nome, dias: d.diasValidade }),
   });
 
+  const plano = useQuery({
+    queryKey: ['master', 'plano', props.conta.id],
+    queryFn: () => api<PlanoConta>(`/master/contas/${props.conta.id}/plano`),
+  });
+  const p = plano.data;
+
   return (
     <div className="pilha" style={{ gap: 12 }}>
+      {p?.usuarios != null && (
+        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+          {p.uso.usuarios} de {p.usuarios} vagas do plano em uso
+          {p.uso.usuarios >= p.usuarios
+            ? '. Para convidar mais alguém, aumente o número de usuários na aba Plano e módulos.'
+            : '.'}
+        </p>
+      )}
       {link && <LinkConvite link={link.link} nome={link.nome} dias={link.dias} conta={props.conta.nome} />}
       <ul className="usuarios-conta">
         {props.conta.usuarios.map((u) => (
@@ -469,27 +491,59 @@ function Usuarios(props: { conta: ContaDetalhe }) {
               <span className="quieto">{u.email}</span>
             </span>
             <span className="usuarios-conta__info">
-              <Badge tone="outline">{ROTULO_PAPEL_USUARIO[u.papel]}</Badge>
+              {(u.master || !u.ativo) && <Badge tone="outline">{ROTULO_PAPEL_USUARIO[u.papel]}</Badge>}
               {u.master && <Badge tone="brand">Master</Badge>}
               {!u.ativo && <Badge tone="neutral">Desativado</Badge>}
               {u.ativo && u.convitePendente && <Badge tone="warning">Convite pendente</Badge>}
               {u.ultimoAcesso && <span className="quieto">entrou {fmtQuando(u.ultimoAcesso)}</span>}
             </span>
-            {u.ativo && (
-              <Button
-                size="sm"
-                variant="ghost"
-                icon="link"
-                disabled={convite.isPending}
-                onClick={() => convite.mutate(u)}
-              >
-                {u.convitePendente ? 'Novo convite' : 'Link de nova senha'}
-              </Button>
-            )}
+            <span className="usuarios-conta__acoes">
+              {!u.master && (
+                <>
+                  <label className="pp-sr" htmlFor={`mu-papel-${u.id}`}>
+                    Papel de {u.nome}
+                  </label>
+                  <select
+                    id={`mu-papel-${u.id}`}
+                    className="filtro filtro--mini"
+                    value={u.papel}
+                    disabled={editar.isPending || !u.ativo}
+                    onChange={(e) => editar.mutate({ id: u.id, papel: e.target.value as PapelUsuario })}
+                  >
+                    {(Object.keys(ROTULO_PAPEL_USUARIO) as PapelUsuario[]).map((p) => (
+                      <option key={p} value={p}>
+                        {ROTULO_PAPEL_USUARIO[p]}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {u.ativo && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="link"
+                  disabled={convite.isPending}
+                  onClick={() => convite.mutate(u)}
+                >
+                  {u.convitePendente ? 'Novo convite' : 'Link de nova senha'}
+                </Button>
+              )}
+              {!u.master && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={editar.isPending}
+                  onClick={() => editar.mutate({ id: u.id, ativo: !u.ativo })}
+                >
+                  {u.ativo ? 'Desativar' : 'Reativar'}
+                </Button>
+              )}
+            </span>
           </li>
         ))}
       </ul>
-      <ErroDaApi erro={convite.error} />
+      <ErroDaApi erro={convite.error ?? editar.error} />
       {novo ? (
         <form
           className="form caixa"
@@ -828,13 +882,13 @@ function HistoricoConta(props: { contaId: number }) {
 
 /* ───────────────────────── Conta (drawer) ───────────────────────── */
 
-type SecaoConta = 'credenciais' | 'consumo' | 'usuarios' | 'historico' | 'dados';
+type SecaoConta = 'plano' | 'credenciais' | 'consumo' | 'usuarios' | 'historico' | 'dados';
 
 function Conta(props: { id: number; aoFechar: () => void }) {
   const cliente = useQueryClient();
   const navegar = useNavigate();
   const sessao = useSessao();
-  const [secao, setSecao] = useState<SecaoConta>('credenciais');
+  const [secao, setSecao] = useState<SecaoConta>('plano');
   const q = useQuery({
     queryKey: ['master', 'conta', props.id],
     queryFn: () => api<ContaDetalhe>(`/master/contas/${props.id}`),
@@ -864,7 +918,7 @@ function Conta(props: { id: number; aoFechar: () => void }) {
   const naConta = sessao.data?.conta.id === props.id;
 
   return (
-    <Drawer titulo={c?.nome ?? 'Conta'} barra="Painel master" aoFechar={props.aoFechar} largo>
+    <Drawer titulo={c?.nome ?? 'Cliente'} barra="Clientes e planos" aoFechar={props.aoFechar} largo>
       <div className="drawer__corpo">
         {q.isPending ? (
           <div className="esqueleto" />
@@ -893,6 +947,7 @@ function Conta(props: { id: number; aoFechar: () => void }) {
             <div className="pipelines" role="tablist" aria-label="Seções da conta">
               {(
                 [
+                  ['plano', 'Plano e módulos'],
                   ['credenciais', 'Credenciais'],
                   ['consumo', 'Consumo e tetos'],
                   ['usuarios', `Usuários (${c.usuarios.filter((u) => u.ativo).length})`],
@@ -912,6 +967,7 @@ function Conta(props: { id: number; aoFechar: () => void }) {
                 </button>
               ))}
             </div>
+            {secao === 'plano' && <PlanoDaConta contaId={c.id} />}
             {secao === 'credenciais' && <Credenciais conta={c} />}
             {secao === 'consumo' && <Consumo conta={c} />}
             {secao === 'usuarios' && <Usuarios conta={c} />}
@@ -1009,22 +1065,50 @@ function Conta(props: { id: number; aoFechar: () => void }) {
   );
 }
 
+/* ───────────────────────── Plano da conta ───────────────────────── */
+
+function PlanoDaConta(props: { contaId: number }) {
+  const q = useQuery({
+    queryKey: ['master', 'plano', props.contaId],
+    queryFn: () => api<PlanoConta>(`/master/contas/${props.contaId}/plano`),
+  });
+  if (q.isPending) return <div className="esqueleto" />;
+  if (!q.data) return <ErroDaApi erro={q.error} />;
+  return (
+    <div className="pilha" style={{ gap: 20 }}>
+      <ResumoPlano p={q.data} />
+      <hr className="divisor" />
+      <FormPlano contaId={props.contaId} p={q.data} />
+    </div>
+  );
+}
+
 /* ───────────────────────── Nova conta ───────────────────────── */
 
 function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void }) {
   const cliente = useQueryClient();
   const [f, setF] = useState({ nome: '', observacoes: '', admin: { nome: '', email: '' } });
+  const [plano, setPlano] = useState<Plano>('start');
+  const [modulos, setModulos] = useState<Modulo[]>([]);
   const criar = useMutation({
     mutationFn: () =>
       api<{ id: number; convite: string; diasValidade: number }>('/master/contas', {
         metodo: 'POST',
-        corpo: { ...f, observacoes: f.observacoes || undefined },
+        corpo: {
+          ...f,
+          observacoes: f.observacoes || undefined,
+          // Personalizado: começa com os números do Start; ajuste na aba Plano e módulos.
+          plano:
+            plano === 'personalizado'
+              ? { plano, limiteUsuarios: 2, limiteLeadsMes: 5000, modulos }
+              : { plano, modulos },
+        },
       }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['master', 'contas'] }),
   });
 
   return (
-    <Drawer titulo="Nova conta" barra="Painel master" aoFechar={props.aoFechar}>
+    <Drawer titulo="Novo cliente" barra="Clientes e planos" aoFechar={props.aoFechar}>
       <div className="drawer__corpo">
         {criar.data ? (
           <div className="pilha" style={{ gap: 16 }}>
@@ -1040,7 +1124,7 @@ function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void 
             </p>
             <div className="acoes">
               <Button variant="primary" icon="settings" onClick={() => props.aoAbrir(criar.data.id)}>
-                Configurar credenciais
+                Abrir a conta
               </Button>
               <Button variant="ghost" onClick={props.aoFechar}>
                 Fechar
@@ -1076,6 +1160,50 @@ function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void 
               />
               <span className="campo__dica">Só o master vê (contrato, contato, combinados).</span>
             </div>
+            <fieldset className="campo">
+              <legend>Plano</legend>
+              <div className="planos-escolha">
+                {(['start', 'time', 'escala', 'personalizado'] as Plano[]).map((id) => (
+                  <label key={id} className="plano-opcao" data-ativo={plano === id || undefined}>
+                    <input
+                      type="radio"
+                      name="nc-plano"
+                      checked={plano === id}
+                      onChange={() => setPlano(id)}
+                    />
+                    <b>{ROTULO_PLANO[id]}</b>
+                    {id === 'personalizado' ? (
+                      <span className="quieto">Ajuste os números depois</span>
+                    ) : (
+                      <span className="quieto">
+                        {fmtReais(PLANOS[id].preco)} · {PLANOS[id].usuarios} usuários ·{' '}
+                        {fmtNumero(PLANOS[id].leadsMes)} leads
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+              <div className="pilha" style={{ gap: 6, marginTop: 8 }}>
+                {LISTA_MODULOS.map((m) => (
+                  <label key={m} className="opcao">
+                    <input
+                      type="checkbox"
+                      checked={modulos.includes(m)}
+                      onChange={(e) => {
+                        let novos = e.target.checked ? [...modulos, m] : modulos.filter((x) => x !== m);
+                        if (m === 'agente_ia' && e.target.checked && !novos.includes('whatsapp'))
+                          novos = [...novos, 'whatsapp'];
+                        if (m === 'whatsapp' && !e.target.checked)
+                          novos = novos.filter((x) => x !== 'agente_ia');
+                        setModulos(novos);
+                      }}
+                    />
+                    {MODULOS[m].nome} · {fmtReais(MODULOS[m].preco)}/mês
+                  </label>
+                ))}
+              </div>
+              <span className="campo__dica">Números, módulos e mensalidade podem ser ajustados depois.</span>
+            </fieldset>
             <fieldset className="opcoes">
               <legend>Primeiro administrador</legend>
               <div className="form__duas">
@@ -1133,6 +1261,7 @@ export function Master() {
   const sessao = useSessao();
   const [params, setParams] = useSearchParams();
   const [nova, setNova] = useState(false);
+  const [busca, setBusca] = useState('');
   const q = useQuery({
     queryKey: ['master', 'contas'],
     queryFn: () => api<ContaResumo[]>('/master/contas'),
@@ -1147,75 +1276,138 @@ export function Master() {
 
   if (sessao.data && !sessao.data.master) return <Navigate to="/" replace />;
 
+  const contas = q.data ?? [];
+  const clientes = contas.filter((c) => !c.principal);
+  const ativos = clientes.filter((c) => c.ativa && c.plano.plano);
+  const mrr = ativos.reduce((s, c) => s + (c.plano.mensalidade ?? 0), 0);
+  const noLimite = ativos.filter(
+    (c) => c.plano.leadsMes != null && c.plano.uso.leadsMes >= c.plano.leadsMes * 0.9,
+  ).length;
+  const termo = busca.trim().toLowerCase();
+  const visiveis = contas.filter((c) => !termo || c.nome.toLowerCase().includes(termo));
+
   return (
     <>
       <div className="topo">
         <div>
-          <h1>Painel master</h1>
-          <p>Empresas que usam o sistema, as chaves de API de cada uma e o acesso para dar suporte.</p>
+          <h1>Clientes e planos</h1>
+          <p>
+            As empresas que contrataram o Prospect Team: plano, módulos, usuários, uso do mês, chaves de API e
+            o acesso para dar suporte.
+          </p>
         </div>
         <Button variant="primary" icon="plus" onClick={() => setNova(true)}>
-          Nova conta
+          Novo cliente
         </Button>
+      </div>
+      <div className="kpis">
+        <Stat rotulo="Clientes ativos" valor={fmtNumero(ativos.length)} />
+        <Stat rotulo="Mensalidades (por mês)" valor={fmtReais(mrr)} />
+        <Stat
+          rotulo="Usuários em uso"
+          valor={fmtNumero(ativos.reduce((s, c) => s + c.plano.uso.usuarios, 0))}
+        />
+        <Stat rotulo="Perto ou no limite de leads" valor={fmtNumero(noLimite)} />
       </div>
       <ErroDaApi erro={q.error} />
       {q.isPending ? (
         <div className="esqueleto" />
-      ) : !q.data?.length ? (
+      ) : !contas.length ? (
         <div className="pp-panel">
-          <EmptyState icone="building-2" titulo="Nenhuma conta" texto="Crie a primeira conta para começar." />
+          <EmptyState
+            icone="building-2"
+            titulo="Nenhum cliente"
+            texto="Cadastre o primeiro cliente para começar."
+          />
         </div>
       ) : (
-        <div className="pp-tablewrap">
-          <table className="pp-table tabela-contas">
-            <thead>
-              <tr>
-                <th>Conta</th>
-                <th>Usuários</th>
-                <th title="Campanhas de prospecção ativas">Campanhas</th>
-                <th title="Leads abertos no funil">No funil</th>
-                <th>E-mails 30d</th>
-                <th>WhatsApp 30d</th>
-                <th title="Chamadas à IA pela sua chave neste mês (e o teto)">IA da plataforma</th>
-                <th>Último acesso</th>
-              </tr>
-            </thead>
-            <tbody>
-              {q.data.map((c) => (
-                <tr key={c.id} data-inativo={!c.ativa || undefined}>
-                  <td>
-                    <button
-                      type="button"
-                      className="link-botao tabela-contas__nome"
-                      onClick={() => abrir(c.id)}
-                    >
-                      {c.nome}
-                    </button>{' '}
-                    {c.principal && <Badge tone="brand">Principal</Badge>}
-                    {!c.ativa && <Badge tone="danger">Desativada</Badge>}
-                    {sessao.data?.conta.id === c.id && <Badge tone="outline">Você está aqui</Badge>}
-                  </td>
-                  <td className="mono">{fmtNumero(c.usuarios)}</td>
-                  <td className="mono">{fmtNumero(c.campanhasAtivas)}</td>
-                  <td className="mono">{fmtNumero(c.leadsNoFunil)}</td>
-                  <td className="mono">{fmtNumero(c.emails30d)}</td>
-                  <td className="mono">{fmtNumero(c.whatsapp30d)}</td>
-                  <td className="mono">
-                    {fmtNumero(c.iaPlataformaMes)}
-                    {c.limiteIaMes != null && <span className="quieto"> / {fmtNumero(c.limiteIaMes)}</span>}
-                    {!c.principal && !c.usaIaPlataforma && <span className="quieto"> · bloqueada</span>}
-                  </td>
-                  <td className="quieto">{c.ultimoAcesso ? fmtQuando(c.ultimoAcesso) : 'nunca'}</td>
+        <>
+          {contas.length > 6 && (
+            <input
+              className="filtro"
+              style={{ maxWidth: 320, marginBottom: 12 }}
+              aria-label="Buscar cliente"
+              placeholder="Buscar cliente…"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
+          )}
+          <div className="pp-tablewrap">
+            <table className="pp-table tabela-contas">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Plano</th>
+                  <th>Módulos</th>
+                  <th>Usuários</th>
+                  <th>Leads no mês</th>
+                  <th>Mensalidade</th>
+                  <th title="Leads abertos no funil">No funil</th>
+                  <th>Último acesso</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {visiveis.map((c) => {
+                  const p = c.plano;
+                  const pctLeads = p.leadsMes ? p.uso.leadsMes / Math.max(1, p.leadsMes) : 0;
+                  return (
+                    <tr key={c.id} data-inativo={!c.ativa || undefined}>
+                      <td>
+                        <button
+                          type="button"
+                          className="link-botao tabela-contas__nome"
+                          onClick={() => abrir(c.id)}
+                        >
+                          {c.nome}
+                        </button>{' '}
+                        {c.principal && <Badge tone="brand">Sua conta</Badge>}
+                        {!c.ativa && <Badge tone="danger">Desativada</Badge>}
+                        {sessao.data?.conta.id === c.id && <Badge tone="outline">Você está aqui</Badge>}
+                      </td>
+                      <td>{p.plano ? ROTULO_PLANO[p.plano] : <span className="quieto">Sem plano</span>}</td>
+                      <td>
+                        {p.plano ? (
+                          p.modulos.length ? (
+                            <span className="modulos-mini">
+                              {p.modulos.map((m) => (
+                                <Badge key={m} tone="outline">
+                                  {m === 'agente_ia' ? 'IA' : m === 'whatsapp' ? 'WhatsApp' : 'E-mail'}
+                                </Badge>
+                              ))}
+                            </span>
+                          ) : (
+                            <span className="quieto">nenhum</span>
+                          )
+                        ) : (
+                          <span className="quieto">todos</span>
+                        )}
+                      </td>
+                      <td className="mono">
+                        {fmtNumero(p.uso.usuarios)}
+                        {p.usuarios != null && <span className="quieto"> / {fmtNumero(p.usuarios)}</span>}
+                      </td>
+                      <td
+                        className="mono"
+                        data-alerta={pctLeads >= 1 ? 'cheio' : pctLeads >= 0.9 ? 'quase' : undefined}
+                      >
+                        {fmtNumero(p.uso.leadsMes)}
+                        {p.leadsMes != null && <span className="quieto"> / {fmtNumero(p.leadsMes)}</span>}
+                      </td>
+                      <td className="mono">{p.mensalidade != null ? fmtReais(p.mensalidade) : '—'}</td>
+                      <td className="mono">{fmtNumero(c.leadsNoFunil)}</td>
+                      <td className="quieto">{c.ultimoAcesso ? fmtQuando(c.ultimoAcesso) : 'nunca'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
       <p className="nota-rodape">
-        A base de empresas (CNPJ, Maps, enriquecimento) é uma só e economiza buscas; funil, campanhas,
-        conversas, e-mails e equipe são separados por conta. “Entrar na conta” abre o sistema como
-        administrador dela.
+        Cada cliente só vê os próprios dados (funil, campanhas, conversas, e-mails, equipe) e só usa o que o
+        plano dele libera. “Entrar na conta” abre o sistema como administrador dele, para configurar ou dar
+        suporte; a base de empresas (CNPJ, Maps, enriquecimento) é uma só e economiza buscas.
       </p>
       {nova && (
         <NovaConta

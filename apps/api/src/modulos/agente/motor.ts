@@ -196,8 +196,16 @@ export async function enviarProxima(
 }
 
 /** Uma rodada do agente numa conta (já dentro do contexto dela). */
-export async function rodarAgenteDaConta(deps: DepsMotor): Promise<void> {
+export async function rodarAgenteDaConta(
+  deps: DepsMotor,
+  opcoes: { semAgente?: boolean } = {},
+): Promise<void> {
   const cfg = await repo.obterConfig(deps.pool);
+  // Módulo Agente de IA fora do plano: funciona como agente desligado (só as sequências saem).
+  if (opcoes.semAgente) {
+    await enviarProxima(deps, cfg, new Date(), { soSequencia: true });
+    return;
+  }
   // O que o time respondeu no lugar da IA vira sugestão para a base (com ou sem o agente ligado).
   await aprenderComEquipe(deps).catch((erro) => deps.log.warn({ err: erro }, 'agente: aprendizado falhou'));
   // Agente desligado: a IA não aborda nem responde, mas o WhatsApp das sequências continua saindo.
@@ -220,8 +228,11 @@ export async function rodarAgente(deps: DepsRodada): Promise<void> {
     if (!rows[0]?.ok) return;
     try {
       await paraCadaConta(deps.pool, deps.log, 'agente', async (conta) => {
-        const { whatsapp, ia } = await deps.servicos(conta);
-        await rodarAgenteDaConta({ pool: deps.pool, log: deps.log, whatsapp, ia });
+        const { whatsapp, ia, modulos } = await deps.servicos(conta);
+        await rodarAgenteDaConta(
+          { pool: deps.pool, log: deps.log, whatsapp, ia },
+          { semAgente: !!modulos && !modulos.includes('agente_ia') },
+        );
       });
     } finally {
       await cliente.query('SELECT pg_advisory_unlock($1)', [LOCK]);

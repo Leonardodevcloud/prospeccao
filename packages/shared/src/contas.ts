@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { planoContaEntrada } from './planos.js';
 
 /* ───────────────────────────── Contas (painel master) ───────────────────────────── */
 
@@ -10,6 +11,8 @@ export const contaNova = z.object({
     nome: z.string().trim().min(2, 'Informe o nome do administrador.').max(80),
     email: z.string().trim().toLowerCase().email('E-mail do administrador inválido.'),
   }),
+  /** Plano já na criação (pode mudar depois). */
+  plano: planoContaEntrada.optional(),
 });
 export type ContaNova = z.infer<typeof contaNova>;
 

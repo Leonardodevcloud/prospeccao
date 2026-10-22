@@ -42,6 +42,8 @@ export interface CredenciaisConta {
   atualizadoEm: string | null;
   /** Segredos cadastrados que não abriram (CHAVE_CREDENCIAIS diferente da usada para gravar). */
   erro: string | null;
+  /** Módulos contratados (null: conta sem plano, vale tudo). */
+  modulos?: string[] | null;
 }
 
 /** O que o serviço tem no ambiente (variáveis do Railway), usado pela conta principal. */
@@ -77,6 +79,8 @@ export interface CredenciaisEfetivas {
   ia: { provedor: string | null; apiKey: string; modelo: string | null; baseUrl: string | null } | null;
   origem: Record<'places' | 'ors' | 'resend' | 'evolution' | 'ia', Origem>;
   erro: string | null;
+  /** Módulos contratados (null: conta sem plano, vale tudo). */
+  modulos?: string[] | null;
 }
 
 /* ───────────── Cifra ───────────── */
@@ -119,6 +123,7 @@ interface LinhaCredenciais {
   segredos: string | null;
   dicas: Partial<Record<CampoSegredo, string>> | null;
   atualizado_em: string | null;
+  modulos: string[] | null;
 }
 
 export async function lerCredenciais(
@@ -128,7 +133,8 @@ export async function lerCredenciais(
 ): Promise<CredenciaisConta | null> {
   const { rows } = await db.query<LinhaCredenciais>(
     `SELECT c.principal, c.usa_ia_plataforma, k.email_remetente, k.resend_dominio_respostas, k.evolution_url, k.evolution_instancia,
-            k.ia_provedor, k.ia_modelo, k.ia_base_url, k.segredos, k.dicas, k.atualizado_em
+            k.ia_provedor, k.ia_modelo, k.ia_base_url, k.segredos, k.dicas, k.atualizado_em,
+            CASE WHEN c.plano IS NULL THEN NULL ELSE c.modulos END AS modulos
        FROM cadastro.contas c LEFT JOIN cadastro.credenciais_conta k ON k.conta_id = c.id
       WHERE c.id = $1`,
     [contaId],
@@ -163,6 +169,7 @@ export async function lerCredenciais(
     dicas: r.dicas ?? {},
     atualizadoEm: r.atualizado_em,
     erro,
+    modulos: r.modulos,
   };
 }
 
@@ -259,6 +266,7 @@ export function resolverCredenciais(
     ia: null,
     origem: { places: null, ors: null, resend: null, evolution: null, ia: null },
     erro: c?.erro ?? null,
+    modulos: c?.modulos ?? null,
   };
 
   const simples = (campo: 'placesKey' | 'orsKey', amb: string | null | undefined, nome: 'places' | 'ors') => {

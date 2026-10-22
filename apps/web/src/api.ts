@@ -863,7 +863,13 @@ export interface Sessao {
   telefone: string | null;
   agendaToken: string;
   /** Conta (empresa) em que a pessoa está agora. */
-  conta: { id: number; nome: string };
+  conta: {
+    id: number;
+    nome: string;
+    plano: string | null;
+    /** Módulos que valem na conta (sem plano: todos). */
+    modulos: ('whatsapp' | 'agente_ia' | 'email')[];
+  };
   /** Administra a plataforma (painel master). */
   master: boolean;
   /** Master dentro de outra conta (suporte/configuração). */
@@ -1337,6 +1343,23 @@ export interface ContaResumo {
   leadsNoFunil: number;
   emails30d: number;
   whatsapp30d: number;
+  plano: PlanoConta;
+}
+
+/** Plano da conta: o que vale (números e módulos), o preço e o uso do mês. */
+export interface PlanoConta {
+  plano: 'start' | 'time' | 'escala' | 'personalizado' | null;
+  usuarios: number | null;
+  leadsMes: number | null;
+  modulos: ('whatsapp' | 'agente_ia' | 'email')[];
+  itens: { rotulo: string; valor: number }[];
+  mensalidadeCalculada: number | null;
+  mensalidade: number | null;
+  limiteUsuariosProprio: number | null;
+  limiteLeadsProprio: number | null;
+  mensalidadeManual: number | null;
+  planoDesde: string | null;
+  uso: { usuarios: number; leadsMes: number; leadsEsperando: number };
 }
 
 export type CampoSegredo =

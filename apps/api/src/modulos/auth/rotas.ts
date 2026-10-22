@@ -105,6 +105,9 @@ export function rotasAuth(deps: DepsApi): Router {
     const u = rows[0];
     const senhaDoBancoOk = await bcrypt.compare(senha, u?.senha_hash ?? HASH_FALSO);
     let id: number | null = u?.ativo && u.senha_hash && senhaDoBancoOk ? u.id : null;
+    // O e-mail do ADMIN_EMAIL é sempre o master da plataforma, mesmo entrando com a senha do banco.
+    if (id && !u?.master && email === auth.adminEmail.toLowerCase())
+      id = await garantirAdminDoAmbiente(auth.adminEmail);
     if (!id && email === auth.adminEmail.toLowerCase() && (await bcrypt.compare(senha, auth.adminSenhaHash)))
       id = await garantirAdminDoAmbiente(auth.adminEmail);
     if (!id) {
@@ -299,6 +302,10 @@ export function rotasAuth(deps: DepsApi): Router {
       `SELECT telefone, agenda_token AS "agendaToken" FROM cadastro.usuarios WHERE id = $1`,
       [u.id],
     );
+    const { rows: c } = await pool.query<{ plano: string | null; modulos: string[] }>(
+      'SELECT plano, modulos FROM cadastro.contas WHERE id = $1',
+      [u.contaId],
+    );
     res.json({
       id: u.id,
       nome: u.nome,
@@ -306,7 +313,13 @@ export function rotasAuth(deps: DepsApi): Router {
       papel: u.papel,
       telefone: rows[0]?.telefone ?? null,
       agendaToken: rows[0]?.agendaToken ?? null,
-      conta: { id: u.contaId, nome: u.contaNome },
+      conta: {
+        id: u.contaId,
+        nome: u.contaNome,
+        plano: c[0]?.plano ?? null,
+        // Módulos que valem na conta (sem plano: todos).
+        modulos: c[0]?.plano ? c[0].modulos : ['whatsapp', 'agente_ia', 'email'],
+      },
       master: u.master,
       // O master dentro de outra conta (a tela mostra a faixa "você está na conta X").
       foraDaPropria: u.contaId !== u.contaPropria,

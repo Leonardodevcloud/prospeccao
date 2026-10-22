@@ -9,4 +9,5 @@ export * from './indicacoes.js';
 export * from './logger.js';
 export * from './normalizar.js';
 export * from './planilha.js';
+export * from './planos.js';
 export * from './postgres.js';

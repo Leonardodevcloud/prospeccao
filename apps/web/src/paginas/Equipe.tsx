@@ -5,6 +5,7 @@ import {
   api,
   type DesempenhoUsuario,
   type PapelUsuario,
+  type PlanoConta,
   ROTULO_PAPEL_USUARIO,
   type Equipe as TEquipe,
   type UsuarioEquipe,
@@ -12,6 +13,7 @@ import {
 import { linkWhatsapp } from '../componentes/Cadencia';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { ResumoPlano } from '../componentes/PlanoConta';
 import { Dono, useEhAdmin, useEquipe, useSessao } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando, fmtReais, formatarTelefone } from '../formatar';
 
@@ -602,6 +604,18 @@ function Distribuicao(props: { equipe: TEquipe }) {
   );
 }
 
+/** O plano da conta (o que está contratado e o uso do mês), para o administrador. */
+function MeuPlano() {
+  const q = useQuery({ queryKey: ['equipe', 'plano'], queryFn: () => api<PlanoConta>('/equipe/plano') });
+  if (!q.data?.plano) return null;
+  return (
+    <section className="pilha pp-panel meu-plano" id="plano" style={{ gap: 12 }}>
+      <h2 className="subtitulo">Seu plano</h2>
+      <ResumoPlano p={q.data} contato />
+    </section>
+  );
+}
+
 export function Equipe() {
   const q = useEquipe();
   const admin = useEhAdmin();
@@ -630,6 +644,7 @@ export function Equipe() {
       </div>
 
       <div className="pilha" style={{ gap: 32 }}>
+        {admin && <MeuPlano />}
         <Desempenho />
 
         <section className="pilha" style={{ gap: 12 }}>

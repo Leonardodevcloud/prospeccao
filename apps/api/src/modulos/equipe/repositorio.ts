@@ -9,6 +9,7 @@ import {
 } from '@prospeccao/shared';
 import { contaSql, usuarioAtual } from '../../contexto.js';
 import { notificar } from '../notificacoes/repositorio.js';
+import { exigirVagaDeUsuario } from '../plano/repositorio.js';
 
 /** Equipe: usuários, como os leads são divididos e o desempenho de cada um. */
 
@@ -53,6 +54,7 @@ function novoToken() {
 }
 
 export async function criar(db: Executor, d: UsuarioNovo): Promise<{ id: number; token: string }> {
+  await exigirVagaDeUsuario(db);
   const token = novoToken();
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO cadastro.usuarios (nome, email, papel, telefone, convite_token, convite_expira, conta_id)
@@ -96,6 +98,8 @@ export async function atualizar(db: Executor, id: number, d: UsuarioAtualizar): 
   );
   const u = rows[0];
   if (!u) throw AppError.naoEncontrado('Usuário');
+  // Reativar ocupa uma vaga do plano.
+  if (d.ativo === true && !u.ativo) await exigirVagaDeUsuario(db);
   const tiraAdmin = u.papel === 'admin' && ((d.papel && d.papel !== 'admin') || d.ativo === false);
   if (tiraAdmin && (await admins(db, id)) === 0)
     throw AppError.invalido('Precisa ficar pelo menos um administrador ativo.');

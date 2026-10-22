@@ -91,6 +91,12 @@ export async function enriquecerEmpresa(
     log.info('enriquecida há pouco; pulando');
     return 'pulado';
   }
+  // Limite de leads do plano da conta: o lead espera (volta para a fila quando der) e nada é gasto.
+  if (deps.contaId != null && (await repo.semVagaDeLeads(pool, deps.contaId, empresaId))) {
+    await repo.aguardarLimite(pool, empresaId, campanhaId);
+    log.info('conta no limite de leads do plano; o lead espera');
+    return 'pulado';
+  }
 
   await repo.iniciar(pool, empresaId, campanhaId);
   const c = new Coletor();

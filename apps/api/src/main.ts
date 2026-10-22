@@ -9,6 +9,7 @@ import { iniciarAgente } from './modulos/agente/motor.js';
 import { iniciarAlertas } from './modulos/alertas/rotina.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
+import { iniciarPlanos } from './modulos/plano/rotina.js';
 import { iniciarPush } from './modulos/push/servico.js';
 import { criarServicos } from './servicos.js';
 
@@ -63,11 +64,14 @@ const pararLembretes = iniciarLembretes({ pool, log, servicos });
 const pararEmail = iniciarEmail({ pool, log, servicos, origens: env.APP_ORIGENS });
 // Alertas: confere o que costuma quebrar (e-mail, chips, IA, workers) e avisa quem cuida.
 const pararAlertas = iniciarAlertas({ pool, log, servicos });
+// Planos: leads que esperaram o limite voltam para a fila quando há vaga; avisa perto do limite.
+const pararPlanos = iniciarPlanos({ pool, log, filas });
 const pararSinal = manterSinalDeVida(pool, 'api');
 
 encerrarAoReceberSinal(log, async () => {
   pararAutomacao();
   pararAgente();
+  pararPlanos();
   pararLembretes();
   pararEmail();
   pararAlertas();

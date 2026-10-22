@@ -1,4 +1,5 @@
-import { comTransacao, type Executor, type Pool } from '@prospeccao/db';
+import { comTransacao, type Executor, INICIO_MES_SP_TS, type Pool } from '@prospeccao/db';
+import { type Plano, planoEfetivo } from '@prospeccao/shared';
 import type { Coletor } from './coletor.js';
 
 /** Leituras de outros domínios (só views) e escritas no schema enriquecimento. */
@@ -357,4 +358,51 @@ export async function empresasPorTelefone(db: Executor, numeros: string[]): Prom
     saida.set(n, rows[0]?.n ?? 0);
   }
   return saida;
+}
+
+/* ───────────── Limite de leads do plano ───────────── */
+
+/**
+ * A conta chegou no limite de leads enriquecidos do mês? Refazer um lead que já foi enriquecido
+ * neste mês não conta de novo. Conta sem plano não tem limite.
+ */
+export async function semVagaDeLeads(db: Executor, contaId: number, empresaId: number): Promise<boolean> {
+  const { rows } = await db.query<{
+    plano: Plano | null;
+    limite_usuarios: number | null;
+    limite_leads_mes: number | null;
+    modulos: string[];
+    usados: number;
+    ja_conta: boolean;
+  }>(
+    `SELECT c.plano, c.limite_usuarios, c.limite_leads_mes, c.modulos,
+            (SELECT count(*) FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
+              WHERE ca.conta_id = c.id AND l.status = 'concluido' AND l.concluido_em >= ${INICIO_MES_SP_TS})::int AS usados,
+            EXISTS (SELECT 1 FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
+                     WHERE l.empresa_id = $2 AND ca.conta_id = c.id AND l.status = 'concluido'
+                       AND l.concluido_em >= ${INICIO_MES_SP_TS}) AS ja_conta
+       FROM cadastro.contas c WHERE c.id = $1`,
+    [contaId, empresaId],
+  );
+  const r = rows[0];
+  if (!r?.plano || r.ja_conta) return false;
+  const { leadsMes } = planoEfetivo({
+    plano: r.plano,
+    limiteUsuarios: r.limite_usuarios,
+    limiteLeadsMes: r.limite_leads_mes,
+    modulos: r.modulos,
+    mensalidadeManual: null,
+  });
+  return leadsMes != null && r.usados >= leadsMes;
+}
+
+/** O lead espera o limite do plano (volta para a fila quando o mês virar ou o plano aumentar). */
+export async function aguardarLimite(db: Executor, empresaId: number, campanhaId: number): Promise<void> {
+  await db.query(
+    `INSERT INTO enriquecimento.leads (empresa_id, campanha_id, status)
+     VALUES ($1, $2, 'limite')
+     ON CONFLICT (empresa_id) DO UPDATE SET campanha_id = EXCLUDED.campanha_id, status = 'limite'
+      WHERE enriquecimento.leads.status <> 'concluido'`,
+    [empresaId, campanhaId],
+  );
 }

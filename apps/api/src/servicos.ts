@@ -30,6 +30,7 @@ import {
 import { type ConfigIa, configIa } from '@prospeccao/integrations/ia';
 import * as ors from '@prospeccao/integrations/ors';
 import { baixarMidia, enviarMidia, enviarTexto, estadoConexao } from '@prospeccao/integrations/whatsapp';
+import { LISTA_MODULOS, type Modulo } from '@prospeccao/shared';
 
 /**
  * Serviços de fora de cada conta (WhatsApp, IA, e-mail, geocodificação), montados com as
@@ -85,6 +86,8 @@ export interface EmailConta {
 
 export interface ServicosConta {
   contaId: number;
+  /** Módulos contratados que valem agora (conta sem plano: todos). */
+  modulos?: Modulo[];
   whatsapp: WhatsappConta | null;
   /** IA do agente do WhatsApp. Sem ela, a resposta do lead vai direto para a equipe. */
   ia: {
@@ -124,27 +127,35 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor): ServicosConta
   const chip = (instancia?: string) => ({ ...evolution!, instancia: instancia || evolution!.instancia });
   const medidor = db && c.origem.ia ? medidorDeIa(db, c.contaId, c.origem.ia) : null;
   const iaCfg: ConfigIa | null = c.ia ? configIa(c.ia, medidor) : null;
-  const resend = c.resend;
+  // Módulo não contratado: o serviço fica desligado para a conta (a tela diz que não está no plano).
+  const modulos = c.modulos ? LISTA_MODULOS.filter((m) => c.modulos!.includes(m)) : [...LISTA_MODULOS];
+  const temWhatsapp = modulos.includes('whatsapp');
+  const temAgente = modulos.includes('agente_ia') && temWhatsapp;
+  const temEmail = modulos.includes('email');
+  const resend = temEmail ? c.resend : null;
   return {
     contaId: c.contaId,
-    whatsapp: evolution
-      ? {
-          instancia: evolution.instancia,
-          enviar: (tel, texto, inst, op) => enviarTexto(chip(inst), tel, texto, op),
-          enviarMidia: (tel, m, inst) => enviarMidia(chip(inst), tel, m),
-          baixarMidia: (id, inst) => baixarMidia(chip(inst), id),
-          estado: (inst) => estadoConexao(chip(inst)),
-        }
-      : null,
-    ia: iaCfg
-      ? {
-          decidir: (ctx) => decidirComIa(iaCfg, ctx),
-          resumir: (e) => resumirPassagem(iaCfg, e),
-          aprender: (e) => extrairAprendizado(iaCfg, e),
-        }
-      : null,
-    classificarEmail: iaCfg ? (ctx) => classificarRespostaEmail(iaCfg, ctx) : null,
-    personalizarAbertura: iaCfg ? (e) => personalizarAbertura(iaCfg, e) : null,
+    modulos,
+    whatsapp:
+      evolution && temWhatsapp
+        ? {
+            instancia: evolution.instancia,
+            enviar: (tel, texto, inst, op) => enviarTexto(chip(inst), tel, texto, op),
+            enviarMidia: (tel, m, inst) => enviarMidia(chip(inst), tel, m),
+            baixarMidia: (id, inst) => baixarMidia(chip(inst), id),
+            estado: (inst) => estadoConexao(chip(inst)),
+          }
+        : null,
+    ia:
+      iaCfg && temAgente
+        ? {
+            decidir: (ctx) => decidirComIa(iaCfg, ctx),
+            resumir: (e) => resumirPassagem(iaCfg, e),
+            aprender: (e) => extrairAprendizado(iaCfg, e),
+          }
+        : null,
+    classificarEmail: iaCfg && temEmail ? (ctx) => classificarRespostaEmail(iaCfg, ctx) : null,
+    personalizarAbertura: iaCfg && temEmail ? (e) => personalizarAbertura(iaCfg, e) : null,
     email: resend
       ? {
           remetente: resend.remetente,

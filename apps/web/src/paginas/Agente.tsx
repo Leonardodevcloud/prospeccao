@@ -7,6 +7,7 @@ import { Aprendizados, BaseConhecimento, useConhecimento } from '../componentes/
 import { Chips } from '../componentes/Chips';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
+import { useSessao } from '../componentes/Sessao';
 import { DesempenhoAgente, SimuladorIa } from '../componentes/SimuladorIa';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, formatarTelefone } from '../formatar';
 
@@ -221,7 +222,10 @@ export function Agente() {
   const navegar = useNavigate();
   const cliente = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const aba = (params.get('aba') as AbaAgente | null) ?? 'atendimento';
+  const sessao = useSessao();
+  // Módulo Agente de IA fora do plano: só ficam os chips e o WhatsApp das sequências.
+  const temIa = sessao.data?.conta.modulos?.includes('agente_ia') ?? true;
+  const aba = temIa ? ((params.get('aba') as AbaAgente | null) ?? 'atendimento') : 'atendimento';
   const base = useConhecimento();
   const q = useQuery({
     queryKey: ['agente'],
@@ -279,7 +283,13 @@ export function Agente() {
         </div>
       </div>
 
-      {(!d.status.whatsapp || !d.status.ia) && (
+      {!temIa && (
+        <Mensagem tipo="aviso">
+          O módulo Agente de IA não está no plano desta conta: a IA não aborda nem responde. Os chips e o
+          WhatsApp das sequências continuam funcionando. Para contratar, fale com a gente.
+        </Mensagem>
+      )}
+      {temIa && (!d.status.whatsapp || !d.status.ia) && (
         <Mensagem tipo="aviso">
           {!d.status.whatsapp &&
             'Falta o WhatsApp (endereço, chave e instância da Evolution) desta conta, no painel master. '}
@@ -299,21 +309,25 @@ export function Agente() {
       </div>
 
       <div className="pipelines abas-agente" role="tablist" aria-label="Seções do agente">
-        {abas.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            role="tab"
-            aria-selected={aba === a.id}
-            className="pipelines__aba"
-            onClick={() => setParams({ aba: a.id }, { replace: true })}
-          >
-            {a.rotulo}
-            {!!a.conta && (
-              <span className={`pipelines__conta${a.nova ? ' pipelines__conta--nova' : ''}`}>{a.conta}</span>
-            )}
-          </button>
-        ))}
+        {abas
+          .filter((a) => temIa || a.id === 'atendimento')
+          .map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="tab"
+              aria-selected={aba === a.id}
+              className="pipelines__aba"
+              onClick={() => setParams({ aba: a.id }, { replace: true })}
+            >
+              {a.rotulo}
+              {!!a.conta && (
+                <span className={`pipelines__conta${a.nova ? ' pipelines__conta--nova' : ''}`}>
+                  {a.conta}
+                </span>
+              )}
+            </button>
+          ))}
       </div>
 
       {aba === 'base' && <BaseConhecimento />}

@@ -220,7 +220,7 @@ if (env.ENRIQ_PAUSADO) {
     async (p) => {
       // O enriquecimento é comum a todas as contas, mas gasta a IA, o Places e o chip da conta que pediu.
       const contaId = (await contaDaCampanha(pool, p.campanhaId)) ?? 1;
-      await enriquecerEmpresa({ pool, log, fontes: await fontesDa(contaId), ajustes }, p);
+      await enriquecerEmpresa({ pool, log, fontes: await fontesDa(contaId), ajustes, contaId }, p);
     },
     { concorrencia: env.ENRIQ_CONCORRENCIA },
   );

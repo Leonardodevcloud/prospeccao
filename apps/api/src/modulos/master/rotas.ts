@@ -10,7 +10,9 @@ import {
   contaNova,
   credenciaisEntrada,
   limitesConta,
+  planoContaEntrada,
   SERVICOS_TESTAVEIS,
+  usuarioAtualizar,
   usuarioNovo,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
@@ -23,6 +25,7 @@ import * as auditoria from '../auditoria/repositorio.js';
 import { abrirSessao } from '../auth/sessao.js';
 import * as consumo from '../consumo/repositorio.js';
 import * as equipe from '../equipe/repositorio.js';
+import * as plano from '../plano/repositorio.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -37,12 +40,45 @@ export function rotasMaster(deps: DepsApi): Router {
 
   r.get('/contas', async (_req, res) => {
     const [contas, ia] = await Promise.all([repo.listar(pool), consumo.iaPlataformaPorConta(pool)]);
-    res.json(contas.map((c) => ({ ...c, iaPlataformaMes: ia.get(c.id as number) ?? 0 })));
+    const planos = await Promise.all(contas.map((c) => plano.planoDaConta(pool, c.id as number)));
+    res.json(
+      contas.map((c, i) => ({ ...c, iaPlataformaMes: ia.get(c.id as number) ?? 0, plano: planos[i] })),
+    );
+  });
+
+  /** Plano da conta: o que foi contratado, os números trocados só para ela e o uso do mês. */
+  r.get('/contas/:id/plano', async (req, res) => {
+    res.json(await plano.planoDaConta(pool, idDaRota(req)));
+  });
+  r.put('/contas/:id/plano', async (req, res) => {
+    const id = idDaRota(req);
+    const d = corpo(req, planoContaEntrada);
+    await plano.salvarPlano(pool, id, d);
+    // Módulos mudam o que a conta pode usar: esquece as credenciais lembradas.
+    credenciais.invalidar(id);
+    log.info({ conta: id, plano: d.plano, modulos: d.modulos }, 'master: plano da conta salvo');
+    res.json(await plano.planoDaConta(pool, id));
+  });
+
+  /** Usuário de qualquer conta: nome, papel, ativo (reativar respeita a vaga do plano). */
+  r.patch('/usuarios/:id', async (req, res) => {
+    const id = idDaRota(req);
+    const { rows } = await pool.query<{ conta_id: number; master: boolean }>(
+      'SELECT conta_id, master FROM cadastro.usuarios WHERE id = $1',
+      [id],
+    );
+    if (!rows[0]) throw AppError.naoEncontrado('Usuário');
+    if (rows[0].master && id === req.usuario!.id)
+      throw AppError.invalido('Você não pode mudar o seu próprio acesso de master por aqui.');
+    const d = corpo(req, usuarioAtualizar);
+    await comConta(rows[0].conta_id, () => equipe.atualizar(pool, id, d));
+    res.json(await repo.usuarios(pool, rows[0].conta_id));
   });
 
   r.post('/contas', async (req, res) => {
     const d = corpo(req, contaNova);
     const { id, token } = await repo.criar(pool, d);
+    if (d.plano) await plano.salvarPlano(pool, id, d.plano);
     log.info({ conta: id, nome: d.nome }, 'master: conta criada');
     res.status(201).json({ id, convite: link(req, token), diasValidade: equipe.DIAS_CONVITE });
   });

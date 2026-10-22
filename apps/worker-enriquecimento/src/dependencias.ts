@@ -81,4 +81,6 @@ export interface Deps {
   log: Logger;
   fontes: Fontes;
   ajustes: Ajustes;
+  /** Conta que pediu (para o limite de leads do plano); sem ela, não há limite. */
+  contaId?: number;
 }

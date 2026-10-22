@@ -1,6 +1,6 @@
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { type Alerta, api, ErroApi, ROTULO_PAPEL_USUARIO } from '../api';
 import { useAgentePendente } from '../paginas/Agente';
@@ -21,21 +21,23 @@ const ITENS: {
   fim?: boolean;
   admin?: boolean;
   master?: boolean;
+  /** Só aparece se a conta tem algum destes módulos no plano. */
+  modulos?: ('whatsapp' | 'agente_ia' | 'email')[];
 }[] = [
   { para: '/hoje', rotulo: 'Meu dia', icone: 'calendar' },
   { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle' },
-  { para: '/email', rotulo: 'E-mail', icone: 'mail' },
+  { para: '/email', rotulo: 'E-mail', icone: 'mail', modulos: ['email'] },
   { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
   { para: '/', rotulo: 'Leads', icone: 'users', fim: true },
-  { para: '/agente', rotulo: 'Agente', icone: 'bot' },
+  { para: '/agente', rotulo: 'Agente', icone: 'bot', modulos: ['whatsapp', 'agente_ia'] },
   { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up' },
   { para: '/equipe', rotulo: 'Equipe', icone: 'id-card' },
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
   { para: '/atividade', rotulo: 'Atividade', icone: 'clock', admin: true },
   { para: '/nichos', rotulo: 'Nichos', icone: 'store', admin: true },
   { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', admin: true },
+  { para: '/master', rotulo: 'Clientes e planos', icone: 'building-2', master: true },
   { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', master: true },
-  { para: '/master', rotulo: 'Painel master', icone: 'building-2', master: true },
 ];
 
 /** O que está quebrado (e-mail não sai, chip caiu…): a faixa no topo, para o administrador. */
@@ -130,40 +132,46 @@ export function Shell() {
           </span>
         </div>
         {ITENS.filter((i) =>
-          i.master ? !!sessao.data?.master : !i.admin || sessao.data?.papel === 'admin',
+          i.master
+            ? !!sessao.data?.master
+            : (!i.admin || sessao.data?.papel === 'admin') &&
+              (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
         ).map((i) => (
-          <NavLink key={i.para} to={i.para} end={i.fim} className="nav__link">
-            <Icon name={i.icone} size={16} />
-            {i.rotulo}
-            {i.para === '/hoje' && doDia > 0 && (
-              <span className="nav__conta" title="Tarefas e follow-ups atrasados ou para hoje">
-                {doDia}
-              </span>
-            )}
-            {i.para === '/conversas' && naoLidas > 0 && (
-              <span className="nav__conta nav__conta--marca" title="Conversas com mensagem não lida">
-                {naoLidas}
-              </span>
-            )}
-            {i.para === '/email' && respostasEmail > 0 && (
-              <span className="nav__conta nav__conta--marca" title="Respostas de e-mail não lidas">
-                {respostasEmail}
-              </span>
-            )}
-            {i.para === '/funil' && pendentes > 0 && (
-              <span className="nav__conta" title="Follow-ups vencidos ou para hoje">
-                {pendentes}
-              </span>
-            )}
-            {i.para === '/agente' && doAgente > 0 && (
-              <span className="nav__conta" title="Mensagens para revisar e leads que a IA passou para você">
-                {doAgente}
-              </span>
-            )}
-            {i.para === '/atividade' && ativo && (
-              <span className="vivo nav__vivo" role="img" aria-label="trabalhando agora" />
-            )}
-          </NavLink>
+          <Fragment key={i.para}>
+            {i.para === '/master' && <span className="nav__secao">Plataforma</span>}
+            <NavLink to={i.para} end={i.fim} className="nav__link">
+              <Icon name={i.icone} size={16} />
+              {i.rotulo}
+              {i.para === '/hoje' && doDia > 0 && (
+                <span className="nav__conta" title="Tarefas e follow-ups atrasados ou para hoje">
+                  {doDia}
+                </span>
+              )}
+              {i.para === '/conversas' && naoLidas > 0 && (
+                <span className="nav__conta nav__conta--marca" title="Conversas com mensagem não lida">
+                  {naoLidas}
+                </span>
+              )}
+              {i.para === '/email' && respostasEmail > 0 && (
+                <span className="nav__conta nav__conta--marca" title="Respostas de e-mail não lidas">
+                  {respostasEmail}
+                </span>
+              )}
+              {i.para === '/funil' && pendentes > 0 && (
+                <span className="nav__conta" title="Follow-ups vencidos ou para hoje">
+                  {pendentes}
+                </span>
+              )}
+              {i.para === '/agente' && doAgente > 0 && (
+                <span className="nav__conta" title="Mensagens para revisar e leads que a IA passou para você">
+                  {doAgente}
+                </span>
+              )}
+              {i.para === '/atividade' && ativo && (
+                <span className="vivo nav__vivo" role="img" aria-label="trabalhando agora" />
+              )}
+            </NavLink>
+          </Fragment>
         ))}
         <div className="nav__rodape">
           <div className="nav__eu">
