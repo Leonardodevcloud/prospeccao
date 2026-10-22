@@ -4824,6 +4824,16 @@ label.plano-opcao[data-ativo] {
   }
 }
 
+.nota-campanha {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: 13px;
+}
+
 /* Novo nicho: cartões para escolher */
 .cartoes-nicho {
   display: grid;

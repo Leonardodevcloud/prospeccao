@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api, type Campanha, type Nicho } from '../api';
-import { Drawer } from '../componentes/Drawer';
+import { Modal } from '../componentes/Drawer';
 import { CampoLista, ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { EstimativaBusca, PainelPlaces, ResumoPlacesCampanha } from '../componentes/GooglePlaces';
 import { ImportarPlanilha } from '../componentes/ImportarPlanilha';
@@ -25,16 +25,7 @@ function lerCidades(linhas: string[]) {
 function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
   const cliente = useQueryClient();
   const nichos = useQuery({ queryKey: ['nichos'], queryFn: () => api<Nicho[]>('/nichos') });
-  const [f, setF] = useState({
-    nome: '',
-    nichoId: '',
-    cidades: [] as string[],
-    metaDiaria: '40',
-    limiteEnviosDia: '25',
-    maxPorBusca: '120',
-    cadencia: 'padrao',
-    modo: 'semi',
-  });
+  const [f, setF] = useState({ nome: '', nichoId: '', cidades: [] as string[], maxPorBusca: '120' });
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const mudar = (campo: keyof typeof f) => (e: { target: { value: string } }) =>
     setF({ ...f, [campo]: e.target.value });
@@ -59,19 +50,38 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
   };
 
   return (
-    <Drawer titulo="Nova campanha" barra="Nova campanha" aoFechar={aoFechar}>
-      <form className="drawer__corpo form" onSubmit={enviar} noValidate>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 20, lineHeight: '28px', fontWeight: 600 }}>Nova campanha</h2>
-          <p className="quieto" style={{ margin: '2px 0 0', fontSize: 13 }}>
-            Escolha o nicho e as cidades; ao iniciar, o motor busca na base de CNPJ e no Google Maps.
-          </p>
-        </div>
+    <Modal
+      titulo="Nova campanha"
+      subtitulo="Escolha o nicho e as cidades. Ao iniciar, o sistema busca as empresas na Receita e no Google Maps e enriquece cada lead."
+      aoFechar={aoFechar}
+      rodape={
+        <>
+          {(erroLocal || criar.error) && (
+            <div className="modal__erro">
+              {erroLocal ? <Mensagem tipo="erro">{erroLocal}</Mensagem> : <ErroDaApi erro={criar.error} />}
+            </div>
+          )}
+          <Button
+            variant="primary"
+            type="submit"
+            form="form-campanha"
+            icon="check"
+            disabled={criar.isPending}
+          >
+            {criar.isPending ? 'Criando…' : 'Criar campanha'}
+          </Button>
+          <Button variant="ghost" onClick={aoFechar}>
+            Cancelar
+          </Button>
+        </>
+      }
+    >
+      <form id="form-campanha" className="form" onSubmit={enviar} noValidate>
         <TextField
           rotulo="Nome da campanha"
           value={f.nome}
           onChange={mudar('nome')}
-          placeholder="Ex.: Pet shops com entrega · Salvador"
+          placeholder="Ex.: Autopeças · Salvador e região"
         />
         <div className="campo">
           <label htmlFor="nicho">Nicho</label>
@@ -84,7 +94,9 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
             ))}
           </select>
           {nichos.data?.length === 0 && (
-            <span className="campo__erro">Cadastre um nicho antes, na tela Nichos.</span>
+            <span className="campo__erro">
+              Cadastre um nicho antes, na tela <Link to="/nichos">Nichos</Link>.
+            </span>
           )}
         </div>
         <CampoLista
@@ -95,80 +107,23 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
           exemplo={'Salvador/BA\nLauro de Freitas/BA'}
           dica="Uma por linha, no formato Cidade/UF. Pode misturar estados."
         />
-        <div className="form__duas">
-          <TextField
-            rotulo="Lugares por busca no Maps"
-            inputMode="numeric"
-            value={f.maxPorBusca}
-            onChange={mudar('maxPorBusca')}
-            dica="Lugares que cada busca no Google traz: 20 por página, até 3 páginas (60). Cada página conta como uma busca na franquia do Google. Com 60 ou mais, a cidade que enche é dividida por bairro."
-          />
-          <TextField
-            rotulo="Meta de leads por dia"
-            inputMode="numeric"
-            value={f.metaDiaria}
-            onChange={mudar('metaDiaria')}
-          />
-          <TextField
-            rotulo="Abordagens por dia"
-            inputMode="numeric"
-            value={f.limiteEnviosDia}
-            onChange={mudar('limiteEnviosDia')}
-            dica="Teto do chip de prospecção."
-          />
-        </div>
-        <div className="campo">
-          <label htmlFor="cadencia">Cadência</label>
-          <select id="cadencia" value={f.cadencia} onChange={mudar('cadencia')}>
-            <option value="padrao">Padrão · 5 passos em 11 dias úteis</option>
-            <option value="curta">Curta · 3 passos em 5 dias úteis</option>
-          </select>
-        </div>
-        <fieldset className="campo">
-          <legend>Modo de envio</legend>
-          <div className="opcoes" style={{ flexDirection: 'column' }}>
-            <label className="opcao">
-              <input
-                type="radio"
-                name="modo"
-                value="semi"
-                checked={f.modo === 'semi'}
-                onChange={mudar('modo')}
-              />
-              <span>
-                Semi-automático
-                <br />
-                <span className="campo__dica">Você aprova a fila de mensagens toda manhã.</span>
-              </span>
-            </label>
-            <label className="opcao">
-              <input
-                type="radio"
-                name="modo"
-                value="auto"
-                checked={f.modo === 'auto'}
-                onChange={mudar('modo')}
-              />
-              <span>
-                Automático
-                <br />
-                <span className="campo__dica">Leads faixa A recebem a cadência sozinhos.</span>
-              </span>
-            </label>
-          </div>
-        </fieldset>
-        {erroLocal && <Mensagem tipo="erro">{erroLocal}</Mensagem>}
-        <ErroDaApi erro={criar.error} />
-        <div className="acoes">
-          <Button variant="primary" type="submit" icon="check" disabled={criar.isPending}>
-            {criar.isPending ? 'Criando…' : 'Criar campanha'}
-          </Button>
-          <Button variant="ghost" onClick={aoFechar}>
-            Cancelar
-          </Button>
+        <TextField
+          rotulo="Lugares por busca no Google Maps"
+          inputMode="numeric"
+          value={f.maxPorBusca}
+          onChange={mudar('maxPorBusca')}
+          dica="Quantos lugares cada busca traz: 20 por página, até 3 páginas (60). Com 60 ou mais, a cidade que enche é dividida por bairro para achar mais."
+        />
+        <div className="nota-campanha">
+          <b>E a abordagem?</b>
+          <span>
+            A campanha só encontra e qualifica os leads. Quem fala com eles é configurado à parte: o{' '}
+            <Link to="/agente">Agente</Link> (WhatsApp e limite por chip), o <Link to="/email">E-mail</Link>{' '}
+            (sequências) e o <Link to="/funil">Funil</Link> (cadência de follow-up).
+          </span>
         </div>
       </form>
-    </Drawer>
+    </Modal>
   );
 }
 
@@ -233,8 +188,14 @@ function Andamento(props: {
         </div>
         {p.ufsForaDaBase.length > 0 ? (
           <p className="erro-texto">
-            A base ainda não tem {p.ufsForaDaBase.join(', ')}: importe de novo em{' '}
-            <Link to="/base-cnpj">Base CNPJ</Link> (com todos os estados em CNPJ_UFS_EXTRAS).
+            {master ? (
+              <>
+                A base ainda não tem {p.ufsForaDaBase.join(', ')}: importe de novo em{' '}
+                <Link to="/base-cnpj">Base CNPJ</Link> (com todos os estados em CNPJ_UFS_EXTRAS).
+              </>
+            ) : (
+              `Ainda estamos carregando as empresas de ${p.ufsForaDaBase.join(', ')}. Nosso suporte já foi avisado; as buscas no Google Maps seguem normalmente.`
+            )}
           </p>
         ) : (
           <p className="quieto">Empresas ativas do nicho nas cidades da campanha (sem MEI).</p>
@@ -429,8 +390,8 @@ function CardCampanha({ c }: { c: Campanha }) {
         <div style={{ minWidth: 0 }}>
           <h3>{c.nome}</h3>
           <p className="quieto" style={{ margin: '2px 0 0', fontSize: 13, lineHeight: '18px' }}>
-            {c.nichoNome} · {c.cidades.map((x) => `${x.cidade}/${x.uf}`).join(', ')} ·{' '}
-            {c.raioKm == null ? 'todo o Brasil' : `raio ${c.raioKm} km`}
+            {c.nichoNome} · {c.cidades.map((x) => `${x.cidade}/${x.uf}`).join(', ')}
+            {c.raioKm != null && ` · até ${c.raioKm} km das bases`}
           </p>
         </div>
         <Badge tone={TOM_STATUS_CAMPANHA[c.status]}>{ROTULO_STATUS_CAMPANHA[c.status]}</Badge>
@@ -645,7 +606,10 @@ export function Campanhas() {
       <div className="topo">
         <div>
           <h1>Campanhas</h1>
-          <p>Cada campanha é um nicho em algumas cidades, com meta de leads e ritmo de abordagem.</p>
+          <p>
+            Cada campanha busca um nicho nas cidades que você escolher e entrega os leads já enriquecidos e
+            com nota.
+          </p>
         </div>
         <Button variant="primary" icon="plus" onClick={() => setCriando(true)}>
           Nova campanha
