@@ -1,4 +1,5 @@
 export {
+  contarBuscas,
   DIA_SP,
   INICIO_MES_SP,
   INICIO_MES_SP_TS,

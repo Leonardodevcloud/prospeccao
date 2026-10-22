@@ -40,6 +40,17 @@ async function registrar(
   );
 }
 
+/** Mais N buscas no Google (Serper) para a conta, hoje. Falha ao contar nunca derruba a busca. */
+export async function contarBuscas(db: Executor, contaId: number, n = 1, servico = 'serper'): Promise<void> {
+  await db
+    .query(
+      `INSERT INTO cadastro.consumo_buscas (conta_id, dia, servico, buscas) VALUES ($1, ${DIA_SP}, $2, $3)
+       ON CONFLICT (conta_id, dia, servico) DO UPDATE SET buscas = consumo_buscas.buscas + EXCLUDED.buscas`,
+      [contaId, servico, n],
+    )
+    .catch(() => undefined);
+}
+
 /** Chamadas à IA da plataforma neste mês e o teto da conta (null = sem teto). */
 export async function usoIaDoMes(
   db: Executor,

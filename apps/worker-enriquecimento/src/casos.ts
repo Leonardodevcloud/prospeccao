@@ -19,7 +19,6 @@ import { Coletor, notaPorRegras, papelPeloCargo } from './coletor.js';
 import type { Deps } from './dependencias.js';
 import * as repo from './repositorio.js';
 
-const CARGOS_PADRAO = ['comprador', 'compras', 'gerente', 'proprietário', 'sócio'];
 /** E-mail de escritório de contabilidade cadastrado na Receita: não é da empresa. */
 const EMAIL_CONTADOR = /contab|contador|escritorio|assessoria|consultoria/i;
 
@@ -702,9 +701,10 @@ export async function enriquecerEmpresa(
     // busca. Perfil só entra se o próprio LinkedIn disser que a pessoa trabalha NESTA empresa:
     // nome igual não basta (homônimos são comuns).
     if (ajustes.faixasLinkedin.has(faixa) && fontes.google) {
-      const cargos = campanha.cargos_alvo.length ? campanha.cargos_alvo : CARGOS_PADRAO;
       const nomeBusca = empresa.nome.replace(/["]/g, '');
-      const consultaEmpresa = `site:linkedin.com/in "${nomeBusca}" (${cargos.map((x) => `"${x}"`).join(' OR ')})`;
+      // Economia: duas buscas trazem os funcionários de qualquer cargo e a página da empresa (a
+      // busca por cargo ficou de fora: a de funcionários já traz quem tem cargo no título). O sócio
+      // só ganha busca própria se não aparecer nessas duas.
       // Busca ampla, como uma pessoa digitaria: nome da loja + cidade no LinkedIn. Traz perfis
       // sem o cargo no título e a página da empresa.
       const consultaAmpla = `site:linkedin.com "${nomeBusca}" ${empresa.cidade.toLowerCase()}`;
@@ -722,20 +722,22 @@ export async function enriquecerEmpresa(
             'Nome da empresa genérico demais para confirmar no LinkedIn quem trabalha nela.',
           );
         } else {
-          const r = await buscarComRetentativa(fontes.google, [
-            consultaEmpresa,
-            consultaAmpla,
-            consultaPessoas,
-            ...consultasSocios,
-          ]);
+          const r = await buscarComRetentativa(fontes.google, [consultaAmpla, consultaPessoas]);
           let achadas = 0;
           const aceitos: string[] = [];
           const urlsAceitas = new Set<string>();
-          const resultadosEmpresa = [
-            ...(r.get(consultaEmpresa) ?? []),
-            ...(r.get(consultaAmpla) ?? []),
-            ...(r.get(consultaPessoas) ?? []),
-          ];
+          const resultadosEmpresa = [...(r.get(consultaAmpla) ?? []), ...(r.get(consultaPessoas) ?? [])];
+          // Sócio que não apareceu nas duas buscas: aí sim, uma busca pelo nome dele.
+          const faltam = admins
+            .map((s, i) => ({ s, consulta: consultasSocios[i] ?? '' }))
+            .filter(({ s }) => !perfilDoSocio(s.nome, resultadosEmpresa, palavras));
+          if (faltam.length) {
+            const r2 = await buscarComRetentativa(
+              fontes.google,
+              faltam.map((f) => f.consulta),
+            );
+            for (const [k, v] of r2) r.set(k, v);
+          }
           for (const p of pessoasDaEmpresa(resultadosEmpresa, palavras)) {
             if (urlsAceitas.has(p.url)) continue;
             urlsAceitas.add(p.url);
@@ -760,7 +762,7 @@ export async function enriquecerEmpresa(
             achadas++;
           }
           admins.forEach((s, i) => {
-            const resultados = r.get(consultasSocios[i] ?? '') ?? [];
+            const resultados = [...resultadosEmpresa, ...(r.get(consultasSocios[i] ?? '') ?? [])];
             const perfil = perfilDoSocio(s.nome, resultados, palavras);
             if (!perfil) return;
             if (!urlsAceitas.has(perfil.url)) aceitos.push(`${s.nome} (sócio)`);

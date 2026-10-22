@@ -712,6 +712,16 @@ function Consumo(props: { conta: ContaDetalhe }) {
           teto={null}
           detalhe={`${fmtNumero(d.places.pagos)} pagas · US$ ${d.places.gastoUsd.toFixed(2).replace('.', ',')} · ${fmtNumero(d.places.enriquecimento)} no enriquecimento (a conta paga)`}
         />
+        <Uso
+          rotulo="Buscas no Google (Serper)"
+          usado={d.buscas.serper}
+          teto={null}
+          detalhe={
+            d.buscas.leadsEnriquecidos
+              ? `${fmtNumero(d.buscas.leadsEnriquecidos)} leads enriquecidos · ${(d.buscas.serper / d.buscas.leadsEnriquecidos).toFixed(1).replace('.', ',')} buscas por lead · ~US$ ${(d.buscas.serper / 1000).toFixed(2).replace('.', ',')} (a US$ 1 por mil)`
+              : 'nenhum lead enriquecido no mês'
+          }
+        />
       </div>
       {d.iaPorDia.length > 1 && (
         <figure className="grafico-dias" aria-label="Chamadas à IA por dia">

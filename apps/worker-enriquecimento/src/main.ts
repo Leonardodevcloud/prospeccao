@@ -3,6 +3,7 @@ import {
   cacheDeCredenciais,
   chaveDoAmbiente,
   contaDaCampanha,
+  contarBuscas,
   criarPool,
   manterSinalDeVida,
   medidorDeIa,
@@ -125,8 +126,24 @@ async function fontesDa(contaId: number): Promise<Fontes> {
   const ia = c.ia && c.origem.ia ? configIa(c.ia, medidorDeIa(pool, contaId, c.origem.ia)) : null;
   const places = c.places;
   const evolution = c.evolution;
+  // Serper da plataforma, mas cada busca conta no consumo desta conta.
+  const serperConta = serper
+    ? { ...serper, aoBuscar: (n: number) => void contarBuscas(pool, contaId, n) }
+    : null;
   return {
     ...fontesDaPlataforma,
+    ...(serperConta
+      ? {
+          google: {
+            nome: 'Serper',
+            buscar: (consultas: string[]) => enriq.buscarNoGoogleSerper(serperConta, consultas),
+          },
+          diretorios: {
+            buscar: (e: Parameters<typeof enriq.buscarDiretorios>[1]) =>
+              enriq.buscarDiretorios(serperConta, e),
+          },
+        }
+      : {}),
     ia: ia
       ? { avaliar: (e) => enriq.avaliarComIa(ia, e), lerBusca: (e) => enriq.lerBuscaComIa(ia, e) }
       : null,
@@ -148,7 +165,7 @@ async function fontesDa(contaId: number): Promise<Fontes> {
                   log.warn({ err: erro }, 'Google Places falhou ao achar o lugar; tentando o Serper');
                 }
               }
-              return enriq.acharLugarSerper(serper!, e);
+              return enriq.acharLugarSerper(serperConta!, e);
             },
           }
         : null,

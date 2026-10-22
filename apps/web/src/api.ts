@@ -1330,6 +1330,8 @@ export interface ConsumoConta {
   emails: { enviados: number; naFila: number };
   whatsapp: { automaticas: number; equipe: number; recebidas: number };
   places: { pedidos: number; pagos: number; gastoUsd: number; enriquecimento: number };
+  /** Buscas no Google pelo Serper e leads enriquecidos no mês. */
+  buscas: { serper: number; leadsEnriquecidos: number };
 }
 
 export interface ItemAuditoria {

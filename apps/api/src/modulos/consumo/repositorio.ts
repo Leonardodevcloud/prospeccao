@@ -52,6 +52,8 @@ export interface ConsumoConta {
   emails: { enviados: number; naFila: number };
   whatsapp: { automaticas: number; equipe: number; recebidas: number };
   places: { pedidos: number; pagos: number; gastoUsd: number; enriquecimento: number };
+  /** Buscas no Google pelo Serper (o principal custo do enriquecimento) e leads enriquecidos no mês. */
+  buscas: { serper: number; leadsEnriquecidos: number };
 }
 
 /** Consumo do mês de uma conta (painel master: a conta vem da rota, não da sessão). */
@@ -100,6 +102,8 @@ export async function consumoDaConta(db: Executor, contaId: number): Promise<Con
       pagos: number;
       gasto: number;
       enriq: number;
+      serper: number;
+      leads: number;
     }>(
       `SELECT ${sqlUsado('emails', C)} AS enviados,
               (SELECT count(*) FROM comercial.envios_email en JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
@@ -112,7 +116,10 @@ export async function consumoDaConta(db: Executor, contaId: number): Promise<Con
               coalesce((SELECT pedidos FROM descoberta.v_uso_places_mes WHERE conta_id = ${C} AND mes = ${INICIO_MES_SP}), 0)::int AS pedidos,
               coalesce((SELECT pagos FROM descoberta.v_uso_places_mes WHERE conta_id = ${C} AND mes = ${INICIO_MES_SP}), 0)::int AS pagos,
               coalesce((SELECT gasto_usd FROM descoberta.v_uso_places_mes WHERE conta_id = ${C} AND mes = ${INICIO_MES_SP}), 0)::float8 AS gasto,
-              coalesce((SELECT pedidos FROM enriquecimento.v_uso_places_mes WHERE conta_id = ${C} AND mes = ${INICIO_MES_SP}), 0)::int AS enriq`,
+              coalesce((SELECT pedidos FROM enriquecimento.v_uso_places_mes WHERE conta_id = ${C} AND mes = ${INICIO_MES_SP}), 0)::int AS enriq,
+              coalesce((SELECT sum(buscas) FROM cadastro.consumo_buscas WHERE conta_id = ${C} AND dia >= ${INICIO_MES_SP}), 0)::int AS serper,
+              (SELECT count(*) FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
+                WHERE ca.conta_id = ${C} AND l.status = 'concluido' AND l.concluido_em >= ${INICIO_MES_SP_TS})::int AS leads`,
     ),
   ]);
   const c = conta.rows[0];
@@ -141,6 +148,7 @@ export async function consumoDaConta(db: Executor, contaId: number): Promise<Con
     emails: { enviados: o.enviados, naFila: o.na_fila },
     whatsapp: { automaticas: o.automaticas, equipe: o.equipe, recebidas: o.recebidas },
     places: { pedidos: o.pedidos, pagos: o.pagos, gastoUsd: o.gasto, enriquecimento: o.enriq },
+    buscas: { serper: o.serper, leadsEnriquecidos: o.leads },
   };
 }
 

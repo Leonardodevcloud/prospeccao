@@ -13,6 +13,8 @@ import { extrairContatos } from './site.js';
 
 export interface ConfigSerper {
   apiKey: string;
+  /** Avisa cada busca feita (o consumo da conta conta as buscas). */
+  aoBuscar?: (n: number) => void;
 }
 
 interface RespostaSerper {
@@ -32,6 +34,7 @@ export async function buscarNoGoogleSerper(
   cfg: ConfigSerper,
   consultas: string[],
 ): Promise<Map<string, ResultadoGoogle[]>> {
+  cfg.aoBuscar?.(consultas.length);
   const respostas = await Promise.all(
     consultas.map((q) =>
       requisitarJson<RespostaSerper>('https://google.serper.dev/search', {
@@ -104,6 +107,7 @@ export function converterLugarSerper(l: LugarSerper): ItemMaps | null {
 }
 
 async function lugaresSerper(cfg: ConfigSerper, q: string): Promise<ItemMaps[]> {
+  cfg.aoBuscar?.(1);
   const r = await requisitarJson<{ places?: LugarSerper[] }>('https://google.serper.dev/places', {
     servico: 'Serper',
     method: 'POST',
@@ -235,6 +239,7 @@ export async function buscarDiretorios(
   e: { nome: string; razaoSocial?: string | null; cidade: string },
 ): Promise<BuscaDiretorios> {
   const consulta = `"${(e.razaoSocial || e.nome).replace(/"/g, '')}" ${e.cidade.toLowerCase()}`;
+  cfg.aoBuscar?.(1);
   const r = await requisitarJson<
     RespostaSerper & {
       knowledgeGraph?: { website?: string; attributes?: Record<string, string> };
