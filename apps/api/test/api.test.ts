@@ -1051,7 +1051,10 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       (await enviar('post', '/agente/conhecimento/testar', { pergunta: 'prazo de pagamento' })).body[0].texto,
     ).toMatch(/28 dias/);
 
-    // 5) Pediu uma pessoa: vai direto para o time, sem chamar a IA.
+    // 5) Pediu uma pessoa: vai direto para o time, sem chamar a IA. (O aviso da passagem anterior já saiu.)
+    await pool.query(
+      `UPDATE comercial.mensagens SET status = 'enviada' WHERE empresa_id = 78 AND status = 'aprovada'`,
+    );
     await enviar('patch', '/funil/78', { devolverParaIa: true });
     expect((await ler('/conversas/78')).body.agenteResumo).toBeNull();
     await leadEscreve('Prefiro falar com um atendente');
@@ -1093,6 +1096,109 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
     await enviar('delete', `/agente/chips/${novo.body.id}`);
     await enviar('delete', `/agente/chips/${antigo.body.id}`);
+
+    // 8) Aviso ao lead: quando a IA passou para o time, ele recebeu "vou chamar alguém" (uma vez só).
+    const { rows: avisos } = await pool.query(
+      `SELECT texto FROM comercial.mensagens WHERE empresa_id = 78 AND nota = 'Aviso ao lead: a IA passou para o time'`,
+    );
+    expect(avisos).toHaveLength(1);
+
+    // 9) Retorno combinado: "me chama semana que vem" → a cadência espera; na data, a IA retoma com o contexto.
+    await enviar('patch', '/funil/78', { devolverParaIa: true });
+    await pool.query(
+      `UPDATE comercial.mensagens SET status = 'enviada' WHERE empresa_id = 78 AND status = 'aprovada'`,
+    );
+    await naConta(() =>
+      funilRepo.registrarAtividade(
+        pool,
+        78,
+        { tipo: 'whatsapp', direcao: 'enviada', texto: 'Oi! Aqui é a Ana, do time. Como posso ajudar?' },
+        'Ana',
+      ),
+    );
+    await leadEscreve('Agora não consigo, me chama semana que vem');
+    const semana = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    decisoes.push({
+      acao: 'agendar_retorno',
+      resposta: 'Combinado, te chamo semana que vem!',
+      retornoEm: semana,
+      motivo: 'Pediu para falar semana que vem',
+    });
+    await naConta(() => motor.gerarRespostas(deps, cfg));
+    let op78 = (await ler('/funil/78')).body.oportunidade;
+    expect(op78).toMatchObject({ proximaAcao: 'Retomar (combinado com o lead)' });
+    expect(new Date(op78.proximaAcaoEm).toISOString()).toBe(semana);
+    await pool.query(
+      `UPDATE comercial.mensagens SET status = 'enviada' WHERE empresa_id = 78 AND status = 'aprovada'`,
+    );
+    // Venceu: a IA retoma (a cadência não manda a mensagem dela por cima).
+    await pool.query(
+      `UPDATE comercial.oportunidades SET agente_retorno_em = now() - interval '1 minute', proxima_acao_em = now() - interval '1 minute'
+        WHERE empresa_id = 78`,
+    );
+    expect(await naConta(() => motor.gerarAbordagens(deps, cfg))).toBe(0);
+    decisoes.push({
+      acao: 'responder',
+      resposta: 'Oi! Como combinamos, passando para retomar. Podemos falar hoje?',
+      motivo: 'Retomada',
+    });
+    const cfgSempre = { ...cfg, horaInicio: 0, horaFim: 24, diasSemana: [0, 1, 2, 3, 4, 5, 6] };
+    expect(await naConta(() => atendimento.retomarCombinados(deps, cfgSempre))).toBe(1);
+    expect(contextos.at(-1)?.retomada).toBe('Pediu para falar semana que vem');
+    op78 = (await ler('/funil/78')).body.oportunidade;
+    const { rows: retomada } = await pool.query(
+      `SELECT texto FROM comercial.mensagens WHERE empresa_id = 78 AND status = 'aprovada'`,
+    );
+    expect(retomada[0]?.texto).toMatch(/Como combinamos/);
+    expect(await naConta(() => atendimento.retomarCombinados(deps, cfgSempre))).toBe(0);
+
+    // 10) Simulador: regra fixa responde sem IA; sem IA configurada, avisa.
+    const sim = await enviar('post', '/agente/simular', {
+      conversa: [{ de: 'lead', texto: 'Quero falar com um atendente' }],
+    });
+    expect(sim.body).toMatchObject({ regraFixa: { tipo: 'pediu_pessoa' }, aviso: expect.any(String) });
+    expect(
+      (await enviar('post', '/agente/simular', { conversa: [{ de: 'lead', texto: 'Atende Feira?' }] }))
+        .status,
+    ).toBe(422);
+
+    // 11) Desempenho: passagens contadas por tipo, verificações, lacunas ensinadas.
+    const desemp = (await ler('/agente/desempenho?dias=7')).body;
+    expect(desemp.numeros).toMatchObject({ corrigidas: 1, barradas: 1, ensinadas: 1 });
+    expect(desemp.passagensPorTipo).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tipo: 'verificacao', n: 1 }),
+        expect.objectContaining({ tipo: 'pediu_pessoa', n: 1 }),
+      ]),
+    );
+
+    // 12) Saúde do chip: 3 falhas em 30 min pausam o chip por 1 hora (e abre alerta); reativar tira a pausa.
+    const chipFalho = await enviar('post', '/agente/chips', {
+      nome: 'Falho',
+      instancia: 'falho-v3',
+      limiteDia: 40,
+    });
+    const chipsMod = await import('../src/modulos/agente/chips.js');
+    await pool.query(
+      `INSERT INTO comercial.mensagens (conta_id, empresa_id, direcao, texto, telefone, status, origem, chip_id, erro, tentado_em)
+       SELECT 1, 78, 'enviada', 'x', '75988112233', 'erro', 'cadencia', $1, 'Connection Closed', now() FROM generate_series(1, 3)`,
+      [chipFalho.body.id],
+    );
+    const falho = { id: chipFalho.body.id, nome: 'Falho', instancia: 'falho-v3', limiteDia: 40 };
+    expect(await naConta(() => chipsMod.conferirSaude(pool, falho))).toBe(true);
+    const telaChips = (await ler('/agente/chips')).body.chips.find(
+      (c: { id: number }) => c.id === chipFalho.body.id,
+    );
+    expect(telaChips.pausadoAte).toBeTruthy();
+    expect(telaChips.pausaMotivo).toMatch(/3 falhas/);
+    expect((await naConta(() => chipsMod.emUso(pool, null))).some((c) => c.id === chipFalho.body.id)).toBe(
+      false,
+    );
+    await enviar('patch', `/agente/chips/${chipFalho.body.id}`, { ativo: true });
+    expect((await naConta(() => chipsMod.emUso(pool, null))).some((c) => c.id === chipFalho.body.id)).toBe(
+      true,
+    );
+    await enviar('delete', `/agente/chips/${chipFalho.body.id}`);
 
     await enviar('put', '/agente/config', { ...config, ligado: false });
     await pool.query('DELETE FROM comercial.oportunidades WHERE empresa_id = 78');

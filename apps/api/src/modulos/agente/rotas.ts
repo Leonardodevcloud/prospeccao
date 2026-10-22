@@ -1,4 +1,5 @@
 import type { Executor } from '@prospeccao/db';
+import { avisoDePassagem, emBolhas } from '@prospeccao/integrations/agente';
 import { interpretarWebhook } from '@prospeccao/integrations/whatsapp';
 import {
   AppError,
@@ -21,10 +22,14 @@ import { exigirAdmin } from '../../middlewares/seguranca.js';
 import * as contatos from '../contatos/repositorio.js';
 import { guardarMidia } from '../conversas/repositorio.js';
 import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
+import { obterConfig as configCadencia } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
 import { notificar, notificarDono } from '../notificacoes/repositorio.js';
+import { pensar, regraFixa } from './atendimento.js';
 import * as chips from './chips.js';
 import * as base from './conhecimento.js';
+import { desempenho } from './desempenho.js';
+import { dentroDoHorario, proximaAbertura } from './horario.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -182,6 +187,72 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
   r.post('/lacunas/:id/dispensar', exigirAdmin, async (req, res) => {
     await base.resolverLacuna(pool, idDaRota(req), null);
     res.json({ ok: true });
+  });
+
+  /**
+   * Simulador: conversa de teste com a IA, pelo mesmo caminho do atendimento de verdade (regras
+   * fixas, base de conhecimento, verificações, reescrita), sem lead, sem WhatsApp e sem gravar nada.
+   */
+  r.post('/simular', async (req, res) => {
+    const d = corpo(
+      req,
+      z.object({
+        conversa: z
+          .array(z.object({ de: z.enum(['lead', 'nos']), texto: z.string().trim().min(1).max(2000) }))
+          .min(1)
+          .max(40),
+        memoria: z.array(z.string().max(200)).max(20).default([]),
+        etapa: z.enum(['abordado', 'respondeu', 'reuniao', 'proposta']).default('respondeu'),
+      }),
+    );
+    const cfg = await repo.obterConfig(pool);
+    const aviso = (tipo: 'pediu_pessoa' | 'sensivel' | 'outro') =>
+      cfg.avisoPassagem
+        ? avisoDePassagem(
+            { dentroDoHorario: dentroDoHorario(cfg), volta: proximaAbertura(cfg), motivo: tipo },
+            0,
+          )
+        : null;
+    const ultimas: string[] = [];
+    for (let i = d.conversa.length - 1; i >= 0 && d.conversa[i]!.de === 'lead'; i--)
+      ultimas.unshift(d.conversa[i]!.texto);
+    const fixa = ultimas.length ? regraFixa(ultimas.join('\n')) : null;
+    if (fixa)
+      return res.json({
+        regraFixa: fixa,
+        aviso: fixa.tipo === 'parar' ? null : aviso(fixa.tipo),
+      });
+    const { ia } = await servicos(conta());
+    if (!ia) throw AppError.invalido('A IA desta conta não está configurada (painel master).');
+    const { rows } = await pool.query<{ nome: string }>(
+      `SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`,
+    );
+    const agora = new Date().toISOString();
+    const p = await pensar(pool, ia, cfg, {
+      empresaNome: rows[0]?.nome ?? 'nossa empresa',
+      remetente: (await configCadencia(pool)).remetente,
+      lead: { empresa: 'Empresa de teste', cidade: null, contato: null, etapa: d.etapa },
+      conversa: d.conversa.map((m) => ({ ...m, em: agora })),
+      memoria: d.memoria,
+      ficha: [],
+    });
+    const { decisao } = p;
+    const passa = p.barrada.length > 0 || decisao.acao === 'passar_para_humano';
+    res.json({
+      decisao,
+      bolhas: !p.barrada.length && decisao.resposta ? emBolhas(decisao.resposta) : [],
+      trechos: p.trechos,
+      primeiraResposta: p.primeiraResposta,
+      problemasIniciais: p.problemasIniciais,
+      barrada: p.barrada,
+      aviso: passa && (p.barrada.length || !decisao.resposta) ? aviso('outro') : null,
+    });
+  });
+
+  /** Números da IA no período (padrão: 30 dias). */
+  r.get('/desempenho', async (req, res) => {
+    const dias = Math.min(365, Math.max(1, Number(req.query.dias) || 30));
+    res.json(await desempenho(pool, dias));
   });
 
   /** Liga a IA em todos os leads abertos das etapas escolhidas. */

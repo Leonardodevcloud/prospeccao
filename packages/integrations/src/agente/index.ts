@@ -9,6 +9,7 @@ import { type ConfigIa, type EsquemaIa, gerarJson } from '../ia/index.js';
 export type AcaoAgente =
   | 'responder'
   | 'marcar_reuniao'
+  | 'agendar_retorno'
   | 'passar_para_humano'
   | 'encerrar_sem_interesse'
   | 'optout';
@@ -18,6 +19,8 @@ export interface DecisaoAgente {
   resposta: string;
   /** Data e hora da reunião combinada (ISO com fuso de São Paulo), quando acao = marcar_reuniao. */
   reuniaoEm: string | null;
+  /** Quando retomar o contato (ISO), quando acao = agendar_retorno. */
+  retornoEm?: string | null;
   motivo: string;
   /** Fatos novos que o lead contou nesta conversa (viram a memória do lead). */
   memoria?: string[];
@@ -43,6 +46,8 @@ export interface ContextoAgente {
   ficha?: string[];
   /** A resposta anterior foi barrada nas verificações: o que corrigir. */
   correcao?: { texto: string; problemas: string[] } | null;
+  /** Hoje é o dia combinado para retomar a conversa (o que foi combinado). */
+  retomada?: string | null;
 }
 
 const ESQUEMA: EsquemaIa = {
@@ -50,10 +55,18 @@ const ESQUEMA: EsquemaIa = {
   properties: {
     acao: {
       type: 'STRING',
-      enum: ['responder', 'marcar_reuniao', 'passar_para_humano', 'encerrar_sem_interesse', 'optout'],
+      enum: [
+        'responder',
+        'marcar_reuniao',
+        'agendar_retorno',
+        'passar_para_humano',
+        'encerrar_sem_interesse',
+        'optout',
+      ],
     },
     resposta: { type: 'STRING' },
     reuniaoEm: { type: 'STRING', nullable: true },
+    retornoEm: { type: 'STRING', nullable: true },
     motivo: { type: 'STRING' },
     memoria: { type: 'ARRAY', items: { type: 'STRING' } },
     semResposta: { type: 'STRING', nullable: true },
@@ -112,6 +125,7 @@ export function promptAgente(c: ContextoAgente): string {
     'Decida o próximo passo e responda em JSON:',
     '- acao "responder": tirar dúvida ou continuar a conversa rumo à reunião; "resposta" é a mensagem.',
     '- acao "marcar_reuniao": o lead CONFIRMOU dia e horário; "reuniaoEm" em ISO 8601 com -03:00; "resposta" confirma.',
+    '- acao "agendar_retorno": o lead pediu para falar depois ("me chama semana que vem", "depois do dia 10", "agora estou sem tempo"); "retornoEm" é a data e hora para retomar, em ISO 8601 com -03:00, dentro dos horários permitidos (se ele não disse quando, daqui a 7 dias às 10h); "resposta" confirma curto ("Combinado, te chamo na segunda!").',
     '- acao "passar_para_humano": pediu preço fechado, proposta, contrato, perguntou algo que não está acima, reclamou, quer falar com uma pessoa, ou você não tem certeza; "resposta" pode ser vazia ou algo como "Vou confirmar com o time e já te retorno" (sem prometer o que não sabe).',
     '- acao "encerrar_sem_interesse": disse claramente que não tem interesse; "resposta" agradece com educação e deixa a porta aberta.',
     '- acao "optout": pediu para não receber mais mensagens; "resposta" vazia.',
@@ -119,6 +133,11 @@ export function promptAgente(c: ContextoAgente): string {
     '"memoria": fatos NOVOS e úteis que o lead contou nesta conversa (fornecedor atual, volume, necessidade, quem cuida das compras segundo ele, melhor horário), cada um em poucas palavras; [] se nada novo.',
     '"semResposta": se ele perguntou algo que as informações acima não respondem, escreva a pergunta dele de forma geral (ex.: "Vocês atendem em Feira de Santana?"); senão null.',
   );
+  if (c.retomada)
+    linhas.push(
+      '',
+      `HOJE É O DIA COMBINADO PARA RETOMAR A CONVERSA (${c.retomada}). Escreva a mensagem de retomada: lembre do que foi conversado em uma frase e faça uma pergunta para avançar. Use acao "responder".`,
+    );
   if (c.correcao)
     linhas.push(
       '',
@@ -154,6 +173,7 @@ export function lerDecisao(texto: string): DecisaoAgente {
   const acoes: AcaoAgente[] = [
     'responder',
     'marcar_reuniao',
+    'agendar_retorno',
     'passar_para_humano',
     'encerrar_sem_interesse',
     'optout',
@@ -168,13 +188,29 @@ export function lerDecisao(texto: string): DecisaoAgente {
     if (d && Number.isFinite(d.getTime()) && d.getTime() > Date.now() - 3600_000) reuniaoEm = d.toISOString();
     else acao = 'passar_para_humano';
   }
+  let retornoEm: string | null = null;
+  if (acao === 'agendar_retorno') {
+    const d = j.retornoEm ? new Date(j.retornoEm) : null;
+    // De 1 hora a 4 meses para frente; fora disso, não vale.
+    if (d && d.getTime() > Date.now() + 3600_000 && d.getTime() < Date.now() + 120 * 86_400_000)
+      retornoEm = d.toISOString();
+    else acao = resposta ? 'responder' : 'passar_para_humano';
+  }
   if ((acao === 'responder' || acao === 'encerrar_sem_interesse') && !resposta) acao = 'passar_para_humano';
   const memoria = (Array.isArray(j.memoria) ? j.memoria : [])
     .map((f) => String(f).replace(/\s+/g, ' ').trim().slice(0, 160))
     .filter((f) => f.length >= 3)
     .slice(0, 5);
   const semResposta = j.semResposta ? String(j.semResposta).trim().slice(0, 300) || null : null;
-  return { acao, resposta, reuniaoEm, motivo: String(j.motivo ?? '').slice(0, 300), memoria, semResposta };
+  return {
+    acao,
+    resposta,
+    reuniaoEm,
+    retornoEm,
+    motivo: String(j.motivo ?? '').slice(0, 300),
+    memoria,
+    semResposta,
+  };
 }
 
 /** Junta a memória do lead: o que é novo entra, repetido (mesmo texto) não; guarda os 15 mais recentes. */

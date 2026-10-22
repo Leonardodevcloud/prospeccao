@@ -93,7 +93,7 @@ export interface ItemRadar extends Risco {
   horasParado: number;
 }
 
-export async function radar(db: Executor, f: { responsavelId?: number | null } = {}) {
+export async function radar(db: Executor, f: { responsavelId?: number | null } = {}, limite = 200) {
   const C = contaSql();
   const { rows } = await db.query<
     Omit<ItemRadar, 'nivel' | 'motivo'> & {
@@ -182,5 +182,5 @@ export async function radar(db: Executor, f: { responsavelId?: number | null } =
       (b.valorMensal ?? 0) - (a.valorMensal ?? 0) ||
       b.horasParado - a.horasParado,
   );
-  return { itens: itens.slice(0, 200), contagem };
+  return { itens: itens.slice(0, limite), contagem };
 }

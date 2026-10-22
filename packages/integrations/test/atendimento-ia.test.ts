@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assuntoSensivel,
+  avisoDePassagem,
   emBolhas,
   juntarMemoria,
   lerAprendizado,
@@ -183,5 +184,42 @@ describe('passagem para o time', () => {
     expect(
       lerAprendizado(JSON.stringify({ util: false, titulo: 'x', pergunta: 'x', resposta: 'x' })),
     ).toBeNull();
+  });
+});
+
+describe('retorno combinado e aviso ao lead', () => {
+  it('lê o retorno combinado e recusa data fora do razoável', () => {
+    const semana = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    expect(
+      lerDecisao(
+        JSON.stringify({ acao: 'agendar_retorno', resposta: 'Combinado!', retornoEm: semana, motivo: 'x' }),
+      ),
+    ).toMatchObject({ acao: 'agendar_retorno', retornoEm: semana });
+    // Data no passado: vira resposta simples (se tem texto) ou passa para o time.
+    expect(
+      lerDecisao(
+        JSON.stringify({
+          acao: 'agendar_retorno',
+          resposta: 'Combinado!',
+          retornoEm: '2020-01-01',
+          motivo: 'x',
+        }),
+      ).acao,
+    ).toBe('responder');
+    expect(lerDecisao(JSON.stringify({ acao: 'agendar_retorno', resposta: '', motivo: 'x' })).acao).toBe(
+      'passar_para_humano',
+    );
+  });
+
+  it('aviso ao lead muda dentro e fora do horário', () => {
+    expect(avisoDePassagem({ dentroDoHorario: false, volta: 'amanhã a partir das 8h' })).toBe(
+      'Anotei aqui! Nosso time te responde amanhã a partir das 8h.',
+    );
+    expect(avisoDePassagem({ dentroDoHorario: true, volta: null, motivo: 'pediu_pessoa' }, 0)).toMatch(
+      /chamando/,
+    );
+    expect(avisoDePassagem({ dentroDoHorario: true, volta: null, motivo: 'sensivel' })).toMatch(
+      /responsável/,
+    );
   });
 });

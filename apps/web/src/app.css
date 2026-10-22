@@ -1422,6 +1422,16 @@ fieldset.campo {
   background: var(--warning-soft);
   color: var(--ink);
 }
+.etiqueta--critico {
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+}
+.etiqueta--risco {
+  background: var(--warning-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
 .cartao__contato {
   display: grid;
   gap: 4px;
@@ -4362,4 +4372,132 @@ details[open] > summary .resumo-ia__abrir {
 .base-lista + .pilha,
 .pp-panel .form.caixa + form.pilha {
   margin-top: var(--space-2);
+}
+/* Simulador da IA */
+.sim-chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 260px;
+  max-height: 560px;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.sim-vazio {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  margin: auto;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.sim-exemplos {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.sim-bolha {
+  max-width: min(560px, 85%);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 20px;
+}
+.sim-bolha__texto {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.sim-bolha--lead {
+  align-self: flex-start;
+}
+.sim-bolha--nos {
+  align-self: flex-end;
+  background: var(--brand-soft);
+  border-color: transparent;
+}
+.sim-bolha--digitando {
+  color: var(--ink-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+.sim-bolha__quem {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.sim-sistema {
+  align-self: center;
+  max-width: 90%;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--warning-soft);
+  font-size: 12px;
+  text-align: center;
+}
+.sim-bastidores {
+  margin-top: var(--space-1);
+  font-size: 12px;
+  color: var(--ink-muted);
+  text-align: left;
+}
+.sim-bastidores summary {
+  cursor: pointer;
+  color: var(--link);
+}
+.sim-bastidores__corpo {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+.sim-bastidores__linha {
+  margin: 0;
+}
+/* Desempenho da IA */
+.desemp-colunas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-4);
+}
+.barras-h,
+.lista-numeros {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+.barras-h__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+.barras-h__barra {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.barras-h__cheio {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+.lista-numeros__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.chip-pausa {
+  font-size: 12px;
+  color: var(--danger);
 }

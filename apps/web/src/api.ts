@@ -298,6 +298,8 @@ export interface CardFunil {
   naoLidas: number;
   /** Próxima reunião/visita marcada na agenda. */
   reuniaoEm: string | null;
+  /** Radar: negócio parado (crítico ou em risco) e por quê. */
+  risco?: { nivel: 'critico' | 'risco'; motivo: string } | null;
   /** Conversa seguindo com uma pessoa indicada ("Carlos Lima · Compras"). */
   falandoCom: string | null;
   /** Pessoas na negociação (indicações confirmadas). */
@@ -718,6 +720,8 @@ export interface ConfigAgente {
   sobreEmpresa: string;
   regras: string;
   horariosReuniao: string;
+  /** Quando a IA passa para o time, o lead recebe "vou chamar alguém do time". */
+  avisoPassagem: boolean;
 }
 
 export interface RascunhoAgente {
@@ -1459,6 +1463,9 @@ export interface Chip {
   diasDeUso: number;
   /** Teto de hoje pelo aquecimento (número novo); null: sem teto. */
   tetoAquecimento: number | null;
+  /** Pausado sozinho por falhas de envio, até esta hora. */
+  pausadoAte: string | null;
+  pausaMotivo: string | null;
 }
 
 /* ───────── Alertas ───────── */
@@ -1473,4 +1480,58 @@ export interface Alerta {
   link: string | null;
   primeiraVez: string;
   ultimaVez: string;
+}
+
+/* ───────── Agente: simulador e desempenho ───────── */
+
+export type AcaoAgente =
+  | 'responder'
+  | 'marcar_reuniao'
+  | 'agendar_retorno'
+  | 'passar_para_humano'
+  | 'encerrar_sem_interesse'
+  | 'optout';
+
+export interface ProblemaVerificacao {
+  regra: string;
+  detalhe: string;
+}
+
+export interface Simulacao {
+  regraFixa?: { tipo: 'parar' | 'pediu_pessoa' | 'sensivel'; motivo?: string };
+  decisao?: {
+    acao: AcaoAgente;
+    resposta: string;
+    reuniaoEm: string | null;
+    retornoEm?: string | null;
+    motivo: string;
+    memoria?: string[];
+    semResposta?: string | null;
+  };
+  bolhas?: string[];
+  trechos?: TrechoAchado[];
+  primeiraResposta?: string | null;
+  problemasIniciais?: ProblemaVerificacao[];
+  barrada?: ProblemaVerificacao[];
+  aviso: string | null;
+}
+
+export interface DesempenhoIa {
+  dias: number;
+  numeros: {
+    leadsAtendidos: number;
+    respostas: number;
+    reunioes: number;
+    retornos: number;
+    semInteresse: number;
+    passagens: number;
+    corrigidas: number;
+    barradas: number;
+    lacunas: number;
+    ensinadas: number;
+    aprendidas: number;
+    tempoRespostaSeg: number | null;
+  };
+  passagensPorTipo: { tipo: string; n: number }[];
+  baseMaisUsada: { id: number; titulo: string; pergunta: string | null; usos: number }[];
 }

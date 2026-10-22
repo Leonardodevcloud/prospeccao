@@ -128,6 +128,15 @@ function Card(props: {
 
           {/* Etiquetas: o que é, onde fica, quem está cuidando e as suas. */}
           <span className="etiquetas">
+            {c.risco && (
+              <span
+                className={`etiqueta etiqueta--${c.risco.nivel === 'critico' ? 'critico' : 'risco'}`}
+                title={c.risco.motivo}
+              >
+                <Icon name={c.risco.nivel === 'critico' ? 'circle-x' : 'clock'} size={12} />{' '}
+                {c.risco.nivel === 'critico' ? 'Crítico' : 'Em risco'}
+              </span>
+            )}
             {c.agente && (
               <span className={`etiqueta ${c.agentePausa ? 'etiqueta--aviso' : 'etiqueta--marca'}`}>
                 <Icon name="bot" size={12} /> {c.agentePausa ? 'IA passou para você' : 'Com a IA'}

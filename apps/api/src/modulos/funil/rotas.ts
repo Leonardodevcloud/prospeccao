@@ -26,7 +26,16 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
 
   /** Quadro: cards de todas as etapas (menos descartados) e quantos follow-ups vencem hoje. */
   r.get('/', async (req, res) => {
-    res.json(await repo.quadro(pool, consulta(req, filtrosFunil)));
+    const [q, r] = await Promise.all([repo.quadro(pool, consulta(req, filtrosFunil)), radar(pool, {}, 2000)]);
+    // Selo do radar no card: crítico ou em risco, com o motivo.
+    const risco = new Map(r.itens.map((i) => [i.empresaId, { nivel: i.nivel, motivo: i.motivo }]));
+    res.json({
+      ...q,
+      cards: (q.cards as { empresaId: number }[]).map((c) => ({
+        ...c,
+        risco: risco.get(c.empresaId) ?? null,
+      })),
+    });
   });
 
   /** Manda leads para o funil ou descarta, em lote, sem duplicar. */

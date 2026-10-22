@@ -321,6 +321,8 @@ export const configAgenteEntrada = z
     sobreEmpresa: z.string().trim().min(20, 'Conte um pouco da sua empresa para a IA.').max(6000),
     regras: z.string().trim().max(3000),
     horariosReuniao: z.string().trim().min(3).max(300),
+    /** Quando a IA passa para o time, o lead recebe "vou chamar alguém do time". */
+    avisoPassagem: z.boolean().default(true),
   })
   .refine((v) => v.horaFim > v.horaInicio, {
     message: 'O fim do horário precisa ser depois do início.',

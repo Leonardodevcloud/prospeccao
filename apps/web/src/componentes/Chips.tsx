@@ -2,7 +2,7 @@ import { Badge, Button, Icon, Panel } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { api, type Chip } from '../api';
-import { fmtNumero, fmtQuando } from '../formatar';
+import { fmtHoraSo, fmtNumero, fmtQuando } from '../formatar';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { useEhAdmin } from './Sessao';
 
@@ -15,6 +15,7 @@ interface TelaChips {
 
 function situacao(c: Chip): { tom: 'brand' | 'danger' | 'neutral' | 'outline'; texto: string } {
   if (!c.ativo) return { tom: 'neutral', texto: 'Pausado' };
+  if (c.pausadoAte) return { tom: 'danger', texto: `Pausado por falhas até ${fmtHoraSo(c.pausadoAte)}` };
   if (!c.estado) return { tom: 'outline', texto: 'Não conferido' };
   return c.estado.startsWith('ok')
     ? { tom: 'brand', texto: 'Conectado' }
@@ -105,9 +106,9 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
             size="sm"
             variant="ghost"
             disabled={editar.isPending}
-            onClick={() => editar.mutate({ ativo: !c.ativo })}
+            onClick={() => editar.mutate({ ativo: !c.ativo || !!c.pausadoAte })}
           >
-            {c.ativo ? 'Pausar' : 'Reativar'}
+            {c.pausadoAte ? 'Retomar agora' : c.ativo ? 'Pausar' : 'Reativar'}
           </Button>
           <Button
             size="sm"
@@ -147,6 +148,7 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
           )}
         </div>
       )}
+      {c.pausadoAte && c.pausaMotivo && <span className="chip-pausa">{c.pausaMotivo}</span>}
       {testar.data && <Mensagem tipo={testar.data.ok ? 'ok' : 'aviso'}>{testar.data.resultado}</Mensagem>}
       <ErroDaApi erro={editar.error ?? testar.error ?? remover.error} />
     </li>

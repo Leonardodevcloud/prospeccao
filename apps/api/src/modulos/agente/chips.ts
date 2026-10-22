@@ -1,7 +1,8 @@
 import type { Executor } from '@prospeccao/db';
 import { AppError } from '@prospeccao/shared';
-import { contaSql } from '../../contexto.js';
+import { conta, contaSql } from '../../contexto.js';
 import type { WhatsappConta } from '../../dependencias.js';
+import * as alertas from '../alertas/repositorio.js';
 import { HOJE_SP } from './repositorio.js';
 
 /**
@@ -57,6 +58,7 @@ export async function listar(db: Executor) {
   const { rows } = await db.query(
     `SELECT c.id, c.nome, c.instancia, c.ativo, c.limite_dia AS "limiteDia", c.estado, c.estado_em AS "estadoEm",
             c.aquecer, c.ativado_em AS "ativadoEm",
+            CASE WHEN c.pausado_ate > now() THEN c.pausado_ate END AS "pausadoAte", c.pausa_motivo AS "pausaMotivo",
             (SELECT count(*)::int FROM comercial.mensagens m
               WHERE m.chip_id = c.id AND m.status = 'enviada' AND m.origem IN ${ORIGENS_FRIAS}
                 AND m.enviado_em >= ${HOJE_SP}) AS "enviadosHoje",
@@ -87,8 +89,9 @@ export async function emUso(
     aquecer: boolean;
     ativado_em: string;
   }>(
-    `SELECT id, nome, instancia, limite_dia, ativo, aquecer, ativado_em FROM comercial.chips
-      WHERE conta_id = ${contaSql()} ORDER BY id`,
+    `SELECT id, nome, instancia, limite_dia, ativo AND (pausado_ate IS NULL OR pausado_ate <= now()) AS ativo,
+            aquecer, ativado_em
+       FROM comercial.chips WHERE conta_id = ${contaSql()} ORDER BY id`,
   );
   if (rows.length)
     return rows
@@ -226,15 +229,19 @@ export async function atualizar(
   const { rowCount } = await db.query(
     `UPDATE comercial.chips SET nome = coalesce($2, nome), ativo = coalesce($3, ativo), limite_dia = coalesce($4, limite_dia),
             aquecer = coalesce($5, aquecer),
+            -- reativar à mão também tira a pausa automática por falhas
+            pausado_ate = CASE WHEN $3::boolean THEN NULL ELSE pausado_ate END,
             ativado_em = CASE WHEN $6::int IS NULL THEN ativado_em ELSE current_date - $6::int END
       WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id, d.nome ?? null, d.ativo ?? null, d.limiteDia ?? null, d.aquecer ?? null, d.diasDeUso ?? null],
   );
   if (!rowCount) throw AppError.naoEncontrado('Chip');
+  if (d.ativo) await fecharAlertaSaude(db, id);
 }
 
 /** Apaga o chip: os leads dele passam para o próximo chip que mandar mensagem. */
 export async function apagar(db: Executor, id: number): Promise<void> {
+  await fecharAlertaSaude(db, id);
   const { rowCount } = await db.query(
     `DELETE FROM comercial.chips WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id],
@@ -256,4 +263,55 @@ export async function guardarEstado(db: Executor, id: number, estado: string): P
     id,
     estado.slice(0, 200),
   ]);
+}
+
+/* ───────────── Saúde do chip ───────────── */
+
+/** Falhas seguidas que pausam o chip, e por quanto tempo. */
+export const FALHAS_PARA_PAUSAR = 3;
+export const PAUSA_POR_FALHAS_MIN = 60;
+
+/**
+ * Depois de uma falha de envio: se o chip falhou 3 vezes ou mais nos últimos 30 minutos e falhou
+ * em pelo menos metade das tentativas, fica pausado por 1 hora (os leads dele esperam) e os
+ * administradores recebem um alerta. Volta sozinho; "Reativar" na tela tira a pausa na hora.
+ */
+export async function conferirSaude(db: Executor, chip: Chip): Promise<boolean> {
+  if (!chip.id) return false;
+  const { rows } = await db.query<{ erros: number; total: number; ultimo: string | null }>(
+    `SELECT count(*) FILTER (WHERE status = 'erro')::int AS erros, count(*)::int AS total,
+            (SELECT erro FROM comercial.mensagens WHERE chip_id = $1 AND status = 'erro'
+              ORDER BY tentado_em DESC NULLS LAST LIMIT 1) AS ultimo
+       FROM comercial.mensagens
+      WHERE chip_id = $1 AND tentado_em > now() - interval '30 minutes'`,
+    [chip.id],
+  );
+  const r = rows[0];
+  if (!r || r.erros < FALHAS_PARA_PAUSAR || r.erros * 2 < r.total) return false;
+  const motivo = `${r.erros} falhas de envio em 30 minutos${r.ultimo ? ` (${r.ultimo.slice(0, 120)})` : ''}`;
+  await db.query(
+    `UPDATE comercial.chips SET pausado_ate = now() + make_interval(mins => $2), pausa_motivo = $3
+      WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [chip.id, PAUSA_POR_FALHAS_MIN, motivo.slice(0, 300)],
+  );
+  await alertas.abrir(db, conta(), `saude-chip:${chip.instancia.toLowerCase()}`, {
+    nivel: 'aviso',
+    titulo: `O chip “${chip.nome}” foi pausado por 1 hora`,
+    texto: `${motivo}. Os leads dele esperam; confira a conexão na Evolution.`,
+    link: '/agente',
+  });
+  return true;
+}
+
+/** Envio deu certo: se o chip tinha sido pausado por falhas, o alerta fecha. */
+export async function envioOk(db: Executor, chip: Chip): Promise<void> {
+  if (chip.id) await alertas.fechar(db, conta(), `saude-chip:${chip.instancia.toLowerCase()}`);
+}
+
+async function fecharAlertaSaude(db: Executor, id: number) {
+  const { rows } = await db.query<{ instancia: string }>(
+    `SELECT instancia FROM comercial.chips WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [id],
+  );
+  if (rows[0]) await alertas.fechar(db, conta(), `saude-chip:${rows[0].instancia.toLowerCase()}`);
 }

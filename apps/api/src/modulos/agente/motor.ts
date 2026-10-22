@@ -7,8 +7,9 @@ import { limiteDoMes } from '../consumo/repositorio.js';
 import { emSequenciaSql } from '../email/sequencia.js';
 import { mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
-import { aprenderComEquipe, type DepsAtendimento, responderLead } from './atendimento.js';
+import { aprenderComEquipe, type DepsAtendimento, responderLead, retomarCombinados } from './atendimento.js';
 import * as chips from './chips.js';
+import { dentroDoHorario } from './horario.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -26,28 +27,7 @@ const LOCK = 7_301_023;
 /** O motor de uma conta: banco, log e o WhatsApp e a IA dela. */
 type DepsMotor = DepsAtendimento;
 
-function agoraSP(agora = new Date()) {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Sao_Paulo',
-      weekday: 'short',
-      hour: 'numeric',
-      hourCycle: 'h23',
-    })
-      .formatToParts(agora)
-      .map((x) => [x.type, x.value]),
-  );
-  const dias: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  return { dia: dias[p.weekday as string] ?? 0, hora: Number(p.hour) };
-}
-
-export function dentroDoHorario(
-  c: Pick<repo.ConfigAgente, 'horaInicio' | 'horaFim' | 'diasSemana'>,
-  agora = new Date(),
-): boolean {
-  const { dia, hora } = agoraSP(agora);
-  return c.diasSemana.includes(dia) && hora >= c.horaInicio && hora < c.horaFim;
-}
+export { dentroDoHorario };
 
 /** 1. Follow-ups vencidos dos leads com IA viram mensagem (rascunho ou aprovada). */
 export async function gerarAbordagens(deps: DepsMotor, cfg: repo.ConfigAgente, limite = 20): Promise<number> {
@@ -56,6 +36,8 @@ export async function gerarAbordagens(deps: DepsMotor, cfg: repo.ConfigAgente, l
       WHERE o.conta_id = ${contaSql()} AND o.agente AND o.agente_pausa IS NULL
         AND o.etapa IN ('a_abordar', 'abordado', 'respondeu', 'proposta')
         AND o.proxima_acao_em <= now() AND o.encerrar_em IS NULL
+        -- retorno combinado com o lead: quem retoma é a IA, com o contexto (não a mensagem da cadência)
+        AND o.agente_retorno_em IS NULL
         -- quem está numa sequência recebe os toques dela (nada de dois toques no mesmo lead)
         AND NOT ${emSequenciaSql('o.conta_id', 'o.empresa_id')}
         AND NOT EXISTS (SELECT 1 FROM comercial.mensagens m
@@ -157,7 +139,7 @@ export async function enviarProxima(
       texto: string;
       telefone: string | null;
     }>(
-      `UPDATE comercial.mensagens SET status = 'enviada', enviado_em = now(), chip_id = $2
+      `UPDATE comercial.mensagens SET status = 'enviada', enviado_em = now(), tentado_em = now(), chip_id = $2
         WHERE id = $1 AND conta_id = ${C} AND status = 'aprovada'
         RETURNING id, empresa_id::int, texto, telefone`,
       [candidata.id, chip.id],
@@ -192,6 +174,7 @@ export async function enviarProxima(
         { tipo: 'whatsapp', direcao: 'enviada', texto: msg.texto, contato: msg.telefone },
         AUTOR,
       );
+      await chips.envioOk(deps.pool, chip);
       return true;
     } catch (erro) {
       const texto = erro instanceof Error ? erro.message : String(erro);
@@ -200,6 +183,12 @@ export async function enviarProxima(
         [msg.id, texto.slice(0, 300)],
       );
       deps.log.warn({ err: erro, mensagem: msg.id, chip: chip.nome }, 'agente: falha ao enviar no WhatsApp');
+      // Chip falhando em sequência: pausa sozinho por 1 hora (e avisa), para não queimar o número.
+      await chips
+        .conferirSaude(deps.pool, chip)
+        .catch((e) =>
+          deps.log.warn({ err: e, chip: chip.nome }, 'agente: não consegui conferir a saúde do chip'),
+        );
       return false;
     }
   }
@@ -217,6 +206,7 @@ export async function rodarAgenteDaConta(deps: DepsMotor): Promise<void> {
     return;
   }
   await gerarRespostas(deps, cfg);
+  await retomarCombinados(deps, cfg);
   if (dentroDoHorario(cfg)) await gerarAbordagens(deps, cfg);
   await enviarProxima(deps, cfg);
 }

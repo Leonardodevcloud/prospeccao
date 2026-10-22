@@ -7,6 +7,7 @@ import { Aprendizados, BaseConhecimento, useConhecimento } from '../componentes/
 import { Chips } from '../componentes/Chips';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
+import { DesempenhoAgente, SimuladorIa } from '../componentes/SimuladorIa';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, formatarTelefone } from '../formatar';
 
 const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -117,6 +118,15 @@ function FormConfig(props: { config: ConfigAgente }) {
         />
         Revisar antes de enviar (recomendado no começo): cada mensagem espera sua aprovação aqui
       </label>
+      <label className="opcao">
+        <input
+          type="checkbox"
+          checked={f.avisoPassagem}
+          onChange={(e) => mudar('avisoPassagem', e.target.checked)}
+        />
+        Avisar o lead quando a IA passar para o time ("vou chamar alguém do time"; fora do horário, diz quando
+        o time volta)
+      </label>
       <div className="funil-ficha">
         <div className="campo">
           <label htmlFor="ag-horaInicio">Começa às (hora)</label>
@@ -205,7 +215,7 @@ function FormConfig(props: { config: ConfigAgente }) {
   );
 }
 
-type AbaAgente = 'atendimento' | 'base' | 'ensinar';
+type AbaAgente = 'atendimento' | 'base' | 'ensinar' | 'simulador' | 'desempenho';
 
 export function Agente() {
   const navegar = useNavigate();
@@ -245,6 +255,8 @@ export function Agente() {
     { id: 'atendimento', rotulo: 'Atendimento', conta: d.rascunhos.length + d.pausados.length, nova: true },
     { id: 'base', rotulo: 'Base de conhecimento', conta: nb?.sugeridos, nova: true },
     { id: 'ensinar', rotulo: 'O que falta ensinar', conta: nb?.lacunas, nova: true },
+    { id: 'simulador', rotulo: 'Simulador' },
+    { id: 'desempenho', rotulo: 'Desempenho' },
   ];
 
   return (
@@ -305,6 +317,8 @@ export function Agente() {
       </div>
 
       {aba === 'base' && <BaseConhecimento />}
+      {aba === 'simulador' && <SimuladorIa />}
+      {aba === 'desempenho' && <DesempenhoAgente />}
       {aba === 'ensinar' && (
         <Aprendizados
           aoAbrirLead={(id) => navegar(`/conversas?lead=${id}`)}

@@ -28,6 +28,33 @@ export function tempoDigitando(texto: string): number {
   return Math.min(7500, Math.max(1200, 900 + 22 * texto.length));
 }
 
+/**
+ * Mensagem ao lead quando a IA passa para o time, para ele não ficar sem resposta. Dentro do
+ * horário: alguém já vai falar; fora: quando o time volta. Varia o texto para não repetir sempre igual.
+ */
+export function avisoDePassagem(
+  o: { dentroDoHorario: boolean; volta: string | null; motivo?: 'pediu_pessoa' | 'sensivel' | 'outro' },
+  sorteio = Math.random(),
+): string {
+  if (!o.dentroDoHorario)
+    return o.volta
+      ? `Anotei aqui! Nosso time te responde ${o.volta}.`
+      : 'Anotei aqui! Nosso time te responde assim que voltar.';
+  if (o.motivo === 'sensivel')
+    return 'Entendi. Vou passar agora para o responsável, que fala com você em seguida.';
+  const opcoes =
+    o.motivo === 'pediu_pessoa'
+      ? [
+          'Claro! Já estou chamando alguém do time para falar com você.',
+          'Combinado, vou chamar uma pessoa do time agora mesmo.',
+        ]
+      : [
+          'Vou chamar alguém do time para continuar com você, só um instante.',
+          'Deixa eu chamar uma pessoa do time para te responder direitinho, já já ela fala com você.',
+        ];
+  return opcoes[Math.floor(sorteio * opcoes.length) % opcoes.length]!;
+}
+
 /* ───────────── Resumo da passagem ───────────── */
 
 export interface ResumoPassagem {

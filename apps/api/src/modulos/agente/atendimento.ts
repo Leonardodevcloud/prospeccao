@@ -1,6 +1,7 @@
 import type { Pool } from '@prospeccao/db';
 import {
   assuntoSensivel,
+  avisoDePassagem,
   type ContextoAgente,
   type DecisaoAgente,
   juntarMemoria,
@@ -18,6 +19,7 @@ import { obterConfig as configCadencia, mensagemDoLead } from '../funil/cadencia
 import * as funil from '../funil/repositorio.js';
 import { notificarDono } from '../notificacoes/repositorio.js';
 import * as base from './conhecimento.js';
+import { dentroDoHorario, proximaAbertura } from './horario.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -95,20 +97,41 @@ async function fichaDoLead(pool: Pool, empresaId: number): Promise<string[]> {
   }
 }
 
+/** Por que a IA passou o lead para o time (para os números de desempenho). */
+export type TipoPassagem = 'pediu_pessoa' | 'sensivel' | 'limite' | 'sem_ia' | 'falha' | 'verificacao' | 'ia';
+
+interface ContextoPassagem {
+  conversa: Mensagem[];
+  etapa: string;
+  leadNome: string;
+  contato: string | null;
+}
+
+/** Já avisamos este lead que o time vai responder (nas últimas 6 horas)? */
+const NOTA_AVISO = 'Aviso ao lead: a IA passou para o time';
+
 /**
- * Para de responder e passa o lead para o time: pausa a IA, põe "Responder" como próximo passo e
- * avisa o dono do lead. Com a IA disponível, junta um resumo da conversa.
+ * Para de responder e passa o lead para o time: pausa a IA, põe "Responder" como próximo passo,
+ * avisa o lead (para ele não ficar sem resposta) e o dono do lead, com um resumo da conversa.
  */
 export async function passarParaTime(
   deps: DepsAtendimento,
+  cfg: repo.ConfigAgente | null,
   empresaId: number,
   motivo: string,
-  contexto?: { conversa: Mensagem[]; etapa: string; leadNome: string; contato: string | null },
+  tipo: TipoPassagem,
+  contexto?: ContextoPassagem,
+  opcoes: { avisarLead?: boolean } = {},
 ): Promise<void> {
   const { pool } = deps;
   await pool.query(
-    `UPDATE comercial.oportunidades SET agente_pausa = $2 WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
+    `UPDATE comercial.oportunidades SET agente_pausa = $2, agente_retorno_em = NULL
+      WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
     [empresaId, motivo.slice(0, 300)],
+  );
+  await pool.query(
+    `INSERT INTO comercial.passagens_ia (conta_id, empresa_id, tipo, motivo) VALUES (${contaSql()}, $1, $2, $3)`,
+    [empresaId, tipo, motivo.slice(0, 300)],
   );
   await funil.atualizar(
     pool,
@@ -116,6 +139,31 @@ export async function passarParaTime(
     { proximaAcao: 'Responder: a IA passou para você', proximaAcaoEm: new Date().toISOString() },
     AUTOR,
   );
+
+  // Aviso ao lead: "vou chamar alguém do time" (fora do horário, quando o time volta).
+  if (cfg?.avisoPassagem && opcoes.avisarLead !== false && contexto) {
+    const { rows: ja } = await pool.query(
+      `SELECT 1 FROM comercial.mensagens WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND nota = $2
+          AND criado_em > now() - interval '6 hours' LIMIT 1`,
+      [empresaId, NOTA_AVISO],
+    );
+    const { telefone } = await mensagemDoLead(pool, empresaId);
+    if (!ja.length && telefone)
+      await repo.criarMensagem(pool, {
+        empresaId,
+        direcao: 'enviada',
+        texto: avisoDePassagem({
+          dentroDoHorario: dentroDoHorario(cfg),
+          volta: proximaAbertura(cfg),
+          motivo: tipo === 'pediu_pessoa' ? 'pediu_pessoa' : tipo === 'sensivel' ? 'sensivel' : 'outro',
+        }),
+        telefone,
+        status: 'aprovada',
+        origem: 'agente',
+        nota: NOTA_AVISO,
+      });
+  }
+
   let textoAviso = motivo;
   if (deps.ia?.resumir && contexto?.conversa.length) {
     const { rows } = await pool.query<{ nome: string }>(
@@ -167,19 +215,110 @@ async function registrarVerificacao(
 }
 
 /** Ações com mensagem para o lead (as outras não passam pelas verificações). */
-const COM_MENSAGEM = new Set(['responder', 'marcar_reuniao', 'encerrar_sem_interesse']);
+const COM_MENSAGEM = new Set(['responder', 'marcar_reuniao', 'agendar_retorno', 'encerrar_sem_interesse']);
 
-export async function responderLead(
-  deps: DepsAtendimento,
+/** Regras fixas, antes da IA (sem chance de erro). */
+export function regraFixa(
+  texto: string,
+): { tipo: 'parar' } | { tipo: 'pediu_pessoa' | 'sensivel'; motivo: string } | null {
+  if (pediuParaParar(texto)) return { tipo: 'parar' };
+  if (pediuHumano(texto)) return { tipo: 'pediu_pessoa', motivo: 'O lead pediu para falar com uma pessoa.' };
+  if (assuntoSensivel(texto))
+    return { tipo: 'sensivel', motivo: 'Assunto sério (reclamação ou jurídico): responda você.' };
+  return null;
+}
+
+export interface EntradaPensar {
+  empresaNome: string;
+  remetente: string;
+  lead: ContextoAgente['lead'];
+  conversa: { de: 'nos' | 'lead'; texto: string; em: string }[];
+  memoria: string[];
+  ficha: string[];
+  retomada?: string | null;
+}
+
+export interface Pensamento {
+  decisao: DecisaoAgente;
+  trechos: base.TrechoAchado[];
+  /** O que a 1ª resposta tinha de errado (vazio: passou de primeira). */
+  problemasIniciais: ProblemaVerificacao[];
+  /** A 1ª resposta, quando foi reescrita. */
+  primeiraResposta: string | null;
+  /** O que sobrou depois da reescrita: a mensagem não sai. */
+  barrada: ProblemaVerificacao[];
+}
+
+/**
+ * O cérebro do atendimento, igual na conversa de verdade e no simulador: busca os trechos da base
+ * que combinam com o que o lead escreveu, pede a decisão à IA, confere a resposta e, se precisar,
+ * pede uma reescrita com o motivo.
+ */
+export async function pensar(
+  pool: Pool,
+  ia: NonNullable<DepsAtendimento['ia']>,
   cfg: repo.ConfigAgente,
-  empresaId: number,
-  etapa: string,
-): Promise<void> {
-  const { pool } = deps;
-  const conversa = await conversaDoLead(pool, empresaId);
-  const doLead = ultimasDoLead(conversa) || conversa.at(-1)?.texto || '';
-  const ultimaId = conversa.at(-1)?.id ?? 0;
+  e: EntradaPensar,
+): Promise<Pensamento> {
+  const doLead: string[] = [];
+  for (let i = e.conversa.length - 1; i >= 0 && e.conversa[i]!.de === 'lead'; i--)
+    doLead.unshift(e.conversa[i]!.texto);
+  // Busca na base com o que ele escreveu agora (e a nossa última mensagem, que dá o assunto).
+  const nossaUltima = [...e.conversa].reverse().find((c) => c.de === 'nos')?.texto ?? '';
+  const trechos = await base.buscarTrechos(pool, `${doLead.join('\n') || e.retomada || ''}\n${nossaUltima}`);
+  const ctx: ContextoAgente = {
+    empresa: e.empresaNome,
+    sobreEmpresa: cfg.sobreEmpresa,
+    regras: cfg.regras,
+    horariosReuniao: cfg.horariosReuniao,
+    remetente: e.remetente,
+    agora: new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      dateStyle: 'full',
+      timeStyle: 'short',
+    }).format(new Date()),
+    lead: e.lead,
+    conversa: e.conversa,
+    conhecimento: trechos.map((t) => ({ titulo: t.titulo, texto: t.texto })),
+    memoria: e.memoria,
+    ficha: e.ficha,
+    retomada: e.retomada ?? null,
+  };
+  // O que a IA podia usar: só isso vale para preço, link, telefone e promessa.
+  const fontes = [
+    cfg.sobreEmpresa,
+    cfg.regras,
+    cfg.horariosReuniao,
+    ...trechos.map((t) => t.texto),
+    ...e.ficha,
+    ...e.memoria,
+    ...e.conversa.map((c) => c.texto),
+  ];
+  const enviadasAntes = e.conversa
+    .filter((c) => c.de === 'nos')
+    .slice(-6)
+    .map((c) => c.texto);
+  const verificar = (d: DecisaoAgente) =>
+    COM_MENSAGEM.has(d.acao) && d.resposta
+      ? verificarMensagem({ texto: d.resposta, fontes, enviadasAntes, acao: d.acao })
+      : [];
 
+  let decisao = await ia.decidir(ctx);
+  const problemasIniciais = verificar(decisao);
+  let barrada: ProblemaVerificacao[] = [];
+  let primeiraResposta: string | null = null;
+  if (problemasIniciais.length) {
+    primeiraResposta = decisao.resposta;
+    decisao = await ia.decidir({
+      ...ctx,
+      correcao: { texto: decisao.resposta, problemas: problemasIniciais.map((p) => p.detalhe) },
+    });
+    barrada = verificar(decisao);
+  }
+  return { decisao, trechos, problemasIniciais, primeiraResposta, barrada };
+}
+
+async function dadosDaConversa(pool: Pool, empresaId: number) {
   const { rows: lead } = await pool.query<{ nome: string; cidade: string | null; decisor: string | null }>(
     `SELECT e.nome, e.cidade,
             -- com quem a conversa está (pessoa indicada, com o cargo), senão o decisor do enriquecimento
@@ -193,18 +332,51 @@ export async function responderLead(
        FROM descoberta.empresas e WHERE e.id = $1`,
     [empresaId],
   );
-  const leadNome = lead[0]?.nome ?? '';
-  const contato = lead[0]?.decisor ?? null;
-  const contexto = { conversa, etapa, leadNome, contato };
+  const cad = await configCadencia(pool);
+  const { rows: contaRows } = await pool.query<{ nome: string }>(
+    `SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`,
+  );
+  return {
+    leadNome: lead[0]?.nome ?? '',
+    cidade: lead[0]?.cidade ?? null,
+    contato: lead[0]?.decisor ?? null,
+    remetente: cad.remetente,
+    empresaNome: contaRows[0]?.nome ?? 'nossa empresa',
+  };
+}
+
+const paraIa = (conversa: Mensagem[]) =>
+  conversa.map((c) => ({
+    de: c.direcao === 'enviada' ? ('nos' as const) : ('lead' as const),
+    texto: c.texto,
+    em: c.em,
+  }));
+
+export async function responderLead(
+  deps: DepsAtendimento,
+  cfg: repo.ConfigAgente,
+  empresaId: number,
+  etapa: string,
+  opcoes: { retomada?: string } = {},
+): Promise<void> {
+  const { pool } = deps;
+  const conversa = await conversaDoLead(pool, empresaId);
+  const doLead = opcoes.retomada ? '' : ultimasDoLead(conversa) || conversa.at(-1)?.texto || '';
+  const ultimaId = conversa.at(-1)?.id ?? 0;
+  const dados = await dadosDaConversa(pool, empresaId);
+  const contexto: ContextoPassagem = { conversa, etapa, leadNome: dados.leadNome, contato: dados.contato };
+  const passar = (motivo: string, tipo: TipoPassagem, avisarLead = true) =>
+    passarParaTime(deps, cfg, empresaId, motivo, tipo, contexto, { avisarLead });
 
   const desligarIa = () =>
     pool.query(
-      `UPDATE comercial.oportunidades SET agente = false WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
+      `UPDATE comercial.oportunidades SET agente = false, agente_retorno_em = NULL
+        WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
       [empresaId],
     );
 
-  // Regras fixas, antes da IA (sem chance de erro).
-  if (pediuParaParar(doLead)) {
+  const fixa = doLead ? regraFixa(doLead) : null;
+  if (fixa?.tipo === 'parar') {
     await desligarIa();
     await funil.atualizar(
       pool,
@@ -214,106 +386,44 @@ export async function responderLead(
     );
     return;
   }
-  if (pediuHumano(doLead)) {
-    await passarParaTime(deps, empresaId, 'O lead pediu para falar com uma pessoa.', contexto);
-    return;
-  }
-  if (assuntoSensivel(doLead)) {
-    await passarParaTime(deps, empresaId, 'Assunto sério (reclamação ou jurídico): responda você.', contexto);
+  if (fixa) {
+    await passar(fixa.motivo, fixa.tipo);
     return;
   }
   const { rows: hoje } = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM comercial.mensagens
-      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND origem = 'agente' AND criado_em >= ${repo.HOJE_SP}`,
-    [empresaId],
+      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND origem = 'agente' AND criado_em >= ${repo.HOJE_SP}
+        AND nota IS DISTINCT FROM $2`,
+    [empresaId, NOTA_AVISO],
   );
   if ((hoje[0]?.n ?? 0) >= cfg.respostasDiaLead) {
-    await passarParaTime(
-      deps,
-      empresaId,
-      `A IA já respondeu ${cfg.respostasDiaLead} vezes hoje: continue você.`,
-      contexto,
-    );
+    await passar(`A IA já respondeu ${cfg.respostasDiaLead} vezes hoje: continue você.`, 'limite');
     return;
   }
   if (!deps.ia) {
-    await passarParaTime(deps, empresaId, 'O lead respondeu e a IA não está configurada para esta conta.');
+    await passar('O lead respondeu e a IA não está configurada para esta conta.', 'sem_ia');
     return;
   }
-  const ia = deps.ia;
 
   const m = await mensagemDoLead(pool, empresaId);
-  const cad = await configCadencia(pool);
-  const { rows: contaRows } = await pool.query<{ nome: string }>(
-    `SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`,
-  );
-  // Busca na base com o que ele escreveu agora (e a nossa última mensagem, que dá o assunto).
-  const nossaUltima = [...conversa].reverse().find((c) => c.direcao === 'enviada')?.texto ?? '';
-  const trechos = await base.buscarTrechos(pool, `${doLead}\n${nossaUltima}`);
   const memoria = await memoriaDoLead(pool, empresaId);
-  const ficha = await fichaDoLead(pool, empresaId);
-
-  const ctx: ContextoAgente = {
-    empresa: contaRows[0]?.nome ?? 'nossa empresa',
-    sobreEmpresa: cfg.sobreEmpresa,
-    regras: cfg.regras,
-    horariosReuniao: cfg.horariosReuniao,
-    remetente: cad.remetente,
-    agora: new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      dateStyle: 'full',
-      timeStyle: 'short',
-    }).format(new Date()),
-    lead: { empresa: leadNome, cidade: lead[0]?.cidade ?? null, contato, etapa },
-    conversa: conversa.map((c) => ({
-      de: c.direcao === 'enviada' ? 'nos' : 'lead',
-      texto: c.texto,
-      em: c.em,
-    })),
-    conhecimento: trechos.map((t) => ({ titulo: t.titulo, texto: t.texto })),
-    memoria,
-    ficha,
-  };
-
-  // O que a IA podia usar: só isso vale para preço, link, telefone e promessa.
-  const fontes = [
-    cfg.sobreEmpresa,
-    cfg.regras,
-    cfg.horariosReuniao,
-    ...trechos.map((t) => t.texto),
-    ...ficha,
-    ...conversa.map((c) => c.texto),
-  ];
-  const enviadasAntes = conversa
-    .filter((c) => c.direcao === 'enviada')
-    .slice(-6)
-    .map((c) => c.texto);
-  const verificar = (d: DecisaoAgente) =>
-    COM_MENSAGEM.has(d.acao) && d.resposta
-      ? verificarMensagem({ texto: d.resposta, fontes, enviadasAntes, acao: d.acao })
-      : [];
-
-  let decisao: DecisaoAgente;
-  /** Problemas que sobraram depois da reescrita: a mensagem não sai. */
-  let barrada: ProblemaVerificacao[] = [];
+  let p: Pensamento;
   try {
-    decisao = await ia.decidir(ctx);
-    const problemas = verificar(decisao);
-    if (problemas.length) {
-      const primeira = decisao;
-      decisao = await ia.decidir({
-        ...ctx,
-        correcao: { texto: primeira.resposta, problemas: problemas.map((p) => p.detalhe) },
-      });
-      barrada = verificar(decisao);
-      if (!barrada.length)
-        await registrarVerificacao(pool, empresaId, primeira.resposta, problemas, 'reescrita');
-    }
+    p = await pensar(pool, deps.ia, cfg, {
+      empresaNome: dados.empresaNome,
+      remetente: dados.remetente,
+      lead: { empresa: dados.leadNome, cidade: dados.cidade, contato: dados.contato, etapa },
+      conversa: paraIa(conversa),
+      memoria,
+      ficha: await fichaDoLead(pool, empresaId),
+      retomada: opcoes.retomada ?? null,
+    });
   } catch (erro) {
     deps.log.warn({ err: erro, empresaId }, 'agente: a IA falhou');
-    await passarParaTime(deps, empresaId, 'A IA falhou ao responder: responda você.', contexto);
+    await passar('A IA falhou ao responder: responda você.', 'falha');
     return;
   }
+  const { decisao, trechos, barrada } = p;
 
   // O lead escreveu de novo enquanto a IA pensava: responde tudo junto na próxima rodada.
   const { rows: novas } = await pool.query(
@@ -331,13 +441,13 @@ export async function responderLead(
       pergunta: decisao.semResposta,
       motivo: decisao.motivo || 'A base não responde',
     });
+  if (p.problemasIniciais.length && !barrada.length && p.primeiraResposta)
+    await registrarVerificacao(pool, empresaId, p.primeiraResposta, p.problemasIniciais, 'reescrita');
   if (barrada.length) {
     await registrarVerificacao(pool, empresaId, decisao.resposta, barrada, 'bloqueada');
-    await passarParaTime(
-      deps,
-      empresaId,
-      `A resposta da IA não passou nas verificações (${barrada.map((p) => p.regra).join(', ')}): responda você.`,
-      contexto,
+    await passar(
+      `A resposta da IA não passou nas verificações (${barrada.map((x) => x.regra).join(', ')}): responda você.`,
+      'verificacao',
     );
     return;
   }
@@ -357,6 +467,14 @@ export async function responderLead(
       origem: 'agente',
       nota: decisao.motivo,
     });
+
+  // A conversa voltou a andar: o retorno que estava combinado deixa de valer.
+  if (decisao.acao !== 'agendar_retorno')
+    await pool.query(
+      `UPDATE comercial.oportunidades SET agente_retorno_em = NULL
+        WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND agente_retorno_em IS NOT NULL`,
+      [empresaId],
+    );
 
   switch (decisao.acao) {
     case 'responder':
@@ -382,6 +500,31 @@ export async function responderLead(
         );
       if (decisao.resposta) await nova(decisao.resposta);
       break;
+    case 'agendar_retorno':
+      // O lead pediu para falar depois: a cadência espera e a IA retoma na data, com o contexto.
+      if (decisao.resposta) await nova(decisao.resposta);
+      await pool.query(
+        `UPDATE comercial.oportunidades SET agente_retorno_em = $2, agente_retorno_motivo = $3
+          WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
+        [empresaId, decisao.retornoEm, decisao.motivo.slice(0, 300) || 'O lead pediu para falar depois'],
+      );
+      await funil.registrarAtividade(
+        pool,
+        empresaId,
+        {
+          tipo: 'nota',
+          direcao: null,
+          texto: `A IA combinou retomar o contato: ${decisao.motivo}`,
+        },
+        AUTOR,
+      );
+      await funil.atualizar(
+        pool,
+        empresaId,
+        { proximaAcao: 'Retomar (combinado com o lead)', proximaAcaoEm: decisao.retornoEm },
+        AUTOR,
+      );
+      break;
     case 'encerrar_sem_interesse':
       if (decisao.resposta) await nova(decisao.resposta);
       await desligarIa();
@@ -402,9 +545,38 @@ export async function responderLead(
       );
       break;
     default:
+      // A IA já disse algo ("vou confirmar com o time"): não manda o aviso fixo junto.
       if (decisao.resposta) await nova(decisao.resposta);
-      await passarParaTime(deps, empresaId, decisao.motivo || 'A IA preferiu que você responda.', contexto);
+      await passar(decisao.motivo || 'A IA preferiu que você responda.', 'ia', !decisao.resposta);
   }
+}
+
+/**
+ * Retornos combinados que venceram: a IA retoma a conversa com o contexto ("como combinamos…"),
+ * no horário do agente. Sai pelo mesmo caminho das respostas (verificações, revisão).
+ */
+export async function retomarCombinados(deps: DepsAtendimento, cfg: repo.ConfigAgente, limite = 5) {
+  if (!deps.ia || !dentroDoHorario(cfg)) return 0;
+  const { rows } = await deps.pool.query<{ empresa_id: number; etapa: string; motivo: string | null }>(
+    `SELECT o.empresa_id::int, o.etapa, o.agente_retorno_motivo AS motivo FROM comercial.oportunidades o
+      WHERE o.conta_id = ${contaSql()} AND o.agente AND o.agente_pausa IS NULL
+        AND o.agente_retorno_em <= now() AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
+        AND NOT EXISTS (SELECT 1 FROM comercial.mensagens m
+                         WHERE m.conta_id = o.conta_id AND m.empresa_id = o.empresa_id
+                           AND m.status IN ('rascunho', 'aprovada'))
+      ORDER BY o.agente_retorno_em LIMIT $1`,
+    [limite],
+  );
+  for (const r of rows) {
+    await deps.pool.query(
+      `UPDATE comercial.oportunidades SET agente_retorno_em = NULL WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
+      [r.empresa_id],
+    );
+    await responderLead(deps, cfg, r.empresa_id, r.etapa, {
+      retomada: r.motivo || 'o lead pediu para falar depois',
+    });
+  }
+  return rows.length;
 }
 
 /**
