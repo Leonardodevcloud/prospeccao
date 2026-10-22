@@ -350,17 +350,29 @@ export async function reservarUsoPlaces(
   r: { campanhaId: number; buscaId: number; tetoCampanhaUsd: number | null; contaId: number },
 ): Promise<ReservaPlaces> {
   return comTransacao(pool, async (db) => {
-    // Um pedido de cada vez por conta (a franquia e os tetos são de cada conta).
-    await db.query(`SELECT pg_advisory_xact_lock(hashtext('descoberta.uso_places:' || $1))`, [r.contaId]);
+    // A franquia grátis é da chave do Google: conta com chave própria tem a sua; as que usam a da
+    // plataforma dividem a da conta principal. Um pedido de cada vez por cota (o enriquecimento
+    // usa a mesma trava). O teto do mês é de cada conta, sobre o que ela gastou.
+    const { rows: cota } = await db.query<{ id: number }>('SELECT cadastro.cota_places($1) AS id', [
+      r.contaId,
+    ]);
+    const cotaId = cota[0]?.id ?? r.contaId;
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext('places.cota:' || $1))`, [cotaId]);
     const cfg = await configPlaces(db, r.contaId);
-    const { rows: mes } = await db.query<{ pedidos: number; gasto: number }>(
-      `SELECT count(*)::int AS pedidos, coalesce(sum(custo_usd), 0)::float8 AS gasto
+    const cfgCota = cotaId === r.contaId ? cfg : await configPlaces(db, cotaId);
+    const { rows: usoCota } = await db.query<{ pedidos: number }>(
+      `SELECT coalesce((SELECT pedidos FROM descoberta.v_uso_places_cota
+                         WHERE cota_id = $1 AND mes = descoberta.mes_places()), 0)::int AS pedidos`,
+      [cotaId],
+    );
+    const { rows: mes } = await db.query<{ gasto: number }>(
+      `SELECT coalesce(sum(custo_usd), 0)::float8 AS gasto
          FROM descoberta.uso_places WHERE conta_id = $1 AND mes = descoberta.mes_places()`,
       [r.contaId],
     );
-    const usados = mes[0]?.pedidos ?? 0;
-    const paga = usados >= cfg.franquia_mensal;
-    const custo = paga ? cfg.preco_mil_usd / 1000 : 0;
+    const usados = usoCota[0]?.pedidos ?? 0;
+    const paga = usados >= cfgCota.franquia_mensal;
+    const custo = paga ? cfgCota.preco_mil_usd / 1000 : 0;
 
     if (paga && r.tetoCampanhaUsd != null) {
       if (r.tetoCampanhaUsd <= 0) {

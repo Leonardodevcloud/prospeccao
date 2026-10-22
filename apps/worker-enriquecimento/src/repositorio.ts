@@ -275,26 +275,26 @@ export async function marcarErro(db: Executor, empresaId: number, erro: string) 
 }
 
 /**
- * Reserva `n` pedidos do Google Places dentro da cota GRÁTIS do mês (somando o que a descoberta
- * já usou). Devolve false quando não cabe: aí o enriquecimento usa o Serper e não paga o Google.
+ * Reserva `n` pedidos do Google Places dentro da cota GRÁTIS do mês da chave usada (somando o que a
+ * descoberta já usou). Devolve false quando não cabe: aí o enriquecimento usa o Serper e não paga o Google.
  * Conta para mais quando a segunda tentativa (razão social) não acontece: nunca para menos.
  */
 export async function reservarPlacesGratis(pool: Pool, n: number, contaId: number): Promise<boolean> {
   const cliente = await pool.connect();
   try {
     await cliente.query('BEGIN');
-    // A cota é da chave do Google de cada conta.
-    await cliente.query(`SELECT pg_advisory_xact_lock(hashtext('enriquecimento.uso_places:' || $1))`, [
+    // A cota grátis é da chave do Google: conta com chave própria tem a sua; as que usam a da
+    // plataforma dividem a da conta principal. Mesma trava da descoberta (um pedido por vez na cota).
+    const { rows: cota } = await cliente.query<{ id: number }>('SELECT cadastro.cota_places($1) AS id', [
       contaId,
     ]);
+    const cotaId = cota[0]?.id ?? contaId;
+    await cliente.query(`SELECT pg_advisory_xact_lock(hashtext('places.cota:' || $1))`, [cotaId]);
     const { rows } = await cliente.query<{ franquia: number; usados: number }>(
       `SELECT coalesce((SELECT franquia_mensal FROM cadastro.v_config_places WHERE conta_id = $1), 1000)::int AS franquia,
-              (coalesce((SELECT pedidos FROM descoberta.v_uso_places_mes
-                          WHERE conta_id = $1 AND mes = descoberta.mes_places()), 0)
-               + coalesce((SELECT pedidos FROM enriquecimento.uso_places
-                            WHERE conta_id = $1 AND mes = descoberta.mes_places()), 0))::int
-                AS usados`,
-      [contaId],
+              coalesce((SELECT pedidos FROM descoberta.v_uso_places_cota
+                         WHERE cota_id = $1 AND mes = descoberta.mes_places()), 0)::int AS usados`,
+      [cotaId],
     );
     const { franquia = 1000, usados = 0 } = rows[0] ?? {};
     if (usados + n > franquia) {

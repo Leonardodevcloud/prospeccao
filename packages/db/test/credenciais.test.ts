@@ -55,6 +55,18 @@ describe('credenciais das contas', () => {
     expect(r.origem).toEqual({ places: 'conta', ors: null, resend: null, evolution: null, ia: 'plataforma' });
   });
 
+  it('conta parceira sem chave do Google usa a da plataforma (busca é serviço da plataforma)', () => {
+    const r = resolverCredenciais(conta(), { ...ambiente, orsKey: 'ors-plataforma' }, 2);
+    expect(r.places).toEqual({ apiKey: 'AIza-plataforma' });
+    expect(r.ors).toEqual({ apiKey: 'ors-plataforma' });
+    expect(r.origem).toMatchObject({
+      places: 'plataforma',
+      ors: 'plataforma',
+      resend: null,
+      evolution: null,
+    });
+  });
+
   it('conta principal: o ambiente completa o que ela não cadastrou, grupo a grupo', () => {
     const r = resolverCredenciais(
       // Só a chave do Resend sem remetente não forma o grupo: vale o Resend inteiro do ambiente.

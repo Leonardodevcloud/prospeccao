@@ -219,6 +219,13 @@ export function PainelPlaces() {
         </p>
       )}
 
+      {u.cotaDaPlataforma && (
+        <p className="quieto painel-places__nota">
+          Esta conta usa a chave do Google da plataforma: a franquia grátis acima é a da chave, somando todas
+          as contas que a usam (franquia e preço vêm da conta principal). O teto do mês vale só para o que
+          esta conta gasta.
+        </p>
+      )}
       {configurando && <FormConfig uso={u} aoFechar={() => setConfigurando(false)} />}
     </section>
   );

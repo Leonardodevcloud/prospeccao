@@ -681,6 +681,8 @@ export interface UsoPlaces {
   tetoMensalUsd: number | null;
   cotacaoBrl: number;
   maxBairros: number;
+  /** A conta usa a chave do Google da plataforma: a franquia é dividida com as outras contas nela. */
+  cotaDaPlataforma?: boolean;
 }
 
 export interface ConfigPlaces {

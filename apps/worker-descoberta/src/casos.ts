@@ -76,7 +76,8 @@ async function cruzarPendentes(deps: Deps, campanha: repo.CampanhaDescoberta, bu
 export async function dispararBuscaMaps(deps: Deps, buscaId: number) {
   const busca = await repo.obterBusca(deps.pool, buscaId);
   if (!busca) throw new ErroDefinitivo(`Busca ${buscaId} não existe`);
-  // Cada conta busca com a sua chave do Google.
+  // Busca só pelo Google Places (chave da conta ou da plataforma). O Apify não dispara buscas
+  // novas: só termina a coleta de runs antigos (coletarBuscaMaps).
   const places = await deps.placesDa(busca.conta_id);
   if (places) return buscarNoPlaces(deps, busca, places);
 
@@ -88,20 +89,9 @@ export async function dispararBuscaMaps(deps: Deps, buscaId: number) {
     await aoConcluirBusca(deps, campanha.id);
     return;
   }
-  if (!deps.maps)
-    throw new ErroDefinitivo(
-      'Sem Google Places para esta conta: o administrador do sistema cadastra a chave no painel master.',
-    );
-
-  const local = `${busca.bairro ? `${busca.bairro}, ` : ''}${busca.cidade}, ${busca.uf}, Brasil`;
-  const run = await deps.maps.iniciar({ termo: busca.termo, local, max: campanha.max_por_busca });
-  await repo.marcarBuscaRodando(deps.pool, buscaId, run.id, run.datasetId);
-  await deps.filas.publicar(
-    'maps.coletar',
-    { buscaId },
-    { atrasoSegundos: deps.ajustes.esperaColetaSegundos },
+  throw new ErroDefinitivo(
+    'Busca no Google não configurada: o administrador do sistema cadastra a chave do Google Places (GOOGLE_PLACES_KEY).',
   );
-  deps.log.info({ buscaId, runId: run.id, termo: busca.termo, local }, 'busca no Maps disparada');
 }
 
 /**

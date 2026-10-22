@@ -6,6 +6,7 @@ import { criarLogger, MOTIVO_META_LEADS } from '@prospeccao/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as casos from '../src/casos.js';
 import type { Deps } from '../src/dependencias.js';
+import * as repo from '../src/repositorio.js';
 
 const URL_TESTE = process.env.TEST_DATABASE_URL;
 const log = criarLogger('teste', 'silent');
@@ -265,6 +266,34 @@ describe.skipIf(!URL_TESTE)(
       ]);
       expect(rows[0].status).toBe('pendente');
       expect(rows[0].erro).toMatch(/Places API \(New\)/);
+    });
+
+    it('franquia grátis é da chave: conta sem chave própria divide a da plataforma', async () => {
+      await pool.query(
+        `INSERT INTO cadastro.contas (id, nome) VALUES (2, 'Cliente sem chave'), (3, 'Cliente com chave')`,
+      );
+      await pool.query(
+        `INSERT INTO cadastro.credenciais_conta (conta_id, dicas) VALUES (3, '{"placesKey": "…abcd"}')`,
+      );
+      const cota = async (id: number) =>
+        (await pool.query<{ c: number }>('SELECT cadastro.cota_places($1) AS c', [id])).rows[0]!.c;
+      expect([await cota(1), await cota(2), await cota(3)]).toEqual([1, 1, 3]);
+
+      // A plataforma (conta 1) já usou a franquia inteira: o primeiro pedido da conta 2 já é pago,
+      // e o da conta 3 (chave própria, cota zerada) é grátis.
+      const { rows: u } = await pool.query<{ n: number }>(
+        `SELECT pedidos AS n FROM descoberta.v_uso_places_cota WHERE cota_id = 1 AND mes = descoberta.mes_places()`,
+      );
+      await pool.query(`UPDATE cadastro.config_places SET franquia_mensal = $1 WHERE conta_id = 1`, [
+        u[0]!.n,
+      ]);
+      const reservar = (contaId: number) =>
+        repo.reservarUsoPlaces(pool, { campanhaId: 1, buscaId: 1, tetoCampanhaUsd: null, contaId });
+      const r2 = await reservar(2);
+      const r3 = await reservar(3);
+      expect([r2.ok && r2.paga, r3.ok && r3.paga]).toEqual([true, false]);
+      await pool.query(`DELETE FROM descoberta.uso_places WHERE conta_id IN (2, 3)`);
+      await pool.query(`UPDATE cadastro.config_places SET franquia_mensal = 1000 WHERE conta_id = 1`);
     });
 
     it('meta de leads: para a busca quando já tem leads, enriquece só a meta e retoma se ela subir', async () => {

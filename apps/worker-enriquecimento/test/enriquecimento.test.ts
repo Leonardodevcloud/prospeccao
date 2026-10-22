@@ -666,9 +666,15 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(await reservarPlacesGratis(pool, 2, 1)).toBe(false); // passaria de 3: vai para o Serper
     expect(await reservarPlacesGratis(pool, 1, 1)).toBe(true);
     expect(await reservarPlacesGratis(pool, 1, 1)).toBe(false);
-    // Outra conta tem a sua chave e a sua cota (não conta o que a conta 1 gastou).
+    // Outra conta sem chave própria usa a da plataforma: divide a cota (que já acabou).
     await pool.query(`INSERT INTO cadastro.contas (id, nome) VALUES (2, 'Parceira') ON CONFLICT DO NOTHING`);
     await pool.query('SELECT cadastro.preparar_conta(2)');
+    expect(await reservarPlacesGratis(pool, 2, 2)).toBe(false);
+    // Com a chave dela, tem a sua cota (não conta o que a conta 1 gastou).
+    await pool.query(
+      `INSERT INTO cadastro.credenciais_conta (conta_id, dicas) VALUES (2, '{"placesKey": "…abcd"}')
+       ON CONFLICT (conta_id) DO UPDATE SET dicas = EXCLUDED.dicas`,
+    );
     expect(await reservarPlacesGratis(pool, 2, 2)).toBe(true);
     await pool.query('UPDATE cadastro.config_places SET franquia_mensal = 1000 WHERE conta_id = 1');
   });

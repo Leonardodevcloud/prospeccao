@@ -19,8 +19,7 @@ const env = carregarEnv(
     GOOGLE_PLACES_KEY: opcional(z.string().min(10)),
     CHAVE_CREDENCIAIS: opcional(z.string().min(32)),
     /** "apify" força o Apify mesmo com a chave do Google (para voltar atrás sem mexer em código). */
-    MAPS_PROVEDOR: z.enum(['places', 'apify']).default('places'),
-    /** Opcional (legado): Apify, usado só sem GOOGLE_PLACES_KEY ou com MAPS_PROVEDOR=apify. */
+    /** Opcional (legado): Apify só termina a coleta de buscas antigas; buscas novas são no Places. */
     APIFY_TOKEN: opcional(z.string().min(10)),
     APIFY_MAPS_ATOR: z.string().default('compass~crawler-google-places'),
     /** JSON com opções extras do ator, ex.: {"scrapePlaceDetailPage":true}. */
@@ -47,11 +46,10 @@ const env = carregarEnv(
 );
 
 const log = criarLogger('worker-descoberta', env.LOG_LEVEL);
-const usarPlaces = env.MAPS_PROVEDOR === 'places';
 const chave = chaveDoAmbiente();
 if (!chave)
   log.warn(
-    'CHAVE_CREDENCIAIS não configurada: só a conta principal busca no Google (com GOOGLE_PLACES_KEY).',
+    'CHAVE_CREDENCIAIS não configurada: chaves cadastradas por conta não são lidas; vale só GOOGLE_PLACES_KEY.',
   );
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-descoberta', max: 6 });
 // Sinal de vida para o painel de alertas (worker parado aparece para o master).
@@ -86,7 +84,6 @@ const deps: Deps = {
   filas,
   log,
   async placesDa(contaId) {
-    if (!usarPlaces) return null;
     const c = await credenciais.obter(contaId);
     const cfg = c.places;
     return cfg ? { buscar: (busca) => places.buscarTexto(cfg, busca) } : null;
@@ -154,7 +151,9 @@ await casos
   .catch((erro) => log.warn({ err: erro }, 'não consegui retomar buscas'));
 log.info(
   {
-    buscas: usarPlaces ? 'Google Places (chave de cada conta)' : 'Apify',
+    buscas: env.GOOGLE_PLACES_KEY
+      ? 'Google Places (chave da conta ou da plataforma)'
+      : 'Google Places (só contas com chave própria)',
     apify: cfgApify ? 'ligado (reserva)' : 'desligado',
   },
   'worker-descoberta pronto',

@@ -247,10 +247,13 @@ function Andamento(props: {
         {noTeto ? (
           <div className="etapa-campanha__erro">
             <p className="erro-texto">
-              {fmtNumero(p.buscasBloqueadas)} {p.buscasBloqueadas === 1 ? 'busca parada' : 'buscas paradas'}{' '}
-              no teto. {p.erroBusca}
+              {fmtNumero(p.buscasBloqueadas - pelaMeta)}{' '}
+              {p.buscasBloqueadas - pelaMeta === 1 ? 'busca parada' : 'buscas paradas'}{' '}
+              {master
+                ? `no teto. ${p.erroBusca ?? ''}`
+                : 'no limite de uso do Google desta conta. Fale com o suporte do Prospect Team para liberar.'}
             </p>
-            {c.status !== 'encerrada' && (
+            {master && c.status !== 'encerrada' && (
               <Button size="sm" disabled={props.ocupado} onClick={props.aoTentarDeNovo}>
                 Ajustar teto e retomar
               </Button>
@@ -260,7 +263,11 @@ function Andamento(props: {
           <div className="etapa-campanha__erro">
             <p className="erro-texto">
               {paradas > 0 && `${fmtNumero(paradas)} ${paradas === 1 ? 'busca parada' : 'buscas paradas'}. `}
-              {p.erroBusca ?? 'Ela não está mais na fila: clique em "Tentar de novo".'}
+              {p.erroBusca
+                ? master
+                  ? p.erroBusca
+                  : 'A busca no Google teve um problema. Nosso suporte já foi avisado; você pode tentar de novo.'
+                : 'Ela não está mais na fila: clique em "Tentar de novo".'}
             </p>
             {ativa && (
               <Button size="sm" disabled={props.ocupado} onClick={props.aoTentarDeNovo}>

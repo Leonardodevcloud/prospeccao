@@ -1,6 +1,6 @@
 import { criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
-import type { ItemMaps, Run } from '@prospeccao/integrations/apify';
+import type { ItemMaps } from '@prospeccao/integrations/apify';
 import type { NomeJob, PayloadJob } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -41,7 +41,7 @@ function item(p: Partial<ItemMaps> & Pick<ItemMaps, 'placeId' | 'nome'>): ItemMa
   };
 }
 
-describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS simulados)', () => {
+describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Google Places e ORS simulados)', () => {
   let pool: Pool;
   const publicados: { nome: NomeJob; payload: object }[] = [];
 
@@ -68,7 +68,6 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
     };
   }
 
-  let chamadasObter = 0;
   const deps = (): Deps => ({
     pool,
     log,
@@ -78,19 +77,14 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
         return 'job';
       },
     },
-    placesDa: async () => null, // este teste cobre o caminho do Apify (legado); o Places está em places.test.ts
-    maps: {
-      async iniciar(): Promise<Run> {
-        return { id: 'run1', status: 'RUNNING', datasetId: 'ds1' };
+    // Google Places simulado: uma página com os 4 lugares (dados brutos no formato antigo, que a
+    // reidratação também lê).
+    placesDa: async () => ({
+      async buscar() {
+        return { itens: itensMaps, ignorados: 0, proximaPagina: null };
       },
-      async obter(): Promise<Run> {
-        chamadasObter++;
-        return { id: 'run1', status: chamadasObter > 1 ? 'SUCCEEDED' : 'RUNNING', datasetId: 'ds1' };
-      },
-      async itens() {
-        return { itens: itensMaps, ignorados: 0 };
-      },
-    },
+    }),
+    maps: null,
     geoDa: async () => ({
       // Só a empresa C (sem Maps) chega aqui: fica a ~80 km da base.
       async geocodificar() {

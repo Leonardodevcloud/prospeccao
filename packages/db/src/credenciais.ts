@@ -9,6 +9,8 @@ import type { Executor } from './pool.js';
  *
  * Regra de uso: o que a conta cadastrou vale; a conta principal (a da plataforma) usa as
  * variáveis do ambiente quando não cadastrou; a IA cai na da plataforma para todas as contas.
+ * Busca no Google (Places) e geolocalização (ORS) são serviços da plataforma: toda conta sem
+ * chave própria usa a do ambiente (o uso do Google é contado e limitado por conta).
  * Cada grupo (Resend, Evolution, IA) vem inteiro de um lugar só: nunca a chave de um com o
  * domínio do outro.
  */
@@ -273,7 +275,7 @@ export function resolverCredenciais(
     if (valor(s[campo])) {
       r[nome] = { apiKey: valor(s[campo])! };
       r.origem[nome] = 'conta';
-    } else if (usaAmbiente && valor(amb)) {
+    } else if (valor(amb)) {
       r[nome] = { apiKey: valor(amb)! };
       r.origem[nome] = 'plataforma';
     }
