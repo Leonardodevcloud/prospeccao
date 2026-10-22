@@ -19,6 +19,9 @@ export const STATUS_CAMPANHA = ['rascunho', 'ativa', 'pausada', 'encerrada'] as 
 export type StatusCampanha = (typeof STATUS_CAMPANHA)[number];
 
 export const MODOS_CAMPANHA = ['semi', 'auto'] as const;
+
+/** Motivo gravado na busca do Maps que não rodou porque a campanha já tem leads para a meta. */
+export const MOTIVO_META_LEADS = 'Meta de leads atingida: esta busca não precisou rodar.';
 export const CADENCIAS = ['padrao', 'curta'] as const;
 
 export const ORIGENS_EMPRESA = ['cnpj', 'maps', 'ambos'] as const;
@@ -112,6 +115,18 @@ export const campanhaEntrada = z.object({
   cadencia: z.enum(CADENCIAS).default('padrao'),
   modo: z.enum(MODOS_CAMPANHA).default('semi'),
   maxPorBusca: z.coerce.number().int().min(20).max(500).default(120),
+  /** Quantos leads enriquecer. null = todos que a busca achar. */
+  limiteLeads: z
+    .preprocess(
+      (v) => (v === '' ? null : v),
+      z.coerce
+        .number()
+        .int('A meta de leads é um número inteiro.')
+        .min(10, 'Meta mínima de 10 leads.')
+        .max(100_000, 'Meta máxima de 100.000 leads.')
+        .nullable(),
+    )
+    .default(null),
 });
 export type CampanhaEntrada = z.infer<typeof campanhaEntrada>;
 export const campanhaAtualizacao = parcialSemPadroes(campanhaEntrada);

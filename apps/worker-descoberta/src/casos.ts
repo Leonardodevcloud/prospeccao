@@ -7,7 +7,7 @@ import {
   textoDaBusca,
 } from '@prospeccao/integrations/places';
 import { ErroDefinitivo } from '@prospeccao/queue';
-import { AppError, type ItemPlanilhaMaps, normalizarTelefone } from '@prospeccao/shared';
+import { AppError, type ItemPlanilhaMaps, MOTIVO_META_LEADS, normalizarTelefone } from '@prospeccao/shared';
 import { cruzarResultado } from './cruzamento.js';
 import type { Deps } from './dependencias.js';
 import * as repo from './repositorio.js';
@@ -83,6 +83,11 @@ export async function dispararBuscaMaps(deps: Deps, buscaId: number) {
   if (busca.status !== 'pendente') return; // já disparada (job repetido)
   const campanha = await repo.obterCampanha(deps.pool, busca.campanha_id);
   if (campanha?.status !== 'ativa') return; // fica pendente até a campanha voltar
+  if (await repo.metaAtingida(deps.pool, campanha)) {
+    await repo.bloquearBusca(deps.pool, buscaId, MOTIVO_META_LEADS);
+    await aoConcluirBusca(deps, campanha.id);
+    return;
+  }
   if (!deps.maps)
     throw new ErroDefinitivo(
       'Sem Google Places para esta conta: o administrador do sistema cadastra a chave no painel master.',
@@ -114,13 +119,28 @@ async function buscarNoPlaces(
   if (campanha?.status !== 'ativa') return; // fica pendente até a campanha voltar
   const busca = await repo.reivindicarBuscaPlaces(deps.pool, inicial.id);
   if (!busca) return; // outra tarefa está nela, ou já terminou
+  // A campanha já tem leads para a meta: a busca não roda (nem gasta no Google).
+  if (busca.paginas === 0 && (await repo.metaAtingida(deps.pool, campanha))) {
+    await repo.bloquearBusca(deps.pool, busca.id, MOTIVO_META_LEADS);
+    await aoConcluirBusca(deps, campanha.id);
+    return;
+  }
 
   const maxPaginas = Math.min(MAX_PAGINAS, Math.max(1, Math.ceil(campanha.max_por_busca / POR_PAGINA)));
   const texto = textoDaBusca(busca);
   let paginas = busca.paginas;
   let proxima = busca.proxima_pagina;
 
+  let bateuMeta = false;
   while (paginas < maxPaginas && (paginas === 0 || proxima)) {
+    // Meta de leads atingida no meio da busca: para aqui, guardando a página (volta se a meta subir).
+    if (paginas > 0) {
+      await cruzarPendentes(deps, campanha, busca);
+      if (await repo.metaAtingida(deps.pool, campanha)) {
+        bateuMeta = true;
+        break;
+      }
+    }
     const reserva = await repo.reservarUsoPlaces(deps.pool, {
       campanhaId: campanha.id,
       buscaId: busca.id,
@@ -164,8 +184,17 @@ async function buscarNoPlaces(
   const itens = await repo.contarResultados(deps.pool, busca.id);
 
   // Encheu? O Google não entrega mais que isso por texto: divide a cidade por bairro.
+  const encheu = !busca.bairro && paginas >= MAX_PAGINAS && itens >= MAX_PAGINAS * POR_PAGINA;
+  // Parou na meta, ou encheu mas a meta já foi: fica parada (sem dividir por bairro) e retoma
+  // daqui se a meta subir.
+  if (bateuMeta || (encheu && (await repo.metaAtingida(deps.pool, campanha)))) {
+    await repo.bloquearBusca(deps.pool, busca.id, MOTIVO_META_LEADS);
+    deps.log.info({ buscaId: busca.id, texto, paginas, itens }, 'busca parada na meta de leads');
+    await aoConcluirBusca(deps, campanha.id);
+    return;
+  }
   let porBairro = 0;
-  if (!busca.bairro && paginas >= MAX_PAGINAS && itens >= MAX_PAGINAS * POR_PAGINA) {
+  if (encheu) {
     const cfg = await repo.configPlaces(deps.pool, campanha.conta_id);
     const bairros = await repo.bairrosParaBusca(deps.pool, {
       cidade: busca.cidade,

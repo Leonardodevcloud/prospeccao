@@ -2,7 +2,7 @@ import { criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
 import { converterLugar, type PaginaPlaces, textoDaBusca } from '@prospeccao/integrations/places';
 import type { NomeJob, PayloadJob } from '@prospeccao/queue';
-import { criarLogger } from '@prospeccao/shared';
+import { criarLogger, MOTIVO_META_LEADS } from '@prospeccao/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as casos from '../src/casos.js';
 import type { Deps } from '../src/dependencias.js';
@@ -77,7 +77,12 @@ describe.skipIf(!URL_TESTE)(
         return { itens: brutos.map((x) => converterLugar(x)!), ignorados: 0, proximaPagina: null };
       }
       const n = b.pagina ? Number(b.pagina) : 1;
-      const brutos = Array.from({ length: 20 }, (_, k) => lugar(`cid-${n}-${k}`, `Autopeças ${n}-${k}`));
+      // Outra cidade, outros lugares (Salvador mantém os ids de sempre).
+      const cidade = /em ([^,]+?) - [A-Z]{2}$/.exec(b.texto)?.[1] ?? 'Salvador';
+      const pre = cidade === 'Salvador' ? '' : `${cidade}-`;
+      const brutos = Array.from({ length: 20 }, (_, k) =>
+        lugar(`${pre}cid-${n}-${k}`, `${pre}Autopeças ${n}-${k}`),
+      );
       return {
         itens: brutos.map((x) => converterLugar(x)!),
         ignorados: 0,
@@ -260,6 +265,80 @@ describe.skipIf(!URL_TESTE)(
       ]);
       expect(rows[0].status).toBe('pendente');
       expect(rows[0].erro).toMatch(/Places API \(New\)/);
+    });
+
+    it('meta de leads: para a busca quando já tem leads, enriquece só a meta e retoma se ela subir', async () => {
+      await pool.query(
+        `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status, limite_leads)
+       VALUES (1, 'Com meta', 1, '[{"cidade":"Camaçari","uf":"BA"}]', NULL, 'ativa', 25)`,
+      );
+      const { rows: nova } = await pool.query<{ id: number }>(
+        `SELECT id FROM cadastro.campanhas WHERE nome = 'Com meta'`,
+      );
+      const id = Number(nova[0]!.id);
+      const d = deps();
+      publicados.length = 0;
+      chamadas.length = 0;
+      const pedidosEnriq: number[] = [];
+      const drenarContando = async () => {
+        let guarda = 0;
+        while (publicados.length && guarda++ < 500) {
+          const job = publicados.shift()!;
+          const p = job.payload as Record<string, number>;
+          if (job.nome === 'campanha.buscar_cnpj') await casos.buscarNaBaseCnpj(d, p.campanhaId!);
+          else if (job.nome === 'maps.buscar') await casos.dispararBuscaMaps(d, p.buscaId!);
+          else if (job.nome === 'enriquecimento.solicitar') pedidosEnriq.push(p.empresaId!);
+        }
+      };
+      await casos.iniciarCampanha(d, id);
+      await drenarContando();
+      // Página 1 (20) não bastava; com a 2 (40) passou de 25: a 3 e os bairros nem rodam.
+      expect(chamadas.map((c) => c.pagina)).toEqual([null, '2']);
+      const busca = async () =>
+        (
+          await pool.query(
+            `SELECT status, paginas, erro FROM descoberta.buscas_maps WHERE campanha_id = $1`,
+            [id],
+          )
+        ).rows;
+      expect(await busca()).toEqual([{ status: 'bloqueada', paginas: 2, erro: MOTIVO_META_LEADS }]);
+      // Só 25 vão para o enriquecimento, todas achadas no Google (antes das só da Receita).
+      expect(pedidosEnriq).toHaveLength(25);
+      const { rows: origens } = await pool.query(
+        `SELECT origem, count(*)::int AS n FROM descoberta.campanha_empresas
+          WHERE campanha_id = $1 AND enriquecimento_solicitado_em IS NOT NULL GROUP BY 1`,
+        [id],
+      );
+      expect(origens.every((o) => o.origem !== 'cnpj')).toBe(true);
+
+      // Meta sobe para 60: a busca retoma da página 3 e completa a meta.
+      await pool.query(`UPDATE cadastro.campanhas SET limite_leads = 60 WHERE id = $1`, [id]);
+      chamadas.length = 0;
+      pedidosEnriq.length = 0;
+      await casos.iniciarCampanha(d, id);
+      await drenarContando();
+      expect(chamadas.map((c) => c.pagina)).toEqual(['3']);
+      expect(pedidosEnriq).toHaveLength(35);
+      const { rows: total } = await pool.query(
+        `SELECT count(*)::int AS n FROM descoberta.campanha_empresas
+          WHERE campanha_id = $1 AND enriquecimento_solicitado_em IS NOT NULL`,
+        [id],
+      );
+      expect(total[0].n).toBe(60);
+
+      // Outra campanha na mesma cidade: as 60 já foram leads da "Com meta", então nada vai de novo
+      // para o enriquecimento (nem ocupa a meta dela).
+      await pool.query(
+        `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status, limite_leads)
+       VALUES (1, 'Repetida', 1, '[{"cidade":"Camaçari","uf":"BA"}]', NULL, 'ativa', 10)`,
+      );
+      const { rows: rep } = await pool.query<{ id: number }>(
+        `SELECT id FROM cadastro.campanhas WHERE nome = 'Repetida'`,
+      );
+      pedidosEnriq.length = 0;
+      await casos.iniciarCampanha(d, Number(rep[0]!.id));
+      await drenarContando();
+      expect(pedidosEnriq).toHaveLength(0);
     });
   },
 );

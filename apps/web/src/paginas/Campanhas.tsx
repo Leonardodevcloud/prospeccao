@@ -25,7 +25,14 @@ function lerCidades(linhas: string[]) {
 function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
   const cliente = useQueryClient();
   const nichos = useQuery({ queryKey: ['nichos'], queryFn: () => api<Nicho[]>('/nichos') });
-  const [f, setF] = useState({ nome: '', nichoId: '', cidades: [] as string[], maxPorBusca: '120' });
+  const [f, setF] = useState({
+    nome: '',
+    nichoId: '',
+    cidades: [] as string[],
+    limiteLeads: '300',
+    maxPorBusca: '120',
+  });
+  const [ajustes, setAjustes] = useState(false);
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const mudar = (campo: keyof typeof f) => (e: { target: { value: string } }) =>
     setF({ ...f, [campo]: e.target.value });
@@ -108,12 +115,34 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
           dica="Uma por linha, no formato Cidade/UF. Pode misturar estados."
         />
         <TextField
-          rotulo="Lugares por busca no Google Maps"
+          rotulo="Quantos leads você quer"
           inputMode="numeric"
-          value={f.maxPorBusca}
-          onChange={mudar('maxPorBusca')}
-          dica="Quantos lugares cada busca traz: 20 por página, até 3 páginas (60). Com 60 ou mais, a cidade que enche é dividida por bairro para achar mais."
+          value={f.limiteLeads}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            setF({ ...f, limiteLeads: e.target.value.replace(/\D/g, '') })
+          }
+          placeholder="Todos que encontrar"
+          dica="A campanha para de buscar no Google quando já tem leads suficientes e só enriquece essa quantidade, começando pelos achados no Google com mais avaliações. Em branco, traz todos. Dá para aumentar depois."
         />
+        <div>
+          <button
+            type="button"
+            className="link-botao"
+            aria-expanded={ajustes}
+            onClick={() => setAjustes(!ajustes)}
+          >
+            {ajustes ? 'Esconder ajustes da busca' : 'Ajustes da busca no Google'}
+          </button>
+        </div>
+        {ajustes && (
+          <TextField
+            rotulo="Lugares por busca no Google Maps"
+            inputMode="numeric"
+            value={f.maxPorBusca}
+            onChange={mudar('maxPorBusca')}
+            dica="Quantos lugares cada pesquisa traz: 20 por página, até 3 páginas (60). Com 60 ou mais, a cidade que enche é dividida por bairro para achar mais."
+          />
+        )}
         <div className="nota-campanha">
           <b>E a abordagem?</b>
           <span>
@@ -172,7 +201,10 @@ function Andamento(props: {
   };
   const ativa = c.status === 'ativa';
   const buscasTotal = p.buscasPendentes + p.buscasConcluidas + p.buscasComErro + p.buscasBloqueadas;
-  const noTeto = p.buscasBloqueadas > 0;
+  const pelaMeta = c.progresso.buscasPelaMeta ?? 0;
+  const noTeto = p.buscasBloqueadas - pelaMeta > 0;
+  // Com meta, o alvo do enriquecimento é a meta (ou menos, se a busca achou menos).
+  const alvo = c.limiteLeads != null ? Math.min(p.elegiveis, c.limiteLeads) : p.elegiveis;
   const paradas = ativa ? p.buscasParadas : 0;
   const buscando = ativa && p.buscasPendentes > paradas;
   const enriquecendo = p.naFilaEnriquecimento > 0;
@@ -242,11 +274,13 @@ function Andamento(props: {
               ? 'Campanha pausada: as buscas esperam ela voltar.'
               : buscando
                 ? `${fmtNumero(p.buscasPendentes - paradas)} em andamento no Google · cada uma leva poucos segundos.`
-                : buscasTotal
-                  ? `Concluídas · última ${fmtQuando(p.ultimaBusca)} · ${fmtNumero(p.noMaps)} lugares ligados`
-                  : ativa
-                    ? 'Preparando as buscas…'
-                    : 'Começa quando a campanha for iniciada.'}
+                : pelaMeta > 0
+                  ? `Meta de leads atingida: ${fmtNumero(pelaMeta)} ${pelaMeta === 1 ? 'busca parou' : 'buscas pararam'} antes, sem gastar no Google. Se aumentar a meta, elas continuam.`
+                  : buscasTotal
+                    ? `Concluídas · última ${fmtQuando(p.ultimaBusca)} · ${fmtNumero(p.noMaps)} lugares ligados`
+                    : ativa
+                      ? 'Preparando as buscas…'
+                      : 'Começa quando a campanha for iniciada.'}
           </p>
         )}
       </div>
@@ -259,10 +293,10 @@ function Andamento(props: {
             Enriquecimento
           </b>
           <span className="mono">
-            {fmtNumero(p.enriquecidos)} de {fmtNumero(p.elegiveis)} leads
+            {fmtNumero(p.enriquecidos)} de {fmtNumero(alvo)} leads
           </span>
         </div>
-        {p.elegiveis > 0 && <Barra feito={p.enriquecidos} total={p.elegiveis} rotulo="Leads enriquecidos" />}
+        {alvo > 0 && <Barra feito={p.enriquecidos} total={alvo} rotulo="Leads enriquecidos" />}
         {servico === 'pausado' ? (
           <p className="aviso-texto">
             {master
@@ -284,10 +318,12 @@ function Andamento(props: {
           </div>
         ) : (
           <p className="quieto">
-            {p.elegiveis === 0
+            {alvo === 0
               ? 'Começa quando as buscas encontrarem leads.'
-              : p.enriquecidos >= p.elegiveis
-                ? 'Todos os leads enriquecidos.'
+              : p.enriquecidos >= alvo
+                ? c.limiteLeads != null && p.enriquecidos >= c.limiteLeads
+                  ? 'Meta de leads completa.'
+                  : 'Todos os leads enriquecidos.'
                 : buscando
                   ? 'Começa quando as buscas no Maps terminarem.'
                   : 'Nada na fila. Use "Refazer enriquecimento" para enriquecer os que faltam.'}
@@ -295,6 +331,93 @@ function Andamento(props: {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Meta de leads no cartão. "Buscar mais" soma à meta: a busca no Google continua de onde parou e
+ * só empresas novas (nunca mandadas para o enriquecimento nesta nem em outra campanha) entram.
+ */
+function MetaLeads({ c }: { c: Campanha }) {
+  const cliente = useQueryClient();
+  const [modo, setModo] = useState<'ver' | 'mais' | 'alterar'>('ver');
+  const [valor, setValor] = useState('');
+  const meta = c.limiteLeads ?? null;
+  const reservados = c.progresso.reservados ?? 0;
+  const salvar = useMutation({
+    mutationFn: (limiteLeads: number | null) =>
+      api<Campanha>(`/campanhas/${c.id}`, { metodo: 'PATCH', corpo: { limiteLeads } }),
+    onSuccess: () => {
+      cliente.invalidateQueries({ queryKey: ['campanhas'] });
+      setModo('ver');
+    },
+  });
+  const abrir = (m: 'mais' | 'alterar') => {
+    setValor(m === 'mais' ? '300' : meta != null ? String(meta) : '');
+    setModo(m);
+  };
+  const enviar = (e: FormEvent) => {
+    e.preventDefault();
+    const n = Number(valor);
+    if (modo === 'mais') {
+      if (n > 0) salvar.mutate(Math.max(meta ?? 0, reservados) + n);
+    } else salvar.mutate(valor ? n : null);
+  };
+
+  if (modo === 'ver')
+    return (
+      <div className="meta-leads">
+        <span>
+          {meta != null ? (
+            <>
+              Meta: <b>{fmtNumero(meta)} leads</b> · {fmtNumero(Math.min(reservados, meta))} já enviados para
+              enriquecer
+            </>
+          ) : (
+            'Sem meta: todos os leads que encontrar'
+          )}
+        </span>
+        {c.status !== 'encerrada' && (
+          <span className="meta-leads__acoes">
+            {meta != null && (
+              <Button size="sm" variant="secondary" icon="plus" onClick={() => abrir('mais')}>
+                Buscar mais leads
+              </Button>
+            )}
+            <button type="button" className="link-botao" onClick={() => abrir('alterar')}>
+              {meta != null ? 'Alterar meta' : 'Definir meta'}
+            </button>
+          </span>
+        )}
+      </div>
+    );
+  return (
+    <form className="meta-leads meta-leads--editando" onSubmit={enviar}>
+      <label htmlFor={`meta-${c.id}`}>
+        {modo === 'mais' ? 'Quantos leads novos a mais' : 'Meta de leads'}
+      </label>
+      <input
+        id={`meta-${c.id}`}
+        className="filtro"
+        inputMode="numeric"
+        placeholder={modo === 'mais' ? '300' : 'Todos'}
+        value={valor}
+        onChange={(e) => setValor(e.target.value.replace(/\D/g, ''))}
+      />
+      <Button size="sm" variant="primary" type="submit" disabled={salvar.isPending}>
+        {modo === 'mais' ? 'Buscar' : 'Salvar'}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setModo('ver')}>
+        Cancelar
+      </Button>
+      {modo === 'mais' && (
+        <span className="campo__dica meta-leads__dica">
+          Só empresas novas: quem já foi enriquecido nesta ou em outra campanha não entra de novo nem gasta
+          API.{c.status !== 'ativa' && ' Inicie a campanha para começar a buscar.'}
+        </span>
+      )}
+      <ErroDaApi erro={salvar.error} />
+    </form>
   );
 }
 
@@ -393,6 +516,7 @@ function CardCampanha({ c }: { c: Campanha }) {
             {c.nichoNome} · {c.cidades.map((x) => `${x.cidade}/${x.uf}`).join(', ')}
             {c.raioKm != null && ` · até ${c.raioKm} km das bases`}
           </p>
+          <MetaLeads c={c} />
         </div>
         <Badge tone={TOM_STATUS_CAMPANHA[c.status]}>{ROTULO_STATUS_CAMPANHA[c.status]}</Badge>
       </div>

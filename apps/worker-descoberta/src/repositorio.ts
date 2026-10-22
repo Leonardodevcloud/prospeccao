@@ -24,6 +24,8 @@ export interface CampanhaDescoberta {
   teto_places_usd: number | null;
   /** Conta dona da campanha (credenciais, bases, funil). */
   conta_id: number;
+  /** Meta de leads (quantos enriquecer). null = todos que achar. */
+  limite_leads: number | null;
 }
 
 export async function obterCampanha(db: Executor, id: number): Promise<CampanhaDescoberta | null> {
@@ -537,32 +539,94 @@ export async function empresasSemLocalizacao(
 }
 
 /**
- * Marca e devolve as empresas prontas para enriquecer: localizadas, dentro do
- * raio, não fechadas e ainda não enviadas. Só campanhas ativas.
+ * Condições para a empresa da campanha poder virar lead (iguais na meta e no enriquecimento).
+ * Usa os apelidos ce (campanha_empresas), e (empresas) e c (v_campanhas_descoberta).
+ */
+const PODE_SER_LEAD = `
+  coalesce(e.maps_fechada, false) = false
+  -- MEI não contrata o serviço: não gasta enriquecimento (se o nicho excluir MEI).
+  AND NOT (e.mei AND c.excluir_mei)
+  -- Já marcada como fora do perfil no funil: não gasta enriquecimento.
+  AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d
+                   WHERE d.empresa_id = e.id AND d.conta_id = c.conta_id)
+  -- Já foi lead de outra campanha da conta: não é novo, não ocupa vaga na meta nem vai de novo.
+  AND (ce.enriquecimento_solicitado_em IS NOT NULL OR NOT EXISTS (
+        SELECT 1 FROM descoberta.campanha_empresas o
+          JOIN cadastro.v_campanhas_descoberta oc ON oc.id = o.campanha_id
+         WHERE o.empresa_id = ce.empresa_id AND o.campanha_id <> ce.campanha_id
+           AND oc.conta_id = c.conta_id AND o.enriquecimento_solicitado_em IS NOT NULL))`;
+
+/**
+ * A campanha já tem leads para a meta? Conta quem foi achado no Google (ou já foi para o
+ * enriquecimento) e pode virar lead. Sem meta: nunca.
+ */
+export async function metaAtingida(db: Executor, campanha: CampanhaDescoberta): Promise<boolean> {
+  if (campanha.limite_leads == null) return false;
+  const { rows } = await db.query<{ n: number }>(
+    `SELECT count(*)::int AS n
+       FROM descoberta.campanha_empresas ce
+       JOIN descoberta.empresas e ON e.id = ce.empresa_id
+       JOIN cadastro.v_campanhas_descoberta c ON c.id = ce.campanha_id
+      WHERE ce.campanha_id = $1
+        AND (ce.origem <> 'cnpj' OR ce.enriquecimento_solicitado_em IS NOT NULL)
+        AND coalesce(ce.dentro_do_raio, true)
+        AND ${PODE_SER_LEAD}`,
+    [campanha.id],
+  );
+  return (rows[0]?.n ?? 0) >= campanha.limite_leads;
+}
+
+/**
+ * Marca e devolve as empresas prontas para enriquecer: localizadas, dentro do raio, não fechadas
+ * e ainda não enviadas. Só campanhas ativas. Com meta de leads, só até a meta: primeiro quem foi
+ * achado no Google (mais avaliações antes), depois as da base de CNPJ. A trava evita que duas
+ * tarefas ao mesmo tempo passem da meta.
  */
 export async function reservarParaEnriquecimento(
-  db: Executor,
+  pool: Pool,
   filtro: { campanhaId?: number; empresaId?: number },
 ): Promise<{ empresa_id: number; campanha_id: number }[]> {
-  const { rows } = await db.query<{ empresa_id: number; campanha_id: number }>(
-    `UPDATE descoberta.campanha_empresas ce
-        SET enriquecimento_solicitado_em = now()
-       FROM descoberta.empresas e, cadastro.v_campanhas_descoberta c
-      WHERE e.id = ce.empresa_id AND c.id = ce.campanha_id AND c.status = 'ativa'
-        AND ce.enriquecimento_solicitado_em IS NULL
-        AND ce.dentro_do_raio
-        AND coalesce(e.maps_fechada, false) = false
-        -- MEI não contrata o serviço: não gasta enriquecimento (se o nicho excluir MEI).
-        AND NOT (e.mei AND c.excluir_mei)
-        -- Achada de novo, mas já marcada como fora do perfil no funil: não gasta enriquecimento.
-        AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d
-                         WHERE d.empresa_id = e.id AND d.conta_id = c.conta_id)
-        AND ($1::bigint IS NULL OR ce.campanha_id = $1)
-        AND ($2::bigint IS NULL OR ce.empresa_id = $2)
-      RETURNING ce.empresa_id, ce.campanha_id`,
-    [filtro.campanhaId ?? null, filtro.empresaId ?? null],
-  );
-  return rows;
+  return comTransacao(pool, async (db) => {
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext('descoberta.reservar_enriquecimento'))`);
+    const { rows } = await db.query<{ empresa_id: number; campanha_id: number }>(
+      `WITH candidatas AS (
+         SELECT ce.campanha_id, ce.empresa_id, c.limite_leads,
+                row_number() OVER (
+                  PARTITION BY ce.campanha_id
+                  ORDER BY (ce.origem <> 'cnpj') DESC, coalesce(e.maps_avaliacoes, 0) DESC, ce.empresa_id
+                ) AS ordem
+           FROM descoberta.campanha_empresas ce
+           JOIN descoberta.empresas e ON e.id = ce.empresa_id
+           JOIN cadastro.v_campanhas_descoberta c ON c.id = ce.campanha_id
+          WHERE c.status = 'ativa'
+            AND ce.enriquecimento_solicitado_em IS NULL
+            AND ce.dentro_do_raio
+            AND ${PODE_SER_LEAD}
+            AND ($1::bigint IS NULL OR ce.campanha_id = $1)
+            AND ($2::bigint IS NULL OR ce.empresa_id = $2)
+       ),
+       ja_enviadas AS (
+         SELECT campanha_id, count(*)::int AS n
+           FROM descoberta.campanha_empresas
+          WHERE enriquecimento_solicitado_em IS NOT NULL
+            AND campanha_id IN (SELECT DISTINCT campanha_id FROM candidatas)
+          GROUP BY 1
+       ),
+       escolhidas AS (
+         SELECT x.campanha_id, x.empresa_id
+           FROM candidatas x
+           LEFT JOIN ja_enviadas j ON j.campanha_id = x.campanha_id
+          WHERE x.limite_leads IS NULL OR x.ordem <= x.limite_leads - coalesce(j.n, 0)
+       )
+       UPDATE descoberta.campanha_empresas ce
+          SET enriquecimento_solicitado_em = now()
+         FROM escolhidas x
+        WHERE ce.campanha_id = x.campanha_id AND ce.empresa_id = x.empresa_id
+        RETURNING ce.empresa_id, ce.campanha_id`,
+      [filtro.campanhaId ?? null, filtro.empresaId ?? null],
+    );
+    return rows;
+  });
 }
 
 /** Busca do tipo planilha: já nasce "rodando" (as linhas chegam junto) e fecha no fim da importação. */

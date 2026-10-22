@@ -250,7 +250,14 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Apify e ORS
     // Inclusive a que fica a ~80 km da base: no nacional, distância não exclui ninguém.
     expect(rows.map((r) => r.nome)).toContain('PECAS LONGE');
     expect(rows.every((r) => r.dentro_do_raio === true)).toBe(true);
-    expect(enriquecer.filter((e) => e.campanhaId === 2)).toHaveLength(rows.length);
+    // Só vai para o enriquecimento quem é novo para a conta: as que a campanha 1 já mandou ficam
+    // de fora (a de ~80 km não tinha entrado na 1, por estar fora do raio).
+    const { rows: longe } = await pool.query(
+      `SELECT id AS empresa_id FROM descoberta.v_empresas_campanha WHERE campanha_id = 2 AND nome = 'PECAS LONGE'`,
+    );
+    expect(enriquecer.filter((e) => e.campanhaId === 2).map((e) => e.empresaId)).toEqual([
+      Number(longe[0].empresa_id),
+    ]);
     expect(localizar()).toBe(antesLocalizar);
   });
 

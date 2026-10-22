@@ -1,12 +1,17 @@
 import { comTransacao, type Executor, type Pool } from '@prospeccao/db';
-import type { CampanhaEntrada, EscopoReenriquecer, StatusCampanha } from '@prospeccao/shared';
+import {
+  type CampanhaEntrada,
+  type EscopoReenriquecer,
+  MOTIVO_META_LEADS,
+  type StatusCampanha,
+} from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
 
 /** Campanha com o progresso da descoberta (lido das views publicadas pelo domínio descoberta). */
 const SELECT = `
   SELECT c.id, c.nome, c.nicho_id AS "nichoId", n.nome AS "nichoNome", c.cidades, c.raio_km::float8 AS "raioKm",
          c.meta_diaria AS "metaDiaria", c.limite_envios_dia AS "limiteEnviosDia", c.cadencia, c.modo,
-         c.max_por_busca AS "maxPorBusca", c.teto_places_usd::float8 AS "tetoPlacesUsd", c.status, c.iniciada_em AS "iniciadaEm",
+         c.max_por_busca AS "maxPorBusca", c.limite_leads AS "limiteLeads", c.teto_places_usd::float8 AS "tetoPlacesUsd", c.status, c.iniciada_em AS "iniciadaEm",
          c.criado_em AS "criadoEm", c.atualizado_em AS "atualizadoEm",
          json_build_object(
            'empresas', coalesce(p.empresas, 0),
@@ -96,22 +101,29 @@ async function estadoDoEnriquecimento(
 async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]): Promise<T[]> {
   if (!campanhas.length) return campanhas;
   const ids = campanhas.map((c) => Number(c.id));
-  const [fila, servico, base, enriq, erros] = await Promise.all([
+  const [fila, servico, base, enriq, erros, meta] = await Promise.all([
     naFilaDoEnriquecimento(db),
     estadoDoEnriquecimento(db),
     db.query<{ ufs: string[] }>(
       `SELECT ufs FROM base_cnpj.importacoes
         WHERE status = 'concluida' AND motivo <> 'mei' ORDER BY concluido_em DESC LIMIT 1`,
     ),
-    db.query<{ campanha_id: string; enriquecidos: number; elegiveis: number }>(
+    db.query<{ campanha_id: string; enriquecidos: number; elegiveis: number; reservados: number }>(
       `SELECT ce.campanha_id, count(*) FILTER (WHERE l.status = 'concluido')::int AS enriquecidos,
-              count(*)::int AS elegiveis
+              count(*)::int AS elegiveis,
+              count(*) FILTER (WHERE ce.enriquecimento_solicitado_em IS NOT NULL)::int AS reservados
          FROM descoberta.campanha_empresas ce
          JOIN descoberta.empresas e ON e.id = ce.empresa_id AND NOT e.mei
          LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
         WHERE ce.campanha_id = ANY($1::bigint[])
           AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d
                            WHERE d.empresa_id = e.id AND d.conta_id = ${contaSql()})
+          -- Lead de outra campanha da conta não conta como novo nesta.
+          AND (ce.enriquecimento_solicitado_em IS NOT NULL OR NOT EXISTS (
+                SELECT 1 FROM descoberta.campanha_empresas o
+                  JOIN cadastro.campanhas oc ON oc.id = o.campanha_id
+                 WHERE o.empresa_id = ce.empresa_id AND o.campanha_id <> ce.campanha_id
+                   AND oc.conta_id = ${contaSql()} AND o.enriquecimento_solicitado_em IS NOT NULL))
         GROUP BY 1`,
       [ids],
     ),
@@ -119,12 +131,19 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
       `SELECT DISTINCT ON (campanha_id) campanha_id, erro,
               count(*) OVER (PARTITION BY campanha_id)::int AS total
          FROM descoberta.buscas_maps
-        WHERE campanha_id = ANY($1::bigint[]) AND erro IS NOT NULL
+        WHERE campanha_id = ANY($1::bigint[]) AND erro IS NOT NULL AND erro <> $2
           AND (status IN ('pendente', 'rodando', 'bloqueada') OR concluido_em > now() - interval '1 day')
         ORDER BY campanha_id, coalesce(concluido_em, criado_em) DESC`,
-      [ids],
+      [ids, MOTIVO_META_LEADS],
+    ),
+    db.query<{ campanha_id: string; n: number }>(
+      `SELECT campanha_id, count(*)::int AS n FROM descoberta.buscas_maps
+        WHERE campanha_id = ANY($1::bigint[]) AND status = 'bloqueada' AND erro = $2
+        GROUP BY 1`,
+      [ids, MOTIVO_META_LEADS],
     ),
   ]);
+  const pelaMeta = new Map(meta.rows.map((r) => [Number(r.campanha_id), r.n]));
   const ufsNaBase = base.rows[0]?.ufs ?? null;
   const porCampanha = new Map(enriq.rows.map((r) => [Number(r.campanha_id), r]));
   const erroPorCampanha = new Map(erros.rows.map((r) => [Number(r.campanha_id), r.erro]));
@@ -149,6 +168,8 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
       naFilaEnriquecimento: fila.get(Number(c.id)) ?? 0,
       enriquecidos: e?.enriquecidos ?? 0,
       elegiveis: e?.elegiveis ?? 0,
+      reservados: e?.reservados ?? 0,
+      buscasPelaMeta: pelaMeta.get(Number(c.id)) ?? 0,
       servicoEnriquecimento: servico,
       // Estados da campanha que a última importação da Receita não trouxe.
       ufsForaDaBase: ufsNaBase ? ufs.filter((u) => !ufsNaBase.includes(u)) : ufs,
@@ -184,8 +205,9 @@ export async function nichoAtivo(db: Executor, nichoId: number): Promise<boolean
 export async function criar(db: Executor, c: CampanhaEntrada): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO cadastro.campanhas
-       (conta_id, nome, nicho_id, cidades, raio_km, meta_diaria, limite_envios_dia, cadencia, modo, max_por_busca)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+       (conta_id, nome, nicho_id, cidades, raio_km, meta_diaria, limite_envios_dia, cadencia, modo, max_por_busca,
+        limite_leads)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
     [
       c.nome,
       c.nichoId,
@@ -196,6 +218,7 @@ export async function criar(db: Executor, c: CampanhaEntrada): Promise<number> {
       c.cadencia,
       c.modo,
       c.maxPorBusca,
+      c.limiteLeads,
     ],
   );
   return rows[0]!.id;
@@ -211,6 +234,7 @@ const COLUNAS: Record<string, string> = {
   cadencia: 'cadencia',
   modo: 'modo',
   maxPorBusca: 'max_por_busca',
+  limiteLeads: 'limite_leads',
 };
 
 export async function atualizar(db: Executor, id: number, dados: Record<string, unknown>) {

@@ -63,6 +63,10 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
       throw AppError.invalido('Nicho inexistente ou desativado.');
     }
     await repo.atualizar(pool, id, dados);
+    // Meta de leads mudou com a campanha rodando: retoma as buscas que pararam na meta e manda
+    // para o enriquecimento o que couber na meta nova.
+    if (dados.limiteLeads !== undefined && atual === 'ativa')
+      await filas.publicar('campanha.iniciar', { campanhaId: id });
     res.json(await repo.obter(pool, id));
   });
 

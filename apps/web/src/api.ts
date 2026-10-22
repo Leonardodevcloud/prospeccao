@@ -97,8 +97,12 @@ export interface ProgressoCampanha {
   erroBusca: string | null;
   /** Buscas pendentes/rodando sem tarefa na fila (não andam sozinhas). */
   buscasParadas?: number;
-  /** Buscas paradas no teto de gasto (da campanha ou do mês). */
+  /** Buscas paradas no teto de gasto (da campanha ou do mês) ou na meta de leads. */
   buscasBloqueadas?: number;
+  /** Das bloqueadas, as que não rodaram porque a meta de leads já foi atingida. */
+  buscasPelaMeta?: number;
+  /** Leads já mandados para o enriquecimento (contam na meta). */
+  reservados?: number;
   /** Buscas por bairro (a cidade inteira encheu os 60 lugares do Google). */
   buscasPorBairro?: number;
   /** Pedidos feitos ao Google Places por esta campanha (cada página conta), pagos e gasto. */
@@ -120,6 +124,8 @@ export interface Campanha {
   cadencia: 'padrao' | 'curta';
   modo: 'semi' | 'auto';
   maxPorBusca: number;
+  /** Meta de leads (quantos enriquecer). null = todos que achar. */
+  limiteLeads?: number | null;
   /** Teto de gasto no Google em buscas pagas. null = sem teto; 0 = só a franquia grátis. */
   tetoPlacesUsd?: number | null;
   status: 'rascunho' | 'ativa' | 'pausada' | 'encerrada';
