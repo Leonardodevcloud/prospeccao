@@ -21,6 +21,8 @@ const ITENS: {
   fim?: boolean;
   admin?: boolean;
   master?: boolean;
+  /** Só aparece em conta com plano (cliente). */
+  comPlano?: boolean;
   /** Só aparece se a conta tem algum destes módulos no plano. */
   modulos?: ('whatsapp' | 'agente_ia' | 'email')[];
 }[] = [
@@ -32,6 +34,7 @@ const ITENS: {
   { para: '/agente', rotulo: 'Agente', icone: 'bot', modulos: ['whatsapp', 'agente_ia'] },
   { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up' },
   { para: '/equipe', rotulo: 'Equipe', icone: 'id-card' },
+  { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', comPlano: true },
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
   { para: '/atividade', rotulo: 'Atividade', icone: 'clock', admin: true },
   { para: '/nichos', rotulo: 'Nichos', icone: 'store', admin: true },
@@ -135,6 +138,7 @@ export function Shell() {
           i.master
             ? !!sessao.data?.master
             : (!i.admin || sessao.data?.papel === 'admin') &&
+              (!i.comPlano || !!sessao.data?.conta.plano) &&
               (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
         ).map((i) => (
           <Fragment key={i.para}>

@@ -21,6 +21,7 @@ import { Leads } from './paginas/Leads';
 import { Login } from './paginas/Login';
 import { Master } from './paginas/Master';
 import { MeuDia } from './paginas/MeuDia';
+import { MeuPlano } from './paginas/MeuPlano';
 import { Nichos } from './paginas/Nichos';
 import { Relatorios } from './paginas/Relatorios';
 import { EsqueciSenha, RedefinirSenha } from './paginas/Senha';
@@ -42,6 +43,7 @@ const roteador = createBrowserRouter([
       { path: 'hoje', element: <MeuDia /> },
       { path: 'conversas', element: <Conversas /> },
       { path: 'equipe', element: <Equipe /> },
+      { path: 'plano', element: <MeuPlano /> },
       { path: 'email', element: <Email /> },
       { path: 'funil', element: <Funil /> },
       { path: 'relatorios', element: <Relatorios /> },

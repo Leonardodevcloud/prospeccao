@@ -223,6 +223,7 @@ export function Agente() {
   const cliente = useQueryClient();
   const [params, setParams] = useSearchParams();
   const sessao = useSessao();
+  const master = !!sessao.data?.master;
   // Módulo Agente de IA fora do plano: só ficam os chips e o WhatsApp das sequências.
   const temIa = sessao.data?.conta.modulos?.includes('agente_ia') ?? true;
   const aba = temIa ? ((params.get('aba') as AbaAgente | null) ?? 'atendimento') : 'atendimento';
@@ -291,10 +292,19 @@ export function Agente() {
       )}
       {temIa && (!d.status.whatsapp || !d.status.ia) && (
         <Mensagem tipo="aviso">
-          {!d.status.whatsapp &&
-            'Falta o WhatsApp (endereço, chave e instância da Evolution) desta conta, no painel master. '}
-          {!d.status.ia && 'Falta a IA (DeepSeek, Gemini…) desta conta, no painel master. '}
-          Sem isso o agente prepara as mensagens mas não envia nem responde.
+          {master ? (
+            <>
+              {!d.status.whatsapp &&
+                'Falta o WhatsApp (endereço, chave e instância da Evolution) desta conta, no painel master. '}
+              {!d.status.ia && 'Falta a IA (DeepSeek, Gemini…) desta conta, no painel master. '}
+              Sem isso o agente prepara as mensagens mas não envia nem responde.
+            </>
+          ) : (
+            <>
+              {!d.status.whatsapp ? 'O WhatsApp' : 'A IA'} desta conta ainda está sendo ativado pelo nosso
+              suporte. Até lá, o agente prepara as mensagens, mas não envia nem responde.
+            </>
+          )}
         </Mensagem>
       )}
 
@@ -418,40 +428,42 @@ export function Agente() {
 
           <Chips />
 
-          <Panel titulo="Conectar o WhatsApp">
-            <ol className="passos">
-              <li>
-                No <b>painel master</b>, na conta, preencha o WhatsApp (endereço, chave e instância da
-                Evolution) e a IA. Para dividir o volume em mais de um chip, cadastre os chips acima.
-              </li>
-              <li>
-                Na Evolution, em <b>Webhook</b> de cada instância (cada chip), cole o endereço abaixo, marque
-                o evento <code>MESSAGES_UPSERT</code> e ative.
-              </li>
-            </ol>
-            <div className="barra">
-              <input
-                className="filtro mono"
-                readOnly
-                value={d.webhook}
-                style={{ flex: '1 1 320px' }}
-                aria-label="Endereço do webhook"
-              />
-              <Button
-                size="sm"
-                icon={copiado ? 'check' : 'copy'}
-                onClick={() => {
-                  navigator.clipboard?.writeText(d.webhook).catch(() => undefined);
-                  setCopiado(true);
-                }}
-              >
-                {copiado ? 'Copiado' : 'Copiar'}
-              </Button>
-            </div>
-            <p className="quieto" style={{ margin: '8px 0 0', fontSize: 12 }}>
-              O endereço tem uma senha embutida: não compartilhe.
-            </p>
-          </Panel>
+          {master && (
+            <Panel titulo="Conectar o WhatsApp">
+              <ol className="passos">
+                <li>
+                  No <b>painel master</b>, na conta, preencha o WhatsApp (endereço, chave e instância da
+                  Evolution) e a IA. Para dividir o volume em mais de um chip, cadastre os chips acima.
+                </li>
+                <li>
+                  Na Evolution, em <b>Webhook</b> de cada instância (cada chip), cole o endereço abaixo,
+                  marque o evento <code>MESSAGES_UPSERT</code> e ative.
+                </li>
+              </ol>
+              <div className="barra">
+                <input
+                  className="filtro mono"
+                  readOnly
+                  value={d.webhook}
+                  style={{ flex: '1 1 320px' }}
+                  aria-label="Endereço do webhook"
+                />
+                <Button
+                  size="sm"
+                  icon={copiado ? 'check' : 'copy'}
+                  onClick={() => {
+                    navigator.clipboard?.writeText(d.webhook).catch(() => undefined);
+                    setCopiado(true);
+                  }}
+                >
+                  {copiado ? 'Copiado' : 'Copiar'}
+                </Button>
+              </div>
+              <p className="quieto" style={{ margin: '8px 0 0', fontSize: 12 }}>
+                O endereço tem uma senha embutida: não compartilhe.
+              </p>
+            </Panel>
+          )}
         </>
       )}
     </>

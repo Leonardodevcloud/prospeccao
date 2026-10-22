@@ -7,6 +7,7 @@ export * from './funil.js';
 export * from './geo.js';
 export * from './indicacoes.js';
 export * from './logger.js';
+export * from './nichosProntos.js';
 export * from './normalizar.js';
 export * from './planilha.js';
 export * from './planos.js';

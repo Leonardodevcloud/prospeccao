@@ -721,10 +721,7 @@ export function iniciarEmail(deps: DepsRodada): () => void {
 
 /** Responde o lead de dentro do sistema (na mesma conversa do e-mail dele, com a marca da campanha). */
 export async function responder(deps: Deps, respostaId: number, texto: string): Promise<void> {
-  if (!deps.email)
-    throw AppError.invalido(
-      'O e-mail desta conta não está configurado (o administrador configura o Resend no painel master).',
-    );
+  if (!deps.email) throw AppError.invalido('O envio de e-mail ainda não está ativo nesta conta.');
   const email = deps.email;
   const C = contaSql();
   const { rows } = await deps.pool.query<{
@@ -798,10 +795,7 @@ export async function enviarDaConversa(
   empresaId: number,
   d: { texto: string; assunto?: string | null },
 ): Promise<void> {
-  if (!deps.email)
-    throw AppError.invalido(
-      'O e-mail desta conta não está configurado (o administrador configura o Resend no painel master).',
-    );
+  if (!deps.email) throw AppError.invalido('O envio de e-mail ainda não está ativo nesta conta.');
   const email = deps.email;
   const C = contaSql();
   const { rows: ultima } = await deps.pool.query<{ id: number }>(

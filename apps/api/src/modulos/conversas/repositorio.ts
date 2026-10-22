@@ -205,7 +205,7 @@ async function exigirWhatsapp(deps: Deps) {
   const { whatsapp } = await deps.servicos(conta());
   if (!whatsapp)
     throw AppError.invalido(
-      'O WhatsApp desta conta não está conectado: o administrador do sistema configura a Evolution no painel master.',
+      'O WhatsApp ainda não está ativo nesta conta. Fale com o suporte do Prospect Team.',
     );
   return whatsapp;
 }

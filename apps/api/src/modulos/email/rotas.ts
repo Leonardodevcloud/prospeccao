@@ -18,14 +18,14 @@ import { conta, contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
-import { exigirAdmin } from '../../middlewares/seguranca.js';
+import { exigirAdmin, exigirMaster } from '../../middlewares/seguranca.js';
 import { guardarMidia } from '../conversas/repositorio.js';
 import { obterConfig as configCadencia } from '../funil/cadencia.js';
 import * as motor from './motor.js';
 import * as repo from './repositorio.js';
 
 const NAO_CONFIGURADO =
-  'O e-mail desta conta não está configurado: o administrador do sistema cadastra o Resend no painel master.';
+  'O envio de e-mail ainda não está ativo nesta conta. Fale com o suporte do Prospect Team.';
 
 const textoPrevia = z.object({
   assunto: z.string().max(200),
@@ -53,7 +53,8 @@ export function rotasEmail(deps: DepsApi): Router {
   };
 
   /** Visão geral: configuração, o que está conectado no Resend e os números do dia. */
-  r.get('/', async (_req, res) => {
+  r.get('/', async (req, res) => {
+    const master = !!req.usuario?.master;
     const [config, resumo, s, token] = await Promise.all([
       repo.obterConfig(pool),
       repo.resumo(pool),
@@ -71,9 +72,12 @@ export function rotasEmail(deps: DepsApi): Router {
         dominioRespostas: s.email?.dominioRespostas ?? null,
         webhook: !!s.email?.segredoWebhook,
         // Endereço para colar no Resend da conta (Webhooks → Add endpoint).
-        webhookUrl: `${urlPublicaApi(deps.origens)}/e/resend/${token.rows[0]?.webhook_token ?? ''}`,
+        // Endereço (com a senha embutida) e o que é técnico: só para o master.
+        webhookUrl: master
+          ? `${urlPublicaApi(deps.origens)}/e/resend/${token.rows[0]?.webhook_token ?? ''}`
+          : '',
         ia: !!s.personalizarAbertura,
-        iaDescricao: s.iaDescricao,
+        iaDescricao: master ? s.iaDescricao : null,
         origem: s.origem.resend,
       },
     });
@@ -85,7 +89,7 @@ export function rotasEmail(deps: DepsApi): Router {
   });
 
   /** Confere a chave do Resend e o domínio do remetente. */
-  r.post('/verificar', exigirAdmin, async (_req, res) => {
+  r.post('/verificar', exigirMaster, async (_req, res) => {
     const { email } = await servicos();
     if (!email) throw AppError.invalido(NAO_CONFIGURADO);
     let resend: string;

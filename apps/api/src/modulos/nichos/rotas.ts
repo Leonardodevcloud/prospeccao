@@ -1,5 +1,6 @@
-import { AppError, nichoAtualizacao, nichoEntrada } from '@prospeccao/shared';
+import { AppError, NICHOS_PRONTOS, nichoAtualizacao, nichoEntrada } from '@prospeccao/shared';
 import { Router } from 'express';
+import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
 import * as repo from './repositorio.js';
@@ -15,6 +16,33 @@ export function rotasNichos({ pool }: DepsApi): Router {
 
   r.get('/', async (req, res) => {
     res.json(await repo.listar(pool, req.query.todos === 'true'));
+  });
+
+  /** Nichos prontos para escolher (e quais a conta já tem, pelo nome). */
+  r.get('/prontos', async (_req, res) => {
+    const ja = new Set((await repo.listar(pool, false)).map((n) => n.nome.trim().toLowerCase()));
+    res.json(NICHOS_PRONTOS.map((n) => ({ ...n, jaTem: ja.has(n.nome.toLowerCase()) })));
+  });
+
+  /** Cria os nichos prontos escolhidos (os que a conta já tem com o mesmo nome ficam como estão). */
+  r.post('/prontos', async (req, res) => {
+    const { ids } = corpo(req, z.object({ ids: z.array(z.string().max(60)).min(1).max(40) }));
+    const ja = new Set((await repo.listar(pool, false)).map((n) => n.nome.trim().toLowerCase()));
+    let criados = 0;
+    for (const p of NICHOS_PRONTOS.filter((n) => ids.includes(n.id))) {
+      if (ja.has(p.nome.toLowerCase())) continue;
+      const dados = nichoEntrada.parse({
+        nome: p.nome,
+        cnaes: p.cnaes,
+        termosMaps: p.termosMaps,
+        palavrasPositivas: p.palavrasPositivas,
+        palavrasNegativas: p.palavrasNegativas,
+        cargosAlvo: p.cargosAlvo,
+      });
+      await repo.criar(pool, dados).catch(conflitoDeNome);
+      criados++;
+    }
+    res.status(201).json({ criados });
   });
 
   r.post('/', async (req, res) => {

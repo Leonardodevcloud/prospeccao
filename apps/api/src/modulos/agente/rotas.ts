@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { comConta, conta, contaSql } from '../../contexto.js';
 import type { DepsApi, WhatsappConta } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
-import { exigirAdmin } from '../../middlewares/seguranca.js';
+import { exigirAdmin, exigirMaster } from '../../middlewares/seguranca.js';
 import * as contatos from '../contatos/repositorio.js';
 import { guardarMidia } from '../conversas/repositorio.js';
 import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
@@ -59,11 +59,11 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
     res.json({
       config: resto,
       // Endereço para colar na Evolution (Webhook → MESSAGES_UPSERT).
-      webhook: `${enderecoPublico(req)}/webhooks/evolution/${webhookToken}`,
+      webhook: req.usuario?.master ? `${enderecoPublico(req)}/webhooks/evolution/${webhookToken}` : '',
       status: {
         whatsapp: !!whatsapp,
         ia: !!ia,
-        iaDescricao,
+        iaDescricao: req.usuario?.master ? iaDescricao : null,
         origem: { whatsapp: origem.evolution, ia: origem.ia },
       },
       resumo,
@@ -77,7 +77,8 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
     const { whatsapp } = await servicos(conta());
     res.json({ chips: await chips.listar(pool), padrao: whatsapp?.instancia ?? null, conectado: !!whatsapp });
   });
-  r.post('/chips', exigirAdmin, async (req, res) => {
+  // Cadastrar e apagar chip (instância da Evolution) é com o master; o cliente ajusta limite e pausa.
+  r.post('/chips', exigirMaster, async (req, res) => {
     const id = await chips.criar(pool, corpo(req, chipEntrada));
     res.status(201).json({ id, chips: await chips.listar(pool) });
   });
@@ -85,17 +86,17 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
     await chips.atualizar(pool, idDaRota(req), corpo(req, chipAtualizar));
     res.json(await chips.listar(pool));
   });
-  r.delete('/chips/:id', exigirAdmin, async (req, res) => {
+  r.delete('/chips/:id', exigirMaster, async (req, res) => {
     await chips.apagar(pool, idDaRota(req));
     res.json(await chips.listar(pool));
   });
   /** Lê na Evolution se o chip está conectado (e guarda para a tela e os alertas). */
-  r.post('/chips/:id/testar', async (req, res) => {
+  r.post('/chips/:id/testar', exigirMaster, async (req, res) => {
     const chip = await chips.obter(pool, idDaRota(req));
     const { whatsapp } = await servicos(conta());
     if (!whatsapp?.estado)
       throw AppError.invalido(
-        'O WhatsApp desta conta não está configurado (endereço e chave da Evolution no painel master).',
+        'O WhatsApp ainda não está ativo nesta conta. Fale com o suporte do Prospect Team.',
       );
     let resultado: string;
     try {
@@ -223,7 +224,8 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
         aviso: fixa.tipo === 'parar' ? null : aviso(fixa.tipo),
       });
     const { ia } = await servicos(conta());
-    if (!ia) throw AppError.invalido('A IA desta conta não está configurada (painel master).');
+    if (!ia)
+      throw AppError.invalido('A IA ainda não está ativa nesta conta. Fale com o suporte do Prospect Team.');
     const { rows } = await pool.query<{ nome: string }>(
       `SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`,
     );

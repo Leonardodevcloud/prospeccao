@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api, type BuscaAtividade, type Atividade as DadosAtividade } from '../api';
 import { ErroDaApi } from '../componentes/Formulario';
+import { useEhMaster } from '../componentes/Sessao';
 import { fmtDuracao, fmtHora, fmtHoraCompleta, fmtMes, fmtNumero } from '../formatar';
 
 type Tom = 'brand' | 'warning' | 'danger' | 'neutral';
@@ -153,9 +154,7 @@ function quandoDaBusca(b: BuscaAtividade, agora: number) {
     return (
       <>
         <Quando iso={desde} prefixo="desde" /> <span className="quieto">· {fmtDuracao(passou)}</span>
-        {passou > BUSCA_DEMORADA_MS && (
-          <div className="aviso-texto">Demorando mais que o normal: confira o worker-descoberta.</div>
-        )}
+        {passou > BUSCA_DEMORADA_MS && <div className="aviso-texto">Demorando mais que o normal.</div>}
       </>
     );
   }
@@ -275,6 +274,7 @@ function Filas({ d }: { d: DadosAtividade }) {
 }
 
 export function Atividade() {
+  const master = useEhMaster();
   const atividade = useAtividade();
   const d = atividade.data;
   const ativo = temAtividade(d);
@@ -325,17 +325,21 @@ export function Atividade() {
             </div>
           </div>
 
-          <Panel titulo="Base de CNPJ da Receita">
-            <ImportacaoCnpj d={d} />
-          </Panel>
+          {master && (
+            <Panel titulo="Base de CNPJ da Receita">
+              <ImportacaoCnpj d={d} />
+            </Panel>
+          )}
 
           <Panel titulo="Buscas no Google Maps" contagem={d.buscas.length} semPadding>
             <BuscasMaps d={d} />
           </Panel>
 
-          <Panel titulo="Filas de trabalho">
-            <Filas d={d} />
-          </Panel>
+          {master && (
+            <Panel titulo="Filas de trabalho">
+              <Filas d={d} />
+            </Panel>
+          )}
         </>
       )}
     </>

@@ -23,7 +23,7 @@ import {
 import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { useEhAdmin, useSessao } from '../componentes/Sessao';
+import { useEhAdmin, useEhMaster, useSessao } from '../componentes/Sessao';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, fmtPct, fmtQuando } from '../formatar';
 import {
   EscolherLead,
@@ -73,6 +73,7 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
   const { v } = props;
   const cliente = useQueryClient();
   const admin = useEhAdmin();
+  const master = useEhMaster();
   const ligar = useMutation({
     mutationFn: (ligado: boolean) => api('/email/config', { metodo: 'PUT', corpo: { ...v.config, ligado } }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['email'] }),
@@ -80,9 +81,10 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
   if (!v.status.resend)
     return (
       <Mensagem tipo="aviso">
-        O envio de e-mail desta conta ainda não está configurado: quem administra o sistema cadastra a chave e
-        o remetente do Resend no painel master.{' '}
-        {admin && (
+        {master
+          ? 'O envio de e-mail desta conta ainda não está configurado: cadastre a chave e o remetente do Resend no painel master. '
+          : 'O envio de e-mail desta conta ainda está sendo ativado pelo nosso suporte. '}
+        {master && (
           <button type="button" className="link-botao" onClick={props.aoConfigurar}>
             Ver o que falta
           </button>
@@ -125,7 +127,9 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
         <span className="quieto">Leitura das respostas</span>
         <b>
           {!v.status.dominioRespostas || !v.status.webhook
-            ? 'Não configurada'
+            ? master
+              ? 'Não configurada'
+              : 'Em ativação'
             : v.config.webhookEm
               ? `Último aviso ${fmtQuando(v.config.webhookEm)}`
               : 'Aguardando o 1º aviso'}
@@ -374,8 +378,7 @@ function EditorMarcaIa(props: {
       </label>
       {v.personalizarIa && !props.iaLigada && (
         <Mensagem tipo="aviso">
-          A IA não está configurada nesta conta: a abertura fica vazia até ela ser cadastrada no painel
-          master.
+          A IA ainda não está ativa nesta conta: até lá, a abertura fica vazia.
         </Mensagem>
       )}
       <div className="campo">
@@ -1755,8 +1758,8 @@ function Respostas(props: { aoAbrirLead: (id: number) => void }) {
         <div className="esqueleto" />
       ) : !q.data?.length ? (
         <p className="quieto">
-          Nenhuma resposta {classe ? 'nesta classificação' : 'ainda'}. As respostas chegam pelo Resend e
-          aparecem aqui na hora; quem tem interesse entra sozinho no SDR em “Respondeu”.
+          Nenhuma resposta {classe ? 'nesta classificação' : 'ainda'}. As respostas aparecem aqui assim que
+          chegam; quem tem interesse entra sozinho no SDR em “Respondeu”.
         </p>
       ) : (
         <ul className="respostas-email">
@@ -1901,114 +1904,157 @@ function Configuracao(props: { v: VisaoEmail }) {
         </div>
       </form>
 
-      <aside className="pilha" style={{ gap: 12 }}>
-        <div className="pp-panel" style={{ padding: 16 }}>
-          <h3 className="subtitulo" style={{ marginTop: 0 }}>
-            Conexão
-          </h3>
-          <ul className="lista-status">
-            <li data-ok={st.resend || undefined}>
-              <Icon name={st.resend ? 'check' : 'circle-x'} size={14} />
-              <span>
-                Envio pelo Resend
-                <span className="quieto">
-                  {' · '}
-                  {st.remetente ?? 'falta a chave e o remetente'}
-                  {st.origem === 'plataforma' && ' (chaves da plataforma)'}
+      {master ? (
+        <aside className="pilha" style={{ gap: 12 }}>
+          <div className="pp-panel" style={{ padding: 16 }}>
+            <h3 className="subtitulo" style={{ marginTop: 0 }}>
+              Conexão
+            </h3>
+            <ul className="lista-status">
+              <li data-ok={st.resend || undefined}>
+                <Icon name={st.resend ? 'check' : 'circle-x'} size={14} />
+                <span>
+                  Envio pelo Resend
+                  <span className="quieto">
+                    {' · '}
+                    {st.remetente ?? 'falta a chave e o remetente'}
+                    {st.origem === 'plataforma' && ' (chaves da plataforma)'}
+                  </span>
                 </span>
-              </span>
-            </li>
-            <li data-ok={st.dominioRespostas || undefined}>
-              <Icon name={st.dominioRespostas ? 'check' : 'circle-x'} size={14} />
-              <span>
-                Domínio de respostas
-                <span className="quieto"> · {st.dominioRespostas ?? 'falta configurar'}</span>
-              </span>
-            </li>
-            <li data-ok={(st.webhook && !!props.v.config.webhookEm) || undefined}>
-              <Icon
-                name={st.webhook ? (props.v.config.webhookEm ? 'check' : 'clock') : 'circle-x'}
-                size={14}
-              />
-              <span>
-                Webhook
-                <span className="quieto">
-                  {' · '}
-                  {!st.webhook
-                    ? 'falta o segredo'
-                    : props.v.config.webhookEm
-                      ? `último aviso ${fmtQuando(props.v.config.webhookEm)}`
-                      : 'nenhum aviso ainda'}
+              </li>
+              <li data-ok={st.dominioRespostas || undefined}>
+                <Icon name={st.dominioRespostas ? 'check' : 'circle-x'} size={14} />
+                <span>
+                  Domínio de respostas
+                  <span className="quieto"> · {st.dominioRespostas ?? 'falta configurar'}</span>
                 </span>
-              </span>
-            </li>
-            <li data-ok={st.ia || undefined}>
-              <Icon name={st.ia ? 'check' : 'circle-help'} size={14} />
-              <span>
-                IA (lê as respostas e escreve a abertura)
-                <span className="quieto">
-                  {' · '}
-                  {st.ia ? (st.iaDescricao ?? 'ligada') : 'sem ela, uma regra de palavras lê as respostas'}
+              </li>
+              <li data-ok={(st.webhook && !!props.v.config.webhookEm) || undefined}>
+                <Icon
+                  name={st.webhook ? (props.v.config.webhookEm ? 'check' : 'clock') : 'circle-x'}
+                  size={14}
+                />
+                <span>
+                  Webhook
+                  <span className="quieto">
+                    {' · '}
+                    {!st.webhook
+                      ? 'falta o segredo'
+                      : props.v.config.webhookEm
+                        ? `último aviso ${fmtQuando(props.v.config.webhookEm)}`
+                        : 'nenhum aviso ainda'}
+                  </span>
                 </span>
-              </span>
-            </li>
-          </ul>
-          {st.resend && (
-            <div className="acoes" style={{ marginTop: 12 }}>
-              <Button
-                size="sm"
-                icon="check"
-                disabled={verificar.isPending}
-                onClick={() => verificar.mutate()}
+              </li>
+              <li data-ok={st.ia || undefined}>
+                <Icon name={st.ia ? 'check' : 'circle-help'} size={14} />
+                <span>
+                  IA (lê as respostas e escreve a abertura)
+                  <span className="quieto">
+                    {' · '}
+                    {st.ia ? (st.iaDescricao ?? 'ligada') : 'sem ela, uma regra de palavras lê as respostas'}
+                  </span>
+                </span>
+              </li>
+            </ul>
+            {st.resend && (
+              <div className="acoes" style={{ marginTop: 12 }}>
+                <Button
+                  size="sm"
+                  icon="check"
+                  disabled={verificar.isPending}
+                  onClick={() => verificar.mutate()}
+                >
+                  {verificar.isPending ? 'Testando…' : 'Testar conexão'}
+                </Button>
+              </div>
+            )}
+            {verificar.data && (
+              <Mensagem
+                tipo={
+                  /^ok/.test(verificar.data.resend) && /^ok/.test(verificar.data.respostas) ? 'ok' : 'aviso'
+                }
               >
-                {verificar.isPending ? 'Testando…' : 'Testar conexão'}
-              </Button>
-            </div>
-          )}
-          {verificar.data && (
-            <Mensagem
-              tipo={
-                /^ok/.test(verificar.data.resend) && /^ok/.test(verificar.data.respostas) ? 'ok' : 'aviso'
-              }
-            >
-              Resend: {verificar.data.resend} · Respostas: {verificar.data.respostas}
-            </Mensagem>
-          )}
-          <ErroDaApi erro={verificar.error} />
-        </div>
-        <div className="pp-panel" style={{ padding: 16 }}>
-          <h3 className="subtitulo" style={{ marginTop: 0 }}>
-            Chaves desta conta
-          </h3>
-          <p className="quieto" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            A chave do Resend, o remetente padrão, o domínio de respostas e o segredo do webhook ficam no
-            painel master (cada conta tem os seus).
-            {!master && ' Peça para quem administra o sistema.'}
-          </p>
-          {master && (
-            <Button size="sm" icon="building-2" href="/master">
-              Abrir o painel master
-            </Button>
-          )}
-          <div className="campo" style={{ marginTop: 12 }}>
-            <label htmlFor="cfe-webhook">Endereço do webhook desta conta</label>
-            <input
-              id="cfe-webhook"
-              className="filtro mono"
-              readOnly
-              value={st.webhookUrl}
-              onFocus={(e) => e.target.select()}
-            />
-            <span className="campo__dica">
-              No Resend: Webhooks → Add endpoint, com os eventos de e-mail (received, delivered, opened,
-              clicked, bounced, complained, failed).
-            </span>
+                Resend: {verificar.data.resend} · Respostas: {verificar.data.respostas}
+              </Mensagem>
+            )}
+            <ErroDaApi erro={verificar.error} />
           </div>
-          <p className="quieto" style={{ margin: '8px 0 0', fontSize: 13 }}>
-            Deixe o rastreio de abertura e clique do domínio desligado no Resend: o sistema já conta sozinho.
-          </p>
-        </div>
-      </aside>
+          <div className="pp-panel" style={{ padding: 16 }}>
+            <h3 className="subtitulo" style={{ marginTop: 0 }}>
+              Chaves desta conta
+            </h3>
+            <p className="quieto" style={{ margin: '0 0 12px', fontSize: 13 }}>
+              A chave do Resend, o remetente padrão, o domínio de respostas e o segredo do webhook ficam no
+              painel master (cada conta tem os seus).
+              {!master && ' Peça para quem administra o sistema.'}
+            </p>
+            {master && (
+              <Button size="sm" icon="building-2" href="/master">
+                Abrir o painel master
+              </Button>
+            )}
+            <div className="campo" style={{ marginTop: 12 }}>
+              <label htmlFor="cfe-webhook">Endereço do webhook desta conta</label>
+              <input
+                id="cfe-webhook"
+                className="filtro mono"
+                readOnly
+                value={st.webhookUrl}
+                onFocus={(e) => e.target.select()}
+              />
+              <span className="campo__dica">
+                No Resend: Webhooks → Add endpoint, com os eventos de e-mail (received, delivered, opened,
+                clicked, bounced, complained, failed).
+              </span>
+            </div>
+            <p className="quieto" style={{ margin: '8px 0 0', fontSize: 13 }}>
+              Deixe o rastreio de abertura e clique do domínio desligado no Resend: o sistema já conta
+              sozinho.
+            </p>
+          </div>
+        </aside>
+      ) : (
+        <aside className="pilha" style={{ gap: 12 }}>
+          <div className="pp-panel" style={{ padding: 16 }}>
+            <h3 className="subtitulo" style={{ marginTop: 0 }}>
+              Situação
+            </h3>
+            <ul className="lista-status">
+              <li data-ok={st.resend || undefined}>
+                <Icon name={st.resend ? 'check' : 'clock'} size={14} />
+                <span>
+                  Envio de e-mail
+                  <span className="quieto">
+                    {' '}
+                    · {st.resend ? (st.remetente ?? 'ativo') : 'em ativação pelo suporte'}
+                  </span>
+                </span>
+              </li>
+              <li data-ok={(st.dominioRespostas && st.webhook) || undefined}>
+                <Icon name={st.dominioRespostas && st.webhook ? 'check' : 'clock'} size={14} />
+                <span>
+                  Leitura das respostas
+                  <span className="quieto">
+                    {' '}
+                    · {st.dominioRespostas && st.webhook ? 'ativa' : 'em ativação pelo suporte'}
+                  </span>
+                </span>
+              </li>
+              <li data-ok={st.ia || undefined}>
+                <Icon name={st.ia ? 'check' : 'circle-help'} size={14} />
+                <span>
+                  IA (lê as respostas e escreve a abertura)
+                  <span className="quieto">
+                    {' '}
+                    · {st.ia ? 'ativa' : 'sem ela, uma regra de palavras lê as respostas'}
+                  </span>
+                </span>
+              </li>
+            </ul>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

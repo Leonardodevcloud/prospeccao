@@ -14,7 +14,7 @@ export function ErroDaTela() {
         <EmptyState
           icone="circle-x"
           titulo="Esta tela não carregou"
-          texto="Se você acabou de publicar uma atualização, espere o deploy da API terminar no Railway (uns 3 minutos) e recarregue."
+          texto="Pode ser uma atualização sendo publicada agora. Espere uns minutos e recarregue a página."
           acao={
             <Button variant="primary" size="sm" onClick={() => location.reload()}>
               Recarregar a página

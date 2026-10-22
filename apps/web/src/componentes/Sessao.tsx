@@ -11,6 +11,11 @@ export function useEhAdmin(): boolean {
   return useSessao().data?.papel === 'admin';
 }
 
+/** Quem administra a plataforma: só ele vê chaves, webhooks e o que é técnico. */
+export function useEhMaster(): boolean {
+  return !!useSessao().data?.master;
+}
+
 /** Pessoas da equipe (para escolher responsável, filtrar). */
 export function useEquipe() {
   return useQuery({ queryKey: ['equipe'], queryFn: () => api<Equipe>('/equipe'), staleTime: 60_000 });

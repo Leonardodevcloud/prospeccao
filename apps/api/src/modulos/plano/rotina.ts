@@ -50,14 +50,14 @@ export async function conferirLimitesDeLeads(deps: Deps): Promise<number> {
             nivel: 'aviso',
             titulo: 'A conta chegou no limite de leads do mês',
             texto: `${p.uso.leadsMes} de ${p.leadsMes} leads enriquecidos. Os próximos esperam o mês virar${p.uso.leadsEsperando ? ` (${p.uso.leadsEsperando} esperando)` : ''}, ou peça para aumentar o plano.`,
-            link: '/equipe?aba=plano',
+            link: '/plano',
           }
         : usado >= 0.9
           ? {
               nivel: 'aviso',
               titulo: 'A conta está perto do limite de leads do mês',
               texto: `${p.uso.leadsMes} de ${p.leadsMes} leads enriquecidos neste mês.`,
-              link: '/equipe?aba=plano',
+              link: '/plano',
             }
           : null,
     );

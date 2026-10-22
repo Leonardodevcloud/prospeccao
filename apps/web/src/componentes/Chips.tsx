@@ -4,7 +4,7 @@ import { type FormEvent, useState } from 'react';
 import { api, type Chip } from '../api';
 import { fmtHoraSo, fmtNumero, fmtQuando } from '../formatar';
 import { ErroDaApi, Mensagem } from './Formulario';
-import { useEhAdmin } from './Sessao';
+import { useEhAdmin, useEhMaster } from './Sessao';
 
 interface TelaChips {
   chips: Chip[];
@@ -22,7 +22,7 @@ function situacao(c: Chip): { tom: 'brand' | 'danger' | 'neutral' | 'outline'; t
     : { tom: 'danger', texto: 'Desconectado' };
 }
 
-function LinhaChip(props: { c: Chip; admin: boolean }) {
+function LinhaChip(props: { c: Chip; admin: boolean; master: boolean }) {
   const { c } = props;
   const cliente = useQueryClient();
   const [limite, setLimite] = useState(String(c.limiteDia));
@@ -50,7 +50,7 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
     <li className="chip-linha" data-inativo={!c.ativo || undefined}>
       <div className="chip-linha__quem">
         <b>{c.nome}</b>
-        <span className="quieto mono">{c.instancia}</span>
+        {props.master && <span className="quieto mono">{c.instancia}</span>}
       </div>
       <div className="chip-linha__uso">
         <span className="quieto">
@@ -68,12 +68,12 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
             Aquecendo · dia {c.diasDeUso + 1}, até {c.tetoAquecimento}/dia
           </Badge>
         )}
-        {c.estado && !c.estado.startsWith('ok') && (
+        {props.master && c.estado && !c.estado.startsWith('ok') && (
           <span className="quieto" title={c.estado}>
             {c.estado.slice(0, 60)}
           </span>
         )}
-        {c.estadoEm && <span className="quieto">conferido {fmtQuando(c.estadoEm)}</span>}
+        {props.master && c.estadoEm && <span className="quieto">conferido {fmtQuando(c.estadoEm)}</span>}
       </div>
       {props.admin && (
         <div className="chip-linha__acoes">
@@ -93,15 +93,17 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
               else setLimite(String(c.limiteDia));
             }}
           />
-          <Button
-            size="sm"
-            variant="ghost"
-            icon="check"
-            disabled={testar.isPending}
-            onClick={() => testar.mutate()}
-          >
-            {testar.isPending ? 'Conferindo…' : 'Conferir'}
-          </Button>
+          {props.master && (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="check"
+              disabled={testar.isPending}
+              onClick={() => testar.mutate()}
+            >
+              {testar.isPending ? 'Conferindo…' : 'Conferir'}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -123,29 +125,30 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
           >
             {c.aquecer ? 'Sem aquecimento' : 'Aquecer'}
           </Button>
-          {apagar ? (
-            <>
+          {props.master &&
+            (apagar ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={remover.isPending}
+                  onClick={() => remover.mutate()}
+                >
+                  Apagar “{c.nome}”
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setApagar(false)}>
+                  Manter
+                </Button>
+              </>
+            ) : (
               <Button
                 size="sm"
-                variant="danger"
-                disabled={remover.isPending}
-                onClick={() => remover.mutate()}
-              >
-                Apagar “{c.nome}”
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setApagar(false)}>
-                Manter
-              </Button>
-            </>
-          ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              icon="x"
-              aria-label={`Apagar ${c.nome}`}
-              onClick={() => setApagar(true)}
-            />
-          )}
+                variant="ghost"
+                icon="x"
+                aria-label={`Apagar ${c.nome}`}
+                onClick={() => setApagar(true)}
+              />
+            ))}
         </div>
       )}
       {c.pausadoAte && c.pausaMotivo && <span className="chip-pausa">{c.pausaMotivo}</span>}
@@ -161,6 +164,7 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
  */
 export function Chips() {
   const admin = useEhAdmin();
+  const master = useEhMaster();
   const cliente = useQueryClient();
   const [novo, setNovo] = useState(false);
   const [f, setF] = useState({ nome: '', instancia: '', limiteDia: '40', novo: true });
@@ -192,7 +196,7 @@ export function Chips() {
     <Panel
       titulo="Chips de WhatsApp"
       acoes={
-        admin && !novo ? (
+        master && !novo ? (
           <Button size="sm" variant="ghost" icon="plus" onClick={() => setNovo(true)}>
             Adicionar chip
           </Button>
@@ -202,13 +206,16 @@ export function Chips() {
       <ErroDaApi erro={q.error} />
       {d && !d.conectado && (
         <Mensagem tipo="aviso">
-          A Evolution desta conta não está configurada (endereço e chave no painel master): os chips não
-          enviam.
+          {master
+            ? 'A Evolution desta conta não está configurada (endereço e chave no painel master): os chips não enviam.'
+            : 'O WhatsApp desta conta ainda está sendo ativado pelo nosso suporte.'}
         </Mensagem>
       )}
       {d && !d.chips.length && (
         <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-          {d.padrao ? (
+          {!master ? (
+            'Os números de WhatsApp da sua conta aparecem aqui assim que o suporte conectar.'
+          ) : d.padrao ? (
             <>
               Hoje a conta usa um chip só, a instância <b className="mono">{d.padrao}</b>, com o limite do dia
               acima. Cadastre os chips (inclusive este) para dividir o volume: cada um com o seu limite, e o
@@ -222,7 +229,7 @@ export function Chips() {
       {d && d.chips.length > 0 && (
         <ul className="chips-lista">
           {d.chips.map((c) => (
-            <LinhaChip key={c.id} c={c} admin={admin} />
+            <LinhaChip key={c.id} c={c} admin={admin} master={master} />
           ))}
         </ul>
       )}
@@ -294,14 +301,17 @@ export function Chips() {
           </div>
         </form>
       )}
+      {master && (
+        <p className="quieto" style={{ margin: 0, fontSize: 12 }}>
+          <Icon name="link" size={12} /> Em cada instância da Evolution, use o mesmo webhook desta conta
+          (abaixo): o sistema sabe por qual chip a mensagem chegou.
+        </p>
+      )}
       <p className="quieto" style={{ margin: 0, fontSize: 12 }}>
-        <Icon name="link" size={12} /> Em cada instância da Evolution, use o mesmo webhook desta conta
-        (abaixo): o sistema sabe por qual chip a mensagem chegou. Mensagens da equipe não contam no limite.
-      </p>
-      <p className="quieto" style={{ margin: 0, fontSize: 12 }}>
-        Ritmo contra bloqueio: só dentro do horário do agente; entre uma mensagem fria e outra, o intervalo
-        mais uma variação aleatória de até 60%; resposta a quem escreveu sai antes das frias, com “digitando…”
-        e em mensagens curtas; o lead conversa sempre pelo mesmo número.
+        Mensagens que alguém da equipe manda não contam no limite. Ritmo contra bloqueio: só dentro do horário
+        do agente; entre uma mensagem fria e outra, o intervalo mais uma variação aleatória de até 60%;
+        resposta a quem escreveu sai antes das frias, com “digitando…” e em mensagens curtas; o lead conversa
+        sempre pelo mesmo número.
       </p>
     </Panel>
   );

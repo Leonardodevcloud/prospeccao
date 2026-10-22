@@ -1,5 +1,5 @@
 import { comTransacao, type Executor, INICIO_MES_SP_TS, type Pool } from '@prospeccao/db';
-import { type Plano, planoEfetivo } from '@prospeccao/shared';
+import { type Plano, planoEfetivo, tabelaCompleta } from '@prospeccao/shared';
 import type { Coletor } from './coletor.js';
 
 /** Leituras de outros domínios (só views) e escritas no schema enriquecimento. */
@@ -374,8 +374,10 @@ export async function semVagaDeLeads(db: Executor, contaId: number, empresaId: n
     modulos: string[];
     usados: number;
     ja_conta: boolean;
+    tabela: unknown;
   }>(
     `SELECT c.plano, c.limite_usuarios, c.limite_leads_mes, c.modulos,
+            (SELECT dados FROM cadastro.tabela_precos WHERE id = 1) AS tabela,
             (SELECT count(*) FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
               WHERE ca.conta_id = c.id AND l.status = 'concluido' AND l.concluido_em >= ${INICIO_MES_SP_TS})::int AS usados,
             EXISTS (SELECT 1 FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
@@ -386,13 +388,16 @@ export async function semVagaDeLeads(db: Executor, contaId: number, empresaId: n
   );
   const r = rows[0];
   if (!r?.plano || r.ja_conta) return false;
-  const { leadsMes } = planoEfetivo({
-    plano: r.plano,
-    limiteUsuarios: r.limite_usuarios,
-    limiteLeadsMes: r.limite_leads_mes,
-    modulos: r.modulos,
-    mensalidadeManual: null,
-  });
+  const { leadsMes } = planoEfetivo(
+    {
+      plano: r.plano,
+      limiteUsuarios: r.limite_usuarios,
+      limiteLeadsMes: r.limite_leads_mes,
+      modulos: r.modulos,
+      mensalidadeManual: null,
+    },
+    tabelaCompleta(r.tabela),
+  );
   return leadsMes != null && r.usados >= leadsMes;
 }
 

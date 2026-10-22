@@ -461,7 +461,8 @@ function EditorMarca(props: {
                 onChange={(e) => setF({ ...f, remetenteEmail: e.target.value || null })}
               />
               <span className="campo__dica">
-                Vazio: o padrão da conta. Outro, só de domínio verificado no Resend.
+                Vazio: o padrão da conta. Outro endereço só funciona se for de um domínio já liberado para a
+                sua conta.
               </span>
             </div>
             <div className="campo">

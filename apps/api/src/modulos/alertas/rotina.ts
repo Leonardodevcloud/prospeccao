@@ -97,7 +97,7 @@ async function conferirEmail(pool: Pool, contaId: number, s: ServicosConta) {
       ? {
           nivel: 'aviso',
           titulo: `Teto de e-mails do mês atingido (${teto.limite})`,
-          texto: `${r.fila} e-mails esperando o mês virar ou o teto subir no painel master.`,
+          texto: `${r.fila} e-mails esperando o mês virar. Para aumentar o limite, fale com a gente.`,
           link: '/email',
         }
       : null,
@@ -154,7 +154,7 @@ async function conferirWhatsapp(pool: Pool, contaId: number, s: ServicosConta, l
       ? {
           nivel: 'aviso',
           titulo: `Teto de mensagens automáticas de WhatsApp do mês atingido (${teto.limite})`,
-          texto: 'As mensagens esperam o mês virar ou o teto subir no painel master.',
+          texto: 'As mensagens esperam o mês virar. Para aumentar o limite, fale com a gente.',
           link: '/agente',
         }
       : null,

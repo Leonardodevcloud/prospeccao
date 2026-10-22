@@ -1574,7 +1574,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
 
     // Sem WhatsApp configurado, a tela explica.
     expect((await enviar('post', '/conversas/92/mensagens', { texto: 'oi' })).body.erro.mensagem).toMatch(
-      /Evolution/,
+      /WhatsApp ainda não está ativo/,
     );
   });
 
@@ -3026,7 +3026,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(p).toMatchObject({
       usuarios: 3,
       leadsMes: 8000,
-      mensalidadeCalculada: 297 + 59 + 250 + 150,
+      mensalidadeCalculada: 297 + 59 + 3 * 20 + 250 + 150,
       mensalidade: 650,
     });
     expect(
@@ -3112,5 +3112,20 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect([!!semPlano.email, !!semPlano.whatsapp, !!semPlano.ia]).toEqual([true, true, true]);
 
     await enviar('patch', `/master/contas/${contaId}`, { ativa: false });
+  });
+  it('nichos prontos: lista, aplica os escolhidos e não duplica', async () => {
+    const lista = (await ler('/nichos/prontos')).body as { id: string; nome: string; jaTem: boolean }[];
+    expect(lista.length).toBeGreaterThan(10);
+    const r = await enviar('post', '/nichos/prontos', { ids: ['farmacias', 'oticas'] });
+    expect(r.status).toBe(201);
+    expect(r.body.criados).toBe(2);
+    expect((await enviar('post', '/nichos/prontos', { ids: ['farmacias'] })).body.criados).toBe(0);
+    const depois = (await ler('/nichos/prontos')).body as { id: string; jaTem: boolean }[];
+    expect(depois.find((n) => n.id === 'farmacias')?.jaTem).toBe(true);
+    const nichos = (await ler('/nichos')).body as { id: number; nome: string; cnaes: string[] }[];
+    const farmacia = nichos.find((n) => n.nome === 'Farmácias e drogarias')!;
+    expect(farmacia.cnaes).toContain('4771701');
+    for (const n of nichos.filter((x) => ['Farmácias e drogarias', 'Óticas'].includes(x.nome)))
+      await enviar('delete', `/nichos/${n.id}`);
   });
 });

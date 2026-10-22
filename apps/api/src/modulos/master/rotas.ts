@@ -12,6 +12,7 @@ import {
   limitesConta,
   planoContaEntrada,
   SERVICOS_TESTAVEIS,
+  tabelaPrecosEntrada,
   usuarioAtualizar,
   usuarioNovo,
 } from '@prospeccao/shared';
@@ -44,6 +45,15 @@ export function rotasMaster(deps: DepsApi): Router {
     res.json(
       contas.map((c, i) => ({ ...c, iaPlataformaMes: ia.get(c.id as number) ?? 0, plano: planos[i] })),
     );
+  });
+
+  /** Tabela de preços dos planos, módulos, usuário e mil leads (vale para o cálculo de todas as contas). */
+  r.get('/precos', async (_req, res) => {
+    res.json(await plano.tabelaDePrecos(pool));
+  });
+  r.put('/precos', async (req, res) => {
+    await plano.salvarTabelaDePrecos(pool, corpo(req, tabelaPrecosEntrada), req.usuario!.id);
+    res.json(await plano.tabelaDePrecos(pool));
   });
 
   /** Plano da conta: o que foi contratado, os números trocados só para ela e o uso do mês. */

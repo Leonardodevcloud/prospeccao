@@ -1,4 +1,4 @@
-import { LISTA_MODULOS, MODULOS, type Modulo, PLANOS, type Plano } from '@prospeccao/shared/planos';
+import { LISTA_MODULOS, MODULOS, type Modulo, type Plano, TABELA_PADRAO } from '@prospeccao/shared/planos';
 import { Badge, Button, EmptyState, Icon, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
@@ -20,7 +20,13 @@ import {
 } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { FormPlano, ResumoPlano, ROTULO_PLANO } from '../componentes/PlanoConta';
+import {
+  FormPlano,
+  ResumoPlano,
+  ROTULO_PLANO,
+  TabelaDePrecos,
+  useTabelaPrecos,
+} from '../componentes/PlanoConta';
 import { useSessao } from '../componentes/Sessao';
 import { fmtMes, fmtNumero, fmtQuando, fmtReais } from '../formatar';
 import { LinkConvite } from './Equipe';
@@ -1089,6 +1095,7 @@ function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void 
   const cliente = useQueryClient();
   const [f, setF] = useState({ nome: '', observacoes: '', admin: { nome: '', email: '' } });
   const [plano, setPlano] = useState<Plano>('start');
+  const tabela = useTabelaPrecos().data ?? TABELA_PADRAO;
   const [modulos, setModulos] = useState<Modulo[]>([]);
   const criar = useMutation({
     mutationFn: () =>
@@ -1100,7 +1107,7 @@ function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void 
           // Personalizado: começa com os números do Start; ajuste na aba Plano e módulos.
           plano:
             plano === 'personalizado'
-              ? { plano, limiteUsuarios: 2, limiteLeadsMes: 5000, modulos }
+              ? { plano, limiteUsuarios: 3, limiteLeadsMes: 10000, modulos }
               : { plano, modulos },
         },
       }),
@@ -1176,8 +1183,8 @@ function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void 
                       <span className="quieto">Ajuste os números depois</span>
                     ) : (
                       <span className="quieto">
-                        {fmtReais(PLANOS[id].preco)} · {PLANOS[id].usuarios} usuários ·{' '}
-                        {fmtNumero(PLANOS[id].leadsMes)} leads
+                        {fmtReais(tabela.planos[id].preco)} · {tabela.planos[id].usuarios} usuários ·{' '}
+                        {fmtNumero(tabela.planos[id].leadsMes)} leads
                       </span>
                     )}
                   </label>
@@ -1198,7 +1205,7 @@ function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void 
                         setModulos(novos);
                       }}
                     />
-                    {MODULOS[m].nome} · {fmtReais(MODULOS[m].preco)}/mês
+                    {MODULOS[m].nome} · {fmtReais(tabela.modulos[m])}/mês
                   </label>
                 ))}
               </div>
@@ -1262,6 +1269,7 @@ export function Master() {
   const [params, setParams] = useSearchParams();
   const [nova, setNova] = useState(false);
   const [busca, setBusca] = useState('');
+  const [precos, setPrecos] = useState(false);
   const q = useQuery({
     queryKey: ['master', 'contas'],
     queryFn: () => api<ContaResumo[]>('/master/contas'),
@@ -1296,9 +1304,14 @@ export function Master() {
             o acesso para dar suporte.
           </p>
         </div>
-        <Button variant="primary" icon="plus" onClick={() => setNova(true)}>
-          Novo cliente
-        </Button>
+        <div className="acoes">
+          <Button variant="ghost" icon="file-text" onClick={() => setPrecos(true)}>
+            Tabela de preços
+          </Button>
+          <Button variant="primary" icon="plus" onClick={() => setNova(true)}>
+            Novo cliente
+          </Button>
+        </div>
       </div>
       <div className="kpis">
         <Stat rotulo="Clientes ativos" valor={fmtNumero(ativos.length)} />
@@ -1419,6 +1432,13 @@ export function Master() {
         />
       )}
       {aberta && <Conta key={aberta} id={aberta} aoFechar={() => abrir(null)} />}
+      {precos && (
+        <Drawer titulo="Tabela de preços" barra="Clientes e planos" aoFechar={() => setPrecos(false)} largo>
+          <div className="drawer__corpo">
+            <TabelaDePrecos />
+          </div>
+        </Drawer>
+      )}
     </>
   );
 }

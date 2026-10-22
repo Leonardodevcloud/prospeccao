@@ -9,6 +9,13 @@ import { notificar } from '../notificacoes/repositorio.js';
  * (conta null), para quem é master.
  */
 
+/**
+ * Alertas que o cliente vê (limites do plano). Os técnicos (chaves, WhatsApp desconectado, e-mail
+ * falhando, serviços parados) vão só para quem é master: o cliente não configura nada disso.
+ */
+const DO_CLIENTE = ['plano:', 'limite_emails', 'limite_whatsapp'];
+export const ehDoCliente = (chave: string) => DO_CLIENTE.some((p) => chave.startsWith(p));
+
 export interface NovoAlerta {
   nivel?: 'erro' | 'aviso';
   titulo: string;
@@ -40,7 +47,7 @@ export async function abrir(
     ],
   );
   const novo = rows[0]?.novo ?? false;
-  if (novo) await avisar(db, contaId, a);
+  if (novo) await avisar(db, contaId, chave, a);
   return novo;
 }
 
@@ -78,20 +85,23 @@ export async function fecharOsOutros(
   );
 }
 
-async function avisar(db: Executor, contaId: number | null, a: NovoAlerta) {
-  const { rows } = await db.query<{ id: number; conta_id: number }>(
-    contaId
-      ? `SELECT id, conta_id FROM cadastro.usuarios WHERE conta_id = $1 AND papel = 'admin' AND ativo`
-      : `SELECT id, conta_id FROM cadastro.usuarios WHERE master AND ativo AND $1::int IS NULL`,
+async function avisar(db: Executor, contaId: number | null, chave: string, a: NovoAlerta) {
+  const doCliente = contaId != null && ehDoCliente(chave);
+  const { rows } = await db.query<{ id: number; conta_id: number; nome_conta: string | null }>(
+    doCliente
+      ? `SELECT id, conta_id, NULL AS nome_conta FROM cadastro.usuarios WHERE conta_id = $1 AND papel = 'admin' AND ativo`
+      : // Técnico: só o master (com o nome do cliente no título, quando é de uma conta).
+        `SELECT u.id, u.conta_id, (SELECT c.nome FROM cadastro.contas c WHERE c.id = $1 AND NOT c.principal) AS nome_conta
+           FROM cadastro.usuarios u WHERE u.master AND u.ativo`,
     [contaId],
   );
   for (const u of rows)
     await comConta(u.conta_id, () =>
       notificar(db, u.id, {
         tipo: 'sistema',
-        titulo: a.titulo,
+        titulo: u.nome_conta ? `${u.nome_conta}: ${a.titulo}` : a.titulo,
         texto: a.texto ?? null,
-        link: a.link ?? null,
+        link: u.nome_conta && contaId ? `/master?conta=${contaId}` : (a.link ?? null),
       }),
     );
 }
@@ -106,7 +116,8 @@ export async function ativos(db: Executor, contaId: number, master: boolean) {
       ORDER BY (nivel = 'erro') DESC, primeira_vez`,
     [contaId, master],
   );
-  return rows;
+  // O cliente só vê os avisos de limite do plano; o resto é com o suporte (master).
+  return master ? rows : rows.filter((r) => ehDoCliente(String(r.chave)));
 }
 
 /** Histórico recente (painel master). */

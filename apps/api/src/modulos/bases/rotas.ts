@@ -15,7 +15,7 @@ export function rotasBases({ pool, servicos }: DepsApi): Router {
     const { geocodificar } = await servicos(conta());
     if (!geocodificar) {
       throw AppError.invalido(
-        'Informe latitude e longitude: a busca por endereço precisa da chave do OpenRouteService (painel master).',
+        'Não consegui achar o endereço automaticamente: informe a latitude e a longitude.',
       );
     }
     const geo = await geocodificar(b.endereco!);

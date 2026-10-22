@@ -5,6 +5,7 @@ import { conta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
+import { consumoDaConta } from '../consumo/repositorio.js';
 import { planoDaConta } from '../plano/repositorio.js';
 import * as repo from './repositorio.js';
 
@@ -20,8 +21,21 @@ export function rotasEquipe({ pool, origens }: DepsApi): Router {
   const link = (req: Request, token: string) => `${enderecoDoApp(req, origens)}/convite/${token}`;
 
   /** O plano da conta: o que está contratado e quanto já foi usado no mês. */
-  r.get('/plano', async (_req, res) => {
-    res.json(await planoDaConta(pool, conta()));
+  r.get('/plano', async (req, res) => {
+    const [p, c] = await Promise.all([planoDaConta(pool, conta()), consumoDaConta(pool, conta())]);
+    const admin = req.usuario?.papel === 'admin';
+    res.json({
+      ...p,
+      // O preço e o detalhe do cálculo ficam com o administrador da conta.
+      mensalidade: admin ? p.mensalidade : null,
+      itens: admin ? p.itens : [],
+      mensalidadeCalculada: null,
+      mensalidadeManual: null,
+      consumo: {
+        emails: { enviados: c.emails.enviados, limite: c.limites.emailsMes },
+        whatsapp: { automaticas: c.whatsapp.automaticas, limite: c.limites.whatsappMes },
+      },
+    });
   });
 
   r.get('/', async (_req, res) => {

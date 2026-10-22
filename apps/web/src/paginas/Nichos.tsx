@@ -1,4 +1,5 @@
 import { nichoEntrada, PORTES, ROTULO_PORTE } from '@prospeccao/shared/dominio';
+import { GRUPOS_NICHOS, type NichoPronto } from '@prospeccao/shared/nichos-prontos';
 import { Badge, Button, EmptyState, TextField } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
@@ -179,9 +180,139 @@ function FormNicho({ nicho, aoFechar }: { nicho: Nicho | null; aoFechar: () => v
   );
 }
 
+/** Escolher entre os nichos prontos: cada um mostra os CNAEs, a busca no Maps e os sinais. */
+function NichosProntos(props: { aoFechar: () => void }) {
+  const cliente = useQueryClient();
+  const q = useQuery({
+    queryKey: ['nichos', 'prontos'],
+    queryFn: () => api<(NichoPronto & { jaTem: boolean })[]>('/nichos/prontos'),
+  });
+  const [escolhidos, setEscolhidos] = useState<string[]>([]);
+  const [aberto, setAberto] = useState<string | null>(null);
+  const aplicar = useMutation({
+    mutationFn: () =>
+      api<{ criados: number }>('/nichos/prontos', { metodo: 'POST', corpo: { ids: escolhidos } }),
+    onSuccess: () => cliente.invalidateQueries({ queryKey: ['nichos'] }),
+  });
+  const alternar = (id: string) =>
+    setEscolhidos((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
+
+  return (
+    <Drawer titulo="Nichos prontos" barra="Nichos" aoFechar={props.aoFechar} largo>
+      <div className="drawer__corpo pilha" style={{ gap: 16 }}>
+        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+          Escolha os nichos que você quer prospectar. Cada um já vem com os CNAEs da Receita, os termos de
+          busca no Google Maps, os sinais de que a empresa é um bom lead e o que descartar. Depois de aplicar,
+          dá para editar tudo.
+        </p>
+        <ErroDaApi erro={q.error} />
+        {aplicar.data ? (
+          <div className="pilha" style={{ gap: 12 }}>
+            <Mensagem tipo="ok">
+              {aplicar.data.criados
+                ? `${aplicar.data.criados} ${aplicar.data.criados === 1 ? 'nicho criado' : 'nichos criados'}. Agora é só criar uma campanha com eles.`
+                : 'Esses nichos já estavam na sua lista.'}
+            </Mensagem>
+            <div className="acoes">
+              <Button variant="primary" onClick={props.aoFechar}>
+                Ver meus nichos
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {GRUPOS_NICHOS.map((g) => {
+              const doGrupo = q.data?.filter((n) => n.grupo === g) ?? [];
+              if (!doGrupo.length) return null;
+              return (
+                <section key={g} className="pilha" style={{ gap: 8 }}>
+                  <h3 className="subtitulo">{g}</h3>
+                  <ul className="nichos-prontos">
+                    {doGrupo.map((n) => {
+                      const marcado = escolhidos.includes(n.id);
+                      return (
+                        <li key={n.id} className="nicho-pronto" data-marcado={marcado || undefined}>
+                          <label className="nicho-pronto__topo">
+                            <input
+                              type="checkbox"
+                              checked={marcado}
+                              disabled={n.jaTem}
+                              onChange={() => alternar(n.id)}
+                            />
+                            <span className="nicho-pronto__nome">
+                              <b>{n.nome}</b>
+                              <span className="quieto">{n.descricao}</span>
+                            </span>
+                            {n.jaTem && <Badge tone="outline">Já está na sua lista</Badge>}
+                          </label>
+                          <button
+                            type="button"
+                            className="link-botao nicho-pronto__ver"
+                            aria-expanded={aberto === n.id}
+                            onClick={() => setAberto(aberto === n.id ? null : n.id)}
+                          >
+                            {aberto === n.id ? 'Esconder detalhes' : 'Ver CNAEs, busca e sinais'}
+                          </button>
+                          {aberto === n.id && (
+                            <dl className="nicho-pronto__detalhe">
+                              <div>
+                                <dt>CNAEs</dt>
+                                <dd className="mono">{n.cnaes.join(' · ')}</dd>
+                              </div>
+                              <div>
+                                <dt>Busca no Maps</dt>
+                                <dd>{n.termosMaps.join(', ')}</dd>
+                              </div>
+                              <div>
+                                <dt>Sinais de bom lead</dt>
+                                <dd>{n.palavrasPositivas.join(', ')}</dd>
+                              </div>
+                              {n.palavrasNegativas.length > 0 && (
+                                <div>
+                                  <dt>Descarta</dt>
+                                  <dd>{n.palavrasNegativas.join(', ')}</dd>
+                                </div>
+                              )}
+                              <div>
+                                <dt>Cargos-alvo</dt>
+                                <dd>{n.cargosAlvo.join(', ')}</dd>
+                              </div>
+                            </dl>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })}
+            <ErroDaApi erro={aplicar.error} />
+            <div className="acoes barra-fixa">
+              <Button
+                variant="primary"
+                icon="check"
+                disabled={!escolhidos.length || aplicar.isPending}
+                onClick={() => aplicar.mutate()}
+              >
+                {escolhidos.length
+                  ? `Aplicar ${escolhidos.length} ${escolhidos.length === 1 ? 'nicho' : 'nichos'}`
+                  : 'Escolha os nichos'}
+              </Button>
+              <Button variant="ghost" onClick={props.aoFechar}>
+                Cancelar
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Drawer>
+  );
+}
+
 export function Nichos() {
   const cliente = useQueryClient();
   const [editando, setEditando] = useState<Nicho | 'novo' | null>(null);
+  const [prontos, setProntos] = useState(false);
   const nichos = useQuery({ queryKey: ['nichos'], queryFn: () => api<Nicho[]>('/nichos') });
   const desativar = useMutation({
     mutationFn: (id: number) => api(`/nichos/${id}`, { metodo: 'DELETE' }),
@@ -195,9 +326,14 @@ export function Nichos() {
           <h1>Nichos</h1>
           <p>Perfis de quem prospectar: CNAEs, termos de busca no Maps e os cargos que você quer alcançar.</p>
         </div>
-        <Button variant="primary" icon="plus" onClick={() => setEditando('novo')}>
-          Novo nicho
-        </Button>
+        <div className="acoes">
+          <Button variant="ghost" icon="plus" onClick={() => setEditando('novo')}>
+            Montar do zero
+          </Button>
+          <Button variant="primary" icon="store" onClick={() => setProntos(true)}>
+            Nichos prontos
+          </Button>
+        </div>
       </div>
 
       <ErroDaApi erro={nichos.error ?? desativar.error} />
@@ -207,10 +343,10 @@ export function Nichos() {
           <EmptyState
             icone="store"
             titulo="Nenhum nicho cadastrado"
-            texto="Comece por um nicho, como autopeças ou pet shop. Depois crie uma campanha com ele."
+            texto="Escolha entre os nichos prontos (autopeças, farmácias, pet shops…) ou monte o seu. Depois crie uma campanha com ele."
             acao={
-              <Button size="sm" variant="primary" icon="plus" onClick={() => setEditando('novo')}>
-                Novo nicho
+              <Button size="sm" variant="primary" icon="store" onClick={() => setProntos(true)}>
+                Escolher nichos prontos
               </Button>
             }
           />
@@ -273,6 +409,7 @@ export function Nichos() {
         </div>
       )}
 
+      {prontos && <NichosProntos aoFechar={() => setProntos(false)} />}
       {editando && (
         <FormNicho nicho={editando === 'novo' ? null : editando} aoFechar={() => setEditando(null)} />
       )}

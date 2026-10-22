@@ -2,24 +2,21 @@ import {
   LISTA_MODULOS,
   MODULOS,
   type Modulo,
-  PLANOS,
+  NOME_PLANO,
+  PLANOS_PRONTOS,
   type Plano,
-  PRECO_USUARIO_ADICIONAL,
   planoEfetivo,
+  TABELA_PADRAO,
+  type TabelaPrecos,
 } from '@prospeccao/shared/planos';
 import { Badge, Button } from '@prospeccao/ui';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, type PlanoConta } from '../api';
 import { fmtData, fmtNumero, fmtReais } from '../formatar';
 import { ErroDaApi, Mensagem } from './Formulario';
 
-export const ROTULO_PLANO: Record<Plano, string> = {
-  start: 'Start',
-  time: 'Time',
-  escala: 'Escala',
-  personalizado: 'Personalizado',
-};
+export const ROTULO_PLANO: Record<Plano, string> = NOME_PLANO;
 
 /** Barra de uso: "3 de 4" (sem limite: só o número). */
 export function UsoComLimite(props: {
@@ -54,7 +51,7 @@ export function UsoComLimite(props: {
 }
 
 /** O que a conta contratou e quanto já usou no mês (tela do cliente e painel master). */
-export function ResumoPlano(props: { p: PlanoConta; contato?: boolean }) {
+export function ResumoPlano(props: { p: PlanoConta; contato?: boolean; semPreco?: boolean }) {
   const { p } = props;
   if (!p.plano)
     return (
@@ -69,7 +66,7 @@ export function ResumoPlano(props: { p: PlanoConta; contato?: boolean }) {
           <span className="plano-cabeca__nome">Plano {ROTULO_PLANO[p.plano]}</span>
           {p.planoDesde && <span className="quieto"> · desde {fmtData(p.planoDesde)}</span>}
         </div>
-        {p.mensalidade != null && (
+        {p.mensalidade != null && !props.semPreco && (
           <span className="plano-cabeca__preco">
             {fmtReais(p.mensalidade)}
             <span className="quieto">/mês</span>
@@ -112,46 +109,136 @@ export function ResumoPlano(props: { p: PlanoConta; contato?: boolean }) {
   );
 }
 
-const numeroOuNulo = (v: string) => (v.trim() === '' ? null : Number(v.replace(/\D/g, '')));
+/** Tabela de preços em vigor (painel master). */
+export function useTabelaPrecos() {
+  return useQuery({
+    queryKey: ['master', 'precos'],
+    queryFn: () => api<TabelaPrecos>('/master/precos'),
+    staleTime: 60_000,
+  });
+}
+
+/** Número com botões de menos e mais (o valor muda o preço na hora). */
+function Contador(props: {
+  id: string;
+  rotulo: string;
+  valor: number;
+  passo: number;
+  minimo: number;
+  padrao?: number | null;
+  aoMudar: (v: number) => void;
+}) {
+  const [texto, setTexto] = useState(String(props.valor));
+  useEffect(() => setTexto(String(props.valor)), [props.valor]);
+  const mudar = (v: number) => props.aoMudar(Math.max(props.minimo, Math.round(v)));
+  return (
+    <div className="campo">
+      <label htmlFor={props.id}>{props.rotulo}</label>
+      <div className="contador">
+        <button
+          type="button"
+          className="contador__botao"
+          aria-label={`Menos ${props.rotulo.toLowerCase()}`}
+          disabled={props.valor <= props.minimo}
+          onClick={() => mudar(props.valor - props.passo)}
+        >
+          −
+        </button>
+        <input
+          id={props.id}
+          className="filtro contador__valor mono"
+          inputMode="numeric"
+          value={texto}
+          onChange={(e) => {
+            const limpo = e.target.value.replace(/\D/g, '');
+            setTexto(limpo);
+            if (limpo) mudar(Number(limpo));
+          }}
+          onBlur={() => setTexto(String(props.valor))}
+        />
+        <button
+          type="button"
+          className="contador__botao"
+          aria-label={`Mais ${props.rotulo.toLowerCase()}`}
+          onClick={() => mudar(props.valor + props.passo)}
+        >
+          +
+        </button>
+      </div>
+      {props.padrao != null && props.padrao !== props.valor && (
+        <span className="campo__dica">
+          O plano inclui {fmtNumero(props.padrao)}.{' '}
+          <button type="button" className="link-botao" onClick={() => props.aoMudar(props.padrao!)}>
+            Voltar para o do plano
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+const reais = (v: string) => (v.trim() ? Number(v.replace(/\./g, '').replace(',', '.')) : null);
 
 /**
- * Painel master: escolhe o plano da conta e, se quiser, troca os números só para ela (mais ou
- * menos usuários e leads), liga os módulos e combina a mensalidade.
+ * Painel master: escolhe o plano da conta e ajusta só para ela (mais ou menos usuários e leads),
+ * liga os módulos e, se quiser, combina outro valor. O preço é recalculado a cada mudança.
+ * Personalizado: monta tudo do zero (usuários, leads, módulos e valor).
  */
 export function FormPlano(props: { contaId: number; p: PlanoConta }) {
   const cliente = useQueryClient();
-  const inicial = () => ({
-    plano: (props.p.plano ?? '') as Plano | '',
-    usuarios: props.p.limiteUsuariosProprio != null ? String(props.p.limiteUsuariosProprio) : '',
-    leads: props.p.limiteLeadsProprio != null ? String(props.p.limiteLeadsProprio) : '',
-    modulos: props.p.plano ? [...props.p.modulos] : ([] as Modulo[]),
-    manual: props.p.mensalidadeManual != null ? String(props.p.mensalidadeManual).replace('.', ',') : '',
-  });
+  const tabela = useTabelaPrecos().data ?? TABELA_PADRAO;
+  const numerosDoPlano = (plano: Plano | '', t: TabelaPrecos) =>
+    plano && plano !== 'personalizado'
+      ? { usuarios: t.planos[plano].usuarios, leads: t.planos[plano].leadsMes }
+      : { usuarios: 3, leads: 10000 };
+  const inicial = () => {
+    const plano = (props.p.plano ?? '') as Plano | '';
+    return {
+      plano,
+      usuarios: props.p.usuarios ?? numerosDoPlano(plano, tabela).usuarios,
+      leads: props.p.leadsMes ?? numerosDoPlano(plano, tabela).leads,
+      modulos: props.p.plano ? [...props.p.modulos] : ([] as Modulo[]),
+      manual: props.p.mensalidadeManual != null ? String(props.p.mensalidadeManual).replace('.', ',') : '',
+    };
+  };
   const [f, setF] = useState(inicial);
   // biome-ignore lint/correctness/useExhaustiveDependencies: recarrega quando o servidor devolve o plano salvo
   useEffect(() => setF(inicial()), [props.p]);
+  const pronto = f.plano && f.plano !== 'personalizado' ? tabela.planos[f.plano] : null;
   const salvar = useMutation({
     mutationFn: () =>
       api<PlanoConta>(`/master/contas/${props.contaId}/plano`, {
         metodo: 'PUT',
         corpo: {
           plano: f.plano || null,
-          limiteUsuarios: numeroOuNulo(f.usuarios),
-          limiteLeadsMes: numeroOuNulo(f.leads),
+          // Igual ao do plano: guarda vazio, para acompanhar se a tabela mudar.
+          limiteUsuarios: pronto && f.usuarios === pronto.usuarios ? null : f.usuarios,
+          limiteLeadsMes: pronto && f.leads === pronto.leadsMes ? null : f.leads,
           modulos: f.modulos,
-          mensalidadeManual: f.manual.trim() ? Number(f.manual.replace(/\./g, '').replace(',', '.')) : null,
+          mensalidadeManual: reais(f.manual),
         },
       }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['master'] }),
   });
-  const base = f.plano ? PLANOS[f.plano] : null;
-  const previa = planoEfetivo({
-    plano: f.plano || null,
-    limiteUsuarios: numeroOuNulo(f.usuarios),
-    limiteLeadsMes: numeroOuNulo(f.leads),
-    modulos: f.modulos,
-    mensalidadeManual: null,
-  });
+  const previa = planoEfetivo(
+    {
+      plano: f.plano || null,
+      limiteUsuarios: f.usuarios,
+      limiteLeadsMes: f.leads,
+      modulos: f.modulos,
+      mensalidadeManual: reais(f.manual),
+    },
+    tabela,
+  );
+  const escolher = (plano: Plano | '') =>
+    setF((x) => ({
+      ...x,
+      plano,
+      ...(() => {
+        const n = numerosDoPlano(plano, tabela);
+        return { usuarios: n.usuarios, leads: n.leads };
+      })(),
+    }));
   const alternar = (m: Modulo, ligado: boolean) =>
     setF((x) => {
       let mods = ligado ? [...new Set([...x.modulos, m])] : x.modulos.filter((y) => y !== m);
@@ -170,129 +257,217 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
       }}
     >
       <fieldset className="planos-escolha" aria-label="Plano">
-        {(['start', 'time', 'escala', 'personalizado'] as Plano[]).map((id) => (
+        {PLANOS_PRONTOS.map((id) => (
           <label key={id} className="plano-opcao" data-ativo={f.plano === id || undefined}>
-            <input
-              type="radio"
-              name="plano"
-              checked={f.plano === id}
-              onChange={() => setF({ ...f, plano: id })}
-            />
-            <b>{ROTULO_PLANO[id]}</b>
-            {id === 'personalizado' ? (
-              <span className="quieto">Números e preço combinados</span>
-            ) : (
-              <>
-                <span className="plano-opcao__preco">{fmtReais(PLANOS[id].preco)}/mês</span>
-                <span className="quieto">
-                  {PLANOS[id].usuarios} usuários · {fmtNumero(PLANOS[id].leadsMes)} leads/mês
-                </span>
-              </>
-            )}
+            <input type="radio" name="plano" checked={f.plano === id} onChange={() => escolher(id)} />
+            <b>{NOME_PLANO[id]}</b>
+            <span className="plano-opcao__preco">{fmtReais(tabela.planos[id].preco)}/mês</span>
+            <span className="quieto">
+              {tabela.planos[id].usuarios} usuários · {fmtNumero(tabela.planos[id].leadsMes)} leads/mês
+            </span>
           </label>
         ))}
-        <label className="plano-opcao" data-ativo={f.plano === '' || undefined}>
+        <label className="plano-opcao" data-ativo={f.plano === 'personalizado' || undefined}>
           <input
             type="radio"
             name="plano"
-            checked={f.plano === ''}
-            onChange={() => setF({ ...f, plano: '' })}
+            checked={f.plano === 'personalizado'}
+            onChange={() => escolher('personalizado')}
           />
+          <b>Personalizado</b>
+          <span className="quieto">Você monta: usuários, leads, módulos e valor</span>
+        </label>
+        <label className="plano-opcao" data-ativo={f.plano === '' || undefined}>
+          <input type="radio" name="plano" checked={f.plano === ''} onChange={() => escolher('')} />
           <b>Sem plano</b>
           <span className="quieto">Sem limites e todos os módulos (uso interno)</span>
         </label>
       </fieldset>
 
       {f.plano && (
-        <>
-          <div className="form__duas">
-            <div className="campo">
-              <label htmlFor="pl-usuarios">Usuários</label>
-              <input
+        <div className="plano-montagem">
+          <div className="pilha" style={{ gap: 16 }}>
+            <div className="form__duas">
+              <Contador
                 id="pl-usuarios"
-                className="filtro"
-                inputMode="numeric"
-                placeholder={
-                  base && f.plano !== 'personalizado' ? `${base.usuarios} (do plano)` : 'Obrigatório'
-                }
-                value={f.usuarios}
-                onChange={(e) => setF({ ...f, usuarios: e.target.value.replace(/\D/g, '') })}
+                rotulo="Usuários"
+                valor={f.usuarios}
+                passo={1}
+                minimo={1}
+                padrao={pronto?.usuarios}
+                aoMudar={(v) => setF({ ...f, usuarios: v })}
               />
-              <span className="campo__dica">
-                Em branco: o número do plano. Acima dele, cada usuário soma{' '}
-                {fmtReais(PRECO_USUARIO_ADICIONAL)}.
-              </span>
-            </div>
-            <div className="campo">
-              <label htmlFor="pl-leads">Leads enriquecidos por mês</label>
-              <input
+              <Contador
                 id="pl-leads"
-                className="filtro"
-                inputMode="numeric"
-                placeholder={
-                  base && f.plano !== 'personalizado'
-                    ? `${fmtNumero(base.leadsMes)} (do plano)`
-                    : 'Obrigatório'
-                }
-                value={f.leads}
-                onChange={(e) => setF({ ...f, leads: e.target.value.replace(/\D/g, '') })}
+                rotulo="Leads enriquecidos por mês"
+                valor={f.leads}
+                passo={1000}
+                minimo={0}
+                padrao={pronto?.leadsMes}
+                aoMudar={(v) => setF({ ...f, leads: v })}
               />
-              <span className="campo__dica">Em branco: o número do plano. Pode aumentar ou diminuir.</span>
             </div>
+            <fieldset className="campo">
+              <legend>Módulos</legend>
+              <div className="pilha" style={{ gap: 8 }}>
+                {LISTA_MODULOS.map((m) => (
+                  <label key={m} className="opcao">
+                    <input
+                      type="checkbox"
+                      checked={f.modulos.includes(m)}
+                      onChange={(e) => alternar(m, e.target.checked)}
+                    />
+                    <span>
+                      <b>{MODULOS[m].nome}</b> · {fmtReais(tabela.modulos[m])}/mês
+                      <span className="quieto"> · {MODULOS[m].descricao}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           </div>
 
-          <fieldset className="campo">
-            <legend>Módulos</legend>
-            <div className="pilha" style={{ gap: 8 }}>
-              {LISTA_MODULOS.map((m) => (
-                <label key={m} className="opcao">
-                  <input
-                    type="checkbox"
-                    checked={f.modulos.includes(m)}
-                    onChange={(e) => alternar(m, e.target.checked)}
-                  />
-                  <span>
-                    <b>{MODULOS[m].nome}</b> · {fmtReais(MODULOS[m].preco)}/mês
-                    <span className="quieto"> · {MODULOS[m].descricao}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="plano-conta">
+          <aside className="plano-conta" aria-live="polite">
+            <b className="plano-conta__titulo">Mensalidade</b>
             {previa.itens.map((i) => (
-              <div key={i.rotulo} className="plano-conta__linha">
+              <div key={i.rotulo} className="plano-conta__linha" data-negativo={i.valor < 0 || undefined}>
                 <span>{i.rotulo}</span>
-                <span className="mono">{fmtReais(i.valor)}</span>
+                <span className="mono">
+                  {i.valor < 0 ? '− ' : ''}
+                  {fmtReais(Math.abs(i.valor))}
+                </span>
               </div>
             ))}
-            {f.plano !== 'personalizado' && (
-              <div className="plano-conta__linha plano-conta__total">
-                <span>Total calculado</span>
-                <span className="mono">{fmtReais(previa.mensalidadeCalculada)}</span>
-              </div>
-            )}
-          </div>
-          <div className="campo" style={{ maxWidth: 280 }}>
-            <label htmlFor="pl-manual">Mensalidade combinada (R$)</label>
-            <input
-              id="pl-manual"
-              className="filtro"
-              inputMode="decimal"
-              placeholder={f.plano === 'personalizado' ? 'Valor fechado' : 'Em branco: a calculada'}
-              value={f.manual}
-              onChange={(e) => setF({ ...f, manual: e.target.value.replace(/[^\d.,]/g, '') })}
-            />
-            <span className="campo__dica">Para desconto ou valor fechado. Só o master vê o cálculo.</span>
-          </div>
-        </>
+            <div className="plano-conta__linha plano-conta__total">
+              <span>Calculado</span>
+              <span className="mono">{fmtReais(previa.mensalidadeCalculada)}</span>
+            </div>
+            <div className="campo">
+              <label htmlFor="pl-manual">Valor combinado (R$)</label>
+              <input
+                id="pl-manual"
+                className="filtro"
+                inputMode="decimal"
+                placeholder="Em branco: o calculado"
+                value={f.manual}
+                onChange={(e) => setF({ ...f, manual: e.target.value.replace(/[^\d.,]/g, '') })}
+              />
+            </div>
+            <div className="plano-conta__linha plano-conta__final">
+              <span>O cliente paga</span>
+              <span className="mono">{fmtReais(previa.mensalidade)}/mês</span>
+            </div>
+            <span className="quieto" style={{ fontSize: 11 }}>
+              Usuário {fmtReais(tabela.usuario)} · cada 1.000 leads {fmtReais(tabela.milLeads)} (para mais ou
+              para menos). A tabela fica em “Tabela de preços”.
+            </span>
+          </aside>
+        </div>
       )}
       <ErroDaApi erro={salvar.error} />
       {salvar.isSuccess && <Mensagem tipo="ok">Plano salvo. Vale na hora para a conta.</Mensagem>}
       <div className="acoes">
         <Button type="submit" variant="primary" disabled={salvar.isPending}>
           {salvar.isPending ? 'Salvando…' : 'Salvar plano'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Painel master: preço de cada plano e módulo, do usuário e de cada 1.000 leads. */
+export function TabelaDePrecos() {
+  const cliente = useQueryClient();
+  const q = useTabelaPrecos();
+  const [t, setT] = useState<TabelaPrecos | null>(null);
+  useEffect(() => {
+    if (q.data) setT(q.data);
+  }, [q.data]);
+  const salvar = useMutation({
+    mutationFn: (dados: TabelaPrecos) => api<TabelaPrecos>('/master/precos', { metodo: 'PUT', corpo: dados }),
+    onSuccess: () => cliente.invalidateQueries({ queryKey: ['master'] }),
+  });
+  if (!t) return <div className="esqueleto" />;
+  const num = (v: string) =>
+    Number(
+      v
+        .replace(/\./g, '')
+        .replace(',', '.')
+        .replace(/[^\d.]/g, ''),
+    ) || 0;
+  const campo = (
+    id: string,
+    rotulo: string,
+    valor: number,
+    aoMudar: (v: number) => void,
+    dinheiro = true,
+  ) => (
+    <div className="campo">
+      <label htmlFor={id}>{rotulo}</label>
+      <input
+        id={id}
+        className="filtro mono"
+        inputMode={dinheiro ? 'decimal' : 'numeric'}
+        value={String(valor)}
+        onChange={(e) => aoMudar(num(e.target.value))}
+      />
+    </div>
+  );
+  return (
+    <form
+      className="form"
+      onSubmit={(e: FormEvent) => {
+        e.preventDefault();
+        salvar.mutate(t);
+      }}
+    >
+      <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+        Vale para o cálculo de todos os clientes (quem tem valor combinado continua pagando o combinado).
+      </p>
+      <div className="tabela-precos">
+        {PLANOS_PRONTOS.map((id) => (
+          <fieldset key={id} className="caixa">
+            <legend>Plano {NOME_PLANO[id]}</legend>
+            {campo(`tp-${id}-preco`, 'Preço (R$/mês)', t.planos[id].preco, (v) =>
+              setT({ ...t, planos: { ...t.planos, [id]: { ...t.planos[id], preco: v } } }),
+            )}
+            {campo(
+              `tp-${id}-usuarios`,
+              'Usuários incluídos',
+              t.planos[id].usuarios,
+              (v) =>
+                setT({ ...t, planos: { ...t.planos, [id]: { ...t.planos[id], usuarios: Math.max(1, v) } } }),
+              false,
+            )}
+            {campo(
+              `tp-${id}-leads`,
+              'Leads/mês incluídos',
+              t.planos[id].leadsMes,
+              (v) => setT({ ...t, planos: { ...t.planos, [id]: { ...t.planos[id], leadsMes: v } } }),
+              false,
+            )}
+          </fieldset>
+        ))}
+        <fieldset className="caixa">
+          <legend>Módulos e ajustes</legend>
+          {LISTA_MODULOS.map((m) =>
+            campo(`tp-${m}`, `${MODULOS[m].nome} (R$/mês)`, t.modulos[m], (v) =>
+              setT({ ...t, modulos: { ...t.modulos, [m]: v } }),
+            ),
+          )}
+          {campo('tp-usuario', 'Cada usuário a mais ou a menos (R$)', t.usuario, (v) =>
+            setT({ ...t, usuario: v }),
+          )}
+          {campo('tp-mil', 'Cada 1.000 leads a mais ou a menos (R$)', t.milLeads, (v) =>
+            setT({ ...t, milLeads: v }),
+          )}
+        </fieldset>
+      </div>
+      <ErroDaApi erro={salvar.error} />
+      {salvar.isSuccess && <Mensagem tipo="ok">Tabela salva.</Mensagem>}
+      <div className="acoes">
+        <Button type="submit" variant="primary" disabled={salvar.isPending}>
+          Salvar tabela
         </Button>
       </div>
     </form>

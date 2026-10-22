@@ -28,7 +28,7 @@ const ROTULO_ACAO: Record<string, string> = {
   lead: 'Lead',
   importação: 'Importação',
   exportação: 'Exportação',
-  master: 'Painel master',
+  master: 'Suporte Prospect Team',
   outro: 'Outro',
 };
 

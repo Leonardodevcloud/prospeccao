@@ -2,41 +2,83 @@ import { z } from 'zod';
 
 /**
  * Planos e módulos do Prospect Team. O plano dá os números de partida; cada conta pode ter os
- * próprios (mais ou menos usuários e leads) e os módulos que contratou. Conta sem plano não tem
- * limite nem trava (a conta principal e as que existiam antes dos planos).
+ * próprios (mais ou menos usuários e leads) e os módulos que contratou, e o preço acompanha. A
+ * tabela de preços é editável no painel master; aqui ficam os valores de partida. Conta sem plano
+ * não tem limite nem trava (a conta principal e as que existiam antes dos planos).
  */
 
-export const PLANOS = {
-  start: { nome: 'Start', preco: 297, usuarios: 2, leadsMes: 5000 },
-  time: { nome: 'Time', preco: 499, usuarios: 4, leadsMes: 15000 },
-  escala: { nome: 'Escala', preco: 999, usuarios: 6, leadsMes: 25000 },
-  personalizado: { nome: 'Personalizado', preco: 0, usuarios: 1, leadsMes: 0 },
-} as const;
-export type Plano = keyof typeof PLANOS;
-export const LISTA_PLANOS = Object.keys(PLANOS) as Plano[];
+export type Plano = 'start' | 'time' | 'escala' | 'personalizado';
+export const LISTA_PLANOS: Plano[] = ['start', 'time', 'escala', 'personalizado'];
+export type PlanoPronto = Exclude<Plano, 'personalizado'>;
+export const PLANOS_PRONTOS: PlanoPronto[] = ['start', 'time', 'escala'];
+
+export const NOME_PLANO: Record<Plano, string> = {
+  start: 'Start',
+  time: 'Time',
+  escala: 'Escala',
+  personalizado: 'Personalizado',
+};
 
 export const MODULOS = {
   whatsapp: {
     nome: 'WhatsApp integrado',
-    preco: 250,
     descricao: 'Conversas no CRM, chips, mensagens das sequências e da cadência pelo WhatsApp.',
   },
   agente_ia: {
     nome: 'Agente de IA',
-    preco: 150,
     descricao: 'A IA aborda, responde, tira dúvidas pela base de conhecimento e marca reunião.',
   },
   email: {
     nome: 'E-mail automatizado',
-    preco: 200,
     descricao: 'Campanhas e sequências de e-mail com a abertura escrita pela IA, e-mails ilimitados.',
   },
 } as const;
 export type Modulo = keyof typeof MODULOS;
 export const LISTA_MODULOS = Object.keys(MODULOS) as Modulo[];
 
-/** Cada usuário além do que o plano inclui. */
-export const PRECO_USUARIO_ADICIONAL = 59;
+/** Tabela de preços (editável no painel master). */
+export interface TabelaPrecos {
+  planos: Record<PlanoPronto, { preco: number; usuarios: number; leadsMes: number }>;
+  modulos: Record<Modulo, number>;
+  /** Cada usuário a mais (ou a menos) que o plano inclui. */
+  usuario: number;
+  /** Cada 1.000 leads/mês a mais (ou a menos) que o plano inclui. */
+  milLeads: number;
+}
+
+export const TABELA_PADRAO: TabelaPrecos = {
+  planos: {
+    start: { preco: 297, usuarios: 2, leadsMes: 5000 },
+    time: { preco: 499, usuarios: 4, leadsMes: 15000 },
+    escala: { preco: 999, usuarios: 6, leadsMes: 25000 },
+  },
+  modulos: { whatsapp: 250, agente_ia: 150, email: 200 },
+  usuario: 59,
+  milLeads: 20,
+};
+
+const numero = (min: number, max: number) => z.number().min(min).max(max);
+const linhaPlano = z.object({
+  preco: numero(0, 1_000_000),
+  usuarios: z.number().int().min(1).max(500),
+  leadsMes: z.number().int().min(0).max(1_000_000),
+});
+export const tabelaPrecosEntrada = z.object({
+  planos: z.object({ start: linhaPlano, time: linhaPlano, escala: linhaPlano }),
+  modulos: z.object({
+    whatsapp: numero(0, 100_000),
+    agente_ia: numero(0, 100_000),
+    email: numero(0, 100_000),
+  }),
+  usuario: numero(0, 100_000),
+  milLeads: numero(0, 100_000),
+});
+
+/** Junta o que veio do banco com a tabela padrão (campo faltando = padrão). */
+export function tabelaCompleta(t: unknown): TabelaPrecos {
+  const r = tabelaPrecosEntrada.safeParse(t);
+  return r.success ? r.data : TABELA_PADRAO;
+}
 
 export interface PlanoDaConta {
   plano: Plano | null;
@@ -53,14 +95,21 @@ export interface PlanoEfetivo {
   leadsMes: number | null;
   /** Módulos que valem (sem plano: todos). */
   modulos: Modulo[];
-  /** Quanto custa no mês, item a item, e o total (null: sem plano). */
+  /** Quanto custa no mês, item a item (ajuste para menos entra negativo). */
   itens: { rotulo: string; valor: number }[];
   mensalidadeCalculada: number | null;
   mensalidade: number | null;
 }
 
-/** O que vale para a conta: os números do plano com o que foi trocado só para ela, e o preço. */
-export function planoEfetivo(c: PlanoDaConta): PlanoEfetivo {
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+const milhares = (n: number) => n.toLocaleString('pt-BR');
+
+/**
+ * O que vale para a conta e quanto custa. Planos prontos: o preço do plano mais (ou menos) cada
+ * usuário e cada 1.000 leads de diferença, mais os módulos. Personalizado: montado item a item
+ * (usuários, leads, módulos). Em todos, a mensalidade combinada substitui a calculada.
+ */
+export function planoEfetivo(c: PlanoDaConta, tabela: TabelaPrecos = TABELA_PADRAO): PlanoEfetivo {
   if (!c.plano)
     return {
       plano: null,
@@ -71,22 +120,51 @@ export function planoEfetivo(c: PlanoDaConta): PlanoEfetivo {
       mensalidadeCalculada: null,
       mensalidade: null,
     };
-  const p = PLANOS[c.plano];
-  const usuarios = c.limiteUsuarios ?? p.usuarios;
-  const leadsMes = c.limiteLeadsMes ?? p.leadsMes;
   const modulos = LISTA_MODULOS.filter((m) => c.modulos.includes(m));
   const itens: { rotulo: string; valor: number }[] = [];
-  if (c.plano !== 'personalizado') {
-    itens.push({ rotulo: `Plano ${p.nome}`, valor: p.preco });
-    const extras = Math.max(0, usuarios - p.usuarios);
-    if (extras)
+  let usuarios: number;
+  let leadsMes: number;
+  if (c.plano === 'personalizado') {
+    usuarios = c.limiteUsuarios ?? 1;
+    leadsMes = c.limiteLeadsMes ?? 0;
+    itens.push({
+      rotulo: plural(usuarios, 'usuário', 'usuários'),
+      valor: usuarios * tabela.usuario,
+    });
+    if (leadsMes)
       itens.push({
-        rotulo: `${extras} usuário${extras > 1 ? 's' : ''} adicional${extras > 1 ? 'is' : ''}`,
-        valor: extras * PRECO_USUARIO_ADICIONAL,
+        rotulo: `${milhares(leadsMes)} leads/mês`,
+        valor: Math.ceil(leadsMes / 1000) * tabela.milLeads,
       });
-    for (const m of modulos) itens.push({ rotulo: MODULOS[m].nome, valor: MODULOS[m].preco });
+  } else {
+    const p = tabela.planos[c.plano];
+    usuarios = c.limiteUsuarios ?? p.usuarios;
+    leadsMes = c.limiteLeadsMes ?? p.leadsMes;
+    itens.push({ rotulo: `Plano ${NOME_PLANO[c.plano]}`, valor: p.preco });
+    const difUsuarios = usuarios - p.usuarios;
+    if (difUsuarios)
+      itens.push({
+        rotulo:
+          difUsuarios > 0
+            ? `${plural(difUsuarios, 'usuário adicional', 'usuários adicionais')}`
+            : `${plural(-difUsuarios, 'usuário a menos', 'usuários a menos')}`,
+        valor: difUsuarios * tabela.usuario,
+      });
+    const difLeads = leadsMes - p.leadsMes;
+    if (difLeads)
+      itens.push({
+        rotulo:
+          difLeads > 0
+            ? `${milhares(difLeads)} leads/mês a mais`
+            : `${milhares(-difLeads)} leads/mês a menos`,
+        valor: Math.sign(difLeads) * Math.ceil(Math.abs(difLeads) / 1000) * tabela.milLeads,
+      });
   }
-  const mensalidadeCalculada = itens.reduce((s, i) => s + i.valor, 0);
+  for (const m of modulos) itens.push({ rotulo: MODULOS[m].nome, valor: tabela.modulos[m] });
+  const mensalidadeCalculada = Math.max(
+    0,
+    itens.reduce((s, i) => s + i.valor, 0),
+  );
   return {
     plano: c.plano,
     usuarios,
@@ -94,7 +172,7 @@ export function planoEfetivo(c: PlanoDaConta): PlanoEfetivo {
     modulos,
     itens,
     mensalidadeCalculada,
-    mensalidade: c.mensalidadeManual ?? (c.plano === 'personalizado' ? null : mensalidadeCalculada),
+    mensalidade: c.mensalidadeManual ?? mensalidadeCalculada,
   };
 }
 

@@ -8,6 +8,7 @@ import { Drawer } from '../componentes/Drawer';
 import { CampoLista, ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { EstimativaBusca, PainelPlaces, ResumoPlacesCampanha } from '../componentes/GooglePlaces';
 import { ImportarPlanilha } from '../componentes/ImportarPlanilha';
+import { useEhMaster } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando, ROTULO_STATUS_CAMPANHA, TOM_STATUS_CAMPANHA } from '../formatar';
 
 /** "Salvador/BA" ou "Salvador - BA" → { cidade, uf } */
@@ -198,6 +199,7 @@ function Andamento(props: {
   aoParar: () => void;
   ocupado: boolean;
 }) {
+  const master = useEhMaster();
   const { c } = props;
   // A tela pode chegar antes da API nova (o Vercel publica mais rápido que o Railway): campos que
   // ainda não vieram entram com valor neutro em vez de derrubar a página.
@@ -248,7 +250,7 @@ function Andamento(props: {
           </span>
         </div>
         {buscasTotal > 0 && <Barra feito={p.buscasConcluidas} total={buscasTotal} rotulo="Buscas no Maps" />}
-        <ResumoPlacesCampanha c={c} />
+        {master && <ResumoPlacesCampanha c={c} />}
         {noTeto ? (
           <div className="etapa-campanha__erro">
             <p className="erro-texto">
@@ -302,13 +304,15 @@ function Andamento(props: {
         {p.elegiveis > 0 && <Barra feito={p.enriquecidos} total={p.elegiveis} rotulo="Leads enriquecidos" />}
         {servico === 'pausado' ? (
           <p className="aviso-texto">
-            Pausado no Railway (ENRIQ_PAUSADO=true no worker-enriquecimento).{' '}
-            {fmtNumero(p.naFilaEnriquecimento)} esperando; troque para false para continuar.
+            {master
+              ? `Pausado no Railway (ENRIQ_PAUSADO=true no worker-enriquecimento). ${fmtNumero(p.naFilaEnriquecimento)} esperando; troque para false para continuar.`
+              : `Enriquecimento em manutenção: ${fmtNumero(p.naFilaEnriquecimento)} leads esperando, continuam sozinhos.`}
           </p>
         ) : servico === 'fora' ? (
           <p className="erro-texto">
-            O worker-enriquecimento não dá sinal de vida há mais de 3 minutos: confira se ele está no ar no
-            Railway.
+            {master
+              ? 'O worker-enriquecimento não dá sinal de vida há mais de 3 minutos: confira se ele está no ar no Railway.'
+              : 'O enriquecimento está parado no momento. Nosso suporte já foi avisado; os leads continuam na fila.'}
           </p>
         ) : enriquecendo ? (
           <div className="etapa-campanha__erro">
@@ -334,6 +338,7 @@ function Andamento(props: {
 }
 
 function CardCampanha({ c }: { c: Campanha }) {
+  const master = useEhMaster();
   const cliente = useQueryClient();
   const navegar = useNavigate();
   const [avisos, setAvisos] = useState<string[]>([]);
@@ -451,7 +456,7 @@ function CardCampanha({ c }: { c: Campanha }) {
       </div>
       <Andamento
         c={c}
-        aoTentarDeNovo={() => setEstimando(true)}
+        aoTentarDeNovo={() => (master ? setEstimando(true) : rodar.mutate(null))}
         aoParar={() => parar.mutate()}
         ocupado={acao.isPending || parar.isPending || rodar.isPending}
       />
@@ -514,8 +519,8 @@ function CardCampanha({ c }: { c: Campanha }) {
       {confirmarRefazer && (
         <div className="confirmar">
           <span>
-            Refazer o enriquecimento de quais leads? MEI e descartados ficam de fora. Gasta de novo no Apify e
-            no Gemini.
+            Refazer o enriquecimento de quais leads? MEI e descartados ficam de fora. Conta de novo no limite
+            de leads do mês.
           </span>
           <fieldset className="campo" style={{ gap: 6 }}>
             <legend className="pp-sr">Quais leads</legend>
@@ -566,7 +571,7 @@ function CardCampanha({ c }: { c: Campanha }) {
             size="sm"
             icon="send"
             disabled={acao.isPending || estimando}
-            onClick={() => setEstimando(true)}
+            onClick={() => (master ? setEstimando(true) : rodar.mutate(null))}
           >
             {c.status === 'rascunho' ? 'Iniciar busca' : 'Retomar'}
           </Button>
@@ -620,6 +625,7 @@ function CardCampanha({ c }: { c: Campanha }) {
 }
 
 export function Campanhas() {
+  const master = useEhMaster();
   const [criando, setCriando] = useState(false);
   const campanhas = useQuery({
     queryKey: ['campanhas'],
@@ -646,7 +652,7 @@ export function Campanhas() {
         </Button>
       </div>
 
-      <PainelPlaces />
+      {master && <PainelPlaces />}
       <ErroDaApi erro={campanhas.error} />
       {campanhas.isPending ? (
         <div className="grade-cards">

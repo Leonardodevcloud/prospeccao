@@ -5,6 +5,8 @@ import {
   type PlanoContaEntrada,
   type PlanoEfetivo,
   planoEfetivo,
+  type TabelaPrecos,
+  tabelaCompleta,
 } from '@prospeccao/shared';
 import { conta } from '../../contexto.js';
 
@@ -30,6 +32,22 @@ export const sqlLeadsDoMes = (conta: string) =>
 export const sqlUsuariosAtivos = (conta: string) =>
   `(SELECT count(*) FROM cadastro.usuarios u WHERE u.conta_id = ${conta} AND u.ativo AND NOT u.master)::int`;
 
+/** Tabela de preços em vigor (a editada no painel master, ou a de partida). */
+export async function tabelaDePrecos(db: Executor): Promise<TabelaPrecos> {
+  const { rows } = await db.query<{ dados: unknown }>(
+    'SELECT dados FROM cadastro.tabela_precos WHERE id = 1',
+  );
+  return tabelaCompleta(rows[0]?.dados);
+}
+
+export async function salvarTabelaDePrecos(db: Executor, t: TabelaPrecos, usuarioId: number | null) {
+  await db.query(
+    `INSERT INTO cadastro.tabela_precos (id, dados, atualizado_em, atualizado_por) VALUES (1, $1, now(), $2)
+     ON CONFLICT (id) DO UPDATE SET dados = EXCLUDED.dados, atualizado_em = now(), atualizado_por = EXCLUDED.atualizado_por`,
+    [JSON.stringify(t), usuarioId],
+  );
+}
+
 export async function planoDaConta(db: Executor, contaId: number): Promise<PlanoComUso> {
   const C = String(Math.trunc(contaId));
   const { rows } = await db.query<{
@@ -53,14 +71,18 @@ export async function planoDaConta(db: Executor, contaId: number): Promise<Plano
   const r = rows[0];
   if (!r) throw AppError.naoEncontrado('Conta');
   const manual = r.mensalidade_manual == null ? null : Number(r.mensalidade_manual);
+  const tabela = await tabelaDePrecos(db);
   return {
-    ...planoEfetivo({
-      plano: r.plano,
-      limiteUsuarios: r.limite_usuarios,
-      limiteLeadsMes: r.limite_leads_mes,
-      modulos: r.modulos,
-      mensalidadeManual: manual,
-    }),
+    ...planoEfetivo(
+      {
+        plano: r.plano,
+        limiteUsuarios: r.limite_usuarios,
+        limiteLeadsMes: r.limite_leads_mes,
+        modulos: r.modulos,
+        mensalidadeManual: manual,
+      },
+      tabela,
+    ),
     limiteUsuariosProprio: r.limite_usuarios,
     limiteLeadsProprio: r.limite_leads_mes,
     mensalidadeManual: manual,
