@@ -37,6 +37,7 @@ export interface CampanhaEnriquecer {
   status: string;
   nicho_nome: string;
   cargos_alvo: string[];
+  palavras_positivas: string[];
   conta_nome: string | null;
   oferta: string | null;
 }
@@ -67,7 +68,7 @@ export async function obterEmpresa(
 
 export async function obterCampanha(db: Executor, id: number): Promise<CampanhaEnriquecer | null> {
   const { rows } = await db.query<CampanhaEnriquecer>(
-    `SELECT v.id, v.nome, v.status, v.nicho_nome, v.cargos_alvo, ct.nome AS conta_nome, ca.sobre_empresa AS oferta
+    `SELECT v.id, v.nome, v.status, v.nicho_nome, v.cargos_alvo, v.palavras_positivas, ct.nome AS conta_nome, ca.sobre_empresa AS oferta
        FROM cadastro.v_campanhas_enriquecimento v
        JOIN cadastro.campanhas c ON c.id = v.id
        JOIN cadastro.contas ct ON ct.id = c.conta_id

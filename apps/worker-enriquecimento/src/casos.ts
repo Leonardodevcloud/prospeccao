@@ -691,6 +691,7 @@ export async function enriquecerEmpresa(
           },
           socios: socios.map((s) => ({ nome: s.nome, qualificacao: s.qualificacao })),
           cargosAlvo: campanha.cargos_alvo,
+          sinais: campanha.palavras_positivas ?? [],
           contatos: (() => {
             const todos = [...c.contatos.values()];
             const n = (canal: string) => todos.filter((x) => x.canal === canal).length;

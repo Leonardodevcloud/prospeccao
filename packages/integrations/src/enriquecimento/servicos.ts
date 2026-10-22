@@ -146,7 +146,10 @@ export interface EntradaAvaliacao {
     seguidoresInstagram: number | null;
   };
   socios: { nome: string; qualificacao: string }[];
+  /** Pessoas a priorizar (vazio: qualquer pessoa da equipe serve). */
   cargosAlvo: string[];
+  /** Sinais do nicho: palavras que mostram que a empresa tem o perfil procurado. */
+  sinais?: string[];
   /** O que já foi achado para falar com a empresa (quanto mais canais, mais fácil abordar). */
   contatos?: { whatsapp: number; telefones: number; emails: number; instagram: boolean; site: boolean };
   textoSite: string | null;
@@ -198,6 +201,9 @@ export function montarPrompt(e: EntradaAvaliacao): string {
     `Você qualifica empresas como possíveis clientes B2B${e.vendedor?.nome ? ` da ${e.vendedor.nome}` : ''}.`,
     e.vendedor?.oferta ? `O que ela vende: ${e.vendedor.oferta.slice(0, 1200)}` : '',
     `Nicho da campanha: ${e.nicho}. Cliente ideal: combina com o que é vendido, tem movimento (avaliações no Google, Instagram ativo), porte pequeno a médio, já estabelecida.`,
+    e.sinais?.length
+      ? `Sinais de bom lead neste nicho (pesam a favor quando aparecem no site, na bio ou na categoria do Google): ${e.sinais.join(', ')}.`
+      : '',
     'Responda em português, em JSON, com:',
     '- faixa: A (prioridade alta, abordar já), B (vale abordar), C (baixa prioridade ou fora do perfil);',
     '- score: 0 a 100, coerente com a faixa (A ≥ 70, B 40–69, C < 40);',
@@ -206,10 +212,12 @@ export function montarPrompt(e: EntradaAvaliacao): string {
     '- entrega: true se o site/Instagram indicar que entrega, false se indicar que não, null se não der para saber;',
     '- pessoas: SOMENTE quem o texto apresenta como da equipe da empresa, com o cargo escrito no texto (ex.: "Carlos Lima – gerente de compras", "fundada por Ana Souza"). Para cada uma, "trecho" é a frase copiada do texto que mostra nome e cargo juntos.',
     '  NÃO inclua: clientes, autores de depoimentos ou avaliações ("o que dizem nossos clientes", estrelas, "recomendo"), quem comentou ou marcou o perfil, fornecedores, marcas, nomes sem cargo no texto. Na dúvida, deixe de fora: lista vazia é melhor que nome errado. Não repita os sócios.',
-    `Cargos que mais interessam: ${e.cargosAlvo.join(', ') || 'dono, sócio, gerente, comprador'}.`,
+    e.cargosAlvo.length
+      ? `Pessoas que mais interessam: ${e.cargosAlvo.join(', ')}; as demais da equipe também valem.`
+      : 'Qualquer pessoa da equipe serve de contato: dono, sócio, gerente, comprador, vendedor ou atendente.',
     '',
     'COMO DAR A NOTA (siga à risca):',
-    '- Só pese contra a empresa o que estiver ESCRITO nos dados (ex.: "não fazemos entrega", nota baixa, empresa fechada, ramo diferente). Um assunto que o site ou a bio não citam não é sinal negativo: é "não dá para saber" e não muda a nota.',
+    '- Só pese contra a empresa o que estiver ESCRITO nos dados (ex.: nota baixa, empresa fechada, ramo diferente). Um assunto que o site ou a bio não citam não é sinal negativo: é "não dá para saber" e não muda a nota.',
     '- Mais dados encontrados (site, Instagram, telefones, e-mails) nunca diminuem a nota; só podem aumentar ou manter.',
     '- Peso maior para: aderência ao que é vendido, tempo de mercado, movimento (avaliações, seguidores) e canais para falar com a empresa.',
     '- No motivo, cite só sinais que estão nos dados; não escreva o que faltou.',

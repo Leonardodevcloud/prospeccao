@@ -10,4 +10,19 @@ describe('nichos prontos', () => {
     }
     expect(new Set(NICHOS_PRONTOS.map((n) => n.id)).size).toBe(NICHOS_PRONTOS.length);
   });
+
+  it('sinais falam do ramo (não de entrega) e as sugestões não repetem os já marcados', () => {
+    for (const n of NICHOS_PRONTOS) {
+      const sinais = [...n.palavrasPositivas, ...n.outrosSinais];
+      expect(
+        sinais.some((s) => /entreg|delivery|motoboy/i.test(s)),
+        n.nome,
+      ).toBe(false);
+      expect(
+        n.outrosSinais.filter((s) => n.palavrasPositivas.includes(s)),
+        n.nome,
+      ).toEqual([]);
+      expect(n.palavrasPositivas.length, n.nome).toBeGreaterThan(0);
+    }
+  });
 });

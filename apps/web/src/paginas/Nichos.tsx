@@ -1,11 +1,16 @@
 import { nichoEntrada, PORTES, ROTULO_PORTE } from '@prospeccao/shared/dominio';
-import { GRUPOS_NICHOS, type NichoPronto } from '@prospeccao/shared/nichos-prontos';
-import { Badge, Button, EmptyState, TextField } from '@prospeccao/ui';
+import {
+  GRUPOS_NICHOS,
+  NICHOS_PRONTOS,
+  type NichoPronto,
+  SUGESTOES_PESSOAS,
+} from '@prospeccao/shared/nichos-prontos';
+import { Badge, Button, EmptyState, Icon, TextField } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { api, type Nicho } from '../api';
-import { Drawer } from '../componentes/Drawer';
-import { CampoLista, ErroDaApi, limparLista, Mensagem } from '../componentes/Formulario';
+import { Modal } from '../componentes/Drawer';
+import { CampoEtiquetas, ErroDaApi, limparLista, Mensagem } from '../componentes/Formulario';
 import { formatarCnae } from '../formatar';
 
 type Rascunho = {
@@ -24,21 +29,47 @@ const VAZIO: Rascunho = {
   nome: '',
   cnaes: [],
   termosMaps: [],
-  palavrasPositivas: ['entrega', 'delivery', 'motoboy'],
+  palavrasPositivas: [],
   palavrasNegativas: [],
-  cargosAlvo: ['sócio-administrador'],
+  cargosAlvo: [],
   portes: [...PORTES],
   idadeMinimaAnos: '0',
   excluirMei: true,
 };
 
-function FormNicho({ nicho, aoFechar }: { nicho: Nicho | null; aoFechar: () => void }) {
+const daLista = (p: NichoPronto): Rascunho => ({
+  ...VAZIO,
+  nome: p.nome,
+  cnaes: p.cnaes,
+  termosMaps: p.termosMaps,
+  palavrasPositivas: p.palavrasPositivas,
+  palavrasNegativas: p.palavrasNegativas,
+});
+
+const doNicho = (n: Nicho): Rascunho => ({
+  ...n,
+  cnaes: n.cnaes.map(formatarCnae),
+  idadeMinimaAnos: String(n.idadeMinimaAnos),
+});
+
+const prontoPeloNome = (nome: string) =>
+  NICHOS_PRONTOS.find((p) => p.nome.toLowerCase() === nome.trim().toLowerCase()) ?? null;
+
+/**
+ * Personalizar um nicho (pronto, próprio ou já cadastrado). O que manda é o nome e os sinais; a
+ * busca (Maps, CNAEs, o que descartar) vem sugerida e o cliente ajusta como achar melhor.
+ */
+function EditorNicho(props: {
+  nicho: Nicho | null;
+  pronto: NichoPronto | null;
+  aoVoltar?: () => void;
+  aoFechar: () => void;
+}) {
   const cliente = useQueryClient();
-  const [f, setF] = useState<Rascunho>(
-    nicho
-      ? { ...nicho, cnaes: nicho.cnaes.map(formatarCnae), idadeMinimaAnos: String(nicho.idadeMinimaAnos) }
-      : VAZIO,
-  );
+  const { nicho } = props;
+  const base = props.pronto ?? (nicho ? prontoPeloNome(nicho.nome) : null);
+  const [f, setF] = useState<Rascunho>(nicho ? doNicho(nicho) : props.pronto ? daLista(props.pronto) : VAZIO);
+  const [maisFiltros, setMaisFiltros] = useState(false);
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const lista = (campo: keyof Rascunho) => (v: string[]) => setF({ ...f, [campo]: v });
 
@@ -49,12 +80,12 @@ function FormNicho({ nicho, aoFechar }: { nicho: Nicho | null; aoFechar: () => v
         : api<Nicho>('/nichos', { metodo: 'POST', corpo: dados }),
     onSuccess: () => {
       cliente.invalidateQueries({ queryKey: ['nichos'] });
-      aoFechar();
+      props.aoFechar();
     },
   });
 
-  const enviar = (e: FormEvent) => {
-    e.preventDefault();
+  const enviar = (e?: FormEvent) => {
+    e?.preventDefault();
     const r = nichoEntrada.safeParse({
       ...f,
       cnaes: limparLista(f.cnaes),
@@ -71,267 +102,269 @@ function FormNicho({ nicho, aoFechar }: { nicho: Nicho | null; aoFechar: () => v
   const alternarPorte = (p: string) =>
     setF({ ...f, portes: f.portes.includes(p) ? f.portes.filter((x) => x !== p) : [...f.portes, p] });
 
+  // Nicho próprio: o próprio nome já serve de busca no Maps.
+  const nomeComoBusca = f.nome.trim().length > 2 ? [f.nome.trim().toLowerCase()] : [];
+  const proprio = !nicho && !props.pronto;
+
   return (
-    <Drawer
-      titulo={nicho ? `Editar ${nicho.nome}` : 'Novo nicho'}
-      barra={nicho ? 'Editar nicho' : 'Novo nicho'}
-      aoFechar={aoFechar}
-    >
-      <form className="drawer__corpo form" onSubmit={enviar} noValidate>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 20, lineHeight: '28px', fontWeight: 600 }}>
-            {nicho ? nicho.nome : 'Novo nicho'}
-          </h2>
-          <p className="quieto" style={{ margin: '2px 0 0', fontSize: 13 }}>
-            O perfil diz ao motor quem procurar na base de CNPJ e no Google Maps.
-          </p>
-        </div>
-        <TextField
-          rotulo="Nome"
-          value={f.nome}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, nome: e.target.value })}
-          placeholder="Ex.: Pet shop"
-        />
-        <CampoLista
-          id="cnaes"
-          rotulo="CNAEs"
-          valor={f.cnaes}
-          aoMudar={lista('cnaes')}
-          exemplo={'4789-0/04'}
-          dica="Um por linha. Confira os códigos na Concla (IBGE). Vale CNAE principal ou secundário."
-        />
-        <CampoLista
-          id="termos"
-          rotulo="Busca no Google Maps"
-          valor={f.termosMaps}
-          aoMudar={lista('termosMaps')}
-          exemplo={'pet shop\nagropecuária'}
-          dica="Um termo por linha; cada termo roda em cada cidade da campanha."
-        />
-        <CampoLista
-          id="positivas"
-          rotulo="Palavras que indicam entrega"
-          valor={f.palavrasPositivas}
-          aoMudar={lista('palavrasPositivas')}
-          dica="Usadas no score (Fase 2), ao ler site e Instagram."
-        />
-        <CampoLista
-          id="negativas"
-          rotulo="Palavras que descartam"
-          valor={f.palavrasNegativas}
-          aoMudar={lista('palavrasNegativas')}
-          exemplo={'oficina\nfunilaria'}
-          dica="Lugar do Maps com uma delas no nome ou na categoria não entra na campanha."
-        />
-        <CampoLista
-          id="cargos"
-          rotulo="Cargos do decisor"
-          valor={f.cargosAlvo}
-          aoMudar={lista('cargosAlvo')}
-          exemplo={'sócio-administrador\ngerente de logística'}
-          dica="Em ordem de prioridade; usados na busca do LinkedIn (Fase 2)."
-        />
-        <fieldset className="campo">
-          <legend>Porte</legend>
-          <div className="opcoes">
-            {PORTES.map((p) => (
-              <label key={p} className="opcao">
-                <input type="checkbox" checked={f.portes.includes(p)} onChange={() => alternarPorte(p)} />
-                {ROTULO_PORTE[p]}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <TextField
-          rotulo="Idade mínima da empresa (anos)"
-          inputMode="numeric"
-          value={f.idadeMinimaAnos}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-            setF({ ...f, idadeMinimaAnos: e.target.value })
-          }
-          dica="0 aceita empresas abertas este ano."
-        />
-        <label className="opcao">
-          <input
-            type="checkbox"
-            checked={f.excluirMei}
-            onChange={(e) => setF({ ...f, excluirMei: e.target.checked })}
-          />
-          <span>
-            Deixar MEI de fora
-            <span className="campo__dica" style={{ display: 'block' }}>
-              Microempreendedor individual não tem volume para contratar entregas: não aparece nos leads nem
-              gasta enriquecimento.
-            </span>
-          </span>
-        </label>
-        {erroLocal && <Mensagem tipo="erro">{erroLocal}</Mensagem>}
-        <ErroDaApi erro={salvar.error} />
-        <div className="acoes">
-          <Button variant="primary" type="submit" icon="check" disabled={salvar.isPending}>
+    <Modal
+      titulo={nicho ? `Editar ${nicho.nome}` : proprio ? 'Nicho personalizado' : props.pronto!.nome}
+      subtitulo={
+        proprio
+          ? 'Dê um nome e diga os sinais do cliente que você procura. A busca você monta como preferir.'
+          : 'Tudo aqui é sugestão: tire, troque ou acrescente o que fizer sentido para a sua busca.'
+      }
+      antes={
+        props.aoVoltar && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Voltar para a lista de nichos"
+            onClick={props.aoVoltar}
+          >
+            <Icon name="arrow-right" size={16} className="icone-voltar" />
+          </Button>
+        )
+      }
+      aoFechar={props.aoFechar}
+      rodape={
+        <>
+          {(erroLocal || salvar.error) && (
+            <div className="modal__erro">
+              {erroLocal ? <Mensagem tipo="erro">{erroLocal}</Mensagem> : <ErroDaApi erro={salvar.error} />}
+            </div>
+          )}
+          <Button variant="primary" icon="check" type="submit" form="form-nicho" disabled={salvar.isPending}>
             {salvar.isPending ? 'Salvando…' : nicho ? 'Salvar nicho' : 'Criar nicho'}
           </Button>
-          <Button variant="ghost" onClick={aoFechar}>
-            Cancelar
+          <Button variant="ghost" onClick={props.aoVoltar ?? props.aoFechar}>
+            {props.aoVoltar ? 'Voltar' : 'Cancelar'}
           </Button>
+        </>
+      }
+    >
+      <form id="form-nicho" className="form editor-nicho" onSubmit={enviar} noValidate>
+        <TextField
+          rotulo="Nome do nicho"
+          value={f.nome}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, nome: e.target.value })}
+          placeholder="Ex.: Lojas de tintas"
+        />
+        <div className="editor-nicho__destaque">
+          <CampoEtiquetas
+            id="sinais"
+            rotulo="Sinais de bom lead"
+            valor={f.palavrasPositivas}
+            aoMudar={lista('palavrasPositivas')}
+            sugestoes={base?.outrosSinais}
+            placeholder="Digite e tecle Enter. Ex.: atacado e varejo"
+            dica="Palavras que, no site, no Instagram ou no Google, mostram que a empresa tem o perfil que você procura. Quanto mais aparecem, maior a nota do lead."
+          />
         </div>
+
+        <section className="editor-nicho__secao">
+          <h3 className="subtitulo">Como achar as empresas</h3>
+          <CampoEtiquetas
+            id="termos"
+            rotulo="Busca no Google Maps"
+            valor={f.termosMaps}
+            aoMudar={lista('termosMaps')}
+            sugestoes={base?.termosMaps ?? nomeComoBusca}
+            placeholder="Ex.: loja de tintas"
+            dica="Cada termo é pesquisado em cada cidade da campanha."
+          />
+          <CampoEtiquetas
+            id="cnaes"
+            rotulo="CNAEs"
+            mono
+            valor={f.cnaes}
+            aoMudar={lista('cnaes')}
+            sugestoes={base?.cnaes}
+            normalizar={formatarCnae}
+            placeholder="Ex.: 4741-5/00"
+            dica={
+              <>
+                Atividade da empresa na Receita (principal ou secundária). Não sabe o código? Procure o ramo
+                em{' '}
+                <a href="https://concla.ibge.gov.br/busca-online-cnae.html" target="_blank" rel="noreferrer">
+                  concla.ibge.gov.br
+                </a>
+                .
+              </>
+            }
+          />
+          <CampoEtiquetas
+            id="negativas"
+            rotulo="Palavras que descartam"
+            valor={f.palavrasNegativas}
+            aoMudar={lista('palavrasNegativas')}
+            sugestoes={base?.palavrasNegativas}
+            placeholder="Ex.: oficina"
+            dica="Lugar do Maps com uma delas no nome ou na categoria fica de fora."
+          />
+        </section>
+
+        <section className="editor-nicho__secao">
+          <h3 className="subtitulo">Pessoas a priorizar (opcional)</h3>
+          <CampoEtiquetas
+            id="pessoas"
+            rotulo="Funções"
+            valor={f.cargosAlvo}
+            aoMudar={lista('cargosAlvo')}
+            sugestoes={SUGESTOES_PESSOAS}
+            placeholder="Deixe vazio para qualquer pessoa da empresa"
+            dica="Vazio: vale qualquer pessoa da empresa (dono, sócio, gerente, vendedor, atendente). Preencha só se quiser que essas funções venham primeiro."
+          />
+        </section>
+
+        <div>
+          <button
+            type="button"
+            className="link-botao"
+            aria-expanded={maisFiltros}
+            onClick={() => setMaisFiltros(!maisFiltros)}
+          >
+            {maisFiltros ? 'Esconder filtros de porte e idade' : 'Filtros de porte e idade'}
+          </button>
+        </div>
+        {maisFiltros && (
+          <section className="editor-nicho__secao">
+            <fieldset className="campo">
+              <legend>Porte</legend>
+              <div className="opcoes">
+                {PORTES.map((p) => (
+                  <label key={p} className="opcao">
+                    <input type="checkbox" checked={f.portes.includes(p)} onChange={() => alternarPorte(p)} />
+                    {ROTULO_PORTE[p]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <TextField
+              rotulo="Idade mínima da empresa (anos)"
+              inputMode="numeric"
+              value={f.idadeMinimaAnos}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setF({ ...f, idadeMinimaAnos: e.target.value })
+              }
+              dica="0 aceita empresas abertas este ano."
+            />
+            <label className="opcao">
+              <input
+                type="checkbox"
+                checked={f.excluirMei}
+                onChange={(e) => setF({ ...f, excluirMei: e.target.checked })}
+              />
+              <span>
+                Deixar MEI de fora
+                <span className="campo__dica" style={{ display: 'block' }}>
+                  Microempreendedor individual costuma ser pequeno demais: não aparece nos leads nem gasta
+                  enriquecimento.
+                </span>
+              </span>
+            </label>
+          </section>
+        )}
       </form>
-    </Drawer>
+    </Modal>
   );
 }
 
-/** Escolher entre os nichos prontos: cada um mostra os CNAEs, a busca no Maps e os sinais. */
-function NichosProntos(props: { aoFechar: () => void }) {
-  const cliente = useQueryClient();
+/** Escolher o ponto de partida: um nicho pronto ou um personalizado. */
+function EscolherNicho(props: { aoEscolher: (p: NichoPronto | null) => void; aoFechar: () => void }) {
   const q = useQuery({
     queryKey: ['nichos', 'prontos'],
     queryFn: () => api<(NichoPronto & { jaTem: boolean })[]>('/nichos/prontos'),
   });
-  const [escolhidos, setEscolhidos] = useState<string[]>([]);
-  const [aberto, setAberto] = useState<string | null>(null);
-  const aplicar = useMutation({
-    mutationFn: () =>
-      api<{ criados: number }>('/nichos/prontos', { metodo: 'POST', corpo: { ids: escolhidos } }),
-    onSuccess: () => cliente.invalidateQueries({ queryKey: ['nichos'] }),
-  });
-  const alternar = (id: string) =>
-    setEscolhidos((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
 
   return (
-    <Drawer titulo="Nichos prontos" barra="Nichos" aoFechar={props.aoFechar} largo>
-      <div className="drawer__corpo pilha" style={{ gap: 16 }}>
-        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-          Escolha os nichos que você quer prospectar. Cada um já vem com os CNAEs da Receita, os termos de
-          busca no Google Maps, os sinais de que a empresa é um bom lead e o que descartar. Depois de aplicar,
-          dá para editar tudo.
-        </p>
-        <ErroDaApi erro={q.error} />
-        {aplicar.data ? (
-          <div className="pilha" style={{ gap: 12 }}>
-            <Mensagem tipo="ok">
-              {aplicar.data.criados
-                ? `${aplicar.data.criados} ${aplicar.data.criados === 1 ? 'nicho criado' : 'nichos criados'}. Agora é só criar uma campanha com eles.`
-                : 'Esses nichos já estavam na sua lista.'}
-            </Mensagem>
-            <div className="acoes">
-              <Button variant="primary" onClick={props.aoFechar}>
-                Ver meus nichos
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {GRUPOS_NICHOS.map((g) => {
-              const doGrupo = q.data?.filter((n) => n.grupo === g) ?? [];
-              if (!doGrupo.length) return null;
-              return (
-                <section key={g} className="pilha" style={{ gap: 8 }}>
-                  <h3 className="subtitulo">{g}</h3>
-                  <ul className="nichos-prontos">
-                    {doGrupo.map((n) => {
-                      const marcado = escolhidos.includes(n.id);
-                      return (
-                        <li key={n.id} className="nicho-pronto" data-marcado={marcado || undefined}>
-                          <label className="nicho-pronto__topo">
-                            <input
-                              type="checkbox"
-                              checked={marcado}
-                              disabled={n.jaTem}
-                              onChange={() => alternar(n.id)}
-                            />
-                            <span className="nicho-pronto__nome">
-                              <b>{n.nome}</b>
-                              <span className="quieto">{n.descricao}</span>
-                            </span>
-                            {n.jaTem && <Badge tone="outline">Já está na sua lista</Badge>}
-                          </label>
-                          <button
-                            type="button"
-                            className="link-botao nicho-pronto__ver"
-                            aria-expanded={aberto === n.id}
-                            onClick={() => setAberto(aberto === n.id ? null : n.id)}
-                          >
-                            {aberto === n.id ? 'Esconder detalhes' : 'Ver CNAEs, busca e sinais'}
-                          </button>
-                          {aberto === n.id && (
-                            <dl className="nicho-pronto__detalhe">
-                              <div>
-                                <dt>CNAEs</dt>
-                                <dd className="mono">{n.cnaes.join(' · ')}</dd>
-                              </div>
-                              <div>
-                                <dt>Busca no Maps</dt>
-                                <dd>{n.termosMaps.join(', ')}</dd>
-                              </div>
-                              <div>
-                                <dt>Sinais de bom lead</dt>
-                                <dd>{n.palavrasPositivas.join(', ')}</dd>
-                              </div>
-                              {n.palavrasNegativas.length > 0 && (
-                                <div>
-                                  <dt>Descarta</dt>
-                                  <dd>{n.palavrasNegativas.join(', ')}</dd>
-                                </div>
-                              )}
-                              <div>
-                                <dt>Cargos-alvo</dt>
-                                <dd>{n.cargosAlvo.join(', ')}</dd>
-                              </div>
-                            </dl>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-              );
-            })}
-            <ErroDaApi erro={aplicar.error} />
-            <div className="acoes barra-fixa">
-              <Button
-                variant="primary"
-                icon="check"
-                disabled={!escolhidos.length || aplicar.isPending}
-                onClick={() => aplicar.mutate()}
-              >
-                {escolhidos.length
-                  ? `Aplicar ${escolhidos.length} ${escolhidos.length === 1 ? 'nicho' : 'nichos'}`
-                  : 'Escolha os nichos'}
-              </Button>
-              <Button variant="ghost" onClick={props.aoFechar}>
-                Cancelar
-              </Button>
-            </div>
-          </>
-        )}
+    <Modal
+      titulo="Novo nicho"
+      subtitulo="Escolha um ponto de partida. Na próxima tela você personaliza os sinais e a busca."
+      largura="larga"
+      aoFechar={props.aoFechar}
+    >
+      <ErroDaApi erro={q.error} />
+      <div className="pilha" style={{ gap: 20 }}>
+        <button
+          type="button"
+          className="cartao-nicho cartao-nicho--proprio"
+          onClick={() => props.aoEscolher(null)}
+        >
+          <span className="cartao-nicho__icone">
+            <Icon name="plus" size={18} />
+          </span>
+          <span className="cartao-nicho__texto">
+            <b className="cartao-nicho__nome">Nicho personalizado</b>
+            <span className="quieto">Digite o nome e os sinais do cliente que você procura.</span>
+          </span>
+        </button>
+        {GRUPOS_NICHOS.map((g) => {
+          const doGrupo = q.data?.filter((n) => n.grupo === g) ?? [];
+          if (!doGrupo.length) return null;
+          return (
+            <section key={g} className="pilha" style={{ gap: 8 }}>
+              <h3 className="subtitulo">{g}</h3>
+              <div className="cartoes-nicho">
+                {doGrupo.map((n) => (
+                  <button
+                    key={n.id}
+                    type="button"
+                    className="cartao-nicho"
+                    disabled={n.jaTem}
+                    onClick={() => props.aoEscolher(n)}
+                  >
+                    <span className="cartao-nicho__texto">
+                      <b className="cartao-nicho__nome">{n.nome}</b>
+                      <span className="quieto">{n.descricao}</span>
+                      <span className="cartao-nicho__sinais">
+                        {n.palavrasPositivas.slice(0, 3).map((s) => (
+                          <span key={s} className="cartao-nicho__sinal">
+                            {s}
+                          </span>
+                        ))}
+                      </span>
+                    </span>
+                    {n.jaTem && <Badge tone="outline">Já cadastrado</Badge>}
+                  </button>
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
-    </Drawer>
+    </Modal>
   );
 }
 
+type Tela =
+  | null
+  | { tipo: 'escolher' }
+  | { tipo: 'editar'; nicho: Nicho | null; pronto: NichoPronto | null; deEscolha: boolean };
+
 export function Nichos() {
   const cliente = useQueryClient();
-  const [editando, setEditando] = useState<Nicho | 'novo' | null>(null);
-  const [prontos, setProntos] = useState(false);
+  const [tela, setTela] = useState<Tela>(null);
   const nichos = useQuery({ queryKey: ['nichos'], queryFn: () => api<Nicho[]>('/nichos') });
   const desativar = useMutation({
     mutationFn: (id: number) => api(`/nichos/${id}`, { metodo: 'DELETE' }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['nichos'] }),
   });
+  const novo = () => setTela({ tipo: 'escolher' });
 
   return (
     <>
       <div className="topo">
         <div>
           <h1>Nichos</h1>
-          <p>Perfis de quem prospectar: CNAEs, termos de busca no Maps e os cargos que você quer alcançar.</p>
+          <p>
+            Quem prospectar: o tipo de empresa, os sinais de um bom cliente e como achar no Google e na
+            Receita.
+          </p>
         </div>
         <div className="acoes">
-          <Button variant="ghost" icon="plus" onClick={() => setEditando('novo')}>
-            Montar do zero
-          </Button>
-          <Button variant="primary" icon="store" onClick={() => setProntos(true)}>
-            Nichos prontos
+          <Button variant="primary" icon="plus" onClick={novo}>
+            Novo nicho
           </Button>
         </div>
       </div>
@@ -343,10 +376,10 @@ export function Nichos() {
           <EmptyState
             icone="store"
             titulo="Nenhum nicho cadastrado"
-            texto="Escolha entre os nichos prontos (autopeças, farmácias, pet shops…) ou monte o seu. Depois crie uma campanha com ele."
+            texto="Escolha um dos nichos prontos (autopeças, farmácias, pet shops…) ou monte o seu. Depois crie uma campanha com ele."
             acao={
-              <Button size="sm" variant="primary" icon="store" onClick={() => setProntos(true)}>
-                Escolher nichos prontos
+              <Button size="sm" variant="primary" icon="plus" onClick={novo}>
+                Novo nicho
               </Button>
             }
           />
@@ -357,9 +390,9 @@ export function Nichos() {
             <thead>
               <tr>
                 <th>Nicho</th>
-                <th>CNAEs</th>
+                <th>Sinais</th>
                 <th>Busca no Maps</th>
-                <th>Cargos-alvo</th>
+                <th>CNAEs</th>
                 <th>Campanhas</th>
                 <th>
                   <span className="pp-sr">Ações</span>
@@ -373,10 +406,17 @@ export function Nichos() {
                     <b style={{ fontWeight: 500 }}>{n.nome}</b>
                   </td>
                   <td>
-                    <span className="mono">{n.cnaes.map(formatarCnae).join(' · ')}</span>
+                    {n.palavrasPositivas.length ? (
+                      n.palavrasPositivas.slice(0, 4).join(', ') +
+                      (n.palavrasPositivas.length > 4 ? ` +${n.palavrasPositivas.length - 4}` : '')
+                    ) : (
+                      <span className="quieto">—</span>
+                    )}
                   </td>
                   <td>{n.termosMaps.join(', ')}</td>
-                  <td className="quieto">{n.cargosAlvo[0] ?? '—'}</td>
+                  <td>
+                    <span className="mono">{n.cnaes.map(formatarCnae).join(' · ')}</span>
+                  </td>
                   <td>
                     {n.campanhasEmAndamento ? (
                       <Badge tone="brand">{n.campanhasEmAndamento} em andamento</Badge>
@@ -385,7 +425,11 @@ export function Nichos() {
                     )}
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <Button variant="ghost" size="sm" onClick={() => setEditando(n)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTela({ tipo: 'editar', nicho: n, pronto: null, deEscolha: false })}
+                    >
                       Editar
                     </Button>
                     <Button
@@ -409,9 +453,20 @@ export function Nichos() {
         </div>
       )}
 
-      {prontos && <NichosProntos aoFechar={() => setProntos(false)} />}
-      {editando && (
-        <FormNicho nicho={editando === 'novo' ? null : editando} aoFechar={() => setEditando(null)} />
+      {tela?.tipo === 'escolher' && (
+        <EscolherNicho
+          aoEscolher={(pronto) => setTela({ tipo: 'editar', nicho: null, pronto, deEscolha: true })}
+          aoFechar={() => setTela(null)}
+        />
+      )}
+      {tela?.tipo === 'editar' && (
+        <EditorNicho
+          key={tela.nicho?.id ?? tela.pronto?.id ?? 'proprio'}
+          nicho={tela.nicho}
+          pronto={tela.pronto}
+          aoVoltar={tela.deEscolha ? novo : undefined}
+          aoFechar={() => setTela(null)}
+        />
       )}
     </>
   );

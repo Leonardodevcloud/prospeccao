@@ -37,7 +37,6 @@ export function rotasNichos({ pool }: DepsApi): Router {
         termosMaps: p.termosMaps,
         palavrasPositivas: p.palavrasPositivas,
         palavrasNegativas: p.palavrasNegativas,
-        cargosAlvo: p.cargosAlvo,
       });
       await repo.criar(pool, dados).catch(conflitoDeNome);
       criados++;
