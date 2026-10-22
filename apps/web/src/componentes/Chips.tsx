@@ -28,7 +28,7 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
   const [apagar, setApagar] = useState(false);
   const atualizar = () => cliente.invalidateQueries({ queryKey: ['agente', 'chips'] });
   const editar = useMutation({
-    mutationFn: (d: { ativo?: boolean; limiteDia?: number }) =>
+    mutationFn: (d: { ativo?: boolean; limiteDia?: number; aquecer?: boolean }) =>
       api(`/agente/chips/${c.id}`, { metodo: 'PATCH', corpo: d }),
     onSuccess: atualizar,
   });
@@ -42,7 +42,9 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
     onSuccess: atualizar,
   });
   const s = situacao(c);
-  const usoPct = Math.min(100, Math.round((c.enviadosHoje / Math.max(1, c.limiteDia)) * 100));
+  // Limite de hoje: o do chip, ou o do aquecimento se o número ainda é novo.
+  const limiteHoje = c.tetoAquecimento != null ? Math.min(c.limiteDia, c.tetoAquecimento) : c.limiteDia;
+  const usoPct = Math.min(100, Math.round((c.enviadosHoje / Math.max(1, limiteHoje)) * 100));
   return (
     <li className="chip-linha" data-inativo={!c.ativo || undefined}>
       <div className="chip-linha__quem">
@@ -51,7 +53,8 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
       </div>
       <div className="chip-linha__uso">
         <span className="quieto">
-          {fmtNumero(c.enviadosHoje)} de {fmtNumero(c.limiteDia)} hoje · {fmtNumero(c.leads)} leads
+          {fmtNumero(c.enviadosHoje)} de {fmtNumero(limiteHoje)} hoje
+          {c.respostasHoje ? ` · ${fmtNumero(c.respostasHoje)} respostas` : ''} · {fmtNumero(c.leads)} leads
         </span>
         <span className="barra-uso" aria-hidden="true">
           <span style={{ width: `${usoPct}%` }} />
@@ -59,6 +62,11 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
       </div>
       <div className="chip-linha__estado">
         <Badge tone={s.tom}>{s.texto}</Badge>
+        {c.tetoAquecimento != null && (
+          <Badge tone="warning">
+            Aquecendo · dia {c.diasDeUso + 1}, até {c.tetoAquecimento}/dia
+          </Badge>
+        )}
         {c.estado && !c.estado.startsWith('ok') && (
           <span className="quieto" title={c.estado}>
             {c.estado.slice(0, 60)}
@@ -101,6 +109,19 @@ function LinhaChip(props: { c: Chip; admin: boolean }) {
           >
             {c.ativo ? 'Pausar' : 'Reativar'}
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={editar.isPending}
+            title={
+              c.aquecer
+                ? 'Desliga o aquecimento: vale só o limite do chip (para número que já é usado há tempo)'
+                : 'Liga o aquecimento: número novo manda pouco e vai subindo em 30 dias'
+            }
+            onClick={() => editar.mutate({ aquecer: !c.aquecer })}
+          >
+            {c.aquecer ? 'Sem aquecimento' : 'Aquecer'}
+          </Button>
           {apagar ? (
             <>
               <Button
@@ -140,7 +161,7 @@ export function Chips() {
   const admin = useEhAdmin();
   const cliente = useQueryClient();
   const [novo, setNovo] = useState(false);
-  const [f, setF] = useState({ nome: '', instancia: '', limiteDia: '40' });
+  const [f, setF] = useState({ nome: '', instancia: '', limiteDia: '40', novo: true });
   const q = useQuery({
     queryKey: ['agente', 'chips'],
     queryFn: () => api<TelaChips>('/agente/chips'),
@@ -150,10 +171,15 @@ export function Chips() {
     mutationFn: () =>
       api('/agente/chips', {
         metodo: 'POST',
-        corpo: { nome: f.nome, instancia: f.instancia, limiteDia: Number(f.limiteDia) || 40 },
+        corpo: {
+          nome: f.nome,
+          instancia: f.instancia,
+          limiteDia: Number(f.limiteDia) || 40,
+          aquecer: f.novo,
+        },
       }),
     onSuccess: () => {
-      setF({ nome: '', instancia: '', limiteDia: '40' });
+      setF({ nome: '', instancia: '', limiteDia: '40', novo: true });
       setNovo(false);
       cliente.invalidateQueries({ queryKey: ['agente', 'chips'] });
     },
@@ -240,8 +266,17 @@ export function Chips() {
               value={f.limiteDia}
               onChange={(e) => setF({ ...f, limiteDia: e.target.value.replace(/\D/g, '') })}
             />
-            <span className="campo__dica">Chip novo: comece com 20 a 40 e aumente aos poucos.</span>
+            <span className="campo__dica">Mensagens frias (respostas a quem escreveu não contam).</span>
           </div>
+          <label className="opcao">
+            <input
+              type="checkbox"
+              checked={f.novo}
+              onChange={(e) => setF({ ...f, novo: e.target.checked })}
+            />
+            Número novo: aquecer aos poucos (começa com 10 por dia e dobra a cada semana; depois de 30 dias
+            vale o limite acima)
+          </label>
           <ErroDaApi erro={criar.error} />
           <div className="acoes">
             <Button
@@ -260,6 +295,11 @@ export function Chips() {
       <p className="quieto" style={{ margin: 0, fontSize: 12 }}>
         <Icon name="link" size={12} /> Em cada instância da Evolution, use o mesmo webhook desta conta
         (abaixo): o sistema sabe por qual chip a mensagem chegou. Mensagens da equipe não contam no limite.
+      </p>
+      <p className="quieto" style={{ margin: 0, fontSize: 12 }}>
+        Ritmo contra bloqueio: só dentro do horário do agente; entre uma mensagem fria e outra, o intervalo
+        mais uma variação aleatória de até 60%; resposta a quem escreveu sai antes das frias, com “digitando…”
+        e em mensagens curtas; o lead conversa sempre pelo mesmo número.
       </p>
     </Panel>
   );

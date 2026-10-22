@@ -8,12 +8,17 @@ import {
 } from '@prospeccao/db';
 import {
   type AnaliseRespostaEmail,
+  type Aprendizado,
   type ContextoAgente,
   classificarRespostaEmail,
   type DecisaoAgente,
   decidirComIa,
   type EntradaAbertura,
+  type EntradaResumo,
+  extrairAprendizado,
   personalizarAbertura,
+  type ResumoPassagem,
+  resumirPassagem,
 } from '@prospeccao/integrations/agente';
 import {
   buscarRecebido,
@@ -39,7 +44,12 @@ import { baixarMidia, enviarMidia, enviarTexto, estadoConexao } from '@prospecca
 export interface WhatsappConta {
   /** Instância das credenciais (o chip de quando não há chips cadastrados). */
   instancia: string;
-  enviar(telefone: string, texto: string, instancia?: string): Promise<{ idExterno: string | null }>;
+  enviar(
+    telefone: string,
+    texto: string,
+    instancia?: string,
+    opcoes?: { digitandoMs?: number },
+  ): Promise<{ idExterno: string | null }>;
   /** Foto, vídeo, documento ou áudio (base64). */
   enviarMidia?(
     telefone: string,
@@ -77,7 +87,13 @@ export interface ServicosConta {
   contaId: number;
   whatsapp: WhatsappConta | null;
   /** IA do agente do WhatsApp. Sem ela, a resposta do lead vai direto para a equipe. */
-  ia: { decidir(contexto: ContextoAgente): Promise<DecisaoAgente> } | null;
+  ia: {
+    decidir(contexto: ContextoAgente): Promise<DecisaoAgente>;
+    /** Resumo para o vendedor quando a IA passa o lead para o time. */
+    resumir?(e: EntradaResumo): Promise<ResumoPassagem | null>;
+    /** A resposta do time a uma pergunta que a IA não sabia, escrita para a base. */
+    aprender?(e: { empresa: string; pergunta: string; respostaDoTime: string }): Promise<Aprendizado | null>;
+  } | null;
   /** IA que lê a resposta do e-mail (tem interesse?). Sem ela, uma regra de palavras decide. */
   classificarEmail:
     | ((c: { sobreEmpresa: string; assunto: string; texto: string }) => Promise<AnaliseRespostaEmail | null>)
@@ -114,13 +130,19 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor): ServicosConta
     whatsapp: evolution
       ? {
           instancia: evolution.instancia,
-          enviar: (tel, texto, inst) => enviarTexto(chip(inst), tel, texto),
+          enviar: (tel, texto, inst, op) => enviarTexto(chip(inst), tel, texto, op),
           enviarMidia: (tel, m, inst) => enviarMidia(chip(inst), tel, m),
           baixarMidia: (id, inst) => baixarMidia(chip(inst), id),
           estado: (inst) => estadoConexao(chip(inst)),
         }
       : null,
-    ia: iaCfg ? { decidir: (ctx) => decidirComIa(iaCfg, ctx) } : null,
+    ia: iaCfg
+      ? {
+          decidir: (ctx) => decidirComIa(iaCfg, ctx),
+          resumir: (e) => resumirPassagem(iaCfg, e),
+          aprender: (e) => extrairAprendizado(iaCfg, e),
+        }
+      : null,
     classificarEmail: iaCfg ? (ctx) => classificarRespostaEmail(iaCfg, ctx) : null,
     personalizarAbertura: iaCfg ? (e) => personalizarAbertura(iaCfg, e) : null,
     email: resend

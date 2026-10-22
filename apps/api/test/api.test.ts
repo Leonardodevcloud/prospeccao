@@ -1,5 +1,6 @@
 import { criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
+import type { ContextoAgente } from '@prospeccao/integrations/agente';
 import type { NomeJob } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import bcrypt from 'bcryptjs';
@@ -7,6 +8,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
 import { comConta } from '../src/contexto.js';
+import * as funilRepo from '../src/modulos/funil/repositorio.js';
 import type { ServicosConta } from '../src/servicos.js';
 
 const URL_TESTE = process.env.TEST_DATABASE_URL;
@@ -855,6 +857,247 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await pool.query('DELETE FROM comercial.mensagens WHERE empresa_id = 77');
     await pool.query('DELETE FROM enriquecimento.contatos WHERE empresa_id = 77');
     await pool.query('DELETE FROM descoberta.empresas WHERE id = 77');
+  });
+
+  it('agente v2: base de conhecimento, verificações, resumo da passagem, aprendizado, radar e aquecimento', async () => {
+    const motor = await import('../src/modulos/agente/motor.js');
+    const atendimento = await import('../src/modulos/agente/atendimento.js');
+    const repoAgente = await import('../src/modulos/agente/repositorio.js');
+
+    // 1) Base: texto, pergunta e resposta, arquivo; a busca acha o trecho certo.
+    expect(
+      (
+        await enviar('post', '/agente/conhecimento', {
+          tipo: 'texto',
+          titulo: 'Planos',
+          conteudo: 'O plano mensal custa R$ 890 e inclui até 300 entregas em Salvador e Lauro de Freitas.',
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (await enviar('post', '/agente/conhecimento', { tipo: 'faq', titulo: 'x', conteudo: 'Sem pergunta' }))
+        .status,
+    ).toBe(422);
+    await enviar('post', '/agente/conhecimento', {
+      tipo: 'faq',
+      titulo: 'Cidades',
+      pergunta: 'Vocês atendem Feira de Santana?',
+      conteudo: 'Atendemos Feira de Santana às terças e quintas.',
+    });
+    const arquivo = await enviar('post', '/agente/conhecimento/arquivo', {
+      nome: 'politica.txt',
+      mime: 'text/plain',
+      base64: Buffer.from('Política de troca: a coleta de devolução é grátis em até 7 dias.').toString(
+        'base64',
+      ),
+    });
+    expect(arquivo.status).toBe(201);
+    let tela = (await ler('/agente/conhecimento')).body;
+    expect(tela.itens).toHaveLength(3);
+    expect(tela.numeros).toMatchObject({ ativos: 3, sugeridos: 0, lacunas: 0 });
+    const achados = (
+      await enviar('post', '/agente/conhecimento/testar', { pergunta: 'Vcs atendem em feira?' })
+    ).body;
+    expect(achados[0]).toMatchObject({ titulo: 'Cidades' });
+
+    // Lead com a IA ligada, que escreveu e parou de digitar.
+    await pool.query(
+      `INSERT INTO descoberta.empresas (id, nome, cidade, uf) VALUES (78, 'Peças Lima', 'FEIRA DE SANTANA', 'BA')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (2, 78, 'maps') ON CONFLICT DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, whatsapp, principal)
+       VALUES (78, 'whatsapp', '75988112233', 'site', '{site}', 'verificado', true, true)`,
+    );
+    await enviar('post', '/funil', { empresaIds: [78], forcar: true });
+    await enviar('patch', '/funil/78', { agente: true });
+    const config = (await ler('/agente')).body.config;
+    await enviar('put', '/agente/config', {
+      ...config,
+      ligado: true,
+      revisarAntes: false,
+      horaInicio: 0,
+      horaFim: 24,
+      diasSemana: [0, 1, 2, 3, 4, 5, 6],
+      sobreEmpresa: 'Somos a Rota Norte: entregas para autopeças na Bahia.',
+    });
+    const cfg = await naConta(() => repoAgente.obterConfig(pool));
+    const leadEscreve = async (texto: string) => {
+      await naConta(() =>
+        funilRepo.registrarAtividade(pool, 78, { tipo: 'whatsapp', direcao: 'recebida', texto }, 'lead'),
+      );
+      await pool.query(
+        `UPDATE comercial.atividades SET criado_em = criado_em - interval '2 minutes' WHERE empresa_id = 78`,
+      );
+    };
+
+    const contextos: ContextoAgente[] = [];
+    const decisoes: object[] = [];
+    const enviados: { texto: string; digitando?: number }[] = [];
+    const deps = {
+      pool,
+      log: criarLogger('teste', 'silent'),
+      whatsapp: {
+        instancia: 'teste',
+        async enviar(_tel: string, texto: string, _inst?: string, op?: { digitandoMs?: number }) {
+          enviados.push({ texto, digitando: op?.digitandoMs });
+          return { idExterno: `v2-${enviados.length}` };
+        },
+      },
+      ia: {
+        async decidir(c: ContextoAgente) {
+          contextos.push(c);
+          return decisoes.shift() as never;
+        },
+        async resumir() {
+          return {
+            situacao: 'Quer saber prazo de pagamento antes de fechar.',
+            combinado: [],
+            objecoes: ['Prazo de pagamento'],
+            perguntasEmAberto: ['Qual o prazo de pagamento?'],
+            interesse: 'alto' as const,
+            proximoPasso: 'Responder o prazo e propor reunião',
+          };
+        },
+        async aprender(e: { pergunta: string; respostaDoTime: string }) {
+          return { titulo: 'Prazo de pagamento', pergunta: e.pergunta, resposta: 'Boleto em 28 dias.' };
+        },
+      },
+    };
+
+    // 2) A IA recebe o trecho da base; preço inventado é barrado e ela reescreve.
+    await leadEscreve('Vocês atendem Feira de Santana? Quanto fica?');
+    decisoes.push(
+      { acao: 'responder', resposta: 'Atendemos sim! Fica R$ 450 por mês.', motivo: 'Cidade e preço' },
+      {
+        acao: 'responder',
+        resposta:
+          'Atendemos sim, às terças e quintas.\n\nO plano mensal é R$ 890. Posso te ligar amanhã às 10h?',
+        motivo: 'Cidade e preço da base',
+        memoria: ['Fica em Feira de Santana'],
+      },
+    );
+    expect(await naConta(() => motor.gerarRespostas(deps, cfg))).toBe(1);
+    expect(contextos[0]?.conhecimento?.map((t) => t.titulo)).toContain('Cidades');
+    expect(contextos[0]?.correcao).toBeUndefined();
+    expect(contextos[1]?.correcao?.problemas[0]).toMatch(/R\$ 450/);
+    const { rows: verif } = await pool.query(
+      `SELECT resultado FROM comercial.verificacoes_ia WHERE empresa_id = 78`,
+    );
+    expect(verif).toEqual([{ resultado: 'reescrita' }]);
+
+    // Resposta sai primeiro, em bolhas, com "digitando".
+    expect(await naConta(() => motor.enviarProxima(deps, cfg))).toBe(true);
+    expect(enviados.map((e) => e.texto)).toEqual([
+      'Atendemos sim, às terças e quintas.',
+      'O plano mensal é R$ 890. Posso te ligar amanhã às 10h?',
+    ]);
+    expect(enviados[0]?.digitando).toBeGreaterThanOrEqual(1200);
+    expect((await ler('/conversas/78')).body.agenteMemoria).toEqual(['Fica em Feira de Santana']);
+
+    // 3) Pergunta fora da base: a IA promete retorno sem passar; reescrita também falha → vai para o time,
+    // com o resumo, e a pergunta vira lacuna.
+    await leadEscreve('Qual o prazo de pagamento?');
+    const semPrazo = {
+      acao: 'responder',
+      resposta: 'Vou verificar com o financeiro e te retorno já já.',
+      motivo: 'Prazo',
+      semResposta: 'Qual o prazo de pagamento?',
+    };
+    decisoes.push(semPrazo, semPrazo);
+    await naConta(() => motor.gerarRespostas(deps, cfg));
+    const pausado = (await ler('/agente')).body.pausados.find(
+      (p: { empresaId: number }) => p.empresaId === 78,
+    );
+    expect(pausado.motivo).toMatch(/retorno_sem_passar/);
+    expect(pausado.resumo).toMatchObject({ interesse: 'alto', objecoes: ['Prazo de pagamento'] });
+    expect((await ler('/conversas/78')).body.agenteResumo.proximoPasso).toBe(
+      'Responder o prazo e propor reunião',
+    );
+    tela = (await ler('/agente/conhecimento')).body;
+    expect(tela.lacunas).toEqual([
+      expect.objectContaining({ pergunta: 'Qual o prazo de pagamento?', sugestaoId: null }),
+    ]);
+    expect(tela.verificacoes[0]).toMatchObject({ resultado: 'bloqueada' });
+
+    // 4) O vendedor responde: 10 min depois vira sugestão; aprovada, entra na base e a lacuna some.
+    await pool.query(
+      `INSERT INTO comercial.mensagens (conta_id, empresa_id, direcao, texto, telefone, status, origem, criado_em)
+       VALUES (1, 78, 'enviada', 'Oi Marcos, é boleto em 28 dias.', '75988112233', 'enviada', 'humano', now() - interval '20 minutes')`,
+    );
+    await pool.query(
+      `UPDATE comercial.lacunas_ia SET criado_em = now() - interval '1 hour' WHERE empresa_id = 78`,
+    );
+    expect(await naConta(() => atendimento.aprenderComEquipe(deps))).toBe(1);
+    expect(await naConta(() => atendimento.aprenderComEquipe(deps))).toBe(0); // uma tentativa só
+    tela = (await ler('/agente/conhecimento')).body;
+    const sugestao = tela.itens.find((i: { status: string }) => i.status === 'sugerido');
+    expect(sugestao).toMatchObject({
+      origem: 'conversa',
+      pergunta: 'Qual o prazo de pagamento?',
+      empresaNome: 'Peças Lima',
+    });
+    expect(
+      (await enviar('post', '/agente/conhecimento/testar', { pergunta: 'prazo de pagamento' })).body,
+    ).toHaveLength(0); // sugestão não vale antes de aprovar
+    await enviar('patch', `/agente/conhecimento/${sugestao.id}`, { aprovar: true });
+    tela = (await ler('/agente/conhecimento')).body;
+    expect(tela.lacunas).toHaveLength(0);
+    expect(tela.numeros).toMatchObject({ ativos: 4, sugeridos: 0 });
+    expect(
+      (await enviar('post', '/agente/conhecimento/testar', { pergunta: 'prazo de pagamento' })).body[0].texto,
+    ).toMatch(/28 dias/);
+
+    // 5) Pediu uma pessoa: vai direto para o time, sem chamar a IA.
+    await enviar('patch', '/funil/78', { devolverParaIa: true });
+    expect((await ler('/conversas/78')).body.agenteResumo).toBeNull();
+    await leadEscreve('Prefiro falar com um atendente');
+    const chamadas = contextos.length;
+    await naConta(() => motor.gerarRespostas(deps, cfg));
+    expect(contextos.length).toBe(chamadas);
+    expect(
+      (await ler('/agente')).body.pausados.find((p: { empresaId: number }) => p.empresaId === 78).motivo,
+    ).toBe('O lead pediu para falar com uma pessoa.');
+
+    // 6) Radar: o lead escreveu há 30 h e ninguém respondeu → crítico.
+    await pool.query(
+      `UPDATE comercial.atividades SET criado_em = criado_em - interval '30 hours' WHERE empresa_id = 78`,
+    );
+    const radar = (await ler('/funil/radar')).body;
+    expect(radar.itens.find((i: { empresaId: number }) => i.empresaId === 78)).toMatchObject({
+      nivel: 'critico',
+      motivo: expect.stringMatching(/^O lead escreveu há 30 h/),
+    });
+    expect(radar.contagem.critico).toBeGreaterThanOrEqual(1);
+
+    // 7) Chip novo aquece (teto baixo nos primeiros dias); número antigo não.
+    const novo = await enviar('post', '/agente/chips', { nome: 'Novo', instancia: 'novo-v2', limiteDia: 40 });
+    const antigo = await enviar('post', '/agente/chips', {
+      nome: 'Antigo',
+      instancia: 'antigo-v2',
+      limiteDia: 40,
+      diasDeUso: 90,
+    });
+    const lista = antigo.body.chips as {
+      instancia: string;
+      tetoAquecimento: number | null;
+      diasDeUso: number;
+    }[];
+    expect(lista.find((c) => c.instancia === 'novo-v2')).toMatchObject({ tetoAquecimento: 10, diasDeUso: 0 });
+    expect(lista.find((c) => c.instancia === 'antigo-v2')).toMatchObject({
+      tetoAquecimento: null,
+      diasDeUso: 90,
+    });
+    await enviar('delete', `/agente/chips/${novo.body.id}`);
+    await enviar('delete', `/agente/chips/${antigo.body.id}`);
+
+    await enviar('put', '/agente/config', { ...config, ligado: false });
+    await pool.query('DELETE FROM comercial.oportunidades WHERE empresa_id = 78');
+    await pool.query('DELETE FROM comercial.mensagens WHERE empresa_id = 78');
+    await pool.query('DELETE FROM enriquecimento.contatos WHERE empresa_id = 78');
   });
 
   it('pipelines: SDR passa para o Closer na reunião, etapas com o mesmo papel, etiquetas e edição', async () => {

@@ -93,7 +93,7 @@ export async function rascunhos(db: Executor) {
 export async function pausados(db: Executor) {
   const { rows } = await db.query(
     `SELECT o.empresa_id::int AS "empresaId", e.nome, e.cidade, o.agente_pausa AS motivo, o.etapa,
-            o.atualizado_em AS "em"
+            o.atualizado_em AS "em", o.agente_resumo AS resumo
        FROM comercial.oportunidades o JOIN descoberta.empresas e ON e.id = o.empresa_id
       WHERE o.conta_id = ${contaSql()} AND o.agente AND o.agente_pausa IS NOT NULL
         AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
@@ -195,7 +195,7 @@ export async function descartar(db: Executor, id: number): Promise<boolean> {
 /** Liga a IA nos leads ainda abertos das etapas pedidas (ex.: todos em "A abordar"). */
 export async function ligarEmMassa(db: Executor, etapas: string[]): Promise<number> {
   const { rowCount } = await db.query(
-    `UPDATE comercial.oportunidades SET agente = true, agente_pausa = NULL
+    `UPDATE comercial.oportunidades SET agente = true, agente_pausa = NULL, agente_resumo = NULL
       WHERE conta_id = ${contaSql()} AND etapa = ANY($1::text[]) AND NOT agente`,
     [etapas],
   );

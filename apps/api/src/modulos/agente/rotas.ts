@@ -6,6 +6,10 @@ import {
   chipAtualizar,
   chipEntrada,
   configAgenteEntrada,
+  conhecimentoArquivo,
+  conhecimentoAtualizar,
+  conhecimentoEntrada,
+  ensinarLacuna,
   indicacoesNoTexto,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
@@ -20,6 +24,7 @@ import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
 import * as funil from '../funil/repositorio.js';
 import { notificar, notificarDono } from '../notificacoes/repositorio.js';
 import * as chips from './chips.js';
+import * as base from './conhecimento.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -117,6 +122,66 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
 
   r.get('/conversa/:empresaId', async (req, res) => {
     res.json(await repo.conversa(pool, idDaRota(req, 'empresaId')));
+  });
+
+  /* Base de conhecimento: o que a IA sabe, o que ela aprendeu e o que falta ensinar */
+  r.get('/conhecimento', async (_req, res) => {
+    const [itens, lacunas, numeros, verificacoes] = await Promise.all([
+      base.listar(pool),
+      base.lacunas(pool),
+      base.numeros(pool),
+      base.verificacoes(pool),
+    ]);
+    res.json({ itens, lacunas, numeros, verificacoes });
+  });
+  r.post('/conhecimento', exigirAdmin, async (req, res) => {
+    const d = corpo(req, conhecimentoEntrada);
+    const id = await base.criar(pool, { ...d, pergunta: d.tipo === 'faq' ? d.pergunta : null });
+    res.status(201).json({ id });
+  });
+  /** PDF, TXT, Markdown ou CSV: o texto entra na base (o arquivo em si não é guardado). */
+  r.post('/conhecimento/arquivo', exigirAdmin, async (req, res) => {
+    const d = corpo(req, conhecimentoArquivo);
+    const texto = await base.textoDoArquivo(d);
+    const id = await base.criar(pool, {
+      tipo: 'arquivo',
+      titulo: d.titulo || d.nome.replace(/\.[a-z0-9]+$/i, ''),
+      conteudo: texto.slice(0, 400_000),
+      origem: 'arquivo',
+    });
+    res.status(201).json({ id, caracteres: texto.length });
+  });
+  r.patch('/conhecimento/:id', exigirAdmin, async (req, res) => {
+    await base.atualizar(pool, idDaRota(req), corpo(req, conhecimentoAtualizar));
+    res.json({ ok: true });
+  });
+  r.delete('/conhecimento/:id', exigirAdmin, async (req, res) => {
+    await base.arquivar(pool, idDaRota(req));
+    res.json({ ok: true });
+  });
+  /** Simula: o que a IA receberia da base se o lead escrevesse isto. */
+  r.post('/conhecimento/testar', async (req, res) => {
+    const { pergunta } = corpo(req, z.object({ pergunta: z.string().trim().min(2).max(1000) }));
+    res.json(await base.buscarTrechos(pool, pergunta));
+  });
+  /** Responde uma pergunta que a IA não soube: vira pergunta e resposta da base, já valendo. */
+  r.post('/lacunas/:id/ensinar', exigirAdmin, async (req, res) => {
+    const d = corpo(req, ensinarLacuna);
+    const lacuna = (await base.lacunas(pool)).find((l) => l.id === idDaRota(req));
+    if (!lacuna) throw AppError.naoEncontrado('Pergunta');
+    const pergunta = d.pergunta || String(lacuna.pergunta);
+    const id = await base.criar(pool, {
+      tipo: 'faq',
+      titulo: pergunta.slice(0, 120),
+      pergunta,
+      conteudo: d.resposta,
+    });
+    await base.resolverLacuna(pool, lacuna.id, id);
+    res.status(201).json({ id });
+  });
+  r.post('/lacunas/:id/dispensar', exigirAdmin, async (req, res) => {
+    await base.resolverLacuna(pool, idDaRota(req), null);
+    res.json({ ok: true });
   });
 
   /** Liga a IA em todos os leads abertos das etapas escolhidas. */

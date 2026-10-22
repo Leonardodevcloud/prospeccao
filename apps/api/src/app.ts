@@ -51,7 +51,7 @@ export function criarApp(deps: DepsApi): Express {
   const jsonGrande = express.json({ limit: '15mb' });
   const jsonPequeno = express.json({ limit: '200kb' });
   app.use((req, res, next) =>
-    /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$/.test(req.path)
+    /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$/.test(req.path)
       ? jsonGrande(req, res, next)
       : jsonPequeno(req, res, next),
   );

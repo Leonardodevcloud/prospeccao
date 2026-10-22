@@ -16,6 +16,7 @@ import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import * as cadencia from './cadencia.js';
 import * as pipelines from './pipelines.js';
+import { radar } from './radar.js';
 import * as repo from './repositorio.js';
 
 const autor = (req: Request) => req.usuario?.nome ?? 'sistema';
@@ -36,6 +37,12 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
   /** Para o menu: os seus follow-ups (o administrador vê os de todos). */
   r.get('/resumo', async (req, res) => {
     res.json(await repo.resumo(pool, req.usuario?.papel === 'admin' ? null : (req.usuario?.id ?? null)));
+  });
+
+  /** Radar dos negócios parados: críticos e em risco, com o motivo (o vendedor vê os dele). */
+  r.get('/radar', async (req, res) => {
+    const meus = req.query.meus === '1' || req.usuario?.papel !== 'admin';
+    res.json(await radar(pool, { responsavelId: meus ? (req.usuario?.id ?? null) : null }));
   });
 
   r.get('/etiquetas', async (_req, res) => {

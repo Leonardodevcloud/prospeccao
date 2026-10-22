@@ -138,12 +138,18 @@ export const chipEntrada = z.object({
     .max(100)
     .regex(/^[\w.@-]+$/, 'A instância tem só letras, números, ponto, hífen e sublinhado.'),
   limiteDia: z.number().int().min(1).max(1000).default(40),
+  /** Número novo começa mandando pouco e vai subindo (aquecimento). */
+  aquecer: z.boolean().default(true),
+  /** Há quantos dias o número já é usado no WhatsApp (o aquecimento conta a partir daí). */
+  diasDeUso: z.number().int().min(0).max(3650).default(0),
 });
 export const chipAtualizar = z
   .object({
     nome: z.string().trim().min(1).max(60).optional(),
     ativo: z.boolean().optional(),
     limiteDia: z.number().int().min(1).max(1000).optional(),
+    aquecer: z.boolean().optional(),
+    diasDeUso: z.number().int().min(0).max(3650).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
 

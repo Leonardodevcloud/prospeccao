@@ -1,14 +1,13 @@
-import type { Pool } from '@prospeccao/db';
-import { pediuParaParar } from '@prospeccao/integrations/agente';
+import { emBolhas, tempoDigitando } from '@prospeccao/integrations/agente';
 import type { Logger } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
-import type { DepsApi, ServicosConta } from '../../dependencias.js';
+import type { DepsApi } from '../../dependencias.js';
 import { paraCadaConta } from '../../rotinas.js';
-import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { limiteDoMes } from '../consumo/repositorio.js';
 import { emSequenciaSql } from '../email/sequencia.js';
-import { obterConfig as configCadencia, mensagemDoLead } from '../funil/cadencia.js';
+import { mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
+import { aprenderComEquipe, type DepsAtendimento, responderLead } from './atendimento.js';
 import * as chips from './chips.js';
 import * as repo from './repositorio.js';
 
@@ -25,7 +24,7 @@ const AUTOR = 'agente';
 const LOCK = 7_301_023;
 
 /** O motor de uma conta: banco, log e o WhatsApp e a IA dela. */
-type DepsMotor = Pick<DepsApi, 'pool' | 'log'> & Pick<ServicosConta, 'whatsapp' | 'ia'>;
+type DepsMotor = DepsAtendimento;
 
 function agoraSP(agora = new Date()) {
   const p = Object.fromEntries(
@@ -116,172 +115,12 @@ export async function gerarRespostas(deps: DepsMotor, cfg: repo.ConfigAgente, li
   return n;
 }
 
-async function pausar(pool: Pool, empresaId: number, motivo: string) {
-  await pool.query(
-    `UPDATE comercial.oportunidades SET agente_pausa = $2 WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
-    [empresaId, motivo.slice(0, 300)],
-  );
-  await funil.atualizar(
-    pool,
-    empresaId,
-    { proximaAcao: 'Responder: a IA passou para você', proximaAcaoEm: new Date().toISOString() },
-    AUTOR,
-  );
-}
-
-async function responderLead(deps: DepsMotor, cfg: repo.ConfigAgente, empresaId: number, etapa: string) {
-  const { pool } = deps;
-  const { rows: conversa } = await pool.query<{ direcao: string; texto: string; em: string }>(
-    `SELECT direcao, texto, criado_em AS em FROM comercial.atividades
-      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND direcao IS NOT NULL AND texto IS NOT NULL
-      ORDER BY criado_em DESC, id DESC LIMIT 20`,
-    [empresaId],
-  );
-  conversa.reverse();
-  const ultima = conversa.at(-1)?.texto ?? '';
-
-  const desligarIa = () =>
-    pool.query(
-      `UPDATE comercial.oportunidades SET agente = false WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
-      [empresaId],
-    );
-  if (pediuParaParar(ultima)) {
-    await desligarIa();
-    await funil.atualizar(
-      pool,
-      empresaId,
-      { etapa: 'descartado', motivo: 'Pediu para não receber mensagens' },
-      AUTOR,
-    );
-    return;
-  }
-  const { rows: hoje } = await pool.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM comercial.mensagens
-      WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND origem = 'agente' AND criado_em >= ${repo.HOJE_SP}`,
-    [empresaId],
-  );
-  if ((hoje[0]?.n ?? 0) >= cfg.respostasDiaLead) {
-    await pausar(pool, empresaId, `A IA já respondeu ${cfg.respostasDiaLead} vezes hoje: continue você.`);
-    return;
-  }
-  if (!deps.ia) {
-    await pausar(pool, empresaId, 'O lead respondeu e a IA não está configurada para esta conta.');
-    return;
-  }
-
-  const m = await mensagemDoLead(pool, empresaId);
-  const { rows: lead } = await pool.query<{ nome: string; cidade: string | null; decisor: string | null }>(
-    `SELECT e.nome, e.cidade,
-            -- com quem a conversa está (pessoa indicada, com o cargo), senão o decisor do enriquecimento
-            coalesce(
-              (SELECT cl.nome || coalesce(' (' || cl.cargo || ')', '') FROM comercial.contatos_lead cl
-                 JOIN comercial.oportunidades o ON o.conta_id = cl.conta_id AND o.empresa_id = cl.empresa_id
-                WHERE cl.conta_id = ${contaSql()} AND cl.empresa_id = e.id AND cl.status = 'confirmado'
-                  AND o.whatsapp_destino IS NOT NULL AND left(cl.telefone, 2) = left(o.whatsapp_destino, 2)
-                  AND right(cl.telefone, 8) = right(o.whatsapp_destino, 8) LIMIT 1),
-              (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor LIMIT 1)) AS decisor
-       FROM descoberta.empresas e WHERE e.id = $1`,
-    [empresaId],
-  );
-  const cad = await configCadencia(pool);
-  const { rows: contaRows } = await pool.query<{ nome: string }>(
-    `SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`,
-  );
-  let decisao: Awaited<ReturnType<NonNullable<ServicosConta['ia']>['decidir']>>;
-  try {
-    decisao = await deps.ia.decidir({
-      empresa: contaRows[0]?.nome ?? 'nossa empresa',
-      sobreEmpresa: cfg.sobreEmpresa,
-      regras: cfg.regras,
-      horariosReuniao: cfg.horariosReuniao,
-      remetente: cad.remetente,
-      agora: new Intl.DateTimeFormat('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        dateStyle: 'full',
-        timeStyle: 'short',
-      }).format(new Date()),
-      lead: {
-        empresa: lead[0]?.nome ?? '',
-        cidade: lead[0]?.cidade ?? null,
-        contato: lead[0]?.decisor ?? null,
-        etapa,
-      },
-      conversa: conversa.map((c) => ({
-        de: c.direcao === 'enviada' ? 'nos' : 'lead',
-        texto: c.texto,
-        em: c.em,
-      })),
-    });
-  } catch (erro) {
-    deps.log.warn({ err: erro, empresaId }, 'agente: a IA falhou');
-    await pausar(pool, empresaId, 'A IA falhou ao responder: responda você.');
-    return;
-  }
-
-  const nova = (texto: string) =>
-    repo.criarMensagem(pool, {
-      empresaId,
-      direcao: 'enviada',
-      texto,
-      telefone: m.telefone,
-      status: cfg.revisarAntes ? 'rascunho' : 'aprovada',
-      origem: 'agente',
-      nota: decisao.motivo,
-    });
-
-  switch (decisao.acao) {
-    case 'responder':
-      await nova(decisao.resposta);
-      break;
-    case 'marcar_reuniao':
-      await funil.registrarAtividade(
-        pool,
-        empresaId,
-        {
-          tipo: 'reuniao',
-          direcao: null,
-          texto: `Reunião combinada pela IA: ${decisao.motivo}`,
-          proximaAcao: 'Reunião com o lead',
-          proximaAcaoEm: decisao.reuniaoEm,
-        },
-        AUTOR,
-      );
-      // Entra na agenda do dono do lead (o closer, se a reunião passou o lead para ele).
-      if (decisao.reuniaoEm)
-        await criarReuniaoDoLead(pool, empresaId, decisao.reuniaoEm, null).catch((erro) =>
-          deps.log.warn({ err: erro, empresaId }, 'agente: não consegui pôr a reunião na agenda'),
-        );
-      if (decisao.resposta) await nova(decisao.resposta);
-      break;
-    case 'encerrar_sem_interesse':
-      if (decisao.resposta) await nova(decisao.resposta);
-      await desligarIa();
-      await funil.atualizar(
-        pool,
-        empresaId,
-        { etapa: 'perdido', motivo: `Sem interesse: ${decisao.motivo}` },
-        AUTOR,
-      );
-      break;
-    case 'optout':
-      await desligarIa();
-      await funil.atualizar(
-        pool,
-        empresaId,
-        { etapa: 'descartado', motivo: 'Pediu para não receber mensagens' },
-        AUTOR,
-      );
-      break;
-    default:
-      await pausar(pool, empresaId, decisao.motivo || 'A IA preferiu que você responda.');
-      if (decisao.resposta) await nova(decisao.resposta);
-  }
-}
-
 /**
  * 3. Envia a próxima mensagem aprovada, pelo chip do lead (ou o menos usado hoje, para quem ainda
- * não tem), se o horário, o limite do chip, o intervalo e o teto do mês deixarem. Com o agente
- * desligado, só saem as mensagens das sequências (que têm o próprio liga/desliga).
+ * não tem), se o horário e o teto do mês deixarem. Respostas a quem escreveu saem primeiro e na
+ * hora, com "digitando…" e em bolhas, como uma pessoa; as frias respeitam o limite do chip (com o
+ * aquecimento do número) e o intervalo com variação. Com o agente desligado, só saem as mensagens
+ * das sequências (que têm o próprio liga/desliga).
  */
 export async function enviarProxima(
   deps: DepsMotor,
@@ -296,18 +135,20 @@ export async function enviarProxima(
   const disponiveis = await chips.emUso(deps.pool, whatsapp);
   if (!disponiveis.length) return false;
 
-  const { rows: fila } = await deps.pool.query<{ id: number; empresa_id: number }>(
-    `SELECT id::int, empresa_id::int FROM comercial.mensagens
+  const { rows: fila } = await deps.pool.query<{ id: number; empresa_id: number; origem: string }>(
+    `SELECT id::int, empresa_id::int, origem FROM comercial.mensagens
       WHERE conta_id = ${C} AND status = 'aprovada' ${opcoes.soSequencia ? `AND origem = 'sequencia'` : ''}
-      ORDER BY criado_em, id LIMIT 30`,
+      ORDER BY (origem = 'agente') DESC, criado_em, id LIMIT 30`,
   );
   for (const candidata of fila) {
+    const resposta = candidata.origem === 'agente';
     const chip = await chips.chipParaAutomatica(
       deps.pool,
       candidata.empresa_id,
       disponiveis,
       cfg,
       agora.getTime(),
+      { resposta },
     );
     if (!chip) continue; // o chip deste lead está no limite ou no intervalo: tenta o próximo lead
     const { rows } = await deps.pool.query<{
@@ -331,7 +172,16 @@ export async function enviarProxima(
       continue;
     }
     try {
-      const r = await whatsapp.enviar(msg.telefone, msg.texto, chip.instancia);
+      // Resposta da IA: em bolhas (cada parágrafo), cada uma com "digitando…" antes.
+      const partes = resposta ? emBolhas(msg.texto) : [msg.texto];
+      let r: { idExterno: string | null } = { idExterno: null };
+      for (const parte of partes)
+        r = await whatsapp.enviar(
+          msg.telefone,
+          parte,
+          chip.instancia,
+          resposta ? { digitandoMs: tempoDigitando(parte) } : undefined,
+        );
       await deps.pool.query('UPDATE comercial.mensagens SET id_externo = $2 WHERE id = $1', [
         msg.id,
         r.idExterno,
@@ -359,6 +209,8 @@ export async function enviarProxima(
 /** Uma rodada do agente numa conta (já dentro do contexto dela). */
 export async function rodarAgenteDaConta(deps: DepsMotor): Promise<void> {
   const cfg = await repo.obterConfig(deps.pool);
+  // O que o time respondeu no lugar da IA vira sugestão para a base (com ou sem o agente ligado).
+  await aprenderComEquipe(deps).catch((erro) => deps.log.warn({ err: erro }, 'agente: aprendizado falhou'));
   // Agente desligado: a IA não aborda nem responde, mas o WhatsApp das sequências continua saindo.
   if (!cfg.ligado) {
     await enviarProxima(deps, cfg, new Date(), { soSequencia: true });

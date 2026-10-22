@@ -125,7 +125,7 @@ describe('decisão do agente', () => {
       lead: { empresa: 'Ceave', cidade: 'Salvador', contato: 'Marcos', etapa: 'respondeu' },
       conversa: [{ de: 'lead', texto: 'Quanto custa?', em: '' }],
     });
-    expect(p).toContain('Você é Paulo da Rota Norte');
+    expect(p).toContain('Você é Paulo, da Rota Norte');
     expect(p).toContain('SOBRE A ROTA NORTE');
     expect(p).toContain('Não prometa preço.');
     expect(p).toContain('LEAD: Quanto custa?');

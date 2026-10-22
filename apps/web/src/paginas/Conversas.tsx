@@ -15,6 +15,7 @@ import { EnviarPara, FaixaIndicacoes, PainelContatos } from '../componentes/Cont
 import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { ResumoPassagem } from '../componentes/ResumoPassagem';
 import { Dono } from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
 import { fmtCidade, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
@@ -818,6 +819,12 @@ function Conversa(props: {
               A IA está conduzindo esta conversa. Se você responder, ela para e o lead fica com você.
             </span>
           )}
+        </div>
+      )}
+      {c.agente && c.agentePausa && c.agenteResumo && <ResumoPassagem r={c.agenteResumo} compacto />}
+      {c.agente && !c.agentePausa && !!c.agenteMemoria?.length && (
+        <div className="chat__memoria">
+          <b>A IA já sabe:</b> {c.agenteMemoria.join(' · ')}
         </div>
       )}
       <FaixaIndicacoes conversa={c} aoRevisar={(x) => setPessoas({ editar: x })} aoMudar={atualizar} />

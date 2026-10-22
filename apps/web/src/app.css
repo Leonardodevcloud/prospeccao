@@ -4153,3 +4153,213 @@ a.botao-icone {
     overflow-y: auto;
   }
 }
+
+/* ───────── Agente v2: resumo da passagem, base de conhecimento, lacunas, radar ───────── */
+.tarefa__icone[data-tipo="atrasada"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.resumo-ia {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 18px;
+}
+.resumo-ia[data-compacto] {
+  padding: var(--space-2) var(--space-3);
+  border-radius: 0;
+  border-width: 0 0 1px;
+}
+.resumo-ia__topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.resumo-ia__situacao {
+  font-weight: 600;
+  color: var(--ink);
+}
+.resumo-ia__lista {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.resumo-ia__lista > div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: var(--space-2);
+}
+.resumo-ia__lista dt {
+  color: var(--ink-muted);
+}
+.resumo-ia__lista dd {
+  margin: 0;
+}
+.resumo-ia__passo dd {
+  font-weight: 600;
+}
+.resumo-ia__nota {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.abas-agente {
+  margin-bottom: var(--space-4);
+}
+.rotulo-forte {
+  font-size: 13px;
+  font-weight: 600;
+}
+.trecho {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--brand);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.trecho__texto {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  color: var(--ink-muted);
+}
+.base-lista,
+.lacunas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.base-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.base-item[data-sugerido] {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+.base-item__topo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.base-item__titulo {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.base-item__uso {
+  flex: none;
+  font-size: 12px;
+}
+.base-item__seta {
+  flex: none;
+  color: var(--ink-muted);
+  transition: transform 120ms ease;
+}
+.base-item__topo[aria-expanded="true"] .base-item__seta {
+  transform: rotate(180deg);
+}
+.base-item__corpo {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+}
+.base-item__texto {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 19px;
+}
+.lacuna,
+.verificacao {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.lacuna__topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 14px;
+}
+.lacuna__form {
+  display: grid;
+  gap: var(--space-2);
+}
+.verificacao__texto {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+  white-space: pre-wrap;
+}
+.pausado-ia {
+  display: grid;
+  gap: var(--space-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .base-item__seta {
+    transition: none;
+  }
+}
+@media (max-width: 560px) {
+  .resumo-ia__lista > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .base-item__uso {
+    display: none;
+  }
+}
+.chat__memoria {
+  padding: var(--space-1) var(--space-4) var(--space-2);
+  border-bottom: 1px solid var(--line);
+  background: var(--brand-soft);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+summary.resumo-ia__topo {
+  cursor: pointer;
+  list-style: none;
+}
+summary.resumo-ia__topo::-webkit-details-marker {
+  display: none;
+}
+.resumo-ia__abrir {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--link);
+  text-decoration: underline;
+}
+details[open] > summary .resumo-ia__abrir {
+  display: none;
+}
+.lacuna__form textarea {
+  font: inherit;
+  font-size: 13px;
+}
+.base-lista + .pilha,
+.pp-panel .form.caixa + form.pilha {
+  margin-top: var(--space-2);
+}

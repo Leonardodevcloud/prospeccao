@@ -19,6 +19,10 @@ export interface DecisaoAgente {
   /** Data e hora da reunião combinada (ISO com fuso de São Paulo), quando acao = marcar_reuniao. */
   reuniaoEm: string | null;
   motivo: string;
+  /** Fatos novos que o lead contou nesta conversa (viram a memória do lead). */
+  memoria?: string[];
+  /** Pergunta do lead que a base não responde (vira "o que falta ensinar"). */
+  semResposta?: string | null;
 }
 
 export interface ContextoAgente {
@@ -31,6 +35,14 @@ export interface ContextoAgente {
   agora: string;
   lead: { empresa: string; cidade: string | null; contato: string | null; etapa: string };
   conversa: { de: 'nos' | 'lead'; texto: string; em: string }[];
+  /** Trechos da base de conhecimento que combinam com o que o lead escreveu. */
+  conhecimento?: { titulo: string; texto: string }[];
+  /** O que já sabemos do lead pelas conversas anteriores. */
+  memoria?: string[];
+  /** O que o enriquecimento achou do lead (ramo, porte, site, nota no Google…). */
+  ficha?: string[];
+  /** A resposta anterior foi barrada nas verificações: o que corrigir. */
+  correcao?: { texto: string; problemas: string[] } | null;
 }
 
 const ESQUEMA: EsquemaIa = {
@@ -43,34 +55,85 @@ const ESQUEMA: EsquemaIa = {
     resposta: { type: 'STRING' },
     reuniaoEm: { type: 'STRING', nullable: true },
     motivo: { type: 'STRING' },
+    memoria: { type: 'ARRAY', items: { type: 'STRING' } },
+    semResposta: { type: 'STRING', nullable: true },
   },
   required: ['acao', 'resposta', 'motivo'],
 };
 
+/** O que a IA deve buscar em cada etapa do funil. */
+const OBJETIVO_DA_ETAPA: Record<string, string> = {
+  a_abordar:
+    'despertar interesse e entender se faz sentido para ele; o objetivo é marcar uma conversa rápida',
+  abordado: 'despertar interesse e entender se faz sentido para ele; o objetivo é marcar uma conversa rápida',
+  respondeu: 'tirar as dúvidas, entender a necessidade dele e marcar uma conversa rápida',
+  reuniao: 'a reunião já está marcada: confirme, remarque se ele pedir, e tire dúvidas simples',
+  proposta: 'a proposta já foi enviada: tire dúvidas da base; negociação de preço e condições é com o time',
+};
+
 export function promptAgente(c: ContextoAgente): string {
-  return [
-    `Você é ${c.remetente || 'o atendente'} da ${c.empresa}, conversando pelo WhatsApp com uma empresa que prospectamos.`,
-    `SOBRE A ${c.empresa.toUpperCase()} (use só isto; não invente nada fora daqui):`,
-    c.sobreEmpresa,
+  const nome = c.remetente || 'o atendente';
+  const objetivo = OBJETIVO_DA_ETAPA[c.lead.etapa] ?? OBJETIVO_DA_ETAPA.respondeu;
+  const trechos = c.conhecimento ?? [];
+  const linhas = [
+    `Você é ${nome}, da ${c.empresa}, conversando pelo WhatsApp com uma empresa que prospectamos.`,
+    `Seu objetivo agora: ${objetivo}.`,
     '',
-    'REGRAS:',
-    c.regras,
-    `Horários para reunião: ${c.horariosReuniao}. Agora é ${c.agora} (horário de Brasília).`,
+    `SOBRE A ${c.empresa.toUpperCase()}:`,
+    c.sobreEmpresa || '(não informado)',
+  ];
+  if (trechos.length)
+    linhas.push(
+      '',
+      'INFORMAÇÕES DA EMPRESA QUE COMBINAM COM A CONVERSA:',
+      ...trechos.map((t, i) => `[${i + 1}] ${t.titulo}\n${t.texto}`),
+    );
+  linhas.push('', 'REGRAS DA EMPRESA:', c.regras || '(nenhuma)');
+  linhas.push(
     '',
     `LEAD: ${c.lead.empresa}${c.lead.cidade ? `, ${c.lead.cidade}` : ''}${c.lead.contato ? `; falando com ${c.lead.contato}` : ''}. Etapa no funil: ${c.lead.etapa}.`,
+  );
+  if (c.ficha?.length)
+    linhas.push('O que sabemos da empresa dele (pesquisa):', ...c.ficha.map((f) => `- ${f}`));
+  if (c.memoria?.length)
+    linhas.push('O que ele já contou (não pergunte de novo):', ...c.memoria.map((f) => `- ${f}`));
+  linhas.push(
+    `Horários para reunião: ${c.horariosReuniao}. Agora é ${c.agora} (horário de Brasília).`,
+    '',
+    'COMO RESPONDER:',
+    '- Use SÓ o que está acima. Preço, prazo, condição, desconto, garantia, link, telefone ou e-mail que não estiverem escritos acima: não diga. Nesses casos, ou se não tiver certeza, use "passar_para_humano".',
+    '- Escreva como uma pessoa no WhatsApp: frases curtas, no tom do lead (formal se ele for formal), sem markdown, sem listas, no máximo 1 emoji. Até 2 mensagens curtas separadas por uma linha em branco; no total, no máximo 4 frases.',
+    '- Responda primeiro o que ele perguntou, depois avance: termine com UMA pergunta ou um próximo passo concreto (exceto ao encerrar).',
+    '- Objeção ("já tenho fornecedor", "está caro", "agora não"): reconheça sem discutir, faça uma pergunta para entender, e mostre um ponto da empresa que responda àquela objeção. Se ele recusar duas vezes, encerre com educação.',
+    '- Para marcar reunião, ofereça dois horários concretos dentro dos horários permitidos.',
+    '- Não repita frases que já mandamos na conversa. Use o nome da pessoa quando souber.',
+    '- Se perguntarem se é robô ou IA, não negue: diga que é o assistente virtual da empresa e ofereça chamar alguém do time.',
     '',
     'Decida o próximo passo e responda em JSON:',
-    '- acao "responder": tirar dúvida ou continuar a conversa rumo a uma reunião; "resposta" é a mensagem.',
-    '- acao "marcar_reuniao": o lead CONFIRMOU um dia e horário; "reuniaoEm" em ISO 8601 com -03:00; "resposta" confirma.',
-    '- acao "passar_para_humano": pediu preço fechado, contrato, algo fora da base de conhecimento, reclamou, ou você não tem certeza; "resposta" pode ser vazia ou "Vou confirmar e já te retorno".',
-    '- acao "encerrar_sem_interesse": disse claramente que não tem interesse; "resposta" agradece com educação.',
+    '- acao "responder": tirar dúvida ou continuar a conversa rumo à reunião; "resposta" é a mensagem.',
+    '- acao "marcar_reuniao": o lead CONFIRMOU dia e horário; "reuniaoEm" em ISO 8601 com -03:00; "resposta" confirma.',
+    '- acao "passar_para_humano": pediu preço fechado, proposta, contrato, perguntou algo que não está acima, reclamou, quer falar com uma pessoa, ou você não tem certeza; "resposta" pode ser vazia ou algo como "Vou confirmar com o time e já te retorno" (sem prometer o que não sabe).',
+    '- acao "encerrar_sem_interesse": disse claramente que não tem interesse; "resposta" agradece com educação e deixa a porta aberta.',
     '- acao "optout": pediu para não receber mais mensagens; "resposta" vazia.',
     '"motivo": uma frase curta explicando a decisão (para o vendedor ler).',
-    'Mensagens curtas, naturais, sem parecer robô, sem emojis em excesso, nunca mais de 3 frases.',
+    '"memoria": fatos NOVOS e úteis que o lead contou nesta conversa (fornecedor atual, volume, necessidade, quem cuida das compras segundo ele, melhor horário), cada um em poucas palavras; [] se nada novo.',
+    '"semResposta": se ele perguntou algo que as informações acima não respondem, escreva a pergunta dele de forma geral (ex.: "Vocês atendem em Feira de Santana?"); senão null.',
+  );
+  if (c.correcao)
+    linhas.push(
+      '',
+      'ATENÇÃO: sua resposta anterior foi barrada e não foi enviada:',
+      `"${c.correcao.texto}"`,
+      'Problemas:',
+      ...c.correcao.problemas.map((p) => `- ${p}`),
+      'Escreva de novo corrigindo isso. Se não der para responder sem esses itens, use "passar_para_humano".',
+    );
+  linhas.push(
     '',
     'CONVERSA (mais antiga primeiro):',
     ...c.conversa.slice(-20).map((m) => `${m.de === 'nos' ? 'NÓS' : 'LEAD'}: ${m.texto}`),
-  ].join('\n');
+  );
+  return linhas.join('\n');
 }
 
 /** Confere a decisão da IA: ação desconhecida, resposta longa ou reunião sem data viram "passar para humano". */
@@ -84,6 +147,8 @@ export function lerDecisao(texto: string): DecisaoAgente {
       resposta: '',
       reuniaoEm: null,
       motivo: 'A IA não respondeu direito.',
+      memoria: [],
+      semResposta: null,
     };
   }
   const acoes: AcaoAgente[] = [
@@ -96,7 +161,7 @@ export function lerDecisao(texto: string): DecisaoAgente {
   let acao: AcaoAgente = acoes.includes(j.acao as AcaoAgente) ? (j.acao as AcaoAgente) : 'passar_para_humano';
   const resposta = String(j.resposta ?? '')
     .trim()
-    .slice(0, 700);
+    .slice(0, 900);
   let reuniaoEm: string | null = null;
   if (acao === 'marcar_reuniao') {
     const d = j.reuniaoEm ? new Date(j.reuniaoEm) : null;
@@ -104,7 +169,32 @@ export function lerDecisao(texto: string): DecisaoAgente {
     else acao = 'passar_para_humano';
   }
   if ((acao === 'responder' || acao === 'encerrar_sem_interesse') && !resposta) acao = 'passar_para_humano';
-  return { acao, resposta, reuniaoEm, motivo: String(j.motivo ?? '').slice(0, 300) };
+  const memoria = (Array.isArray(j.memoria) ? j.memoria : [])
+    .map((f) => String(f).replace(/\s+/g, ' ').trim().slice(0, 160))
+    .filter((f) => f.length >= 3)
+    .slice(0, 5);
+  const semResposta = j.semResposta ? String(j.semResposta).trim().slice(0, 300) || null : null;
+  return { acao, resposta, reuniaoEm, motivo: String(j.motivo ?? '').slice(0, 300), memoria, semResposta };
+}
+
+/** Junta a memória do lead: o que é novo entra, repetido (mesmo texto) não; guarda os 15 mais recentes. */
+export function juntarMemoria(atual: string[], novos: string[], maximo = 15): string[] {
+  const chave = (t: string) =>
+    t
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const vistos = new Set(atual.map(chave));
+  const saida = [...atual];
+  for (const n of novos) {
+    const k = chave(n);
+    if (!k || vistos.has(k)) continue;
+    vistos.add(k);
+    saida.push(n);
+  }
+  return saida.slice(-maximo);
 }
 
 /** Pedido para parar de receber mensagens: tratado antes da IA, sem chance de erro. */
@@ -121,7 +211,7 @@ export async function decidirComIa(cfg: ConfigIa, c: ContextoAgente): Promise<De
     esquema: ESQUEMA,
     temperatura: 0.4,
     timeoutMs: 45_000,
-    maxTokens: 800,
+    maxTokens: 1000,
   });
   return lerDecisao(texto);
 }
@@ -287,3 +377,6 @@ export async function personalizarAbertura(cfg: ConfigIa, e: EntradaAbertura): P
   });
   return lerAbertura(texto);
 }
+export * from './conhecimento.js';
+export * from './passagem.js';
+export * from './verificacoes.js';

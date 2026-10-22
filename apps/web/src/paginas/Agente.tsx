@@ -1,10 +1,12 @@
 import { Badge, Button, Panel, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { api, type ConfigAgente, type RascunhoAgente, ROTULO_ETAPA, type TelaAgente } from '../api';
+import { Aprendizados, BaseConhecimento, useConhecimento } from '../componentes/BaseConhecimento';
 import { Chips } from '../componentes/Chips';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { ResumoPassagem } from '../componentes/ResumoPassagem';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, formatarTelefone } from '../formatar';
 
 const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -132,7 +134,9 @@ function FormConfig(props: { config: ConfigAgente }) {
         <div className="campo">
           <label htmlFor="ag-intervaloSeg">Segundos entre mensagens</label>
           {numero('intervaloSeg')}
-          <span className="campo__dica">Em cada chip.</span>
+          <span className="campo__dica">
+            Entre mensagens frias, em cada chip, mais uma variação de até 60%.
+          </span>
         </div>
         <div className="campo">
           <label htmlFor="ag-respostasDiaLead">Respostas da IA por lead/dia</label>
@@ -168,8 +172,8 @@ function FormConfig(props: { config: ConfigAgente }) {
           onChange={(e) => mudar('sobreEmpresa', e.target.value)}
         />
         <span className="campo__dica">
-          Serviço, diferenciais, cidades, como funciona o preço. A IA só responde com o que está aqui; o resto
-          ela passa para você.
+          O resumo que a IA lê em toda conversa: o que a empresa faz, para quem e o diferencial. Detalhes
+          (preços, cidades, condições, perguntas frequentes) ficam na aba Base de conhecimento.
         </span>
       </div>
       <div className="campo">
@@ -201,9 +205,14 @@ function FormConfig(props: { config: ConfigAgente }) {
   );
 }
 
+type AbaAgente = 'atendimento' | 'base' | 'ensinar';
+
 export function Agente() {
   const navegar = useNavigate();
   const cliente = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const aba = (params.get('aba') as AbaAgente | null) ?? 'atendimento';
+  const base = useConhecimento();
   const q = useQuery({
     queryKey: ['agente'],
     queryFn: () => api<TelaAgente>('/agente'),
@@ -231,6 +240,12 @@ export function Agente() {
   if (q.error) return <ErroDaApi erro={q.error} />;
   const d = q.data;
   const abrir = (id: number) => navegar(`/funil?empresa=${id}`);
+  const nb = base.data?.numeros;
+  const abas: { id: AbaAgente; rotulo: string; conta?: number; nova?: boolean }[] = [
+    { id: 'atendimento', rotulo: 'Atendimento', conta: d.rascunhos.length + d.pausados.length, nova: true },
+    { id: 'base', rotulo: 'Base de conhecimento', conta: nb?.sugeridos, nova: true },
+    { id: 'ensinar', rotulo: 'O que falta ensinar', conta: nb?.lacunas, nova: true },
+  ];
 
   return (
     <>
@@ -271,114 +286,146 @@ export function Agente() {
         <Stat rotulo="Para você" valor={fmtNumero(d.resumo.rascunhos + d.resumo.pausados)} />
       </div>
 
-      <Panel titulo="Para revisar" contagem={d.rascunhos.length}>
-        {d.rascunhos.length ? (
-          <div className="pilha">
-            {d.rascunhos.map((r) => (
-              <Rascunho key={r.id} r={r} aoAbrir={() => abrir(r.empresaId)} />
-            ))}
-          </div>
-        ) : (
-          <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-            Nada esperando aprovação.
-            {d.config.revisarAntes
-              ? ' As mensagens da IA aparecem aqui antes de sair.'
-              : ' A revisão está desligada: a IA envia direto.'}
-          </p>
-        )}
-      </Panel>
-
-      <Panel titulo="A IA passou para você" contagem={d.pausados.length}>
-        {d.pausados.length ? (
-          <ul className="lista-simples">
-            {d.pausados.map((p) => (
-              <li key={p.empresaId}>
-                <div>
-                  <button type="button" className="link-botao" onClick={() => abrir(p.empresaId)}>
-                    <b>{fmtNome(p.nome)}</b>
-                  </button>{' '}
-                  <span className="quieto">
-                    · {ROTULO_ETAPA[p.etapa]} · {fmtHora(p.em)}
-                  </span>
-                  <div className="quieto" style={{ fontSize: 13 }}>
-                    {p.motivo}
-                  </div>
-                </div>
-                <div className="acoes">
-                  <Button size="sm" onClick={() => abrir(p.empresaId)}>
-                    Abrir
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={devolver.isPending}
-                    onClick={() => devolver.mutate(p.empresaId)}
-                  >
-                    Devolver para a IA
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-            Nenhum lead esperando você.
-          </p>
-        )}
-      </Panel>
-
-      <Panel
-        titulo="Configuração"
-        acoes={
-          <Button size="sm" variant="ghost" disabled={emMassa.isPending} onClick={() => emMassa.mutate()}>
-            Ligar a IA em todos de "A abordar"
-          </Button>
-        }
-      >
-        {emMassa.data && (
-          <Mensagem tipo="ok">
-            IA ligada em {fmtNumero(emMassa.data.ligados)} lead(s) de "A abordar".
-          </Mensagem>
-        )}
-        <FormConfig config={d.config} />
-      </Panel>
-
-      <Chips />
-
-      <Panel titulo="Conectar o WhatsApp">
-        <ol className="passos">
-          <li>
-            No <b>painel master</b>, na conta, preencha o WhatsApp (endereço, chave e instância da Evolution)
-            e a IA. Para dividir o volume em mais de um chip, cadastre os chips acima.
-          </li>
-          <li>
-            Na Evolution, em <b>Webhook</b> de cada instância (cada chip), cole o endereço abaixo, marque o
-            evento <code>MESSAGES_UPSERT</code> e ative.
-          </li>
-        </ol>
-        <div className="barra">
-          <input
-            className="filtro mono"
-            readOnly
-            value={d.webhook}
-            style={{ flex: '1 1 320px' }}
-            aria-label="Endereço do webhook"
-          />
-          <Button
-            size="sm"
-            icon={copiado ? 'check' : 'copy'}
-            onClick={() => {
-              navigator.clipboard?.writeText(d.webhook).catch(() => undefined);
-              setCopiado(true);
-            }}
+      <div className="pipelines abas-agente" role="tablist" aria-label="Seções do agente">
+        {abas.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            role="tab"
+            aria-selected={aba === a.id}
+            className="pipelines__aba"
+            onClick={() => setParams({ aba: a.id }, { replace: true })}
           >
-            {copiado ? 'Copiado' : 'Copiar'}
-          </Button>
-        </div>
-        <p className="quieto" style={{ margin: '8px 0 0', fontSize: 12 }}>
-          O endereço tem uma senha embutida: não compartilhe.
-        </p>
-      </Panel>
+            {a.rotulo}
+            {!!a.conta && (
+              <span className={`pipelines__conta${a.nova ? ' pipelines__conta--nova' : ''}`}>{a.conta}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {aba === 'base' && <BaseConhecimento />}
+      {aba === 'ensinar' && (
+        <Aprendizados
+          aoAbrirLead={(id) => navegar(`/conversas?lead=${id}`)}
+          aoVerBase={() => setParams({ aba: 'base' })}
+        />
+      )}
+      {aba === 'atendimento' && (
+        <>
+          <Panel titulo="Para revisar" contagem={d.rascunhos.length}>
+            {d.rascunhos.length ? (
+              <div className="pilha">
+                {d.rascunhos.map((r) => (
+                  <Rascunho key={r.id} r={r} aoAbrir={() => abrir(r.empresaId)} />
+                ))}
+              </div>
+            ) : (
+              <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+                Nada esperando aprovação.
+                {d.config.revisarAntes
+                  ? ' As mensagens da IA aparecem aqui antes de sair.'
+                  : ' A revisão está desligada: a IA envia direto.'}
+              </p>
+            )}
+          </Panel>
+
+          <Panel titulo="A IA passou para você" contagem={d.pausados.length}>
+            {d.pausados.length ? (
+              <ul className="lista-simples">
+                {d.pausados.map((p) => (
+                  <li key={p.empresaId}>
+                    <div className="pausado-ia">
+                      <div>
+                        <button type="button" className="link-botao" onClick={() => abrir(p.empresaId)}>
+                          <b>{fmtNome(p.nome)}</b>
+                        </button>{' '}
+                        <span className="quieto">
+                          · {ROTULO_ETAPA[p.etapa]} · {fmtHora(p.em)}
+                        </span>
+                      </div>
+                      <div className="quieto" style={{ fontSize: 13 }}>
+                        {p.motivo}
+                      </div>
+                      {p.resumo && <ResumoPassagem r={p.resumo} />}
+                    </div>
+                    <div className="acoes">
+                      <Button size="sm" onClick={() => navegar(`/conversas?lead=${p.empresaId}`)}>
+                        Responder
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={devolver.isPending}
+                        onClick={() => devolver.mutate(p.empresaId)}
+                      >
+                        Devolver para a IA
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+                Nenhum lead esperando você.
+              </p>
+            )}
+          </Panel>
+
+          <Panel
+            titulo="Configuração"
+            acoes={
+              <Button size="sm" variant="ghost" disabled={emMassa.isPending} onClick={() => emMassa.mutate()}>
+                Ligar a IA em todos de "A abordar"
+              </Button>
+            }
+          >
+            {emMassa.data && (
+              <Mensagem tipo="ok">
+                IA ligada em {fmtNumero(emMassa.data.ligados)} lead(s) de "A abordar".
+              </Mensagem>
+            )}
+            <FormConfig config={d.config} />
+          </Panel>
+
+          <Chips />
+
+          <Panel titulo="Conectar o WhatsApp">
+            <ol className="passos">
+              <li>
+                No <b>painel master</b>, na conta, preencha o WhatsApp (endereço, chave e instância da
+                Evolution) e a IA. Para dividir o volume em mais de um chip, cadastre os chips acima.
+              </li>
+              <li>
+                Na Evolution, em <b>Webhook</b> de cada instância (cada chip), cole o endereço abaixo, marque
+                o evento <code>MESSAGES_UPSERT</code> e ative.
+              </li>
+            </ol>
+            <div className="barra">
+              <input
+                className="filtro mono"
+                readOnly
+                value={d.webhook}
+                style={{ flex: '1 1 320px' }}
+                aria-label="Endereço do webhook"
+              />
+              <Button
+                size="sm"
+                icon={copiado ? 'check' : 'copy'}
+                onClick={() => {
+                  navigator.clipboard?.writeText(d.webhook).catch(() => undefined);
+                  setCopiado(true);
+                }}
+              >
+                {copiado ? 'Copiado' : 'Copiar'}
+              </Button>
+            </div>
+            <p className="quieto" style={{ margin: '8px 0 0', fontSize: 12 }}>
+              O endereço tem uma senha embutida: não compartilhe.
+            </p>
+          </Panel>
+        </>
+      )}
     </>
   );
 }

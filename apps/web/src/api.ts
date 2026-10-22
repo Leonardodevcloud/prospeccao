@@ -753,7 +753,93 @@ export interface TelaAgente {
     motivo: string;
     etapa: EtapaFunil;
     em: string;
+    /** Resumo que a IA fez ao passar para você. */
+    resumo: ResumoPassagem | null;
   }[];
+}
+
+/** Resumo da conversa quando a IA passa o lead para o time. */
+export interface ResumoPassagem {
+  situacao: string;
+  combinado: string[];
+  objecoes: string[];
+  perguntasEmAberto: string[];
+  interesse: 'alto' | 'medio' | 'baixo' | 'indefinido';
+  proximoPasso: string;
+  motivo?: string;
+}
+
+export interface ItemConhecimento {
+  id: number;
+  tipo: 'texto' | 'faq' | 'arquivo';
+  titulo: string;
+  pergunta: string | null;
+  conteudo: string;
+  origem: 'manual' | 'arquivo' | 'conversa';
+  status: 'ativo' | 'sugerido';
+  empresaId: number | null;
+  empresaNome: string | null;
+  usos: number;
+  usadoEm: string | null;
+  criadoEm: string;
+  criadoPorNome: string | null;
+}
+
+export interface LacunaIa {
+  id: number;
+  empresaId: number;
+  empresaNome: string | null;
+  pergunta: string;
+  motivo: string | null;
+  criadoEm: string;
+  /** Sugestão de resposta já criada a partir do que o time respondeu. */
+  sugestaoId: number | null;
+}
+
+export interface VerificacaoIa {
+  id: number;
+  empresaId: number;
+  empresaNome: string | null;
+  texto: string;
+  problemas: { regra: string; detalhe: string }[];
+  resultado: 'reescrita' | 'bloqueada';
+  criadoEm: string;
+}
+
+export interface TelaConhecimento {
+  itens: ItemConhecimento[];
+  lacunas: LacunaIa[];
+  verificacoes: VerificacaoIa[];
+  numeros: { ativos: number; sugeridos: number; lacunas: number; barradas7d: number };
+}
+
+export interface TrechoAchado {
+  conhecimentoId: number;
+  titulo: string;
+  texto: string;
+  relevancia: number;
+}
+
+export interface ItemRadar {
+  empresaId: number;
+  nome: string;
+  cidade: string | null;
+  etapa: EtapaFunil;
+  etapaNome: string | null;
+  responsavelId: number | null;
+  responsavelNome: string | null;
+  valorMensal: number | null;
+  proximaAcao: string | null;
+  proximaAcaoEm: string | null;
+  ultimoMovimento: string | null;
+  horasParado: number;
+  nivel: 'critico' | 'risco';
+  motivo: string;
+}
+
+export interface TelaRadar {
+  itens: ItemRadar[];
+  contagem: { critico: number; risco: number; andamento: number };
 }
 
 /* ───────────────────────────── Equipe ───────────────────────────── */
@@ -898,6 +984,10 @@ export interface ConversaAberta {
   responsavelNome: string | null;
   agente: boolean;
   agentePausa: string | null;
+  /** Resumo que a IA fez ao passar a conversa para o time (só enquanto está pausada). */
+  agenteResumo: ResumoPassagem | null;
+  /** O que o lead já contou (a IA não pergunta de novo). */
+  agenteMemoria: string[] | null;
   /** Melhor e-mail do lead. */
   email: string | null;
   /** O lead já respondeu por e-mail: a resposta vai na mesma conversa. */
@@ -1360,8 +1450,15 @@ export interface Chip {
   limiteDia: number;
   estado: string | null;
   estadoEm: string | null;
+  /** Mensagens frias hoje (as que contam no limite). */
   enviadosHoje: number;
+  /** Respostas da IA hoje (não contam no limite). */
+  respostasHoje: number;
   leads: number;
+  aquecer: boolean;
+  diasDeUso: number;
+  /** Teto de hoje pelo aquecimento (número novo); null: sem teto. */
+  tetoAquecimento: number | null;
 }
 
 /* ───────── Alertas ───────── */

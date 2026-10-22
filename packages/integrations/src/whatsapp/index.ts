@@ -22,16 +22,24 @@ export async function enviarTexto(
   cfg: ConfigEvolution,
   telefone: string,
   texto: string,
+  opcoes: { digitandoMs?: number } = {},
 ): Promise<{ idExterno: string | null }> {
+  // "digitando…" antes de enviar (a Evolution segura a mensagem por esse tempo).
+  const atraso = Math.max(0, Math.min(15_000, Math.round(opcoes.digitandoMs ?? 0)));
   const r = await requisitarJson<{ key?: { id?: string } }>(
     `${cfg.url.replace(/\/$/, '')}/message/sendText/${encodeURIComponent(cfg.instancia)}`,
     {
       servico: 'Evolution API',
       method: 'POST',
       headers: { apikey: cfg.apiKey },
-      // v2 usa "text"; v1 usa "textMessage.text". Mandar os dois funciona nas duas.
-      body: { number: numeroWhatsapp(telefone), text: texto, textMessage: { text: texto } },
-      timeoutMs: 30_000,
+      // v2 usa "text" e "delay"; v1 usa "textMessage.text" e "options". Mandar os dois funciona nas duas.
+      body: {
+        number: numeroWhatsapp(telefone),
+        text: texto,
+        textMessage: { text: texto },
+        ...(atraso ? { delay: atraso, options: { delay: atraso, presence: 'composing' } } : {}),
+      },
+      timeoutMs: 30_000 + atraso,
     },
   );
   return { idExterno: r.key?.id ?? null };

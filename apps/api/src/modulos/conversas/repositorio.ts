@@ -136,7 +136,9 @@ export async function abrir(db: Executor, empresaId: number) {
   const { rows: info } = await db.query(
     `SELECT e.nome, e.cidade, o.etapa, et.nome AS "etapaNome", et.cor AS "etapaCor",
             o.responsavel_id AS "responsavelId", u.nome AS "responsavelNome",
-            o.agente, o.agente_pausa AS "agentePausa", o.whatsapp_destino AS "destinoEscolhido"
+            o.agente, o.agente_pausa AS "agentePausa", o.whatsapp_destino AS "destinoEscolhido",
+            CASE WHEN o.agente_pausa IS NOT NULL THEN o.agente_resumo END AS "agenteResumo",
+            o.agente_memoria AS "agenteMemoria"
        FROM comercial.oportunidades o
        JOIN descoberta.empresas e ON e.id = o.empresa_id
        LEFT JOIN comercial.etapas et ON et.id = o.etapa_id

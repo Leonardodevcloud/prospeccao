@@ -330,6 +330,46 @@ export type ConfigAgenteEntrada = z.infer<typeof configAgenteEntrada>;
 
 export const aprovarRascunho = z.object({ texto: z.string().trim().min(1).max(1500).optional() });
 
+/* ───────────── Base de conhecimento do agente ───────────── */
+
+export const conhecimentoEntrada = z
+  .object({
+    tipo: z.enum(['texto', 'faq']),
+    titulo: z.string().trim().min(2, 'Dê um título.').max(200),
+    pergunta: z.string().trim().max(500).optional(),
+    conteudo: z.string().trim().min(5, 'Escreva o conteúdo.').max(60_000),
+  })
+  .refine((v) => v.tipo !== 'faq' || (v.pergunta?.length ?? 0) >= 5, {
+    message: 'Escreva a pergunta.',
+    path: ['pergunta'],
+  });
+export type ConhecimentoEntrada = z.infer<typeof conhecimentoEntrada>;
+
+export const conhecimentoAtualizar = z
+  .object({
+    titulo: z.string().trim().min(2).max(200).optional(),
+    pergunta: z.string().trim().max(500).nullable().optional(),
+    conteudo: z.string().trim().min(5).max(60_000).optional(),
+    aprovar: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
+
+export const conhecimentoArquivo = z.object({
+  nome: z.string().trim().min(1).max(200),
+  mime: z.string().trim().max(120),
+  titulo: z.string().trim().max(200).optional(),
+  /** Conteúdo em base64 (sem o prefixo data:), até 10 MB. */
+  base64: z
+    .string()
+    .min(1)
+    .max(Math.ceil((10 * 1024 * 1024 * 4) / 3) + 8, 'Arquivo grande demais (até 10 MB).'),
+});
+
+export const ensinarLacuna = z.object({
+  pergunta: z.string().trim().min(5).max(500).optional(),
+  resposta: z.string().trim().min(2, 'Escreva a resposta.').max(4000),
+});
+
 /* ───────────────────────────── Pipelines ───────────────────────────── */
 
 /** O que cada etapa faz no sistema (a cadência, a IA e os relatórios usam o papel). */

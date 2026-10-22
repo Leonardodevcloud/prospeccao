@@ -8,6 +8,7 @@ import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ConectarGoogle } from '../componentes/MinhaConta';
+import { Radar } from '../componentes/Radar';
 import { useEhAdmin, useEquipe, useSessao } from '../componentes/Sessao';
 import { FormTarefa, LinhaTarefa } from '../componentes/Tarefas';
 import { fmtCidade, fmtCompromisso, fmtNome, fmtNumero, fmtPrazo, fmtQuando } from '../formatar';
@@ -323,6 +324,10 @@ export function MeuDia() {
                   ))}
                 </ul>
               </section>
+            )}
+
+            {(quem === 'eu' || quem === 'todos') && (
+              <Radar todos={quem === 'todos'} aoAbrirLead={abrirLead} />
             )}
 
             {(atrasadas.length > 0 || followAtrasados.length > 0) && (

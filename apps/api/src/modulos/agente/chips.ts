@@ -18,22 +18,59 @@ export interface Chip {
   instancia: string;
   /** null: usa o limite do dia do agente. */
   limiteDia: number | null;
+  /** Teto de hoje pelo aquecimento do número (chip novo manda pouco e vai subindo); null: sem teto. */
+  tetoAquecimento?: number | null;
 }
 
-/** Mensagens automáticas (IA, cadência, sequência): as que contam no limite do chip. */
+/** Mensagens automáticas (IA, cadência, sequência). */
 export const ORIGENS_AUTOMATICAS = `('agente', 'cadencia', 'sequencia')`;
+/** Mensagens frias (o lead não escreveu antes): as que contam no limite, no intervalo e no aquecimento. */
+export const ORIGENS_FRIAS = `('cadencia', 'sequencia')`;
+
+/**
+ * Aquecimento: número novo que dispara muito é banido. Teto de mensagens frias por dia conforme a
+ * idade do número; depois de 31 dias vale só o limite do chip.
+ */
+export function tetoDeAquecimento(diasDeUso: number): number | null {
+  if (diasDeUso < 4) return 10;
+  if (diasDeUso < 8) return 20;
+  if (diasDeUso < 15) return 40;
+  if (diasDeUso < 31) return 80;
+  return null;
+}
+
+/**
+ * Intervalo com variação: entre uma mensagem fria e outra, o intervalo do agente mais 0 a 60% (o
+ * WhatsApp desconfia de envios em ritmo de relógio). A variação sai da hora do último envio, então
+ * é a mesma em todas as rodadas do motor.
+ */
+export function proximoEnvioPermitido(ultimaMs: number, intervaloSeg: number): number {
+  if (!ultimaMs) return 0;
+  const variacao = (Math.floor(ultimaMs / 1000) % 997) / 997; // 0..1, estável para o mesmo envio
+  return ultimaMs + intervaloSeg * 1000 * (1 + 0.6 * variacao);
+}
+
+const diasDesde = (data: string | Date) => Math.floor((Date.now() - new Date(data).getTime()) / 86_400_000);
 
 export async function listar(db: Executor) {
   const C = contaSql();
   const { rows } = await db.query(
     `SELECT c.id, c.nome, c.instancia, c.ativo, c.limite_dia AS "limiteDia", c.estado, c.estado_em AS "estadoEm",
+            c.aquecer, c.ativado_em AS "ativadoEm",
             (SELECT count(*)::int FROM comercial.mensagens m
-              WHERE m.chip_id = c.id AND m.status = 'enviada' AND m.origem IN ${ORIGENS_AUTOMATICAS}
+              WHERE m.chip_id = c.id AND m.status = 'enviada' AND m.origem IN ${ORIGENS_FRIAS}
                 AND m.enviado_em >= ${HOJE_SP}) AS "enviadosHoje",
+            (SELECT count(*)::int FROM comercial.mensagens m
+              WHERE m.chip_id = c.id AND m.status = 'enviada' AND m.origem = 'agente'
+                AND m.enviado_em >= ${HOJE_SP}) AS "respostasHoje",
             (SELECT count(*)::int FROM comercial.oportunidades o WHERE o.conta_id = c.conta_id AND o.chip_id = c.id) AS leads
        FROM comercial.chips c WHERE c.conta_id = ${C} ORDER BY c.id`,
   );
-  return rows;
+  return rows.map((r) => ({
+    ...r,
+    diasDeUso: diasDesde(r.ativadoEm),
+    tetoAquecimento: r.aquecer ? tetoDeAquecimento(diasDesde(r.ativadoEm)) : null,
+  }));
 }
 
 /** Chips em uso: os cadastrados e ativos ou, sem cadastro, o das credenciais. */
@@ -47,13 +84,22 @@ export async function emUso(
     instancia: string;
     limite_dia: number;
     ativo: boolean;
+    aquecer: boolean;
+    ativado_em: string;
   }>(
-    `SELECT id, nome, instancia, limite_dia, ativo FROM comercial.chips WHERE conta_id = ${contaSql()} ORDER BY id`,
+    `SELECT id, nome, instancia, limite_dia, ativo, aquecer, ativado_em FROM comercial.chips
+      WHERE conta_id = ${contaSql()} ORDER BY id`,
   );
   if (rows.length)
     return rows
       .filter((r) => r.ativo)
-      .map((r) => ({ id: r.id, nome: r.nome, instancia: r.instancia, limiteDia: r.limite_dia }));
+      .map((r) => ({
+        id: r.id,
+        nome: r.nome,
+        instancia: r.instancia,
+        limiteDia: r.limite_dia,
+        tetoAquecimento: r.aquecer ? tetoDeAquecimento(diasDesde(r.ativado_em)) : null,
+      }));
   return whatsapp?.instancia
     ? [{ id: null, nome: 'Chip principal', instancia: whatsapp.instancia, limiteDia: null }]
     : [];
@@ -69,10 +115,11 @@ export async function porInstancia(db: Executor, instancia: string | null): Prom
   return rows[0]?.id ?? null;
 }
 
-/** Uso de hoje de cada chip: quantas automáticas saíram e quando foi a última. */
+/** Uso de hoje de cada chip: quantas frias saíram e quando foi a última (fria ou resposta). */
 async function usoDeHoje(db: Executor) {
   const { rows } = await db.query<{ chip_id: number | null; hoje: number; ultima: string | null }>(
-    `SELECT chip_id, count(*) FILTER (WHERE enviado_em >= ${HOJE_SP})::int AS hoje, max(enviado_em) AS ultima
+    `SELECT chip_id, count(*) FILTER (WHERE enviado_em >= ${HOJE_SP} AND origem IN ${ORIGENS_FRIAS})::int AS hoje,
+            max(enviado_em) FILTER (WHERE origem IN ${ORIGENS_FRIAS}) AS ultima
        FROM comercial.mensagens
       WHERE conta_id = ${contaSql()} AND status = 'enviada' AND origem IN ${ORIGENS_AUTOMATICAS}
         AND enviado_em > now() - interval '2 days'
@@ -83,9 +130,17 @@ async function usoDeHoje(db: Executor) {
   );
 }
 
+/** Quantas frias o chip pode mandar hoje: o limite dele, ou o do aquecimento se for menor. */
+export function limiteDeHoje(c: Chip, limiteDoAgente: number): number {
+  const limite = c.limiteDia ?? limiteDoAgente;
+  return c.tetoAquecimento != null ? Math.min(limite, c.tetoAquecimento) : limite;
+}
+
 /**
- * Chip para mandar uma mensagem automática a este lead agora, ou null se não dá (o chip dele
- * chegou no limite de hoje ou ainda está no intervalo). Lead sem chip ganha o menos usado hoje.
+ * Chip para mandar uma mensagem automática a este lead agora, ou null se não dá. Mensagem fria
+ * respeita o limite de hoje (com o aquecimento) e o intervalo com variação; resposta a quem
+ * escreveu sai na hora pelo chip do lead (é conversa, não disparo). Lead sem chip ganha o menos
+ * usado hoje.
  */
 export async function chipParaAutomatica(
   db: Executor,
@@ -93,20 +148,25 @@ export async function chipParaAutomatica(
   chips: Chip[],
   limites: { limiteDia: number; intervaloSeg: number },
   agora = Date.now(),
+  opcoes: { resposta?: boolean } = {},
 ): Promise<Chip | null> {
   if (!chips.length) return null;
   const uso = await usoDeHoje(db);
   const livre = (c: Chip) => {
+    if (opcoes.resposta) return true;
     const u = uso.get(c.id ?? 0) ?? { hoje: 0, ultima: 0 };
-    return u.hoje < (c.limiteDia ?? limites.limiteDia) && agora - u.ultima >= limites.intervaloSeg * 1000;
+    return (
+      u.hoje < limiteDeHoje(c, limites.limiteDia) &&
+      agora >= proximoEnvioPermitido(u.ultima, limites.intervaloSeg)
+    );
   };
   const doLead = await chipDoLead(db, empresaId);
   const dele = doLead != null ? chips.find((c) => c.id === doLead) : undefined;
   if (dele) return livre(dele) ? dele : null;
-  const opcoes = chips
+  const candidatos = chips
     .filter(livre)
     .sort((a, b) => (uso.get(a.id ?? 0)?.hoje ?? 0) - (uso.get(b.id ?? 0)?.hoje ?? 0));
-  const escolhido = opcoes[0] ?? null;
+  const escolhido = candidatos[0] ?? null;
   if (escolhido?.id) await fixarChip(db, empresaId, escolhido.id);
   return escolhido;
 }
@@ -141,13 +201,14 @@ export async function fixarChip(db: Executor, empresaId: number, chipId: number)
 
 export async function criar(
   db: Executor,
-  d: { nome: string; instancia: string; limiteDia: number },
+  d: { nome: string; instancia: string; limiteDia: number; aquecer?: boolean; diasDeUso?: number },
 ): Promise<number> {
   try {
     const { rows } = await db.query<{ id: number }>(
-      `INSERT INTO comercial.chips (conta_id, nome, instancia, limite_dia) VALUES (${contaSql()}, $1, $2, $3)
+      `INSERT INTO comercial.chips (conta_id, nome, instancia, limite_dia, aquecer, ativado_em)
+       VALUES (${contaSql()}, $1, $2, $3, $4, current_date - $5::int)
        RETURNING id`,
-      [d.nome, d.instancia, d.limiteDia],
+      [d.nome, d.instancia, d.limiteDia, d.aquecer ?? true, d.diasDeUso ?? 0],
     );
     return rows[0]!.id;
   } catch (erro) {
@@ -160,12 +221,14 @@ export async function criar(
 export async function atualizar(
   db: Executor,
   id: number,
-  d: { nome?: string; ativo?: boolean; limiteDia?: number },
+  d: { nome?: string; ativo?: boolean; limiteDia?: number; aquecer?: boolean; diasDeUso?: number },
 ): Promise<void> {
   const { rowCount } = await db.query(
-    `UPDATE comercial.chips SET nome = coalesce($2, nome), ativo = coalesce($3, ativo), limite_dia = coalesce($4, limite_dia)
+    `UPDATE comercial.chips SET nome = coalesce($2, nome), ativo = coalesce($3, ativo), limite_dia = coalesce($4, limite_dia),
+            aquecer = coalesce($5, aquecer),
+            ativado_em = CASE WHEN $6::int IS NULL THEN ativado_em ELSE current_date - $6::int END
       WHERE id = $1 AND conta_id = ${contaSql()}`,
-    [id, d.nome ?? null, d.ativo ?? null, d.limiteDia ?? null],
+    [id, d.nome ?? null, d.ativo ?? null, d.limiteDia ?? null, d.aquecer ?? null, d.diasDeUso ?? null],
   );
   if (!rowCount) throw AppError.naoEncontrado('Chip');
 }

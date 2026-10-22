@@ -378,9 +378,9 @@ export async function atualizar(pool: Pool, empresaId: number, d: FunilAtualizar
     if (d.motivo !== undefined && para === atual) set('motivo', d.motivo);
     if (d.agente !== undefined) {
       set('agente', d.agente);
-      sets.push('agente_pausa = NULL');
+      sets.push('agente_pausa = NULL', 'agente_resumo = NULL');
     }
-    if (d.devolverParaIa) sets.push('agente_pausa = NULL');
+    if (d.devolverParaIa) sets.push('agente_pausa = NULL', 'agente_resumo = NULL');
     if (d.etiquetas !== undefined) set('etiquetas', [...new Set(d.etiquetas)]);
     if (sets.length)
       await tx.query(
