@@ -1,8 +1,10 @@
 import {
   type AvaliacaoIa,
+  consultaPrincipal,
   contatosDosDiretorios,
   instagramNosResultados,
   interpretarLinkedin,
+  nomeDeBusca,
   normalizarSite,
   type PerfilInstagram,
   palavrasDaEmpresa,
@@ -231,21 +233,44 @@ export async function enriquecerEmpresa(
     // Lavrale, Econodata…) citam telefone e e-mail no próprio trecho; o painel traz o telefone da
     // loja; e a IA lê a página inteira atrás do Instagram, do site e de quem é dono ou comprador.
     // A mesma busca poupa a busca separada do Instagram e dá o site quando o Maps não tem.
+    // Busca principal como uma pessoa digitaria: a marca entre aspas, o ramo e a cidade
+    // ("GEFPEL" autopeças salvador). Ela costuma trazer de uma vez o site, o Instagram, o LinkedIn
+    // de quem trabalha lá e os diretórios. A razão social só é buscada se a principal não achar nada
+    // desta empresa.
+    const nome = nomeDeBusca(empresa.nome, empresa.razao_social);
+    const palavrasEmpresa = palavrasDaEmpresa(empresa.nome, empresa.razao_social);
     let consultaDiretorios: string | null = null;
     let instagramBusca: string | null = null;
     let siteBusca: string | null = null;
+    /** Resultados do LinkedIn que já vieram nas buscas do Google (sem custo extra). */
+    const linkedinDaBusca: ResultadoGoogle[] = [];
     if (fontes.diretorios) {
       try {
-        const d = await fontes.diretorios.buscar({
+        let d = await fontes.diretorios.buscar({
           nome: empresa.nome,
           razaoSocial: empresa.razao_social,
           cidade: empresa.cidade,
+          consulta: consultaPrincipal(empresa.nome, empresa.razao_social, empresa.cidade),
         });
+        const falaDaEmpresa = (r: ResultadoGoogle) => {
+          const t = `${r.titulo} ${r.descricao} ${r.url}`
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+          return palavrasEmpresa.some((p) => t.includes(p));
+        };
+        if (!d.resultados.some(falaDaEmpresa) && empresa.razao_social) {
+          // Nada desta empresa pela marca: tenta a razão social (diretórios de CNPJ).
+          const r2 = await fontes.diretorios.buscar({
+            nome: empresa.nome,
+            razaoSocial: empresa.razao_social,
+            cidade: empresa.cidade,
+          });
+          d = { ...r2, painel: r2.painel ?? d.painel };
+        }
         consultaDiretorios = d.consulta;
-        const achados = contatosDosDiretorios(
-          d.resultados,
-          palavrasDaEmpresa(empresa.nome, empresa.razao_social),
-        );
+        linkedinDaBusca.push(...d.resultados.filter((r) => /linkedin\.com\//i.test(r.url)));
+        const achados = contatosDosDiretorios(d.resultados, palavrasEmpresa);
         for (const a of achados) {
           c.contato({
             canal: a.canal,
@@ -266,10 +291,7 @@ export async function enriquecerEmpresa(
           });
         instagramBusca = instagramNosResultados(d.resultados, empresa.nome);
         // O próprio site aparece entre os resultados (alcoolmaq.com.br): não depende da IA apontar.
-        siteBusca = siteProprioNosResultados(
-          d.resultados,
-          palavrasDaEmpresa(empresa.nome, empresa.razao_social),
-        );
+        siteBusca = siteProprioNosResultados(d.resultados, palavrasEmpresa);
 
         // A IA lê os resultados; o que ela devolve só vale se estiver escrito na busca.
         const daIa: string[] = [];
@@ -450,26 +472,37 @@ export async function enriquecerEmpresa(
           : `${site.paginas.length} página(s) lida(s), sem contatos no texto.`,
         url,
       );
-    } else {
+    } else if (siteParaLer) {
+      // O site existe (está no Google), só não deixou o robô ler: comum em sites com proteção
+      // contra robôs. Ele entra nos contatos e a trilha não diz que "falhou".
+      c.contato({
+        canal: 'site',
+        valor: normalizarSite(siteParaLer) ?? siteParaLer,
+        fonte: siteMaps ? 'maps' : 'google',
+        confianca: 80,
+        urlOrigem: siteParaLer,
+      });
       await etapa(
         'site',
-        siteParaLer ? 'erro' : 'pulada',
-        siteParaLer
-          ? 'O site não respondeu (fora do ar ou bloqueia leitura automática).'
-          : 'Sem site no Google.',
+        'encontrado',
+        `${(normalizarSite(siteParaLer) ?? siteParaLer).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}: o site existe, mas bloqueia a leitura automática. Os contatos dele não entraram; abra o link para ver.`,
         siteParaLer,
       );
+    } else {
+      await etapa('site', 'pulada', 'Sem site no Google.', null);
     }
     if (!instagram) instagram = instagramBusca;
 
     // 4. Instagram: pelo site, pela busca da razão social; se não, procura no Google.
     let perfil: PerfilInstagram | null = null;
     let falhaBuscaInstagram: string | null = null;
-    const consultaInstagram = `"${empresa.nome}" ${empresa.cidade.toLowerCase()} instagram`;
+    const consultaInstagram = `"${nome.nucleo}" ${empresa.cidade.toLowerCase()} instagram`;
     if (!instagram && fontes.google && ajustes.buscarInstagram) {
       try {
         const r = await fontes.google.buscar([consultaInstagram]);
-        instagram = instagramNosResultados(r.get(consultaInstagram) ?? [], empresa.nome);
+        const res = r.get(consultaInstagram) ?? [];
+        instagram = instagramNosResultados(res, empresa.nome);
+        linkedinDaBusca.push(...res.filter((x) => /linkedin\.com\//i.test(x.url)));
       } catch (erro) {
         log.warn({ err: erro }, 'falha ao procurar o Instagram no Google');
         falhaBuscaInstagram = explicarFalhaBusca(erro, fontes.google.nome);
@@ -711,152 +744,141 @@ export async function enriquecerEmpresa(
       await etapa('ia', 'pulada', `IA não configurada nesta conta. ${motivo}`);
     }
 
-    // 6. LinkedIn: pessoas de compras/gestão e os sócios-administradores, só para leads que valem a
-    // busca. Perfil só entra se o próprio LinkedIn disser que a pessoa trabalha NESTA empresa:
-    // nome igual não basta (homônimos são comuns).
-    if (ajustes.faixasLinkedin.has(faixa) && fontes.google) {
-      const nomeBusca = empresa.nome.replace(/["]/g, '');
-      // Economia: duas buscas trazem os funcionários de qualquer cargo e a página da empresa (a
-      // busca por cargo ficou de fora: a de funcionários já traz quem tem cargo no título). O sócio
-      // só ganha busca própria se não aparecer nessas duas.
-      // Busca ampla, como uma pessoa digitaria: nome da loja + cidade no LinkedIn. Traz perfis
-      // sem o cargo no título e a página da empresa.
-      const consultaAmpla = `site:linkedin.com "${nomeBusca}" ${empresa.cidade.toLowerCase()}`;
-      // Funcionários de qualquer cargo, sem a cidade: muitos perfis dizem só "Brasil".
-      const consultaPessoas = `site:linkedin.com/in "${nomeBusca}"`;
-      const admins = socios.filter((s) => s.prioridade === 1).slice(0, 2);
-      const consultasSocios = admins.map((s) => `site:linkedin.com/in "${s.nome}" ${nomeBusca}`);
-      const palavras = palavrasDaEmpresa(empresa.nome, empresa.razao_social);
-      try {
-        if (!palavras.length) {
-          // "Js Peças", "Auto Peças Salvador": nada no nome que diferencie de outras lojas.
-          await etapa(
-            'linkedin',
-            'pulada',
-            'Nome da empresa genérico demais para confirmar no LinkedIn quem trabalha nela.',
-          );
-        } else {
-          const r = await buscarComRetentativa(fontes.google, [consultaAmpla, consultaPessoas]);
-          let achadas = 0;
-          const aceitos: string[] = [];
-          const urlsAceitas = new Set<string>();
-          const resultadosEmpresa = [...(r.get(consultaAmpla) ?? []), ...(r.get(consultaPessoas) ?? [])];
-          // Sócio que não apareceu nas duas buscas: aí sim, uma busca pelo nome dele.
-          const faltam = admins
-            .map((s, i) => ({ s, consulta: consultasSocios[i] ?? '' }))
-            .filter(({ s }) => !perfilDoSocio(s.nome, resultadosEmpresa, palavras));
-          if (faltam.length) {
-            const r2 = await buscarComRetentativa(
-              fontes.google,
-              faltam.map((f) => f.consulta),
-            );
-            for (const [k, v] of r2) r.set(k, v);
-          }
-          for (const p of pessoasDaEmpresa(resultadosEmpresa, palavras)) {
-            if (urlsAceitas.has(p.url)) continue;
-            urlsAceitas.add(p.url);
-            aceitos.push(p.cargo ? `${p.nome} (${p.cargo})` : p.nome);
-            const papel = papelPeloCargo(p.cargo);
-            c.pessoa({
-              nome: p.nome,
-              cargo: p.cargo,
-              papel,
-              linkedin: p.url,
-              fonte: 'linkedin',
-              urlOrigem: p.url,
-            });
-            c.contato({
-              canal: 'linkedin',
-              valor: p.url,
-              fonte: 'linkedin',
-              confianca: 70,
-              pessoa: p.nome,
-              urlOrigem: p.url,
-            });
-            achadas++;
-          }
-          admins.forEach((s, i) => {
-            const resultados = [...resultadosEmpresa, ...(r.get(consultasSocios[i] ?? '') ?? [])];
-            const perfil = perfilDoSocio(s.nome, resultados, palavras);
-            if (!perfil) return;
-            if (!urlsAceitas.has(perfil.url)) aceitos.push(`${s.nome} (sócio)`);
-            c.pessoa({
-              nome: s.nome,
-              cargo: perfil.cargo,
-              fonte: 'linkedin',
-              linkedin: perfil.url,
-              papel: 'socio',
-              urlOrigem: perfil.url,
-            });
-            c.contato({
-              canal: 'linkedin',
-              valor: perfil.url,
-              fonte: 'linkedin',
-              confianca: 75,
-              pessoa: s.nome,
-              urlOrigem: perfil.url,
-            });
-            urlsAceitas.add(perfil.url);
-          });
-          achadas = urlsAceitas.size;
-          // Página da empresa no LinkedIn (linkedin.com/company/…) com o nome da loja.
-          const paginaEmpresa = resultadosEmpresa.find((x) => {
-            if (!/linkedin\.com\/company\//i.test(x.url)) return false;
-            const t = `${x.titulo} ${x.url}`
-              .normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
-              .toLowerCase();
-            return palavras.some((w) => t.includes(w));
-          });
-          if (paginaEmpresa)
-            c.contato({
-              canal: 'linkedin',
-              valor: paginaEmpresa.url.split('?')[0] ?? paginaEmpresa.url,
-              fonte: 'linkedin',
-              confianca: 70,
-              rotulo: 'Página da empresa no LinkedIn',
-              urlOrigem: paginaEmpresa.url,
-            });
-          const pagina = paginaEmpresa ? ' Página da empresa no LinkedIn encontrada.' : '';
-          // Quantos perfis o Google trouxe no total: o que não entrou foi descartado de propósito.
-          const vistos = new Set<string>();
-          for (const lista of r.values())
-            for (const x of lista) {
-              const p = interpretarLinkedin(x);
-              if (p) vistos.add(p.url);
-            }
-          const ignorados = Math.max(0, vistos.size - achadas);
-          const motivoIgnorados = `não citam "${palavras.join(' ')}" no emprego atual (outra empresa ou homônimo)`;
-          await etapa(
-            'linkedin',
-            achadas ? 'encontrado' : 'sem_resultado',
-            achadas
-              ? `${achadas} de ${vistos.size} perfil(is) trabalham nesta empresa: ${aceitos.join(', ')}.${ignorados ? ` ${ignorados} ignorado(s): ${motivoIgnorados}.` : ''}${pagina}`
-              : vistos.size
-                ? `O Google trouxe ${vistos.size} perfil(is), nenhum desta empresa: ${motivoIgnorados}.${pagina}`
-                : `Nenhum perfil do LinkedIn no Google com o nome desta empresa.${pagina}`,
-            // Achou a página da empresa: o link leva direto para ela, não para a busca.
-            paginaEmpresa
-              ? (paginaEmpresa.url.split('?')[0] ?? paginaEmpresa.url)
-              : linkGoogle(consultaAmpla),
-          );
-        }
-      } catch (erro) {
-        await etapa(
-          'linkedin',
-          'erro',
-          explicarFalhaBusca(erro, fontes.google.nome),
-          linkGoogle(consultaAmpla),
-        );
-      }
-    } else {
+    // 6. LinkedIn: aproveita os perfis que já vieram nas buscas do Google (sem custo). Só leads
+    // que valem a busca ganham UMA busca a mais ("site:linkedin.com" + marca), e só se nada veio.
+    // Sócio não ganha busca própria: o nome dele é procurado nos perfis achados. Perfil só entra se
+    // o próprio LinkedIn disser que a pessoa trabalha NESTA empresa (homônimos são comuns).
+    const consultaLinkedin = `site:linkedin.com "${nome.nucleo}"`;
+    const palavras = palavrasEmpresa;
+    const temLinkedin = (lista: ResultadoGoogle[]) =>
+      pessoasDaEmpresa(lista, palavras).length > 0 ||
+      lista.some((x) => /linkedin\.com\/company\//i.test(x.url));
+    const podeBuscar = ajustes.faixasLinkedin.has(faixa) && !!fontes.google;
+    if (!palavras.length) {
+      // "Js Peças", "Auto Peças Salvador": nada no nome que diferencie de outras lojas.
+      await etapa(
+        'linkedin',
+        'pulada',
+        'Nome da empresa genérico demais para confirmar no LinkedIn quem trabalha nela.',
+      );
+    } else if (!podeBuscar && !temLinkedin(linkedinDaBusca)) {
       await etapa(
         'linkedin',
         'pulada',
         !fontes.google
           ? 'Sem busca no Google configurada (SERPER_API_KEY ou APIFY_TOKEN).'
-          : `Só para leads ${[...ajustes.faixasLinkedin].join(' e ')}.`,
+          : `Nada do LinkedIn na busca principal; a busca própria é só para leads ${[...ajustes.faixasLinkedin].join(' e ')}.`,
       );
+    } else {
+      try {
+        const resultadosEmpresa = [...linkedinDaBusca];
+        let buscou = false;
+        if (!temLinkedin(resultadosEmpresa) && podeBuscar && fontes.google) {
+          const r0 = await buscarComRetentativa(fontes.google, [consultaLinkedin]);
+          resultadosEmpresa.push(...(r0.get(consultaLinkedin) ?? []));
+          buscou = true;
+        }
+        const admins = socios.filter((s) => s.prioridade === 1);
+        let achadas = 0;
+        const aceitos: string[] = [];
+        const urlsAceitas = new Set<string>();
+        for (const p of pessoasDaEmpresa(resultadosEmpresa, palavras)) {
+          if (urlsAceitas.has(p.url)) continue;
+          urlsAceitas.add(p.url);
+          aceitos.push(p.cargo ? `${p.nome} (${p.cargo})` : p.nome);
+          const papel = papelPeloCargo(p.cargo);
+          c.pessoa({
+            nome: p.nome,
+            cargo: p.cargo,
+            papel,
+            linkedin: p.url,
+            fonte: 'linkedin',
+            urlOrigem: p.url,
+          });
+          c.contato({
+            canal: 'linkedin',
+            valor: p.url,
+            fonte: 'linkedin',
+            confianca: 70,
+            pessoa: p.nome,
+            urlOrigem: p.url,
+          });
+          achadas++;
+        }
+        // Sócio: o nome dele entre os perfis já achados (sem busca por sócio).
+        for (const s of admins) {
+          const perfil = perfilDoSocio(s.nome, resultadosEmpresa, palavras);
+          if (!perfil) continue;
+          if (!urlsAceitas.has(perfil.url)) aceitos.push(`${s.nome} (sócio)`);
+          c.pessoa({
+            nome: s.nome,
+            cargo: perfil.cargo,
+            fonte: 'linkedin',
+            linkedin: perfil.url,
+            papel: 'socio',
+            urlOrigem: perfil.url,
+          });
+          c.contato({
+            canal: 'linkedin',
+            valor: perfil.url,
+            fonte: 'linkedin',
+            confianca: 75,
+            pessoa: s.nome,
+            urlOrigem: perfil.url,
+          });
+          urlsAceitas.add(perfil.url);
+        }
+        const r = new Map([['_', resultadosEmpresa]]);
+        achadas = urlsAceitas.size;
+        // Página da empresa no LinkedIn (linkedin.com/company/…) com o nome da loja.
+        const paginaEmpresa = resultadosEmpresa.find((x) => {
+          if (!/linkedin\.com\/company\//i.test(x.url)) return false;
+          const t = `${x.titulo} ${x.url}`
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+          return palavras.some((w) => t.includes(w));
+        });
+        if (paginaEmpresa)
+          c.contato({
+            canal: 'linkedin',
+            valor: paginaEmpresa.url.split('?')[0] ?? paginaEmpresa.url,
+            fonte: 'linkedin',
+            confianca: 70,
+            rotulo: 'Página da empresa no LinkedIn',
+            urlOrigem: paginaEmpresa.url,
+          });
+        const pagina = paginaEmpresa ? ' Página da empresa no LinkedIn encontrada.' : '';
+        // Quantos perfis o Google trouxe no total: o que não entrou foi descartado de propósito.
+        const vistos = new Set<string>();
+        for (const lista of r.values())
+          for (const x of lista) {
+            const p = interpretarLinkedin(x);
+            if (p) vistos.add(p.url);
+          }
+        const ignorados = Math.max(0, vistos.size - achadas);
+        const motivoIgnorados = `não citam "${palavras.join(' ')}" no emprego atual (outra empresa ou homônimo)`;
+        await etapa(
+          'linkedin',
+          achadas ? 'encontrado' : 'sem_resultado',
+          achadas
+            ? `${achadas} de ${vistos.size} perfil(is) trabalham nesta empresa: ${aceitos.join(', ')}.${ignorados ? ` ${ignorados} ignorado(s): ${motivoIgnorados}.` : ''}${pagina}`
+            : vistos.size
+              ? `O Google trouxe ${vistos.size} perfil(is), nenhum desta empresa: ${motivoIgnorados}.${pagina}`
+              : `Nenhum perfil do LinkedIn no Google com o nome desta empresa.${pagina}`,
+          // Achou a página da empresa: o link leva direto para ela, não para a busca.
+          paginaEmpresa
+            ? (paginaEmpresa.url.split('?')[0] ?? paginaEmpresa.url)
+            : linkGoogle(buscou ? consultaLinkedin : (consultaDiretorios ?? consultaLinkedin)),
+        );
+      } catch (erro) {
+        await etapa(
+          'linkedin',
+          'erro',
+          explicarFalhaBusca(erro, fontes.google?.nome),
+          linkGoogle(consultaLinkedin),
+        );
+      }
     }
 
     // 7. Google Places: a loja segue aberta? Telefone atualizado?

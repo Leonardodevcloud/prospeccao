@@ -193,7 +193,7 @@ export function Nichos() {
       <div className="topo">
         <div>
           <h1>Nichos</h1>
-          <p>Perfis de quem prospectar: CNAEs, termos de busca no Maps e quem decide.</p>
+          <p>Perfis de quem prospectar: CNAEs, termos de busca no Maps e os cargos que você quer alcançar.</p>
         </div>
         <Button variant="primary" icon="plus" onClick={() => setEditando('novo')}>
           Novo nicho
@@ -223,7 +223,7 @@ export function Nichos() {
                 <th>Nicho</th>
                 <th>CNAEs</th>
                 <th>Busca no Maps</th>
-                <th>Decisor</th>
+                <th>Cargos-alvo</th>
                 <th>Campanhas</th>
                 <th>
                   <span className="pp-sr">Ações</span>

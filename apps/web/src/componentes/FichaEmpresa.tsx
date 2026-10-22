@@ -384,7 +384,7 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
               linkedin={p.linkedin}
               evidencia={
                 p.naoDecisor
-                  ? 'Você marcou que esta pessoa não é quem decide.'
+                  ? 'Você marcou que esta não é a pessoa certa para abordar.'
                   : (p.evidencia ?? provaDaPessoa(p))
               }
               contatos={p.decisor ? [...proprios, ...melhores] : proprios}
@@ -397,7 +397,7 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
                     retorno.mutate({ tipo: 'nao_decisor', valor: p.nome, desfazer: !!p.naoDecisor })
                   }
                 >
-                  {p.naoDecisor ? 'Desfazer' : 'Não é quem decide'}
+                  {p.naoDecisor ? 'Desfazer' : 'Não é a pessoa certa'}
                 </Button>
               }
             />
@@ -583,7 +583,7 @@ export function FichaEmpresa({
 
             <section className="secao">
               <h2>
-                Quem decide{' '}
+                Possíveis decisores{' '}
                 <small>
                   {e.pessoas.length
                     ? `${e.pessoas.length} ${e.pessoas.length === 1 ? 'pessoa' : 'pessoas'}`

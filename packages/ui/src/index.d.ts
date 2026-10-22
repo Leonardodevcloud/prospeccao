@@ -108,7 +108,7 @@ export interface DecisorCardProps {
   /** Trecho da fonte que comprova o cargo (ex.: frase do site). */
   evidencia?: string;
   contatos?: ContactRowProps[];
-  /** Botões extras no cabeçalho (ex.: "não é quem decide"). */
+  /** Botões extras no cabeçalho (ex.: "não é a pessoa certa"). */
   acoes?: React.ReactNode;
 }
 export declare function DecisorCard(props: DecisorCardProps): React.ReactElement;

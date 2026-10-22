@@ -22,7 +22,7 @@ const ABAS = [
   { id: 'todos', rotulo: 'Todos' },
   { id: 'A', rotulo: 'Nota A' },
   { id: 'B', rotulo: 'Nota B' },
-  { id: 'decisor', rotulo: 'Com decisor' },
+  { id: 'decisor', rotulo: 'Com possível decisor' },
   { id: 'whatsapp', rotulo: 'Com WhatsApp' },
   { id: 'entrega', rotulo: 'Com entrega' },
   { id: 'pendente', rotulo: 'Aguardando enriquecimento' },
@@ -416,7 +416,7 @@ export function Leads() {
                   </th>
                   <th>Empresa</th>
                   <th>Nota</th>
-                  <th>Quem decide</th>
+                  <th>Possível decisor</th>
                   <th>Melhor contato</th>
                   <th>Google</th>
                 </tr>

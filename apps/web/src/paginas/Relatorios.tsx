@@ -252,7 +252,7 @@ export function Relatorios() {
                 delta={`${fmtPct(k.faixaA + k.faixaB, k.enriquecidos)} dos enriquecidos`}
               />
               <Stat
-                rotulo="Com decisor"
+                rotulo="Com possível decisor"
                 valor={fmtNumero(k.comDecisor)}
                 delta={`${fmtPct(k.comDecisor, k.encontrados)} dos encontrados`}
               />
@@ -384,7 +384,7 @@ export function Relatorios() {
                     <th>Campanha</th>
                     <th className="num">Encontrados</th>
                     <th className="num">A / B / C</th>
-                    <th className="num">Com decisor</th>
+                    <th className="num">Com possível decisor</th>
                     <th className="num">Novos</th>
                     <th className="num">No funil</th>
                     <th className="num">Descartados</th>
@@ -452,7 +452,7 @@ export function Relatorios() {
             </div>
             <p className="quieto nota-rodape" style={{ padding: '0 16px 16px' }}>
               {r.naoDecisores
-                ? `${fmtNumero(r.naoDecisores)} pessoa(s) marcada(s) como "não é quem decide". `
+                ? `${fmtNumero(r.naoDecisores)} pessoa(s) marcada(s) como "não é a pessoa certa". `
                 : ''}
               Fonte com taxa de erro alta deve pesar menos: me avise que eu ajusto a confiança dela.
             </p>

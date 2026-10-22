@@ -163,7 +163,7 @@ export function CadeiaContatos(props: {
             <b>{fmtNome(c.nome)}</b>
             {c.cargo && <span className="quieto"> · {c.cargo}</span>}
             <span className="cadeia__selos">
-              {c.decisor && <Badge tone="brand">Decisor</Badge>}
+              {c.decisor && <Badge tone="brand">Decide a compra</Badge>}
               {agora && <Badge tone="neutral">Conversa com ele(a)</Badge>}
             </span>
           </div>

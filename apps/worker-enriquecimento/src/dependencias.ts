@@ -42,7 +42,13 @@ export interface Fontes {
   lugar?: { achar(empresa: EmpresaParaAchar): Promise<LugarAchado> } | null;
   /** Busca a razão social no Google e lê telefone/e-mail citados em diretórios (Serper). */
   diretorios?: {
-    buscar(empresa: { nome: string; razaoSocial: string | null; cidade: string }): Promise<BuscaDiretorios>;
+    buscar(empresa: {
+      nome: string;
+      razaoSocial: string | null;
+      cidade: string;
+      /** Busca pronta (a principal: "GEFPEL" autopeças salvador). Sem ela, busca a razão social. */
+      consulta?: string;
+    }): Promise<BuscaDiretorios>;
   } | null;
   /** Base paga (Direct Data): telefones atualizados por CNPJ. Custa por consulta. */
   basePaga?: { nome: string; precoBrl: number; consultar(cnpj: string): Promise<ConsultaBasePaga> } | null;

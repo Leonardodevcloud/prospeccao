@@ -165,6 +165,15 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
                 'Pedro Alves - Comprador - Outra Empresa Qualquer | LinkedIn',
                 'https://br.linkedin.com/in/pedro',
               ),
+              // O sócio aparece na mesma busca; o homônimo de outra empresa não pode ser ligado a ele.
+              resultado(
+                'João da Silva Caldas - Operador de Produção - Tronox | LinkedIn',
+                'https://br.linkedin.com/in/joaocaldas',
+              ),
+              resultado(
+                'João da Silva - Sócio - Ladeira Auto Peças | LinkedIn',
+                'https://br.linkedin.com/in/joaodasilva',
+              ),
             ]);
         }
         return m;
@@ -311,7 +320,9 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(pessoas[1]).toMatchObject({ linkedin_url: 'https://br.linkedin.com/in/joaodasilva' });
     expect(pessoas.some((p) => p.nome === 'Pedro Alves')).toBe(false);
     // Além da busca por cargo, a busca ampla (nome da loja + cidade), como uma pessoa digitaria.
-    expect(consultas).toContain('site:linkedin.com "Ladeira Auto Peças" salvador');
+    // Uma busca de LinkedIn pela marca; nenhuma busca por sócio.
+    expect(consultas).toContain('site:linkedin.com "Ladeira"');
+    expect(consultas.filter((q) => q.includes('JOAO DA SILVA'))).toEqual([]);
     expect(pessoas.some((p) => p.nome === 'Emmanuel Junior')).toBe(false);
 
     const { rows: contatos } = await pool.query(
@@ -348,7 +359,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
   it('lead só do Maps: acha Instagram pelo Google, CNPJ na bio, e não gasta LinkedIn com nota C', async () => {
     consultas.length = 0;
     await enriquecerEmpresa(deps(fontesCompletas()), { empresaId: 2, campanhaId: 1 });
-    expect(consultas).toEqual(['"Nova Era Moto Peças" salvador instagram']);
+    expect(consultas).toEqual(['"Nova Era" salvador instagram']);
     const { rows } = await pool.query(
       `SELECT faixa, instagram, cnpj_achado FROM enriquecimento.leads WHERE empresa_id = 2`,
     );
@@ -358,7 +369,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     );
     expect(etapas.find((e) => e.etapa === 'linkedin')).toMatchObject({
       status: 'pulada',
-      detalhe: 'Só para leads A e B.',
+      detalhe: 'Nada do LinkedIn na busca principal; a busca própria é só para leads A e B.',
     });
     expect(etapas.find((e) => e.etapa === 'receita')?.status).toBe('pulada');
   });

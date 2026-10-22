@@ -236,9 +236,9 @@ export interface BuscaDiretorios {
 /** Busca a razão social (ou o nome) com a cidade: 1 crédito do Serper. */
 export async function buscarDiretorios(
   cfg: ConfigSerper,
-  e: { nome: string; razaoSocial?: string | null; cidade: string },
+  e: { nome: string; razaoSocial?: string | null; cidade: string; consulta?: string },
 ): Promise<BuscaDiretorios> {
-  const consulta = `"${(e.razaoSocial || e.nome).replace(/"/g, '')}" ${e.cidade.toLowerCase()}`;
+  const consulta = e.consulta ?? `"${(e.razaoSocial || e.nome).replace(/"/g, '')}" ${e.cidade.toLowerCase()}`;
   cfg.aoBuscar?.(1);
   const r = await requisitarJson<
     RespostaSerper & {

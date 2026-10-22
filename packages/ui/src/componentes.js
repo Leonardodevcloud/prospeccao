@@ -690,7 +690,7 @@ function DecisorCard(props) {
           'h4',
           { className: 'pp-decisor__nome' },
           props.nome,
-          props.principal ? h(Badge, { tone: 'brand' }, 'Decisor principal') : null,
+          props.principal ? h(Badge, { tone: 'brand' }, 'Começar por aqui') : null,
         ),
         h(
           'p',
