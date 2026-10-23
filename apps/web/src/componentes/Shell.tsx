@@ -13,11 +13,16 @@ import { Logo } from './Marca';
 import { MinhaConta } from './MinhaConta';
 import { Dono, useSessao } from './Sessao';
 
-/** Itens do menu; "admin" só aparece para o administrador e "master" só para quem administra a plataforma. */
+/**
+ * Itens do menu, na ordem do trabalho: o dia, achar os leads (prospecção), vender e acompanhar
+ * (gestão). "admin" só aparece para o administrador e "master" só para quem administra a plataforma.
+ */
 const ITENS: {
   para: string;
   rotulo: string;
   icone: string;
+  /** Título do grupo (aparece antes do primeiro item visível do grupo). */
+  secao?: 'Prospecção' | 'Vendas' | 'Gestão' | 'Plataforma';
   fim?: boolean;
   admin?: boolean;
   master?: boolean;
@@ -27,20 +32,20 @@ const ITENS: {
   modulos?: ('whatsapp' | 'agente_ia' | 'email')[];
 }[] = [
   { para: '/hoje', rotulo: 'Meu dia', icone: 'calendar' },
-  { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle' },
-  { para: '/email', rotulo: 'E-mail', icone: 'mail', modulos: ['email'] },
-  { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
-  { para: '/', rotulo: 'Leads', icone: 'users', fim: true },
-  { para: '/agente', rotulo: 'Agente', icone: 'bot', modulos: ['whatsapp', 'agente_ia'] },
-  { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up' },
-  { para: '/equipe', rotulo: 'Equipe', icone: 'id-card' },
-  { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', comPlano: true },
-  { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
-  { para: '/atividade', rotulo: 'Atividade', icone: 'clock', admin: true },
-  { para: '/nichos', rotulo: 'Nichos', icone: 'store', admin: true },
-  { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', admin: true },
-  { para: '/master', rotulo: 'Clientes e planos', icone: 'building-2', master: true },
-  { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', master: true },
+  { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers', secao: 'Prospecção' },
+  { para: '/nichos', rotulo: 'Nichos', icone: 'store', secao: 'Prospecção', admin: true },
+  { para: '/', rotulo: 'Leads', icone: 'users', secao: 'Prospecção', fim: true },
+  { para: '/atividade', rotulo: 'Atividade', icone: 'clock', secao: 'Prospecção', admin: true },
+  { para: '/funil', rotulo: 'Funil', icone: 'kanban', secao: 'Vendas' },
+  { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle', secao: 'Vendas' },
+  { para: '/email', rotulo: 'E-mail', icone: 'mail', secao: 'Vendas', modulos: ['email'] },
+  { para: '/agente', rotulo: 'Agente', icone: 'bot', secao: 'Vendas', modulos: ['whatsapp', 'agente_ia'] },
+  { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up', secao: 'Gestão' },
+  { para: '/equipe', rotulo: 'Equipe', icone: 'id-card', secao: 'Gestão' },
+  { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', secao: 'Gestão', comPlano: true },
+  { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', secao: 'Gestão', admin: true },
+  { para: '/master', rotulo: 'Clientes e planos', icone: 'building-2', secao: 'Plataforma', master: true },
+  { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', secao: 'Plataforma', master: true },
 ];
 
 /** O que está quebrado (e-mail não sai, chip caiu…): a faixa no topo, para o administrador. */
@@ -140,9 +145,9 @@ export function Shell() {
             : (!i.admin || sessao.data?.papel === 'admin') &&
               (!i.comPlano || !!sessao.data?.conta.plano) &&
               (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
-        ).map((i) => (
+        ).map((i, n, visiveis) => (
           <Fragment key={i.para}>
-            {i.para === '/master' && <span className="nav__secao">Plataforma</span>}
+            {i.secao && i.secao !== visiveis[n - 1]?.secao && <span className="nav__secao">{i.secao}</span>}
             <NavLink to={i.para} end={i.fim} className="nav__link">
               <Icon name={i.icone} size={16} />
               {i.rotulo}
