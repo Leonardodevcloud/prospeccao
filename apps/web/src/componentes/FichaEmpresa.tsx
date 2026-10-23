@@ -82,6 +82,7 @@ const NOME_ETAPA: Record<EtapaEnriq['etapa'], string> = {
   places: 'Validação no Google',
   whatsapp: 'WhatsApp',
   base_paga: 'Base paga (telefones atualizados)',
+  cnpj: 'CNPJ na Receita',
 };
 
 const PAPEL: Record<PessoaEnriq['papel'], string> = {
@@ -261,7 +262,7 @@ function trilha(e: EmpresaDetalhe): Camada[] {
       fonte:
         et.etapa === 'whatsapp'
           ? undefined
-          : FONTE[et.etapa === 'receita' ? 'receita' : (et.etapa as FonteEnriq)],
+          : FONTE[et.etapa === 'receita' || et.etapa === 'cnpj' ? 'receita' : (et.etapa as FonteEnriq)],
       detalhe: et.detalhe ?? undefined,
     });
   }
@@ -434,7 +435,7 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
     <Mensagem tipo="aviso">
       {e.cnpj
         ? 'A Receita não lista sócios para este CNPJ e o enriquecimento ainda não achou um responsável.'
-        : 'Empresa achada só no Google Maps, sem CNPJ: o responsável vem do site, do Instagram e do LinkedIn.'}
+        : 'Empresa achada só no Google Maps e o CNPJ dela não foi confirmado: o responsável vem do site, do Instagram e do LinkedIn.'}
     </Mensagem>
   );
 }

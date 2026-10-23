@@ -21,7 +21,12 @@ async function contaPrincipal(deps: Deps): Promise<number> {
   return rows[0]?.id ?? 1;
 }
 
-/** Campanha iniciada ou retomada: base de CNPJ + buscas no Maps. */
+/**
+ * Campanha iniciada ou retomada. A ordem importa: 1) as empresas da base da Receita entram na
+ * campanha; 2) as buscas no Google rodam e cada lugar cruza com elas (pelo telefone, nome e CEP);
+ * 3) só com tudo encontrado e cruzado a campanha vai para o enriquecimento (finalizarDescoberta).
+ * Assim nenhum lead é enriquecido antes de ganhar o CNPJ, e nada é pago duas vezes.
+ */
 export async function iniciarCampanha(deps: Deps, campanhaId: number) {
   const campanha = await repo.obterCampanha(deps.pool, campanhaId);
   if (!campanha) throw new ErroDefinitivo(`Campanha ${campanhaId} não existe`);
@@ -30,19 +35,22 @@ export async function iniciarCampanha(deps: Deps, campanhaId: number) {
     return;
   }
   await deps.filas.publicar('campanha.buscar_cnpj', { campanhaId });
-  const buscas = await repo.prepararBuscas(deps.pool, campanha, deps.ajustes.rebuscaDias);
-  for (const buscaId of buscas) await deps.filas.publicar('maps.buscar', { buscaId });
-  deps.log.info({ campanhaId, buscas: buscas.length }, 'campanha em descoberta');
-  if (!buscas.length) await finalizarDescoberta(deps, campanhaId);
 }
 
-/** Empresas do nicho nas cidades da campanha, vindas da base de CNPJ. */
+/** Etapa 1 (e base da Receita atualizada): liga as empresas da base e dispara as buscas no Google. */
 export async function buscarNaBaseCnpj(deps: Deps, campanhaId: number) {
   const campanha = await repo.obterCampanha(deps.pool, campanhaId);
   if (campanha?.status !== 'ativa') return;
-  const total = await repo.importarEmpresasDaBase(deps.pool, campanha);
-  deps.log.info({ campanhaId, empresas: total }, 'empresas da base de CNPJ ligadas à campanha');
-  // Se o Maps já terminou, quem chegou agora precisa ser localizado.
+  try {
+    const total = await repo.importarEmpresasDaBase(deps.pool, campanha);
+    deps.log.info({ campanhaId, empresas: total }, 'empresas da base de CNPJ ligadas à campanha');
+  } catch (erro) {
+    // A base é um reforço: se falhar, as buscas no Google seguem (o CNPJ é conferido no enriquecimento).
+    deps.log.warn({ err: erro, campanhaId }, 'não consegui ligar a base de CNPJ; seguindo com o Google');
+  }
+  const buscas = await repo.prepararBuscas(deps.pool, campanha, deps.ajustes.rebuscaDias);
+  for (const buscaId of buscas) await deps.filas.publicar('maps.buscar', { buscaId });
+  deps.log.info({ campanhaId, buscas: buscas.length }, 'campanha em descoberta');
   if ((await repo.buscasEmAberto(deps.pool, campanhaId)) === 0) await finalizarDescoberta(deps, campanhaId);
 }
 
@@ -260,8 +268,34 @@ export async function coletarBuscaMaps(deps: Deps, buscaId: number) {
   await aoConcluirBusca(deps, busca.campanha_id);
 }
 
+/** Uma busca terminou: se era a última, fecha a descoberta e libera o enriquecimento. */
 async function aoConcluirBusca(deps: Deps, campanhaId: number) {
   if ((await repo.buscasEmAberto(deps.pool, campanhaId)) === 0) await finalizarDescoberta(deps, campanhaId);
+}
+
+async function enviarParaEnriquecer(deps: Deps, campanhaId: number) {
+  await repo.recalcularDistancias(deps.pool, { campanhaId });
+  const prontas = await repo.reservarParaEnriquecimento(deps.pool, { campanhaId });
+  for (const p of prontas) {
+    await deps.filas.publicar('enriquecimento.solicitar', {
+      empresaId: p.empresa_id,
+      campanhaId: p.campanha_id,
+    });
+  }
+  return prontas.length;
+}
+
+/**
+ * Rotina (a cada poucos minutos): busca sem tarefa na fila volta para a fila, e campanha que
+ * terminou as buscas mas deixou empresa pronta sem enviar manda para o enriquecimento.
+ */
+export async function destravarCampanhas(deps: Deps) {
+  const buscas = await repo.buscasSemTarefa(deps.pool);
+  for (const buscaId of buscas) await deps.filas.publicar('maps.buscar', { buscaId });
+  let enviadas = 0;
+  for (const campanhaId of await repo.campanhasComProntasParadas(deps.pool))
+    enviadas += await enviarParaEnriquecer(deps, campanhaId);
+  if (buscas.length || enviadas) deps.log.info({ buscas: buscas.length, enviadas }, 'campanhas destravadas');
 }
 
 /**

@@ -173,9 +173,20 @@ function Barra({ feito, total, rotulo }: { feito: number; total: number; rotulo:
   );
 }
 
+/** "≈ 12 min" no ritmo atual (null: sem ritmo medido ainda). */
+function tempoRestante(faltam: number, porMinuto: number): string | null {
+  if (faltam <= 0 || porMinuto <= 0) return null;
+  const min = Math.ceil(faltam / porMinuto);
+  if (min <= 1) return 'menos de 1 min';
+  if (min < 60) return `≈ ${min} min`;
+  const h = Math.floor(min / 60);
+  const resto = min % 60;
+  return `≈ ${h} h${resto ? ` ${resto} min` : ''}`;
+}
+
 /**
- * Onde a campanha está, etapa por etapa: base de CNPJ, buscas no Maps e enriquecimento. Cada
- * etapa diz o que já fez e, se parou, por quê e o que fazer.
+ * Onde a campanha está: uma barra geral com o tempo estimado e, embaixo, cada etapa (buscas no
+ * Google e enriquecimento) com a sua barra até 100%. Se parou, diz por quê e o que fazer.
  */
 function Andamento(props: {
   c: Campanha;
@@ -210,39 +221,74 @@ function Andamento(props: {
   const enriquecendo = p.naFilaEnriquecimento > 0;
   const servico = p.servicoEnriquecimento;
 
+  // Progresso geral: buscas valem 30%, enriquecimento 70%. Busca que parou na meta ou com erro
+  // já terminou o que tinha para fazer.
+  const buscasFeitas = p.buscasConcluidas + p.buscasComErro + pelaMeta;
+  const fracBuscas = buscasTotal ? Math.min(1, buscasFeitas / buscasTotal) : 0;
+  const fracEnriq = alvo ? Math.min(1, p.enriquecidos / alvo) : 0;
+  const iniciou = buscasTotal > 0 || alvo > 0;
+  const geral = Math.round((0.3 * fracBuscas + 0.7 * fracEnriq) * 100);
+  const concluida = iniciou && fracBuscas >= 1 && (alvo === 0 || fracEnriq >= 1);
+  const faltamBuscas = Math.max(0, buscasTotal - buscasFeitas);
+  const faltamLeads = Math.max(0, alvo - p.enriquecidos);
+  const ritmoBuscas = c.progresso.ritmoBuscas ?? 0;
+  const ritmoEnriq = c.progresso.ritmoEnriquecimento ?? 0;
+  const restoBuscas = buscando ? tempoRestante(faltamBuscas, ritmoBuscas) : null;
+  const restoEnriq = enriquecendo ? tempoRestante(faltamLeads, ritmoEnriq) : null;
+  // Tempo geral: o que falta das buscas no ritmo das buscas + o que falta enriquecer no ritmo do
+  // enriquecimento. Sem ritmo medido ainda (começou agora), "calculando".
+  let restoGeral: string | null = null;
+  if (ativa && !concluida && (buscando || enriquecendo)) {
+    const precisaBuscas = buscando && faltamBuscas > 0;
+    const precisaLeads = faltamLeads > 0;
+    const semRitmo = (precisaBuscas && ritmoBuscas <= 0) || (precisaLeads && ritmoEnriq <= 0);
+    const minutos =
+      (precisaBuscas ? faltamBuscas / Math.max(ritmoBuscas, 1e-9) : 0) +
+      (precisaLeads ? faltamLeads / Math.max(ritmoEnriq, 1e-9) : 0);
+    restoGeral = semRitmo ? 'calculando o tempo…' : tempoRestante(minutos, 1);
+  }
+
   return (
     <div className="andamento-campanha">
-      {/* 1. Base de CNPJ */}
-      <div className="etapa-campanha">
+      {/* Progresso geral */}
+      <div className="etapa-campanha etapa-campanha--geral">
         <div className="etapa-campanha__topo">
-          <b>Base de CNPJ</b>
-          <span className="mono">{fmtNumero(p.comCnpj)} empresas</span>
+          <b>
+            {(buscando || enriquecendo) && <span className="vivo" aria-hidden="true" />}
+            {concluida ? 'Concluída' : !iniciou ? 'Ainda não começou' : ativa ? 'Em andamento' : 'Pausada'}
+          </b>
+          <span className="mono">{iniciou ? `${concluida ? 100 : geral}%` : '—'}</span>
         </div>
-        {p.ufsForaDaBase.length > 0 ? (
-          <p className="erro-texto">
-            {master ? (
-              <>
-                A base ainda não tem {p.ufsForaDaBase.join(', ')}: importe de novo em{' '}
-                <Link to="/base-cnpj">Base CNPJ</Link> (com todos os estados em CNPJ_UFS_EXTRAS).
-              </>
-            ) : (
-              `Ainda estamos carregando as empresas de ${p.ufsForaDaBase.join(', ')}. Nosso suporte já foi avisado; as buscas no Google Maps seguem normalmente.`
-            )}
-          </p>
-        ) : (
-          <p className="quieto">Empresas ativas do nicho nas cidades da campanha (sem MEI).</p>
-        )}
+        <Barra feito={concluida ? 100 : geral} total={100} rotulo="Progresso da campanha" />
+        <p className="quieto">
+          {concluida
+            ? `${fmtNumero(p.enriquecidos)} leads prontos para abordar.`
+            : restoGeral
+              ? restoGeral === 'calculando o tempo…'
+                ? 'Calculando o tempo que falta…'
+                : `Falta ${restoGeral} no ritmo atual.`
+              : !iniciou
+                ? 'Clique em "Iniciar busca" para começar.'
+                : 'Acompanhe cada etapa abaixo.'}
+        </p>
       </div>
+      {master && p.ufsForaDaBase.length > 0 && (
+        <p className="aviso-texto">
+          Base da Receita sem {p.ufsForaDaBase.join(', ')}: o CNPJ dessas empresas é conferido no
+          enriquecimento (site, Google e BrasilAPI). Para cruzar já na busca, importe de novo em{' '}
+          <Link to="/base-cnpj">Base CNPJ</Link> com esses estados em CNPJ_UFS_EXTRAS.
+        </p>
+      )}
 
       {/* 2. Google Maps */}
       <div className="etapa-campanha">
         <div className="etapa-campanha__topo">
-          <b>{buscando && <span className="vivo" aria-hidden="true" />} Google Maps</b>
+          <b>{buscando && <span className="vivo" aria-hidden="true" />} 1. Busca no Google</b>
           <span className="mono">
-            {buscasTotal ? `${fmtNumero(p.buscasConcluidas)} de ${fmtNumero(buscasTotal)} buscas` : '—'}
+            {buscasTotal ? `${fmtNumero(buscasFeitas)} de ${fmtNumero(buscasTotal)} buscas` : '—'}
           </span>
         </div>
-        {buscasTotal > 0 && <Barra feito={p.buscasConcluidas} total={buscasTotal} rotulo="Buscas no Maps" />}
+        <Barra feito={buscasFeitas} total={Math.max(1, buscasTotal)} rotulo="Buscas no Google" />
         {master && <ResumoPlacesCampanha c={c} />}
         {noTeto ? (
           <div className="etapa-campanha__erro">
@@ -280,7 +326,7 @@ function Andamento(props: {
             {!ativa && p.buscasPendentes > 0
               ? 'Campanha pausada: as buscas esperam ela voltar.'
               : buscando
-                ? `${fmtNumero(p.buscasPendentes - paradas)} em andamento no Google · cada uma leva poucos segundos.`
+                ? `${fmtNumero(p.buscasPendentes - paradas)} em andamento · ${fmtNumero(p.noMaps)} lugares até agora${restoBuscas ? ` · falta ${restoBuscas}` : ''}.`
                 : pelaMeta > 0
                   ? `Meta de leads atingida: ${fmtNumero(pelaMeta)} ${pelaMeta === 1 ? 'busca parou' : 'buscas pararam'} antes, sem gastar no Google. Se aumentar a meta, elas continuam.`
                   : buscasTotal
@@ -296,14 +342,20 @@ function Andamento(props: {
       <div className="etapa-campanha">
         <div className="etapa-campanha__topo">
           <b>
-            {enriquecendo && servico === 'rodando' && <span className="vivo" aria-hidden="true" />}{' '}
+            {enriquecendo && servico === 'rodando' && <span className="vivo" aria-hidden="true" />} 2.
             Enriquecimento
           </b>
           <span className="mono">
             {fmtNumero(p.enriquecidos)} de {fmtNumero(alvo)} leads
           </span>
         </div>
-        {alvo > 0 && <Barra feito={p.enriquecidos} total={alvo} rotulo="Leads enriquecidos" />}
+        <Barra feito={p.enriquecidos} total={Math.max(1, alvo)} rotulo="Leads enriquecidos" />
+        {alvo > 0 && (
+          <p className="quieto">
+            Contatos, nota e CNPJ conferido na Receita · {fmtNumero(p.comCnpj)} com CNPJ
+            {restoEnriq ? ` · falta ${restoEnriq}` : ''}
+          </p>
+        )}
         {servico === 'pausado' ? (
           <p className="aviso-texto">
             {master
@@ -318,7 +370,7 @@ function Andamento(props: {
           </p>
         ) : enriquecendo ? (
           <div className="etapa-campanha__erro">
-            <p className="quieto">{fmtNumero(p.naFilaEnriquecimento)} na fila ou rodando agora.</p>
+            <p className="quieto">{fmtNumero(p.naFilaEnriquecimento)} na fila ou sendo enriquecidos agora.</p>
             <Button size="sm" variant="danger" disabled={props.ocupado} onClick={props.aoParar}>
               Parar enriquecimento
             </Button>

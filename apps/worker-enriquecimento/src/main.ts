@@ -54,6 +54,8 @@ const env = carregarEnv(
     ENRIQ_BUSCAR_INSTAGRAM: booleano.default(true),
     /** Procura no Google (nome + endereço) quem veio da base de CNPJ e não apareceu nas buscas. */
     ENRIQ_ACHAR_NO_GOOGLE: booleano.default(true),
+    /** Confirma o CNPJ de quem veio só do Maps na BrasilAPI (dados públicos da Receita, grátis). */
+    ENRIQ_CNPJ_PUBLICO: booleano.default(true),
     /** Base paga Direct Data (telefones atualizados). Sem o token, a etapa não roda. */
     DIRECTD_TOKEN: opcional(z.string().min(8)),
     DIRECTD_PRECO_BRL: z.coerce.number().min(0).default(0.16),
@@ -99,25 +101,27 @@ const credenciais = cacheDeCredenciais(pool, chaveDoAmbiente(), {
 });
 
 /** Fontes da plataforma: as mesmas para todas as contas (Serper, Apify, base paga, sites). */
-const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'instagram' | 'diretorios' | 'basePaga'> = {
-  site: { ler: (url) => enriq.lerSite(url), lerLinks: (url) => enriq.lerPaginaDeLinks(url) },
-  // Serper é mais barato e rápido; o Apify fica de reserva quando não há a chave do Serper.
-  google: serper
-    ? { nome: 'Serper', buscar: (consultas) => enriq.buscarNoGoogleSerper(serper, consultas) }
-    : apify
-      ? { nome: 'Apify', buscar: (consultas) => enriq.buscarNoGoogle(apify, consultas) }
+const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'instagram' | 'diretorios' | 'basePaga' | 'cnpj'> =
+  {
+    site: { ler: (url) => enriq.lerSite(url), lerLinks: (url) => enriq.lerPaginaDeLinks(url) },
+    // Serper é mais barato e rápido; o Apify fica de reserva quando não há a chave do Serper.
+    google: serper
+      ? { nome: 'Serper', buscar: (consultas) => enriq.buscarNoGoogleSerper(serper, consultas) }
+      : apify
+        ? { nome: 'Apify', buscar: (consultas) => enriq.buscarNoGoogle(apify, consultas) }
+        : null,
+    instagram: apify ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) } : null,
+    diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
+    cnpj: env.ENRIQ_CNPJ_PUBLICO ? { consultar: (cnpj) => enriq.consultarCnpjBrasilApi(cnpj) } : null,
+    basePaga: env.DIRECTD_TOKEN
+      ? {
+          nome: 'Direct Data',
+          precoBrl: env.DIRECTD_PRECO_BRL,
+          consultar: (cnpj) =>
+            enriq.consultarDirectData({ token: env.DIRECTD_TOKEN! }, cnpj, normalizarTelefone),
+        }
       : null,
-  instagram: apify ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) } : null,
-  diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
-  basePaga: env.DIRECTD_TOKEN
-    ? {
-        nome: 'Direct Data',
-        precoBrl: env.DIRECTD_PRECO_BRL,
-        consultar: (cnpj) =>
-          enriq.consultarDirectData({ token: env.DIRECTD_TOKEN! }, cnpj, normalizarTelefone),
-      }
-    : null,
-};
+  };
 
 /** Fontes de uma conta: a IA, o Google Places e o chip do WhatsApp são os dela. */
 async function fontesDa(contaId: number): Promise<Fontes> {

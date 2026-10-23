@@ -3,6 +3,7 @@ import type {
   AvaliacaoIa,
   BuscaDiretorios,
   ConsultaBasePaga,
+  DadosCnpj,
   DetalhesPlaces,
   EmpresaParaAchar,
   EntradaAvaliacao,
@@ -50,6 +51,8 @@ export interface Fontes {
       consulta?: string;
     }): Promise<BuscaDiretorios>;
   } | null;
+  /** Dados públicos da Receita por CNPJ (BrasilAPI, gratuita): confirma o CNPJ de quem veio só do Maps. */
+  cnpj?: { consultar(cnpj: string): Promise<DadosCnpj | null> } | null;
   /** Base paga (Direct Data): telefones atualizados por CNPJ. Custa por consulta. */
   basePaga?: { nome: string; precoBrl: number; consultar(cnpj: string): Promise<ConsultaBasePaga> } | null;
   whatsapp: {

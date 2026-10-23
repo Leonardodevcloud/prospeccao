@@ -144,6 +144,22 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
     ),
   ]);
   const pelaMeta = new Map(meta.rows.map((r) => [Number(r.campanha_id), r.n]));
+  // Ritmo dos últimos 15 minutos, para a tela estimar quanto falta.
+  const ritmo = await db
+    .query<{ campanha_id: string; leads: number; buscas: number }>(
+      `SELECT c.id AS campanha_id,
+              (SELECT count(*)::int FROM descoberta.campanha_empresas ce
+                 JOIN enriquecimento.leads l ON l.empresa_id = ce.empresa_id
+                WHERE ce.campanha_id = c.id AND l.status = 'concluido'
+                  AND l.concluido_em > now() - interval '15 minutes') AS leads,
+              (SELECT count(*)::int FROM descoberta.buscas_maps b
+                WHERE b.campanha_id = c.id AND b.status = 'concluida'
+                  AND b.concluido_em > now() - interval '15 minutes') AS buscas
+         FROM cadastro.campanhas c WHERE c.id = ANY($1::bigint[])`,
+      [ids],
+    )
+    .then((r) => new Map(r.rows.map((x) => [Number(x.campanha_id), x])))
+    .catch(() => new Map<number, { leads: number; buscas: number }>());
   const ufsNaBase = base.rows[0]?.ufs ?? null;
   const porCampanha = new Map(enriq.rows.map((r) => [Number(r.campanha_id), r]));
   const erroPorCampanha = new Map(erros.rows.map((r) => [Number(r.campanha_id), r.erro]));
@@ -169,6 +185,9 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
       enriquecidos: e?.enriquecidos ?? 0,
       elegiveis: e?.elegiveis ?? 0,
       reservados: e?.reservados ?? 0,
+      /** Leads enriquecidos e buscas concluídas por minuto (média dos últimos 15 minutos). */
+      ritmoEnriquecimento: (ritmo.get(Number(c.id))?.leads ?? 0) / 15,
+      ritmoBuscas: (ritmo.get(Number(c.id))?.buscas ?? 0) / 15,
       buscasPelaMeta: pelaMeta.get(Number(c.id)) ?? 0,
       servicoEnriquecimento: servico,
       // Estados da campanha que a última importação da Receita não trouxe.

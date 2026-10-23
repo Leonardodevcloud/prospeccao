@@ -1,3 +1,4 @@
+import { emailDescartavel } from '@prospeccao/integrations/enriquecimento';
 import { ehCelular, normalizarNome } from '@prospeccao/shared';
 
 /**
@@ -88,6 +89,8 @@ export class Coletor {
     pessoa?: string | null;
   }): void {
     if (!c.valor) return;
+    // Endereço técnico (Sentry, Wix) ou de exemplo: não é contato de ninguém, venha de onde vier.
+    if (c.canal === 'email' && emailDescartavel(c.valor)) return;
     const chave = `${c.canal}:${c.valor}`;
     const atual = this.contatos.get(chave);
     if (atual) {

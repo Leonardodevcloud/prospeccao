@@ -1,8 +1,12 @@
 import { comTransacao, type Executor, INICIO_MES_SP_TS, type Pool } from '@prospeccao/db';
+import type { DadosCnpj } from '@prospeccao/integrations/enriquecimento';
 import { type Plano, planoEfetivo, tabelaCompleta } from '@prospeccao/shared';
 import type { Coletor } from './coletor.js';
 
-/** Leituras de outros domínios (só views) e escritas no schema enriquecimento. */
+/**
+ * Leituras de outros domínios (só views) e escritas no schema enriquecimento. Exceção: o CNPJ
+ * confirmado de empresa que veio só do Maps é gravado na empresa (adotarCnpj).
+ */
 
 export interface EmpresaEnriquecer {
   id: number;
@@ -118,7 +122,6 @@ export async function iniciar(db: Executor, empresaId: number, campanhaId: numbe
 }
 
 export type NomeEtapa =
-  | 'base_paga'
   | 'receita'
   | 'maps'
   | 'site'
@@ -127,7 +130,9 @@ export type NomeEtapa =
   | 'ia'
   | 'linkedin'
   | 'places'
-  | 'whatsapp';
+  | 'whatsapp'
+  | 'base_paga'
+  | 'cnpj';
 export type StatusEtapa = 'encontrado' | 'sem_resultado' | 'pulada' | 'erro';
 
 export async function registrarEtapa(
@@ -411,4 +416,101 @@ export async function aguardarLimite(db: Executor, empresaId: number, campanhaId
       WHERE enriquecimento.leads.status <> 'concluido'`,
     [empresaId, campanhaId],
   );
+}
+
+/** CNPJ que já está na base da Receita importada (sem gastar consulta de fora). */
+export async function dadosCnpjNaBase(db: Executor, cnpj: string): Promise<DadosCnpj | null> {
+  const { rows } = await db.query<{
+    cnpj: string;
+    nome_fantasia: string | null;
+    razao_social: string | null;
+    cnae_principal: string | null;
+    porte: DadosCnpj['porte'] | null;
+    situacao: string | null;
+    data_inicio: string | null;
+    logradouro: string | null;
+    numero: string | null;
+    bairro: string | null;
+    cep: string | null;
+    cidade: string | null;
+    uf: string | null;
+    telefones: string[] | null;
+    email: string | null;
+    mei: boolean | null;
+    cnpj_basico: string;
+  }>(
+    `SELECT cnpj, cnpj_basico, nome_fantasia, razao_social, cnae_principal, porte, situacao,
+            to_char(data_inicio, 'YYYY-MM-DD') AS data_inicio, logradouro, numero, bairro, cep, cidade, uf,
+            telefones, email, mei
+       FROM base_cnpj.v_estabelecimentos WHERE cnpj = $1`,
+    [cnpj],
+  );
+  const e = rows[0];
+  if (!e) return null;
+  const socios = await obterSocios(db, e.cnpj_basico);
+  return {
+    cnpj: e.cnpj,
+    razaoSocial: e.razao_social,
+    nomeFantasia: e.nome_fantasia,
+    cnaePrincipal: e.cnae_principal,
+    porte: e.porte ?? 'nao_informado',
+    situacao: e.situacao,
+    dataAbertura: e.data_inicio,
+    logradouro: e.logradouro,
+    numero: e.numero,
+    bairro: e.bairro,
+    cep: e.cep,
+    cidade: e.cidade,
+    uf: e.uf,
+    telefones: e.telefones ?? [],
+    email: e.email,
+    mei: !!e.mei,
+    socios: socios.map((s) => ({
+      nome: s.nome,
+      qualificacao: s.qualificacao,
+      tipo: s.tipo === 'pj' ? 'pj' : s.tipo === 'estrangeiro' ? 'estrangeiro' : 'pf',
+      desde: s.data_entrada,
+    })),
+  };
+}
+
+/**
+ * Grava o CNPJ confirmado na empresa que veio só do Maps (a única escrita do enriquecimento na
+ * empresa: só quando ela não tem CNPJ e nenhuma outra empresa já tem este). O nome do Maps fica;
+ * entram razão social, porte, CNAE, abertura, endereço que faltar e os contatos da Receita.
+ */
+export async function adotarCnpj(db: Executor, empresaId: number, d: DadosCnpj): Promise<boolean> {
+  const { rows } = await db.query(
+    `UPDATE descoberta.empresas e SET
+       cnpj = $2, cnpj_basico = left($2, 8), razao_social = $3, cnae_principal = $4, porte = $5,
+       situacao = $6, data_abertura = $7::date,
+       logradouro = coalesce(e.logradouro, $8), numero = coalesce(e.numero, $9),
+       bairro = coalesce(e.bairro, $10), cep = coalesce(e.cep, $11),
+       telefones_receita = $12, email_receita = $13, mei = $14
+      WHERE e.id = $1 AND e.cnpj IS NULL
+        AND NOT EXISTS (SELECT 1 FROM descoberta.empresas o WHERE o.cnpj = $2)
+      RETURNING e.id`,
+    [
+      empresaId,
+      d.cnpj,
+      d.razaoSocial,
+      d.cnaePrincipal,
+      d.porte,
+      d.situacao,
+      d.dataAbertura,
+      d.logradouro,
+      d.numero,
+      d.bairro,
+      d.cep,
+      d.telefones,
+      d.email,
+      d.mei,
+    ],
+  );
+  if (!rows.length) return false;
+  await db.query(
+    `UPDATE descoberta.campanha_empresas SET origem = 'ambos' WHERE empresa_id = $1 AND origem = 'maps'`,
+    [empresaId],
+  );
+  return true;
 }

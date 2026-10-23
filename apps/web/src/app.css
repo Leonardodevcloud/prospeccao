@@ -1107,6 +1107,13 @@ fieldset.campo {
   }
 }
 
+.etapa-campanha--geral .etapa-campanha__topo {
+  font-size: 14px;
+}
+.etapa-campanha--geral .barra-progresso {
+  height: 8px;
+}
+
 /* ---------- Google Places: uso do mês e estimativa ---------- */
 /* Card que cresce (estimativa aberta) não estica os vizinhos por dentro nem estoura a coluna. */
 .card-campanha {

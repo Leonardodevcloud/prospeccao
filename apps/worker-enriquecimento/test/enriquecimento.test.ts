@@ -374,6 +374,134 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(etapas.find((e) => e.etapa === 'receita')?.status).toBe('pulada');
   });
 
+  it('lead só do Maps: CNPJ do rodapé conferido na Receita vira razão social, porte e sócios', async () => {
+    const { rows: nova } = await pool.query<{ id: number }>(
+      `INSERT INTO descoberta.empresas (nome, cidade, uf, place_id, maps_telefone, maps_site)
+       VALUES ('Boteco do Pátio', 'SALVADOR', 'BA', 'p-boteco', '(71) 3333-4444', 'obotecodopatio.com.br')
+       RETURNING id`,
+    );
+    const id = Number(nova[0]!.id);
+    await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (1, $1, 'maps')`,
+      [id],
+    );
+    const f = fontesCompletas();
+    const consultados: string[] = [];
+    const fontes: Fontes = {
+      ...f,
+      site: {
+        async ler(url) {
+          return {
+            urlFinal: `${url}/`,
+            paginas: [{ url, titulo: 'Boteco' }],
+            texto: 'Boteco do Pátio · CNPJ 19.131.243/0001-97',
+            emails: [
+              '605a7baede844d278b89dc95ae0a9123@sentry-next.wixpress.com',
+              'contato@obotecodopatio.com.br',
+            ],
+            telefones: [],
+            whatsapps: [],
+            instagram: null,
+            facebook: null,
+            linkedinEmpresa: null,
+            linkedinPessoas: [],
+            // Um CNPJ de outra cidade (rodapé de fornecedor) e o da loja.
+            cnpjs: ['11222333000181', '19131243000197'],
+          };
+        },
+      },
+      cnpj: {
+        async consultar(cnpj) {
+          consultados.push(cnpj);
+          if (cnpj === '11222333000181')
+            return {
+              cnpj,
+              razaoSocial: 'LADEIRA COMERCIO LTDA',
+              nomeFantasia: 'LADEIRA AUTO PECAS',
+              cnaePrincipal: '4530703',
+              porte: 'epp',
+              situacao: '02',
+              dataAbertura: '2012-05-02',
+              logradouro: null,
+              numero: null,
+              bairro: null,
+              cep: null,
+              cidade: 'FEIRA DE SANTANA',
+              uf: 'BA',
+              telefones: [],
+              email: null,
+              mei: false,
+              socios: [],
+            };
+          return {
+            cnpj,
+            razaoSocial: 'PATIO BAR E RESTAURANTE LTDA',
+            nomeFantasia: 'BOTECO DO PATIO',
+            cnaePrincipal: '5611201',
+            porte: 'me',
+            situacao: '02',
+            dataAbertura: '2015-03-10',
+            logradouro: 'RUA DAS FLORES',
+            numero: '10',
+            bairro: 'CENTRO',
+            cep: '40000000',
+            cidade: 'SALVADOR',
+            uf: 'BA',
+            telefones: ['7133334444'],
+            email: null,
+            mei: false,
+            socios: [
+              {
+                nome: 'MARCOS PEREIRA',
+                qualificacao: 'Sócio-Administrador',
+                tipo: 'pf',
+                desde: '2015-03-10',
+              },
+            ],
+          };
+        },
+      },
+    };
+    await enriquecerEmpresa(deps(fontes), { empresaId: id, campanhaId: 1 });
+
+    // O primeiro número é de outra loja, em outra cidade: recusado; o segundo confere.
+    expect(consultados).toEqual(['11222333000181', '19131243000197']);
+    const { rows: emp } = await pool.query(
+      `SELECT cnpj, razao_social, porte, cnae_principal, to_char(data_abertura, 'YYYY-MM-DD') AS abertura
+         FROM descoberta.empresas WHERE id = $1`,
+      [id],
+    );
+    expect(emp[0]).toEqual({
+      cnpj: '19131243000197',
+      razao_social: 'PATIO BAR E RESTAURANTE LTDA',
+      porte: 'me',
+      cnae_principal: '5611201',
+      abertura: '2015-03-10',
+    });
+    const { rows: origem } = await pool.query(
+      `SELECT origem FROM descoberta.campanha_empresas WHERE empresa_id = $1`,
+      [id],
+    );
+    expect(origem[0].origem).toBe('ambos');
+    const { rows: pessoas } = await pool.query(
+      `SELECT nome, papel FROM enriquecimento.pessoas WHERE empresa_id = $1`,
+      [id],
+    );
+    expect(pessoas).toContainEqual({ nome: 'MARCOS PEREIRA', papel: 'socio' });
+    const { rows: etapa } = await pool.query(
+      `SELECT status, detalhe FROM enriquecimento.etapas WHERE empresa_id = $1 AND etapa = 'cnpj'`,
+      [id],
+    );
+    expect(etapa[0].status).toBe('encontrado');
+    expect(etapa[0].detalhe).toMatch(/19\.131\.243\/0001-97 confirmado na Receita \(mesmo telefone/);
+    // E-mail técnico do Wix/Sentry não entra.
+    const { rows: emails } = await pool.query(
+      `SELECT valor FROM enriquecimento.contatos WHERE empresa_id = $1 AND canal = 'email'`,
+      [id],
+    );
+    expect(emails.map((e) => e.valor)).toEqual(['contato@obotecodopatio.com.br']);
+  });
+
   it('não refaz empresa enriquecida há pouco, a não ser que peçam', async () => {
     expect(await enriquecerEmpresa(deps(fontesCompletas()), { empresaId: 1, campanhaId: 1 })).toBe('pulado');
     expect(

@@ -250,6 +250,7 @@ describe.skipIf(!URL_TESTE)(
         },
       });
       await casos.iniciarCampanha(d, 4);
+      await casos.buscarNaBaseCnpj(d, 4);
       const job = publicados.find((p) => p.nome === 'maps.buscar')!;
       const buscaId = (job.payload as { buscaId: number }).buscaId;
       await expect(casos.dispararBuscaMaps(d, buscaId)).rejects.toThrow();
@@ -266,6 +267,39 @@ describe.skipIf(!URL_TESTE)(
       ]);
       expect(rows[0].status).toBe('pendente');
       expect(rows[0].erro).toMatch(/Places API \(New\)/);
+    });
+
+    it('rotina destrava a busca sem tarefa; o enriquecimento só começa com todas as buscas fechadas', async () => {
+      await pool.query(
+        `INSERT INTO cadastro.campanhas (conta_id, nome, nicho_id, cidades, raio_km, status)
+       VALUES (1, 'Travada', 1, '[{"cidade":"Feira de Santana","uf":"BA"}]', NULL, 'ativa')`,
+      );
+      const { rows: tr } = await pool.query<{ id: number }>(
+        `SELECT id FROM cadastro.campanhas WHERE nome = 'Travada'`,
+      );
+      const id = Number(tr[0]!.id);
+      // Duas buscas pendentes, sem tarefa na fila há 10 minutos (como depois de um deploy no meio).
+      await pool.query(
+        `INSERT INTO descoberta.buscas_maps (campanha_id, cidade, uf, termo, criado_em)
+         VALUES ($1, 'Feira de Santana', 'BA', 'autopeças', now() - interval '10 minutes'),
+                ($1, 'Feira de Santana', 'BA', 'peças', now() - interval '10 minutes')`,
+        [id],
+      );
+      const d = deps();
+      publicados.length = 0;
+      await casos.destravarCampanhas(d);
+      const buscas = publicados.filter((p) => p.nome === 'maps.buscar');
+      expect(buscas).toHaveLength(2);
+
+      // Roda só a primeira: nada vai para o enriquecimento enquanto houver busca aberta.
+      publicados.length = 0;
+      await casos.dispararBuscaMaps(d, (buscas[0]!.payload as { buscaId: number }).buscaId);
+      expect(publicados.filter((p) => p.nome === 'enriquecimento.solicitar')).toHaveLength(0);
+      // Terminou a segunda: agora sim, tudo de uma vez.
+      await casos.dispararBuscaMaps(d, (buscas[1]!.payload as { buscaId: number }).buscaId);
+      expect(publicados.filter((p) => p.nome === 'enriquecimento.solicitar').length).toBeGreaterThan(0);
+      await pool.query(`UPDATE cadastro.campanhas SET status = 'encerrada' WHERE id = $1`, [id]);
+      publicados.length = 0;
     });
 
     it('franquia grátis é da chave: conta sem chave própria divide a da plataforma', async () => {

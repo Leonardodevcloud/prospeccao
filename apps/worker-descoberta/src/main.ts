@@ -149,6 +149,13 @@ await filas.consumir('maps.importar_planilha', (p) => casos.importarPlanilha(dep
 await casos
   .retomarBuscasParadas(deps)
   .catch((erro) => log.warn({ err: erro }, 'não consegui retomar buscas'));
+// A cada 5 minutos: busca sem tarefa na fila volta a rodar e empresa pronta parada vai para o
+// enriquecimento (sem depender de alguém clicar em "Tentar de novo").
+const destravar = setInterval(
+  () =>
+    void casos.destravarCampanhas(deps).catch((erro) => log.warn({ err: erro }, 'não consegui destravar')),
+  5 * 60_000,
+);
 log.info(
   {
     buscas: env.GOOGLE_PLACES_KEY
@@ -160,6 +167,7 @@ log.info(
 );
 
 encerrarAoReceberSinal(log, async () => {
+  clearInterval(destravar);
   pararSinal();
   await filas.parar();
   await pool.end();

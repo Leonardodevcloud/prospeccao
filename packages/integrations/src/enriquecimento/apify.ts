@@ -140,6 +140,57 @@ const GENERICAS = new Set([
   'brasil',
   'nordeste',
   'filial',
+  // Outros ramos (o sistema prospecta qualquer nicho): também não identificam a empresa.
+  'bar',
+  'bares',
+  'restaurante',
+  'restaurantes',
+  'lanchonete',
+  'lanches',
+  'pizzaria',
+  'pizzas',
+  'pizza',
+  'hamburgueria',
+  'burger',
+  'churrascaria',
+  'grill',
+  'cafe',
+  'cafeteria',
+  'padaria',
+  'confeitaria',
+  'doceria',
+  'delivery',
+  'mercado',
+  'supermercado',
+  'mercadinho',
+  'minimercado',
+  'atacado',
+  'atacadista',
+  'otica',
+  'oticas',
+  'cosmeticos',
+  'perfumaria',
+  'papelaria',
+  'moveis',
+  'floricultura',
+  'flores',
+  'construcao',
+  'material',
+  'materiais',
+  'eletrico',
+  'eletricos',
+  'bebidas',
+  'adega',
+  'clinica',
+  'veterinaria',
+  'veterinario',
+  'laboratorio',
+  'informatica',
+  'celulares',
+  'agropecuaria',
+  'racoes',
+  'gas',
+  'agua',
 ]);
 
 /** Palavras do nome que identificam a empresa ("Lojão Auto Peças" → ["lojao"]). */
@@ -155,20 +206,40 @@ export function palavrasDoNome(nome: string): string[] {
 /**
  * Perfil de Instagram nos resultados do Google que é mesmo da empresa: ignora posts, páginas
  * de tópico (instagram.com/popular/...) e perfis cujo nome não tem nenhuma palavra da empresa.
+ * Na busca sem aspas (`estrito`), que traz perfis parecidos, exige mais: o telefone da loja no
+ * trecho, ou duas palavras próprias do nome (no @ ou no título), ou, se o nome só tem uma
+ * palavra própria, ela no @ ("Matheus & Rosaria Bar" → @matheuserosaria).
  */
-export function instagramNosResultados(resultados: ResultadoGoogle[], nomeEmpresa?: string): string | null {
+export function instagramNosResultados(
+  resultados: ResultadoGoogle[],
+  nomeEmpresa?: string,
+  opcoes: { estrito?: boolean; telefones?: (string | null | undefined)[] } = {},
+): string | null {
   const palavras = nomeEmpresa ? palavrasDoNome(nomeEmpresa) : [];
+  const finais = (opcoes.telefones ?? [])
+    .map((t) => (t ?? '').replace(/\D/g, '').slice(-8))
+    .filter((t) => t.length === 8);
   for (const r of resultados) {
     if (!/instagram\.com\//i.test(r.url)) continue;
     const u = usuarioInstagram(r.url);
     if (!u) continue;
+    // Telefone da loja no trecho: é ela, qualquer que seja o nome do perfil.
+    const digitos = `${r.titulo} ${r.descricao}`.replace(/\D/g, '');
+    if (finais.some((f) => digitos.includes(f))) return u;
     if (palavras.length) {
-      const texto = `${u.replace(/[._]/g, ' ')} ${r.titulo} ${r.descricao}`
+      const doUsuario = u.replace(/[._]/g, ' ');
+      const texto = `${doUsuario} ${r.titulo} ${r.descricao}`
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase();
       const juntos = texto.replace(/\s+/g, '');
-      if (!palavras.some((p) => texto.includes(p) || juntos.includes(p))) continue;
+      const achadas = palavras.filter((p) => texto.includes(p) || juntos.includes(p));
+      if (!achadas.length) continue;
+      if (opcoes.estrito) {
+        const noUsuario = palavras.filter((p) => u.replace(/[._]/g, '').includes(p));
+        const forte = palavras.length >= 2 ? achadas.length >= 2 : noUsuario.length >= 1;
+        if (!forte) continue;
+      }
     }
     return u;
   }

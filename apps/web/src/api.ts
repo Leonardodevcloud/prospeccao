@@ -103,6 +103,9 @@ export interface ProgressoCampanha {
   buscasPelaMeta?: number;
   /** Leads já mandados para o enriquecimento (contam na meta). */
   reservados?: number;
+  /** Leads enriquecidos e buscas concluídas por minuto (últimos 15 minutos), para estimar o fim. */
+  ritmoEnriquecimento?: number;
+  ritmoBuscas?: number;
   /** Buscas por bairro (a cidade inteira encheu os 60 lugares do Google). */
   buscasPorBairro?: number;
   /** Pedidos feitos ao Google Places por esta campanha (cada página conta), pagos e gasto. */
@@ -521,7 +524,8 @@ export interface EtapaEnriq {
     | 'linkedin'
     | 'places'
     | 'whatsapp'
-    | 'base_paga';
+    | 'base_paga'
+    | 'cnpj';
   status: 'encontrado' | 'sem_resultado' | 'pulada' | 'erro';
   detalhe: string | null;
   url: string | null;

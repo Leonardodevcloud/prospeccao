@@ -641,6 +641,46 @@ export async function reservarParaEnriquecimento(
   });
 }
 
+/**
+ * Buscas que não andam sozinhas: pendentes (ou "rodando" no Places sem andar) há alguns minutos,
+ * de campanha ativa, sem tarefa na fila (a tarefa falhou de vez, caiu num deploy, etc.).
+ */
+export async function buscasSemTarefa(db: Executor): Promise<number[]> {
+  // A tabela da fila é criada pelo pg-boss: sem ela (banco novo), toda busca parada conta.
+  const { rows: fila } = await db.query<{ tem: boolean }>(
+    `SELECT to_regclass('fila.job') IS NOT NULL AS tem`,
+  );
+  const semTarefa = fila[0]?.tem
+    ? `AND NOT EXISTS (SELECT 1 FROM fila.job j
+                        WHERE j.name IN ('maps.buscar', 'maps.coletar')
+                          AND j.state IN ('created', 'retry', 'active')
+                          AND (j.data ->> 'buscaId')::bigint = b.id)`
+    : '';
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT b.id FROM descoberta.buscas_maps b
+       JOIN cadastro.v_campanhas_descoberta c ON c.id = b.campanha_id AND c.status = 'ativa'
+      WHERE (b.status = 'pendente' OR (b.status = 'rodando' AND b.fonte = 'places'))
+        AND coalesce(b.iniciado_em, b.criado_em) < now() - interval '3 minutes'
+        ${semTarefa}
+      ORDER BY b.id LIMIT 200`,
+  );
+  return rows.map((r) => Number(r.id));
+}
+
+/** Campanhas ativas sem busca aberta que ainda têm empresa pronta para enriquecer e não enviada. */
+export async function campanhasComProntasParadas(db: Executor): Promise<number[]> {
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT c.id FROM cadastro.v_campanhas_descoberta c
+      WHERE c.status = 'ativa'
+        AND NOT EXISTS (SELECT 1 FROM descoberta.buscas_maps b
+                         WHERE b.campanha_id = c.id AND b.status IN ('pendente', 'rodando'))
+        AND EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce
+                     WHERE ce.campanha_id = c.id AND ce.enriquecimento_solicitado_em IS NULL
+                       AND ce.dentro_do_raio)`,
+  );
+  return rows.map((r) => Number(r.id));
+}
+
 /** Busca do tipo planilha: já nasce "rodando" (as linhas chegam junto) e fecha no fim da importação. */
 export async function criarBuscaPlanilha(
   db: Executor,

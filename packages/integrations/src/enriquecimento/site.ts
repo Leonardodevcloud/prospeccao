@@ -44,6 +44,13 @@ const NAO_E_SITE =
 const EMAIL = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const EMAIL_LIXO =
   /\.(png|jpe?g|gif|webp|svg)$|@(example|exemplo|sentry|wixpress|domain|email|seudominio|dominio|empresa)\.|^(nome|seu|your|exemplo|example|seuemail|seu\.email|seu-email|email|teste|test|usuario|fulano|name|user)@/i;
+/** Endereços técnicos de monitoramento (Sentry, Wix): código no lugar do nome, ninguém lê. */
+const EMAIL_TECNICO = /@([a-z0-9-]+\.)*[a-z0-9-]*(sentry|wixpress)[a-z0-9-]*\.|^[0-9a-f]{20,}@/i;
+
+/** E-mail que não é de gente: exemplo de formulário, imagem, endereço técnico de monitoramento. */
+export function emailDescartavel(email: string): boolean {
+  return EMAIL_LIXO.test(email) || EMAIL_TECNICO.test(email);
+}
 const TELEFONE = /(?:\+?55[\s.-]?)?\(?\b([1-9]{2})\)?[\s.-]?(9?\d{4})[\s.-]?(\d{4})\b/g;
 const WHATSAPP_URL = /wa\.me\/\+?(\d{10,13})|whatsapp\.com\/send\/?\?(?:[^"'\s<>]*&)?phone=\+?(\d{10,13})/gi;
 /** Encurtadores que costumam esconder o link do WhatsApp (wa.link/xyz → wa.me/55…). */
@@ -125,7 +132,7 @@ export function extrairContatos(conteudo: string): ContatosExtraidos {
 
   const emails = unicos(
     [...(decodificado.match(EMAIL) ?? [])].map((e) => e.toLowerCase().replace(/^mailto:/, '')),
-  ).filter((e) => !EMAIL_LIXO.test(e));
+  ).filter((e) => !emailDescartavel(e));
 
   // Botões de WhatsApp em qualquer formato: href comum, JSON da página (páginas de links
   // como Linktree guardam os botões num JSON, com "\/" escapado) ou texto corrido.

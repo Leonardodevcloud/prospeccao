@@ -1,7 +1,10 @@
 import {
   type AvaliacaoIa,
+  cnpjConfere,
+  cnpjsNoTexto,
   consultaPrincipal,
   contatosDosDiretorios,
+  type DadosCnpj,
   instagramNosResultados,
   interpretarLinkedin,
   nomeDeBusca,
@@ -16,7 +19,7 @@ import {
   siteProprioNosResultados,
 } from '@prospeccao/integrations/enriquecimento';
 import { ErroDefinitivo } from '@prospeccao/queue';
-import { formatarTelefone, normalizarTelefone } from '@prospeccao/shared';
+import { formatarCnpj, formatarTelefone, normalizarTelefone } from '@prospeccao/shared';
 import { Coletor, notaPorRegras, papelPeloCargo } from './coletor.js';
 import type { Deps } from './dependencias.js';
 import * as repo from './repositorio.js';
@@ -28,6 +31,92 @@ function anosDesde(data: string | null): number | null {
   if (!data) return null;
   const anos = (Date.now() - new Date(data).getTime()) / (365.25 * 86_400_000);
   return Number.isFinite(anos) ? Math.floor(anos) : null;
+}
+
+/**
+ * Acha e confirma o CNPJ de quem veio só do Maps. Primeiro os números já vistos (site, Instagram,
+ * trechos do Google); sem nenhum, uma busca no Google com o nome, a cidade e "CNPJ". Cada número é
+ * conferido na base da Receita importada ou, se não estiver nela, na BrasilAPI (gratuita).
+ */
+async function acharCnpj(
+  deps: Deps,
+  e: {
+    empresa: repo.EmpresaEnriquecer;
+    candidatos: (string | null | undefined)[];
+    telefones: (string | null | undefined)[];
+  },
+): Promise<
+  | { dados: DadosCnpj; motivo: string; origem: string }
+  | { dados: null; status: 'nao_achou' | 'erro'; motivo: string; url: string | null }
+> {
+  const { pool, fontes } = deps;
+  const { empresa } = e;
+  let candidatos = [...new Set(e.candidatos.filter((x): x is string => !!x))];
+  let origem = 'no site, no Instagram ou nos diretórios';
+  let consulta: string | null = null;
+  if (!candidatos.length && fontes.google) {
+    consulta = `"${nomeDeBusca(empresa.nome, empresa.razao_social).nucleo}" ${empresa.cidade.toLowerCase()} cnpj`;
+    try {
+      const r = await fontes.google.buscar([consulta]);
+      const textos = [...r.values()].flat().map((x) => `${x.titulo} ${x.descricao} ${x.url}`);
+      candidatos = cnpjsNoTexto(textos.join(' \n '));
+      origem = 'numa busca no Google';
+    } catch (erro) {
+      return {
+        dados: null,
+        status: 'erro',
+        motivo: `Não consegui buscar o CNPJ no Google: ${explicarFalhaBusca(erro, fontes.google.nome ?? 'Serper')}`,
+        url: linkGoogle(consulta),
+      };
+    }
+  }
+  if (!candidatos.length)
+    return {
+      dados: null,
+      status: 'nao_achou',
+      motivo: consulta
+        ? 'Nenhum CNPJ citado no site, no Instagram nem no Google para esta loja.'
+        : 'Nenhum CNPJ citado no site nem no Instagram (sem busca no Google configurada).',
+      url: consulta ? linkGoogle(consulta) : null,
+    };
+
+  const recusados: string[] = [];
+  let falha: string | null = null;
+  for (const cnpj of candidatos.slice(0, 4)) {
+    let dados: DadosCnpj | null = null;
+    try {
+      dados =
+        (await repo.dadosCnpjNaBase(pool, cnpj)) ?? (fontes.cnpj ? await fontes.cnpj.consultar(cnpj) : null);
+    } catch (erro) {
+      falha = mensagemDe(erro).slice(0, 160);
+      continue;
+    }
+    if (!dados) continue;
+    const conf = cnpjConfere(dados, {
+      nome: empresa.nome,
+      cidade: empresa.cidade,
+      uf: empresa.uf,
+      telefones: e.telefones,
+    });
+    if (conf.ok && dados.situacao && dados.situacao !== '02') {
+      recusados.push(`${formatarCnpj(cnpj)} (não está ativo na Receita)`);
+      continue;
+    }
+    if (conf.ok) return { dados, motivo: conf.motivo, origem };
+    recusados.push(`${formatarCnpj(cnpj)} (${conf.motivo})`);
+  }
+  if (!recusados.length && falha)
+    return { dados: null, status: 'erro', motivo: `Não consegui consultar a Receita: ${falha}`, url: null };
+  return {
+    dados: null,
+    status: 'nao_achou',
+    motivo: recusados.length
+      ? `CNPJ citado ${origem}, mas não é desta loja: ${recusados.join('; ')}.`
+      : fontes.cnpj
+        ? `CNPJ citado ${origem}, mas não encontrado na Receita.`
+        : 'CNPJ citado, mas a consulta à Receita está desligada (ENRIQ_CNPJ_PUBLICO=false).',
+    url: consulta ? linkGoogle(consulta) : null,
+  };
 }
 
 function mensagemDe(erro: unknown): string {
@@ -250,6 +339,8 @@ export async function enriquecerEmpresa(
     let siteBusca: string | null = null;
     /** Resultados do LinkedIn que já vieram nas buscas do Google (sem custo extra). */
     const linkedinDaBusca: ResultadoGoogle[] = [];
+    /** Trechos das buscas no Google (diretórios de CNPJ costumam citar o número). */
+    const textosDaBusca: string[] = [];
     if (fontes.diretorios) {
       try {
         let d = await fontes.diretorios.buscar({
@@ -275,6 +366,7 @@ export async function enriquecerEmpresa(
           d = { ...r2, painel: r2.painel ?? d.painel };
         }
         consultaDiretorios = d.consulta;
+        textosDaBusca.push(...d.resultados.map((r) => `${r.titulo} ${r.descricao} ${r.url}`));
         linkedinDaBusca.push(...d.resultados.filter((r) => /linkedin\.com\//i.test(r.url)));
         const achados = contatosDosDiretorios(d.resultados, palavrasEmpresa);
         for (const a of achados) {
@@ -503,12 +595,23 @@ export async function enriquecerEmpresa(
     let perfil: PerfilInstagram | null = null;
     let falhaBuscaInstagram: string | null = null;
     const consultaInstagram = `"${nome.nucleo}" ${empresa.cidade.toLowerCase()} instagram`;
+    let consultaInstagramLivre: string | null = null;
     if (!instagram && fontes.google && ajustes.buscarInstagram) {
       try {
         const r = await fontes.google.buscar([consultaInstagram]);
         const res = r.get(consultaInstagram) ?? [];
         instagram = instagramNosResultados(res, empresa.nome);
         linkedinDaBusca.push(...res.filter((x) => /linkedin\.com\//i.test(x.url)));
+        // Entre aspas não achou ("Matheus & Rosaria" x "Matheus e Rosária"): tenta sem aspas,
+        // conferindo com mais rigor (duas palavras do nome, a palavra no @ ou o telefone da loja).
+        if (!instagram) {
+          consultaInstagramLivre = `${nome.nucleo} ${empresa.cidade.toLowerCase()} instagram`;
+          const r2 = await fontes.google.buscar([consultaInstagramLivre]);
+          instagram = instagramNosResultados(r2.get(consultaInstagramLivre) ?? [], empresa.nome, {
+            estrito: true,
+            telefones: [empresa.maps_telefone, ...(site?.telefones ?? []), ...(site?.whatsapps ?? [])],
+          });
+        }
       } catch (erro) {
         log.warn({ err: erro }, 'falha ao procurar o Instagram no Google');
         falhaBuscaInstagram = explicarFalhaBusca(erro, fontes.google.nome);
@@ -650,8 +753,8 @@ export async function enriquecerEmpresa(
       await etapa(
         'instagram',
         'sem_resultado',
-        'Nem o site, nem a busca da razão social, nem a busca pelo nome com "instagram" trouxeram um perfil desta empresa.',
-        linkGoogle(consultaInstagram),
+        'Nem o site, nem a busca da razão social, nem a busca pelo nome com "instagram" (com e sem aspas) trouxeram um perfil desta empresa.',
+        linkGoogle(consultaInstagramLivre ?? consultaInstagram),
       );
     } else {
       const buscou = !!fontes.google && ajustes.buscarInstagram;
@@ -663,6 +766,78 @@ export async function enriquecerEmpresa(
           : 'Sem busca no Google configurada (SERPER_API_KEY ou APIFY_TOKEN).',
         buscou ? linkGoogle(consultaInstagram) : null,
       );
+    }
+
+    // 4b. CNPJ de quem veio só do Maps: os números do site, do Instagram e dos trechos do Google
+    // são conferidos na Receita (mesma cidade, e o nome ou um telefone da loja). Confirmado, entram
+    // a razão social, o porte, a abertura, os contatos da Receita e o quadro de sócios.
+    if (!empresa.cnpj) {
+      const r = await acharCnpj(deps, {
+        empresa,
+        candidatos: [cnpjAchado, ...(site?.cnpjs ?? []), ...cnpjsNoTexto(textosDaBusca.join(' \n '))],
+        telefones: [empresa.maps_telefone, ...(site?.telefones ?? []), ...(site?.whatsapps ?? [])],
+      });
+      if (r.dados) {
+        const d = r.dados;
+        cnpjAchado = d.cnpj;
+        const adotado = await repo.adotarCnpj(pool, empresa.id, d);
+        empresa.cnpj = d.cnpj;
+        empresa.cnpj_basico = d.cnpj.slice(0, 8);
+        empresa.razao_social = d.razaoSocial;
+        empresa.porte = d.porte;
+        empresa.data_abertura = d.dataAbertura;
+        socios = d.socios
+          .filter((x) => x.tipo !== 'pj')
+          .map((x) => ({
+            nome: x.nome,
+            tipo: x.tipo,
+            qualificacao: x.qualificacao ?? 'Sócio',
+            prioridade: /administrador/i.test(x.qualificacao ?? '') ? 1 : 2,
+            data_entrada: x.desde,
+          }));
+        for (const x of socios) {
+          c.pessoa({
+            nome: x.nome,
+            fonte: 'receita',
+            cargo: x.qualificacao,
+            papel: 'socio',
+            prioridadeReceita: x.prioridade,
+            desde: x.data_entrada,
+          });
+        }
+        const anosCnpj = anosDesde(d.dataAbertura);
+        const antigo = anosCnpj != null && anosCnpj >= 5;
+        for (const t of d.telefones) {
+          c.contato({
+            canal: 'telefone',
+            valor: t,
+            fonte: 'receita',
+            confianca: antigo ? 20 : 35,
+            rotulo: antigo
+              ? `Cadastro na Receita (CNPJ de ${anosCnpj} anos, pode estar desatualizado)`
+              : 'Cadastro na Receita',
+          });
+        }
+        if (d.email) {
+          const doContador = EMAIL_CONTADOR.test(d.email);
+          c.contato({
+            canal: 'email',
+            valor: d.email,
+            fonte: 'receita',
+            confianca: doContador ? 15 : 40,
+            rotulo: doContador ? 'Pode ser do contador' : 'Cadastro na Receita',
+            status: doContador ? 'atencao' : 'nao_verificado',
+          });
+        }
+        await etapa(
+          'cnpj',
+          'encontrado',
+          `CNPJ ${formatarCnpj(d.cnpj)} confirmado na Receita (${r.motivo}, achado ${r.origem}): ${d.razaoSocial ?? 'sem razão social'}; ${socios.length} ${socios.length === 1 ? 'sócio' : 'sócios'}.${adotado ? '' : ' Este CNPJ já está em outra empresa da lista (pode ser a mesma loja duas vezes no Google).'}`,
+          `https://brasilapi.com.br/api/cnpj/v1/${d.cnpj}`,
+        );
+      } else {
+        await etapa('cnpj', r.status === 'erro' ? 'erro' : 'sem_resultado', r.motivo, r.url);
+      }
     }
 
     // 5. Nota: IA (Gemini) ou regras.
