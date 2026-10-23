@@ -34,6 +34,7 @@ import { Drawer } from './Drawer';
 import { EmailsDoLead } from './EmailsDoLead';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { SecaoFunil } from './SecaoFunil';
+import { useEhMaster } from './Sessao';
 
 const PORTE: Record<string, string> = {
   me: 'Microempresa',
@@ -211,7 +212,30 @@ function LinksDaTrilha({ etapas }: { etapas: EtapaEnriq[] }) {
   );
 }
 
-function trilha(e: EmpresaDetalhe): Camada[] {
+/**
+ * Detalhe da etapa sem o texto técnico do servidor (JSON de erro, nomes de variável): o cliente
+ * vê o que aconteceu; o master vê tudo.
+ */
+function detalheLegivel(d: string | null, master: boolean): string | undefined {
+  if (!d) return undefined;
+  if (master) return d;
+  const limpo = d
+    // JSON de erro do servidor
+    .replace(/\s*\{[\s\S]*\}\s*/g, ' ')
+    // parênteses com variável de ambiente ou nome de serviço interno
+    .replace(/\s*\([^)]*(=|worker-|[A-Z]{3,}_[A-Z])[^)]*\)/g, '')
+    .replace(/\bHTTP \d{3}\b/g, '')
+    .replace(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b(=\w+)?/g, '')
+    .replace(/\b(Apify|BrasilAPI|Serper|Railway|Evolution|Resend)\b:?/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,;:])/g, '$1')
+    .replace(/:\s*:/g, ':')
+    .trim()
+    .replace(/:$/, ': indisponível no momento.');
+  return limpo.length > 8 ? limpo : 'Falhou nesta rodada; o suporte já foi avisado.';
+}
+
+function trilha(e: EmpresaDetalhe, master = false): Camada[] {
   // Sem place_id da campanha, vale o que o enriquecimento achou (busca por nome e endereço).
   const mapsEnriq = e.etapas.find((et) => et.etapa === 'maps');
   const camadas: Camada[] = [
@@ -263,7 +287,7 @@ function trilha(e: EmpresaDetalhe): Camada[] {
         et.etapa === 'whatsapp'
           ? undefined
           : FONTE[et.etapa === 'receita' || et.etapa === 'cnpj' ? 'receita' : (et.etapa as FonteEnriq)],
-      detalhe: et.detalhe ?? undefined,
+      detalhe: detalheLegivel(et.detalhe, master),
     });
   }
   const st = e.enriquecimento?.status;
@@ -451,6 +475,7 @@ export function FichaEmpresa({
   aoAbrir?: (id: number) => void;
 }) {
   const cliente = useQueryClient();
+  const master = useEhMaster();
   const q = useQuery({
     queryKey: ['empresa', id],
     queryFn: () => api<EmpresaDetalhe>(`/empresas/${id}`),
@@ -615,7 +640,7 @@ export function FichaEmpresa({
             </Panel>
 
             <Panel titulo="Como encontramos">
-              <EnrichmentTrail camadas={trilha(e)} />
+              <EnrichmentTrail camadas={trilha(e, master)} />
               <LinksDaTrilha etapas={e.etapas} />
               {en?.concluidoEm && (
                 <p className="quieto" style={{ margin: '12px 0 0', fontSize: 12 }}>

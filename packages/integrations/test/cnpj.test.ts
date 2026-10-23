@@ -84,3 +84,110 @@ describe('CNPJ de quem veio só do Maps', () => {
     expect(emailDescartavel('compras@empresarialsul.com.br')).toBe(false);
   });
 });
+
+describe('consulta pública de CNPJ com reserva', () => {
+  const CNPJ_WS = {
+    razao_social: 'PATIO BAR LTDA',
+    porte: { id: '01', descricao: 'Micro Empresa' },
+    simples: { mei: 'Não' },
+    socios: [
+      {
+        nome: 'MARCOS PEREIRA',
+        tipo: 'Pessoa Física',
+        data_entrada: '2015-03-10',
+        qualificacao_socio: { descricao: 'Sócio-Administrador' },
+      },
+    ],
+    estabelecimento: {
+      cnpj: '19131243000197',
+      nome_fantasia: 'BOTECO DO PATIO',
+      situacao_cadastral: 'Ativa',
+      data_inicio_atividade: '2015-03-10',
+      atividade_principal: { id: '5611201' },
+      tipo_logradouro: 'Rua',
+      logradouro: 'DAS FLORES',
+      numero: '10',
+      bairro: 'CENTRO',
+      cep: '14400000',
+      ddd1: '16',
+      telefone1: '37207447',
+      email: null,
+      cidade: { nome: 'Franca' },
+      estado: { sigla: 'SP' },
+    },
+  };
+  const RECEITA_WS = {
+    status: 'OK',
+    cnpj: '19.131.243/0001-97',
+    nome: 'PATIO BAR LTDA',
+    fantasia: 'BOTECO DO PATIO',
+    abertura: '10/03/2015',
+    situacao: 'ATIVA',
+    porte: 'MICRO EMPRESA',
+    atividade_principal: [{ code: '56.11-2-01', text: 'Restaurantes' }],
+    logradouro: 'RUA DAS FLORES',
+    numero: '10',
+    bairro: 'CENTRO',
+    cep: '14.400-000',
+    municipio: 'FRANCA',
+    uf: 'SP',
+    telefone: '(16) 3720-7447 / (16) 99249-0094',
+    email: '',
+    qsa: [{ nome: 'MARCOS PEREIRA', qual: '49-Sócio-Administrador' }],
+    simei: { optante: false },
+  };
+
+  it('lê CNPJ.ws e ReceitaWS no mesmo formato', async () => {
+    const { converterCnpjWs, converterReceitaWs } = await import('../src/enriquecimento/cnpj.js');
+    const a = converterCnpjWs(CNPJ_WS)!;
+    const b = converterReceitaWs(RECEITA_WS)!;
+    for (const d of [a, b]) {
+      expect(d).toMatchObject({
+        cnpj: '19131243000197',
+        razaoSocial: 'PATIO BAR LTDA',
+        cnaePrincipal: '5611201',
+        porte: 'me',
+        situacao: '02',
+        dataAbertura: '2015-03-10',
+        cep: '14400000',
+        uf: 'SP',
+        mei: false,
+      });
+      expect(d.telefones).toContain('1637207447');
+      expect(d.socios[0]).toMatchObject({ nome: 'MARCOS PEREIRA', qualificacao: 'Sócio-Administrador' });
+    }
+    expect(b.telefones).toEqual(['1637207447', '16992490094']);
+  });
+
+  it('BrasilAPI recusa: tenta CNPJ.ws; todas fora: erro curto, sem o JSON do servidor', async () => {
+    const { consultarCnpjPublico, ConsultaCnpjIndisponivel } = await import('../src/enriquecimento/cnpj.js');
+    const chamadas: string[] = [];
+    const resposta = (status: number, corpo: unknown) =>
+      new Response(JSON.stringify(corpo), { status, headers: { 'content-type': 'application/json' } });
+    const original = globalThis.fetch;
+    try {
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        chamadas.push(
+          `${new URL(url).hostname} ${(init?.headers as Record<string, string>)['user-agent'] ? 'com-ua' : 'sem-ua'}`,
+        );
+        if (url.includes('brasilapi')) return resposta(403, { error: { code: '403', message: 'Forbidden' } });
+        return resposta(200, CNPJ_WS);
+      }) as typeof fetch;
+      const d = await consultarCnpjPublico('19.131.243/0001-97');
+      expect(d?.razaoSocial).toBe('PATIO BAR LTDA');
+      expect(chamadas).toEqual(['brasilapi.com.br com-ua', 'publica.cnpj.ws com-ua']);
+
+      globalThis.fetch = (async () => resposta(429, { erro: 'muitas' })) as unknown as typeof fetch;
+      const erro = await consultarCnpjPublico('19131243000197').catch((e) => e);
+      expect(erro).toBeInstanceOf(ConsultaCnpjIndisponivel);
+      expect(erro.message).toBe(
+        'Consulta pública da Receita indisponível agora (BrasilAPI: limite de consultas por minuto; CNPJ.ws: limite de consultas por minuto; ReceitaWS: limite de consultas por minuto).',
+      );
+
+      globalThis.fetch = (async () => resposta(404, {})) as unknown as typeof fetch;
+      expect(await consultarCnpjPublico('19131243000197')).toBeNull();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

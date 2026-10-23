@@ -502,6 +502,67 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(emails.map((e) => e.valor)).toEqual(['contato@obotecodopatio.com.br']);
   });
 
+  it('Instagram sem leitura (Apify sem crédito): o @ e o telefone do trecho do Google ficam', async () => {
+    const { rows: nova } = await pool.query<{ id: number }>(
+      `INSERT INTO descoberta.empresas (nome, cidade, uf, place_id)
+       VALUES ('Matheus & Rosaria Bar', 'SALVADOR', 'BA', 'p-matheus') RETURNING id`,
+    );
+    const id = Number(nova[0]!.id);
+    await pool.query(
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (1, $1, 'maps')`,
+      [id],
+    );
+    const f = fontesCompletas();
+    const fontes: Fontes = {
+      ...f,
+      cnpj: null,
+      google: {
+        async buscar(qs) {
+          const m = new Map<string, ResultadoGoogle[]>();
+          for (const q of qs)
+            m.set(
+              q,
+              q.includes('instagram') && !q.startsWith('"')
+                ? [
+                    resultado(
+                      'Matheus e Rosária (@matheuserosaria)',
+                      'https://www.instagram.com/matheuserosaria/',
+                      'A casa da Cremosinha e do Chopp gelado! Reservas (71) 99249-0094',
+                    ),
+                  ]
+                : [],
+            );
+          return m;
+        },
+      },
+      instagram: {
+        async ler() {
+          throw new Error(
+            'Apify: HTTP 403 { "error": { "type": "platform-feature-disabled", "message": "Monthly usage hard limit exceeded" } }',
+          );
+        },
+      },
+    };
+    await enriquecerEmpresa(deps(fontes), { empresaId: id, campanhaId: 1 });
+    const { rows: contatos } = await pool.query(
+      `SELECT canal, valor FROM enriquecimento.contatos WHERE empresa_id = $1 ORDER BY canal`,
+      [id],
+    );
+    expect(contatos).toContainEqual({
+      canal: 'instagram',
+      valor: 'https://www.instagram.com/matheuserosaria/',
+    });
+    expect(contatos.some((c) => c.valor === '71992490094')).toBe(true);
+    const { rows: etapa } = await pool.query(
+      `SELECT status, detalhe FROM enriquecimento.etapas WHERE empresa_id = $1 AND etapa = 'instagram'`,
+      [id],
+    );
+    expect(etapa[0].status).toBe('erro');
+    expect(etapa[0].detalhe).toBe(
+      '@matheuserosaria achado no Google; a leitura do perfil está sem crédito no momento (limite do mês do serviço). Do trecho do Google: 1 telefone(s).',
+    );
+  });
+
   it('não refaz empresa enriquecida há pouco, a não ser que peçam', async () => {
     expect(await enriquecerEmpresa(deps(fontesCompletas()), { empresaId: 1, campanhaId: 1 })).toBe('pulado');
     expect(

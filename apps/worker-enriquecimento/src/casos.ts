@@ -1,5 +1,6 @@
 import {
   type AvaliacaoIa,
+  ConsultaCnpjIndisponivel,
   cnpjConfere,
   cnpjsNoTexto,
   consultaPrincipal,
@@ -88,7 +89,8 @@ async function acharCnpj(
       dados =
         (await repo.dadosCnpjNaBase(pool, cnpj)) ?? (fontes.cnpj ? await fontes.cnpj.consultar(cnpj) : null);
     } catch (erro) {
-      falha = mensagemDe(erro).slice(0, 160);
+      falha = erro instanceof ConsultaCnpjIndisponivel ? erro.message : 'Erro ao consultar a Receita.';
+      deps.log.warn({ err: erro, cnpj }, 'consulta de CNPJ falhou');
       continue;
     }
     if (!dados) continue;
@@ -106,7 +108,12 @@ async function acharCnpj(
     recusados.push(`${formatarCnpj(cnpj)} (${conf.motivo})`);
   }
   if (!recusados.length && falha)
-    return { dados: null, status: 'erro', motivo: `Não consegui consultar a Receita: ${falha}`, url: null };
+    return {
+      dados: null,
+      status: 'erro',
+      motivo: `${falha} Use "Enriquecer de novo" mais tarde.`,
+      url: null,
+    };
   return {
     dados: null,
     status: 'nao_achou',
@@ -600,6 +607,7 @@ export async function enriquecerEmpresa(
       try {
         const r = await fontes.google.buscar([consultaInstagram]);
         const res = r.get(consultaInstagram) ?? [];
+        textosDaBusca.push(...res.map((x) => `${x.titulo} ${x.descricao} ${x.url}`));
         instagram = instagramNosResultados(res, empresa.nome);
         linkedinDaBusca.push(...res.filter((x) => /linkedin\.com\//i.test(x.url)));
         // Entre aspas não achou ("Matheus & Rosaria" x "Matheus e Rosária"): tenta sem aspas,
@@ -607,6 +615,9 @@ export async function enriquecerEmpresa(
         if (!instagram) {
           consultaInstagramLivre = `${nome.nucleo} ${empresa.cidade.toLowerCase()} instagram`;
           const r2 = await fontes.google.buscar([consultaInstagramLivre]);
+          textosDaBusca.push(
+            ...(r2.get(consultaInstagramLivre) ?? []).map((x) => `${x.titulo} ${x.descricao} ${x.url}`),
+          );
           instagram = instagramNosResultados(r2.get(consultaInstagramLivre) ?? [], empresa.nome, {
             estrito: true,
             telefones: [empresa.maps_telefone, ...(site?.telefones ?? []), ...(site?.whatsapps ?? [])],
@@ -617,13 +628,63 @@ export async function enriquecerEmpresa(
         falhaBuscaInstagram = explicarFalhaBusca(erro, fontes.google.nome);
       }
     }
+    /**
+     * Perfil achado, mas sem leitura (leitor do Instagram fora ou sem crédito): o @ fica como contato
+     * não verificado e o que o Google já mostrou da bio (telefone, WhatsApp, CNPJ) é aproveitado.
+     */
+    const usarTrechoDoGoogle = async (usuario: string, status: repo.StatusEtapa, motivo: string) => {
+      const url = `https://www.instagram.com/${usuario}/`;
+      c.contato({
+        canal: 'instagram',
+        valor: url,
+        fonte: 'google',
+        confianca: 60,
+        rotulo: `@${usuario}`,
+        urlOrigem: url,
+      });
+      const trecho = textosDaBusca
+        .filter((t) => t.toLowerCase().includes(usuario.toLowerCase()))
+        .join(' \n ');
+      const telefones = [
+        ...new Set(
+          [...trecho.matchAll(/\(?\b\d{2}\)?[\s.-]?9?\d{4}[\s.-]?\d{4}\b/g)]
+            .map((m) => normalizarTelefone(m[0]))
+            .filter((t): t is string => !!t),
+        ),
+      ];
+      for (const t of telefones.slice(0, 3)) {
+        c.contato({
+          canal: 'telefone',
+          valor: t,
+          fonte: 'google',
+          confianca: 55,
+          rotulo: 'Na bio do Instagram (trecho do Google)',
+          urlOrigem: url,
+        });
+      }
+      if (!empresa.cnpj) cnpjAchado ??= cnpjsNoTexto(trecho)[0] ?? null;
+      await etapa(
+        'instagram',
+        status,
+        `@${usuario} achado no Google; ${motivo}${telefones.length ? ` Do trecho do Google: ${telefones.length} telefone(s).` : ''}`,
+        url,
+      );
+    };
+
     if (instagram && fontes.instagram) {
       let falhou = false;
       try {
         perfil = await fontes.instagram.ler(instagram);
       } catch (erro) {
         falhou = true;
-        await etapa('instagram', 'erro', `@${instagram}: ${mensagemDe(erro)}`);
+        log.warn({ err: erro, instagram }, 'leitura do Instagram falhou');
+        await usarTrechoDoGoogle(
+          instagram,
+          'erro',
+          /limit|usage|402|403/i.test(mensagemDe(erro))
+            ? 'a leitura do perfil está sem crédito no momento (limite do mês do serviço).'
+            : 'a leitura do perfil falhou agora.',
+        );
       }
       if (!perfil && !falhou) {
         await etapa('instagram', 'sem_resultado', `@${instagram} não abriu (perfil privado ou removido).`);
@@ -740,12 +801,7 @@ export async function enriquecerEmpresa(
         );
       }
     } else if (instagram) {
-      await etapa(
-        'instagram',
-        'pulada',
-        `@${instagram} encontrado, mas sem APIFY_TOKEN para ler o perfil.`,
-        `https://www.instagram.com/${instagram}/`,
-      );
+      await usarTrechoDoGoogle(instagram, 'pulada', 'a leitura do perfil está desligada.');
     } else if (falhaBuscaInstagram) {
       // Não é "não tem Instagram": a busca nem rodou.
       await etapa('instagram', 'erro', falhaBuscaInstagram, linkGoogle(consultaInstagram));

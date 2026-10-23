@@ -54,6 +54,11 @@ const env = carregarEnv(
     ENRIQ_BUSCAR_INSTAGRAM: booleano.default(true),
     /** Procura no Google (nome + endereço) quem veio da base de CNPJ e não apareceu nas buscas. */
     ENRIQ_ACHAR_NO_GOOGLE: booleano.default(true),
+    /**
+     * Abre o perfil do Instagram pelo Apify (bio completa, link da bio, seguidores). Desligado, o
+     * sistema usa só o @ e o trecho que o Google (Serper) já mostra, sem custo do Apify.
+     */
+    ENRIQ_LER_INSTAGRAM: booleano.default(true),
     /** Confirma o CNPJ de quem veio só do Maps na BrasilAPI (dados públicos da Receita, grátis). */
     ENRIQ_CNPJ_PUBLICO: booleano.default(true),
     /** Base paga Direct Data (telefones atualizados). Sem o token, a etapa não roda. */
@@ -110,9 +115,10 @@ const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'instagram' | 'direto
       : apify
         ? { nome: 'Apify', buscar: (consultas) => enriq.buscarNoGoogle(apify, consultas) }
         : null,
-    instagram: apify ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) } : null,
+    instagram:
+    apify && env.ENRIQ_LER_INSTAGRAM ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) } : null,
     diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
-    cnpj: env.ENRIQ_CNPJ_PUBLICO ? { consultar: (cnpj) => enriq.consultarCnpjBrasilApi(cnpj) } : null,
+    cnpj: env.ENRIQ_CNPJ_PUBLICO ? { consultar: (cnpj) => enriq.consultarCnpjPublico(cnpj) } : null,
     basePaga: env.DIRECTD_TOKEN
       ? {
           nome: 'Direct Data',
@@ -234,7 +240,7 @@ const ligado = (v: unknown) => (v ? 'ligado' : 'desligado');
 log.info(
   {
     busca_no_google: serper ? 'Serper' : apify ? 'Apify' : 'desligada',
-    perfis_instagram: ligado(apify),
+    perfis_instagram: ligado(apify && env.ENRIQ_LER_INSTAGRAM),
     ia: 'a de cada conta (ou a da plataforma: IA_API_KEY)',
     places_whatsapp: 'os de cada conta (painel master)',
     diretorios: ligado(serper),

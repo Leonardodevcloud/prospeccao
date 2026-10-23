@@ -117,18 +117,178 @@ export function converterBrasilApi(bruto: unknown): DadosCnpj | null {
   };
 }
 
+/** Resposta do CNPJ.ws público (publica.cnpj.ws/cnpj/{cnpj}) no formato do sistema. */
+export function converterCnpjWs(bruto: unknown): DadosCnpj | null {
+  const r = (bruto ?? {}) as Record<string, unknown>;
+  const e = (r.estabelecimento ?? {}) as Record<string, unknown>;
+  const cnpj = soDigitos(String(e.cnpj ?? ''));
+  if (!cnpjValido(cnpj)) return null;
+  const sub = (o: unknown, k: string) => texto((o as Record<string, unknown> | null)?.[k]);
+  const telefones = [
+    [e.ddd1, e.telefone1],
+    [e.ddd2, e.telefone2],
+  ]
+    .map(([d, t]) => normalizarTelefone(`${d ?? ''}${t ?? ''}`))
+    .filter((t): t is string => !!t);
+  const situacao = (texto(e.situacao_cadastral) ?? '').toUpperCase();
+  const cnae = soDigitos(String(sub(e.atividade_principal, 'id') ?? ''));
+  const socios = Array.isArray(r.socios) ? (r.socios as Record<string, unknown>[]) : [];
+  return {
+    cnpj,
+    razaoSocial: texto(r.razao_social),
+    nomeFantasia: texto(e.nome_fantasia),
+    cnaePrincipal: cnae.length === 7 ? cnae : null,
+    porte: porteDoTexto(sub(r.porte, 'id'), sub(r.porte, 'descricao')),
+    situacao: situacao ? (situacao === 'ATIVA' ? '02' : '08') : null,
+    dataAbertura: texto(e.data_inicio_atividade),
+    logradouro: [texto(e.tipo_logradouro), texto(e.logradouro)].filter(Boolean).join(' ') || null,
+    numero: texto(e.numero),
+    bairro: texto(e.bairro),
+    cep: (() => {
+      const c = soDigitos(String(e.cep ?? ''));
+      return c.length === 8 ? c : null;
+    })(),
+    cidade: sub(e.cidade, 'nome'),
+    uf: sub(e.estado, 'sigla')?.toUpperCase() ?? null,
+    telefones: [...new Set(telefones)],
+    email: texto(e.email)?.toLowerCase() ?? null,
+    mei: /sim/i.test(sub(r.simples, 'mei') ?? ''),
+    socios: socios
+      .map((x) => ({
+        nome: texto(x.nome) ?? '',
+        qualificacao: sub(x.qualificacao_socio, 'descricao'),
+        tipo: (/jur[ií]dica/i.test(String(x.tipo ?? ''))
+          ? 'pj'
+          : /estrangeir/i.test(String(x.tipo ?? ''))
+            ? 'estrangeiro'
+            : 'pf') as SocioCnpj['tipo'],
+        desde: texto(x.data_entrada),
+      }))
+      .filter((x) => x.nome),
+  };
+}
+
+/** Resposta da ReceitaWS (receitaws.com.br/v1/cnpj/{cnpj}) no formato do sistema. */
+export function converterReceitaWs(bruto: unknown): DadosCnpj | null {
+  const r = (bruto ?? {}) as Record<string, unknown>;
+  if (String(r.status ?? '').toUpperCase() === 'ERROR') return null;
+  const cnpj = soDigitos(String(r.cnpj ?? ''));
+  if (!cnpjValido(cnpj)) return null;
+  const abertura = texto(r.abertura)?.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const principal = Array.isArray(r.atividade_principal)
+    ? (r.atividade_principal[0] as Record<string, unknown> | undefined)
+    : undefined;
+  const cnae = soDigitos(String(principal?.code ?? ''));
+  const telefones = (texto(r.telefone) ?? '')
+    .split('/')
+    .map((t) => normalizarTelefone(t))
+    .filter((t): t is string => !!t);
+  const qsa = Array.isArray(r.qsa) ? (r.qsa as Record<string, unknown>[]) : [];
+  return {
+    cnpj,
+    razaoSocial: texto(r.nome),
+    nomeFantasia: texto(r.fantasia),
+    cnaePrincipal: cnae.length === 7 ? cnae : null,
+    porte: porteDoTexto(null, r.porte),
+    situacao: texto(r.situacao) ? (/ATIVA/i.test(String(r.situacao)) ? '02' : '08') : null,
+    dataAbertura: abertura ? `${abertura[3]}-${abertura[2]}-${abertura[1]}` : null,
+    logradouro: texto(r.logradouro),
+    numero: texto(r.numero),
+    bairro: texto(r.bairro),
+    cep: (() => {
+      const c = soDigitos(String(r.cep ?? ''));
+      return c.length === 8 ? c : null;
+    })(),
+    cidade: texto(r.municipio),
+    uf: texto(r.uf)?.toUpperCase() ?? null,
+    telefones: [...new Set(telefones)],
+    email: texto(r.email)?.toLowerCase() ?? null,
+    mei: (r.simei as { optante?: boolean } | undefined)?.optante === true,
+    socios: qsa
+      .map((x) => ({
+        nome: texto(x.nome) ?? '',
+        qualificacao: texto(x.qual)?.replace(/^\d+-/, '') ?? null,
+        tipo: 'pf' as const,
+        desde: null,
+      }))
+      .filter((x) => x.nome),
+  };
+}
+
+/** Os servidores públicos recusam pedido sem identificação (firewall contra robôs). */
+const CABECALHOS = { 'user-agent': 'ProspectTeam/1.0 (+https://prospectteam.com.br)' };
+
+const status = (erro: unknown) => (erro as { detalhes?: { status?: number } }).detalhes?.status;
+
 /** Consulta o CNPJ na BrasilAPI (dados públicos da Receita). null: não existe. */
 export async function consultarCnpjBrasilApi(cnpj: string, timeoutMs = 15_000): Promise<DadosCnpj | null> {
   try {
     const bruto = await requisitarJson<unknown>(`https://brasilapi.com.br/api/cnpj/v1/${soDigitos(cnpj)}`, {
       servico: 'BrasilAPI',
+      headers: CABECALHOS,
       timeoutMs,
     });
     return converterBrasilApi(bruto);
   } catch (erro) {
-    if ((erro as { detalhes?: { status?: number } }).detalhes?.status === 404) return null;
+    if (status(erro) === 404) return null;
     throw erro;
   }
+}
+
+/** Fontes públicas e gratuitas, na ordem: a primeira que responder vale. */
+const FONTES_PUBLICAS: {
+  nome: string;
+  url: (cnpj: string) => string;
+  converter: (bruto: unknown) => DadosCnpj | null;
+}[] = [
+  {
+    nome: 'BrasilAPI',
+    url: (c) => `https://brasilapi.com.br/api/cnpj/v1/${c}`,
+    converter: converterBrasilApi,
+  },
+  { nome: 'CNPJ.ws', url: (c) => `https://publica.cnpj.ws/cnpj/${c}`, converter: converterCnpjWs },
+  { nome: 'ReceitaWS', url: (c) => `https://receitaws.com.br/v1/cnpj/${c}`, converter: converterReceitaWs },
+];
+
+/** Erro de consulta pública em português curto (sem o JSON do servidor). */
+export class ConsultaCnpjIndisponivel extends Error {
+  constructor(public readonly falhas: string[]) {
+    super(`Consulta pública da Receita indisponível agora (${falhas.join('; ')}).`);
+  }
+}
+
+const motivoCurto = (erro: unknown) => {
+  const s = status(erro);
+  if (s === 403) return 'recusou o pedido';
+  if (s === 429) return 'limite de consultas por minuto';
+  if (s && s >= 500) return 'fora do ar';
+  return 'sem resposta';
+};
+
+/**
+ * Consulta o CNPJ nas fontes públicas da Receita (BrasilAPI, depois CNPJ.ws, depois ReceitaWS):
+ * se uma recusar ou estiver fora, tenta a próxima. null: o CNPJ não existe. Todas falhando, lança
+ * ConsultaCnpjIndisponivel com o motivo curto de cada uma.
+ */
+export async function consultarCnpjPublico(cnpj: string, timeoutMs = 15_000): Promise<DadosCnpj | null> {
+  const c = soDigitos(cnpj);
+  const falhas: string[] = [];
+  for (const f of FONTES_PUBLICAS) {
+    try {
+      const bruto = await requisitarJson<unknown>(f.url(c), {
+        servico: f.nome,
+        headers: CABECALHOS,
+        timeoutMs,
+      });
+      const dados = f.converter(bruto);
+      if (dados) return dados;
+      falhas.push(`${f.nome}: resposta sem os dados`);
+    } catch (erro) {
+      if (status(erro) === 404) return null;
+      falhas.push(`${f.nome}: ${motivoCurto(erro)}`);
+    }
+  }
+  throw new ConsultaCnpjIndisponivel(falhas);
 }
 
 const PALAVRAS_GENERICAS = new Set([
