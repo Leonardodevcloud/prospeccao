@@ -15,6 +15,7 @@ import {
 } from '../api';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { ImportarLeads } from '../componentes/ImportarLeads';
 import { useEhAdmin } from '../componentes/Sessao';
 import { fmtCidade, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO_ORIGEM } from '../formatar';
 
@@ -103,6 +104,7 @@ export function Leads() {
   const [busca, setBusca] = useState(params.get('busca') ?? '');
   const [marcados, setMarcados] = useState<Set<number>>(new Set());
   const [descartando, setDescartando] = useState(false);
+  const [importando, setImportando] = useState(false);
   const [motivo, setMotivo] = useState('');
   const cliente = useQueryClient();
   const enviarLote = useMutation({
@@ -193,6 +195,11 @@ export function Leads() {
           </p>
         </div>
         <div className="acoes">
+          {admin && (
+            <Button variant="ghost" icon="file-text" onClick={() => setImportando(true)}>
+              Importar leads
+            </Button>
+          )}
           {admin && (
             <Button
               variant="ghost"
@@ -477,6 +484,14 @@ export function Leads() {
                           <Badge tone="warning">Enriquecendo</Badge>
                         ) : e.enriqStatus === 'erro' ? (
                           <Badge tone="danger">Erro</Badge>
+                        ) : e.enriqPedido === false && e.origem === 'importacao' ? (
+                          <span
+                            className="quieto"
+                            style={{ fontSize: 13 }}
+                            title="Importado sem enriquecimento"
+                          >
+                            Sem nota
+                          </span>
                         ) : (
                           <span className="quieto" style={{ fontSize: 13 }}>
                             Na fila
@@ -557,6 +572,7 @@ export function Leads() {
           aoAbrir={(id) => mudar({ empresa: String(id) })}
         />
       )}
+      {importando && <ImportarLeads aoFechar={() => setImportando(false)} />}
     </>
   );
 }

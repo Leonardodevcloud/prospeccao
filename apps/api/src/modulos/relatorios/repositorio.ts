@@ -1,6 +1,7 @@
 import type { Executor } from '@prospeccao/db';
 import type { FiltrosRelatorio } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
+import { visivel } from '../../visibilidade.js';
 
 /**
  * Relatórios (só leitura): o que as campanhas acharam, como os leads andaram no funil e se a
@@ -23,10 +24,10 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
   // Leads encontrados no período (uma linha por empresa), com nota, decisor e WhatsApp.
   const LEADS = `
     SELECT e.id, l.faixa, l.status,
-           EXISTS (SELECT 1 FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor) AS com_decisor,
-           (SELECT p.fontes FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor LIMIT 1) AS fontes_decisor,
+           EXISTS (SELECT 1 FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')}) AS com_decisor,
+           (SELECT p.fontes FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')} LIMIT 1) AS fontes_decisor,
            EXISTS (SELECT 1 FROM enriquecimento.contatos w WHERE w.empresa_id = e.id AND w.canal = 'whatsapp'
-                     AND w.status <> 'invalido') AS com_whatsapp
+                     AND w.status <> 'invalido' AND ${visivel('w')}) AS com_whatsapp
       FROM descoberta.empresas e
       LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
      WHERE NOT e.mei AND EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce WHERE ce.empresa_id = e.id
@@ -94,7 +95,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
               count(*) FILTER (WHERE l.faixa = 'B')::int AS "faixaB",
               count(*) FILTER (WHERE l.faixa = 'C')::int AS "faixaC",
               count(*) FILTER (WHERE EXISTS (SELECT 1 FROM enriquecimento.pessoas p
-                                WHERE p.empresa_id = ce.empresa_id AND p.decisor))::int AS "comDecisor",
+                                WHERE p.empresa_id = ce.empresa_id AND p.decisor AND ${visivel('p')}))::int AS "comDecisor",
               count(*) FILTER (WHERE o.empresa_id IS NULL)::int AS novos,
               count(*) FILTER (WHERE o.etapa = 'descartado')::int AS descartados,
               count(*) FILTER (WHERE o.etapa IS NOT NULL AND o.etapa <> 'descartado')::int AS "noFunil",
@@ -176,7 +177,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
      total AS (
        SELECT unnest(c.fontes) AS fonte, count(*)::int AS n
          FROM enriquecimento.contatos c WHERE c.canal IN ('whatsapp', 'telefone', 'email')
-          AND ${daConta('c.empresa_id')}
+          AND ${daConta('c.empresa_id')} AND ${visivel('c')}
         GROUP BY 1
      )
      SELECT m.fonte, count(*)::int AS erros, coalesce(max(t.n), 0)::int AS contatos

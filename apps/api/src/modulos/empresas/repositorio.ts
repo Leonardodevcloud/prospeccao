@@ -1,6 +1,7 @@
 import type { Executor } from '@prospeccao/db';
 import type { FiltrosEmpresas } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
+import { visivel } from '../../visibilidade.js';
 
 /**
  * Leitura das empresas descobertas. Tudo vem de views publicadas pelos domínios
@@ -33,15 +34,16 @@ export const juncoesEnriq = () => `
   LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
   LEFT JOIN LATERAL (
     SELECT nome, cargo FROM enriquecimento.pessoas p
-     WHERE p.empresa_id = e.id AND p.decisor
+     WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')}
        AND NOT EXISTS (SELECT 1 FROM comercial.feedback f
                         WHERE f.empresa_id = e.id AND f.tipo = 'nao_decisor' AND f.valor = p.nome)
+     ORDER BY (p.conta_id <> 0) DESC, p.prioridade
      LIMIT 1
   ) dec ON true
   LEFT JOIN LATERAL (
     -- Melhor contato que você não marcou como errado (o principal, se ainda vale).
     SELECT canal, valor, status FROM enriquecimento.contatos c
-     WHERE c.empresa_id = e.id AND c.canal IN ('whatsapp', 'telefone', 'email') AND c.status <> 'invalido'
+     WHERE c.empresa_id = e.id AND c.canal IN ('whatsapp', 'telefone', 'email') AND c.status <> 'invalido' AND ${visivel('c')}
        AND NOT EXISTS (SELECT 1 FROM comercial.feedback f
                         WHERE f.empresa_id = e.id AND f.tipo = 'numero_errado' AND f.valor = c.valor)
      ORDER BY c.principal DESC, (c.status = 'verificado') DESC, c.confianca DESC
@@ -106,7 +108,7 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
   if (f.scoreMinimo != null) where.push(`l.score >= ${p(f.scoreMinimo)}`);
   if (f.comWhatsapp != null) {
     // WhatsApp achado (botão do site, bio, Evolution); só o número conferido como inválido fica de fora.
-    const existe = `EXISTS (SELECT 1 FROM enriquecimento.contatos w WHERE w.empresa_id = e.id AND w.canal = 'whatsapp' AND w.status <> 'invalido')`;
+    const existe = `EXISTS (SELECT 1 FROM enriquecimento.contatos w WHERE w.empresa_id = e.id AND w.canal = 'whatsapp' AND w.status <> 'invalido' AND ${visivel('w')})`;
     where.push(f.comWhatsapp ? existe : `NOT ${existe}`);
   }
 
@@ -115,7 +117,8 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
 
   const total = await db.query<{ n: number }>(`SELECT count(*)::int AS n ${base}`, valores);
   const pagina = await db.query(
-    `SELECT ${CAMPOS_LISTA}, ce.origem, ce.dentro_do_raio AS "dentroDoRaio", ce.campanha_id AS "campanhaId"
+    `SELECT ${CAMPOS_LISTA}, ce.origem, ce.dentro_do_raio AS "dentroDoRaio", ce.campanha_id AS "campanhaId",
+            (ce.enriquecimento_solicitado_em IS NOT NULL) AS "enriqPedido"
        ${base}
       ORDER BY ${ORDENS[f.ordem]}
       LIMIT ${p(f.porPagina)} OFFSET ${p((f.pagina - 1) * f.porPagina)}`,
@@ -181,7 +184,7 @@ export async function obter(db: Executor, id: number) {
          FROM enriquecimento.pessoas p
          LEFT JOIN comercial.feedback f
            ON f.empresa_id = p.empresa_id AND f.tipo = 'nao_decisor' AND f.valor = p.nome
-        WHERE p.empresa_id = $1 ORDER BY (f.id IS NOT NULL), p.prioridade, p.nome`,
+        WHERE p.empresa_id = $1 AND ${visivel('p')} ORDER BY (f.id IS NOT NULL), (p.conta_id <> 0) DESC, p.prioridade, p.nome`,
       [id],
     ),
     db.query(
@@ -193,7 +196,7 @@ export async function obter(db: Executor, id: number) {
          FROM enriquecimento.contatos c
          LEFT JOIN comercial.feedback f
            ON f.empresa_id = c.empresa_id AND f.tipo = 'numero_errado' AND f.valor = c.valor
-        WHERE c.empresa_id = $1
+        WHERE c.empresa_id = $1 AND ${visivel('c')}
         ORDER BY (f.id IS NOT NULL), c.principal DESC, (c.status = 'verificado') DESC, c.confianca DESC, c.canal`,
       [id],
     ),
@@ -253,11 +256,11 @@ export async function registrarFeedback(
   const origem =
     d.tipo === 'numero_errado'
       ? await db.query<{ fontes: string[]; canal: string }>(
-          'SELECT fontes, canal FROM enriquecimento.contatos WHERE empresa_id = $1 AND valor = $2 LIMIT 1',
+          `SELECT fontes, canal FROM enriquecimento.contatos c WHERE empresa_id = $1 AND valor = $2 AND ${visivel('c')} LIMIT 1`,
           [empresaId, d.valor],
         )
       : await db.query<{ fontes: string[]; canal: string }>(
-          `SELECT fontes, 'pessoa' AS canal FROM enriquecimento.pessoas WHERE empresa_id = $1 AND nome = $2 LIMIT 1`,
+          `SELECT fontes, 'pessoa' AS canal FROM enriquecimento.pessoas p WHERE empresa_id = $1 AND nome = $2 AND ${visivel('p')} LIMIT 1`,
           [empresaId, d.valor],
         );
   await db.query(

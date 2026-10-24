@@ -8,6 +8,7 @@ import {
   type VincularEntrada,
 } from '@prospeccao/shared';
 import { contaSql, usuarioAtual } from '../../contexto.js';
+import { visivel } from '../../visibilidade.js';
 
 /**
  * Contatos da negociação: as pessoas que a equipe conheceu conversando com a empresa (quem atendeu,
@@ -80,7 +81,7 @@ export async function opcoesDeEnvio(db: Executor, empresaId: number): Promise<Op
               (CASE WHEN c.principal THEN 0 ELSE 1 END) AS ordem
          FROM enriquecimento.contatos c
          LEFT JOIN enriquecimento.pessoas p ON p.id = c.pessoa_id
-        WHERE c.empresa_id = $1 AND c.status <> 'invalido'
+        WHERE c.empresa_id = $1 AND c.status <> 'invalido' AND ${visivel('c')}
           AND (c.canal = 'whatsapp' OR (c.canal = 'telefone' AND (c.whatsapp IS NOT FALSE)))
           AND NOT EXISTS (SELECT 1 FROM comercial.feedback f WHERE f.empresa_id = c.empresa_id
                            AND f.tipo = 'numero_errado' AND f.valor = c.valor)
@@ -286,8 +287,8 @@ export async function sugerir(
       `SELECT 1 FROM comercial.contatos_lead
         WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND telefone IS NOT NULL AND ${mesmoNumero('telefone', '$2')}
        UNION ALL
-       SELECT 1 FROM enriquecimento.contatos
-        WHERE empresa_id = $1 AND canal IN ('whatsapp', 'telefone') AND ${mesmoNumero('valor', '$2')}
+       SELECT 1 FROM enriquecimento.contatos c
+        WHERE empresa_id = $1 AND canal IN ('whatsapp', 'telefone') AND ${mesmoNumero('valor', '$2')} AND ${visivel('c')}
        LIMIT 1`,
       [empresaId, a.telefone],
     );
@@ -500,7 +501,7 @@ export async function buscarLeads(db: Executor, busca: string) {
       WHERE o.conta_id = ${C} AND o.etapa <> 'descartado'
         AND (e.nome ILIKE $1 OR e.razao_social ILIKE $1
              OR ($2 <> '' AND (e.maps_telefone LIKE $2
-                  OR EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.empresa_id = o.empresa_id AND c.valor LIKE $2)))
+                  OR EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.empresa_id = o.empresa_id AND c.valor LIKE $2 AND ${visivel('c')})))
              OR EXISTS (SELECT 1 FROM comercial.contatos_lead cl WHERE cl.conta_id = o.conta_id AND cl.empresa_id = o.empresa_id
                          AND (cl.nome ILIKE $1 OR ($2 <> '' AND cl.telefone LIKE $2))))
       ORDER BY o.atualizado_em DESC

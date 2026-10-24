@@ -1,6 +1,7 @@
 import type { Executor } from '@prospeccao/db';
 import type { ConfigAgenteEntrada } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
+import { visivel } from '../../visibilidade.js';
 
 /** Agente de abordagem (schema comercial, só a API escreve). */
 
@@ -225,7 +226,7 @@ export async function leadPorTelefone(
         WHERE cl.conta_id = ${C} AND cl.status = 'confirmado' AND cl.telefone IS NOT NULL
           AND left(cl.telefone, 2) = $1 AND right(cl.telefone, 8) = $2
        UNION ALL
-       SELECT c.empresa_id, c.valor, NULL, 1 FROM enriquecimento.contatos c WHERE c.canal IN ('whatsapp', 'telefone')
+       SELECT c.empresa_id, c.valor, NULL, 1 FROM enriquecimento.contatos c WHERE c.canal IN ('whatsapp', 'telefone') AND ${visivel('c')}
        UNION ALL SELECT e.id, e.maps_telefone, NULL, 1 FROM descoberta.empresas e WHERE e.maps_telefone IS NOT NULL
      )
      SELECT o.empresa_id::int, tel.contato_id::int FROM tel

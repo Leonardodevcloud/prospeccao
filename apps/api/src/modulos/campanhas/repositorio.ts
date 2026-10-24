@@ -6,12 +6,13 @@ import {
   type StatusCampanha,
 } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
+import { visivel } from '../../visibilidade.js';
 
 /** Campanha com o progresso da descoberta (lido das views publicadas pelo domínio descoberta). */
 const SELECT = `
   SELECT c.id, c.nome, c.nicho_id AS "nichoId", n.nome AS "nichoNome", c.cidades, c.raio_km::float8 AS "raioKm",
          c.meta_diaria AS "metaDiaria", c.limite_envios_dia AS "limiteEnviosDia", c.cadencia, c.modo,
-         c.max_por_busca AS "maxPorBusca", c.limite_leads AS "limiteLeads", c.teto_places_usd::float8 AS "tetoPlacesUsd", c.status, c.iniciada_em AS "iniciadaEm",
+         c.max_por_busca AS "maxPorBusca", c.limite_leads AS "limiteLeads", c.teto_places_usd::float8 AS "tetoPlacesUsd", c.status, c.tipo, c.iniciada_em AS "iniciadaEm",
          c.criado_em AS "criadoEm", c.atualizado_em AS "atualizadoEm",
          json_build_object(
            'empresas', coalesce(p.empresas, 0),
@@ -306,18 +307,19 @@ const elegiveis = () => `
    AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d
                     WHERE d.empresa_id = e.id AND d.conta_id = cp.conta_id)`;
 
-const SEM_DECISOR = `NOT EXISTS (SELECT 1 FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor)`;
+const SEM_DECISOR = () =>
+  `NOT EXISTS (SELECT 1 FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')})`;
 
-const FILTRO_ESCOPO: Record<EscopoReenriquecer, string> = {
-  ab: `l.faixa IN ('A', 'B')`,
+const FILTRO_ESCOPO: Record<EscopoReenriquecer, () => string> = {
+  ab: () => `l.faixa IN ('A', 'B')`,
   sem_decisor: SEM_DECISOR,
-  todos: 'true',
+  todos: () => 'true',
 };
 
 export async function previaReenriquecer(db: Executor, campanhaId: number) {
   const { rows } = await db.query<{ ab: number; semDecisor: number; todos: number }>(
-    `SELECT count(*) FILTER (WHERE ${FILTRO_ESCOPO.ab})::int AS ab,
-            count(*) FILTER (WHERE ${SEM_DECISOR})::int AS "semDecisor",
+    `SELECT count(*) FILTER (WHERE ${FILTRO_ESCOPO.ab()})::int AS ab,
+            count(*) FILTER (WHERE ${SEM_DECISOR()})::int AS "semDecisor",
             count(*)::int AS todos
        ${elegiveis()}`,
     [campanhaId],
@@ -332,7 +334,7 @@ export async function empresasParaReenriquecer(
 ): Promise<number[]> {
   // Notas A primeiro: o que mais importa fica pronto antes.
   const { rows } = await db.query<{ id: number }>(
-    `SELECT e.id::int ${elegiveis()} AND ${FILTRO_ESCOPO[escopo]}
+    `SELECT e.id::int ${elegiveis()} AND ${FILTRO_ESCOPO[escopo]()}
       ORDER BY l.score DESC NULLS LAST, e.id`,
     [campanhaId],
   );

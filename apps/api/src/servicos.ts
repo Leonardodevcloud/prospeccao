@@ -29,6 +29,7 @@ import {
   verificarResend,
 } from '@prospeccao/integrations/email';
 import { type ConfigIa, configIa } from '@prospeccao/integrations/ia';
+import { extrairLeadsDoTexto, mapearColunasComIa } from '@prospeccao/integrations/importacao';
 import * as ors from '@prospeccao/integrations/ors';
 import {
   assinarInstancia,
@@ -45,7 +46,7 @@ import {
   type StatusWhatsapp,
   statusInstancia,
 } from '@prospeccao/integrations/whatsapp';
-import { AppError, LISTA_MODULOS, type Modulo } from '@prospeccao/shared';
+import { AppError, LISTA_MODULOS, type MapaImportacao, type Modulo } from '@prospeccao/shared';
 
 /**
  * Serviços de fora de cada conta (WhatsApp, IA, e-mail, geocodificação), montados com as
@@ -127,6 +128,14 @@ export interface ServicosConta {
   email: EmailConta | null;
   /** Endereço → coordenadas (bases de operação). */
   geocodificar: ((endereco: string) => Promise<{ lat: number; lng: number } | null>) | null;
+  /** IA que lê a planilha de leads importada (o que é cada coluna) e tira os leads de um PDF. */
+  iaImportacao?: {
+    mapear(e: { linhas: string[][]; palpite: MapaImportacao; cabecalho: number | null }): Promise<{
+      mapa: MapaImportacao;
+      cabecalho: number | null;
+    } | null>;
+    extrairDoTexto(texto: string): Promise<string[][]>;
+  } | null;
   /** De onde veio cada credencial (da conta ou da plataforma), para a tela. */
   origem: Record<'places' | 'ors' | 'resend' | 'whatsapp' | 'ia', Origem>;
   /** Descrição da IA em uso ("DeepSeek · deepseek-flash"). */
@@ -208,6 +217,12 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
       ? async (endereco) => {
           const r = await ors.geocodificar({ apiKey: c.ors!.apiKey }, endereco);
           return r && r.confianca >= 0.6 ? { lat: r.lat, lng: r.lng } : null;
+        }
+      : null,
+    iaImportacao: iaCfg
+      ? {
+          mapear: (e) => mapearColunasComIa(iaCfg, e),
+          extrairDoTexto: (t) => extrairLeadsDoTexto(iaCfg, t),
         }
       : null,
     origem: c.origem,

@@ -3,6 +3,7 @@
  * repassa para o Railway; em desenvolvimento, o proxy do Vite.
  */
 
+import type { CampoImportacao, LeadImportado } from '@prospeccao/shared/importacao';
 export class ErroApi extends Error {
   constructor(
     readonly status: number,
@@ -132,6 +133,8 @@ export interface Campanha {
   /** Teto de gasto no Google em buscas pagas. null = sem teto; 0 = só a franquia grátis. */
   tetoPlacesUsd?: number | null;
   status: 'rascunho' | 'ativa' | 'pausada' | 'encerrada';
+  /** Campanha de busca (Google + Receita) ou lista importada pelo cliente. */
+  tipo?: 'busca' | 'importacao';
   iniciadaEm: string | null;
   criadoEm: string;
   progresso: ProgressoCampanha;
@@ -159,7 +162,9 @@ export interface EmpresaLista {
   noMaps: boolean;
   /** Microempreendedor individual (pelo Simples ou pela razão social com CPF). */
   mei: boolean;
-  origem: 'cnpj' | 'maps' | 'ambos';
+  origem: 'cnpj' | 'maps' | 'ambos' | 'importacao';
+  /** Já foi pedido o enriquecimento (na lista importada, só quando o cliente pede). */
+  enriqPedido?: boolean;
   dentroDoRaio: boolean | null;
   campanhaId: number;
   /** Enriquecimento: null enquanto não rodou. */
@@ -478,7 +483,8 @@ export type FonteEnriq =
   | 'places'
   | 'manual'
   | 'whatsapp'
-  | 'base_paga';
+  | 'base_paga'
+  | 'importacao';
 
 export interface PessoaEnriq {
   id: number;
@@ -1575,4 +1581,57 @@ export interface DesempenhoIa {
   };
   passagensPorTipo: { tipo: string; n: number }[];
   baseMaisUsada: { id: number; titulo: string; pergunta: string | null; usos: number }[];
+}
+
+/* ───────── Importação de leads (Excel, CSV ou PDF do cliente) ───────── */
+
+export interface ColunaImportacao {
+  indice: number;
+  cabecalho: string | null;
+  campo: CampoImportacao;
+  exemplos: string[];
+}
+
+export interface ImportacaoLeads {
+  id: number;
+  arquivo: string;
+  formato: 'xlsx' | 'csv' | 'pdf';
+  status: 'analisada' | 'na_fila' | 'gravando' | 'funil' | 'concluida' | 'erro';
+  leitura: 'regras' | 'ia';
+  total: number;
+  gravados: number;
+  resultado: {
+    avisos?: string[];
+    leads?: number;
+    semCidade?: number;
+    semNome?: number;
+    repetidas?: number;
+    novas?: number;
+    existentes?: number;
+    jaNaLista?: number;
+    enriquecer?: number;
+    funil?: { adicionadas: number; jaNoFunil: number; duplicadas: number };
+  };
+  erro: string | null;
+  campanha: { id: number; nome: string | null } | null;
+  criadoEm: string;
+  concluidoEm: string | null;
+  cabecalho?: number | null;
+  linhasDoArquivo?: number;
+  inicio?: string[][];
+  colunas?: ColunaImportacao[];
+}
+
+export interface PreviaImportacao {
+  leads: number;
+  amostra: LeadImportado[];
+  semNome: number;
+  repetidas: number;
+  semContato: number;
+  semCidade: number;
+  comTelefone: number;
+  comEmail: number;
+  comCnpj: number;
+  comContato: number;
+  jaNaConta: number;
 }

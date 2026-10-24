@@ -7,6 +7,7 @@ import { api, type Campanha, type Nicho } from '../api';
 import { Modal } from '../componentes/Drawer';
 import { CampoLista, ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { EstimativaBusca, PainelPlaces, ResumoPlacesCampanha } from '../componentes/GooglePlaces';
+import { ImportarLeads } from '../componentes/ImportarLeads';
 import { ImportarPlanilha } from '../componentes/ImportarPlanilha';
 import { useEhMaster } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando, ROTULO_STATUS_CAMPANHA, TOM_STATUS_CAMPANHA } from '../formatar';
@@ -393,6 +394,43 @@ function Andamento(props: {
   );
 }
 
+/** Lista importada: não busca nada; só o enriquecimento (quando o cliente pediu) tem andamento. */
+function EnriquecimentoDaLista(props: { c: Campanha; aoParar: () => void; ocupado: boolean }) {
+  const p = props.c.progresso;
+  const enriquecidos = p.enriquecidos ?? 0;
+  const naFila = p.naFilaEnriquecimento ?? 0;
+  const total = enriquecidos + naFila;
+  if (!total)
+    return (
+      <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+        Leads trazidos do seu arquivo. Para buscar site, Instagram, CNPJ e sócios deles, use "Enriquecer".
+      </p>
+    );
+  return (
+    <div className="andamento-campanha">
+      <div className="etapa-campanha">
+        <div className="etapa-campanha__topo">
+          <b>{naFila > 0 && <span className="vivo" aria-hidden="true" />} Enriquecimento</b>
+          <span className="mono">
+            {fmtNumero(enriquecidos)} de {fmtNumero(total)} leads
+          </span>
+        </div>
+        <Barra feito={enriquecidos} total={Math.max(1, total)} rotulo="Leads enriquecidos" />
+        {naFila > 0 ? (
+          <div className="etapa-campanha__erro">
+            <p className="quieto">{fmtNumero(naFila)} na fila ou sendo enriquecidos agora.</p>
+            <Button size="sm" variant="danger" disabled={props.ocupado} onClick={props.aoParar}>
+              Parar enriquecimento
+            </Button>
+          </div>
+        ) : (
+          <p className="quieto">Todos os leads enriquecidos · {fmtNumero(p.comCnpj)} com CNPJ.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Meta de leads no cartão. "Buscar mais" soma à meta: a busca no Google continua de onde parou e
  * só empresas novas (nunca mandadas para o enriquecimento nesta nem em outra campanha) entram.
@@ -507,6 +545,8 @@ function CardCampanha({ c }: { c: Campanha }) {
   });
   const [confirmarRefazer, setConfirmarRefazer] = useState(false);
   const [importando, setImportando] = useState(false);
+  const [importandoLeads, setImportandoLeads] = useState(false);
+  const importada = c.tipo === 'importacao';
   const [apagando, setApagando] = useState(false);
   const [nomeDigitado, setNomeDigitado] = useState('');
   const parar = useMutation({
@@ -572,10 +612,19 @@ function CardCampanha({ c }: { c: Campanha }) {
         <div style={{ minWidth: 0 }}>
           <h3>{c.nome}</h3>
           <p className="quieto" style={{ margin: '2px 0 0', fontSize: 13, lineHeight: '18px' }}>
-            {c.nichoNome} · {c.cidades.map((x) => `${x.cidade}/${x.uf}`).join(', ')}
-            {c.raioKm != null && ` · até ${c.raioKm} km das bases`}
+            {importada
+              ? `${c.nichoNome} · lista importada${
+                  c.cidades.length
+                    ? ` · ${c.cidades
+                        .slice(0, 3)
+                        .map((x) => `${x.cidade}/${x.uf}`)
+                        .join(', ')}${c.cidades.length > 3 ? ` e mais ${c.cidades.length - 3}` : ''}`
+                    : ''
+                }`
+              : `${c.nichoNome} · ${c.cidades.map((x) => `${x.cidade}/${x.uf}`).join(', ')}`}
+            {!importada && c.raioKm != null && ` · até ${c.raioKm} km das bases`}
           </p>
-          <MetaLeads c={c} />
+          {!importada && <MetaLeads c={c} />}
         </div>
         <Badge tone={TOM_STATUS_CAMPANHA[c.status]}>{ROTULO_STATUS_CAMPANHA[c.status]}</Badge>
       </div>
@@ -598,12 +647,16 @@ function CardCampanha({ c }: { c: Campanha }) {
           <span>descartados</span>
         </div>
       </div>
-      <Andamento
-        c={c}
-        aoTentarDeNovo={() => (master ? setEstimando(true) : rodar.mutate(null))}
-        aoParar={() => parar.mutate()}
-        ocupado={acao.isPending || parar.isPending || rodar.isPending}
-      />
+      {importada ? (
+        <EnriquecimentoDaLista c={c} aoParar={() => parar.mutate()} ocupado={parar.isPending} />
+      ) : (
+        <Andamento
+          c={c}
+          aoTentarDeNovo={() => (master ? setEstimando(true) : rodar.mutate(null))}
+          aoParar={() => parar.mutate()}
+          ocupado={acao.isPending || parar.isPending || rodar.isPending}
+        />
+      )}
       {estimando && (
         <EstimativaBusca
           c={c}
@@ -709,7 +762,7 @@ function CardCampanha({ c }: { c: Campanha }) {
       )}
 
       <div className="acoes">
-        {(c.status === 'rascunho' || c.status === 'pausada') && (
+        {!importada && (c.status === 'rascunho' || c.status === 'pausada') && (
           <Button
             variant="primary"
             size="sm"
@@ -720,7 +773,7 @@ function CardCampanha({ c }: { c: Campanha }) {
             {c.status === 'rascunho' ? 'Iniciar busca' : 'Retomar'}
           </Button>
         )}
-        {c.status === 'ativa' && (
+        {!importada && c.status === 'ativa' && (
           <Button size="sm" disabled={acao.isPending} onClick={() => acao.mutate('pausar')}>
             Pausar
           </Button>
@@ -735,13 +788,20 @@ function CardCampanha({ c }: { c: Campanha }) {
           </Button>
         )}
         {c.status !== 'encerrada' && (
-          <Button size="sm" variant="ghost" icon="file-text" onClick={() => setImportando(true)}>
+          <Button size="sm" variant="ghost" icon="file-text" onClick={() => setImportandoLeads(true)}>
+            {importada ? 'Importar mais leads' : 'Importar lista de leads'}
+          </Button>
+        )}
+        {!importada && c.status !== 'encerrada' && (
+          <Button size="sm" variant="ghost" icon="map-pin" onClick={() => setImportando(true)}>
             Importar planilha do Maps
           </Button>
         )}
         {p.empresas > 0 && !confirmarRefazer && (
           <Button size="sm" variant="ghost" icon="loader" onClick={() => setConfirmarRefazer(true)}>
-            Refazer enriquecimento
+            {importada && !p.enriquecidos && !p.naFilaEnriquecimento
+              ? 'Enriquecer'
+              : 'Refazer enriquecimento'}
           </Button>
         )}
         {c.status !== 'encerrada' && (
@@ -764,6 +824,7 @@ function CardCampanha({ c }: { c: Campanha }) {
         )}
       </div>
       {importando && <ImportarPlanilha campanha={c} aoFechar={() => setImportando(false)} />}
+      {importandoLeads && <ImportarLeads campanha={c} aoFechar={() => setImportandoLeads(false)} />}
     </article>
   );
 }
@@ -771,6 +832,7 @@ function CardCampanha({ c }: { c: Campanha }) {
 export function Campanhas() {
   const master = useEhMaster();
   const [criando, setCriando] = useState(false);
+  const [importando, setImportando] = useState(false);
   const campanhas = useQuery({
     queryKey: ['campanhas'],
     queryFn: () => api<Campanha[]>('/campanhas'),
@@ -794,9 +856,14 @@ export function Campanhas() {
             com nota.
           </p>
         </div>
-        <Button variant="primary" icon="plus" onClick={() => setCriando(true)}>
-          Nova campanha
-        </Button>
+        <div className="acoes">
+          <Button variant="ghost" icon="file-text" onClick={() => setImportando(true)}>
+            Importar lista
+          </Button>
+          <Button variant="primary" icon="plus" onClick={() => setCriando(true)}>
+            Nova campanha
+          </Button>
+        </div>
       </div>
 
       {master && <PainelPlaces />}
@@ -829,6 +896,7 @@ export function Campanhas() {
       )}
 
       {criando && <FormCampanha aoFechar={() => setCriando(false)} />}
+      {importando && <ImportarLeads aoFechar={() => setImportando(false)} />}
     </>
   );
 }

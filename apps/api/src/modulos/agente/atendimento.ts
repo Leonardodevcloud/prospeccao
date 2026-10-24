@@ -13,6 +13,7 @@ import {
 } from '@prospeccao/integrations/agente';
 import { contaSql } from '../../contexto.js';
 import type { DepsApi, ServicosConta } from '../../dependencias.js';
+import { visivel } from '../../visibilidade.js';
 import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { fatosDoLead } from '../email/repositorio.js';
 import { obterConfig as configCadencia, mensagemDoLead } from '../funil/cadencia.js';
@@ -328,7 +329,8 @@ async function dadosDaConversa(pool: Pool, empresaId: number) {
                 WHERE cl.conta_id = ${contaSql()} AND cl.empresa_id = e.id AND cl.status = 'confirmado'
                   AND o.whatsapp_destino IS NOT NULL AND left(cl.telefone, 2) = left(o.whatsapp_destino, 2)
                   AND right(cl.telefone, 8) = right(o.whatsapp_destino, 8) LIMIT 1),
-              (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor LIMIT 1)) AS decisor
+              (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')}
+                ORDER BY (p.conta_id <> 0) DESC LIMIT 1)) AS decisor
        FROM descoberta.empresas e WHERE e.id = $1`,
     [empresaId],
   );

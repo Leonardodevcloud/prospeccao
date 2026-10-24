@@ -27,6 +27,7 @@ import { rotasEmpresas } from './modulos/empresas/rotas.js';
 import { rotasEquipe } from './modulos/equipe/rotas.js';
 import { rotasExportar } from './modulos/exportar/rotas.js';
 import { rotasFunil } from './modulos/funil/rotas.js';
+import { rotasImportacaoLeads } from './modulos/importacao-leads/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasMaster } from './modulos/master/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
@@ -51,10 +52,16 @@ export function criarApp(deps: DepsApi): Express {
   // o resto fica em 200 kb.
   const jsonGrande = express.json({ limit: '15mb' });
   const jsonPequeno = express.json({ limit: '200kb' });
+  // Lista de leads para importar (até 15 MB em base64).
+  const jsonPlanilha = express.json({ limit: '21mb' });
   app.use((req, res, next) =>
-    /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$/.test(req.path)
-      ? jsonGrande(req, res, next)
-      : jsonPequeno(req, res, next),
+    req.path === '/importacoes-leads/analisar'
+      ? jsonPlanilha(req, res, next)
+      : /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$/.test(
+            req.path,
+          )
+        ? jsonGrande(req, res, next)
+        : jsonPequeno(req, res, next),
   );
   app.use(cookieParser());
   app.use(
@@ -95,6 +102,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/agente', rotasAgente(deps));
   protegidas.use('/relatorios', rotasRelatorios(deps));
   protegidas.use('/importacoes', adminParaAlterar, rotasImportacoes(deps));
+  protegidas.use('/importacoes-leads', rotasImportacaoLeads(deps));
   protegidas.use('/equipe', rotasEquipe(deps));
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));

@@ -84,6 +84,15 @@ const REGRAS: Record<string, Regra | null> = {
   'PUT /places/config': { acao: 'configuração', texto: 'Mudou a configuração do Google Places' },
   'POST /importacoes/planilha-maps': { acao: 'importação', texto: 'Importou uma planilha do Maps' },
   'POST /importacoes/cnpj': { acao: 'importação', texto: 'Pediu a importação da base CNPJ' },
+  'POST /importacoes-leads/analisar': {
+    acao: 'importação',
+    texto: (b) => `Enviou a lista de leads ${txt(b.nome)}`,
+  },
+  'POST /importacoes-leads/:id/importar': {
+    acao: 'importação',
+    texto: (b) =>
+      `Importou uma lista de leads${b.enriquecer ? ', com enriquecimento' : ''}${b.funil ? ', direto para o funil' : ''}`,
+  },
 
   'POST /empresas/:id/enriquecer': { acao: 'lead', texto: 'Mandou enriquecer o lead' },
   'POST /empresas/:id/feedback': { acao: 'lead', texto: (b) => `Marcou um contato: ${String(b.tipo ?? '')}` },
@@ -225,6 +234,8 @@ const REGRAS: Record<string, Regra | null> = {
   'POST /notificacoes/push/teste': null,
   'POST /alertas/conferir': null,
   'POST /agente/chips/:id/testar': null,
+  'POST /importacoes-leads/:id/previa': null,
+  'DELETE /importacoes-leads/:id': null,
   'POST /email/campanhas/estimar/': null,
 };
 

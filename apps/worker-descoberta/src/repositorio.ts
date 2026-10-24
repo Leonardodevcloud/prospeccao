@@ -613,6 +613,8 @@ export async function reservarParaEnriquecimento(
           WHERE c.status = 'ativa'
             AND ce.enriquecimento_solicitado_em IS NULL
             AND ce.dentro_do_raio
+            -- Importado pelo cliente só vai para o enriquecimento quando ele pede, na importação.
+            AND ce.origem <> 'importacao'
             AND ${PODE_SER_LEAD}
             AND ($1::bigint IS NULL OR ce.campanha_id = $1)
             AND ($2::bigint IS NULL OR ce.empresa_id = $2)
@@ -676,7 +678,7 @@ export async function campanhasComProntasParadas(db: Executor): Promise<number[]
                          WHERE b.campanha_id = c.id AND b.status IN ('pendente', 'rodando'))
         AND EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce
                      WHERE ce.campanha_id = c.id AND ce.enriquecimento_solicitado_em IS NULL
-                       AND ce.dentro_do_raio)`,
+                       AND ce.dentro_do_raio AND ce.origem <> 'importacao')`,
   );
   return rows.map((r) => Number(r.id));
 }

@@ -3,6 +3,7 @@ import { type Response, Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
+import { visivel } from '../../visibilidade.js';
 import { ipDe } from '../auditoria/middleware.js';
 import * as auditoria from '../auditoria/repositorio.js';
 import { listar as listarEmpresas } from '../empresas/repositorio.js';
@@ -65,6 +66,7 @@ export function rotasExportar({ pool, log }: DepsApi): Router {
       `SELECT DISTINCT ON (c.empresa_id, c.canal) c.empresa_id::int, c.canal, c.valor
          FROM enriquecimento.contatos c
         WHERE c.empresa_id = ANY($1::bigint[]) AND c.canal IN ('whatsapp', 'telefone', 'email', 'instagram', 'site', 'linkedin')
+          AND ${visivel('c')}
           AND c.status <> 'invalido'
           AND NOT EXISTS (SELECT 1 FROM comercial.feedback fb
                            WHERE fb.empresa_id = c.empresa_id AND fb.tipo = 'numero_errado' AND fb.valor = c.valor)

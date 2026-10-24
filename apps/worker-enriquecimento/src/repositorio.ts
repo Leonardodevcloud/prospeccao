@@ -178,11 +178,12 @@ export interface Conclusao {
  */
 export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, c: Conclusao) {
   await comTransacao(pool, async (tx) => {
-    await tx.query(`DELETE FROM enriquecimento.contatos WHERE empresa_id = $1 AND fonte <> 'manual'`, [
-      empresaId,
-    ]);
     await tx.query(
-      `DELETE FROM enriquecimento.pessoas p WHERE empresa_id = $1
+      `DELETE FROM enriquecimento.contatos WHERE empresa_id = $1 AND conta_id = 0 AND fonte <> 'manual'`,
+      [empresaId],
+    );
+    await tx.query(
+      `DELETE FROM enriquecimento.pessoas p WHERE empresa_id = $1 AND conta_id = 0
           AND NOT EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.pessoa_id = p.id)`,
       [empresaId],
     );
@@ -194,7 +195,7 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
            (empresa_id, nome, cargo, papel, decisor, prioridade, desde, linkedin_url, fontes, url_origem,
             evidencia)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (empresa_id, nome_chave) DO UPDATE
+         ON CONFLICT (empresa_id, conta_id, nome_chave) DO UPDATE
             SET cargo = coalesce(EXCLUDED.cargo, enriquecimento.pessoas.cargo),
                 papel = EXCLUDED.papel, decisor = EXCLUDED.decisor, prioridade = EXCLUDED.prioridade,
                 desde = coalesce(EXCLUDED.desde, enriquecimento.pessoas.desde),
@@ -225,7 +226,7 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
            (empresa_id, pessoa_id, canal, valor, rotulo, fonte, fontes, url_origem, confianca, status,
             whatsapp, verificado_em, principal)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::boolean, CASE WHEN $11::boolean IS NOT NULL THEN now() END, $12)
-         ON CONFLICT (empresa_id, canal, valor) DO NOTHING`,
+         ON CONFLICT (empresa_id, conta_id, canal, valor) DO NOTHING`,
         [
           empresaId,
           ct.pessoa ? (ids.get(ct.pessoa) ?? null) : null,

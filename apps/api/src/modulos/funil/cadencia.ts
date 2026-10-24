@@ -13,6 +13,7 @@ import {
   totalTentativas,
 } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
+import { visivel } from '../../visibilidade.js';
 import { estaEmSequencia } from '../email/sequencia.js';
 
 /**
@@ -141,18 +142,18 @@ export async function dadosDoLead(db: Executor, empresaId: number) {
                   AND o.whatsapp_destino IS NOT NULL AND left(cl.telefone, 2) = left(o.whatsapp_destino, 2)
                   AND right(cl.telefone, 8) = right(o.whatsapp_destino, 8) LIMIT 1),
               (SELECT p.nome FROM enriquecimento.pessoas p
-                WHERE p.empresa_id = e.id AND p.decisor ORDER BY p.id LIMIT 1)) AS decisor,
+                WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')} ORDER BY (p.conta_id <> 0) DESC, p.id LIMIT 1)) AS decisor,
             coalesce(
               -- com quem a conversa segue ("enviar para")
               o.whatsapp_destino,
               (SELECT c.valor FROM enriquecimento.contatos c
-                WHERE c.empresa_id = e.id AND c.status <> 'invalido'
+                WHERE c.empresa_id = e.id AND c.status <> 'invalido' AND ${visivel('c')}
                   AND (c.canal = 'whatsapp' OR (c.canal = 'telefone' AND c.whatsapp))
                   AND NOT EXISTS (SELECT 1 FROM comercial.feedback f WHERE f.empresa_id = e.id
                                    AND f.tipo = 'numero_errado' AND f.valor = c.valor)
                 ORDER BY c.principal DESC, c.confianca DESC LIMIT 1),
               (SELECT c.valor FROM enriquecimento.contatos c
-                WHERE c.empresa_id = e.id AND c.principal AND c.canal IN ('telefone', 'whatsapp')
+                WHERE c.empresa_id = e.id AND c.principal AND c.canal IN ('telefone', 'whatsapp') AND ${visivel('c')}
                   AND NOT EXISTS (SELECT 1 FROM comercial.feedback f WHERE f.empresa_id = e.id
                                    AND f.tipo = 'numero_errado' AND f.valor = c.valor) LIMIT 1),
               e.maps_telefone) AS telefone

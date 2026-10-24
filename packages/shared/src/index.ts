@@ -5,6 +5,7 @@ export * from './equipe.js';
 export * from './erros.js';
 export * from './funil.js';
 export * from './geo.js';
+export * from './importacao.js';
 export * from './indicacoes.js';
 export * from './logger.js';
 export * from './nichosProntos.js';

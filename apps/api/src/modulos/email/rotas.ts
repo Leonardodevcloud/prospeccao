@@ -19,6 +19,7 @@ import type { DepsApi } from '../../dependencias.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin, exigirMaster } from '../../middlewares/seguranca.js';
+import { visivel } from '../../visibilidade.js';
 import { guardarMidia } from '../conversas/repositorio.js';
 import { obterConfig as configCadencia } from '../funil/cadencia.js';
 import * as motor from './motor.js';
@@ -171,7 +172,7 @@ export function rotasEmail(deps: DepsApi): Router {
     const { rows } = await pool.query(
       `SELECT e.id::int AS "empresaId", e.nome, e.cidade,
               (SELECT c.valor FROM enriquecimento.contatos c
-                WHERE c.empresa_id = e.id AND c.canal = 'email' AND c.status <> 'invalido'
+                WHERE c.empresa_id = e.id AND c.canal = 'email' AND c.status <> 'invalido' AND ${visivel('c')}
                 ORDER BY c.principal DESC, c.confianca DESC LIMIT 1) AS email
          FROM descoberta.empresas e
         WHERE EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce
@@ -179,7 +180,7 @@ export function rotasEmail(deps: DepsApi): Router {
                          AND ($1::bigint IS NULL OR ce.campanha_id = $1))
           AND ($2::text IS NULL OR e.nome ILIKE $2 OR e.razao_social ILIKE $2)
         ORDER BY (EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.empresa_id = e.id AND c.canal = 'email'
-                           AND c.status <> 'invalido')) DESC, e.nome
+                           AND c.status <> 'invalido' AND ${visivel('c')})) DESC, e.nome
         LIMIT 20`,
       [f.campanhaId ?? null, f.busca ? `%${f.busca}%` : null],
     );

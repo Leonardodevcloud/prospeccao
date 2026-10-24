@@ -24,7 +24,7 @@ export const MODOS_CAMPANHA = ['semi', 'auto'] as const;
 export const MOTIVO_META_LEADS = 'Meta de leads atingida: esta busca não precisou rodar.';
 export const CADENCIAS = ['padrao', 'curta'] as const;
 
-export const ORIGENS_EMPRESA = ['cnpj', 'maps', 'ambos'] as const;
+export const ORIGENS_EMPRESA = ['cnpj', 'maps', 'ambos', 'importacao'] as const;
 export type OrigemEmpresa = (typeof ORIGENS_EMPRESA)[number];
 
 const texto = (min: number, max: number, rotulo: string) =>

@@ -9,6 +9,7 @@ import { iniciarAgente } from './modulos/agente/motor.js';
 import { iniciarAlertas } from './modulos/alertas/rotina.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
+import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
 import { iniciarPlanos } from './modulos/plano/rotina.js';
 import { iniciarPush } from './modulos/push/servico.js';
 import { criarServicos } from './servicos.js';
@@ -21,7 +22,13 @@ const filas = await conectarFilas({
   aplicacao: 'api',
   log,
   // Filas que a API publica: criadas aqui também, para não depender da ordem de subida dos serviços.
-  filas: ['campanha.iniciar', 'cnpj.importar', 'enriquecimento.solicitar', 'maps.importar_planilha'],
+  filas: [
+    'campanha.iniciar',
+    'cnpj.importar',
+    'enriquecimento.solicitar',
+    'maps.importar_planilha',
+    'leads.importar',
+  ],
 });
 
 // Credenciais: as de cada conta (painel master, cifradas com CHAVE_CREDENCIAIS) e as do ambiente,
@@ -66,12 +73,15 @@ const pararEmail = iniciarEmail({ pool, log, servicos, origens: env.APP_ORIGENS 
 const pararAlertas = iniciarAlertas({ pool, log, servicos });
 // Planos: leads que esperaram o limite voltam para a fila quando há vaga; avisa perto do limite.
 const pararPlanos = iniciarPlanos({ pool, log, filas });
+// Importação de leads: põe no funil o que o worker terminou de gravar (quando o cliente pediu).
+const pararImportacao = iniciarImportacaoLeads(pool, log);
 const pararSinal = manterSinalDeVida(pool, 'api');
 
 encerrarAoReceberSinal(log, async () => {
   pararAutomacao();
   pararAgente();
   pararPlanos();
+  pararImportacao();
   pararLembretes();
   pararEmail();
   pararAlertas();

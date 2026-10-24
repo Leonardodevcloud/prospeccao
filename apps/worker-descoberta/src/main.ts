@@ -9,6 +9,7 @@ import { criarLogger } from '@prospeccao/shared';
 import { z } from 'zod';
 import * as casos from './casos.js';
 import type { Deps } from './dependencias.js';
+import { importarLeads } from './importacao.js';
 
 const env = carregarEnv(
   envBase.extend({
@@ -63,6 +64,7 @@ const filas = await conectarFilas({
     'campanha.buscar_cnpj',
     'maps.buscar',
     'maps.importar_planilha',
+    'leads.importar',
     'maps.coletar',
     'empresa.localizar',
     'enriquecimento.solicitar',
@@ -145,6 +147,7 @@ await filas.consumir('empresa.localizar', (p) => casos.localizarEmpresa(deps, p.
 });
 await filas.consumir('cnpj.importacao_concluida', () => casos.aoAtualizarBaseCnpj(deps));
 await filas.consumir('maps.importar_planilha', (p) => casos.importarPlanilha(deps, p));
+await filas.consumir('leads.importar', (p) => importarLeads(deps, p.importacaoId));
 
 await casos
   .retomarBuscasParadas(deps)

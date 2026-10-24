@@ -9,6 +9,7 @@ import {
   ORDEM_ETAPA,
 } from '@prospeccao/shared';
 import { contaSql, usuarioAtual } from '../../contexto.js';
+import { visivel } from '../../visibilidade.js';
 import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { pararSequencia } from '../email/sequencia.js';
 import { daConta, juncoesEnriq } from '../empresas/repositorio.js';
@@ -28,9 +29,9 @@ const FIM_DE_HOJE = `(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') 
  * Telefone que veio só da Receita fica de fora: costuma ser do contador e se repete em
  * dezenas de empresas.
  */
-const TELEFONES = `
+const TELEFONES = () => `
   SELECT c.empresa_id, c.valor FROM enriquecimento.contatos c
-   WHERE c.canal IN ('whatsapp', 'telefone') AND NOT (c.fontes <@ ARRAY['receita']::text[])
+   WHERE c.canal IN ('whatsapp', 'telefone') AND NOT (c.fontes <@ ARRAY['receita']::text[]) AND ${visivel('c')}
   UNION
   SELECT e.id, e.maps_telefone FROM descoberta.empresas e WHERE e.maps_telefone IS NOT NULL`;
 
@@ -48,7 +49,7 @@ export async function duplicadas(db: Executor, empresaIds: number[]): Promise<Du
   if (!empresaIds.length) return [];
   const C = contaSql();
   const { rows } = await db.query<Duplicada>(
-    `WITH tel AS (${TELEFONES})
+    `WITH tel AS (${TELEFONES()})
      SELECT DISTINCT ON (a.empresa_id)
             a.empresa_id::int AS "empresaId", ea.nome, b.empresa_id::int AS "outraEmpresaId",
             eb.nome AS "outraNome", o.etapa AS "outraEtapa", a.valor AS telefone

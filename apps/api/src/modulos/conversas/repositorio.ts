@@ -2,6 +2,7 @@ import type { Executor } from '@prospeccao/db';
 import { AppError, LIMITE_MIDIA_BYTES, type MidiaEntrada } from '@prospeccao/shared';
 import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
+import { visivel } from '../../visibilidade.js';
 import { chipParaEquipe, emUso as chipsEmUso } from '../agente/chips.js';
 import * as agente from '../agente/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
@@ -148,7 +149,7 @@ export async function abrir(db: Executor, empresaId: number) {
   );
   const { rows: email } = await db.query<{ email: string | null; temConversa: boolean }>(
     `SELECT (SELECT c.valor FROM enriquecimento.contatos c
-              WHERE c.empresa_id = $1 AND c.canal = 'email' AND c.status <> 'invalido'
+              WHERE c.empresa_id = $1 AND c.canal = 'email' AND c.status <> 'invalido' AND ${visivel('c')}
               ORDER BY c.principal DESC, c.confianca DESC LIMIT 1) AS email,
             EXISTS (SELECT 1 FROM comercial.respostas_email r
                      WHERE r.conta_id = ${contaSql()} AND r.empresa_id = $1 AND r.classe <> 'automatica') AS "temConversa"`,

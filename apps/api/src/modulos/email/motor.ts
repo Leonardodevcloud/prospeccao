@@ -10,6 +10,7 @@ import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import type { DepsApi, EmailConta, ServicosConta } from '../../dependencias.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { paraCadaConta } from '../../rotinas.js';
+import { visivel } from '../../visibilidade.js';
 import { criar as criarTarefa } from '../agenda/repositorio.js';
 import { dentroDoHorario } from '../agente/motor.js';
 import { criarMensagem } from '../agente/repositorio.js';
@@ -180,7 +181,7 @@ function enderecoNaoExiste(erro: unknown): boolean {
 async function marcarEmailInvalido(deps: Pick<Deps, 'pool'>, empresaId: number, email: string) {
   await deps.pool.query(
     `UPDATE enriquecimento.contatos SET status = 'invalido', rotulo = 'E-mail voltou: não existe'
-      WHERE empresa_id = $1 AND canal = 'email' AND lower(valor) = lower($2)`,
+      WHERE empresa_id = $1 AND canal = 'email' AND lower(valor) = lower($2) AND ${visivel('enriquecimento.contatos')}`,
     [empresaId, email],
   );
 }
@@ -614,7 +615,7 @@ export async function processarRecebido(
     const { rows } = await pool.query<{ empresa_id: number }>(
       `SELECT c.empresa_id::int FROM enriquecimento.contatos c
          JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = c.empresa_id
-        WHERE c.canal = 'email' AND lower(c.valor) = $1 LIMIT 1`,
+        WHERE c.canal = 'email' AND lower(c.valor) = $1 AND ${visivel('c')} LIMIT 1`,
       [r.de],
     );
     empresaId = rows[0]?.empresa_id ?? null;
@@ -809,8 +810,8 @@ export async function enviarDaConversa(
     return;
   }
   const { rows: contato } = await deps.pool.query<{ valor: string }>(
-    `SELECT valor FROM enriquecimento.contatos
-      WHERE empresa_id = $1 AND canal = 'email' AND status <> 'invalido'
+    `SELECT valor FROM enriquecimento.contatos c
+      WHERE empresa_id = $1 AND canal = 'email' AND status <> 'invalido' AND ${visivel('c')}
       ORDER BY principal DESC, confianca DESC LIMIT 1`,
     [empresaId],
   );

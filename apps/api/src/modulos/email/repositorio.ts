@@ -17,6 +17,7 @@ import {
 } from '@prospeccao/shared';
 import { contaSql, usuarioAtual } from '../../contexto.js';
 import { urlPublicaApi } from '../../endereco.js';
+import { visivel } from '../../visibilidade.js';
 import { obterConfig as configCadencia } from '../funil/cadencia.js';
 import { emSequenciaSql, RESPONDEU_EMAIL, RESPONDEU_WHATSAPP } from './sequencia.js';
 
@@ -321,8 +322,8 @@ export async function variaveisDoLead(
   const [{ rows }, cad] = await Promise.all([
     db.query<{ nome: string; cidade: string | null; decisor: string | null }>(
       `SELECT e.nome, e.cidade,
-              (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor
-                ORDER BY p.id LIMIT 1) AS decisor
+              (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')}
+                ORDER BY (p.conta_id <> 0) DESC, p.id LIMIT 1) AS decisor
          FROM descoberta.empresas e WHERE e.id = $1`,
       [empresaId],
     ),
@@ -353,7 +354,8 @@ export async function fatosDoLead(db: Executor, empresaId: number): Promise<Entr
     anos: number | null;
   }>(
     `SELECT e.nome, e.cidade,
-            (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor ORDER BY p.id LIMIT 1)
+            (SELECT p.nome FROM enriquecimento.pessoas p WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')}
+              ORDER BY (p.conta_id <> 0) DESC, p.id LIMIT 1)
               AS decisor,
             coalesce(e.maps_categoria, l.maps_categoria) AS categoria, l.resumo,
             coalesce(e.maps_nota, l.maps_nota)::float8 AS nota, coalesce(e.maps_avaliacoes, l.maps_avaliacoes) AS avaliacoes,
@@ -407,10 +409,10 @@ export async function leadDaPrevia(
   }
   const { rows } = await db.query<{ empresa_id: number }>(
     `SELECT ce.empresa_id::int FROM descoberta.campanha_empresas ce
-       JOIN enriquecimento.pessoas p ON p.empresa_id = ce.empresa_id AND p.decisor
+       JOIN enriquecimento.pessoas p ON p.empresa_id = ce.empresa_id AND p.decisor AND ${visivel('p')}
       WHERE ce.conta_id = ${C} AND ($1::bigint IS NULL OR ce.campanha_id = $1)
         AND EXISTS (SELECT 1 FROM enriquecimento.contatos c
-                     WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email' AND c.status <> 'invalido')
+                     WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email' AND c.status <> 'invalido' AND ${visivel('c')})
       ORDER BY ce.adicionada_em DESC LIMIT 1`,
     [d.campanhaId ?? null],
   );
@@ -535,11 +537,11 @@ export async function previa(
 /** WhatsApp do lead (o mesmo critério da mensagem pronta do funil). */
 const SQL_TEM_WHATSAPP = (empresa: string) => `EXISTS (
   SELECT 1 FROM enriquecimento.contatos c
-   WHERE c.empresa_id = ${empresa} AND c.status <> 'invalido'
+   WHERE c.empresa_id = ${empresa} AND c.status <> 'invalido' AND ${visivel('c')}
      AND (c.canal = 'whatsapp' OR (c.canal = 'telefone' AND c.whatsapp)))`;
 const SQL_TEM_TELEFONE = (empresa: string) => `(EXISTS (
   SELECT 1 FROM enriquecimento.contatos c
-   WHERE c.empresa_id = ${empresa} AND c.status <> 'invalido' AND c.canal IN ('whatsapp', 'telefone'))
+   WHERE c.empresa_id = ${empresa} AND c.status <> 'invalido' AND c.canal IN ('whatsapp', 'telefone') AND ${visivel('c')})
   OR (SELECT e2.maps_telefone FROM descoberta.empresas e2 WHERE e2.id = ${empresa}) IS NOT NULL)`;
 
 type FiltroQuem = Pick<CampanhaEmailEntrada, 'faixas' | 'pularNoFunil' | 'incluirContador'> & {
@@ -564,7 +566,7 @@ function sqlElegiveis(c: FiltroQuem) {
     WITH alvo AS (
       SELECT ce.empresa_id, e.nome, e.cidade, l.faixa, o.etapa,
              (SELECT c.valor FROM enriquecimento.contatos c
-               WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email' AND c.status <> 'invalido'
+               WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email' AND c.status <> 'invalido' AND ${visivel('c')}
                  ${c.incluirContador ? '' : `AND NOT (c.status = 'atencao' AND coalesce(c.rotulo, '') ILIKE '%contador%')`}
                ORDER BY c.principal DESC, (c.fontes <@ ARRAY['receita']::text[]), c.confianca DESC
                LIMIT 1) AS email,
@@ -611,7 +613,7 @@ export async function elegiveis(db: Executor, c: FiltroQuem & Pick<CampanhaEmail
     `SELECT count(*)::int AS leads,
             count(*) FILTER (WHERE EXISTS (SELECT 1 FROM enriquecimento.contatos c
                                             WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email'
-                                              AND c.status <> 'invalido'))::int AS "comEmail",
+                                              AND c.status <> 'invalido' AND ${visivel('c')}))::int AS "comEmail",
             count(*) FILTER (WHERE ${SQL_TEM_WHATSAPP('ce.empresa_id')})::int AS "comWhatsapp"
        FROM descoberta.campanha_empresas ce WHERE ce.campanha_id = $1 AND ce.conta_id = ${contaSql()}`,
     [c.campanhaId],

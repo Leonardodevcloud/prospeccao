@@ -3141,6 +3141,142 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(chamadas.at(-1)).toBe('apagar dom-1');
   });
 
+  it('importa os leads do cliente: lê o Excel, reconhece as colunas, grava, põe no funil e não mostra para outra conta', async () => {
+    const { gerarXlsx } = await import('../src/modulos/exportar/planilha.js');
+    const xlsx = await gerarXlsx([
+      {
+        nome: 'Clientes',
+        colunas: [
+          { titulo: 'Razão Social' },
+          { titulo: 'Responsável' },
+          { titulo: 'Celular' },
+          { titulo: 'E-mail' },
+          { titulo: 'Município' },
+          { titulo: 'Obs' },
+        ],
+        linhas: [
+          [
+            'AUTO PEÇAS IMPORTADA LTDA',
+            'Marcos Teixeira',
+            71987654321,
+            'marcos@importada.com.br',
+            'Salvador/BA',
+            'Compra toda semana',
+          ],
+          ['Peças Sem Cidade', '', '71 3333-4444', '', '', ''],
+          ['', '', '', '', '', 'linha só com observação'],
+        ],
+      },
+    ]);
+    expect(
+      (await enviar('post', '/importacoes-leads/analisar', { nome: 'clientes.xls', base64: 'AAAA' })).status,
+    ).toBe(422); // .xls antigo: pede para salvar como .xlsx
+    const an = await enviar('post', '/importacoes-leads/analisar', {
+      nome: 'clientes.xlsx',
+      mime: '',
+      base64: xlsx.toString('base64'),
+    });
+    expect(an.status).toBe(201);
+    const mapa = an.body.colunas.map((c: { campo: string }) => c.campo);
+    expect(mapa).toEqual(['empresa', 'contato', 'telefone', 'email', 'cidade', 'observacao']);
+    expect(an.body.colunas[2]).toMatchObject({
+      cabecalho: 'Celular',
+      exemplos: ['71987654321', '71 3333-4444'],
+    });
+    expect(an.body).toMatchObject({ leitura: 'regras', cabecalho: 0, linhasDoArquivo: 3 });
+
+    const id = an.body.id;
+    const previa = (await enviar('post', `/importacoes-leads/${id}/previa`, { mapa })).body;
+    expect(previa).toMatchObject({
+      leads: 2,
+      semNome: 1,
+      semCidade: 1,
+      comTelefone: 2,
+      comEmail: 1,
+      comContato: 1,
+    });
+    expect(previa.amostra[0]).toMatchObject({
+      empresa: 'Auto Peças Importada LTDA',
+      cidade: 'Salvador',
+      uf: 'BA',
+    });
+
+    const { rows: nicho } = await pool.query(
+      `SELECT id FROM cadastro.nichos WHERE conta_id = 1 AND ativo ORDER BY id LIMIT 1`,
+    );
+    const antes = publicados.length;
+    const imp = await enviar('post', `/importacoes-leads/${id}/importar`, {
+      mapa,
+      cidadePadrao: 'Lauro de Freitas',
+      ufPadrao: 'BA',
+      destino: { nova: { nome: 'Clientes antigos', nichoId: nicho[0].id } },
+      enriquecer: false,
+      funil: { responsavelId: null },
+    });
+    expect(imp.status).toBe(202);
+    expect(publicados.slice(antes)).toEqual([{ nome: 'leads.importar', payload: { importacaoId: id } }]);
+    expect(
+      (
+        await enviar('post', `/importacoes-leads/${id}/importar`, {
+          mapa,
+          destino: { campanhaId: imp.body.campanha.id },
+        })
+      ).status,
+    ).toBe(409); // não importa duas vezes
+    const campanha = (await ler(`/campanhas/${imp.body.campanha.id}`)).body;
+    expect(campanha).toMatchObject({ nome: 'Clientes antigos', tipo: 'importacao', status: 'ativa' });
+
+    // O worker grava (o mesmo código do worker-descoberta) e a api põe no funil.
+    const { importarLeads } = await import('../../worker-descoberta/src/importacao.js');
+    await importarLeads(
+      { pool, log: criarLogger('teste', 'silent'), filas: { publicar: async () => 'x' } } as never,
+      id,
+    );
+    const { porNoFunil } = await import('../src/modulos/importacao-leads/rotina.js');
+    expect(await porNoFunil(pool, criarLogger('teste', 'silent'))).toBe(1);
+    const fim = (await ler(`/importacoes-leads/${id}`)).body;
+    expect(fim).toMatchObject({ status: 'concluida', total: 2, gravados: 2 });
+    expect(fim.resultado).toMatchObject({ novas: 2, funil: { adicionadas: 2 } });
+    expect((await ler('/importacoes-leads')).body[0]).toMatchObject({ id, status: 'concluida' });
+
+    const { rows: emp } = await pool.query(
+      `SELECT e.id::int, e.nome, e.cidade FROM descoberta.campanha_empresas ce JOIN descoberta.empresas e ON e.id = ce.empresa_id
+        WHERE ce.campanha_id = $1 ORDER BY e.id`,
+      [imp.body.campanha.id],
+    );
+    expect(emp.map((e: { cidade: string }) => e.cidade)).toEqual(['SALVADOR', 'LAURO DE FREITAS']);
+    const ficha = (await ler(`/empresas/${emp[0].id}`)).body;
+    expect(ficha.contatos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ canal: 'telefone', valor: '71987654321', fonte: 'importacao' }),
+        expect.objectContaining({ canal: 'email', valor: 'marcos@importada.com.br' }),
+      ]),
+    );
+    expect(ficha.pessoas[0]).toMatchObject({ nome: 'Marcos Teixeira', decisor: true });
+    const funil = (await ler(`/funil/${emp[0].id}`)).body;
+    expect(funil.oportunidade.etapa).toBe('a_abordar');
+    expect(JSON.stringify(funil.atividades)).toMatch(/Compra toda semana/);
+
+    // Outra conta nunca vê os contatos que esta conta importou.
+    const { visivel } = await import('../src/visibilidade.js');
+    const contar = (conta: number) =>
+      naConta(
+        () =>
+          pool
+            .query(
+              `SELECT count(*)::int AS n FROM enriquecimento.contatos c WHERE c.empresa_id = $1 AND ${visivel('c')}`,
+              [emp[0].id],
+            )
+            .then((r) => r.rows[0].n as number),
+        conta,
+      );
+    expect(await contar(1)).toBe(2);
+    expect(await contar(2)).toBe(0);
+    await pool.query(`DELETE FROM comercial.oportunidades WHERE empresa_id = ANY($1::bigint[])`, [
+      emp.map((e: { id: number }) => e.id),
+    ]);
+  });
+
   it('para o enriquecimento e apaga a campanha com os leads só dela (base de CNPJ fica)', async () => {
     const parar = await enviar('post', '/campanhas/2/parar-enriquecimento');
     expect(parar.body).toEqual({ cancelados: 3 });

@@ -56,6 +56,7 @@ const FONTE: Record<FonteEnriq, Fonte> = {
   manual: 'manual',
   whatsapp: 'whatsapp',
   base_paga: 'base_paga',
+  importacao: 'manual',
 };
 
 const NOME_FONTE: Record<FonteEnriq, string> = {
@@ -70,6 +71,7 @@ const NOME_FONTE: Record<FonteEnriq, string> = {
   manual: 'cadastro manual',
   whatsapp: 'WhatsApp Business',
   base_paga: 'base paga',
+  importacao: 'sua planilha',
 };
 
 const NOME_ETAPA: Record<EtapaEnriq['etapa'], string> = {

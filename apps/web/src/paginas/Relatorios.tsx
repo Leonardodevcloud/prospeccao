@@ -17,6 +17,7 @@ const NOME_FONTE_ERRO: Record<string, string> = {
   ia: 'IA',
   whatsapp: 'WhatsApp Business',
   base_paga: 'Base paga',
+  importacao: 'Sua planilha',
   manual: 'Cadastro manual',
   desconhecida: 'Fonte desconhecida',
 };

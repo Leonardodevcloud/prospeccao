@@ -56,6 +56,11 @@ export const JOBS = {
     itens: z.array(itemPlanilhaMaps).max(500),
   }),
 
+  /** api → worker-descoberta: leads que o cliente importou (Excel, CSV ou PDF), já lidos e conferidos. */
+  'leads.importar': z.object({
+    importacaoId: z.number().int().positive(),
+  }),
+
   /** worker-descoberta (interno): achar coordenadas e distância até a base. */
   'empresa.localizar': z.object({
     empresaId: z.number().int().positive(),
@@ -145,6 +150,13 @@ export const POLITICA_FILAS: Record<NomeJob, PoliticaFila> = {
     retryDelay: 60,
     retryBackoff: true,
     expireInSeconds: 1800,
+    policy: 'standard',
+  },
+  'leads.importar': {
+    retryLimit: 3,
+    retryDelay: 60,
+    retryBackoff: true,
+    expireInSeconds: 3600,
     policy: 'standard',
   },
   'empresa.localizar': {
