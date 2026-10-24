@@ -34,3 +34,46 @@ describe('Resend', () => {
     expect(lerEndereco('compras@loja.com.br')).toEqual({ email: 'compras@loja.com.br', nome: null });
   });
 });
+
+describe('domínios no Resend (cadastro pelo cliente)', () => {
+  it('converte o domínio e os registros de DNS e sugere o DMARC', async () => {
+    const { converterDominio, registroDmarc } = await import('../src/email/index.js');
+    const d = converterDominio({
+      id: 'd1',
+      name: 'loja.com.br',
+      status: 'not_started',
+      records: [
+        {
+          record: 'SPF',
+          name: 'send',
+          type: 'MX',
+          ttl: 'Auto',
+          status: 'not_started',
+          value: 'feedback-smtp.sa-east-1.amazonses.com',
+          priority: 10,
+        },
+        {
+          record: 'DKIM',
+          name: 'resend._domainkey',
+          type: 'TXT',
+          ttl: 'Auto',
+          status: 'verified',
+          value: 'p=MIGf',
+        },
+      ],
+    });
+    expect(d).toMatchObject({ id: 'd1', nome: 'loja.com.br', situacao: 'pendente' });
+    expect(d.registros[0]).toMatchObject({
+      finalidade: 'Envio (SPF)',
+      tipo: 'MX',
+      prioridade: 10,
+      situacao: 'pendente',
+    });
+    expect(d.registros[1]).toMatchObject({ finalidade: 'Assinatura (DKIM)', situacao: 'verificado' });
+    expect(registroDmarc('loja.com.br')).toMatchObject({
+      tipo: 'TXT',
+      nome: '_dmarc',
+      valor: expect.stringMatching(/^v=DMARC1; p=none/),
+    });
+  });
+});

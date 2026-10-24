@@ -1,19 +1,17 @@
 import type { Executor } from '@prospeccao/db';
 import { AppError } from '@prospeccao/shared';
 import { conta, contaSql } from '../../contexto.js';
-import type { WhatsappConta } from '../../dependencias.js';
 import * as alertas from '../alertas/repositorio.js';
 import { HOJE_SP } from './repositorio.js';
 
 /**
- * Chips de WhatsApp da conta (instâncias da Evolution dela). Cada chip tem o seu limite de mensagens
- * automáticas por dia e o seu intervalo; o lead novo vai para o chip menos usado hoje e, depois,
- * conversa sempre pelo mesmo (é o número que ele conhece). Sem chip cadastrado, vale a instância
- * das credenciais (um chip só, com o limite do agente).
+ * Chips de WhatsApp da conta: cada um é um número conectado pelo próprio cliente (instância da
+ * Z-API, lida pelo QR Code). Cada chip tem o seu limite de mensagens automáticas por dia e o seu
+ * intervalo; o lead novo vai para o chip menos usado hoje e, depois, conversa sempre pelo mesmo
+ * (é o número que ele conhece).
  */
 
 export interface Chip {
-  /** null: o chip das credenciais (sem cadastro). */
   id: number | null;
   nome: string;
   instancia: string;
@@ -57,7 +55,8 @@ export async function listar(db: Executor) {
   const C = contaSql();
   const { rows } = await db.query(
     `SELECT c.id, c.nome, c.instancia, c.ativo, c.limite_dia AS "limiteDia", c.estado, c.estado_em AS "estadoEm",
-            c.aquecer, c.ativado_em AS "ativadoEm",
+            c.aquecer, c.ativado_em AS "ativadoEm", c.numero, c.provedor,
+            c.token_cifrado IS NOT NULL AS conectavel,
             CASE WHEN c.pausado_ate > now() THEN c.pausado_ate END AS "pausadoAte", c.pausa_motivo AS "pausaMotivo",
             (SELECT count(*)::int FROM comercial.mensagens m
               WHERE m.chip_id = c.id AND m.status = 'enviada' AND m.origem IN ${ORIGENS_FRIAS}
@@ -75,37 +74,35 @@ export async function listar(db: Executor) {
   }));
 }
 
-/** Chips em uso: os cadastrados e ativos ou, sem cadastro, o das credenciais. */
+/** Chips em uso: os conectados pela Z-API (com token), ativos e fora de pausa. */
 export async function emUso(
   db: Executor,
-  whatsapp: Pick<WhatsappConta, 'instancia'> | null,
+  _whatsapp?: unknown,
+  incluirDesconectados = false,
 ): Promise<Chip[]> {
   const { rows } = await db.query<{
     id: number;
     nome: string;
     instancia: string;
     limite_dia: number;
-    ativo: boolean;
     aquecer: boolean;
     ativado_em: string;
   }>(
-    `SELECT id, nome, instancia, limite_dia, ativo AND (pausado_ate IS NULL OR pausado_ate <= now()) AS ativo,
-            aquecer, ativado_em
-       FROM comercial.chips WHERE conta_id = ${contaSql()} ORDER BY id`,
+    `SELECT id, nome, instancia, limite_dia, aquecer, ativado_em
+       FROM comercial.chips
+      WHERE conta_id = ${contaSql()} AND ativo AND token_cifrado IS NOT NULL
+        AND (pausado_ate IS NULL OR pausado_ate <= now())
+        AND ($1 OR estado IS NULL OR estado NOT LIKE 'desconectado%')
+      ORDER BY id`,
+    [incluirDesconectados],
   );
-  if (rows.length)
-    return rows
-      .filter((r) => r.ativo)
-      .map((r) => ({
-        id: r.id,
-        nome: r.nome,
-        instancia: r.instancia,
-        limiteDia: r.limite_dia,
-        tetoAquecimento: r.aquecer ? tetoDeAquecimento(diasDesde(r.ativado_em)) : null,
-      }));
-  return whatsapp?.instancia
-    ? [{ id: null, nome: 'Chip principal', instancia: whatsapp.instancia, limiteDia: null }]
-    : [];
+  return rows.map((r) => ({
+    id: r.id,
+    nome: r.nome,
+    instancia: r.instancia,
+    limiteDia: r.limite_dia,
+    tetoAquecimento: r.aquecer ? tetoDeAquecimento(diasDesde(r.ativado_em)) : null,
+  }));
 }
 
 /** Chip pela instância que mandou o webhook (com vários chips, diz por qual número o lead escreveu). */
@@ -249,13 +246,81 @@ export async function apagar(db: Executor, id: number): Promise<void> {
   if (!rowCount) throw AppError.naoEncontrado('Chip');
 }
 
-export async function obter(db: Executor, id: number): Promise<{ id: number; instancia: string }> {
-  const { rows } = await db.query<{ id: number; instancia: string }>(
-    `SELECT id, instancia FROM comercial.chips WHERE id = $1 AND conta_id = ${contaSql()}`,
+export interface ChipCadastro {
+  id: number;
+  instancia: string;
+  provedor: 'zapi' | 'evolution';
+  /** Tem token (instância da Z-API criada pela plataforma). */
+  zapi: boolean;
+  assinado: boolean;
+}
+
+export async function obter(db: Executor, id: number): Promise<ChipCadastro> {
+  const { rows } = await db.query<ChipCadastro>(
+    `SELECT id, instancia, provedor, token_cifrado IS NOT NULL AS zapi, assinado_em IS NOT NULL AS assinado
+       FROM comercial.chips WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id],
   );
   if (!rows[0]) throw AppError.naoEncontrado('Chip');
   return rows[0];
+}
+
+/* ───────────── Números pela Z-API (o cliente conecta sozinho) ───────────── */
+
+/** Quantos números a conta pode conectar: o do plano (master) ou, sem plano, sem limite. */
+export async function limiteDeNumeros(db: Executor): Promise<{ limite: number | null; usados: number }> {
+  const { rows } = await db.query<{ limite: number | null; usados: number }>(
+    `SELECT c.limite_chips AS limite,
+            (SELECT count(*)::int FROM comercial.chips h WHERE h.conta_id = c.id AND h.token_cifrado IS NOT NULL) AS usados
+       FROM cadastro.contas c WHERE c.id = ${contaSql()}`,
+  );
+  return rows[0] ?? { limite: null, usados: 0 };
+}
+
+/** Número novo: a instância já criada na Z-API, com o token cifrado. Começa aquecendo. */
+export async function criarNumero(
+  db: Executor,
+  d: { nome: string; instancia: string; tokenCifrado: string; limiteDia?: number },
+): Promise<number> {
+  const { rows } = await db.query<{ id: number }>(
+    `INSERT INTO comercial.chips (conta_id, nome, instancia, token_cifrado, provedor, limite_dia, aquecer, ativado_em,
+                                  estado, estado_em)
+     VALUES (${contaSql()}, $1, $2, $3, 'zapi', $4, true, current_date, 'desconectado: leia o QR Code para conectar', now())
+     RETURNING id`,
+    [d.nome, d.instancia, d.tokenCifrado, d.limiteDia ?? 40],
+  );
+  return rows[0]!.id;
+}
+
+/**
+ * Conexão do número mudou (webhook da Z-API ou a tela conferindo). Conectou: guarda o número e
+ * devolve se ainda falta assinar a instância (a assinatura é feita na primeira conexão).
+ */
+export async function marcarConexao(
+  db: Executor,
+  chip: { id?: number; instancia?: string },
+  conectado: boolean,
+  numero?: string | null,
+): Promise<{ id: number; instancia: string; assinar: boolean } | null> {
+  const { rows } = await db.query<{ id: number; instancia: string; assinar: boolean }>(
+    `UPDATE comercial.chips
+        SET estado = CASE WHEN $3 THEN 'ok (WhatsApp conectado)' ELSE 'desconectado: leia o QR Code para conectar' END,
+            estado_em = now(),
+            numero = CASE WHEN $3 THEN coalesce($4, numero) ELSE numero END,
+            ativo = CASE WHEN $3 THEN true ELSE ativo END
+      WHERE conta_id = ${contaSql()} AND ($1::int IS NULL OR id = $1) AND ($2::text IS NULL OR instancia = $2)
+        AND ($1::int IS NOT NULL OR $2::text IS NOT NULL)
+      RETURNING id, instancia, (assinado_em IS NULL AND token_cifrado IS NOT NULL AND $3) AS assinar`,
+    [chip.id ?? null, chip.instancia ?? null, conectado, numero ?? null],
+  );
+  return rows[0] ?? null;
+}
+
+export async function marcarAssinado(db: Executor, id: number): Promise<void> {
+  await db.query(
+    `UPDATE comercial.chips SET assinado_em = now() WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [id],
+  );
 }
 
 export async function guardarEstado(db: Executor, id: number, estado: string): Promise<void> {

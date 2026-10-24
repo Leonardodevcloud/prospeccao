@@ -46,6 +46,8 @@ export interface CredenciaisConta {
   erro: string | null;
   /** Módulos contratados (null: conta sem plano, vale tudo). */
   modulos?: string[] | null;
+  /** Domínio de e-mail que o próprio cliente cadastrou (envia pelo Resend da plataforma). */
+  dominioEmail?: { dominio: string; verificado: boolean; remetente: string | null } | null;
 }
 
 /** O que o serviço tem no ambiente (variáveis do Railway), usado pela conta principal. */
@@ -56,9 +58,9 @@ export interface CredenciaisAmbiente {
   emailRemetente?: string | null;
   resendDominioRespostas?: string | null;
   resendWebhookSegredo?: string | null;
-  evolutionUrl?: string | null;
-  evolutionKey?: string | null;
-  evolutionInstancia?: string | null;
+  /** Z-API da plataforma: token de parceiro (cria as instâncias dos clientes) e token de segurança. */
+  zapiParceiroToken?: string | null;
+  zapiClientToken?: string | null;
   iaProvedor?: string | null;
   iaKey?: string | null;
   iaModelo?: string | null;
@@ -77,9 +79,13 @@ export interface CredenciaisEfetivas {
     dominioRespostas: string | null;
     webhookSegredo: string | null;
   } | null;
-  evolution: { url: string; apiKey: string; instancia: string } | null;
+  /**
+   * WhatsApp pela Z-API da plataforma (cada chip tem a sua instância e o seu token, guardados no
+   * chip). null: a plataforma não tem a Z-API configurada.
+   */
+  whatsapp: { parceiroToken: string; clientToken: string | null } | null;
   ia: { provedor: string | null; apiKey: string; modelo: string | null; baseUrl: string | null } | null;
-  origem: Record<'places' | 'ors' | 'resend' | 'evolution' | 'ia', Origem>;
+  origem: Record<'places' | 'ors' | 'resend' | 'whatsapp' | 'ia', Origem>;
   erro: string | null;
   /** Módulos contratados (null: conta sem plano, vale tudo). */
   modulos?: string[] | null;
@@ -126,6 +132,9 @@ interface LinhaCredenciais {
   dicas: Partial<Record<CampoSegredo, string>> | null;
   atualizado_em: string | null;
   modulos: string[] | null;
+  dominio: string | null;
+  dominio_situacao: string | null;
+  dominio_remetente: string | null;
 }
 
 export async function lerCredenciais(
@@ -136,8 +145,10 @@ export async function lerCredenciais(
   const { rows } = await db.query<LinhaCredenciais>(
     `SELECT c.principal, c.usa_ia_plataforma, k.email_remetente, k.resend_dominio_respostas, k.evolution_url, k.evolution_instancia,
             k.ia_provedor, k.ia_modelo, k.ia_base_url, k.segredos, k.dicas, k.atualizado_em,
-            CASE WHEN c.plano IS NULL THEN NULL ELSE c.modulos END AS modulos
+            CASE WHEN c.plano IS NULL THEN NULL ELSE c.modulos END AS modulos,
+            de.dominio, de.situacao AS dominio_situacao, de.remetente AS dominio_remetente
        FROM cadastro.contas c LEFT JOIN cadastro.credenciais_conta k ON k.conta_id = c.id
+       LEFT JOIN cadastro.dominios_email de ON de.conta_id = c.id
       WHERE c.id = $1`,
     [contaId],
   );
@@ -172,6 +183,13 @@ export async function lerCredenciais(
     atualizadoEm: r.atualizado_em,
     erro,
     modulos: r.modulos,
+    dominioEmail: r.dominio
+      ? {
+          dominio: r.dominio,
+          verificado: r.dominio_situacao === 'verificado',
+          remetente: r.dominio_remetente,
+        }
+      : null,
   };
 }
 
@@ -264,9 +282,9 @@ export function resolverCredenciais(
     places: null,
     ors: null,
     resend: null,
-    evolution: null,
+    whatsapp: null,
     ia: null,
-    origem: { places: null, ors: null, resend: null, evolution: null, ia: null },
+    origem: { places: null, ors: null, resend: null, whatsapp: null, ia: null },
     erro: c?.erro ?? null,
     modulos: c?.modulos ?? null,
   };
@@ -291,6 +309,15 @@ export function resolverCredenciais(
       webhookSegredo: valor(s.resendWebhookSegredo),
     };
     r.origem.resend = 'conta';
+  } else if (valor(ambiente.resendKey) && c?.dominioEmail?.verificado && valor(c.dominioEmail.remetente)) {
+    // Domínio que o próprio cliente cadastrou e verificou: envia pelo Resend da plataforma.
+    r.resend = {
+      apiKey: valor(ambiente.resendKey)!,
+      remetente: valor(c.dominioEmail.remetente)!,
+      dominioRespostas: valor(ambiente.resendDominioRespostas),
+      webhookSegredo: valor(ambiente.resendWebhookSegredo),
+    };
+    r.origem.resend = 'plataforma';
   } else if (usaAmbiente && valor(ambiente.resendKey) && valor(ambiente.emailRemetente)) {
     r.resend = {
       apiKey: valor(ambiente.resendKey)!,
@@ -301,25 +328,14 @@ export function resolverCredenciais(
     r.origem.resend = 'plataforma';
   }
 
-  if (valor(s.evolutionKey) && valor(c?.evolutionUrl) && valor(c?.evolutionInstancia)) {
-    r.evolution = {
-      url: valor(c?.evolutionUrl)!,
-      apiKey: valor(s.evolutionKey)!,
-      instancia: valor(c?.evolutionInstancia)!,
+  // WhatsApp: a Z-API é da plataforma para todas as contas (o cliente conecta o próprio número
+  // pelo QR Code; a instância e o token ficam no chip).
+  if (valor(ambiente.zapiParceiroToken)) {
+    r.whatsapp = {
+      parceiroToken: valor(ambiente.zapiParceiroToken)!,
+      clientToken: valor(ambiente.zapiClientToken),
     };
-    r.origem.evolution = 'conta';
-  } else if (
-    usaAmbiente &&
-    valor(ambiente.evolutionKey) &&
-    valor(ambiente.evolutionUrl) &&
-    valor(ambiente.evolutionInstancia)
-  ) {
-    r.evolution = {
-      url: valor(ambiente.evolutionUrl)!,
-      apiKey: valor(ambiente.evolutionKey)!,
-      instancia: valor(ambiente.evolutionInstancia)!,
-    };
-    r.origem.evolution = 'plataforma';
+    r.origem.whatsapp = 'plataforma';
   }
 
   if (valor(s.iaKey)) {
@@ -373,6 +389,40 @@ export function cacheDeCredenciais(
       else cache.delete(contaId);
     },
   };
+}
+
+/* ───────────── Chips de WhatsApp (Z-API) ───────────── */
+
+/** Token da instância do chip, cifrado como os demais segredos. */
+export function cifrarTokenChip(chave: string | null | undefined, token: string): string {
+  if (!chave) throw new Error('Configure CHAVE_CREDENCIAIS no ambiente para conectar números de WhatsApp.');
+  return cifrar(chave, token);
+}
+
+/**
+ * Instância e token de um chip da conta (o informado, ou o primeiro ativo). null: a conta não tem
+ * número conectado pela Z-API.
+ */
+export async function lerChipWhatsapp(
+  db: Executor,
+  contaId: number,
+  chave: string | null | undefined,
+  instancia?: string | null,
+): Promise<{ instancia: string; token: string } | null> {
+  if (!chave) return null;
+  const { rows } = await db.query<{ instancia: string; token_cifrado: string }>(
+    `SELECT instancia, token_cifrado FROM comercial.chips
+      WHERE conta_id = $1 AND token_cifrado IS NOT NULL AND ($2::text IS NULL OR instancia = $2)
+      ORDER BY ativo DESC, (estado LIKE 'ok%') DESC NULLS LAST, id LIMIT 1`,
+    [contaId, instancia ?? null],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  try {
+    return { instancia: r.instancia, token: decifrar(chave, r.token_cifrado) };
+  } catch {
+    return null;
+  }
 }
 
 /* ───────────── Contas ───────────── */

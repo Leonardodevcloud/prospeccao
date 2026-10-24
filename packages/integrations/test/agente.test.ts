@@ -131,3 +131,77 @@ describe('decisão do agente', () => {
     expect(p).toContain('LEAD: Quanto custa?');
   });
 });
+
+describe('WhatsApp (Z-API)', () => {
+  const base = {
+    type: 'ReceivedCallback',
+    instanceId: 'INST1',
+    messageId: 'MSG1',
+    phone: '5516992490094',
+    fromMe: false,
+    momment: 1760900000000,
+    senderName: 'Marcos',
+    chatName: 'Marcos Loja',
+    isGroup: false,
+  };
+
+  it('lê texto, foto com legenda, áudio e cartão de contato', () => {
+    expect(interpretarWebhook({ ...base, text: { message: 'Quanto custa?' } })).toMatchObject({
+      telefone: '16992490094',
+      texto: 'Quanto custa?',
+      idExterno: 'MSG1',
+      deMim: false,
+      nome: 'Marcos',
+      instancia: 'INST1',
+      em: new Date(1760900000000).toISOString(),
+      midia: null,
+    });
+    expect(
+      interpretarWebhook({
+        ...base,
+        image: { imageUrl: 'https://z/f.jpg', caption: 'nossa vitrine', mimeType: 'image/jpeg' },
+      }),
+    ).toMatchObject({
+      texto: 'nossa vitrine',
+      midia: { tipo: 'imagem', url: 'https://z/f.jpg', mime: 'image/jpeg', base64: null },
+    });
+    expect(
+      interpretarWebhook({
+        ...base,
+        audio: { audioUrl: 'https://z/a.ogg', mimeType: 'audio/ogg', ptt: true },
+      }),
+    ).toMatchObject({ texto: '[áudio]', midia: { tipo: 'audio', url: 'https://z/a.ogg' } });
+    const cartao = interpretarWebhook({
+      ...base,
+      contact: {
+        displayName: 'Rafael Compras',
+        vCard:
+          'BEGIN:VCARD\nVERSION:3.0\nFN:Rafael Compras\nTEL;type=CELL;waid=5516991112233:+55 16 99111-2233\nEND:VCARD',
+      },
+    });
+    expect(cartao?.contatos).toEqual([{ nome: 'Rafael Compras', telefones: ['16991112233'] }]);
+  });
+
+  it('ignora grupo, canal, status e outros eventos; reconhece conexão e desconexão', async () => {
+    const { eventoDeConexao } = await import('../src/whatsapp/index.js');
+    expect(interpretarWebhook({ ...base, isGroup: true, text: { message: 'oi' } })).toBeNull();
+    expect(interpretarWebhook({ ...base, phone: '120363-group', text: { message: 'oi' } })).toBeNull();
+    expect(interpretarWebhook({ ...base, isNewsletter: true, text: { message: 'oi' } })).toBeNull();
+    expect(
+      interpretarWebhook({ type: 'MessageStatusCallback', status: 'READ', instanceId: 'INST1' }),
+    ).toBeNull();
+    expect(eventoDeConexao({ type: 'DisconnectedCallback', instanceId: 'INST1' })).toEqual({
+      instancia: 'INST1',
+      conectado: false,
+    });
+    expect(eventoDeConexao({ type: 'ConnectedCallback', instanceId: 'INST1', phone: '5516…' })).toEqual({
+      instancia: 'INST1',
+      conectado: true,
+    });
+    expect(eventoDeConexao({ ...base, text: { message: 'oi' } })).toBeNull();
+  });
+
+  it('mensagem enviada pelo celular vem como "de mim"', () => {
+    expect(interpretarWebhook({ ...base, fromMe: true, text: { message: 'Bom dia!' } })?.deMim).toBe(true);
+  });
+});

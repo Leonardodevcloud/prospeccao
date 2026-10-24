@@ -3,6 +3,7 @@ import {
   type CredenciaisEfetivas,
   cacheDeCredenciais,
   type Executor,
+  lerChipWhatsapp,
   medidorDeIa,
   type Origem,
 } from '@prospeccao/db';
@@ -29,8 +30,22 @@ import {
 } from '@prospeccao/integrations/email';
 import { type ConfigIa, configIa } from '@prospeccao/integrations/ia';
 import * as ors from '@prospeccao/integrations/ors';
-import { baixarMidia, enviarMidia, enviarTexto, estadoConexao } from '@prospeccao/integrations/whatsapp';
-import { LISTA_MODULOS, type Modulo } from '@prospeccao/shared';
+import {
+  assinarInstancia,
+  baixarMidia,
+  type ConfigWhatsapp,
+  cancelarInstancia,
+  configurarWebhook,
+  criarInstancia,
+  desconectar,
+  enviarMidia,
+  enviarTexto,
+  estadoConexao,
+  qrCode,
+  type StatusWhatsapp,
+  statusInstancia,
+} from '@prospeccao/integrations/whatsapp';
+import { AppError, LISTA_MODULOS, type Modulo } from '@prospeccao/shared';
 
 /**
  * Serviços de fora de cada conta (WhatsApp, IA, e-mail, geocodificação), montados com as
@@ -39,12 +54,10 @@ import { LISTA_MODULOS, type Modulo } from '@prospeccao/shared';
  */
 
 /**
- * WhatsApp da conta: a Evolution dela (endereço e chave) e as instâncias (chips). Sem `instancia`,
- * usa a das credenciais.
+ * WhatsApp da conta pela Z-API da plataforma. Cada chip é uma instância (ID e token guardados no
+ * chip); sem `instancia`, usa o primeiro chip ativo da conta.
  */
 export interface WhatsappConta {
-  /** Instância das credenciais (o chip de quando não há chips cadastrados). */
-  instancia: string;
   enviar(
     telefone: string,
     texto: string,
@@ -63,13 +76,21 @@ export interface WhatsappConta {
     },
     instancia?: string,
   ): Promise<{ idExterno: string | null }>;
-  /** Arquivo de mensagem recebida, quando não vem junto no webhook. */
-  baixarMidia?(
-    idExterno: string,
-    instancia?: string,
-  ): Promise<{ base64: string; mime: string | null } | null>;
+  /** Arquivo de mensagem recebida (a Z-API manda o link no webhook). */
+  baixarMidia?(url: string): Promise<{ base64: string; mime: string | null } | null>;
   /** "ok (WhatsApp conectado)" ou o que está errado com o chip. */
   estado?(instancia?: string): Promise<string>;
+  /** Conexão do número, para a tela de conectar. */
+  status?(instancia: string): Promise<StatusWhatsapp>;
+  /** Cria a instância de um número novo na Z-API (teste de 2 dias) e aponta o webhook para o sistema. */
+  criar?(nome: string, webhook: string): Promise<{ instancia: string; token: string }>;
+  /** QR Code para o cliente ler no celular. */
+  qr?(instancia: string): Promise<{ conectado: boolean; imagem: string | null }>;
+  desconectar?(instancia: string): Promise<void>;
+  /** Assina a instância (passa a cobrar no mês). */
+  assinar?(instancia: string): Promise<void>;
+  /** Cancela a instância na Z-API (para de cobrar). */
+  cancelar?(instancia: string): Promise<void>;
 }
 
 export interface EmailConta {
@@ -107,7 +128,7 @@ export interface ServicosConta {
   /** Endereço → coordenadas (bases de operação). */
   geocodificar: ((endereco: string) => Promise<{ lat: number; lng: number } | null>) | null;
   /** De onde veio cada credencial (da conta ou da plataforma), para a tela. */
-  origem: Record<'places' | 'ors' | 'resend' | 'evolution' | 'ia', Origem>;
+  origem: Record<'places' | 'ors' | 'resend' | 'whatsapp' | 'ia', Origem>;
   /** Descrição da IA em uso ("DeepSeek · deepseek-flash"). */
   iaDescricao: string | null;
   erro: string | null;
@@ -121,10 +142,18 @@ const ROTULO_IA: Record<string, string> = { deepseek: 'DeepSeek', gemini: 'Gemin
  * Monta os serviços a partir das credenciais já resolvidas (também usado nos testes). Com o banco,
  * cada chamada à IA é medida (e bloqueada no teto do mês, se for pela chave da plataforma).
  */
-export function servicosDe(c: CredenciaisEfetivas, db?: Executor): ServicosConta {
-  const evolution = c.evolution;
-  // Mesma Evolution, outra instância (chip).
-  const chip = (instancia?: string) => ({ ...evolution!, instancia: instancia || evolution!.instancia });
+export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string | null): ServicosConta {
+  const zapi = c.whatsapp;
+  // Instância e token do chip (o pedido ou o primeiro ativo da conta).
+  const chip = async (instancia?: string): Promise<ConfigWhatsapp> => {
+    const ch = db ? await lerChipWhatsapp(db, c.contaId, chave, instancia) : null;
+    if (!ch)
+      throw AppError.invalido(
+        'Nenhum número de WhatsApp conectado nesta conta. Conecte em Agente → Números de WhatsApp.',
+      );
+    return { ...ch, clientToken: zapi?.clientToken ?? null };
+  };
+  const parceiro = zapi ? { token: zapi.parceiroToken } : null;
   const medidor = db && c.origem.ia ? medidorDeIa(db, c.contaId, c.origem.ia) : null;
   const iaCfg: ConfigIa | null = c.ia ? configIa(c.ia, medidor) : null;
   // Módulo não contratado: o serviço fica desligado para a conta (a tela diz que não está no plano).
@@ -137,13 +166,22 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor): ServicosConta
     contaId: c.contaId,
     modulos,
     whatsapp:
-      evolution && temWhatsapp
+      zapi && parceiro && temWhatsapp
         ? {
-            instancia: evolution.instancia,
-            enviar: (tel, texto, inst, op) => enviarTexto(chip(inst), tel, texto, op),
-            enviarMidia: (tel, m, inst) => enviarMidia(chip(inst), tel, m),
-            baixarMidia: (id, inst) => baixarMidia(chip(inst), id),
-            estado: (inst) => estadoConexao(chip(inst)),
+            enviar: async (tel, texto, inst, op) => enviarTexto(await chip(inst), tel, texto, op),
+            enviarMidia: async (tel, m, inst) => enviarMidia(await chip(inst), tel, m),
+            baixarMidia: (url) => baixarMidia(url),
+            estado: async (inst) => estadoConexao(await chip(inst)),
+            status: async (inst) => statusInstancia(await chip(inst)),
+            criar: async (nome, webhook) => {
+              const nova = await criarInstancia(parceiro, nome);
+              await configurarWebhook({ ...nova, clientToken: zapi.clientToken }, webhook);
+              return { instancia: nova.instancia, token: nova.token };
+            },
+            qr: async (inst) => qrCode(await chip(inst)),
+            desconectar: async (inst) => desconectar(await chip(inst)),
+            assinar: async (inst) => assinarInstancia(parceiro, await chip(inst)),
+            cancelar: async (inst) => cancelarInstancia(parceiro, await chip(inst)),
           }
         : null,
     ia:
@@ -182,7 +220,8 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor): ServicosConta
 export function criarServicos(db: Executor, chave: string | null, ambiente: CredenciaisAmbiente) {
   const cache = cacheDeCredenciais(db, chave, ambiente);
   return {
-    servicos: (async (contaId: number) => servicosDe(await cache.obter(contaId), db)) as ResolverServicos,
+    servicos: (async (contaId: number) =>
+      servicosDe(await cache.obter(contaId), db, chave)) as ResolverServicos,
     invalidar: (contaId?: number) => cache.invalidar(contaId),
   };
 }

@@ -5,6 +5,7 @@ import {
   contaDaCampanha,
   contarBuscas,
   criarPool,
+  lerChipWhatsapp,
   manterSinalDeVida,
   medidorDeIa,
 } from '@prospeccao/db';
@@ -42,11 +43,10 @@ const env = carregarEnv(
      * Validação de WhatsApp pelo chip da conta principal (só consulta, não envia). As três juntas
      * ou nenhuma. As outras contas usam o chip cadastrado no painel master.
      */
-    EVOLUTION_URL: opcional(z.string().url()),
-    EVOLUTION_API_KEY: opcional(z.string().min(4)),
-    EVOLUTION_INSTANCIA: opcional(z.string().min(1)),
+    ZAPI_PARCEIRO_TOKEN: opcional(z.string().min(4)),
+    ZAPI_CLIENT_TOKEN: opcional(z.string().min(4)),
     /** Pausa entre consultas de WhatsApp, para não pesar no chip. */
-    EVOLUTION_INTERVALO_MS: z.coerce.number().int().min(0).default(3_000),
+    WHATSAPP_INTERVALO_MS: z.coerce.number().int().min(0).default(3_000),
     /** Google Places da conta principal (opcional; as outras usam a chave do painel master). */
     GOOGLE_PLACES_KEY: opcional(z.string().min(10)),
     ENRIQ_FAIXAS_LINKEDIN: listaCsv.default(['A', 'B']),
@@ -96,9 +96,8 @@ const serper = env.SERPER_API_KEY ? { apiKey: env.SERPER_API_KEY } : null;
 const iaLegada = !env.IA_API_KEY && env.GEMINI_API_KEY;
 const credenciais = cacheDeCredenciais(pool, chaveDoAmbiente(), {
   placesKey: env.GOOGLE_PLACES_KEY ?? null,
-  evolutionUrl: env.EVOLUTION_URL ?? null,
-  evolutionKey: env.EVOLUTION_API_KEY ?? null,
-  evolutionInstancia: env.EVOLUTION_INSTANCIA ?? null,
+  zapiParceiroToken: env.ZAPI_PARCEIRO_TOKEN ?? null,
+  zapiClientToken: env.ZAPI_CLIENT_TOKEN ?? null,
   iaProvedor: iaLegada ? 'gemini' : (env.IA_PROVEDOR ?? null),
   iaKey: env.IA_API_KEY ?? env.GEMINI_API_KEY ?? null,
   iaModelo: iaLegada ? env.GEMINI_MODELO : (env.IA_MODELO ?? null),
@@ -116,7 +115,9 @@ const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'instagram' | 'direto
         ? { nome: 'Apify', buscar: (consultas) => enriq.buscarNoGoogle(apify, consultas) }
         : null,
     instagram:
-    apify && env.ENRIQ_LER_INSTAGRAM ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) } : null,
+      apify && env.ENRIQ_LER_INSTAGRAM
+        ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) }
+        : null,
     diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
     cnpj: env.ENRIQ_CNPJ_PUBLICO ? { consultar: (cnpj) => enriq.consultarCnpjPublico(cnpj) } : null,
     basePaga: env.DIRECTD_TOKEN
@@ -135,7 +136,9 @@ async function fontesDa(contaId: number): Promise<Fontes> {
   // Cada chamada à IA conta no consumo da conta (e para no teto do mês da IA da plataforma).
   const ia = c.ia && c.origem.ia ? configIa(c.ia, medidorDeIa(pool, contaId, c.origem.ia)) : null;
   const places = c.places;
-  const evolution = c.evolution;
+  // Confere WhatsApp pelo número que a própria conta conectou (Z-API); sem número conectado, pula.
+  const chip = c.whatsapp ? await lerChipWhatsapp(pool, contaId, chaveDoAmbiente()) : null;
+  const zapi = chip ? { ...chip, clientToken: c.whatsapp?.clientToken ?? null } : null;
   // Serper da plataforma, mas cada busca conta no consumo desta conta.
   const serperConta = serper
     ? { ...serper, aoBuscar: (n: number) => void contarBuscas(pool, contaId, n) }
@@ -179,17 +182,12 @@ async function fontesDa(contaId: number): Promise<Fontes> {
             },
           }
         : null,
-    whatsapp: evolution
+    whatsapp: zapi
       ? {
           async verificar(numeros) {
-            const r = await enriq.verificarWhatsapp(evolution, numeros);
-            await espera(env.EVOLUTION_INTERVALO_MS);
+            const r = await enriq.verificarWhatsapp(zapi, numeros);
+            await espera(env.WHATSAPP_INTERVALO_MS);
             return r;
-          },
-          async perfil(numero) {
-            const p = await enriq.perfilComercialWhatsapp(evolution, numero);
-            await espera(env.EVOLUTION_INTERVALO_MS);
-            return p;
           },
         }
       : null,

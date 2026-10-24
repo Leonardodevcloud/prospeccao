@@ -5063,3 +5063,121 @@ label.plano-opcao[data-ativo] {
   padding: var(--space-3) 0;
   background: var(--bg);
 }
+
+/* Conectar número de WhatsApp (QR Code) */
+.vazio-acao {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+}
+.qr-conectar {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--space-4) var(--space-5);
+  align-items: center;
+}
+.qr-conectar__codigo {
+  display: grid;
+  place-items: center;
+  width: 240px;
+  height: 240px;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+.qr-conectar__codigo img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.qr-conectar__espera {
+  width: 100%;
+  height: 100%;
+}
+.qr-conectar__passos {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: 14px;
+  line-height: 1.5;
+}
+@media (max-width: 560px) {
+  .qr-conectar {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+}
+
+/* Domínio de e-mail (registros de DNS) */
+.dns-lista {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dns-registro {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.dns-registro__topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 14px;
+}
+.dns-registro__campos {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) 90px;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: 13px;
+}
+.dns-registro__campos > div {
+  min-width: 0;
+}
+.dns-registro__campos dt {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.dns-registro__campos dd {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: 0;
+  min-width: 0;
+}
+.dns-texto {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: normal;
+  padding-top: 4px;
+}
+.dns-registro__valor {
+  grid-column: 1 / -1;
+}
+.remetente-dominio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.remetente-dominio .filtro {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  .dns-registro__campos {
+    grid-template-columns: 1fr;
+  }
+}

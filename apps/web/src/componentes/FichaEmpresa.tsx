@@ -376,7 +376,6 @@ function BotaoNumeroErrado(props: { c: ContatoEnriq; empresaId: number }) {
 
 function QuemDecide({ e }: { e: EmpresaDetalhe }) {
   const [todos, setTodos] = useState(false);
-  const retorno = useRetorno(e.id);
   const daEmpresa = e.contatos.filter((c) => c.pessoaId == null);
   // Contatos que valem para falar com o decisor: o principal e os WhatsApp confirmados da empresa.
   const melhores = daEmpresa
@@ -407,24 +406,8 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
               principal={p.decisor}
               fontes={[...new Set(p.fontes.map((f) => FONTE[f]))]}
               linkedin={p.linkedin}
-              evidencia={
-                p.naoDecisor
-                  ? 'Você marcou que esta não é a pessoa certa para abordar.'
-                  : (p.evidencia ?? provaDaPessoa(p))
-              }
+              evidencia={p.evidencia ?? provaDaPessoa(p)}
               contatos={p.decisor ? [...proprios, ...melhores] : proprios}
-              acoes={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={retorno.isPending}
-                  onClick={() =>
-                    retorno.mutate({ tipo: 'nao_decisor', valor: p.nome, desfazer: !!p.naoDecisor })
-                  }
-                >
-                  {p.naoDecisor ? 'Desfazer' : 'Não é a pessoa certa'}
-                </Button>
-              }
             />
           );
         })}

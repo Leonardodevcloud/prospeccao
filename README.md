@@ -84,7 +84,7 @@ foi pulada (é a trilha "Como encontramos" da ficha), e a falha de uma fonte nã
 5. **Nota (Gemini)**: faixa A/B/C, score e o motivo, mais pessoas citadas no site. Sem chave, nota por regras.
 6. **LinkedIn** (só A e B): pessoas com os cargos-alvo do nicho e o perfil dos sócios-administradores, via busca no Google.
 7. **Google Places** (só A e B, opcional): a loja segue aberta?
-8. **WhatsApp** (Evolution API): quais telefones têm WhatsApp. Só consulta, não envia nada.
+8. **WhatsApp** (Z-API, pelo número que a conta conectou): quais telefones têm WhatsApp. Só consulta, não envia nada.
 
 Decisor: quem cuida de compras, se aparecer; senão quem administra na Receita; senão um gestor citado.
 Melhor contato: WhatsApp confirmado > WhatsApp do site/Instagram > telefone do Google > e-mail de compras.
@@ -157,10 +157,10 @@ A variável `SERVICO` escolhe o que a imagem empacota.
 
 | Serviço | `SERVICO` | Pre-deploy | Healthcheck | Variáveis além de `DATABASE_URL` |
 | --- | --- | --- | --- | --- |
-| api | `api` | `node dist/migrar.js` | `/saude` | `APP_ORIGENS`, `JWT_SEGREDO`, `ADMIN_EMAIL`, `ADMIN_SENHA_HASH`, `CHAVE_CREDENCIAIS`; opcionais: `IA_PROVEDOR` + `IA_API_KEY` (+ `IA_MODELO`, `IA_BASE_URL`), Resend, Evolution e `ORS_API_KEY` da conta principal |
+| api | `api` | `node dist/migrar.js` | `/saude` | `APP_ORIGENS`, `JWT_SEGREDO`, `ADMIN_EMAIL`, `ADMIN_SENHA_HASH`, `CHAVE_CREDENCIAIS`; opcionais: `IA_PROVEDOR` + `IA_API_KEY` (+ `IA_MODELO`, `IA_BASE_URL`), Resend da plataforma (`RESEND_API_KEY` com acesso total: cadastra os domínios dos clientes), `ZAPI_PARCEIRO_TOKEN` + `ZAPI_CLIENT_TOKEN` e `ORS_API_KEY` |
 | worker-descoberta | `worker-descoberta` | — | — | `CHAVE_CREDENCIAIS`; `GOOGLE_PLACES_KEY` da conta principal (ou `APIFY_TOKEN`, legado); opcionais: `ORS_API_KEY` (campanhas com raio) e ajustes (ver `.env.example`) |
 | worker-cnpj | `worker-cnpj` | — | — | opcionais: `CNPJ_UFS_EXTRAS`, `CNPJ_AGENDA` |
-| worker-enriquecimento | `worker-enriquecimento` | — | — | `CHAVE_CREDENCIAIS`; opcionais: `IA_*`, `APIFY_TOKEN`, `SERPER_API_KEY`, `DIRECTD_TOKEN`, e Evolution + `GOOGLE_PLACES_KEY` da conta principal |
+| worker-enriquecimento | `worker-enriquecimento` | — | — | `CHAVE_CREDENCIAIS`; opcionais: `IA_*`, `APIFY_TOKEN`, `SERPER_API_KEY`, `DIRECTD_TOKEN`, `ZAPI_PARCEIRO_TOKEN` + `ZAPI_CLIENT_TOKEN` e `GOOGLE_PLACES_KEY` |
 
 - As migrations rodam só no pre-deploy da `api`, antes da nova versão subir. Os workers não migram.
 - Em "Watch paths", limite cada serviço a `apps/<serviço>/**`, `packages/**` e `pnpm-lock.yaml`, para um deploy não reiniciar os outros.
@@ -187,11 +187,11 @@ de cada conta e permite **entrar na conta** para configurar ou dar suporte.
   consulta filtra por `conta_id` da sessão (`apps/api/src/contexto.ts`).
 - **Compartilhado:** a base de empresas (CNPJ, Maps, enriquecimento). Uma conta só enxerga a
   empresa que uma campanha dela encontrou; a busca já feita por outra conta não é paga de novo.
-- **Chaves:** Resend, Evolution, IA, Google Places e ORS por conta, cifradas com
+- **Chaves:** Resend, IA, Google Places e ORS por conta, cifradas com
   `CHAVE_CREDENCIAIS` (mesmo valor na api e nos workers). A tela só mostra o final de cada chave.
   O que a conta principal deixar em branco vem do ambiente; a IA do ambiente vale para todas.
-- **Webhooks por conta:** Resend em `<API>/e/resend/<token>` e Evolution em
-  `<API>/webhooks/evolution/<token>` (os dois aparecem no painel, prontos para copiar).
+- **Webhooks por conta:** Resend próprio em `<API>/e/resend/<token>`; WhatsApp em
+  `<API>/webhooks/whatsapp/<token>` (configurado sozinho em cada número da Z-API).
 - **IA:** DeepSeek por padrão (bem mais barato que o Gemini para ler respostas, conversar e
   escrever a abertura do e-mail); Gemini ou qualquer API compatível com OpenAI também servem.
 
@@ -207,7 +207,8 @@ e manda um teste para a sua caixa.
 ### Operação (v12)
 
 - **Sequência multicanal:** cada passo é e-mail, WhatsApp ou ligação (até 6), com "dias sem resposta" entre eles. Resposta em qualquer canal, descadastro ou mover o lead no funil para depois de "abordado" para a sequência. WhatsApp sai pelo motor do agente (mesmo com o agente desligado), ligação vira tarefa para o dono do lead.
-- **Chips:** várias instâncias da Evolution por conta (tela Agente), cada uma com limite diário. O lead novo vai para o chip menos usado e fica sempre no mesmo. Todas as instâncias usam **o mesmo webhook** da conta; o campo `instance` diz o chip.
+- **Números de WhatsApp (Z-API):** o próprio cliente conecta em Agente → Números de WhatsApp: dá um nome e lê o QR Code. A plataforma é parceira da Z-API: cria a instância (com o webhook da conta), assina na primeira conexão e cancela quando o número é removido. Quantos números cada conta pode ter: painel master → Consumo → Tetos do mês. O lead novo vai para o número menos usado e fica sempre no mesmo.
+- **Domínio de e-mail:** o próprio cliente cadastra o domínio em E-mail → Configuração, copia os registros de DNS, confere e escolhe o remetente. Verificado, envia pelo Resend da plataforma; os avisos chegam no webhook da plataforma (`<API>/e/resend`) e o sistema descobre a conta pelo próprio aviso.
 - **Conversas com e-mail:** respostas de e-mail aparecem na conversa do lead e dá para responder por e-mail dali.
 - **Consumo e tetos (painel master):** IA (chamadas e tokens), e-mails, WhatsApp automático e Places por mês; tetos mensais por conta e a chave "pode usar a IA da plataforma".
 - **Esqueci minha senha:** link de 1 h, uso único, enviado pelo Resend da conta principal.

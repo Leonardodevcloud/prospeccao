@@ -8,6 +8,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
 import { comConta } from '../src/contexto.js';
+import * as chipsRepo from '../src/modulos/agente/chips.js';
 import * as funilRepo from '../src/modulos/funil/repositorio.js';
 import type { ServicosConta } from '../src/servicos.js';
 
@@ -23,7 +24,7 @@ const semServicos = (contaId: number): ServicosConta => ({
   personalizarAbertura: null,
   email: null,
   geocodificar: null,
-  origem: { places: null, ors: null, resend: null, evolution: null, ia: null },
+  origem: { places: null, ors: null, resend: null, whatsapp: null, ia: null },
   iaDescricao: null,
   erro: null,
 });
@@ -94,7 +95,20 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       }),
       credenciais: CREDENCIAIS,
     });
+    // Número de WhatsApp conectado da conta principal (os testes antigos mandam por ele).
+    await pool.query(`DELETE FROM comercial.chips`);
+    await pool.query(
+      `INSERT INTO comercial.chips (conta_id, nome, instancia, token_cifrado, limite_dia, aquecer)
+       VALUES (1, 'Principal', 'principal', 'x', 1000, false)`,
+    );
   });
+
+  /** Número já conectado (o fluxo do QR Code tem o seu próprio teste). */
+  const novoChip = async (d: { nome: string; instancia: string; limiteDia?: number; diasDeUso?: number }) => {
+    const id = await naConta(() => chipsRepo.criar(pool, { ...d, limiteDia: d.limiteDia ?? 40 }));
+    await pool.query(`UPDATE comercial.chips SET token_cifrado = 'x' WHERE id = $1`, [id]);
+    return { id, chips: (await ler('/agente/chips')).body.chips };
+  };
 
   afterAll(async () => {
     await pool?.end();
@@ -737,7 +751,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
 
     const tela = await ler('/agente');
     expect(tela.body.status).toMatchObject({ whatsapp: false, ia: false });
-    expect(tela.body.webhook).toMatch(/\/webhooks\/evolution\/[0-9a-f]{32}$/);
+    expect(tela.body.webhook).toMatch(/\/webhooks\/whatsapp\/[0-9a-f]{32}$/);
     const token = tela.body.webhook.split('/').at(-1);
     const salvo = await enviar('put', '/agente/config', {
       ...tela.body.config,
@@ -757,7 +771,6 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       pool,
       log: criarLogger('teste', 'silent'),
       whatsapp: {
-        instancia: 'teste',
         async enviar(tel: string, texto: string) {
           enviados.push({ tel, texto });
           return { idExterno: `ext-${enviados.length}` };
@@ -941,7 +954,6 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       pool,
       log: criarLogger('teste', 'silent'),
       whatsapp: {
-        instancia: 'teste',
         async enviar(_tel: string, texto: string, _inst?: string, op?: { digitandoMs?: number }) {
           enviados.push({ texto, digitando: op?.digitandoMs });
           return { idExterno: `v2-${enviados.length}` };
@@ -1077,13 +1089,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(radar.contagem.critico).toBeGreaterThanOrEqual(1);
 
     // 7) Chip novo aquece (teto baixo nos primeiros dias); número antigo não.
-    const novo = await enviar('post', '/agente/chips', { nome: 'Novo', instancia: 'novo-v2', limiteDia: 40 });
-    const antigo = await enviar('post', '/agente/chips', {
-      nome: 'Antigo',
-      instancia: 'antigo-v2',
-      limiteDia: 40,
-      diasDeUso: 90,
-    });
+    const novo = { body: await novoChip({ nome: 'Novo', instancia: 'novo-v2' }) };
+    const antigo = { body: await novoChip({ nome: 'Antigo', instancia: 'antigo-v2', diasDeUso: 90 }) };
     const lista = antigo.body.chips as {
       instancia: string;
       tetoAquecimento: number | null;
@@ -1173,11 +1180,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     );
 
     // 12) Saúde do chip: 3 falhas em 30 min pausam o chip por 1 hora (e abre alerta); reativar tira a pausa.
-    const chipFalho = await enviar('post', '/agente/chips', {
-      nome: 'Falho',
-      instancia: 'falho-v3',
-      limiteDia: 40,
-    });
+    const chipFalho = { body: await novoChip({ nome: 'Falho', instancia: 'falho-v3' }) };
     const chipsMod = await import('../src/modulos/agente/chips.js');
     await pool.query(
       `INSERT INTO comercial.mensagens (conta_id, empresa_id, direcao, texto, telefone, status, origem, chip_id, erro, tentado_em)
@@ -1468,7 +1471,6 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       servicos: async (conta) => ({
         ...semServicos(conta),
         whatsapp: {
-          instancia: 'teste',
           async enviar(tel: string, texto: string) {
             enviados.push({ tel, texto });
             return { idExterno: `z-${enviados.length}` };
@@ -1601,7 +1603,6 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       servicos: async (conta) => ({
         ...semServicos(conta),
         whatsapp: {
-          instancia: 'teste',
           async enviar(tel: string, texto: string) {
             enviados.push({ tel, texto });
             return { idExterno: `ind-${enviados.length}` };
@@ -1783,7 +1784,6 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       servicos: async (conta: number) => ({
         ...semServicos(conta),
         whatsapp: {
-          instancia: 'teste',
           async enviar(tel: string, texto: string) {
             enviados.push({ tel, texto });
             return { idExterno: `l-${enviados.length}` };
@@ -2264,7 +2264,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       iaKey: '…5555',
       evolutionKey: null,
     });
-    expect(cred.body.emUso).toMatchObject({ places: 'conta', resend: 'conta', ia: 'conta', evolution: null });
+    expect(cred.body.emUso).toMatchObject({ places: 'conta', resend: 'conta', ia: 'conta', whatsapp: null });
     const { rows: bruto } = await pool.query(
       'SELECT segredos FROM cadastro.credenciais_conta WHERE conta_id = $1',
       [id],
@@ -2280,7 +2280,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(sem.body.segredos).toMatchObject({ placesKey: null, resendKey: '…9876' });
     const detalhe = (await ler(`/master/contas/${id}`)).body;
     expect(detalhe.webhooks.resend).toMatch(/\/e\/resend\/[0-9a-f]{32}$/);
-    expect(detalhe.webhooks.evolution).toMatch(/\/webhooks\/evolution\/[0-9a-f]{32}$/);
+    expect(detalhe.webhooks.whatsapp).toMatch(/\/webhooks\/whatsapp\/[0-9a-f]{32}$/);
     expect(detalhe.usuarios).toEqual([
       expect.objectContaining({ email: 'bia@fiix.com.br', papel: 'admin', convitePendente: true }),
     ]);
@@ -2428,14 +2428,13 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     );
 
     // Dois chips: o 1º só manda uma automática por dia.
-    expect(
-      (await enviar('post', '/agente/chips', { nome: 'Chip 1', instancia: 'chip1', limiteDia: 1 })).status,
-    ).toBe(201);
-    const c2 = await enviar('post', '/agente/chips', { nome: 'Chip 2', instancia: 'chip2', limiteDia: 5 });
+    await pool.query(`DELETE FROM comercial.chips WHERE instancia = 'principal'`);
+    await novoChip({ nome: 'Chip 1', instancia: 'chip1', limiteDia: 1 });
+    const c2 = { body: await novoChip({ nome: 'Chip 2', instancia: 'chip2', limiteDia: 5 }) };
     expect(c2.body.chips).toHaveLength(2);
-    expect((await enviar('post', '/agente/chips', { nome: 'Repetido', instancia: 'CHIP1' })).status).toBe(
-      409,
-    );
+    await expect(
+      naConta(() => chipsRepo.criar(pool, { nome: 'Repetido', instancia: 'CHIP1', limiteDia: 1 })),
+    ).rejects.toThrow(/já está cadastrada/);
 
     // Quem pode entrar depende dos canais da sequência.
     const soEmail = await enviar('post', '/email/campanhas/estimar', { campanhaId: 120 });
@@ -2845,27 +2844,25 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
         'Entrou no sistema',
         'Criou uma senha nova pelo link do e-mail',
         'Tentativa de login com senha errada',
-        expect.stringMatching(/^Cadastrou o chip “Chip 1”/),
         expect.stringMatching(/^Criou a sequência “Multicanal”/),
       ]),
     );
     expect(JSON.stringify(aud.itens)).not.toMatch(/senha-nova-456|senha-antiga-123/);
-    expect((await ler('/auditoria?busca=chip')).body.itens.length).toBeGreaterThan(0);
+    expect((await ler('/auditoria?busca=sequência')).body.itens.length).toBeGreaterThan(0);
     expect((await ler('/master/contas/1/auditoria')).body.length).toBeGreaterThan(0);
 
     // Alertas: chip caído abre o alerta e avisa o administrador uma vez; voltou, fecha.
     const { verificarSaude } = await import('../src/modulos/alertas/rotina.js');
     await pool.query(
-      `INSERT INTO comercial.chips (conta_id, nome, instancia) VALUES (1, 'Chip Loja', 'loja1')`,
+      `INSERT INTO comercial.chips (conta_id, nome, instancia, token_cifrado) VALUES (1, 'Chip Loja', 'loja1', 'x')`,
     );
-    let estado = 'instância loja1: close (leia o QR Code na Evolution)';
+    let estado = 'desconectado: leia o QR Code para conectar';
     const depsSaude = {
       pool,
       log: criarLogger('teste', 'silent'),
       servicos: async (conta: number) => ({
         ...semServicos(conta),
         whatsapp: {
-          instancia: 'loja1',
           enviar: async () => ({ idExterno: null }),
           estado: async () => estado,
         },
@@ -2936,6 +2933,212 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       (await enviar('delete', '/notificacoes/push', { endpoint: inscricao.endpoint })).body.aparelhos,
     ).toHaveLength(0);
     await pool.query(`DELETE FROM cadastro.usuarios WHERE email = 'carla@exemplo.com'`);
+  });
+
+  it('número de WhatsApp: o cliente conecta pelo QR Code, a plataforma assina e cancela na Z-API', async () => {
+    const chamadas: string[] = [];
+    let conectado = false;
+    const appQr = criarApp({
+      pool,
+      log: criarLogger('teste', 'silent'),
+      filas: {
+        publicar: async () => 'x',
+        publicarVarios: async () => 0,
+        cancelarPendentes: async () => 0,
+        tamanhos: async () => ({}),
+      },
+      auth: {
+        jwtSegredo: 'x'.repeat(40),
+        adminEmail: 'ops@exemplo.com',
+        adminSenhaHash: 'x',
+        sessaoHoras: 1,
+        cookieSeguro: false,
+      },
+      origens: [ORIGEM],
+      credenciais: CREDENCIAIS,
+      servicos: async (conta) => ({
+        ...semServicos(conta),
+        whatsapp: {
+          enviar: async () => ({ idExterno: null }),
+          async criar(nome: string, webhook: string) {
+            chamadas.push(`criar ${nome} ${webhook.replace(/[0-9a-f]{32}$/, 'TOKEN')}`);
+            return { instancia: 'INST-QR', token: 'tok-secreto' };
+          },
+          async qr(instancia: string) {
+            chamadas.push(`qr ${instancia}`);
+            return conectado
+              ? { conectado: true, imagem: null }
+              : { conectado: false, imagem: 'data:image/png;base64,AAA' };
+          },
+          async assinar(instancia: string) {
+            chamadas.push(`assinar ${instancia}`);
+          },
+          async cancelar(instancia: string) {
+            chamadas.push(`cancelar ${instancia}`);
+          },
+          async desconectar(instancia: string) {
+            chamadas.push(`desconectar ${instancia}`);
+          },
+        },
+      }),
+    });
+    const q = (metodo: 'get' | 'post' | 'delete', rota: string, corpo?: object) =>
+      request(appQr)[metodo](rota).set('Origin', ORIGEM).set('Cookie', cookie).send(corpo);
+    await pool.query(`UPDATE cadastro.contas SET limite_chips = 2 WHERE id = 1`);
+
+    const antes = (await q('get', '/agente/chips')).body;
+    expect(antes).toMatchObject({ conectado: true, limite: 2 });
+    const criado = await q('post', '/agente/chips', { nome: 'Loja Centro' });
+    expect(criado.status).toBe(201);
+    expect(chamadas[0]).toMatch(/^criar Loja Centro · conta 1 http.+\/webhooks\/whatsapp\/TOKEN$/);
+    const { rows: guardado } = await pool.query(`SELECT token_cifrado FROM comercial.chips WHERE id = $1`, [
+      criado.body.id,
+    ]);
+    expect(guardado[0].token_cifrado).toMatch(/^v1:/); // o token da instância fica cifrado
+    // Ainda não leu o QR: não entra no rodízio de envio.
+    expect((await naConta(() => chipsRepo.emUso(pool))).some((c) => c.id === criado.body.id)).toBe(false);
+    // Limite do plano.
+    const usados = (await q('get', '/agente/chips')).body.usados;
+    if (usados >= 2) expect((await q('post', '/agente/chips', { nome: 'Outro' })).status).toBe(422);
+
+    // A tela pede o QR; depois de ler, conecta e a instância é assinada uma vez só.
+    expect((await q('get', `/agente/chips/${criado.body.id}/qr`)).body).toMatchObject({ conectado: false });
+    conectado = true;
+    expect((await q('get', `/agente/chips/${criado.body.id}/qr`)).body).toMatchObject({ conectado: true });
+    await q('get', `/agente/chips/${criado.body.id}/qr`);
+    expect(chamadas.filter((c) => c.startsWith('assinar'))).toEqual(['assinar INST-QR']);
+    expect((await naConta(() => chipsRepo.emUso(pool))).some((c) => c.id === criado.body.id)).toBe(true);
+
+    // Webhook de desconexão: avisa os administradores; reconectou com o número, guarda o número.
+    const token = (await ler('/agente')).body.webhook.split('/').at(-1);
+    await request(appQr)
+      .post(`/webhooks/whatsapp/${token}`)
+      .send({ type: 'DisconnectedCallback', instanceId: 'INST-QR' });
+    const lista1 = (await q('get', '/agente/chips')).body.chips;
+    expect(lista1.find((c: { id: number }) => c.id === criado.body.id).estado).toMatch(/^desconectado/);
+    const { rows: aviso } = await pool.query(
+      `SELECT count(*)::int AS n FROM comercial.notificacoes WHERE titulo = 'O WhatsApp "Loja Centro" desconectou'`,
+    );
+    expect(aviso[0].n).toBeGreaterThanOrEqual(1);
+    await request(appQr)
+      .post(`/webhooks/whatsapp/${token}`)
+      .send({ type: 'ConnectedCallback', instanceId: 'INST-QR', phone: '5571999998888' });
+    const lista2 = (await q('get', '/agente/chips')).body.chips;
+    expect(lista2.find((c: { id: number }) => c.id === criado.body.id)).toMatchObject({
+      numero: '5571999998888',
+      estado: 'ok (WhatsApp conectado)',
+    });
+
+    // Remover: cancela na Z-API (para de cobrar) e apaga.
+    expect((await q('delete', `/agente/chips/${criado.body.id}`)).status).toBe(200);
+    expect(chamadas.at(-1)).toBe('cancelar INST-QR');
+    await pool.query(`UPDATE cadastro.contas SET limite_chips = NULL WHERE id = 1`);
+  });
+
+  it('domínio de e-mail: o cliente cadastra, vê o DNS, confere, escolhe o remetente e envia pela plataforma', async () => {
+    const chamadas: string[] = [];
+    let situacao: 'pendente' | 'verificado' = 'pendente';
+    const dominioResend = () => ({
+      id: 'dom-1',
+      nome: 'lojateste.com.br',
+      situacao,
+      registros: [
+        {
+          finalidade: 'Assinatura (DKIM)',
+          tipo: 'TXT',
+          nome: 'resend._domainkey.lojateste.com.br',
+          valor: 'p=MIG',
+          prioridade: null,
+          ttl: 'Auto',
+          situacao,
+        },
+        {
+          finalidade: 'Envio (SPF)',
+          tipo: 'TXT',
+          nome: 'send',
+          valor: 'v=spf1 include:amazonses.com ~all',
+          prioridade: null,
+          ttl: 'Auto',
+          situacao,
+        },
+      ],
+    });
+    const appDom = criarApp({
+      pool,
+      log: criarLogger('teste', 'silent'),
+      filas: {
+        publicar: async () => 'x',
+        publicarVarios: async () => 0,
+        cancelarPendentes: async () => 0,
+        tamanhos: async () => ({}),
+      },
+      auth: {
+        jwtSegredo: 'x'.repeat(40),
+        adminEmail: 'ops@exemplo.com',
+        adminSenhaHash: 'x',
+        sessaoHoras: 1,
+        cookieSeguro: false,
+      },
+      origens: [ORIGEM],
+      credenciais: CREDENCIAIS,
+      servicos: async (conta) => semServicos(conta),
+      dominiosEmail: {
+        async criar(nome) {
+          chamadas.push(`criar ${nome}`);
+          return dominioResend();
+        },
+        async ler() {
+          return dominioResend();
+        },
+        async verificar(id) {
+          chamadas.push(`verificar ${id}`);
+        },
+        async apagar(id) {
+          chamadas.push(`apagar ${id}`);
+        },
+      },
+    });
+    const q = (metodo: 'get' | 'post' | 'put' | 'delete', rota: string, corpo?: object) =>
+      request(appDom)[metodo](rota).set('Origin', ORIGEM).set('Cookie', cookie).send(corpo);
+
+    expect((await q('get', '/email/dominio')).body).toMatchObject({ dominio: null, disponivel: true });
+    expect((await q('post', '/email/dominio', { dominio: 'gmail.com' })).status).toBe(422);
+    const criado = await q('post', '/email/dominio', { dominio: 'https://www.LojaTeste.com.br/' });
+    expect(criado.status).toBe(201);
+    expect(chamadas).toEqual(['criar lojateste.com.br']);
+    expect(criado.body.dominio).toMatchObject({
+      dominio: 'lojateste.com.br',
+      situacao: 'pendente',
+      remetente: 'comercial@lojateste.com.br',
+    });
+    // Nomes como se digita no painel do DNS, e o DMARC recomendado junto.
+    expect(criado.body.dominio.registros.map((r: { nome: string }) => r.nome)).toEqual([
+      'resend._domainkey',
+      'send',
+      '_dmarc',
+    ]);
+    expect((await q('post', '/email/dominio', { dominio: 'outra.com.br' })).status).toBe(409);
+    expect((await q('put', '/email/dominio/remetente', { remetente: 'ana@gmail.com' })).status).toBe(422);
+    expect(
+      (await q('put', '/email/dominio/remetente', { remetente: 'Vendas@lojateste.com.br' })).body.dominio
+        .remetente,
+    ).toBe('vendas@lojateste.com.br');
+
+    // Configurou o DNS: confere e passa a enviar pelo Resend da plataforma com o remetente dele.
+    situacao = 'verificado';
+    const conferido = await q('post', '/email/dominio/verificar');
+    expect(chamadas).toContain('verificar dom-1');
+    expect(conferido.body).toMatchObject({ emUso: true, dominio: { situacao: 'verificado' } });
+    const { lerCredenciais, resolverCredenciais } = await import('@prospeccao/db');
+    const cred = resolverCredenciais(
+      await lerCredenciais(pool, 1, CREDENCIAIS.chave),
+      { resendKey: 're_plataforma', emailRemetente: null },
+      1,
+    );
+    expect(cred.resend).toMatchObject({ apiKey: 're_plataforma', remetente: 'vendas@lojateste.com.br' });
+
+    expect((await q('delete', '/email/dominio')).body.dominio).toBeNull();
+    expect(chamadas.at(-1)).toBe('apagar dom-1');
   });
 
   it('para o enriquecimento e apaga a campanha com os leads só dela (base de CNPJ fica)', async () => {
@@ -3099,9 +3302,9 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       places: null,
       ors: null,
       resend: { apiKey: 're_x', remetente: 'a@b.com', dominioRespostas: null, webhookSegredo: null },
-      evolution: { url: 'http://evo', apiKey: 'k', instancia: 'i' },
+      whatsapp: { parceiroToken: 'p', clientToken: null },
       ia: { provedor: 'deepseek', apiKey: 'sk-x', modelo: null, baseUrl: null },
-      origem: { places: null, ors: null, resend: 'conta', evolution: 'conta', ia: 'conta' },
+      origem: { places: null, ors: null, resend: 'conta', whatsapp: 'plataforma', ia: 'conta' },
       erro: null,
     } as const;
     const semEmail = servicosDe({ ...cred, modulos: ['whatsapp', 'agente_ia'] } as never);

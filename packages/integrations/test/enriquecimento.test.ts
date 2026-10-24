@@ -179,30 +179,25 @@ describe('IA e WhatsApp', () => {
     expect(a.pessoas).toEqual([{ nome: 'Carlos Mendes', cargo: 'Gerente', papel: 'gestao', trecho: null }]);
   });
 
-  it('confere WhatsApp pela Evolution API', async () => {
-    let corpo = '';
+  it('confere WhatsApp pela Z-API (um número por vez, com o Client-Token)', async () => {
+    const pedidos: string[] = [];
     const s = createServer((req, res) => {
-      req.on('data', (d) => {
-        corpo += d;
-      });
-      req.on('end', () => {
-        expect(req.url).toBe('/chat/whatsappNumbers/chip1');
-        expect(req.headers.apikey).toBe('k');
-        res.writeHead(200, { 'content-type': 'application/json' }).end(
-          JSON.stringify([
-            { exists: true, jid: '5571998124410@s.whatsapp.net', number: '5571998124410' },
-            { exists: false, number: '557132410098' },
-          ]),
-        );
-      });
+      pedidos.push(`${req.method} ${req.url} ${req.headers['client-token'] ?? '-'}`);
+      const tem = req.url?.endsWith('/phone-exists/5571998124410');
+      // A Z-API já respondeu em objeto e em lista: os dois valem.
+      const corpo = tem ? [{ exists: true, phone: '5571998124410', lid: '1@lid' }] : { exists: false };
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(corpo));
     });
     await new Promise<void>((ok) => s.listen(0, '127.0.0.1', ok));
-    const url = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
-    const r = await verificarWhatsapp({ url, apiKey: 'k', instancia: 'chip1' }, [
+    const base = `http://127.0.0.1:${(s.address() as AddressInfo).port}/instances`;
+    const r = await verificarWhatsapp({ instancia: 'inst1', token: 'tok', clientToken: 'ct', base }, [
       '71998124410',
       '7132410098',
     ]);
-    expect(JSON.parse(corpo)).toEqual({ numbers: ['5571998124410', '557132410098'] });
+    expect(pedidos).toEqual([
+      'GET /instances/inst1/token/tok/phone-exists/5571998124410 ct',
+      'GET /instances/inst1/token/tok/phone-exists/557132410098 ct',
+    ]);
     expect([...r]).toEqual([
       ['71998124410', true],
       ['7132410098', false],

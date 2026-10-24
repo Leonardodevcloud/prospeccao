@@ -35,9 +35,9 @@ export const esquemaEnvApi = envBase.extend({
    * no painel master). A conta principal também pode cadastrar no painel: o painel vale mais.
    */
   /** WhatsApp pelo chip (Evolution). */
-  EVOLUTION_URL: opcional(z.string().url()),
-  EVOLUTION_API_KEY: opcional(z.string().min(4)),
-  EVOLUTION_INSTANCIA: opcional(z.string().min(1)),
+  /** Z-API (WhatsApp): token de parceiro (cria as instâncias dos clientes) e token de segurança da conta. */
+  ZAPI_PARCEIRO_TOKEN: opcional(z.string().min(10)),
+  ZAPI_CLIENT_TOKEN: opcional(z.string().min(10)),
   /** IA da plataforma (vale para todas as contas que não têm a sua): deepseek, gemini ou openai. */
   IA_PROVEDOR: z.enum(['deepseek', 'gemini', 'openai']).optional().catch(undefined),
   IA_API_KEY: opcional(z.string().min(10)),
@@ -76,9 +76,8 @@ export function credenciaisDoAmbiente(env: EnvApi) {
     emailRemetente: env.EMAIL_REMETENTE ?? null,
     resendDominioRespostas: env.RESEND_DOMINIO_RESPOSTAS ?? null,
     resendWebhookSegredo: env.RESEND_WEBHOOK_SEGREDO ?? null,
-    evolutionUrl: env.EVOLUTION_URL ?? null,
-    evolutionKey: env.EVOLUTION_API_KEY ?? null,
-    evolutionInstancia: env.EVOLUTION_INSTANCIA ?? null,
+    zapiParceiroToken: env.ZAPI_PARCEIRO_TOKEN ?? null,
+    zapiClientToken: env.ZAPI_CLIENT_TOKEN ?? null,
     iaProvedor: iaLegada ? 'gemini' : (env.IA_PROVEDOR ?? null),
     iaKey: env.IA_API_KEY ?? env.GEMINI_API_KEY ?? null,
     iaModelo: iaLegada ? env.GEMINI_MODELO : (env.IA_MODELO ?? null),

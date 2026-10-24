@@ -2,7 +2,7 @@ import { AppError } from '@prospeccao/shared';
 
 export interface OpcoesRequisicao {
   servico: string;
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   headers?: Record<string, string>;
   body?: unknown;
   timeoutMs?: number;

@@ -249,7 +249,6 @@ export function Agente() {
       cliente.invalidateQueries({ queryKey: ['quadro'] });
     },
   });
-  const [copiado, setCopiado] = useState(false);
 
   if (q.isPending) return <div className="esqueleto" />;
   if (q.error) return <ErroDaApi erro={q.error} />;
@@ -295,14 +294,16 @@ export function Agente() {
           {master ? (
             <>
               {!d.status.whatsapp &&
-                'Falta o WhatsApp (endereço, chave e instância da Evolution) desta conta, no painel master. '}
+                'Nenhum número de WhatsApp conectado (o cliente conecta em “Números de WhatsApp”, abaixo, lendo o QR Code). '}
               {!d.status.ia && 'Falta a IA (DeepSeek, Gemini…) desta conta, no painel master. '}
               Sem isso o agente prepara as mensagens mas não envia nem responde.
             </>
           ) : (
             <>
-              {!d.status.whatsapp ? 'O WhatsApp' : 'A IA'} desta conta ainda está sendo ativado pelo nosso
-              suporte. Até lá, o agente prepara as mensagens, mas não envia nem responde.
+              {!d.status.whatsapp
+                ? 'Conecte um número de WhatsApp em “Números de WhatsApp”, abaixo (é só ler o QR Code).'
+                : 'A IA desta conta ainda está sendo ativada pelo nosso suporte.'}{' '}
+              Até lá, o agente prepara as mensagens, mas não envia nem responde.
             </>
           )}
         </Mensagem>
@@ -427,43 +428,6 @@ export function Agente() {
           </Panel>
 
           <Chips />
-
-          {master && (
-            <Panel titulo="Conectar o WhatsApp">
-              <ol className="passos">
-                <li>
-                  No <b>painel master</b>, na conta, preencha o WhatsApp (endereço, chave e instância da
-                  Evolution) e a IA. Para dividir o volume em mais de um chip, cadastre os chips acima.
-                </li>
-                <li>
-                  Na Evolution, em <b>Webhook</b> de cada instância (cada chip), cole o endereço abaixo,
-                  marque o evento <code>MESSAGES_UPSERT</code> e ative.
-                </li>
-              </ol>
-              <div className="barra">
-                <input
-                  className="filtro mono"
-                  readOnly
-                  value={d.webhook}
-                  style={{ flex: '1 1 320px' }}
-                  aria-label="Endereço do webhook"
-                />
-                <Button
-                  size="sm"
-                  icon={copiado ? 'check' : 'copy'}
-                  onClick={() => {
-                    navigator.clipboard?.writeText(d.webhook).catch(() => undefined);
-                    setCopiado(true);
-                  }}
-                >
-                  {copiado ? 'Copiado' : 'Copiar'}
-                </Button>
-              </div>
-              <p className="quieto" style={{ margin: '8px 0 0', fontSize: 12 }}>
-                O endereço tem uma senha embutida: não compartilhe.
-              </p>
-            </Panel>
-          )}
         </>
       )}
     </>

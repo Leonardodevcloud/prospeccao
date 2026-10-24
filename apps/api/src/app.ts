@@ -20,6 +20,7 @@ import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
 import { rotasCampanhas } from './modulos/campanhas/rotas.js';
 import { rotasConversas } from './modulos/conversas/rotas.js';
+import { rotasDominioEmail } from './modulos/email/dominio.js';
 import { rotasEmailPublico, rotasWebhookResend } from './modulos/email/publico.js';
 import { rotasEmail } from './modulos/email/rotas.js';
 import { rotasEmpresas } from './modulos/empresas/rotas.js';
@@ -98,6 +99,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));
   protegidas.use('/agenda', rotasAgenda(deps));
+  protegidas.use('/email/dominio', rotasDominioEmail(deps));
   protegidas.use('/email', rotasEmail(deps));
   protegidas.use('/atividade', rotasAtividade(deps));
   protegidas.use('/places', rotasPlaces(deps));

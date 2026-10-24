@@ -1,42 +1,22 @@
 import { requisitarJson } from '../http.js';
 import { type ConfigIa, type EsquemaIa, gerarJson } from '../ia/index.js';
+import { type ConfigWhatsapp, verificarNumeros } from '../whatsapp/index.js';
 
 export { acharLugar, type EmpresaParaAchar, type LugarAchado, mesmoLugar } from '../places/index.js';
 
-/* ---------------- WhatsApp (Evolution API) ---------------- */
+/* ---------------- WhatsApp (Z-API) ---------------- */
 
-export interface ConfigEvolution {
-  url: string;
-  apiKey: string;
-  instancia: string;
-}
+export type { ConfigWhatsapp } from '../whatsapp/index.js';
 
 /**
- * Confere quais números têm WhatsApp, pelo chip conectado na Evolution API. Só consulta:
- * não envia mensagem. Devolve um mapa número (DDD + número) → tem WhatsApp.
+ * Confere quais números têm WhatsApp, pelo chip conectado da conta (Z-API). Só consulta: não
+ * envia mensagem. Devolve um mapa número (DDD + número) → tem WhatsApp.
  */
 export async function verificarWhatsapp(
-  cfg: ConfigEvolution,
+  cfg: ConfigWhatsapp,
   numeros: string[],
 ): Promise<Map<string, boolean>> {
-  const saida = new Map<string, boolean>();
-  if (!numeros.length) return saida;
-  const resposta = await requisitarJson<{ exists?: boolean; number?: string; jid?: string }[]>(
-    `${cfg.url.replace(/\/$/, '')}/chat/whatsappNumbers/${encodeURIComponent(cfg.instancia)}`,
-    {
-      servico: 'Evolution API',
-      method: 'POST',
-      headers: { apikey: cfg.apiKey },
-      body: { numbers: numeros.map((n) => `55${n}`) },
-      timeoutMs: 30_000,
-    },
-  );
-  for (const r of resposta) {
-    const digitos = (r.number ?? r.jid ?? '').replace(/\D/g, '').replace(/^55/, '');
-    const original = numeros.find((n) => digitos.endsWith(n.slice(-8)) && digitos.startsWith(n.slice(0, 2)));
-    if (original) saida.set(original, r.exists === true);
-  }
-  return saida;
+  return verificarNumeros(cfg, numeros);
 }
 
 export interface PerfilWhatsapp {
@@ -47,28 +27,7 @@ export interface PerfilWhatsapp {
   endereco: string | null;
 }
 
-/**
- * Perfil comercial (WhatsApp Business) de um número: descrição, e-mail e site que a própria loja
- * cadastrou. Só consulta. null quando o número não é comercial ou não tem nada preenchido.
- */
-export async function perfilComercialWhatsapp(
-  cfg: ConfigEvolution,
-  numero: string,
-): Promise<PerfilWhatsapp | null> {
-  const r = await requisitarJson<Record<string, unknown> | Record<string, unknown>[]>(
-    `${cfg.url.replace(/\/$/, '')}/chat/fetchBusinessProfile/${encodeURIComponent(cfg.instancia)}`,
-    {
-      servico: 'Evolution API',
-      method: 'POST',
-      headers: { apikey: cfg.apiKey },
-      body: { number: `55${numero}` },
-      timeoutMs: 20_000,
-    },
-  );
-  return converterPerfilWhatsapp(Array.isArray(r) ? r[0] : r);
-}
-
-/** A Evolution muda o formato entre versões: aceita os nomes de campo conhecidos. */
+/** Perfil comercial (WhatsApp Business): aceita os nomes de campo conhecidos dos provedores. */
 export function converterPerfilWhatsapp(bruto: unknown): PerfilWhatsapp | null {
   if (!bruto || typeof bruto !== 'object') return null;
   const o = bruto as Record<string, unknown>;

@@ -100,7 +100,7 @@ export const credenciaisEntrada = z.object({
 });
 export type CredenciaisEntrada = z.infer<typeof credenciaisEntrada>;
 
-export const SERVICOS_TESTAVEIS = ['resend', 'evolution', 'ia', 'places', 'ors'] as const;
+export const SERVICOS_TESTAVEIS = ['resend', 'whatsapp', 'ia', 'places', 'ors'] as const;
 export type ServicoTestavel = (typeof SERVICOS_TESTAVEIS)[number];
 
 /** Tetos do mês de uma conta (null = sem teto). */
@@ -114,6 +114,8 @@ export const limitesConta = z.object({
   emailsMes: teto,
   /** Mensagens automáticas de WhatsApp por mês. */
   whatsappMes: teto,
+  /** Números de WhatsApp que a conta pode conectar (cada um é uma instância paga na Z-API). */
+  numerosWhatsapp: teto,
 });
 export type LimitesConta = z.infer<typeof limitesConta>;
 
@@ -131,21 +133,6 @@ export const esqueciSenha = z.object({
   email: z.string().trim().toLowerCase().email('E-mail inválido.'),
 });
 
-/** Chip de WhatsApp (instância da Evolution da conta). */
-export const chipEntrada = z.object({
-  nome: z.string().trim().min(1, 'Dê um nome ao chip (ex.: Comercial 2).').max(60),
-  instancia: z
-    .string()
-    .trim()
-    .min(1, 'Informe o nome da instância na Evolution.')
-    .max(100)
-    .regex(/^[\w.@-]+$/, 'A instância tem só letras, números, ponto, hífen e sublinhado.'),
-  limiteDia: z.number().int().min(1).max(1000).default(40),
-  /** Número novo começa mandando pouco e vai subindo (aquecimento). */
-  aquecer: z.boolean().default(true),
-  /** Há quantos dias o número já é usado no WhatsApp (o aquecimento conta a partir daí). */
-  diasDeUso: z.number().int().min(0).max(3650).default(0),
-});
 export const chipAtualizar = z
   .object({
     nome: z.string().trim().min(1).max(60).optional(),

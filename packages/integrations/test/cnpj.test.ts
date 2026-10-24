@@ -168,7 +168,7 @@ describe('consulta pública de CNPJ com reserva', () => {
     try {
       globalThis.fetch = (async (url: string, init?: RequestInit) => {
         chamadas.push(
-          `${new URL(url).hostname} ${(init?.headers as Record<string, string>)['user-agent'] ? 'com-ua' : 'sem-ua'}`,
+          `${new URL(url).hostname} ${(init?.headers as Record<string, string> | undefined)?.['user-agent'] ? 'com-ua' : 'sem-ua'}`,
         );
         if (url.includes('brasilapi')) return resposta(403, { error: { code: '403', message: 'Forbidden' } });
         return resposta(200, CNPJ_WS);

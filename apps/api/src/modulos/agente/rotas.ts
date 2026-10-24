@@ -1,11 +1,10 @@
-import type { Executor } from '@prospeccao/db';
+import { cifrarTokenChip, type Executor } from '@prospeccao/db';
 import { avisoDePassagem, emBolhas } from '@prospeccao/integrations/agente';
-import { interpretarWebhook } from '@prospeccao/integrations/whatsapp';
+import { eventoDeConexao, interpretarWebhook } from '@prospeccao/integrations/whatsapp';
 import {
   AppError,
   aprovarRascunho,
   chipAtualizar,
-  chipEntrada,
   configAgenteEntrada,
   conhecimentoArquivo,
   conhecimentoAtualizar,
@@ -13,12 +12,12 @@ import {
   ensinarLacuna,
   indicacoesNoTexto,
 } from '@prospeccao/shared';
-import { type Request, Router } from 'express';
+import { type Request, type Response, Router } from 'express';
 import { z } from 'zod';
 import { comConta, conta, contaSql } from '../../contexto.js';
 import type { DepsApi, WhatsappConta } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
-import { exigirAdmin, exigirMaster } from '../../middlewares/seguranca.js';
+import { exigirAdmin } from '../../middlewares/seguranca.js';
 import * as contatos from '../contatos/repositorio.js';
 import { guardarMidia } from '../conversas/repositorio.js';
 import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
@@ -44,7 +43,7 @@ function enderecoPublico(req: Request): string {
 }
 
 /** Tela do Agente: configuração, mensagens para revisar e leads que a IA passou para você. */
-export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
+export function rotasAgente({ pool, log, servicos, credenciais }: DepsApi): Router {
   const r = Router();
 
   r.get('/', async (req: Request, res) => {
@@ -58,13 +57,14 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
     const { webhookToken, ...resto } = config;
     res.json({
       config: resto,
-      // Endereço para colar na Evolution (Webhook → MESSAGES_UPSERT).
-      webhook: req.usuario?.master ? `${enderecoPublico(req)}/webhooks/evolution/${webhookToken}` : '',
+      // Endereço do webhook (a plataforma configura sozinha em cada número; aqui só para o master conferir).
+      webhook: req.usuario?.master ? `${enderecoPublico(req)}/webhooks/whatsapp/${webhookToken}` : '',
       status: {
-        whatsapp: !!whatsapp,
+        // Tem WhatsApp de verdade: a Z-API da plataforma e ao menos um número conectado da conta.
+        whatsapp: !!whatsapp && (await chips.emUso(pool)).length > 0,
         ia: !!ia,
         iaDescricao: req.usuario?.master ? iaDescricao : null,
-        origem: { whatsapp: origem.evolution, ia: origem.ia },
+        origem: { whatsapp: origem.whatsapp, ia: origem.ia },
       },
       resumo,
       rascunhos,
@@ -72,32 +72,94 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
     });
   });
 
-  /* Chips de WhatsApp (instâncias da Evolution da conta) */
+  /* Números de WhatsApp: o próprio cliente conecta, lendo o QR Code (instâncias da Z-API). */
   r.get('/chips', async (_req, res) => {
     const { whatsapp } = await servicos(conta());
-    res.json({ chips: await chips.listar(pool), padrao: whatsapp?.instancia ?? null, conectado: !!whatsapp });
+    const [lista, limite] = await Promise.all([chips.listar(pool), chips.limiteDeNumeros(pool)]);
+    res.json({
+      chips: lista,
+      // A plataforma tem a Z-API e a conta tem o módulo de WhatsApp.
+      conectado: !!whatsapp?.criar,
+      limite: limite.limite,
+      usados: limite.usados,
+    });
   });
-  // Cadastrar e apagar chip (instância da Evolution) é com o master; o cliente ajusta limite e pausa.
-  r.post('/chips', exigirMaster, async (req, res) => {
-    const id = await chips.criar(pool, corpo(req, chipEntrada));
+
+  /** Número novo: cria a instância na Z-API (teste de 2 dias) com o webhook do sistema; o QR vem em seguida. */
+  r.post('/chips', exigirAdmin, async (req, res) => {
+    const { nome } = corpo(req, z.object({ nome: z.string().trim().min(2).max(60) }));
+    const { whatsapp } = await servicos(conta());
+    if (!whatsapp?.criar)
+      throw AppError.invalido('O WhatsApp não está no seu plano. Fale com o suporte do Prospect Team.');
+    const { limite, usados } = await chips.limiteDeNumeros(pool);
+    if (limite != null && usados >= limite)
+      throw AppError.invalido(
+        `Seu plano permite ${limite} ${limite === 1 ? 'número' : 'números'} de WhatsApp. Para conectar mais, fale com o suporte do Prospect Team.`,
+      );
+    if (!credenciais.chave)
+      throw AppError.invalido(
+        'Conexão de números indisponível no momento. Fale com o suporte do Prospect Team.',
+      );
+    const { webhookToken } = await repo.obterConfig(pool);
+    const nova = await whatsapp.criar(
+      `${nome} · conta ${conta()}`,
+      `${enderecoPublico(req)}/webhooks/whatsapp/${webhookToken}`,
+    );
+    const id = await chips.criarNumero(pool, {
+      nome,
+      instancia: nova.instancia,
+      tokenCifrado: cifrarTokenChip(credenciais.chave, nova.token),
+    });
+    log.info({ chip: id }, 'agente: número novo criado na Z-API');
     res.status(201).json({ id, chips: await chips.listar(pool) });
   });
+
+  /**
+   * QR Code do número (a tela pede de novo a cada poucos segundos até conectar). Conectado: guarda o
+   * número e assina a instância na primeira vez.
+   */
+  r.get('/chips/:id/qr', exigirAdmin, async (req, res) => {
+    const chip = await chips.obter(pool, idDaRota(req));
+    const { whatsapp } = await servicos(conta());
+    if (!chip.zapi || !whatsapp?.qr)
+      throw AppError.invalido('Este número é do sistema antigo: remova e conecte de novo.');
+    const qr = await whatsapp.qr(chip.instancia);
+    if (qr.conectado) await aoConectar(chip.id, whatsapp);
+    res.json(qr);
+  });
+
+  /** Desconecta o número (para trocar de celular ou de número); a instância continua da conta. */
+  r.post('/chips/:id/desconectar', exigirAdmin, async (req, res) => {
+    const chip = await chips.obter(pool, idDaRota(req));
+    const { whatsapp } = await servicos(conta());
+    if (chip.zapi && whatsapp?.desconectar) await whatsapp.desconectar(chip.instancia);
+    await chips.marcarConexao(pool, { id: chip.id }, false);
+    res.json(await chips.listar(pool));
+  });
+
   r.patch('/chips/:id', exigirAdmin, async (req, res) => {
     await chips.atualizar(pool, idDaRota(req), corpo(req, chipAtualizar));
     res.json(await chips.listar(pool));
   });
-  r.delete('/chips/:id', exigirMaster, async (req, res) => {
-    await chips.apagar(pool, idDaRota(req));
-    res.json(await chips.listar(pool));
-  });
-  /** Lê na Evolution se o chip está conectado (e guarda para a tela e os alertas). */
-  r.post('/chips/:id/testar', exigirMaster, async (req, res) => {
+
+  /** Remove o número: cancela a instância na Z-API (para de cobrar) e apaga o chip. */
+  r.delete('/chips/:id', exigirAdmin, async (req, res) => {
     const chip = await chips.obter(pool, idDaRota(req));
     const { whatsapp } = await servicos(conta());
-    if (!whatsapp?.estado)
-      throw AppError.invalido(
-        'O WhatsApp ainda não está ativo nesta conta. Fale com o suporte do Prospect Team.',
-      );
+    if (chip.zapi && whatsapp?.cancelar)
+      await whatsapp.cancelar(chip.instancia).catch((erro) => {
+        log.warn({ err: erro, chip: chip.id }, 'agente: não consegui cancelar a instância na Z-API');
+      });
+    await chips.apagar(pool, chip.id);
+    res.json(await chips.listar(pool));
+  });
+
+  /** Confere se o número está conectado (e guarda para a tela e os alertas). */
+  r.post('/chips/:id/testar', exigirAdmin, async (req, res) => {
+    const chip = await chips.obter(pool, idDaRota(req));
+    const { whatsapp } = await servicos(conta());
+    if (!whatsapp?.estado || !chip.zapi)
+      throw AppError.invalido('Este número é do sistema antigo: remova e conecte de novo.');
     let resultado: string;
     try {
       resultado = await whatsapp.estado(chip.instancia);
@@ -105,8 +167,23 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
       resultado = erro instanceof Error ? erro.message : String(erro);
     }
     await chips.guardarEstado(pool, chip.id, resultado);
+    if (resultado.startsWith('ok')) await aoConectar(chip.id, whatsapp);
     res.json({ ok: resultado.startsWith('ok'), resultado: resultado.slice(0, 300) });
   });
+
+  /** Conectou: guarda e, na primeira vez, assina a instância (sai do teste de 2 dias). */
+  async function aoConectar(chipId: number, whatsapp: WhatsappConta) {
+    const m = await chips.marcarConexao(pool, { id: chipId }, true);
+    if (m?.assinar && whatsapp.assinar) {
+      try {
+        await whatsapp.assinar(m.instancia);
+        await chips.marcarAssinado(pool, m.id);
+        log.info({ chip: m.id }, 'agente: instância assinada na Z-API');
+      } catch (erro) {
+        log.error({ err: erro, chip: m.id }, 'agente: não consegui assinar a instância na Z-API');
+      }
+    }
+  }
 
   r.put('/config', exigirAdmin, async (req, res) => {
     const dados = corpo(req, configAgenteEntrada);
@@ -276,8 +353,9 @@ export function rotasAgente({ pool, log, servicos }: DepsApi): Router {
  */
 export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
   const r = Router();
-  r.post('/evolution/:token', async (req, res) => {
-    // O token diz de qual conta é o chip (cada conta tem o seu endereço de webhook).
+  /** Webhook dos números (Z-API): mensagens recebidas e conexão/desconexão. `/evolution` fica por compatibilidade. */
+  const webhookWhatsapp = async (req: Request, res: Response) => {
+    // O token diz de qual conta é o número (cada conta tem o seu endereço de webhook).
     const { rows } = await pool.query<{ conta_id: number }>(
       `SELECT a.conta_id FROM comercial.config_agente a JOIN cadastro.contas c ON c.id = a.conta_id
         WHERE a.webhook_token = $1 AND c.ativa`,
@@ -285,17 +363,46 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
     );
     const contaId = rows[0]?.conta_id;
     if (!contaId) throw AppError.naoEncontrado('Webhook');
-    const m = interpretarWebhook(req.body);
-    // Grava antes de responder (é rápido). Falha fica no log; responde 200 para a Evolution não repetir sem fim.
-    if (m)
-      await comConta(contaId, async () => {
-        const { whatsapp } = await servicos(contaId);
-        await registrarRecebida(m, whatsapp);
-      }).catch((erro) =>
-        log.error({ err: erro, conta: contaId }, 'webhook da Evolution: falha ao registrar'),
-      );
+    const conexao = eventoDeConexao(req.body);
+    const m = conexao ? null : interpretarWebhook(req.body);
+    // Grava antes de responder (é rápido). Falha fica no log; responde 200 para o provedor não repetir sem fim.
+    await comConta(contaId, async () => {
+      const { whatsapp } = await servicos(contaId);
+      if (conexao) {
+        const fone = String((req.body as { phone?: unknown })?.phone ?? '').replace(/\D/g, '') || null;
+        const marcado = await chips.marcarConexao(
+          pool,
+          { instancia: conexao.instancia },
+          conexao.conectado,
+          fone,
+        );
+        if (marcado?.assinar && whatsapp?.assinar) {
+          await whatsapp.assinar(marcado.instancia);
+          await chips.marcarAssinado(pool, marcado.id);
+        }
+        if (marcado && !conexao.conectado) await avisarDesconectado(marcado.id);
+      } else if (m) await registrarRecebida(m, whatsapp);
+    }).catch((erro) => log.error({ err: erro, conta: contaId }, 'webhook do WhatsApp: falha ao registrar'));
     res.json({ ok: true });
-  });
+  };
+  r.post('/whatsapp/:token', webhookWhatsapp);
+  r.post('/evolution/:token', webhookWhatsapp);
+
+  /** O número caiu (celular desligado, WhatsApp saiu): avisa os administradores para ler o QR de novo. */
+  async function avisarDesconectado(chipId: number) {
+    const { rows } = await pool.query<{ id: number; nome: string }>(
+      `SELECT u.id, ch.nome FROM cadastro.usuarios u JOIN comercial.chips ch ON ch.id = $1
+        WHERE u.conta_id = ${contaSql()} AND u.papel = 'admin' AND u.ativo`,
+      [chipId],
+    );
+    for (const u of rows)
+      await notificar(pool, u.id, {
+        tipo: 'sistema',
+        titulo: `O WhatsApp "${u.nome}" desconectou`,
+        texto: 'Abra Agente → Números de WhatsApp e leia o QR Code de novo para voltar a enviar.',
+        link: '/agente?aba=chips',
+      });
+  }
 
   type Recebida = NonNullable<ReturnType<typeof interpretarWebhook>>;
 
@@ -335,10 +442,9 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
       mensagemId,
       m.midia.tipo,
     ]);
-    if (!whatsapp?.baixarMidia || !m.idExterno) return;
-    const id = m.idExterno;
+    if (!whatsapp?.baixarMidia || !m.midia.url) return;
     void whatsapp
-      .baixarMidia(id, m.instancia ?? undefined)
+      .baixarMidia(m.midia.url)
       // Em segundo plano: a conta precisa ir junto (o contexto da requisição já terminou).
       .then((r) => (r ? comConta(contaId, () => salvar(r.base64, r.mime)) : undefined))
       .catch((erro) =>

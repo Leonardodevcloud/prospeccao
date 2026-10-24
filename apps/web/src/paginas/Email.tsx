@@ -20,6 +20,7 @@ import {
   ROTULO_ETAPA,
   type VisaoEmail,
 } from '../api';
+import { DominioEmail } from '../componentes/DominioEmail';
 import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
@@ -81,13 +82,13 @@ function Status(props: { v: VisaoEmail; aoConfigurar: () => void }) {
   if (!v.status.resend)
     return (
       <Mensagem tipo="aviso">
-        {master
-          ? 'O envio de e-mail desta conta ainda não está configurado: cadastre a chave e o remetente do Resend no painel master. '
-          : 'O envio de e-mail desta conta ainda está sendo ativado pelo nosso suporte. '}
-        {master && (
+        Para começar a enviar, cadastre o domínio de e-mail da sua empresa (leva poucos minutos).{' '}
+        {admin ? (
           <button type="button" className="link-botao" onClick={props.aoConfigurar}>
-            Ver o que falta
+            Cadastrar o domínio
           </button>
+        ) : (
+          'Peça a um administrador da sua conta.'
         )}
       </Mensagem>
     );
@@ -1802,259 +1803,271 @@ function Configuracao(props: { v: VisaoEmail }) {
   const st = props.v.status;
 
   return (
-    <div className="grade-config-email">
-      <form
-        className="form"
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault();
-          salvar.mutate();
-        }}
-      >
-        <label className="opcao">
-          <input
-            type="checkbox"
-            checked={f.ligado}
-            onChange={(e) => setF({ ...f, ligado: e.target.checked })}
-          />
-          <b>Envio automático ligado</b>
-        </label>
-        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-          Remetente, assinatura, cores e logo ficam na aba Identidade visual (cada campanha escolhe a sua).
-        </p>
-        <h3 className="subtitulo">Ritmo</h3>
-        <div className="form__duas">
-          <div className="campo">
-            <label htmlFor="cfe-lim">E-mails por dia</label>
+    <div className="pilha" style={{ gap: 16 }}>
+      <DominioEmail />
+      <div className="grade-config-email">
+        <form
+          className="form"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            salvar.mutate();
+          }}
+        >
+          <label className="opcao">
             <input
-              id="cfe-lim"
-              className="filtro"
-              inputMode="numeric"
-              value={f.limiteDia}
-              onChange={(e) => num('limiteDia', e.target.value)}
+              type="checkbox"
+              checked={f.ligado}
+              onChange={(e) => setF({ ...f, ligado: e.target.checked })}
             />
-            <span className="campo__dica">Caixa nova: comece com 30 a 50 por dia e aumente aos poucos.</span>
-          </div>
-          <div className="campo">
-            <label htmlFor="cfe-int">Intervalo entre e-mails (segundos)</label>
-            <input
-              id="cfe-int"
-              className="filtro"
-              inputMode="numeric"
-              value={f.intervaloSeg}
-              onChange={(e) => num('intervaloSeg', e.target.value)}
-            />
-          </div>
-          <div className="campo">
-            <label htmlFor="cfe-ini">Das (hora)</label>
-            <input
-              id="cfe-ini"
-              className="filtro"
-              inputMode="numeric"
-              value={f.horaInicio}
-              onChange={(e) => num('horaInicio', e.target.value)}
-            />
-          </div>
-          <div className="campo">
-            <label htmlFor="cfe-fim">Até (hora)</label>
-            <input
-              id="cfe-fim"
-              className="filtro"
-              inputMode="numeric"
-              value={f.horaFim}
-              onChange={(e) => num('horaFim', e.target.value)}
-            />
-          </div>
-        </div>
-        <fieldset className="segmentos">
-          <legend className="campo__rotulo">Dias</legend>
-          {DIAS.map((d, i) => (
-            <button
-              key={d}
-              type="button"
-              className="segmento"
-              aria-pressed={f.diasSemana.includes(i)}
-              data-ativo={f.diasSemana.includes(i) || undefined}
-              onClick={() =>
-                setF({
-                  ...f,
-                  diasSemana: f.diasSemana.includes(i)
-                    ? f.diasSemana.filter((x) => x !== i)
-                    : [...f.diasSemana, i].sort(),
-                })
-              }
-            >
-              {d}
-            </button>
-          ))}
-        </fieldset>
-        <label className="opcao">
-          <input
-            type="checkbox"
-            checked={f.rastrearAbertura}
-            onChange={(e) => setF({ ...f, rastrearAbertura: e.target.checked })}
-          />
-          Contar aberturas e cliques
-        </label>
-        <ErroDaApi erro={salvar.error} />
-        {salvar.isSuccess && <Mensagem tipo="ok">Configuração salva.</Mensagem>}
-        <div className="acoes">
-          <Button type="submit" variant="primary" disabled={salvar.isPending}>
-            Salvar
-          </Button>
-        </div>
-      </form>
-
-      {master ? (
-        <aside className="pilha" style={{ gap: 12 }}>
-          <div className="pp-panel" style={{ padding: 16 }}>
-            <h3 className="subtitulo" style={{ marginTop: 0 }}>
-              Conexão
-            </h3>
-            <ul className="lista-status">
-              <li data-ok={st.resend || undefined}>
-                <Icon name={st.resend ? 'check' : 'circle-x'} size={14} />
-                <span>
-                  Envio pelo Resend
-                  <span className="quieto">
-                    {' · '}
-                    {st.remetente ?? 'falta a chave e o remetente'}
-                    {st.origem === 'plataforma' && ' (chaves da plataforma)'}
-                  </span>
-                </span>
-              </li>
-              <li data-ok={st.dominioRespostas || undefined}>
-                <Icon name={st.dominioRespostas ? 'check' : 'circle-x'} size={14} />
-                <span>
-                  Domínio de respostas
-                  <span className="quieto"> · {st.dominioRespostas ?? 'falta configurar'}</span>
-                </span>
-              </li>
-              <li data-ok={(st.webhook && !!props.v.config.webhookEm) || undefined}>
-                <Icon
-                  name={st.webhook ? (props.v.config.webhookEm ? 'check' : 'clock') : 'circle-x'}
-                  size={14}
-                />
-                <span>
-                  Webhook
-                  <span className="quieto">
-                    {' · '}
-                    {!st.webhook
-                      ? 'falta o segredo'
-                      : props.v.config.webhookEm
-                        ? `último aviso ${fmtQuando(props.v.config.webhookEm)}`
-                        : 'nenhum aviso ainda'}
-                  </span>
-                </span>
-              </li>
-              <li data-ok={st.ia || undefined}>
-                <Icon name={st.ia ? 'check' : 'circle-help'} size={14} />
-                <span>
-                  IA (lê as respostas e escreve a abertura)
-                  <span className="quieto">
-                    {' · '}
-                    {st.ia ? (st.iaDescricao ?? 'ligada') : 'sem ela, uma regra de palavras lê as respostas'}
-                  </span>
-                </span>
-              </li>
-            </ul>
-            {st.resend && (
-              <div className="acoes" style={{ marginTop: 12 }}>
-                <Button
-                  size="sm"
-                  icon="check"
-                  disabled={verificar.isPending}
-                  onClick={() => verificar.mutate()}
-                >
-                  {verificar.isPending ? 'Testando…' : 'Testar conexão'}
-                </Button>
-              </div>
-            )}
-            {verificar.data && (
-              <Mensagem
-                tipo={
-                  /^ok/.test(verificar.data.resend) && /^ok/.test(verificar.data.respostas) ? 'ok' : 'aviso'
-                }
-              >
-                Resend: {verificar.data.resend} · Respostas: {verificar.data.respostas}
-              </Mensagem>
-            )}
-            <ErroDaApi erro={verificar.error} />
-          </div>
-          <div className="pp-panel" style={{ padding: 16 }}>
-            <h3 className="subtitulo" style={{ marginTop: 0 }}>
-              Chaves desta conta
-            </h3>
-            <p className="quieto" style={{ margin: '0 0 12px', fontSize: 13 }}>
-              A chave do Resend, o remetente padrão, o domínio de respostas e o segredo do webhook ficam no
-              painel master (cada conta tem os seus).
-              {!master && ' Peça para quem administra o sistema.'}
-            </p>
-            {master && (
-              <Button size="sm" icon="building-2" href="/master">
-                Abrir o painel master
-              </Button>
-            )}
-            <div className="campo" style={{ marginTop: 12 }}>
-              <label htmlFor="cfe-webhook">Endereço do webhook desta conta</label>
+            <b>Envio automático ligado</b>
+          </label>
+          <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+            Remetente, assinatura, cores e logo ficam na aba Identidade visual (cada campanha escolhe a sua).
+          </p>
+          <h3 className="subtitulo">Ritmo</h3>
+          <div className="form__duas">
+            <div className="campo">
+              <label htmlFor="cfe-lim">E-mails por dia</label>
               <input
-                id="cfe-webhook"
-                className="filtro mono"
-                readOnly
-                value={st.webhookUrl}
-                onFocus={(e) => e.target.select()}
+                id="cfe-lim"
+                className="filtro"
+                inputMode="numeric"
+                value={f.limiteDia}
+                onChange={(e) => num('limiteDia', e.target.value)}
               />
               <span className="campo__dica">
-                No Resend: Webhooks → Add endpoint, com os eventos de e-mail (received, delivered, opened,
-                clicked, bounced, complained, failed).
+                Caixa nova: comece com 30 a 50 por dia e aumente aos poucos.
               </span>
             </div>
-            <p className="quieto" style={{ margin: '8px 0 0', fontSize: 13 }}>
-              Deixe o rastreio de abertura e clique do domínio desligado no Resend: o sistema já conta
-              sozinho.
-            </p>
+            <div className="campo">
+              <label htmlFor="cfe-int">Intervalo entre e-mails (segundos)</label>
+              <input
+                id="cfe-int"
+                className="filtro"
+                inputMode="numeric"
+                value={f.intervaloSeg}
+                onChange={(e) => num('intervaloSeg', e.target.value)}
+              />
+            </div>
+            <div className="campo">
+              <label htmlFor="cfe-ini">Das (hora)</label>
+              <input
+                id="cfe-ini"
+                className="filtro"
+                inputMode="numeric"
+                value={f.horaInicio}
+                onChange={(e) => num('horaInicio', e.target.value)}
+              />
+            </div>
+            <div className="campo">
+              <label htmlFor="cfe-fim">Até (hora)</label>
+              <input
+                id="cfe-fim"
+                className="filtro"
+                inputMode="numeric"
+                value={f.horaFim}
+                onChange={(e) => num('horaFim', e.target.value)}
+              />
+            </div>
           </div>
-        </aside>
-      ) : (
-        <aside className="pilha" style={{ gap: 12 }}>
-          <div className="pp-panel" style={{ padding: 16 }}>
-            <h3 className="subtitulo" style={{ marginTop: 0 }}>
-              Situação
-            </h3>
-            <ul className="lista-status">
-              <li data-ok={st.resend || undefined}>
-                <Icon name={st.resend ? 'check' : 'clock'} size={14} />
-                <span>
-                  Envio de e-mail
-                  <span className="quieto">
-                    {' '}
-                    · {st.resend ? (st.remetente ?? 'ativo') : 'em ativação pelo suporte'}
-                  </span>
-                </span>
-              </li>
-              <li data-ok={(st.dominioRespostas && st.webhook) || undefined}>
-                <Icon name={st.dominioRespostas && st.webhook ? 'check' : 'clock'} size={14} />
-                <span>
-                  Leitura das respostas
-                  <span className="quieto">
-                    {' '}
-                    · {st.dominioRespostas && st.webhook ? 'ativa' : 'em ativação pelo suporte'}
-                  </span>
-                </span>
-              </li>
-              <li data-ok={st.ia || undefined}>
-                <Icon name={st.ia ? 'check' : 'circle-help'} size={14} />
-                <span>
-                  IA (lê as respostas e escreve a abertura)
-                  <span className="quieto">
-                    {' '}
-                    · {st.ia ? 'ativa' : 'sem ela, uma regra de palavras lê as respostas'}
-                  </span>
-                </span>
-              </li>
-            </ul>
+          <fieldset className="segmentos">
+            <legend className="campo__rotulo">Dias</legend>
+            {DIAS.map((d, i) => (
+              <button
+                key={d}
+                type="button"
+                className="segmento"
+                aria-pressed={f.diasSemana.includes(i)}
+                data-ativo={f.diasSemana.includes(i) || undefined}
+                onClick={() =>
+                  setF({
+                    ...f,
+                    diasSemana: f.diasSemana.includes(i)
+                      ? f.diasSemana.filter((x) => x !== i)
+                      : [...f.diasSemana, i].sort(),
+                  })
+                }
+              >
+                {d}
+              </button>
+            ))}
+          </fieldset>
+          <label className="opcao">
+            <input
+              type="checkbox"
+              checked={f.rastrearAbertura}
+              onChange={(e) => setF({ ...f, rastrearAbertura: e.target.checked })}
+            />
+            Contar aberturas e cliques
+          </label>
+          <ErroDaApi erro={salvar.error} />
+          {salvar.isSuccess && <Mensagem tipo="ok">Configuração salva.</Mensagem>}
+          <div className="acoes">
+            <Button type="submit" variant="primary" disabled={salvar.isPending}>
+              Salvar
+            </Button>
           </div>
-        </aside>
-      )}
+        </form>
+
+        {master ? (
+          <aside className="pilha" style={{ gap: 12 }}>
+            <div className="pp-panel" style={{ padding: 16 }}>
+              <h3 className="subtitulo" style={{ marginTop: 0 }}>
+                Conexão
+              </h3>
+              <ul className="lista-status">
+                <li data-ok={st.resend || undefined}>
+                  <Icon name={st.resend ? 'check' : 'circle-x'} size={14} />
+                  <span>
+                    Envio pelo Resend
+                    <span className="quieto">
+                      {' · '}
+                      {st.remetente ?? 'falta a chave e o remetente'}
+                      {st.origem === 'plataforma' && ' (chaves da plataforma)'}
+                    </span>
+                  </span>
+                </li>
+                <li data-ok={st.dominioRespostas || undefined}>
+                  <Icon name={st.dominioRespostas ? 'check' : 'circle-x'} size={14} />
+                  <span>
+                    Domínio de respostas
+                    <span className="quieto"> · {st.dominioRespostas ?? 'falta configurar'}</span>
+                  </span>
+                </li>
+                <li data-ok={(st.webhook && !!props.v.config.webhookEm) || undefined}>
+                  <Icon
+                    name={st.webhook ? (props.v.config.webhookEm ? 'check' : 'clock') : 'circle-x'}
+                    size={14}
+                  />
+                  <span>
+                    Webhook
+                    <span className="quieto">
+                      {' · '}
+                      {!st.webhook
+                        ? 'falta o segredo'
+                        : props.v.config.webhookEm
+                          ? `último aviso ${fmtQuando(props.v.config.webhookEm)}`
+                          : 'nenhum aviso ainda'}
+                    </span>
+                  </span>
+                </li>
+                <li data-ok={st.ia || undefined}>
+                  <Icon name={st.ia ? 'check' : 'circle-help'} size={14} />
+                  <span>
+                    IA (lê as respostas e escreve a abertura)
+                    <span className="quieto">
+                      {' · '}
+                      {st.ia
+                        ? (st.iaDescricao ?? 'ligada')
+                        : 'sem ela, uma regra de palavras lê as respostas'}
+                    </span>
+                  </span>
+                </li>
+              </ul>
+              {st.resend && (
+                <div className="acoes" style={{ marginTop: 12 }}>
+                  <Button
+                    size="sm"
+                    icon="check"
+                    disabled={verificar.isPending}
+                    onClick={() => verificar.mutate()}
+                  >
+                    {verificar.isPending ? 'Testando…' : 'Testar conexão'}
+                  </Button>
+                </div>
+              )}
+              {verificar.data && (
+                <Mensagem
+                  tipo={
+                    /^ok/.test(verificar.data.resend) && /^ok/.test(verificar.data.respostas) ? 'ok' : 'aviso'
+                  }
+                >
+                  Resend: {verificar.data.resend} · Respostas: {verificar.data.respostas}
+                </Mensagem>
+              )}
+              <ErroDaApi erro={verificar.error} />
+            </div>
+            <div className="pp-panel" style={{ padding: 16 }}>
+              <h3 className="subtitulo" style={{ marginTop: 0 }}>
+                Chaves desta conta
+              </h3>
+              <p className="quieto" style={{ margin: '0 0 12px', fontSize: 13 }}>
+                A chave do Resend, o remetente padrão, o domínio de respostas e o segredo do webhook ficam no
+                painel master (cada conta tem os seus).
+                {!master && ' Peça para quem administra o sistema.'}
+              </p>
+              {master && (
+                <Button size="sm" icon="building-2" href="/master">
+                  Abrir o painel master
+                </Button>
+              )}
+              <div className="campo" style={{ marginTop: 12 }}>
+                <label htmlFor="cfe-webhook">Endereço do webhook desta conta</label>
+                <input
+                  id="cfe-webhook"
+                  className="filtro mono"
+                  readOnly
+                  value={st.webhookUrl}
+                  onFocus={(e) => e.target.select()}
+                />
+                <span className="campo__dica">
+                  No Resend: Webhooks → Add endpoint, com os eventos de e-mail (received, delivered, opened,
+                  clicked, bounced, complained, failed).
+                </span>
+              </div>
+              <p className="quieto" style={{ margin: '8px 0 0', fontSize: 13 }}>
+                Deixe o rastreio de abertura e clique do domínio desligado no Resend: o sistema já conta
+                sozinho.
+              </p>
+            </div>
+          </aside>
+        ) : (
+          <aside className="pilha" style={{ gap: 12 }}>
+            <div className="pp-panel" style={{ padding: 16 }}>
+              <h3 className="subtitulo" style={{ marginTop: 0 }}>
+                Situação
+              </h3>
+              <ul className="lista-status">
+                <li data-ok={st.resend || undefined}>
+                  <Icon name={st.resend ? 'check' : 'clock'} size={14} />
+                  <span>
+                    Envio de e-mail
+                    <span className="quieto">
+                      {' '}
+                      · {st.resend ? (st.remetente ?? 'ativo') : 'falta verificar o domínio (acima)'}
+                    </span>
+                  </span>
+                </li>
+                <li data-ok={(st.dominioRespostas && st.webhook) || undefined}>
+                  <Icon name={st.dominioRespostas && st.webhook ? 'check' : 'clock'} size={14} />
+                  <span>
+                    Leitura das respostas
+                    <span className="quieto">
+                      {' '}
+                      ·{' '}
+                      {st.dominioRespostas && st.webhook
+                        ? 'ativa'
+                        : st.resend
+                          ? 'em ativação pelo suporte'
+                          : 'começa junto com o envio'}
+                    </span>
+                  </span>
+                </li>
+                <li data-ok={st.ia || undefined}>
+                  <Icon name={st.ia ? 'check' : 'circle-help'} size={14} />
+                  <span>
+                    IA (lê as respostas e escreve a abertura)
+                    <span className="quieto">
+                      {' '}
+                      · {st.ia ? 'ativa' : 'sem ela, uma regra de palavras lê as respostas'}
+                    </span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }

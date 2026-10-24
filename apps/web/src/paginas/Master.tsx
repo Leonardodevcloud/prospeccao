@@ -165,8 +165,6 @@ function Testar(props: { contaId: number; servico: ServicoTestavel; mudou: boole
 interface FormCredenciais {
   emailRemetente: string;
   resendDominioRespostas: string;
-  evolutionUrl: string;
-  evolutionInstancia: string;
   iaProvedor: ProvedorIa | '';
   iaModelo: string;
   iaBaseUrl: string;
@@ -176,8 +174,6 @@ function doServidor(c: CredenciaisTela): FormCredenciais {
   return {
     emailRemetente: c.emailRemetente ?? '',
     resendDominioRespostas: c.resendDominioRespostas ?? '',
-    evolutionUrl: c.evolutionUrl ?? '',
-    evolutionInstancia: c.evolutionInstancia ?? '',
     iaProvedor: c.iaProvedor ?? '',
     iaModelo: c.iaModelo ?? '',
     iaBaseUrl: c.iaBaseUrl ?? '',
@@ -297,41 +293,15 @@ function Credenciais(props: { conta: ContaDetalhe }) {
 
       <fieldset className="credencial">
         <legend>
-          <Icon name="message-circle" size={16} /> WhatsApp (Evolution)
-          <Origem origem={c.emUso.evolution} />
+          <Icon name="message-circle" size={16} /> WhatsApp (Z-API)
+          <Origem origem={c.emUso.whatsapp} />
         </legend>
-        <div className="form__duas">
-          <div className="campo">
-            <label htmlFor="cr-evo-url">Endereço da Evolution</label>
-            <input
-              id="cr-evo-url"
-              className="filtro"
-              placeholder="https://evolution.empresa.com.br"
-              value={f.evolutionUrl}
-              onChange={(e) => setF({ ...f, evolutionUrl: e.target.value })}
-            />
-          </div>
-          <div className="campo">
-            <label htmlFor="cr-evo-inst">Instância</label>
-            <input
-              id="cr-evo-inst"
-              className="filtro"
-              value={f.evolutionInstancia}
-              onChange={(e) => setF({ ...f, evolutionInstancia: e.target.value })}
-            />
-            <span className="campo__dica">O chip desta conta (um número por conta).</span>
-          </div>
-        </div>
-        <Segredo id="cr-evo-key" rotulo="Chave da API" {...seg('evolutionKey')} />
-        {props.conta.webhooks.evolution && (
-          <Copiavel
-            id="cr-webhook-evo"
-            rotulo="Webhook (cole na instância da Evolution)"
-            valor={props.conta.webhooks.evolution}
-            dica="Evento MESSAGES_UPSERT. É assim que o sistema sabe de qual conta é cada mensagem recebida."
-          />
-        )}
-        <Testar contaId={props.conta.id} servico="evolution" mudou={mudou} />
+        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+          {c.emUso.whatsapp
+            ? 'A Z-API é da plataforma. O próprio cliente conecta os números dele em Agente → Números de WhatsApp, lendo o QR Code; o sistema cria, assina e cancela as instâncias sozinho. Quantos números ele pode ter fica em Consumo → Tetos do mês.'
+            : 'Falta ZAPI_PARCEIRO_TOKEN (e ZAPI_CLIENT_TOKEN) nas variáveis da api e do worker-enriquecimento.'}
+        </p>
+        <Testar contaId={props.conta.id} servico="whatsapp" mudou={mudou} />
       </fieldset>
 
       <fieldset className="credencial">
@@ -686,7 +656,13 @@ function Consumo(props: { conta: ContaDetalhe }) {
     queryKey: ['master', 'consumo', props.conta.id],
     queryFn: () => api<ConsumoConta>(`/master/contas/${props.conta.id}/consumo`),
   });
-  const [f, setF] = useState({ usaIaPlataforma: true, iaMes: '', emailsMes: '', whatsappMes: '' });
+  const [f, setF] = useState({
+    usaIaPlataforma: true,
+    iaMes: '',
+    emailsMes: '',
+    whatsappMes: '',
+    numerosWhatsapp: '',
+  });
   const l = q.data?.limites;
   useEffect(() => {
     if (l)
@@ -695,6 +671,7 @@ function Consumo(props: { conta: ContaDetalhe }) {
         iaMes: l.iaMes == null ? '' : String(l.iaMes),
         emailsMes: l.emailsMes == null ? '' : String(l.emailsMes),
         whatsappMes: l.whatsappMes == null ? '' : String(l.whatsappMes),
+        numerosWhatsapp: l.numerosWhatsapp == null ? '' : String(l.numerosWhatsapp),
       });
   }, [l]);
   const num = (v: string) => (v === '' ? null : Number(v));
@@ -703,7 +680,8 @@ function Consumo(props: { conta: ContaDetalhe }) {
     (f.usaIaPlataforma !== l.usaIaPlataforma ||
       num(f.iaMes) !== l.iaMes ||
       num(f.emailsMes) !== l.emailsMes ||
-      num(f.whatsappMes) !== l.whatsappMes);
+      num(f.whatsappMes) !== l.whatsappMes ||
+      num(f.numerosWhatsapp) !== l.numerosWhatsapp);
   const salvar = useMutation({
     mutationFn: () =>
       api<ConsumoConta>(`/master/contas/${props.conta.id}/limites`, {
@@ -713,6 +691,7 @@ function Consumo(props: { conta: ContaDetalhe }) {
           iaMes: num(f.iaMes),
           emailsMes: num(f.emailsMes),
           whatsappMes: num(f.whatsappMes),
+          numerosWhatsapp: num(f.numerosWhatsapp),
         },
       }),
     onSuccess: (d) => {
@@ -765,6 +744,12 @@ function Consumo(props: { conta: ContaDetalhe }) {
           usado={d.whatsapp.automaticas}
           teto={l?.whatsappMes ?? null}
           detalhe={`${fmtNumero(d.whatsapp.equipe)} pela equipe · ${fmtNumero(d.whatsapp.recebidas)} recebidas`}
+        />
+        <Uso
+          rotulo="Números de WhatsApp (Z-API)"
+          usado={d.whatsapp.numeros}
+          teto={l?.numerosWhatsapp ?? null}
+          detalhe="Cada número conectado é uma instância paga na Z-API."
         />
         <Uso
           rotulo="Google Places (buscas)"
@@ -843,6 +828,13 @@ function Consumo(props: { conta: ContaDetalhe }) {
             valor={f.whatsappMes}
             aoMudar={(v) => setF({ ...f, whatsappMes: v })}
             dica="IA, cadência e sequências."
+          />
+          <Teto
+            id="teto-numeros"
+            rotulo="Números de WhatsApp"
+            valor={f.numerosWhatsapp}
+            aoMudar={(v) => setF({ ...f, numerosWhatsapp: v })}
+            dica="Quantos o cliente pode conectar pelo QR Code."
           />
         </div>
         <ErroDaApi erro={salvar.error} />

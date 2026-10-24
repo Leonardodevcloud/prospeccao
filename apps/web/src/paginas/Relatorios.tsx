@@ -451,9 +451,6 @@ export function Relatorios() {
               </table>
             </div>
             <p className="quieto nota-rodape" style={{ padding: '0 16px 16px' }}>
-              {r.naoDecisores
-                ? `${fmtNumero(r.naoDecisores)} pessoa(s) marcada(s) como "não é a pessoa certa". `
-                : ''}
               Fonte com taxa de erro alta deve pesar menos: me avise que eu ajusto a confiança dela.
             </p>
           </Panel>

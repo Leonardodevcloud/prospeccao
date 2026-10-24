@@ -130,9 +130,10 @@ const REGRAS: Record<string, Regra | null> = {
   'POST /agente/rascunhos/:id/aprovar': { acao: 'agente', texto: 'Aprovou uma mensagem da IA' },
   'POST /agente/rascunhos/:id/descartar': { acao: 'agente', texto: 'Descartou uma mensagem da IA' },
   'POST /agente/ligar-em-massa': { acao: 'agente', texto: 'Ligou a IA em vários leads' },
-  'POST /agente/chips': { acao: 'configuração', texto: (b) => `Cadastrou o chip ${txt(b.nome)}` },
-  'PATCH /agente/chips/:id': { acao: 'configuração', texto: 'Editou um chip' },
-  'DELETE /agente/chips/:id': { acao: 'configuração', texto: 'Apagou um chip' },
+  'POST /agente/chips': { acao: 'configuração', texto: (b) => `Criou o número de WhatsApp ${txt(b.nome)}` },
+  'PATCH /agente/chips/:id': { acao: 'configuração', texto: 'Editou um número de WhatsApp' },
+  'POST /agente/chips/:id/desconectar': { acao: 'configuração', texto: 'Desconectou um número de WhatsApp' },
+  'DELETE /agente/chips/:id': { acao: 'configuração', texto: 'Removeu um número de WhatsApp' },
 
   'POST /agenda': { acao: 'agenda', texto: (b) => `Criou ${String(b.tipo ?? 'tarefa')} ${txt(b.titulo)}` },
   'PATCH /agenda/:id': {

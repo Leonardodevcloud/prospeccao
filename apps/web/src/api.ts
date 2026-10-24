@@ -1382,7 +1382,7 @@ export type CampoSegredo =
   | 'iaKey'
   | 'orsKey';
 export type ProvedorIa = 'deepseek' | 'gemini' | 'openai';
-export type ServicoTestavel = 'resend' | 'evolution' | 'ia' | 'places' | 'ors';
+export type ServicoTestavel = 'resend' | 'whatsapp' | 'ia' | 'places' | 'ors';
 
 export interface CredenciaisTela {
   emailRemetente: string | null;
@@ -1402,7 +1402,7 @@ export interface CredenciaisTela {
     places: OrigemCredencial;
     ors: OrigemCredencial;
     resend: OrigemCredencial;
-    evolution: OrigemCredencial;
+    whatsapp: OrigemCredencial;
     ia: OrigemCredencial;
     remetente: string | null;
     iaModelo: string | null;
@@ -1435,7 +1435,7 @@ export interface ContaDetalhe
   > {
   usuarios: UsuarioConta[];
   credenciais: CredenciaisTela;
-  webhooks: { resend: string; evolution: string | null };
+  webhooks: { resend: string; whatsapp: string | null };
 }
 
 export interface UsoIa {
@@ -1453,11 +1453,12 @@ export interface ConsumoConta {
     iaMes: number | null;
     emailsMes: number | null;
     whatsappMes: number | null;
+    numerosWhatsapp: number | null;
   };
   ia: { conta: UsoIa; plataforma: UsoIa };
   iaPorDia: { dia: string; chamadas: number }[];
   emails: { enviados: number; naFila: number };
-  whatsapp: { automaticas: number; equipe: number; recebidas: number };
+  whatsapp: { automaticas: number; equipe: number; recebidas: number; numeros: number };
   places: { pedidos: number; pagos: number; gastoUsd: number; enriquecimento: number };
   /** Buscas no Google pelo Serper e leads enriquecidos no mês. */
   buscas: { serper: number; leadsEnriquecidos: number };
@@ -1501,6 +1502,11 @@ export interface Chip {
   /** Pausado sozinho por falhas de envio, até esta hora. */
   pausadoAte: string | null;
   pausaMotivo: string | null;
+  /** Número que leu o QR Code (55 + DDD + número). */
+  numero: string | null;
+  provedor: 'zapi' | 'evolution';
+  /** Tem instância própria (Z-API): dá para ler o QR Code. */
+  conectavel: boolean;
 }
 
 /* ───────── Alertas ───────── */

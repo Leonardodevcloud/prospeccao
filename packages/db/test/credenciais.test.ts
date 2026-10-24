@@ -25,9 +25,8 @@ const ambiente = {
   emailRemetente: 'comercial@tutts.com.br',
   iaProvedor: 'deepseek',
   iaKey: 'sk-plataforma',
-  evolutionUrl: 'https://evo.tutts.com.br',
-  evolutionKey: 'k',
-  evolutionInstancia: 'tutts',
+  zapiParceiroToken: 'parceiro-zapi',
+  zapiClientToken: 'seguranca-zapi',
 };
 
 describe('credenciais das contas', () => {
@@ -50,9 +49,16 @@ describe('credenciais das contas', () => {
     const r = resolverCredenciais(conta({ segredos: { placesKey: 'AIza-parceira' } }), ambiente, 2);
     expect(r.places).toEqual({ apiKey: 'AIza-parceira' });
     expect(r.resend).toBeNull();
-    expect(r.evolution).toBeNull();
+    // WhatsApp: a Z-API é da plataforma; cada conta conecta os números dela pelo QR Code.
+    expect(r.whatsapp).toEqual({ parceiroToken: 'parceiro-zapi', clientToken: 'seguranca-zapi' });
     expect(r.ia).toMatchObject({ apiKey: 'sk-plataforma', provedor: 'deepseek' });
-    expect(r.origem).toEqual({ places: 'conta', ors: null, resend: null, evolution: null, ia: 'plataforma' });
+    expect(r.origem).toEqual({
+      places: 'conta',
+      ors: null,
+      resend: null,
+      whatsapp: 'plataforma',
+      ia: 'plataforma',
+    });
   });
 
   it('conta parceira sem chave do Google usa a da plataforma (busca é serviço da plataforma)', () => {
@@ -63,7 +69,7 @@ describe('credenciais das contas', () => {
       places: 'plataforma',
       ors: 'plataforma',
       resend: null,
-      evolution: null,
+      whatsapp: 'plataforma',
     });
   });
 
@@ -75,8 +81,40 @@ describe('credenciais das contas', () => {
       1,
     );
     expect(r.resend).toMatchObject({ apiKey: 're_plataforma', remetente: 'comercial@tutts.com.br' });
-    expect(r.evolution).toMatchObject({ instancia: 'tutts' });
-    expect(r.origem).toMatchObject({ places: 'plataforma', resend: 'plataforma', evolution: 'plataforma' });
+    expect(r.origem).toMatchObject({ places: 'plataforma', resend: 'plataforma', whatsapp: 'plataforma' });
+    expect(resolverCredenciais(conta(), { placesKey: 'x' }, 2).whatsapp).toBeNull();
+  });
+
+  it('domínio de e-mail do próprio cliente, verificado: envia pelo Resend da plataforma com o remetente dele', () => {
+    const amb = {
+      ...ambiente,
+      resendDominioRespostas: 'respostas.tutts.com.br',
+      resendWebhookSegredo: 'whsec_x',
+    };
+    const pendente = conta({
+      dominioEmail: { dominio: 'loja.com.br', verificado: false, remetente: 'a@loja.com.br' },
+    });
+    expect(resolverCredenciais(pendente, amb, 2).resend).toBeNull();
+    const ok = conta({
+      dominioEmail: { dominio: 'loja.com.br', verificado: true, remetente: 'vendas@loja.com.br' },
+    });
+    expect(resolverCredenciais(ok, amb, 2).resend).toEqual({
+      apiKey: 're_plataforma',
+      remetente: 'vendas@loja.com.br',
+      dominioRespostas: 'respostas.tutts.com.br',
+      webhookSegredo: 'whsec_x',
+    });
+    expect(resolverCredenciais(ok, amb, 2).origem.resend).toBe('plataforma');
+    // Resend próprio (cadastrado no painel master) continua valendo primeiro.
+    const propria = conta({
+      ...ok,
+      emailRemetente: 'x@outra.com',
+      segredos: { resendKey: 're_dela' },
+    });
+    expect(resolverCredenciais(propria, amb, 2).resend).toMatchObject({
+      apiKey: 're_dela',
+      remetente: 'x@outra.com',
+    });
   });
 
   it('IA própria da conta, com o provedor e o modelo dela', () => {

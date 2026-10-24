@@ -226,3 +226,122 @@ export function assinaturaValida(
     return recebido.length === esperado.length && timingSafeEqual(recebido, esperado);
   });
 }
+
+/* ───────── Domínios (a conta do Resend é da plataforma; cada cliente cadastra o domínio dele) ───────── */
+
+export type SituacaoDominio = 'pendente' | 'verificado' | 'falhou';
+
+export interface RegistroDns {
+  /** Para que serve: envio (SPF/MX de retorno), assinatura (DKIM) ou política (DMARC). */
+  finalidade: string;
+  tipo: string;
+  /** Nome do registro como se digita no painel do DNS (relativo ao domínio). */
+  nome: string;
+  valor: string;
+  prioridade: number | null;
+  ttl: string | null;
+  situacao: SituacaoDominio;
+}
+
+export interface DominioResend {
+  id: string;
+  nome: string;
+  situacao: SituacaoDominio;
+  registros: RegistroDns[];
+}
+
+interface DominioResendCru {
+  id: string;
+  name: string;
+  status?: string;
+  records?: {
+    record?: string;
+    name?: string;
+    type?: string;
+    ttl?: string;
+    status?: string;
+    value?: string;
+    priority?: number;
+  }[];
+}
+
+const situacaoDe = (s: string | undefined): SituacaoDominio =>
+  s === 'verified' ? 'verificado' : s === 'failed' ? 'falhou' : 'pendente';
+
+const FINALIDADE: Record<string, string> = {
+  SPF: 'Envio (SPF)',
+  DKIM: 'Assinatura (DKIM)',
+  MX: 'Retorno de envio (MX)',
+  DMARC: 'Política (DMARC)',
+};
+
+export function converterDominio(d: DominioResendCru): DominioResend {
+  return {
+    id: d.id,
+    nome: d.name,
+    situacao: situacaoDe(d.status),
+    registros: (d.records ?? []).map((r) => ({
+      finalidade: FINALIDADE[r.record ?? ''] ?? r.record ?? '',
+      tipo: r.type ?? '',
+      nome: r.name ?? '',
+      valor: r.value ?? '',
+      prioridade: r.priority ?? null,
+      ttl: r.ttl ?? null,
+      situacao: situacaoDe(r.status),
+    })),
+  };
+}
+
+/** Registro de DMARC recomendado (o Resend não cria; o Gmail e o Yahoo exigem para volume). */
+export function registroDmarc(dominio: string): RegistroDns {
+  return {
+    finalidade: FINALIDADE.DMARC!,
+    tipo: 'TXT',
+    nome: '_dmarc',
+    valor: `v=DMARC1; p=none; rua=mailto:dmarc@${dominio}`,
+    prioridade: null,
+    ttl: 'Auto',
+    situacao: 'pendente',
+  };
+}
+
+const opcoesResend = (cfg: ConfigResend) => ({
+  servico: 'Resend',
+  headers: { authorization: `Bearer ${cfg.apiKey}` },
+});
+
+export async function criarDominio(
+  cfg: ConfigResend & { base?: string },
+  nome: string,
+): Promise<DominioResend> {
+  const d = await requisitarJson<DominioResendCru>(`${cfg.base ?? API}/domains`, {
+    ...opcoesResend(cfg),
+    method: 'POST',
+    body: { name: nome, region: 'sa-east-1' },
+  });
+  return converterDominio(d);
+}
+
+export async function lerDominio(cfg: ConfigResend & { base?: string }, id: string): Promise<DominioResend> {
+  return converterDominio(
+    await requisitarJson<DominioResendCru>(
+      `${cfg.base ?? API}/domains/${encodeURIComponent(id)}`,
+      opcoesResend(cfg),
+    ),
+  );
+}
+
+/** Pede ao Resend para conferir o DNS agora (a conferência roda em segundo plano por até 72 h). */
+export async function verificarDominio(cfg: ConfigResend & { base?: string }, id: string): Promise<void> {
+  await requisitarJson(`${cfg.base ?? API}/domains/${encodeURIComponent(id)}/verify`, {
+    ...opcoesResend(cfg),
+    method: 'POST',
+  });
+}
+
+export async function apagarDominio(cfg: ConfigResend & { base?: string }, id: string): Promise<void> {
+  await requisitarJson(`${cfg.base ?? API}/domains/${encodeURIComponent(id)}`, {
+    ...opcoesResend(cfg),
+    method: 'DELETE',
+  });
+}

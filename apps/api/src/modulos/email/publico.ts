@@ -188,12 +188,42 @@ export function rotasWebhookResend(deps: DepsApi): Router {
     }
   }
 
+  /**
+   * Webhook do Resend da plataforma: a conta principal e as contas que enviam pelo domínio delas
+   * (cadastrado por elas mesmas). A conta sai do próprio aviso (o envio, o id do e-mail ou o token do
+   * endereço de resposta); a assinatura é conferida com o segredo dessa conta.
+   */
   r.post('/', cru, async (req, res) => {
-    const { rows } = await deps.pool.query<{ id: number }>(
+    await receber(req, res, await contaDoAviso(req.body));
+  });
+
+  async function contaDoAviso(corpo: unknown): Promise<number | null> {
+    let d: NonNullable<EventoResend['data']> = {};
+    try {
+      d = (JSON.parse(Buffer.isBuffer(corpo) ? corpo.toString('utf8') : '{}') as EventoResend).data ?? {};
+    } catch {
+      /* corpo inválido: fica com a principal (e a assinatura decide) */
+    }
+    const tags = Array.isArray(d.tags)
+      ? Object.fromEntries(d.tags.map((t) => [t.name, t.value]))
+      : (d.tags ?? {});
+    const envio = Number(tags.envio);
+    const para = (Array.isArray(d.to) ? d.to : [])
+      .map((p) => String(p).match(/r-([a-f0-9]{32})@/)?.[1])
+      .filter(Boolean) as string[];
+    const { rows } = await deps.pool.query<{ conta_id: number }>(
+      `SELECT conta_id FROM comercial.envios_email
+        WHERE ($1::bigint IS NOT NULL AND id = $1) OR ($2::text IS NOT NULL AND resend_id = $2)
+           OR (cardinality($3::text[]) > 0 AND token = ANY($3::text[]))
+        LIMIT 1`,
+      [Number.isInteger(envio) && envio > 0 ? envio : null, d.email_id ?? null, para],
+    );
+    if (rows[0]) return rows[0].conta_id;
+    const { rows: principal } = await deps.pool.query<{ id: number }>(
       'SELECT id FROM cadastro.contas WHERE principal AND ativa',
     );
-    await receber(req, res, rows[0]?.id ?? null);
-  });
+    return principal[0]?.id ?? null;
+  }
 
   r.post('/:token', cru, async (req, res) => {
     const { rows } = await deps.pool.query<{ id: number }>(

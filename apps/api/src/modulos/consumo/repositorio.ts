@@ -42,6 +42,7 @@ export interface ConsumoConta {
     iaMes: number | null;
     emailsMes: number | null;
     whatsappMes: number | null;
+    numerosWhatsapp: number | null;
   };
   ia: Record<
     'conta' | 'plataforma',
@@ -50,7 +51,7 @@ export interface ConsumoConta {
   /** Chamadas à IA por dia no mês (as duas chaves somadas), para o gráfico. */
   iaPorDia: { dia: string; chamadas: number }[];
   emails: { enviados: number; naFila: number };
-  whatsapp: { automaticas: number; equipe: number; recebidas: number };
+  whatsapp: { automaticas: number; equipe: number; recebidas: number; numeros: number };
   places: { pedidos: number; pagos: number; gastoUsd: number; enriquecimento: number };
   /** Buscas no Google pelo Serper (o principal custo do enriquecimento) e leads enriquecidos no mês. */
   buscas: { serper: number; leadsEnriquecidos: number };
@@ -65,9 +66,12 @@ export async function consumoDaConta(db: Executor, contaId: number): Promise<Con
       limite_ia_mes: number | null;
       limite_emails_mes: number | null;
       limite_whatsapp_mes: number | null;
+      limite_chips: number | null;
+      numeros: number;
       mes: string;
     }>(
-      `SELECT usa_ia_plataforma, limite_ia_mes, limite_emails_mes, limite_whatsapp_mes,
+      `SELECT usa_ia_plataforma, limite_ia_mes, limite_emails_mes, limite_whatsapp_mes, limite_chips,
+              (SELECT count(*)::int FROM comercial.chips h WHERE h.conta_id = $1 AND h.token_cifrado IS NOT NULL) AS numeros,
               to_char(${INICIO_MES_SP}, 'YYYY-MM') AS mes
          FROM cadastro.contas WHERE id = $1`,
       [contaId],
@@ -142,11 +146,12 @@ export async function consumoDaConta(db: Executor, contaId: number): Promise<Con
       iaMes: c.limite_ia_mes,
       emailsMes: c.limite_emails_mes,
       whatsappMes: c.limite_whatsapp_mes,
+      numerosWhatsapp: c.limite_chips,
     },
     ia: porOrigem,
     iaPorDia: porDia.rows,
     emails: { enviados: o.enviados, naFila: o.na_fila },
-    whatsapp: { automaticas: o.automaticas, equipe: o.equipe, recebidas: o.recebidas },
+    whatsapp: { automaticas: o.automaticas, equipe: o.equipe, recebidas: o.recebidas, numeros: c.numeros },
     places: { pedidos: o.pedidos, pagos: o.pagos, gastoUsd: o.gasto, enriquecimento: o.enriq },
     buscas: { serper: o.serper, leadsEnriquecidos: o.leads },
   };
@@ -169,6 +174,7 @@ export async function salvarLimites(
     iaMes?: number | null;
     emailsMes?: number | null;
     whatsappMes?: number | null;
+    numerosWhatsapp?: number | null;
   },
 ): Promise<void> {
   const sets: string[] = [];
@@ -181,6 +187,7 @@ export async function salvarLimites(
   if (d.iaMes !== undefined) set('limite_ia_mes', d.iaMes);
   if (d.emailsMes !== undefined) set('limite_emails_mes', d.emailsMes);
   if (d.whatsappMes !== undefined) set('limite_whatsapp_mes', d.whatsappMes);
+  if (d.numerosWhatsapp !== undefined) set('limite_chips', d.numerosWhatsapp);
   if (!sets.length) return;
   const { rowCount } = await db.query(`UPDATE cadastro.contas SET ${sets.join(', ')} WHERE id = $1`, valores);
   if (!rowCount) throw AppError.naoEncontrado('Conta');

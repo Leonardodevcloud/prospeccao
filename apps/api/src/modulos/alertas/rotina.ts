@@ -160,14 +160,14 @@ async function conferirWhatsapp(pool: Pool, contaId: number, s: ServicosConta, l
       : null,
   );
 
-  // Cada chip: está conectado? (lê na Evolution e guarda o estado para a tela)
+  // Cada número: está conectado? (lê na Z-API e guarda o estado para a tela)
   const whatsapp = s.whatsapp;
   if (!whatsapp?.estado) {
     await fecharOsOutros(pool, contaId, 'chip:', []);
     return;
   }
   const vistos: string[] = [];
-  for (const chip of await chips.emUso(pool, whatsapp)) {
+  for (const chip of await chips.emUso(pool, whatsapp, true)) {
     let estado: string;
     try {
       estado = await whatsapp.estado(chip.instancia);
@@ -186,7 +186,8 @@ async function conferirWhatsapp(pool: Pool, contaId: number, s: ServicosConta, l
         ? null
         : {
             titulo: `O chip “${chip.nome}” está desconectado`,
-            texto: `${curto(estado)}. Leia o QR Code na Evolution para voltar a enviar e receber.`,
+            texto:
+              'Abra Agente → Números de WhatsApp e leia o QR Code de novo para voltar a enviar e receber.',
             link: '/agente',
           },
     );

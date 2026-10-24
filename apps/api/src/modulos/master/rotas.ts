@@ -1,4 +1,4 @@
-import { credenciaisEfetivas, salvarCredenciais } from '@prospeccao/db';
+import { credenciaisEfetivas, lerChipWhatsapp, salvarCredenciais } from '@prospeccao/db';
 import { verificarResend } from '@prospeccao/integrations/email';
 import { configIa, testarIa } from '@prospeccao/integrations/ia';
 import * as ors from '@prospeccao/integrations/ors';
@@ -107,10 +107,10 @@ export function rotasMaster(deps: DepsApi): Router {
       webhookWhatsapp: undefined,
       usuarios,
       credenciais: cred,
-      // Endereços para colar no Resend e na Evolution da conta.
+      // Endereços de webhook da conta (o do WhatsApp a plataforma configura sozinha em cada número).
       webhooks: {
         resend: `${api}/e/resend/${conta.webhookToken}`,
-        evolution: conta.webhookWhatsapp ? `${api}/webhooks/evolution/${conta.webhookWhatsapp}` : null,
+        whatsapp: conta.webhookWhatsapp ? `${api}/webhooks/whatsapp/${conta.webhookWhatsapp}` : null,
       },
     });
   });
@@ -174,11 +174,19 @@ export function rotasMaster(deps: DepsApi): Router {
           resultado = await verificarResend({ apiKey: c.resend.apiKey }, c.resend.remetente);
           ok = resultado.startsWith('ok');
           break;
-        case 'evolution':
-          if (!c.evolution) throw new Error('WhatsApp não configurado (endereço, chave e instância).');
-          resultado = await estadoConexao(c.evolution);
+        case 'whatsapp': {
+          if (!c.whatsapp)
+            throw new Error('Z-API não configurada na plataforma (ZAPI_PARCEIRO_TOKEN no serviço da api).');
+          const chip = await lerChipWhatsapp(pool, id, credenciais.chave, null);
+          if (!chip) {
+            resultado = 'Z-API da plataforma ok; o cliente ainda não conectou nenhum número.';
+            ok = true;
+            break;
+          }
+          resultado = await estadoConexao({ ...chip, clientToken: c.whatsapp.clientToken });
           ok = resultado.startsWith('ok');
           break;
+        }
         case 'ia': {
           const cfg = c.ia ? configIa(c.ia) : null;
           if (!cfg)
