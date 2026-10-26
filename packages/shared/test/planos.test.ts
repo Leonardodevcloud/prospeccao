@@ -10,8 +10,8 @@ describe('planos', () => {
       modulos: ['whatsapp', 'email'],
       mensalidadeManual: null,
     });
-    expect(p).toMatchObject({ usuarios: 6, leadsMes: 15000, modulos: ['whatsapp', 'email'] });
-    expect(p.mensalidadeCalculada).toBe(499 + 2 * 59 + 250 + 200);
+    expect(p).toMatchObject({ usuarios: 6, leadsMes: 5000, modulos: ['whatsapp', 'email'] });
+    expect(p.mensalidadeCalculada).toBe(599 + 2 * 59 + 250 + 200);
     expect(p.mensalidade).toBe(p.mensalidadeCalculada);
     // Menos usuários desconta, mais leads soma; o preço combinado vale.
     expect(
@@ -25,8 +25,8 @@ describe('planos', () => {
     ).toMatchObject({
       usuarios: 3,
       leadsMes: 40000,
-      // 3 usuários a menos (−177) e 15 mil leads a mais (+300)
-      mensalidadeCalculada: 999 - 3 * 59 + 15 * 20,
+      // 3 usuários a menos (−177) e 30 mil leads a mais (+600)
+      mensalidadeCalculada: 999 - 3 * 59 + 30 * 20,
       mensalidade: 800,
     });
   });

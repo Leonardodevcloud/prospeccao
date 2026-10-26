@@ -48,9 +48,9 @@ export interface TabelaPrecos {
 
 export const TABELA_PADRAO: TabelaPrecos = {
   planos: {
-    start: { preco: 297, usuarios: 2, leadsMes: 5000 },
-    time: { preco: 499, usuarios: 4, leadsMes: 15000 },
-    escala: { preco: 999, usuarios: 6, leadsMes: 25000 },
+    start: { preco: 297, usuarios: 2, leadsMes: 2000 },
+    time: { preco: 599, usuarios: 4, leadsMes: 5000 },
+    escala: { preco: 999, usuarios: 6, leadsMes: 10000 },
   },
   modulos: { whatsapp: 250, agente_ia: 150, email: 200 },
   usuario: 59,
