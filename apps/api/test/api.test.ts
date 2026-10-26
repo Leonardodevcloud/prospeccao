@@ -249,7 +249,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
               (NULL, NULL, 'Moto Peças Nova Era', NULL, 'SALVADOR', 'BA', 30, NULL, 'p3', 6.0)`,
     );
     await pool.query(
-      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem, dentro_do_raio) VALUES (2, 1, 'ambos', true), (2, 2, 'maps', true)`,
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem, dentro_do_raio, liberado_em) VALUES (2, 1, 'ambos', true, now()), (2, 2, 'maps', true, now())`,
     );
     await pool.query(
       `INSERT INTO base_cnpj.qualificacoes VALUES ('49', 'Sócio-Administrador') ON CONFLICT DO NOTHING`,
@@ -332,7 +332,12 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     });
     expect(d.body.etapas).toEqual([expect.objectContaining({ etapa: 'receita', status: 'encontrado' })]);
 
-    expect((await ler('/campanhas/2/reenriquecer')).body).toEqual({ ab: 1, semDecisor: 1, todos: 2 });
+    expect((await ler('/campanhas/2/reenriquecer')).body).toEqual({
+      ab: 1,
+      semDecisor: 1,
+      incompletos: 0,
+      todos: 2,
+    });
     expect((await enviar('post', '/campanhas/2/reenriquecer', { escopo: 'ab' })).body).toEqual({
       quantidade: 1,
     });
@@ -738,7 +743,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
        ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
-      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (2, 77, 'maps') ON CONFLICT DO NOTHING`,
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem, liberado_em) VALUES (2, 77, 'maps', now()) ON CONFLICT DO NOTHING`,
     );
     await pool.query(
       `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, whatsapp, principal)
@@ -919,7 +924,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
        ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
-      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (2, 78, 'maps') ON CONFLICT DO NOTHING`,
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem, liberado_em) VALUES (2, 78, 'maps', now()) ON CONFLICT DO NOTHING`,
     );
     await pool.query(
       `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, whatsapp, principal)
@@ -1220,7 +1225,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       `INSERT INTO descoberta.empresas (id, nome, cidade, uf) VALUES (88, 'Pipe Peças', 'SALVADOR', 'BA') ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
-      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) VALUES (2, 88, 'maps') ON CONFLICT DO NOTHING`,
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem, liberado_em) VALUES (2, 88, 'maps', now()) ON CONFLICT DO NOTHING`,
     );
     await enviar('post', '/funil', { empresaIds: [88], forcar: true });
     let q = (await ler(`/funil?pipelineId=${sdr.id}`)).body;
@@ -1360,8 +1365,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
        ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
-      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem)
-       VALUES (2, 91, 'maps'), (2, 92, 'maps') ON CONFLICT DO NOTHING`,
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem, liberado_em)
+       VALUES (2, 91, 'maps', now()), (2, 92, 'maps', now()) ON CONFLICT DO NOTHING`,
     );
     expect((await enviar('post', '/funil', { empresaIds: [91, 92], forcar: true })).body.adicionadas).toBe(2);
     const d91 = (await ler('/funil/91')).body;
@@ -1825,7 +1830,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
        ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
-      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem) SELECT 95, x, 'maps' FROM unnest(ARRAY[95,96,97,98]) x ON CONFLICT DO NOTHING`,
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem, liberado_em) SELECT 95, x, 'maps', now() FROM unnest(ARRAY[95,96,97,98]) x ON CONFLICT DO NOTHING`,
     );
     await pool.query(
       `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, rotulo) VALUES
@@ -2416,8 +2421,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
        ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
-      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem)
-       SELECT 120, x, 'maps' FROM unnest(ARRAY[120, 121, 122]) x ON CONFLICT DO NOTHING`,
+      `INSERT INTO descoberta.campanha_empresas (campanha_id, empresa_id, origem, liberado_em)
+       SELECT 120, x, 'maps', now() FROM unnest(ARRAY[120, 121, 122]) x ON CONFLICT DO NOTHING`,
     );
     await pool.query(
       `INSERT INTO enriquecimento.contatos (empresa_id, canal, valor, fonte, fontes, status, whatsapp, principal) VALUES
@@ -3274,6 +3279,128 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(await contar(2)).toBe(0);
     await pool.query(`DELETE FROM comercial.oportunidades WHERE empresa_id = ANY($1::bigint[])`, [
       emp.map((e: { id: number }) => e.id),
+    ]);
+  });
+
+  it('lead à mão, conversa nova no WhatsApp e a IA que para quando a equipe responde pelo celular', async () => {
+    const token = (await ler('/agente')).body.webhook.split('/').at(-1);
+    const zap = (d: { phone: string; fromMe?: boolean; id: string; texto: string; nome?: string }) =>
+      request(app)
+        .post(`/webhooks/whatsapp/${token}`)
+        .send({
+          type: 'ReceivedCallback',
+          phone: `55${d.phone}`,
+          fromMe: !!d.fromMe,
+          messageId: d.id,
+          momment: Date.now(),
+          senderName: d.nome ?? null,
+          chatName: d.nome ?? null,
+          text: { message: d.texto },
+        });
+
+    // 1) Lead à mão no quadro: entra no funil, com o contato só da conta e a observação como nota.
+    const novo = await enviar('post', '/funil/leads', {
+      empresa: 'Auto Peças Manual',
+      contato: 'Carla Dias',
+      telefone: '(71) 98877-1100',
+      email: 'carla@manual.com.br',
+      cidade: 'Salvador',
+      agente: true,
+      observacao: 'Indicado pelo Pedro',
+    });
+    expect(novo.status).toBe(201);
+    const id = novo.body.empresaId;
+    const op = (await ler(`/funil/${id}`)).body;
+    expect(op.oportunidade).toMatchObject({ etapa: 'a_abordar', agente: true });
+    expect(JSON.stringify(op.atividades)).toMatch(/Indicado pelo Pedro/);
+    const ficha = (await ler(`/empresas/${id}`)).body;
+    expect(ficha.uf).toBe('BA');
+    expect(ficha.contatos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ canal: 'whatsapp', valor: '71988771100', fonte: 'manual' }),
+      ]),
+    );
+    expect(ficha.pessoas[0]).toMatchObject({ nome: 'Carla Dias', decisor: true });
+    const dup = await enviar('post', '/funil/leads', { empresa: 'Outro nome', telefone: '71 8877-1100' });
+    expect(dup.status).toBe(409);
+    expect(dup.body.erro.detalhes).toEqual({ empresaId: id });
+    expect((await ler('/campanhas')).body.some((c: { tipo: string }) => c.tipo === 'manual')).toBe(true);
+
+    // 2) A IA tinha preparado uma resposta. O eco de uma mensagem do sistema (mesmo texto, há pouco)
+    // não conta como a equipe; a mensagem escrita no celular pausa a IA e descarta o rascunho.
+    await pool.query(
+      `INSERT INTO comercial.mensagens (conta_id, empresa_id, direcao, texto, telefone, status, origem)
+       VALUES (1, $1, 'enviada', 'Rascunho da IA', '71988771100', 'rascunho', 'agente')`,
+      [id],
+    );
+    await pool.query(
+      `INSERT INTO comercial.mensagens (conta_id, empresa_id, direcao, texto, telefone, status, origem, enviado_em)
+       VALUES (1, $1, 'enviada', 'Oi, Carla! Tudo bem?', '71988771100', 'enviada', 'cadencia', now())`,
+      [id],
+    );
+    expect(
+      (await zap({ phone: '71988771100', fromMe: true, id: 'eco-1', texto: 'Oi, Carla! Tudo bem?' })).status,
+    ).toBe(200);
+    expect((await ler(`/funil/${id}`)).body.oportunidade.agentePausa).toBeNull();
+    await zap({
+      phone: '71988771100',
+      fromMe: true,
+      id: 'cel-1',
+      texto: 'Carla, aqui é a Ana. Te ligo às 15h?',
+    });
+    expect((await ler(`/funil/${id}`)).body.oportunidade.agentePausa).toBe('Você respondeu pelo celular.');
+    const { rows: msgs } = await pool.query(
+      `SELECT texto, status, origem, id_externo FROM comercial.mensagens WHERE empresa_id = $1 ORDER BY id`,
+      [id],
+    );
+    expect(msgs).toEqual([
+      expect.objectContaining({ texto: 'Rascunho da IA', status: 'descartada' }),
+      expect.objectContaining({ texto: 'Oi, Carla! Tudo bem?', id_externo: 'eco-1' }),
+      expect.objectContaining({
+        texto: 'Carla, aqui é a Ana. Te ligo às 15h?',
+        origem: 'humano',
+        status: 'enviada',
+      }),
+    ]);
+
+    // 3) Número que não é lead escreve: espera em Não identificados; "Criar lead" traz a conversa.
+    expect((await ler('/conversas/conversa-nova')).body).toEqual({ modo: 'perguntar' });
+    await zap({
+      phone: '75991112222',
+      id: 'desc-1',
+      texto: 'Boa tarde, vocês entregam em Feira?',
+      nome: 'Rogério',
+    });
+    const naoId = () => ler('/conversas/nao-identificados').then((r) => r.body as { telefone: string }[]);
+    expect((await naoId()).some((n) => n.telefone === '75991112222')).toBe(true);
+    const criado = await enviar('post', '/funil/leads', {
+      empresa: 'Rogério Peças',
+      contato: 'Rogério',
+      telefone: '75991112222',
+      telefoneConversa: '75991112222',
+    });
+    expect(criado.status).toBe(201);
+    expect((await naoId()).some((n) => n.telefone === '75991112222')).toBe(false);
+    expect(JSON.stringify((await ler(`/conversas/${criado.body.empresaId}`)).body)).toMatch(
+      /vocês entregam em Feira/,
+    );
+    expect((await ler(`/funil/${criado.body.empresaId}`)).body.oportunidade.etapa).toBe('respondeu');
+
+    // 4) A conta escolheu: conversa nova no WhatsApp já vira lead (o estado vem do DDD).
+    expect((await enviar('put', '/conversas/conversa-nova', { modo: 'criar_lead' })).body).toEqual({
+      modo: 'criar_lead',
+    });
+    await zap({ phone: '11955554444', id: 'novo-1', texto: 'Quero uma cotação', nome: 'Marta Lima' });
+    const { rows: marta } = await pool.query(
+      `SELECT e.id::int, e.uf, o.etapa, o.agente FROM descoberta.empresas e
+         JOIN comercial.oportunidades o ON o.empresa_id = e.id AND o.conta_id = 1
+        WHERE e.nome = 'Marta Lima'`,
+    );
+    expect(marta[0]).toMatchObject({ uf: 'SP', etapa: 'respondeu', agente: false });
+    await enviar('put', '/conversas/conversa-nova', { modo: 'perguntar' });
+
+    await pool.query(`DELETE FROM comercial.oportunidades WHERE empresa_id = ANY($1::bigint[])`, [
+      [id, criado.body.empresaId, marta[0].id],
     ]);
   });
 

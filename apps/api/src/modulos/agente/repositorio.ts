@@ -7,6 +7,8 @@ import { visivel } from '../../visibilidade.js';
 
 export interface ConfigAgente extends ConfigAgenteEntrada {
   webhookToken: string;
+  /** Conversa nova no WhatsApp (número que não é lead): espera alguém decidir ou já vira lead. */
+  conversaNova?: 'perguntar' | 'criar_lead';
 }
 
 export async function obterConfig(db: Executor): Promise<ConfigAgente> {
@@ -15,7 +17,7 @@ export async function obterConfig(db: Executor): Promise<ConfigAgente> {
             dias_semana AS "diasSemana", limite_dia AS "limiteDia", intervalo_seg AS "intervaloSeg",
             respostas_dia_lead AS "respostasDiaLead", sobre_empresa AS "sobreEmpresa", regras,
             horarios_reuniao AS "horariosReuniao", aviso_passagem AS "avisoPassagem",
-            webhook_token AS "webhookToken"
+            webhook_token AS "webhookToken", conversa_nova AS "conversaNova"
        FROM comercial.config_agente WHERE conta_id = ${contaSql()}`,
   );
   const c = rows[0];
@@ -238,4 +240,88 @@ export async function leadPorTelefone(
   );
   const r = rows[0];
   return r ? { empresaId: r.empresa_id, contatoId: r.contato_id } : null;
+}
+
+export async function salvarConversaNova(db: Executor, modo: 'perguntar' | 'criar_lead'): Promise<void> {
+  await db.query(`UPDATE comercial.config_agente SET conversa_nova = $1 WHERE conta_id = ${contaSql()}`, [
+    modo,
+  ]);
+}
+
+/**
+ * Lead da conta (alguma campanha dela achou) com este telefone, mas que ainda não está no funil.
+ * Telefone que veio só da Receita não vale (costuma ser do contador e se repete).
+ */
+export async function leadDaContaPorTelefone(db: Executor, telefone: string): Promise<number | null> {
+  const d = telefone.replace(/\D/g, '');
+  if (d.length < 10) return null;
+  const C = contaSql();
+  const { rows } = await db.query<{ empresa_id: number }>(
+    `WITH tel AS (
+       SELECT c.empresa_id, c.valor FROM enriquecimento.contatos c
+        WHERE c.canal IN ('whatsapp', 'telefone') AND ${visivel('c')} AND NOT (c.fontes <@ ARRAY['receita']::text[])
+       UNION ALL SELECT e.id, e.maps_telefone FROM descoberta.empresas e WHERE e.maps_telefone IS NOT NULL
+     )
+     SELECT tel.empresa_id::int FROM tel
+      WHERE left(tel.valor, 2) = $1 AND right(tel.valor, 8) = $2
+        AND EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce WHERE ce.empresa_id = tel.empresa_id AND ce.conta_id = ${C})
+      LIMIT 1`,
+    [d.slice(0, 2), d.slice(-8)],
+  );
+  return rows[0]?.empresa_id ?? null;
+}
+
+/**
+ * Mensagem que saiu deste WhatsApp e voltou pelo webhook: é do sistema (IA, cadência, sequência,
+ * tela) se já está guardada com o mesmo id, ou se o sistema mandou o mesmo texto para o lead há
+ * pouco (o webhook às vezes chega antes de o envio guardar o id). Guarda o id que faltava.
+ */
+export async function foiDoSistema(
+  db: Executor,
+  empresaId: number,
+  texto: string,
+  idExterno: string | null,
+): Promise<boolean> {
+  const C = contaSql();
+  if (idExterno) {
+    const { rows } = await db.query(
+      `SELECT 1 FROM comercial.mensagens WHERE conta_id = ${C} AND id_externo = $1`,
+      [idExterno],
+    );
+    if (rows.length) return true;
+  }
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM comercial.mensagens
+      WHERE conta_id = ${C} AND empresa_id = $1 AND direcao = 'enviada'
+        AND status IN ('aprovada', 'enviada') AND id_externo IS NULL
+        AND btrim(texto) = btrim($2) AND coalesce(enviado_em, tentado_em, criado_em) > now() - interval '5 minutes'
+      ORDER BY id DESC LIMIT 1`,
+    [empresaId, texto],
+  );
+  if (!rows[0]) return false;
+  if (idExterno)
+    await db.query(`UPDATE comercial.mensagens SET id_externo = $2 WHERE id = $1 AND id_externo IS NULL`, [
+      rows[0].id,
+      idExterno,
+    ]);
+  return true;
+}
+
+/**
+ * Alguém da equipe escreveu para o lead pelo celular: a IA para de responder este lead (dá para
+ * devolver na conversa ou na ficha) e o que ela tinha preparado e ainda não saiu é descartado.
+ */
+export async function humanoAssumiu(db: Executor, empresaId: number, motivo: string): Promise<boolean> {
+  const C = contaSql();
+  const { rowCount } = await db.query(
+    `UPDATE comercial.oportunidades SET agente_pausa = $2, agente_retorno_em = NULL
+      WHERE conta_id = ${C} AND empresa_id = $1 AND agente AND agente_pausa IS NULL`,
+    [empresaId, motivo],
+  );
+  await db.query(
+    `UPDATE comercial.mensagens SET status = 'descartada', erro = 'Você assumiu a conversa'
+      WHERE conta_id = ${C} AND empresa_id = $1 AND origem = 'agente' AND status IN ('rascunho', 'aprovada')`,
+    [empresaId],
+  );
+  return (rowCount ?? 0) > 0;
 }

@@ -197,12 +197,17 @@ export async function enriquecerEmpresa(
   await repo.iniciar(pool, empresaId, campanhaId);
   const c = new Coletor();
   let ordem = 0;
+  // Fontes que não responderam nesta rodada (o lead fica "em parte" e nada de antes se perde).
+  const pendencias = new Set<string>();
   const etapa = (
     nome: repo.NomeEtapa,
     status: repo.StatusEtapa,
     detalhe: string,
     url: string | null = null,
-  ) => repo.registrarEtapa(pool, empresaId, ++ordem, nome, status, detalhe, url);
+  ) => {
+    if (status === 'erro') pendencias.add(nome);
+    return repo.registrarEtapa(pool, empresaId, ++ordem, nome, status, detalhe, url);
+  };
 
   try {
     // 1. Receita: sócios (quem administra) e contatos cadastrados.
@@ -1250,7 +1255,9 @@ export async function enriquecerEmpresa(
       await etapa(
         'whatsapp',
         'pulada',
-        numeros.length ? 'Evolution API não configurada.' : 'Nenhum telefone para conferir.',
+        numeros.length
+          ? 'Nenhum número de WhatsApp conectado na conta (Agente → Números de WhatsApp): sem ele não dá para conferir quem tem WhatsApp.'
+          : 'Nenhum telefone para conferir.',
       );
     }
 
@@ -1363,6 +1370,7 @@ export async function enriquecerEmpresa(
       facebook,
       linkedinEmpresa,
       mapsAberto,
+      pendencias: [...pendencias],
       maps: achadaPorNome
         ? {
             nota: empresa.maps_nota,

@@ -15,7 +15,9 @@ const SELECT = `
          c.max_por_busca AS "maxPorBusca", c.limite_leads AS "limiteLeads", c.teto_places_usd::float8 AS "tetoPlacesUsd", c.status, c.tipo, c.iniciada_em AS "iniciadaEm",
          c.criado_em AS "criadoEm", c.atualizado_em AS "atualizadoEm",
          json_build_object(
-           'empresas', coalesce(p.empresas, 0),
+           -- Leads de verdade (liberados: dentro da meta, importados, cadastrados ou no funil).
+           'empresas', coalesce(f.leads, 0),
+           'candidatos', coalesce(p.empresas, 0),
            'comCnpj', coalesce(p.com_cnpj, 0),
            'noMaps', coalesce(p.no_maps, 0),
            'soMaps', coalesce(p.so_maps, 0),
@@ -43,14 +45,15 @@ const SELECT = `
     LEFT JOIN descoberta.v_uso_places_campanha u ON u.campanha_id = c.id
     LEFT JOIN LATERAL (
       -- Situação comercial dos leads da campanha: novos = nunca trabalhados.
-      SELECT count(*) FILTER (WHERE o.empresa_id IS NULL AND NOT e.mei)::int AS novos,
+      SELECT count(*)::int AS leads,
+             count(*) FILTER (WHERE o.empresa_id IS NULL AND NOT e.mei)::int AS novos,
              count(*) FILTER (WHERE e.mei AND o.empresa_id IS NULL)::int AS mei,
              count(*) FILTER (WHERE o.etapa <> 'descartado')::int AS no_funil,
              count(*) FILTER (WHERE o.etapa = 'descartado')::int AS descartados
         FROM descoberta.campanha_empresas ce
         JOIN descoberta.empresas e ON e.id = ce.empresa_id
         LEFT JOIN comercial.oportunidades o ON o.conta_id = c.conta_id AND o.empresa_id = ce.empresa_id
-       WHERE ce.campanha_id = c.id
+       WHERE ce.campanha_id = c.id AND ce.liberado_em IS NOT NULL
     ) f ON true`;
 
 /**
@@ -109,8 +112,21 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
       `SELECT ufs FROM base_cnpj.importacoes
         WHERE status = 'concluida' AND motivo <> 'mei' ORDER BY concluido_em DESC LIMIT 1`,
     ),
-    db.query<{ campanha_id: string; enriquecidos: number; elegiveis: number; reservados: number }>(
-      `SELECT ce.campanha_id, count(*) FILTER (WHERE l.status = 'concluido')::int AS enriquecidos,
+    db.query<{
+      campanha_id: string;
+      enriquecidos: number;
+      incompletos: number;
+      com_cnpj: number;
+      elegiveis: number;
+      reservados: number;
+    }>(
+      `SELECT ce.campanha_id,
+              -- Enriquecidos entre os leads desta campanha (o estoque da busca fora da meta não conta).
+              count(*) FILTER (WHERE ce.liberado_em IS NOT NULL AND l.status = 'concluido')::int AS enriquecidos,
+              count(*) FILTER (WHERE ce.liberado_em IS NOT NULL AND l.status = 'concluido'
+                                 AND cardinality(l.pendencias) > 0)::int AS incompletos,
+              count(*) FILTER (WHERE ce.liberado_em IS NOT NULL
+                                 AND (e.cnpj IS NOT NULL OR l.cnpj_achado IS NOT NULL))::int AS com_cnpj,
               count(*)::int AS elegiveis,
               count(*) FILTER (WHERE ce.enriquecimento_solicitado_em IS NOT NULL)::int AS reservados
          FROM descoberta.campanha_empresas ce
@@ -152,7 +168,7 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
               (SELECT count(*)::int FROM descoberta.campanha_empresas ce
                  JOIN enriquecimento.leads l ON l.empresa_id = ce.empresa_id
                 WHERE ce.campanha_id = c.id AND l.status = 'concluido'
-                  AND l.concluido_em > now() - interval '15 minutes') AS leads,
+                  AND ce.liberado_em IS NOT NULL AND l.concluido_em > now() - interval '15 minutes') AS leads,
               (SELECT count(*)::int FROM descoberta.buscas_maps b
                 WHERE b.campanha_id = c.id AND b.status = 'concluida'
                   AND b.concluido_em > now() - interval '15 minutes') AS buscas
@@ -184,6 +200,10 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
     Object.assign(c.progresso, {
       naFilaEnriquecimento: fila.get(Number(c.id)) ?? 0,
       enriquecidos: e?.enriquecidos ?? 0,
+      /** Enriquecidos em parte: alguma fonte não respondeu (o que achou ficou). */
+      incompletos: e?.incompletos ?? 0,
+      // Com CNPJ entre os leads (o estoque da busca fora da meta não conta).
+      comCnpj: e?.com_cnpj ?? 0,
       elegiveis: e?.elegiveis ?? 0,
       reservados: e?.reservados ?? 0,
       /** Leads enriquecidos e buscas concluídas por minuto (média dos últimos 15 minutos). */
@@ -302,7 +322,7 @@ const elegiveis = () => `
   JOIN cadastro.campanhas cp ON cp.id = ce.campanha_id
   JOIN cadastro.nichos n ON n.id = cp.nicho_id
   LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
- WHERE ce.campanha_id = $1 AND cp.conta_id = ${contaSql()}
+ WHERE ce.campanha_id = $1 AND cp.conta_id = ${contaSql()} AND ce.liberado_em IS NOT NULL
    AND NOT (e.mei AND n.excluir_mei)
    AND NOT EXISTS (SELECT 1 FROM comercial.v_empresas_descartadas d
                     WHERE d.empresa_id = e.id AND d.conta_id = cp.conta_id)`;
@@ -313,18 +333,21 @@ const SEM_DECISOR = () =>
 const FILTRO_ESCOPO: Record<EscopoReenriquecer, () => string> = {
   ab: () => `l.faixa IN ('A', 'B')`,
   sem_decisor: SEM_DECISOR,
+  // Alguma fonte não respondeu na última rodada (ou a rodada falhou): só completa o que faltou.
+  incompletos: () => `(l.status = 'erro' OR cardinality(l.pendencias) > 0)`,
   todos: () => 'true',
 };
 
 export async function previaReenriquecer(db: Executor, campanhaId: number) {
-  const { rows } = await db.query<{ ab: number; semDecisor: number; todos: number }>(
+  const { rows } = await db.query<{ ab: number; semDecisor: number; incompletos: number; todos: number }>(
     `SELECT count(*) FILTER (WHERE ${FILTRO_ESCOPO.ab()})::int AS ab,
             count(*) FILTER (WHERE ${SEM_DECISOR()})::int AS "semDecisor",
+            count(*) FILTER (WHERE ${FILTRO_ESCOPO.incompletos()})::int AS incompletos,
             count(*)::int AS todos
        ${elegiveis()}`,
     [campanhaId],
   );
-  return rows[0] ?? { ab: 0, semDecisor: 0, todos: 0 };
+  return rows[0] ?? { ab: 0, semDecisor: 0, incompletos: 0, todos: 0 };
 }
 
 export async function empresasParaReenriquecer(

@@ -16,7 +16,7 @@ const CAMPOS_LISTA = `
   e.telefones_receita AS "telefonesReceita", e.sinal_entrega AS "sinalEntrega",
   ce.distancia_base_km::float8 AS "distanciaBaseKm", e.maps_fechada AS "mapsFechada",
   (e.place_id IS NOT NULL OR l.maps_url IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm", e.mei,
-  l.status AS "enriqStatus", l.faixa, l.score, l.motivo,
+  l.status AS "enriqStatus", l.faixa, l.score, l.motivo, cardinality(l.pendencias) > 0 AS "enriqParcial",
   dec.nome AS "decisorNome", dec.cargo AS "decisorCargo",
   pc.canal AS "contatoCanal", pc.valor AS "contatoValor", pc.status AS "contatoStatus",
   op.etapa AS "funilEtapa", op.proxima_acao_em AS "funilProximaAcaoEm"`;
@@ -26,7 +26,7 @@ const CAMPOS_LISTA = `
  * cada conta só enxerga (e só trabalha) o que as campanhas dela acharam.
  */
 export function daConta(coluna: string): string {
-  return `EXISTS (SELECT 1 FROM descoberta.campanha_empresas cx WHERE cx.empresa_id = ${coluna} AND cx.conta_id = ${contaSql()})`;
+  return `EXISTS (SELECT 1 FROM descoberta.campanha_empresas cx WHERE cx.empresa_id = ${coluna} AND cx.conta_id = ${contaSql()} AND cx.liberado_em IS NOT NULL)`;
 }
 
 /** Nota, decisor e melhor contato do enriquecimento (schema do worker-enriquecimento, só leitura). */
@@ -71,9 +71,10 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
   const C = contaSql();
   const vinculo = f.campanhaId
     ? `JOIN descoberta.campanha_empresas ce
-         ON ce.empresa_id = e.id AND ce.conta_id = ${C} AND ce.campanha_id = ${p(f.campanhaId)}`
+         ON ce.empresa_id = e.id AND ce.conta_id = ${C} AND ce.campanha_id = ${p(f.campanhaId)} AND ce.liberado_em IS NOT NULL`
     : `JOIN LATERAL (
-         SELECT * FROM descoberta.campanha_empresas c2 WHERE c2.empresa_id = e.id AND c2.conta_id = ${C}
+         SELECT * FROM descoberta.campanha_empresas c2
+          WHERE c2.empresa_id = e.id AND c2.conta_id = ${C} AND c2.liberado_em IS NOT NULL
           ORDER BY c2.adicionada_em DESC LIMIT 1
        ) ce ON true`;
 
@@ -138,7 +139,8 @@ export async function obter(db: Executor, id: number) {
             b.nome AS "baseNome"
        FROM descoberta.empresas e
        JOIN LATERAL (
-         SELECT * FROM descoberta.campanha_empresas c2 WHERE c2.empresa_id = e.id AND c2.conta_id = ${C}
+         SELECT * FROM descoberta.campanha_empresas c2
+          WHERE c2.empresa_id = e.id AND c2.conta_id = ${C} AND c2.liberado_em IS NOT NULL
           ORDER BY c2.adicionada_em DESC LIMIT 1
        ) ce ON true
        LEFT JOIN cadastro.v_bases_ativas b ON b.id = ce.base_id AND b.conta_id = ${C}
@@ -163,7 +165,7 @@ export async function obter(db: Executor, id: number) {
               ce.adicionada_em AS "adicionadaEm", ce.enriquecimento_solicitado_em AS "enriquecimentoSolicitadoEm"
          FROM descoberta.campanha_empresas ce
          JOIN cadastro.campanhas c ON c.id = ce.campanha_id
-        WHERE ce.empresa_id = $1 AND ce.conta_id = ${C} ORDER BY ce.adicionada_em DESC`,
+        WHERE ce.empresa_id = $1 AND ce.conta_id = ${C} AND ce.liberado_em IS NOT NULL ORDER BY ce.adicionada_em DESC`,
       [id],
     ),
     db.query(
@@ -174,7 +176,7 @@ export async function obter(db: Executor, id: number) {
     db.query(
       `SELECT status, faixa, score, motivo, resumo, entrega, cnpj_achado AS "cnpjAchado", site_url AS "site",
               instagram, facebook, linkedin_empresa AS "linkedinEmpresa", maps_aberto AS "mapsAberto",
-              erro, solicitado_em AS "solicitadoEm", iniciado_em AS "iniciadoEm", concluido_em AS "concluidoEm"
+              erro, pendencias, solicitado_em AS "solicitadoEm", iniciado_em AS "iniciadoEm", concluido_em AS "concluidoEm"
          FROM enriquecimento.leads WHERE empresa_id = $1`,
       [id],
     ),
@@ -239,7 +241,8 @@ export async function obter(db: Executor, id: number) {
 /** Campanha mais recente da empresa: para onde vai o pedido de "enriquecer de novo". */
 export async function campanhaDaEmpresa(db: Executor, id: number): Promise<number | null> {
   const { rows } = await db.query<{ campanha_id: number }>(
-    `SELECT campanha_id FROM descoberta.campanha_empresas WHERE empresa_id = $1 AND conta_id = ${contaSql()}
+    `SELECT campanha_id FROM descoberta.campanha_empresas
+      WHERE empresa_id = $1 AND conta_id = ${contaSql()} AND liberado_em IS NOT NULL
       ORDER BY adicionada_em DESC LIMIT 1`,
     [id],
   );

@@ -118,7 +118,50 @@ export async function iniciar(db: Executor, empresaId: number, campanhaId: numbe
             tentativas = enriquecimento.leads.tentativas + 1, erro = NULL`,
     [empresaId, campanhaId],
   );
-  await db.query('DELETE FROM enriquecimento.etapas WHERE empresa_id = $1', [empresaId]);
+  // A trilha da rodada anterior fica até esta terminar: no fim, o que ela achou e esta não
+  // conseguiu (fonte fora do ar, sem crédito) continua valendo (arrumarTrilha).
+}
+
+/**
+ * Junta a trilha desta rodada com a anterior: etapa que antes achou e agora falhou, ficou sem
+ * resultado ou foi pulada mantém o achado de antes (com o que aconteceu agora); o resto da rodada
+ * anterior sai. Sem rodada anterior concluída, nada muda.
+ */
+async function arrumarTrilha(db: Executor, empresaId: number) {
+  const { rows } = await db.query<{
+    id: number;
+    etapa: string;
+    status: string;
+    detalhe: string | null;
+    ordem: number;
+    antiga: boolean;
+  }>(
+    `SELECT e.id::int, e.etapa, e.status, e.detalhe, e.ordem, e.criado_em < l.iniciado_em AS antiga
+       FROM enriquecimento.etapas e JOIN enriquecimento.leads l ON l.empresa_id = e.empresa_id
+      WHERE e.empresa_id = $1`,
+    [empresaId],
+  );
+  const novas = rows.filter((r) => !r.antiga);
+  const apagar = new Set(rows.filter((r) => r.antiga).map((r) => r.id));
+  for (const a of rows.filter((r) => r.antiga && r.status === 'encontrado')) {
+    const n = novas.find((x) => x.etapa === a.etapa);
+    if (!n || n.status === 'encontrado') continue;
+    apagar.delete(a.id);
+    apagar.add(n.id);
+    const agora =
+      n.status === 'erro'
+        ? 'desta vez a fonte não respondeu'
+        : n.status === 'pulada'
+          ? 'desta vez foi pulada'
+          : 'desta vez não achou de novo';
+    await db.query(`UPDATE enriquecimento.etapas SET ordem = $2, detalhe = $3 WHERE id = $1`, [
+      a.id,
+      n.ordem,
+      `${a.detalhe ?? ''} (achado na busca anterior; ${agora})`.slice(0, 500),
+    ]);
+  }
+  if (apagar.size)
+    await db.query(`DELETE FROM enriquecimento.etapas WHERE id = ANY($1::bigint[])`, [[...apagar]]);
 }
 
 export type NomeEtapa =
@@ -163,6 +206,8 @@ export interface Conclusao {
   facebook: string | null;
   linkedinEmpresa: string | null;
   mapsAberto: boolean | null;
+  /** Fontes que não responderam nesta rodada (o lead fica "em parte"). */
+  pendencias?: string[];
   /** Dados do Google achados pelo enriquecimento (busca por nome e endereço). */
   maps?: {
     nota: number | null;
@@ -173,20 +218,24 @@ export interface Conclusao {
 }
 
 /**
- * Grava a rodada inteira numa transação: troca pessoas e contatos automáticos pelos novos
- * (os cadastrados à mão ficam) e fecha o lead com a nota.
+ * Grava a rodada numa transação. Enriquecer soma: o que esta rodada achou entra ou reforça o que
+ * já havia, e nada do que a rodada anterior achou se perde porque uma fonte não respondeu agora.
+ * O que você marcou (número errado, não decide) continua valendo pelo feedback.
  */
 export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, c: Conclusao) {
   await comTransacao(pool, async (tx) => {
-    await tx.query(
-      `DELETE FROM enriquecimento.contatos WHERE empresa_id = $1 AND conta_id = 0 AND fonte <> 'manual'`,
-      [empresaId],
-    );
-    await tx.query(
-      `DELETE FROM enriquecimento.pessoas p WHERE empresa_id = $1 AND conta_id = 0
-          AND NOT EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.pessoa_id = p.id)`,
-      [empresaId],
-    );
+    const novos = [...coletor.contatos.values()];
+    // Quem decide e o melhor contato: os desta rodada, quando ela achou (senão ficam os de antes).
+    if ([...coletor.pessoas.values()].some((p) => p.decisor))
+      await tx.query(
+        `UPDATE enriquecimento.pessoas SET decisor = false WHERE empresa_id = $1 AND conta_id = 0`,
+        [empresaId],
+      );
+    if (novos.some((x) => x.principal))
+      await tx.query(
+        `UPDATE enriquecimento.contatos SET principal = false WHERE empresa_id = $1 AND conta_id = 0`,
+        [empresaId],
+      );
 
     const ids = new Map<string, number>();
     for (const p of coletor.pessoas.values()) {
@@ -200,7 +249,8 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
                 papel = EXCLUDED.papel, decisor = EXCLUDED.decisor, prioridade = EXCLUDED.prioridade,
                 desde = coalesce(EXCLUDED.desde, enriquecimento.pessoas.desde),
                 linkedin_url = coalesce(EXCLUDED.linkedin_url, enriquecimento.pessoas.linkedin_url),
-                fontes = EXCLUDED.fontes, url_origem = EXCLUDED.url_origem,
+                fontes = ARRAY(SELECT DISTINCT unnest(enriquecimento.pessoas.fontes || EXCLUDED.fontes)),
+                url_origem = coalesce(EXCLUDED.url_origem, enriquecimento.pessoas.url_origem),
                 evidencia = coalesce(EXCLUDED.evidencia, enriquecimento.pessoas.evidencia)
          RETURNING id`,
         [
@@ -226,7 +276,17 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
            (empresa_id, pessoa_id, canal, valor, rotulo, fonte, fontes, url_origem, confianca, status,
             whatsapp, verificado_em, principal)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::boolean, CASE WHEN $11::boolean IS NOT NULL THEN now() END, $12)
-         ON CONFLICT (empresa_id, conta_id, canal, valor) DO NOTHING`,
+         ON CONFLICT (empresa_id, conta_id, canal, valor) DO UPDATE
+            SET pessoa_id = coalesce(EXCLUDED.pessoa_id, enriquecimento.contatos.pessoa_id),
+                rotulo = coalesce(EXCLUDED.rotulo, enriquecimento.contatos.rotulo),
+                fontes = ARRAY(SELECT DISTINCT unnest(enriquecimento.contatos.fontes || EXCLUDED.fontes)),
+                url_origem = coalesce(EXCLUDED.url_origem, enriquecimento.contatos.url_origem),
+                confianca = greatest(EXCLUDED.confianca, enriquecimento.contatos.confianca),
+                status = CASE WHEN EXCLUDED.status = 'nao_verificado' AND enriquecimento.contatos.status = 'verificado'
+                              THEN 'verificado' ELSE EXCLUDED.status END,
+                whatsapp = coalesce(EXCLUDED.whatsapp, enriquecimento.contatos.whatsapp),
+                verificado_em = CASE WHEN EXCLUDED.whatsapp IS NOT NULL THEN now() ELSE enriquecimento.contatos.verificado_em END,
+                principal = EXCLUDED.principal OR enriquecimento.contatos.principal`,
         [
           empresaId,
           ct.pessoa ? (ids.get(ct.pessoa) ?? null) : null,
@@ -244,12 +304,35 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
       );
     }
 
+    // O mesmo número não fica duas vezes: conferido como WhatsApp, sai o "telefone"; conferido que
+    // não tem WhatsApp, sai o "WhatsApp" antigo.
     await tx.query(
-      `UPDATE enriquecimento.leads
-          SET status = 'concluido', concluido_em = now(), erro = NULL,
-              faixa = $2, score = $3, motivo = $4, resumo = $5, entrega = $6, cnpj_achado = $7,
-              site_url = $8, instagram = $9, facebook = $10, linkedin_empresa = $11, maps_aberto = $12,
-              maps_nota = $13, maps_avaliacoes = $14, maps_categoria = $15, maps_url = $16
+      `DELETE FROM enriquecimento.contatos t
+        WHERE t.empresa_id = $1 AND t.conta_id = 0 AND t.canal = 'telefone'
+          AND EXISTS (SELECT 1 FROM enriquecimento.contatos w WHERE w.empresa_id = t.empresa_id
+                       AND w.conta_id = 0 AND w.canal = 'whatsapp' AND w.valor = t.valor)
+          AND NOT (t.valor = ANY($2::text[]))`,
+      [empresaId, novos.filter((x) => x.canal === 'telefone' && x.whatsapp !== false).map((x) => x.valor)],
+    );
+    await tx.query(
+      `DELETE FROM enriquecimento.contatos w
+        WHERE w.empresa_id = $1 AND w.conta_id = 0 AND w.canal = 'whatsapp' AND w.valor = ANY($2::text[])`,
+      [empresaId, novos.filter((x) => x.canal === 'telefone' && x.whatsapp === false).map((x) => x.valor)],
+    );
+    // Com fonte fora do ar, a nota desta rodada pode sair menor só por falta de dado: fica a maior.
+    // O que esta rodada não achou mantém o valor de antes.
+    await tx.query(
+      `UPDATE enriquecimento.leads l
+          SET status = 'concluido', concluido_em = now(), erro = NULL, pendencias = $17,
+              faixa = CASE WHEN cardinality($17::text[]) > 0 AND l.score > $3 THEN l.faixa ELSE $2 END,
+              motivo = CASE WHEN cardinality($17::text[]) > 0 AND l.score > $3 THEN l.motivo ELSE $4 END,
+              score = CASE WHEN cardinality($17::text[]) > 0 AND l.score > $3 THEN l.score ELSE $3 END,
+              resumo = coalesce($5, l.resumo), entrega = coalesce($6, l.entrega), cnpj_achado = coalesce($7, l.cnpj_achado),
+              site_url = coalesce($8, l.site_url), instagram = coalesce($9, l.instagram),
+              facebook = coalesce($10, l.facebook), linkedin_empresa = coalesce($11, l.linkedin_empresa),
+              maps_aberto = coalesce($12, l.maps_aberto),
+              maps_nota = coalesce($13, l.maps_nota), maps_avaliacoes = coalesce($14, l.maps_avaliacoes),
+              maps_categoria = coalesce($15, l.maps_categoria), maps_url = coalesce($16, l.maps_url)
         WHERE empresa_id = $1`,
       [
         empresaId,
@@ -268,14 +351,30 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
         c.maps?.avaliacoes ?? null,
         c.maps?.categoria ?? null,
         c.maps?.url ?? null,
+        c.pendencias ?? [],
       ],
     );
+    await arrumarTrilha(tx, empresaId);
   });
 }
 
+/**
+ * A rodada parou no meio. Lead que já tinha sido enriquecido antes continua com tudo o que tinha
+ * (fica "em parte", para tentar de novo); a trilha desta rodada incompleta sai.
+ */
 export async function marcarErro(db: Executor, empresaId: number, erro: string) {
   await db.query(
-    `UPDATE enriquecimento.leads SET status = 'erro', erro = $2, concluido_em = now() WHERE empresa_id = $1`,
+    `DELETE FROM enriquecimento.etapas e USING enriquecimento.leads l
+      WHERE e.empresa_id = $1 AND l.empresa_id = e.empresa_id AND l.faixa IS NOT NULL AND e.criado_em >= l.iniciado_em`,
+    [empresaId],
+  );
+  await db.query(
+    `UPDATE enriquecimento.leads
+        SET erro = $2,
+            status = CASE WHEN faixa IS NOT NULL THEN 'concluido' ELSE 'erro' END,
+            pendencias = CASE WHEN faixa IS NOT NULL THEN ARRAY['rodada'] ELSE pendencias END,
+            concluido_em = CASE WHEN faixa IS NOT NULL THEN concluido_em ELSE now() END
+      WHERE empresa_id = $1`,
     [empresaId, erro.slice(0, 500)],
   );
 }

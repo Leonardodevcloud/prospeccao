@@ -401,7 +401,7 @@ export async function leadDaPrevia(
   const C = contaSql();
   if (d.empresaId) {
     const { rows } = await db.query(
-      `SELECT 1 FROM descoberta.campanha_empresas WHERE empresa_id = $1 AND conta_id = ${C} LIMIT 1`,
+      `SELECT 1 FROM descoberta.campanha_empresas WHERE empresa_id = $1 AND conta_id = ${C} AND liberado_em IS NOT NULL LIMIT 1`,
       [d.empresaId],
     );
     if (!rows.length) throw AppError.naoEncontrado('Lead');
@@ -410,7 +410,7 @@ export async function leadDaPrevia(
   const { rows } = await db.query<{ empresa_id: number }>(
     `SELECT ce.empresa_id::int FROM descoberta.campanha_empresas ce
        JOIN enriquecimento.pessoas p ON p.empresa_id = ce.empresa_id AND p.decisor AND ${visivel('p')}
-      WHERE ce.conta_id = ${C} AND ($1::bigint IS NULL OR ce.campanha_id = $1)
+      WHERE ce.conta_id = ${C} AND ce.liberado_em IS NOT NULL AND ($1::bigint IS NULL OR ce.campanha_id = $1)
         AND EXISTS (SELECT 1 FROM enriquecimento.contatos c
                      WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email' AND c.status <> 'invalido' AND ${visivel('c')})
       ORDER BY ce.adicionada_em DESC LIMIT 1`,
@@ -419,7 +419,7 @@ export async function leadDaPrevia(
   if (rows[0]) return rows[0].empresa_id;
   const { rows: qualquer } = await db.query<{ empresa_id: number }>(
     `SELECT ce.empresa_id::int FROM descoberta.campanha_empresas ce
-      WHERE ce.conta_id = ${C} AND ($1::bigint IS NULL OR ce.campanha_id = $1)
+      WHERE ce.conta_id = ${C} AND ce.liberado_em IS NOT NULL AND ($1::bigint IS NULL OR ce.campanha_id = $1)
       ORDER BY ce.adicionada_em DESC LIMIT 1`,
     [d.campanhaId ?? null],
   );
@@ -577,7 +577,7 @@ function sqlElegiveis(c: FiltroQuem) {
         JOIN descoberta.empresas e ON e.id = ce.empresa_id
         LEFT JOIN enriquecimento.leads l ON l.empresa_id = ce.empresa_id
         LEFT JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = ce.empresa_id
-       WHERE ce.campanha_id = $1)
+       WHERE ce.campanha_id = $1 AND ce.liberado_em IS NOT NULL)
     SELECT DISTINCT ON (coalesce(lower(alvo.email), 'lead:' || alvo.empresa_id))
            alvo.empresa_id::int AS "empresaId", alvo.nome, alvo.cidade,
            alvo.faixa, lower(alvo.email) AS email, alvo.whatsapp, alvo.telefone
@@ -615,7 +615,8 @@ export async function elegiveis(db: Executor, c: FiltroQuem & Pick<CampanhaEmail
                                             WHERE c.empresa_id = ce.empresa_id AND c.canal = 'email'
                                               AND c.status <> 'invalido' AND ${visivel('c')}))::int AS "comEmail",
             count(*) FILTER (WHERE ${SQL_TEM_WHATSAPP('ce.empresa_id')})::int AS "comWhatsapp"
-       FROM descoberta.campanha_empresas ce WHERE ce.campanha_id = $1 AND ce.conta_id = ${contaSql()}`,
+       FROM descoberta.campanha_empresas ce
+      WHERE ce.campanha_id = $1 AND ce.conta_id = ${contaSql()} AND ce.liberado_em IS NOT NULL`,
     [c.campanhaId],
   );
   return {

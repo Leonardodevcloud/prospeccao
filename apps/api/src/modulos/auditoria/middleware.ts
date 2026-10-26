@@ -31,6 +31,18 @@ const qtd = (v: unknown) => (Array.isArray(v) ? v.length : 0);
 
 /** null = não registra. */
 const REGRAS: Record<string, Regra | null> = {
+  'POST /funil/leads': {
+    acao: 'funil',
+    texto: (b) =>
+      `Cadastrou o lead ${txt(b.empresa)}${b.telefoneConversa ? ' a partir de uma conversa do WhatsApp' : ''}`,
+  },
+  'PUT /conversas/conversa-nova': {
+    acao: 'configuração',
+    texto: (b) =>
+      b.modo === 'criar_lead'
+        ? 'Conversa nova no WhatsApp passa a virar lead no funil'
+        : 'Conversa nova no WhatsApp passa a esperar em Não identificados',
+  },
   'POST /funil': {
     acao: 'funil',
     texto: (b) =>

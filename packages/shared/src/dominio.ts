@@ -24,7 +24,7 @@ export const MODOS_CAMPANHA = ['semi', 'auto'] as const;
 export const MOTIVO_META_LEADS = 'Meta de leads atingida: esta busca não precisou rodar.';
 export const CADENCIAS = ['padrao', 'curta'] as const;
 
-export const ORIGENS_EMPRESA = ['cnpj', 'maps', 'ambos', 'importacao'] as const;
+export const ORIGENS_EMPRESA = ['cnpj', 'maps', 'ambos', 'importacao', 'manual'] as const;
 export type OrigemEmpresa = (typeof ORIGENS_EMPRESA)[number];
 
 const texto = (min: number, max: number, rotulo: string) =>
@@ -192,7 +192,7 @@ export const importacaoEntrada = z.object({
 
 /** Que parte da campanha volta para o enriquecimento. */
 export const reenriquecerEntrada = z.object({
-  escopo: z.enum(['ab', 'sem_decisor', 'todos']).default('ab'),
+  escopo: z.enum(['ab', 'sem_decisor', 'incompletos', 'todos']).default('ab'),
 });
 export type EscopoReenriquecer = z.infer<typeof reenriquecerEntrada>['escopo'];
 

@@ -415,3 +415,33 @@ export const etapaAtualizar = z
     ordem: z.number().int().min(1).max(50).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
+
+/** Lead cadastrado à mão (no funil, ou a partir de uma conversa de um número que não é lead). */
+export const leadManualEntrada = z.object({
+  empresa: z.string().trim().min(2, 'Informe o nome da empresa (ou da pessoa).').max(160),
+  contato: z.string().trim().max(120).nullish(),
+  cargo: z.string().trim().max(80).nullish(),
+  telefone: z.string().trim().max(40).nullish(),
+  /** O telefone é WhatsApp (a conversa e a IA usam). */
+  whatsapp: z.boolean().default(true),
+  email: z.string().trim().toLowerCase().email('E-mail inválido.').max(200).nullish().or(z.literal('')),
+  cnpj: z.string().trim().max(30).nullish(),
+  cidade: z.string().trim().max(80).nullish(),
+  uf: z.string().trim().max(20).nullish(),
+  site: z.string().trim().max(300).nullish(),
+  instagram: z.string().trim().max(100).nullish(),
+  observacao: z.string().trim().max(2000).nullish(),
+  /** Coluna do quadro onde entra (padrão: a primeira do SDR). */
+  etapaId: z.number().int().positive().nullish(),
+  /** Quem cuida (sem: o rodízio da equipe). */
+  responsavelId: z.number().int().positive().nullish(),
+  /** A IA conduz a conversa com este lead. */
+  agente: z.boolean().default(false),
+  /** Busca site, Instagram, CNPJ, sócios e confere o WhatsApp. */
+  enriquecer: z.boolean().default(false),
+  /** Número da conversa em "Não identificados" que vira este lead (as mensagens vêm junto). */
+  telefoneConversa: z.string().trim().max(20).nullish(),
+});
+export type LeadManualEntrada = z.infer<typeof leadManualEntrada>;
+
+export const conversaNovaEntrada = z.object({ modo: z.enum(['perguntar', 'criar_lead']) });

@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, type ContatoLead, type ConversaAberta, type NaoIdentificado } from '../api';
 import { ErroDaApi } from '../componentes/Formulario';
+import { NovoLead } from '../componentes/NovoLead';
+import { useEhAdmin } from '../componentes/Sessao';
 import { fmtCidade, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
 
 /**
@@ -18,50 +20,101 @@ export function useNaoIdentificados() {
   });
 }
 
+/** Conversa nova no WhatsApp com um número que não é lead: espera aqui ou já vira lead no funil. */
+function ConversaNova() {
+  const admin = useEhAdmin();
+  const cliente = useQueryClient();
+  const q = useQuery({
+    queryKey: ['conversa-nova'],
+    queryFn: () => api<{ modo: 'perguntar' | 'criar_lead' }>('/conversas/conversa-nova'),
+  });
+  const salvar = useMutation({
+    mutationFn: (modo: 'perguntar' | 'criar_lead') =>
+      api<{ modo: 'perguntar' | 'criar_lead' }>('/conversas/conversa-nova', {
+        metodo: 'PUT',
+        corpo: { modo },
+      }),
+    onSuccess: (d) => cliente.setQueryData(['conversa-nova'], d),
+  });
+  const modo = q.data?.modo;
+  if (!modo) return null;
+  return (
+    <fieldset className="conversa-nova" disabled={!admin || salvar.isPending}>
+      <legend>Quando um número que não é lead conversar no WhatsApp</legend>
+      <label className="opcao">
+        <input
+          type="radio"
+          name="conversa-nova"
+          checked={modo === 'perguntar'}
+          onChange={() => salvar.mutate('perguntar')}
+        />
+        <span>Espera aqui: você cria o lead, vincula a um que existe ou descarta</span>
+      </label>
+      <label className="opcao">
+        <input
+          type="radio"
+          name="conversa-nova"
+          checked={modo === 'criar_lead'}
+          onChange={() => salvar.mutate('criar_lead')}
+        />
+        <span>Vira lead no funil sozinho (em "A abordar", sem a IA)</span>
+      </label>
+      <ErroDaApi erro={salvar.error} />
+    </fieldset>
+  );
+}
+
 export function ListaNaoIdentificados(props: { ativo: string | null; aoAbrir: (telefone: string) => void }) {
   const q = useNaoIdentificados();
   if (q.isPending) return <div className="esqueleto" />;
   if (q.error) return <ErroDaApi erro={q.error} />;
   if (!q.data.length)
     return (
-      <p className="quieto inbox__vazia">
-        Nenhuma mensagem de número desconhecido. Quando alguém indicado escrever antes de estar no lead, a
-        mensagem aparece aqui para você vincular.
-      </p>
+      <>
+        <ConversaNova />
+        <p className="quieto inbox__vazia">
+          Nenhuma conversa de número que não é lead. Quando alguém escrever (ou você escrever pelo celular
+          para alguém) e o número não for de nenhum lead, a conversa aparece aqui para você criar o lead ou
+          vincular.
+        </p>
+      </>
     );
   return (
-    <ul className="conversas">
-      {q.data.map((n) => (
-        <li key={n.telefone}>
-          <button
-            type="button"
-            className="conversa-item"
-            aria-current={props.ativo === n.telefone || undefined}
-            onClick={() => props.aoAbrir(n.telefone)}
-          >
-            <span className="conversa-item__topo">
-              <b>{n.nome ? fmtNome(n.nome) : formatarTelefone(n.telefone)}</b>
-              <span className="conversa-item__hora conversa-item__hora--nova">{fmtQuando(n.ultimaEm)}</span>
-            </span>
-            <span className="conversa-item__linha">
-              <span className="conversa-item__previa">
-                {n.ultimaDirecao === 'enviada' ? 'Você: ' : ''}
-                {n.ultima}
+    <>
+      <ConversaNova />
+      <ul className="conversas">
+        {q.data.map((n) => (
+          <li key={n.telefone}>
+            <button
+              type="button"
+              className="conversa-item"
+              aria-current={props.ativo === n.telefone || undefined}
+              onClick={() => props.aoAbrir(n.telefone)}
+            >
+              <span className="conversa-item__topo">
+                <b>{n.nome ? fmtNome(n.nome) : formatarTelefone(n.telefone)}</b>
+                <span className="conversa-item__hora conversa-item__hora--nova">{fmtQuando(n.ultimaEm)}</span>
               </span>
-              <span className="conversa-item__conta">{n.quantidade}</span>
-            </span>
-            <span className="conversa-item__rodape">
-              <span className="mono">{formatarTelefone(n.telefone)}</span>
-              {n.indicadoEm && (
-                <span className="etiqueta etiqueta--marca">
-                  <Icon name="user-plus" size={10} /> indicado em {fmtNome(n.indicadoEm.empresa)}
+              <span className="conversa-item__linha">
+                <span className="conversa-item__previa">
+                  {n.ultimaDirecao === 'enviada' ? 'Você: ' : ''}
+                  {n.ultima}
                 </span>
-              )}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
+                <span className="conversa-item__conta">{n.quantidade}</span>
+              </span>
+              <span className="conversa-item__rodape">
+                <span className="mono">{formatarTelefone(n.telefone)}</span>
+                {n.indicadoEm && (
+                  <span className="etiqueta etiqueta--marca">
+                    <Icon name="user-plus" size={10} /> indicado em {fmtNome(n.indicadoEm.empresa)}
+                  </span>
+                )}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -87,6 +140,7 @@ export function PainelNaoIdentificado(props: {
   const [nome, setNome] = useState('');
   const [cargo, setCargo] = useState('');
   const [indicadoPor, setIndicadoPor] = useState('');
+  const [criando, setCriando] = useState(false);
 
   // Número já indicado numa conversa: o lead e o nome já vêm escolhidos.
   // biome-ignore lint/correctness/useExhaustiveDependencies: só quando muda o número aberto
@@ -179,6 +233,9 @@ export function PainelNaoIdentificado(props: {
           <span className="chat__sub mono">{formatarTelefone(n.telefone)}</span>
         </div>
         <div className="acoes">
+          <Button size="sm" variant="primary" icon="plus" onClick={() => setCriando(true)}>
+            Criar lead
+          </Button>
           <Button
             size="sm"
             variant="ghost"
@@ -206,7 +263,7 @@ export function PainelNaoIdentificado(props: {
       <form className="vincular" onSubmit={enviar}>
         <div className="vincular__titulo">
           <Icon name="link" size={16} />
-          <b>Vincular a um lead</b>
+          <b>Ou vincule a um lead que já existe</b>
           <span className="quieto">
             Vira um contato da negociação e as mensagens vão para a conversa do lead.
           </span>
@@ -304,6 +361,22 @@ export function PainelNaoIdentificado(props: {
           </Button>
         </div>
       </form>
+      {criando && (
+        <NovoLead
+          inicial={{
+            empresa: n.nome ?? '',
+            contato: n.nome ?? '',
+            telefone: formatarTelefone(n.telefone),
+            telefoneConversa: n.telefone,
+          }}
+          aoFechar={() => setCriando(false)}
+          aoCriar={(empresaId) => {
+            setCriando(false);
+            cliente.invalidateQueries({ queryKey: ['nao-identificados'] });
+            props.aoVinculado(empresaId);
+          }}
+        />
+      )}
     </div>
   );
 }

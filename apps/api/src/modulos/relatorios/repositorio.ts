@@ -16,7 +16,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
   const v = [f.dias, f.campanhaId ?? null];
   const C = contaSql();
   const daConta = (col: string) =>
-    `EXISTS (SELECT 1 FROM descoberta.campanha_empresas cc WHERE cc.empresa_id = ${col} AND cc.conta_id = ${C})`;
+    `EXISTS (SELECT 1 FROM descoberta.campanha_empresas cc WHERE cc.empresa_id = ${col} AND cc.conta_id = ${C} AND cc.liberado_em IS NOT NULL)`;
   const noPeriodo = (col: string) => `($1::int = 0 OR ${col} >= now() - make_interval(days => $1::int))`;
   const daCampanha = (col: string) =>
     `($2::bigint IS NULL OR EXISTS (SELECT 1 FROM descoberta.campanha_empresas cx WHERE cx.empresa_id = ${col} AND cx.campanha_id = $2))`;
@@ -31,7 +31,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
       FROM descoberta.empresas e
       LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
      WHERE NOT e.mei AND EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce WHERE ce.empresa_id = e.id
-                     AND ce.conta_id = ${C}
+                     AND ce.conta_id = ${C} AND ce.liberado_em IS NOT NULL
                      AND ($2::bigint IS NULL OR ce.campanha_id = $2) AND ${noPeriodo('ce.adicionada_em')})`;
 
   // Até onde cada oportunidade chegou (pelo histórico de etapas), mesmo que depois tenha perdido.
@@ -107,7 +107,8 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
                                        AND a.para_etapa = 'respondeu')))::int AS responderam,
               count(*) FILTER (WHERE o.etapa = 'ganho')::int AS ganhos
          FROM cadastro.campanhas c
-         JOIN descoberta.campanha_empresas ce ON ce.campanha_id = c.id AND ${noPeriodo('ce.adicionada_em')}
+         JOIN descoberta.campanha_empresas ce ON ce.campanha_id = c.id AND ce.liberado_em IS NOT NULL
+          AND ${noPeriodo('ce.adicionada_em')}
           AND NOT EXISTS (SELECT 1 FROM descoberta.empresas m WHERE m.id = ce.empresa_id AND m.mei)
          LEFT JOIN enriquecimento.leads l ON l.empresa_id = ce.empresa_id
          LEFT JOIN comercial.oportunidades o ON o.conta_id = c.conta_id AND o.empresa_id = ce.empresa_id

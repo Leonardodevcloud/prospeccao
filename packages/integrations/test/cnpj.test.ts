@@ -159,7 +159,7 @@ describe('consulta pública de CNPJ com reserva', () => {
     expect(b.telefones).toEqual(['1637207447', '16992490094']);
   });
 
-  it('BrasilAPI recusa: tenta CNPJ.ws; todas fora: erro curto, sem o JSON do servidor', async () => {
+  it('BrasilAPI recusa: tenta Minha Receita e CNPJ.ws; todas fora: erro curto, sem o JSON do servidor', async () => {
     const { consultarCnpjPublico, ConsultaCnpjIndisponivel } = await import('../src/enriquecimento/cnpj.js');
     const chamadas: string[] = [];
     const resposta = (status: number, corpo: unknown) =>
@@ -170,18 +170,23 @@ describe('consulta pública de CNPJ com reserva', () => {
         chamadas.push(
           `${new URL(url).hostname} ${(init?.headers as Record<string, string> | undefined)?.['user-agent'] ? 'com-ua' : 'sem-ua'}`,
         );
-        if (url.includes('brasilapi')) return resposta(403, { error: { code: '403', message: 'Forbidden' } });
+        if (url.includes('brasilapi') || url.includes('minhareceita'))
+          return resposta(403, { error: { code: '403', message: 'Forbidden' } });
         return resposta(200, CNPJ_WS);
       }) as typeof fetch;
       const d = await consultarCnpjPublico('19.131.243/0001-97');
       expect(d?.razaoSocial).toBe('PATIO BAR LTDA');
-      expect(chamadas).toEqual(['brasilapi.com.br com-ua', 'publica.cnpj.ws com-ua']);
+      expect(chamadas).toEqual([
+        'brasilapi.com.br com-ua',
+        'minhareceita.org com-ua',
+        'publica.cnpj.ws com-ua',
+      ]);
 
       globalThis.fetch = (async () => resposta(429, { erro: 'muitas' })) as unknown as typeof fetch;
       const erro = await consultarCnpjPublico('19131243000197').catch((e) => e);
       expect(erro).toBeInstanceOf(ConsultaCnpjIndisponivel);
       expect(erro.message).toBe(
-        'Consulta pública da Receita indisponível agora (BrasilAPI: limite de consultas por minuto; CNPJ.ws: limite de consultas por minuto; ReceitaWS: limite de consultas por minuto).',
+        'Consulta pública da Receita indisponível agora (BrasilAPI: limite de consultas por minuto; Minha Receita: limite de consultas por minuto; CNPJ.ws: limite de consultas por minuto; ReceitaWS: limite de consultas por minuto).',
       );
 
       globalThis.fetch = (async () => resposta(404, {})) as unknown as typeof fetch;

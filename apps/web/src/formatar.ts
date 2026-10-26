@@ -130,6 +130,7 @@ export const ROTULO_ORIGEM: Record<string, string> = {
   cnpj: 'Só CNPJ',
   maps: 'Só Maps',
   importacao: 'Importado',
+  manual: 'Cadastrado',
 };
 
 export const ROTULO_STATUS_CAMPANHA: Record<string, string> = {

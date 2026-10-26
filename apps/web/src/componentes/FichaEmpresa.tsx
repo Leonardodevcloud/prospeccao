@@ -74,6 +74,21 @@ const NOME_FONTE: Record<FonteEnriq, string> = {
   importacao: 'sua planilha',
 };
 
+/** Fonte que não respondeu → nome curto para o aviso "enriquecido em parte". */
+const NOME_PENDENCIA: Record<string, string> = {
+  receita: 'Receita',
+  cnpj: 'consulta do CNPJ',
+  maps: 'Google Maps',
+  site: 'site',
+  google: 'busca no Google',
+  instagram: 'Instagram',
+  ia: 'IA',
+  linkedin: 'LinkedIn',
+  places: 'Google',
+  whatsapp: 'WhatsApp',
+  base_paga: 'base paga',
+};
+
 const NOME_ETAPA: Record<EtapaEnriq['etapa'], string> = {
   receita: 'Quadro de sócios (Receita)',
   maps: 'Google Maps',
@@ -627,9 +642,19 @@ export function FichaEmpresa({
             <Panel titulo="Como encontramos">
               <EnrichmentTrail camadas={trilha(e, master)} />
               <LinksDaTrilha etapas={e.etapas} />
-              {en?.concluidoEm && (
+              {(en?.concluidoEm || !!en?.pendencias?.length) && (
                 <p className="quieto" style={{ margin: '12px 0 0', fontSize: 12 }}>
-                  Enriquecido {fmtHora(en.concluidoEm)}.
+                  {en.pendencias?.length ? 'Enriquecido em parte' : 'Enriquecido'}
+                  {en.concluidoEm ? ` ${fmtHora(en.concluidoEm)}` : ''}.
+                  {!!en.pendencias?.length && (
+                    <>
+                      {' '}
+                      {en.pendencias.includes('rodada')
+                        ? 'A última tentativa parou no meio; ficou tudo o que já tinha sido achado.'
+                        : `Não responderam desta vez: ${en.pendencias.map((x) => NOME_PENDENCIA[x] ?? x).join(', ')}. O que já tinha sido achado ficou.`}{' '}
+                      Use "Enriquecer de novo" mais tarde para completar.
+                    </>
+                  )}
                 </p>
               )}
             </Panel>

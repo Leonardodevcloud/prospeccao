@@ -5428,3 +5428,32 @@ label.plano-opcao[data-ativo] {
     max-width: none;
   }
 }
+
+/* Coluna do quadro: + para cadastrar lead direto nela */
+.coluna__novo {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  color: var(--ink-muted);
+}
+.coluna__novo:hover,
+.coluna__novo:focus-visible {
+  color: var(--ink);
+}
+/* Não identificados: o que fazer com conversa nova */
+.conversa-nova {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.conversa-nova legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--space-1);
+  padding: 0;
+  font-weight: 500;
+}

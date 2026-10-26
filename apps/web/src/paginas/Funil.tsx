@@ -15,6 +15,7 @@ import {
 import { ConfigurarCadencia, EnvioRapido } from '../componentes/Cadencia';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { type InicialNovoLead, NovoLead } from '../componentes/NovoLead';
 import { EditarPipelines, usePipelines } from '../componentes/Pipelines';
 import { Dono, useEquipe, useSessao } from '../componentes/Sessao';
 import {
@@ -139,7 +140,7 @@ function Card(props: {
             )}
             {c.agente && (
               <span className={`etiqueta ${c.agentePausa ? 'etiqueta--aviso' : 'etiqueta--marca'}`}>
-                <Icon name="bot" size={12} /> {c.agentePausa ? 'IA passou para você' : 'Com a IA'}
+                <Icon name="bot" size={12} /> {c.agentePausa ? 'IA pausada' : 'Com a IA'}
               </span>
             )}
             {c.etiquetas.map((t) => (
@@ -277,6 +278,7 @@ export function Funil() {
   const [mensagemPara, setMensagemPara] = useState<CardFunil | null>(null);
   const [configurando, setConfigurando] = useState(false);
   const [editando, setEditando] = useState(false);
+  const [novoLead, setNovoLead] = useState<InicialNovoLead | null>(null);
 
   const pipelines = usePipelines();
   const pedido = Number(params.get('pipeline')) || null;
@@ -465,24 +467,29 @@ export function Funil() {
             {quadro.data?.descartados ? ` · ${fmtNumero(quadro.data.descartados)} descartados` : ''}
           </p>
         </div>
-        {sessao.data?.papel === 'admin' && (
-          <div className="acoes">
-            <Button
-              icon="file-down"
-              variant="ghost"
-              href={`/api/exportar/funil${qs(filtros)}`}
-              title="Baixa os leads deste pipeline, com os filtros da tela, numa planilha do Excel"
-            >
-              Exportar
-            </Button>
-            <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
-              Cadência e mensagens
-            </Button>
-            <Button icon="layers" variant="secondary" onClick={() => setEditando(true)}>
-              Editar etapas
-            </Button>
-          </div>
-        )}
+        <div className="acoes">
+          <Button icon="plus" variant="primary" onClick={() => setNovoLead({ pipelineId: pipeline?.id })}>
+            Novo lead
+          </Button>
+          {sessao.data?.papel === 'admin' && (
+            <>
+              <Button
+                icon="file-down"
+                variant="ghost"
+                href={`/api/exportar/funil${qs(filtros)}`}
+                title="Baixa os leads deste pipeline, com os filtros da tela, numa planilha do Excel"
+              >
+                Exportar
+              </Button>
+              <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
+                Cadência e mensagens
+              </Button>
+              <Button icon="layers" variant="secondary" onClick={() => setEditando(true)}>
+                Editar etapas
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Pipelines (SDR, Closer…) */}
@@ -796,6 +803,15 @@ export function Funil() {
                       <span className="coluna__conta">{fmtNumero(lista.length)}</span>
                     </span>
                     {soma > 0 && <span className="coluna__soma mono">{fmtReais(soma)}</span>}
+                    <button
+                      type="button"
+                      className="botao-icone coluna__novo"
+                      aria-label={`Novo lead em ${etapa.nome}`}
+                      title={`Novo lead em ${etapa.nome}`}
+                      onClick={() => setNovoLead({ etapaId: etapa.id, pipelineId: pipeline?.id })}
+                    >
+                      <Icon name="plus" size={14} />
+                    </button>
                   </header>
                   <div className="coluna__cards">
                     {visiveis.map((c, i) => (
@@ -868,6 +884,16 @@ export function Funil() {
           id={Number(empresaAberta)}
           aoFechar={() => mudar({ empresa: null })}
           aoAbrir={(id) => mudar({ empresa: String(id) })}
+        />
+      )}
+      {novoLead && (
+        <NovoLead
+          inicial={novoLead}
+          aoFechar={() => setNovoLead(null)}
+          aoCriar={(id) => {
+            setNovoLead(null);
+            mudar({ empresa: String(id) });
+          }}
         />
       )}
     </>

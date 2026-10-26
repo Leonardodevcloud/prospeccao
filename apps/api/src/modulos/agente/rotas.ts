@@ -22,6 +22,7 @@ import * as contatos from '../contatos/repositorio.js';
 import { guardarMidia } from '../conversas/repositorio.js';
 import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
 import { obterConfig as configCadencia } from '../funil/cadencia.js';
+import { criarLeadManual, nomeDaConversa } from '../funil/novoLead.js';
 import * as funil from '../funil/repositorio.js';
 import { notificar, notificarDono } from '../notificacoes/repositorio.js';
 import { pensar, regraFixa } from './atendimento.js';
@@ -351,7 +352,7 @@ export function rotasAgente({ pool, log, servicos, credenciais }: DepsApi): Rout
  * registra no funil (o lead vai para "Respondeu"); quem responde é o motor do agente, alguns
  * segundos depois, para juntar mensagens em sequência.
  */
-export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
+export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
   const r = Router();
   /** Webhook dos números (Z-API): mensagens recebidas e conexão/desconexão. `/evolution` fica por compatibilidade. */
   const webhookWhatsapp = async (req: Request, res: Response) => {
@@ -454,7 +455,39 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
 
   async function registrarRecebida(m: Recebida, whatsapp: WhatsappConta | null) {
     const chipId = await chips.porInstancia(pool, m.instancia);
-    const achado = await repo.leadPorTelefone(pool, m.telefone);
+    let achado = await repo.leadPorTelefone(pool, m.telefone);
+    if (!achado) {
+      // É de um lead da conta que ainda não estava no funil (só na lista de leads): entra no funil.
+      const daConta = await repo.leadDaContaPorTelefone(pool, m.telefone);
+      if (daConta) {
+        await funil.adicionar(pool, { empresaIds: [daConta], etapa: 'a_abordar', forcar: true }, 'WhatsApp');
+        achado = await repo.leadPorTelefone(pool, m.telefone);
+      }
+    }
+    if (!achado && (await repo.obterConfig(pool)).conversaNova === 'criar_lead') {
+      // A conta escolheu: conversa nova no WhatsApp já vira lead no funil (a IA não entra sozinha).
+      try {
+        const { empresaId } = await criarLeadManual(
+          { pool, filas },
+          {
+            empresa: nomeDaConversa(m.deMim ? null : m.nome, m.telefone),
+            contato: !m.deMim && m.nome && /\p{L}/u.test(m.nome) ? m.nome : null,
+            telefone: m.telefone,
+            whatsapp: true,
+            agente: false,
+            enriquecer: false,
+          },
+          'WhatsApp',
+        );
+        log.info({ empresaId }, 'agente: conversa nova no WhatsApp virou lead');
+        achado = await repo.leadPorTelefone(pool, m.telefone);
+      } catch (erro) {
+        log.warn(
+          { err: erro },
+          'agente: não consegui criar o lead da conversa nova; fica em Não identificados',
+        );
+      }
+    }
     if (!achado) {
       // Número que não é de nenhum lead (a pessoa indicada que escreveu primeiro, por exemplo):
       // fica guardado em "Não identificados" até alguém vincular a um lead.
@@ -475,14 +508,9 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
     // Por qual chip chegou: o lead passa a conversar sempre por ele.
     if (chipId) await chips.fixarChip(pool, empresaId, chipId);
     if (m.deMim) {
-      // Mensagem que você mandou pelo celular: entra no histórico (as do sistema já estão lá).
-      if (m.idExterno) {
-        const { rows } = await pool.query(
-          `SELECT 1 FROM comercial.mensagens WHERE conta_id = ${contaSql()} AND id_externo = $1`,
-          [m.idExterno],
-        );
-        if (rows.length) return;
-      }
+      // Saiu deste número: se foi o sistema (IA, cadência, sequência, tela), já está no histórico.
+      if (await repo.foiDoSistema(pool, empresaId, m.texto, m.idExterno)) return;
+      // Foi alguém da equipe pelo celular: entra no histórico e a IA para de responder este lead.
       const id = await repo.criarMensagem(pool, {
         empresaId,
         direcao: 'enviada',
@@ -496,13 +524,18 @@ export function rotasWebhook({ pool, log, servicos }: DepsApi): Router {
       if (id) await anexar(pool, id, m, whatsapp);
       // Você escreveu para este número pelo celular: a conversa segue com ele.
       if (id) await contatos.definirDestino(pool, empresaId, m.telefone);
-      if (id)
+      if (id) {
         await funil.registrarAtividade(
           pool,
           empresaId,
           { tipo: 'whatsapp', direcao: 'enviada', texto: m.texto, contato: m.telefone },
           'você (celular)',
         );
+        // A pessoa assumiu: a IA para (devolve na conversa) e a sequência automática também.
+        if (await repo.humanoAssumiu(pool, empresaId, 'Você respondeu pelo celular.'))
+          log.info({ empresaId }, 'agente: a equipe respondeu pelo celular; IA pausada neste lead');
+        await pararSequencia(pool, empresaId, 'Você conversou pelo celular');
+      }
       return;
     }
     const id = await repo.criarMensagem(pool, {

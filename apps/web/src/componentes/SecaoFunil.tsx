@@ -430,7 +430,7 @@ export function SecaoFunil(props: {
         {aviso}
         {op.agente && op.agentePausa && (
           <Mensagem tipo="aviso">
-            A IA passou este lead para você: {op.agentePausa}{' '}
+            A IA está pausada neste lead: {op.agentePausa}{' '}
             <button
               type="button"
               className="link-botao"

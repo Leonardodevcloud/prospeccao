@@ -308,21 +308,21 @@ function emailsDoTexto(v: string): string[] {
     .filter((e) => !/\.(png|jpe?g|gif|webp)$/.test(e));
 }
 
-function cnpjDoTexto(v: string): string | null {
+export function cnpjDoTexto(v: string): string | null {
   let d = soDigitos(v);
   // Excel guarda CNPJ como número e perde o zero da frente.
   if (d.length >= 12 && d.length < 14) d = d.padStart(14, '0');
   return d.length === 14 && cnpjValido(d) ? d : null;
 }
 
-function instagramDoTexto(v: string): string | null {
+export function instagramDoTexto(v: string): string | null {
   const t = v.trim();
   const m = t.match(/instagram\.com\/([\w.]{2,30})/i) ?? t.match(/^@?([\w.]{2,30})$/);
   const u = m?.[1]?.replace(/\.$/, '').toLowerCase();
   return u && !['p', 'reel', 'explore', 'accounts'].includes(u) ? u : null;
 }
 
-function siteDoTexto(v: string): string | null {
+export function siteDoTexto(v: string): string | null {
   const t = v.trim().split(/\s+/)[0] ?? '';
   if (!/^(https?:\/\/)?(www\.)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(t)) return null;
   if (/instagram\.com|facebook\.com|wa\.me|whatsapp/i.test(t)) return null;

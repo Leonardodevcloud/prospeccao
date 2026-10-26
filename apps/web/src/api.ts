@@ -68,7 +68,12 @@ export interface Nicho {
 }
 
 export interface ProgressoCampanha {
+  /** Leads de verdade: liberados (dentro da meta, importados, cadastrados ou no funil). */
   empresas: number;
+  /** Candidatas que a busca ligou (inclui o estoque fora da meta). */
+  candidatos?: number;
+  /** Enriquecidos em parte (alguma fonte não respondeu). */
+  incompletos?: number;
   comCnpj: number;
   noMaps: number;
   soMaps: number;
@@ -134,7 +139,7 @@ export interface Campanha {
   tetoPlacesUsd?: number | null;
   status: 'rascunho' | 'ativa' | 'pausada' | 'encerrada';
   /** Campanha de busca (Google + Receita) ou lista importada pelo cliente. */
-  tipo?: 'busca' | 'importacao';
+  tipo?: 'busca' | 'importacao' | 'manual';
   iniciadaEm: string | null;
   criadoEm: string;
   progresso: ProgressoCampanha;
@@ -162,9 +167,11 @@ export interface EmpresaLista {
   noMaps: boolean;
   /** Microempreendedor individual (pelo Simples ou pela razão social com CPF). */
   mei: boolean;
-  origem: 'cnpj' | 'maps' | 'ambos' | 'importacao';
+  origem: 'cnpj' | 'maps' | 'ambos' | 'importacao' | 'manual';
   /** Já foi pedido o enriquecimento (na lista importada, só quando o cliente pede). */
   enriqPedido?: boolean;
+  /** Enriquecido em parte: alguma fonte não respondeu. */
+  enriqParcial?: boolean;
   dentroDoRaio: boolean | null;
   campanhaId: number;
   /** Enriquecimento: null enquanto não rodou. */
@@ -552,6 +559,8 @@ export interface Enriquecimento {
   linkedinEmpresa: string | null;
   mapsAberto: boolean | null;
   erro: string | null;
+  /** Fontes que não responderam na última rodada (o que já havia ficou). */
+  pendencias?: string[];
   solicitadoEm: string;
   iniciadoEm: string | null;
   concluidoEm: string | null;

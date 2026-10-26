@@ -357,6 +357,13 @@ function Andamento(props: {
             {restoEnriq ? ` · falta ${restoEnriq}` : ''}
           </p>
         )}
+        {(c.progresso.incompletos ?? 0) > 0 && (
+          <p className="aviso-texto">
+            {fmtNumero(c.progresso.incompletos ?? 0)} enriquecidos em parte: alguma fonte (Instagram,
+            Receita…) não respondeu. O que foi achado ficou; use "Refazer enriquecimento" → "Só os
+            incompletos" mais tarde.
+          </p>
+        )}
         {servico === 'pausado' ? (
           <p className="aviso-texto">
             {master
@@ -403,7 +410,10 @@ function EnriquecimentoDaLista(props: { c: Campanha; aoParar: () => void; ocupad
   if (!total)
     return (
       <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-        Leads trazidos do seu arquivo. Para buscar site, Instagram, CNPJ e sócios deles, use "Enriquecer".
+        {props.c.tipo === 'manual'
+          ? 'Leads que a equipe cadastrou ou que chegaram pelo WhatsApp.'
+          : 'Leads trazidos do seu arquivo.'}{' '}
+        Para buscar site, Instagram, CNPJ e sócios deles, use "Enriquecer".
       </p>
     );
   return (
@@ -424,7 +434,13 @@ function EnriquecimentoDaLista(props: { c: Campanha; aoParar: () => void; ocupad
             </Button>
           </div>
         ) : (
-          <p className="quieto">Todos os leads enriquecidos · {fmtNumero(p.comCnpj)} com CNPJ.</p>
+          <p className="quieto">
+            Todos os leads enriquecidos · {fmtNumero(p.comCnpj)} com CNPJ
+            {(p.incompletos ?? 0) > 0
+              ? ` · ${fmtNumero(p.incompletos ?? 0)} em parte (use "Refazer" → "Só os incompletos")`
+              : ''}
+            .
+          </p>
         )}
       </div>
     </div>
@@ -546,7 +562,8 @@ function CardCampanha({ c }: { c: Campanha }) {
   const [confirmarRefazer, setConfirmarRefazer] = useState(false);
   const [importando, setImportando] = useState(false);
   const [importandoLeads, setImportandoLeads] = useState(false);
-  const importada = c.tipo === 'importacao';
+  const importada = !!c.tipo && c.tipo !== 'busca';
+  const cidadesDaLista = c.cidades.filter((x) => x.cidade);
   const [apagando, setApagando] = useState(false);
   const [nomeDigitado, setNomeDigitado] = useState('');
   const parar = useMutation({
@@ -571,10 +588,13 @@ function CardCampanha({ c }: { c: Campanha }) {
       cliente.invalidateQueries({ queryKey: ['quadro'] });
     },
   });
-  const [escopo, setEscopo] = useState<'ab' | 'sem_decisor' | 'todos'>('ab');
+  const [escopo, setEscopo] = useState<'ab' | 'sem_decisor' | 'incompletos' | 'todos'>('ab');
   const previa = useQuery({
     queryKey: ['reenriquecer', c.id],
-    queryFn: () => api<{ ab: number; semDecisor: number; todos: number }>(`/campanhas/${c.id}/reenriquecer`),
+    queryFn: () =>
+      api<{ ab: number; semDecisor: number; incompletos?: number; todos: number }>(
+        `/campanhas/${c.id}/reenriquecer`,
+      ),
     enabled: confirmarRefazer,
   });
   const refazer = useMutation({
@@ -601,6 +621,12 @@ function CardCampanha({ c }: { c: Campanha }) {
       dica: 'Útil depois que a base de CNPJ trouxe os sócios.',
       n: previa.data?.semDecisor,
     },
+    {
+      id: 'incompletos' as const,
+      rotulo: 'Só os incompletos',
+      dica: 'Os que ficaram em parte (fonte fora do ar ou sem crédito). O que já foi achado fica.',
+      n: previa.data?.incompletos,
+    },
     { id: 'todos' as const, rotulo: 'Todos', dica: 'O mais caro.', n: previa.data?.todos },
   ];
   const escolhida = OPCOES_REFAZER.find((o) => o.id === escopo);
@@ -613,12 +639,14 @@ function CardCampanha({ c }: { c: Campanha }) {
           <h3>{c.nome}</h3>
           <p className="quieto" style={{ margin: '2px 0 0', fontSize: 13, lineHeight: '18px' }}>
             {importada
-              ? `${c.nichoNome} · lista importada${
-                  c.cidades.length
-                    ? ` · ${c.cidades
+              ? `${c.nichoNome} · ${c.tipo === 'manual' ? 'cadastrados pela equipe e conversas do WhatsApp' : 'lista importada'}${
+                  cidadesDaLista.length
+                    ? ` · ${cidadesDaLista
                         .slice(0, 3)
                         .map((x) => `${x.cidade}/${x.uf}`)
-                        .join(', ')}${c.cidades.length > 3 ? ` e mais ${c.cidades.length - 3}` : ''}`
+                        .join(
+                          ', ',
+                        )}${cidadesDaLista.length > 3 ? ` e mais ${cidadesDaLista.length - 3}` : ''}`
                     : ''
                 }`
               : `${c.nichoNome} · ${c.cidades.map((x) => `${x.cidade}/${x.uf}`).join(', ')}`}
@@ -632,7 +660,7 @@ function CardCampanha({ c }: { c: Campanha }) {
       <div className="numeros">
         <div>
           <b>{fmtNumero(p.empresas)}</b>
-          <span>empresas</span>
+          <span>leads</span>
         </div>
         <div>
           <b>{fmtNumero(p.novos)}</b>

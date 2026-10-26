@@ -479,16 +479,28 @@ export function Leads() {
                       </td>
                       <td title={e.motivo ?? undefined}>
                         {e.faixa ? (
-                          <ScoreBadge faixa={e.faixa} score={e.score ?? undefined} />
+                          <span className="celula-dupla">
+                            <ScoreBadge faixa={e.faixa} score={e.score ?? undefined} />
+                            {e.enriqParcial && (
+                              <span
+                                className="quieto"
+                                style={{ fontSize: 12 }}
+                                title="Alguma fonte não respondeu; o que foi achado ficou"
+                              >
+                                em parte
+                              </span>
+                            )}
+                          </span>
                         ) : e.enriqStatus === 'rodando' ? (
                           <Badge tone="warning">Enriquecendo</Badge>
                         ) : e.enriqStatus === 'erro' ? (
                           <Badge tone="danger">Erro</Badge>
-                        ) : e.enriqPedido === false && e.origem === 'importacao' ? (
+                        ) : e.enriqPedido === false &&
+                          (e.origem === 'importacao' || e.origem === 'manual') ? (
                           <span
                             className="quieto"
                             style={{ fontSize: 13 }}
-                            title="Importado sem enriquecimento"
+                            title="Sem enriquecimento: use Enriquecer na campanha"
                           >
                             Sem nota
                           </span>

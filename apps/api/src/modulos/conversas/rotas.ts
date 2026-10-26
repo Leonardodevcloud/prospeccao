@@ -2,6 +2,7 @@ import {
   AppError,
   contatoLeadAtualizar,
   contatoLeadEntrada,
+  conversaNovaEntrada,
   destinoEntrada,
   filtrosConversas,
   mensagemEntrada,
@@ -13,11 +14,12 @@ import { type Request, Router } from 'express';
 import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
+import { exigirAdmin } from '../../middlewares/seguranca.js';
+import * as agenteRepo from '../agente/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
 import * as motorEmail from '../email/motor.js';
-import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
 import { dadosDoLead } from '../funil/cadencia.js';
-import * as funil from '../funil/repositorio.js';
+import { trazerConversa } from '../funil/novoLead.js';
 import * as repo from './repositorio.js';
 
 /** Telefone na rota: só dígitos (10 a 13). */
@@ -89,29 +91,18 @@ export function rotasConversas(deps: DepsApi): Router {
   /** Vincula o número a um lead: vira contato da negociação e as mensagens vão para a conversa dele. */
   r.post('/nao-identificados/:telefone/vincular', async (req, res) => {
     const d = corpo(req, vincularEntrada);
-    const v = await contatos.vincular(pool, telefoneDaRota(req), d);
-    if (v.recebidas) {
-      // Mensagem dele é resposta: a etapa anda e a sequência automática para.
-      await pararSequencia(pool, d.empresaId, RESPONDEU_WHATSAPP);
-      // Resposta pelo WhatsApp sem texto (as mensagens já estão na conversa): a etapa anda.
-      await funil.registrarAtividade(
-        pool,
-        d.empresaId,
-        { tipo: 'whatsapp', direcao: 'recebida', texto: null, contato: telefoneDaRota(req) },
-        d.nome,
-      );
-      await funil.registrarAtividade(
-        pool,
-        d.empresaId,
-        {
-          tipo: 'nota',
-          direcao: null,
-          texto: `${d.nome}${d.cargo ? ` (${d.cargo})` : ''} entrou na negociação: ${v.recebidas} mensagem(ns) do número ${telefoneDaRota(req)} vieram para esta conversa.`,
-        },
-        req.usuario!.nome,
-      );
-    }
+    await trazerConversa(pool, telefoneDaRota(req), { ...d, autor: req.usuario!.nome });
     res.status(201).json(await repo.abrir(pool, d.empresaId));
+  });
+
+  /** Conversa nova no WhatsApp (número que não é lead): espera alguém decidir ou já vira lead. */
+  r.get('/conversa-nova', async (_req, res) => {
+    res.json({ modo: (await agenteRepo.obterConfig(pool)).conversaNova ?? 'perguntar' });
+  });
+  r.put('/conversa-nova', exigirAdmin, async (req, res) => {
+    const { modo } = corpo(req, conversaNovaEntrada);
+    await agenteRepo.salvarConversaNova(pool, modo);
+    res.json({ modo });
   });
 
   r.post('/nao-identificados/:telefone/descartar', async (req, res) => {

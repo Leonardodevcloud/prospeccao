@@ -574,6 +574,44 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(rows[0].n).toBe(1); // refazer não duplica
   });
 
+  it('rodada com fonte fora do ar não apaga o que já tinha e o lead fica "em parte"', async () => {
+    await enriquecerEmpresa(deps(fontesCompletas()), { empresaId: 1, campanhaId: 1, forcar: true });
+    const { rows: antes } = await pool.query(
+      `SELECT score, instagram FROM enriquecimento.leads WHERE empresa_id = 1`,
+    );
+    const { rows: contatosAntes } = await pool.query(
+      `SELECT canal, valor FROM enriquecimento.contatos WHERE empresa_id = 1 ORDER BY canal, valor`,
+    );
+    expect(contatosAntes.length).toBeGreaterThan(0);
+    const semCredito = {
+      ...fontesCompletas(),
+      instagram: {
+        ler: async () => {
+          throw new Error('Apify: HTTP 403 Monthly usage hard limit exceeded');
+        },
+      },
+    };
+    expect(await enriquecerEmpresa(deps(semCredito), { empresaId: 1, campanhaId: 1, forcar: true })).toBe(
+      'feito',
+    );
+    const { rows: depois } = await pool.query(
+      `SELECT status, score, instagram, pendencias FROM enriquecimento.leads WHERE empresa_id = 1`,
+    );
+    expect(depois[0]).toMatchObject({ status: 'concluido', instagram: antes[0].instagram });
+    expect(depois[0].pendencias).toEqual(['instagram']);
+    expect(depois[0].score).toBeGreaterThanOrEqual(antes[0].score);
+    const { rows: contatosDepois } = await pool.query(
+      `SELECT canal, valor FROM enriquecimento.contatos WHERE empresa_id = 1 ORDER BY canal, valor`,
+    );
+    expect(contatosDepois).toEqual(expect.arrayContaining(contatosAntes));
+    // Voltou: a rodada completa limpa a pendência.
+    await enriquecerEmpresa(deps(fontesCompletas()), { empresaId: 1, campanhaId: 1, forcar: true });
+    expect(
+      (await pool.query(`SELECT pendencias FROM enriquecimento.leads WHERE empresa_id = 1`)).rows[0]
+        .pendencias,
+    ).toEqual([]);
+  });
+
   it('sem nenhuma chave: só Receita, Maps e site, com nota por regras', async () => {
     const f = fontesCompletas();
     await enriquecerEmpresa(
@@ -589,13 +627,13 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     const { rows: etapas } = await pool.query(
       `SELECT etapa, status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 1 ORDER BY ordem`,
     );
-    expect(etapas.filter((e) => e.status === 'pulada').map((e) => e.etapa)).toEqual([
-      'instagram',
-      'ia',
-      'linkedin',
-      'places',
-      'whatsapp',
-    ]);
+    // Sem as chaves desta vez: o que a rodada anterior achou fica (com o aviso), o resto é pulado.
+    for (const nome of ['instagram', 'ia', 'linkedin', 'places', 'whatsapp']) {
+      const e = etapas.find((x) => x.etapa === nome);
+      expect(
+        e?.status === 'pulada' || /achado na busca anterior; desta vez foi pulada/.test(e?.detalhe ?? ''),
+      ).toBe(true);
+    }
     const { rows: principal } = await pool.query(
       `SELECT canal, valor FROM enriquecimento.contatos WHERE empresa_id = 1 AND principal`,
     );
@@ -973,7 +1011,9 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     const { rows: pulada } = await pool.query(
       `SELECT status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 3 AND etapa = 'base_paga'`,
     );
-    expect(pulada[0]).toMatchObject({ status: 'pulada' });
+    // Pulada desta vez (não gastou): o que a consulta paga achou antes continua valendo.
+    expect(pulada[0]).toMatchObject({ status: 'encontrado' });
+    expect(pulada[0].detalhe).toMatch(/achado na busca anterior; desta vez foi pulada/);
   });
 
   it('telefone repetido em muitos CNPJs vira "contador" e seu retorno vale na rodada seguinte', async () => {

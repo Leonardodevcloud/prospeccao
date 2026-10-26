@@ -246,6 +246,8 @@ const FONTES_PUBLICAS: {
     url: (c) => `https://brasilapi.com.br/api/cnpj/v1/${c}`,
     converter: converterBrasilApi,
   },
+  // Mesma resposta da BrasilAPI, servida por outro lugar (quando a BrasilAPI recusa o servidor).
+  { nome: 'Minha Receita', url: (c) => `https://minhareceita.org/${c}`, converter: converterBrasilApi },
   { nome: 'CNPJ.ws', url: (c) => `https://publica.cnpj.ws/cnpj/${c}`, converter: converterCnpjWs },
   { nome: 'ReceitaWS', url: (c) => `https://receitaws.com.br/v1/cnpj/${c}`, converter: converterReceitaWs },
 ];

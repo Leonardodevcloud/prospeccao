@@ -7,6 +7,7 @@ import {
   filtrosFunil,
   funilAdicionar,
   funilAtualizar,
+  leadManualEntrada,
   pipelineEntrada,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
@@ -15,13 +16,15 @@ import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import * as cadencia from './cadencia.js';
+import { criarLeadManual } from './novoLead.js';
 import * as pipelines from './pipelines.js';
 import { radar } from './radar.js';
 import * as repo from './repositorio.js';
 
 const autor = (req: Request) => req.usuario?.nome ?? 'sistema';
 
-export function rotasFunil({ pool, log }: DepsApi): Router {
+export function rotasFunil(deps: DepsApi): Router {
+  const { pool, log } = deps;
   const r = Router();
 
   /** Quadro: cards de todas as etapas (menos descartados) e quantos follow-ups vencem hoje. */
@@ -41,6 +44,12 @@ export function rotasFunil({ pool, log }: DepsApi): Router {
   /** Manda leads para o funil ou descarta, em lote, sem duplicar. */
   r.post('/', async (req, res) => {
     res.json(await repo.adicionar(pool, corpo(req, funilAdicionar), autor(req)));
+  });
+
+  /** Lead cadastrado à mão (no quadro ou a partir de uma conversa de um número que não é lead). */
+  r.post('/leads', async (req, res) => {
+    const r2 = await criarLeadManual(deps, corpo(req, leadManualEntrada), autor(req));
+    res.status(r2.jaExistia ? 200 : 201).json(r2);
   });
 
   /** Para o menu: os seus follow-ups (o administrador vê os de todos). */

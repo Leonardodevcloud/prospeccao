@@ -176,7 +176,7 @@ export function rotasEmail(deps: DepsApi): Router {
                 ORDER BY c.principal DESC, c.confianca DESC LIMIT 1) AS email
          FROM descoberta.empresas e
         WHERE EXISTS (SELECT 1 FROM descoberta.campanha_empresas ce
-                       WHERE ce.empresa_id = e.id AND ce.conta_id = ${contaSql()}
+                       WHERE ce.empresa_id = e.id AND ce.conta_id = ${contaSql()} AND ce.liberado_em IS NOT NULL
                          AND ($1::bigint IS NULL OR ce.campanha_id = $1))
           AND ($2::text IS NULL OR e.nome ILIKE $2 OR e.razao_social ILIKE $2)
         ORDER BY (EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.empresa_id = e.id AND c.canal = 'email'
