@@ -20,6 +20,7 @@ import {
 } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { PedidosSite, useNovosDoSite } from '../componentes/PedidosSite';
 import {
   FormPlano,
   ResumoPlano,
@@ -1267,6 +1268,13 @@ export function Master() {
     queryFn: () => api<ContaResumo[]>('/master/contas'),
     enabled: !!sessao.data?.master,
   });
+  const novosDoSite = useNovosDoSite(!!sessao.data?.master);
+  const pedidosAbertos = params.get('pedidos') === '1';
+  const abrirPedidos = (sim: boolean) => {
+    const p = new URLSearchParams(params);
+    sim ? p.set('pedidos', '1') : p.delete('pedidos');
+    setParams(p, { replace: true });
+  };
   const aberta = Number(params.get('conta')) || null;
   const abrir = (id: number | null) => {
     const p = new URLSearchParams(params);
@@ -1297,6 +1305,14 @@ export function Master() {
           </p>
         </div>
         <div className="acoes">
+          <Button variant="ghost" icon="inbox" onClick={() => abrirPedidos(true)}>
+            Pedidos do site
+            {!!novosDoSite.data?.novos && (
+              <Badge tone="brand">
+                {fmtNumero(novosDoSite.data.novos)} {novosDoSite.data.novos === 1 ? 'novo' : 'novos'}
+              </Badge>
+            )}
+          </Button>
           <Button variant="ghost" icon="file-text" onClick={() => setPrecos(true)}>
             Tabela de preços
           </Button>
@@ -1424,6 +1440,15 @@ export function Master() {
         />
       )}
       {aberta && <Conta key={aberta} id={aberta} aoFechar={() => abrir(null)} />}
+      {pedidosAbertos && (
+        <Drawer titulo="Pedidos do site" barra="Clientes e planos" aoFechar={() => abrirPedidos(false)} largo>
+          <div className="drawer__corpo">
+            <PedidosSite
+              naContaPrincipal={!!contas.find((c) => c.principal && c.id === sessao.data?.conta.id)}
+            />
+          </div>
+        </Drawer>
+      )}
       {precos && (
         <Drawer titulo="Tabela de preços" barra="Clientes e planos" aoFechar={() => setPrecos(false)} largo>
           <div className="drawer__corpo">

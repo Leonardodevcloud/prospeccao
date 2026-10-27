@@ -3442,7 +3442,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(p).toMatchObject({
       plano: 'start',
       usuarios: 2,
-      leadsMes: 5000,
+      leadsMes: 2000,
       modulos: ['email'],
       mensalidade: 497,
       uso: { usuarios: 1, leadsMes: 0 },
@@ -3492,7 +3492,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(p).toMatchObject({
       usuarios: 3,
       leadsMes: 8000,
-      mensalidadeCalculada: 297 + 59 + 3 * 20 + 250 + 150,
+      mensalidadeCalculada: 297 + 59 + 6 * 20 + 250 + 150,
       mensalidade: 650,
     });
     expect(
@@ -3593,5 +3593,66 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(farmacia.cnaes).toContain('4771701');
     for (const n of nichos.filter((x) => ['Farmácias e drogarias', 'Óticas'].includes(x.nome)))
       await enviar('delete', `/nichos/${n.id}`);
+  });
+  it('site: pedido de demonstração vira lead no funil do master e aparece no painel', async () => {
+    // Contato que o site mostra (painel master).
+    expect(
+      (await enviar('put', '/master/site/config', { whatsapp: '(71) 99955-7040', email: '' })).body,
+    ).toEqual({
+      whatsapp: '5571999557040',
+      email: null,
+    });
+    expect((await request(app).get('/site/contato')).body).toEqual({
+      whatsapp: '5571999557040',
+      email: null,
+    });
+
+    // Público: sem login e de outro domínio.
+    const ruim = await request(app)
+      .post('/site/demonstracao')
+      .set('Origin', 'https://site-qualquer.example')
+      .send({ nome: 'Ana', empresa: 'Loja', whatsapp: '123' });
+    expect(ruim.status).toBe(422);
+    const r = await request(app)
+      .post('/site/demonstracao')
+      .set('Origin', 'https://site-qualquer.example')
+      .send({
+        nome: 'Ana Souza',
+        empresa: 'Autopeças Demonstração',
+        whatsapp: '(71) 98888-1212',
+        nicho: 'oficinas em Salvador',
+        plano: 'Time',
+        canal: 'whatsapp',
+        site: '',
+      });
+    expect(r.status).toBe(200);
+    // Robô (campo-isca preenchido): responde ok e não grava.
+    await request(app)
+      .post('/site/demonstracao')
+      .send({ nome: 'Robo', empresa: 'Spam', whatsapp: '71988881313', site: 'http://spam' });
+
+    const painel = (await ler('/master/site')).body as {
+      pedidos: {
+        id: number;
+        empresa: string;
+        empresaId: number | null;
+        erroLead: string | null;
+        plano: string;
+      }[];
+    };
+    expect(painel.pedidos.map((p) => p.empresa)).toEqual(['Autopeças Demonstração']);
+    const pedido = painel.pedidos[0]!;
+    expect(pedido).toMatchObject({ plano: 'Time', erroLead: null });
+    expect(pedido.empresaId).toBeTruthy();
+    expect((await ler('/master/site/novos')).body).toEqual({ novos: 1 });
+    // O lead está no funil da conta principal, com a observação.
+    const ficha = await ler(`/empresas/${pedido.empresaId}`);
+    expect(ficha.status).toBe(200);
+    expect(ficha.body.nome).toBe('Autopeças Demonstração');
+
+    expect((await enviar('patch', `/master/site/pedidos/${pedido.id}`, { status: 'atendido' })).status).toBe(
+      200,
+    );
+    expect((await ler('/master/site/novos')).body).toEqual({ novos: 0 });
   });
 });

@@ -5457,3 +5457,49 @@ label.plano-opcao[data-ativo] {
   padding: 0;
   font-weight: 500;
 }
+
+/* Painel master: pedidos de demonstração do site */
+.pedidos-site__topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.pedidos-site {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.pedidos-site__item {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.pedidos-site__cabeca {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.pedidos-site__dados {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: 13px;
+}
+.pedidos-site__nicho {
+  margin: 0;
+  font-size: 13px;
+}
+.pedidos-site__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}

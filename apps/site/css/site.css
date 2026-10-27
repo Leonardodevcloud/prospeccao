@@ -2976,3 +2976,35 @@ p {
   margin-top: 2px;
   color: var(--brand);
 }
+
+/* contato: campo-isca (robôs preenchem, gente não vê) e confirmação do envio */
+.campo--isca {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.formulario {
+  position: relative;
+}
+.formulario__ok {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 500;
+}
+.formulario__ok[data-tom="erro"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.btn[aria-busy="true"] {
+  opacity: 0.7;
+  pointer-events: none;
+}
+.formulario__acoes .btn[hidden] {
+  display: none;
+}

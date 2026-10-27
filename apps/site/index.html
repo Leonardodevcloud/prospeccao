@@ -412,6 +412,14 @@
           <input id="ct-empresa" name="empresa" autocomplete="organization" required>
         </div>
         <div class="campo">
+          <label for="ct-whats">Seu WhatsApp</label>
+          <input id="ct-whats" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="(71) 99999-1234" required>
+        </div>
+        <div class="campo campo--isca" aria-hidden="true">
+          <label for="ct-site">Deixe em branco</label>
+          <input id="ct-site" name="site" tabindex="-1" autocomplete="off">
+        </div>
+        <div class="campo">
           <label for="ct-nicho">Para quem você vende</label>
           <input id="ct-nicho" name="nicho" placeholder="Ex.: autopeças em Salvador e região">
         </div>
@@ -424,12 +432,13 @@
             <option>Escala</option>
           </select>
         </div>
-        <p class="campo__erro" data-erro hidden>Preencha o seu nome e o da empresa para a gente saber com quem fala.</p>
+        <p class="campo__erro" data-erro role="alert" hidden>Preencha o seu nome, o da empresa e o seu WhatsApp para a gente saber com quem fala.</p>
         <div class="formulario__acoes">
-          <button class="btn btn--pri" type="submit" data-canal="whatsapp"><svg class="ic" aria-hidden="true"><use href="#i-message-circle"></use></svg>Chamar no WhatsApp</button>
-          <button class="btn btn--sec" type="submit" data-canal="email"><svg class="ic" aria-hidden="true"><use href="#i-mail"></use></svg>Mandar por e-mail</button>
+          <button class="btn btn--pri" type="submit" data-canal="formulario"><svg class="ic" aria-hidden="true"><use href="#i-message-circle"></use></svg><span data-rotulo>Agendar demonstração</span></button>
+          <button class="btn btn--sec" type="submit" data-canal="email" hidden><svg class="ic" aria-hidden="true"><use href="#i-mail"></use></svg>Mandar por e-mail</button>
         </div>
-        <p class="formulario__nota">Abrimos o WhatsApp ou o seu e-mail com a mensagem pronta. Nada é enviado sem você.</p>
+        <p class="formulario__ok" data-ok role="status" hidden></p>
+        <p class="formulario__nota" data-nota>A gente responde pelo WhatsApp que você informar, em horário comercial.</p>
       </form>
     </div>
   </div>

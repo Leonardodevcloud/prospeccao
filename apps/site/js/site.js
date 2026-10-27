@@ -1,14 +1,10 @@
 /* Prospect Team — interações da página institucional (sem dependências). */
 
 /**
- * Contato: preencha antes de publicar.
- * whatsapp: só números, com DDI e DDD (ex.: '5571999990000'). Vazio: o botão some.
- * email: endereço que recebe os pedidos de demonstração. Vazio: o botão some.
+ * Contato: o WhatsApp e o e-mail do comercial vêm do painel master do sistema (Pedidos do site), pela
+ * mesma origem (/api, que o Vercel repassa para a API). Cada pedido também vira lead no funil.
  */
-const CONTATO = {
-  whatsapp: '',
-  email: '',
-};
+const API = '/api/site';
 
 const reduzMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
@@ -551,25 +547,30 @@ function iniciarTour() {
   }
 }
 
-/* ---------- contato: abre WhatsApp ou e-mail com a mensagem pronta ---------- */
+/* ---------- contato: grava o pedido (vira lead no funil) e abre o WhatsApp com a mensagem pronta ---------- */
+function soDigitos(v) {
+  return String(v || '').replace(/\D/g, '');
+}
+
+/** Mesmo critério do sistema: DDD + 8 ou 9 dígitos (com ou sem 55 na frente). */
+function telefoneValido(v) {
+  let d = soDigitos(v);
+  if (d.length >= 12 && d.startsWith('55')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return (d.length === 10 || d.length === 11) && d[0] !== '0' && d[1] !== '0';
+}
+
 function iniciarContato() {
   const form = $('[data-contato]');
   if (!form) return;
   const erro = $('[data-erro]', form);
-  const botoes = {
-    whatsapp: $('[data-canal="whatsapp"]', form),
-    email: $('[data-canal="email"]', form),
-  };
-  if (!CONTATO.whatsapp) botoes.whatsapp?.remove();
-  if (!CONTATO.email) botoes.email?.remove();
-  if (!CONTATO.whatsapp && !CONTATO.email) {
-    const aviso = document.createElement('p');
-    aviso.className = 'formulario__nota';
-    aviso.textContent = 'Contato em breve.';
-    $('.formulario__acoes', form)?.append(aviso);
-  }
+  const ok = $('[data-ok]', form);
+  const nota = $('[data-nota]', form);
+  const principal = $('.formulario__acoes .btn--pri', form);
+  const botaoEmail = $('[data-canal="email"]', form);
+  const contato = { whatsapp: '', email: '' };
 
-  // o botão do plano já escolhe o plano no formulário
+  // O botão do plano já escolhe o plano no formulário.
   for (const a of $$('[data-plano]')) {
     a.addEventListener('click', () => {
       const sel = $('#ct-plano');
@@ -577,40 +578,124 @@ function iniciarContato() {
     });
   }
 
-  form.addEventListener('submit', (e) => {
+  // Contato do comercial: sem ele, o pedido chega só no sistema (e a gente chama a pessoa).
+  fetch(`${API}/contato`, { headers: { Accept: 'application/json' } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((c) => {
+      if (!c) return;
+      contato.whatsapp = soDigitos(c.whatsapp);
+      contato.email = String(c.email || '');
+      if (contato.whatsapp) {
+        principal.dataset.canal = 'whatsapp';
+        $('[data-rotulo]', principal).textContent = 'Chamar no WhatsApp';
+        nota.textContent = 'Abrimos o WhatsApp com a mensagem pronta. Nada é enviado sem você.';
+      }
+      if (contato.email) {
+        botaoEmail.hidden = false;
+        if (!contato.whatsapp) nota.textContent = 'Ou abra o seu e-mail com a mensagem pronta.';
+      }
+    })
+    .catch(() => {});
+
+  const mostrar = (texto, tom) => {
+    ok.textContent = texto;
+    ok.dataset.tom = tom || '';
+    ok.hidden = !texto;
+  };
+
+  let enviando = false;
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (enviando) return;
     const dados = Object.fromEntries(new FormData(form));
     const nome = String(dados.nome || '').trim();
     const empresa = String(dados.empresa || '').trim();
-    erro.hidden = Boolean(nome && empresa);
-    for (const campo of ['nome', 'empresa']) {
-      const el = form.elements[campo];
-      el.setAttribute('aria-invalid', String(!String(dados[campo] || '').trim()));
+    const whatsapp = String(dados.whatsapp || '').trim();
+    const validos = {
+      nome: nome.length >= 2,
+      empresa: empresa.length >= 2,
+      whatsapp: telefoneValido(whatsapp),
+    };
+    for (const campo of Object.keys(validos)) {
+      form.elements[campo].setAttribute('aria-invalid', String(!validos[campo]));
     }
-    if (!nome || !empresa) {
-      (nome ? form.elements.empresa : form.elements.nome).focus();
+    const faltando = Object.keys(validos).find((c) => !validos[c]);
+    erro.hidden = !faltando;
+    if (faltando) {
+      erro.textContent =
+        faltando === 'whatsapp' && whatsapp
+          ? 'Confira o seu WhatsApp: DDD + número (ex.: 71 99999-1234).'
+          : 'Preencha o seu nome, o da empresa e o seu WhatsApp para a gente saber com quem fala.';
+      form.elements[faltando].focus();
       return;
     }
+    mostrar('');
+
+    const nicho = String(dados.nicho || '').trim();
+    const plano = String(dados.plano || '');
+    let canal = e.submitter?.dataset.canal || principal.dataset.canal || 'formulario';
+    if (canal === 'whatsapp' && !contato.whatsapp) canal = 'formulario';
+    if (canal === 'email' && !contato.email) canal = 'formulario';
+
+    const pedido = JSON.stringify({ nome, empresa, whatsapp, nicho, plano, canal, site: dados.site || '' });
+    const enviar = () =>
+      fetch(`${API}/demonstracao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: pedido,
+        keepalive: true,
+      });
+
     const linhas = [
       `Olá! Sou ${nome}, da ${empresa}.`,
       'Quero ver uma demonstração do Prospect Team.',
-      dados.nicho ? `Vendemos para: ${String(dados.nicho).trim()}.` : '',
-      dados.plano && dados.plano !== 'Ainda não sei' ? `Plano de interesse: ${dados.plano}.` : '',
+      nicho ? `Vendemos para: ${nicho}.` : '',
+      plano && plano !== 'Ainda não sei' ? `Plano de interesse: ${plano}.` : '',
     ].filter(Boolean);
     const texto = linhas.join('\n');
-    const canal = e.submitter?.dataset.canal || (CONTATO.whatsapp ? 'whatsapp' : 'email');
-    if (canal === 'whatsapp' && CONTATO.whatsapp) {
-      window.open(
-        `https://wa.me/${CONTATO.whatsapp}?text=${encodeURIComponent(texto)}`,
-        '_blank',
-        'noopener',
-      );
-    } else if (CONTATO.email) {
+
+    if (canal === 'whatsapp') {
+      // Abre já no clique (o navegador bloqueia janela aberta depois de esperar a rede); o pedido
+      // segue em paralelo e chega mesmo que a página seja trocada.
+      enviar().catch(() => {});
+      const url = `https://wa.me/${contato.whatsapp}?text=${encodeURIComponent(texto)}`;
+      const janela = window.open(url, '_blank');
+      if (janela) janela.opener = null;
+      else window.location.href = url;
+      mostrar('Pedido recebido! Termine de enviar a mensagem no WhatsApp que acabou de abrir.');
+      form.reset();
+      return;
+    }
+    if (canal === 'email') {
+      enviar().catch(() => {});
       const assunto = encodeURIComponent(`Demonstração do Prospect Team · ${empresa}`);
-      window.location.href = `mailto:${CONTATO.email}?subject=${assunto}&body=${encodeURIComponent(texto)}`;
+      window.location.href = `mailto:${contato.email}?subject=${assunto}&body=${encodeURIComponent(texto)}`;
+      mostrar('Pedido recebido! Termine de enviar o e-mail que acabou de abrir.');
+      form.reset();
+      return;
+    }
+
+    enviando = true;
+    principal.setAttribute('aria-busy', 'true');
+    try {
+      const r = await enviar();
+      if (!r.ok) {
+        const corpo = await r.json().catch(() => null);
+        throw new Error(corpo?.erro?.mensagem || corpo?.mensagem || '');
+      }
+      mostrar(`Pedido recebido, ${nome.split(' ')[0]}! Vamos te chamar no WhatsApp em breve.`);
+      form.reset();
+    } catch (falha) {
+      mostrar(
+        falha.message || 'Não conseguimos enviar agora. Confira a sua internet e tente de novo em instantes.',
+        'erro',
+      );
+    } finally {
+      enviando = false;
+      principal.removeAttribute('aria-busy');
     }
   });
-  for (const campo of ['nome', 'empresa']) {
+  for (const campo of ['nome', 'empresa', 'whatsapp']) {
     form.elements[campo].addEventListener('input', (e) => {
       if (e.target.value.trim()) e.target.removeAttribute('aria-invalid');
     });

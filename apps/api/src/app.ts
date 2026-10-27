@@ -35,6 +35,7 @@ import { rotasNotificacoes } from './modulos/notificacoes/rotas.js';
 import { rotasPlaces } from './modulos/places/rotas.js';
 import { rotasRelatorios } from './modulos/relatorios/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
+import { rotasSiteMaster, rotasSitePublico } from './modulos/site/rotas.js';
 
 /** Monta a aplicação a partir das dependências (os testes passam as suas). */
 export function criarApp(deps: DepsApi): Express {
@@ -86,6 +87,8 @@ export function criarApp(deps: DepsApi): Express {
   app.use('/calendario', rotasCalendario(deps));
   // Abertura, clique e "sair da lista" dos e-mails (o leitor do lead não tem login nem origem).
   app.use('/e', rotasEmailPublico(deps));
+  // Formulário do site institucional (outro domínio, sem login): limite por IP e campo-isca.
+  app.use('/site', rotasSitePublico(deps));
   app.use(exigirOrigemConhecida(deps.origens));
   app.use('/auth', rotasAuth(deps));
 
@@ -116,6 +119,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/alertas', rotasAlertas(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
   // Painel master: contas, credenciais e acesso a qualquer conta.
+  protegidas.use('/master/site', exigirMaster, rotasSiteMaster(deps));
   protegidas.use('/master', exigirMaster, rotasMaster(deps));
   app.use(protegidas);
 

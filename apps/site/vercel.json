@@ -50,5 +50,11 @@
         }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/site/:caminho*",
+      "destination": "https://prospeccaoapi-production.up.railway.app/site/:caminho*"
+    }
   ]
 }

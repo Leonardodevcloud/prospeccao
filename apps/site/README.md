@@ -15,7 +15,7 @@ apps/site/
 
 ## Antes de publicar
 
-1. Em `js/site.js`, preencha `CONTATO.whatsapp` (só números, com 55 e DDD) e/ou `CONTATO.email`. Sem nenhum dos dois, o formulário mostra "Contato em breve".
+1. O WhatsApp e o e-mail do comercial ficam no sistema: painel master → **Pedidos do site**. Cada pedido do formulário vira lead no funil da conta principal e aparece nessa tela. O `vercel.json` repassa `/api/site/*` para a API (troque o endereço se a API mudar de domínio).
 2. Quando tiver o domínio, troque `app.prospectteam.com.br` (barra das telas) e acrescente a URL completa em `og:image` / `canonical` no `index.html`.
 
 ## Rodar localmente
