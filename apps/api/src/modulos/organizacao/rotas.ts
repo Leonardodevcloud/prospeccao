@@ -1,4 +1,12 @@
-import { AppError, pessoaAtualizar, pessoaNova, unidadeAtualizar, unidadeNova } from '@prospeccao/shared';
+import {
+  AppError,
+  marcaEntrada,
+  pessoaAtualizar,
+  pessoaNova,
+  segurancaOrganizacao,
+  unidadeAtualizar,
+  unidadeNova,
+} from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp } from '../../endereco.js';
@@ -25,6 +33,48 @@ export function rotasOrganizacao(deps: DepsApi): Router {
     mes: typeof req.query.mes === 'string' ? req.query.mes : undefined,
   });
 
+  /** Logo da organização (todo mundo dela vê no menu). */
+  r.get('/marca/logo', async (req, res) => {
+    const l = await repo.logo(pool, org(req));
+    if (!l) throw AppError.naoEncontrado('Logo');
+    res.setHeader('Content-Type', l.tipo);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(l.dados);
+  });
+
+  r.put('/marca', exigirGestor, async (req, res) => {
+    await repo.salvarMarca(pool, org(req), corpo(req, marcaEntrada));
+    log.info({ organizacao: org(req) }, 'organização: marca salva');
+    res.json({ ok: true });
+  });
+
+  /** Exigir verificação em duas etapas de todo mundo da organização. */
+  r.put('/seguranca', exigirGestor, async (req, res) => {
+    const { exigirDuasEtapas } = corpo(req, segurancaOrganizacao);
+    const u = req.usuario!;
+    if (exigirDuasEtapas && !u.master) {
+      const { rows } = await pool.query<{ ativo: boolean }>(
+        'SELECT totp_ativo AS ativo FROM cadastro.usuarios WHERE id = $1',
+        [u.id],
+      );
+      if (!rows[0]?.ativo)
+        throw AppError.invalido(
+          'Ligue a verificação em duas etapas na sua conta antes de exigir dos outros.',
+        );
+    }
+    await pool.query('UPDATE cadastro.organizacoes SET exigir_2fa = $2 WHERE id = $1', [
+      org(req),
+      exigirDuasEtapas,
+    ]);
+    res.json({ ok: true });
+  });
+
+  r.post('/pessoas/:id/zerar-duas-etapas', exigirGestor, async (req, res) => {
+    await repo.zerarDuasEtapas(pool, org(req), idDaRota(req));
+    res.json({ ok: true });
+  });
+
   r.get('/', exigirGestor, async (req, res) => {
     res.json(await repo.resumo(pool, org(req)));
   });
@@ -41,8 +91,10 @@ export function rotasOrganizacao(deps: DepsApi): Router {
       painel.painel(pool, org(req), p),
       pool.query<{ nome: string }>('SELECT nome FROM cadastro.organizacoes WHERE id = $1', [org(req)]),
     ]);
-    const organizacao = nome.rows[0]?.nome ?? 'Organização';
-    const pdf = await gerarPdf(dados, organizacao);
+    const m = await repo.marca(pool, org(req));
+    const logo = await repo.logo(pool, org(req));
+    const organizacao = m?.marca_nome || nome.rows[0]?.nome || 'Organização';
+    const pdf = await gerarPdf(dados, organizacao, { cor: m?.marca_cor, logo: logo?.dados ?? null });
     const arquivo = `relatorio-${organizacao}-${p.rotulo}`
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -70,13 +122,13 @@ export function rotasOrganizacao(deps: DepsApi): Router {
     const u = req.usuario!;
     const unidade = await repo.unidadeDaOrganizacao(pool, org(req), id);
     if (!unidade.ativa && !u.master) throw AppError.invalido('Esta unidade está desativada.');
-    abrirSessao(res, deps.auth, u.id, id === u.contaPropria ? null : id);
+    abrirSessao(res, deps.auth, u.id, id === u.contaPropria ? null : id, u.sessaoId);
     res.json({ ok: true });
   });
 
   /** Volta para a própria unidade. */
   r.post('/voltar', exigirGestor, async (req, res) => {
-    abrirSessao(res, deps.auth, req.usuario!.id, null);
+    abrirSessao(res, deps.auth, req.usuario!.id, null, req.usuario!.sessaoId);
     res.json({ ok: true });
   });
 

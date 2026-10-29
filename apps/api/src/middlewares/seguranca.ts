@@ -23,7 +23,19 @@ export async function carregarUsuario(
   db: Executor,
   id: number,
   contaEscolhida?: number | null,
+  sessaoId?: string | null,
 ): Promise<UsuarioSessao | null> {
+  // Sessão registrada: encerrada (pela pessoa, troca de senha, logout) ou vencida derruba na hora.
+  if (sessaoId) {
+    const { rows: s } = await db.query<{ ok: boolean }>(
+      `UPDATE cadastro.sessoes
+          SET ultimo_uso = CASE WHEN ultimo_uso < now() - interval '5 minutes' THEN now() ELSE ultimo_uso END
+        WHERE id = $1 AND usuario_id = $2 AND revogada_em IS NULL AND expira_em > now()
+        RETURNING true AS ok`,
+      [sessaoId, id],
+    );
+    if (!s[0]) return null;
+  }
   const { rows } = await db.query<{
     id: number;
     nome: string;
@@ -33,9 +45,11 @@ export async function carregarUsuario(
     conta_id: number;
     conta_ativa: boolean;
     organizacao_id: number;
+    totp_ativo: boolean;
+    exigir_2fa: boolean;
   }>(
     `SELECT u.id, u.nome, u.email, u.papel, u.master, u.conta_id, (c.ativa AND o.ativa) AS conta_ativa,
-            c.organizacao_id
+            c.organizacao_id, u.totp_ativo, o.exigir_2fa
        FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
        JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
       WHERE u.id = $1 AND u.ativo`,
@@ -78,8 +92,23 @@ export async function carregarUsuario(
     organizacaoId: conta.organizacao_id,
     master: u.master,
     contaPropria: u.conta_id,
+    sessaoId: sessaoId ?? null,
+    // A organização exige verificação em duas etapas e a pessoa ainda não configurou.
+    precisaDuasEtapas: u.exigir_2fa && !u.totp_ativo,
   };
 }
+
+/** Organização que exige duas etapas: sem configurar, só as telas de conta e login funcionam. */
+export const exigirDuasEtapas: RequestHandler = (req, _res, next) => {
+  if (!req.usuario?.precisaDuasEtapas) return next();
+  next(
+    new AppError(
+      403,
+      'configurar_duas_etapas',
+      'Sua organização exige verificação em duas etapas. Configure em Minha conta para continuar.',
+    ),
+  );
+};
 
 /** Acesso só de leitura (diretoria): pode olhar tudo, não altera nada. */
 export const exigirEscrita: RequestHandler = (req, _res, next) => {
@@ -105,16 +134,18 @@ export function exigirSessao(jwtSegredo: string, db: Executor): RequestHandler {
     if (!token) return next(AppError.naoAutorizado());
     let id: number;
     let contaEscolhida: number | null = null;
+    let sessaoId: string | null = null;
     try {
       const dados = jwt.verify(token, jwtSegredo, { algorithms: ['HS256'] }) as jwt.JwtPayload;
       id = Number(dados.sub);
       // Sessão do tempo de um usuário só (sub = e-mail): faz login de novo.
       if (!Number.isInteger(id) || id <= 0) return next(AppError.naoAutorizado());
       if (Number.isInteger(dados.c) && dados.c > 0) contaEscolhida = dados.c as number;
+      if (typeof dados.s === 'string' && /^[0-9a-f-]{36}$/.test(dados.s)) sessaoId = dados.s;
     } catch {
       return next(AppError.naoAutorizado('Sua sessão expirou. Faça login de novo.'));
     }
-    carregarUsuario(db, id, contaEscolhida).then(
+    carregarUsuario(db, id, contaEscolhida, sessaoId).then(
       (u) => {
         if (!u) return next(AppError.naoAutorizado('Seu acesso foi desativado.'));
         req.usuario = u;

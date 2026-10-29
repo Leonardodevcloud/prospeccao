@@ -38,12 +38,17 @@ export async function importarLeads(deps: Deps, importacaoId: number) {
       WHERE id = $1`,
     [imp.id],
   );
-  const r = { novas: 0, existentes: 0, jaNaLista: 0, enriquecer: 0 };
+  const r = { novas: 0, existentes: 0, jaNaLista: 0, enriquecer: 0, suprimidas: 0 };
   try {
     for (let i = 0; i < leads.length; i += LOTE) {
       await comTransacao(deps.pool, async (db) => {
         for (const l of leads.slice(i, i + LOTE)) {
           const g = await gravarLead(db, imp.conta_id, campanhaId, l);
+          // Titular que pediu para ser esquecido (LGPD): fica fora da lista.
+          if (g.suprimida) {
+            r.suprimidas++;
+            continue;
+          }
           l.empresaId = g.empresaId;
           if (g.nova) r.novas++;
           else r.existentes++;

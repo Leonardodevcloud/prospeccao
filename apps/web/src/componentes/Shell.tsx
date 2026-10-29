@@ -11,6 +11,7 @@ import { useMeuDiaResumo } from '../paginas/MeuDia';
 import { useEntrarNaUnidade, useOrganizacao } from '../paginas/Organizacao';
 import { useNovosPedidos } from '../paginas/Vendas';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
+import { AceitarTermos, DuasEtapasObrigatoria, useAplicarMarca } from './ContaSegura';
 import { Logo } from './Marca';
 import { MinhaConta } from './MinhaConta';
 import { Dono, useSessao } from './Sessao';
@@ -179,6 +180,8 @@ export function Shell() {
   const pendentes = useFollowupsPendentes().data?.pendentes ?? 0;
   const doAgente = useAgentePendente().data ?? 0;
   const pedidosNovos = useNovosPedidos(!!sessao.data?.master).data?.novos ?? 0;
+  useAplicarMarca();
+  const marca = sessao.data?.marca;
   const voltar = useMutation({
     mutationFn: () => api('/master/sair', { metodo: 'POST' }),
     onSuccess: () => {
@@ -206,19 +209,35 @@ export function Shell() {
     return <Navigate to={`/login?voltar=${encodeURIComponent(local.pathname + local.search)}`} replace />;
   }
   if (sessao.isPending) return null;
+  // A organização exige duas etapas e a pessoa ainda não configurou: só essa tela.
+  if (sessao.data?.duasEtapas.exigido && !sessao.data.duasEtapas.ativo) return <DuasEtapasObrigatoria />;
   const plataforma =
     !!sessao.data?.master && !sessao.data.foraDaPropria && ehTelaDaPlataforma(local.pathname);
 
   return (
     <div className="app">
       <nav className="nav" aria-label="Navegação principal">
-        <div className="nav__marca">
-          <Logo tamanho={30} />
-          <span className="nav__marca-texto">
-            Prospect Team
-            {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
-          </span>
-        </div>
+        {marca?.logo || marca?.nome ? (
+          <div className="nav__marca nav__marca--cliente">
+            {marca.logo ? (
+              <img className="nav__logo-cliente" src={`/api${marca.logo}`} alt={marca.nome ?? 'Logo'} />
+            ) : (
+              <Logo tamanho={30} />
+            )}
+            <span className="nav__marca-texto">
+              {marca.nome ?? sessao.data?.organizacao?.nome}
+              {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
+            </span>
+          </div>
+        ) : (
+          <div className="nav__marca">
+            <Logo tamanho={30} />
+            <span className="nav__marca-texto">
+              Prospect Team
+              {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
+            </span>
+          </div>
+        )}
         {plataforma && (
           <>
             {ITENS_PLATAFORMA.map((i, n) => (
@@ -372,6 +391,7 @@ export function Shell() {
         <Outlet />
       </main>
       {conta && <MinhaConta aoFechar={() => setConta(false)} />}
+      {sessao.data && !sessao.data.termos.aceitos && <AceitarTermos versao={sessao.data.termos.versao} />}
       {avisosAbertos && <PainelAvisos aoFechar={() => setAvisosAbertos(false)} />}
     </div>
   );

@@ -1,8 +1,9 @@
 import { Button } from '@prospeccao/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
-import { api, ROTULO_PAPEL_USUARIO } from '../api';
+import { api, ROTULO_PAPEL_QUALQUER, ROTULO_PAPEL_USUARIO } from '../api';
 import { formatarTelefone } from '../formatar';
+import { DuasEtapas, LINK_PRIVACIDADE, LINK_TERMOS, SessoesAbertas } from './ContaSegura';
 import { Drawer } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { NotificacoesCelular } from './NotificacoesCelular';
@@ -105,7 +106,10 @@ export function MinhaConta(props: { aoFechar: () => void }) {
               }}
             >
               <p className="quieto" style={{ margin: 0 }}>
-                {u.email} · {ROTULO_PAPEL_USUARIO[u.papel]}
+                {u.email} ·{' '}
+                {u.papelOrganizacao
+                  ? ROTULO_PAPEL_QUALQUER[u.papelOrganizacao]
+                  : ROTULO_PAPEL_USUARIO[u.papel]}
               </p>
               <div className="campo">
                 <label htmlFor="conta-nome">Seu nome</label>
@@ -147,6 +151,10 @@ export function MinhaConta(props: { aoFechar: () => void }) {
 
             <NotificacoesCelular />
 
+            <DuasEtapas />
+
+            <SessoesAbertas />
+
             <form
               className="form"
               onSubmit={(e: FormEvent) => {
@@ -176,7 +184,9 @@ export function MinhaConta(props: { aoFechar: () => void }) {
                   value={nova}
                   onChange={(e) => setNova(e.target.value)}
                 />
-                <span className="campo__dica">Pelo menos 8 caracteres, com letras e números.</span>
+                <span className="campo__dica">
+                  Pelo menos 8 caracteres, com letras e números. Os outros aparelhos saem na hora.
+                </span>
               </div>
               <ErroDaApi erro={senha.error} />
               {senha.isSuccess && <Mensagem tipo="ok">Senha trocada.</Mensagem>}
@@ -186,6 +196,15 @@ export function MinhaConta(props: { aoFechar: () => void }) {
                 </Button>
               </div>
             </form>
+            <p className="quieto" style={{ margin: 0, fontSize: 12 }}>
+              <a href={LINK_TERMOS} target="_blank" rel="noopener noreferrer">
+                Termos de uso
+              </a>{' '}
+              ·{' '}
+              <a href={LINK_PRIVACIDADE} target="_blank" rel="noopener noreferrer">
+                Política de privacidade
+              </a>
+            </p>
           </div>
         )}
       </div>

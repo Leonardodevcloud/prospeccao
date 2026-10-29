@@ -3008,3 +3008,36 @@ p {
 .formulario__acoes .btn[hidden] {
   display: none;
 }
+
+/* Termos e privacidade */
+.documento__topo {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+.documento {
+  max-width: 760px;
+  padding-top: 40px;
+  padding-bottom: 64px;
+  line-height: 1.65;
+  font-size: 16px;
+}
+.documento h1 {
+  font-size: 34px;
+  line-height: 1.2;
+  margin: 8px 0 16px;
+}
+.documento h2 {
+  font-size: 20px;
+  margin: 32px 0 8px;
+}
+.documento ul {
+  padding-left: 20px;
+}
+.documento li + li {
+  margin-top: 6px;
+}
+.documento__versao {
+  color: var(--ink-muted);
+  font-size: 13px;
+}

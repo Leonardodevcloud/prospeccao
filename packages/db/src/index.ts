@@ -30,7 +30,7 @@ export {
   resolverCredenciais,
   salvarCredenciais,
 } from './credenciais.js';
-export { gravarLead, listaDeLeadsManuais, type OrigemLead } from './leads.js';
+export { chaveTitular, gravarLead, listaDeLeadsManuais, type OrigemLead } from './leads.js';
 export { migrar, PASTA_MIGRATIONS, type StatusMigration, statusMigrations } from './migrar.js';
 export {
   comTransacao,

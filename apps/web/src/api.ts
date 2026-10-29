@@ -903,6 +903,12 @@ export interface Sessao {
   };
   /** Administra a plataforma (painel master). */
   master: boolean;
+  /** Verificação em duas etapas da pessoa e se a organização exige. */
+  duasEtapas: { ativo: boolean; exigido: boolean };
+  /** Termos de uso e política de privacidade: a versão em vigor e se a pessoa já aceitou. */
+  termos: { versao: string; aceitos: boolean };
+  /** Marca do cliente (white label). `logo`: caminho na api. */
+  marca: { nome: string | null; cor: string | null; logo: string | null } | null;
   /** Papel na organização inteira: gestor (administra todas as unidades) ou leitura (só olha). */
   papelOrganizacao: 'gestor' | 'leitura' | null;
   /** O cliente (organização) e quantas unidades ativas ele tem. */
@@ -1691,6 +1697,8 @@ export interface UnidadeOrganizacao {
 
 export interface PessoaOrganizacao {
   id: number;
+  /** Verificação em duas etapas ligada. */
+  duasEtapas: boolean;
   nome: string;
   email: string;
   papel: PapelQualquer;
@@ -1704,7 +1712,12 @@ export interface PessoaOrganizacao {
 }
 
 export interface Organizacao {
-  organizacao: { id: number; nome: string };
+  organizacao: {
+    id: number;
+    nome: string;
+    exigirDuasEtapas: boolean;
+    marca: { nome: string | null; cor: string | null; logo: boolean };
+  };
   plano: PlanoConta;
   unidades: UnidadeOrganizacao[];
   pessoas: PessoaOrganizacao[];

@@ -6,6 +6,7 @@ import type { DepsApi } from './dependencias.js';
 import { rotaNaoEncontrada, tratarErros } from './middlewares/erros.js';
 import {
   adminParaAlterar,
+  exigirDuasEtapas,
   exigirEscrita,
   exigirMaster,
   exigirOrigemConhecida,
@@ -30,6 +31,7 @@ import { rotasExportar } from './modulos/exportar/rotas.js';
 import { rotasFunil } from './modulos/funil/rotas.js';
 import { rotasImportacaoLeads } from './modulos/importacao-leads/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
+import { rotasLgpd } from './modulos/lgpd/rotas.js';
 import { rotasMaster } from './modulos/master/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
 import { rotasNotificacoes } from './modulos/notificacoes/rotas.js';
@@ -97,6 +99,8 @@ export function criarApp(deps: DepsApi): Express {
 
   const protegidas = Router();
   protegidas.use(exigirSessao(deps.auth.jwtSegredo, deps.pool));
+  // Organização que exige duas etapas: sem configurar, só a conta da pessoa funciona (em /auth).
+  protegidas.use(exigirDuasEtapas);
   // Acesso só de leitura (diretoria): vê tudo, não altera nada.
   protegidas.use(exigirEscrita);
   // Quem fez o quê: toda alteração que deu certo fica registrada (depois da resposta).
@@ -113,6 +117,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/importacoes-leads', rotasImportacaoLeads(deps));
   protegidas.use('/equipe', rotasEquipe(deps));
   protegidas.use('/organizacao', rotasOrganizacao(deps));
+  protegidas.use('/lgpd', rotasLgpd(deps));
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));
   protegidas.use('/agenda', rotasAgenda(deps));

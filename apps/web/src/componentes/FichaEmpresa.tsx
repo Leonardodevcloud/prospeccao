@@ -34,7 +34,7 @@ import { Drawer } from './Drawer';
 import { EmailsDoLead } from './EmailsDoLead';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { SecaoFunil } from './SecaoFunil';
-import { useEhMaster } from './Sessao';
+import { useEhAdmin, useEhMaster } from './Sessao';
 
 const PORTE: Record<string, string> = {
   me: 'Microempresa',
@@ -476,6 +476,7 @@ export function FichaEmpresa({
 }) {
   const cliente = useQueryClient();
   const master = useEhMaster();
+  const admin = useEhAdmin();
   const q = useQuery({
     queryKey: ['empresa', id],
     queryFn: () => api<EmpresaDetalhe>(`/empresas/${id}`),
@@ -669,9 +670,67 @@ export function FichaEmpresa({
                 ))}
               </ul>
             </section>
+            {admin && <EsquecerTitular empresaId={id} nome={e.nome} aoEsquecer={aoFechar} />}
           </div>
         </>
       )}
     </Drawer>
+  );
+}
+
+/** LGPD: o titular pediu para ser esquecido. Some da organização e não volta. */
+function EsquecerTitular(props: { empresaId: number; nome: string; aoEsquecer: () => void }) {
+  const cliente = useQueryClient();
+  const [aberto, setAberto] = useState(false);
+  const [pedidoPor, setPedidoPor] = useState('');
+  const esquecer = useMutation({
+    mutationFn: () =>
+      api('/lgpd/esquecer', {
+        metodo: 'POST',
+        corpo: { empresaId: props.empresaId, pedidoPor: pedidoPor.trim() || null },
+      }),
+    onSuccess: () => {
+      for (const k of ['empresas', 'quadro', 'funil', 'conversas'])
+        cliente.invalidateQueries({ queryKey: [k] });
+      props.aoEsquecer();
+    },
+  });
+  return (
+    <section className="secao">
+      <h2>Privacidade (LGPD)</h2>
+      {!aberto ? (
+        <button type="button" className="link-botao" style={{ fontSize: 13 }} onClick={() => setAberto(true)}>
+          O contato pediu para ser esquecido
+        </button>
+      ) : (
+        <div className="pilha" style={{ gap: 10 }}>
+          <Mensagem tipo="aviso">
+            Apaga desta organização (todas as unidades) a negociação, as conversas, as anotações e os contatos
+            guardados de {props.nome}, e impede que volte por campanha, importação ou cadastro à mão. Não dá
+            para desfazer.
+          </Mensagem>
+          <div className="campo">
+            <label htmlFor="lgpd-pedido">Como chegou o pedido (fica no registro)</label>
+            <input
+              id="lgpd-pedido"
+              className="filtro"
+              maxLength={200}
+              placeholder="Ex.: e-mail de 28/10 pedindo exclusão"
+              value={pedidoPor}
+              onChange={(ev) => setPedidoPor(ev.target.value)}
+            />
+          </div>
+          <ErroDaApi erro={esquecer.error} />
+          <div className="acoes">
+            <Button variant="danger" disabled={esquecer.isPending} onClick={() => esquecer.mutate()}>
+              {esquecer.isPending ? 'Apagando…' : 'Esquecer este contato'}
+            </Button>
+            <Button variant="ghost" onClick={() => setAberto(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

@@ -622,6 +622,14 @@ export function Equipe() {
         </div>
         {admin && (
           <div className="acoes">
+            <Button
+              variant="ghost"
+              icon="file-down"
+              href="/api/lgpd/exportar"
+              title="Todos os dados desta unidade em um arquivo (LGPD: portabilidade, fim de contrato)"
+            >
+              Exportar dados
+            </Button>
             <Button variant="primary" icon="user-plus" onClick={() => setConvidando(true)}>
               Convidar pessoa
             </Button>

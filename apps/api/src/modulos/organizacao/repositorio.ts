@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { comTransacao, type Executor, INICIO_MES_SP_TS, type Pool } from '@prospeccao/db';
 import {
   AppError,
+  type MarcaEntrada,
   type PessoaAtualizar,
   type PessoaNova,
   type UnidadeAtualizar,
@@ -28,9 +29,17 @@ export async function unidadeDaOrganizacao(db: Executor, organizacaoId: number, 
 
 export async function resumo(db: Executor, organizacaoId: number) {
   const [org, plano, unidades, pessoas] = await Promise.all([
-    db.query<{ id: number; nome: string }>('SELECT id, nome FROM cadastro.organizacoes WHERE id = $1', [
-      organizacaoId,
-    ]),
+    db.query<{
+      id: number;
+      nome: string;
+      exigirDuasEtapas: boolean;
+      marca: { nome: string | null; cor: string | null; logo: boolean };
+    }>(
+      `SELECT id, nome, exigir_2fa AS "exigirDuasEtapas",
+              json_build_object('nome', marca_nome, 'cor', marca_cor, 'logo', marca_logo IS NOT NULL) AS marca
+         FROM cadastro.organizacoes WHERE id = $1`,
+      [organizacaoId],
+    ),
     planoDaOrganizacao(db, organizacaoId),
     db.query(
       `SELECT c.id, c.nome, c.ativa, c.principal, c.cota_leads_mes AS "cotaLeadsMes",
@@ -55,6 +64,7 @@ export async function resumo(db: Executor, organizacaoId: number) {
     db.query(
       `SELECT u.id, u.nome, u.email, u.papel, u.ativo, u.telefone, u.conta_id AS "unidadeId", c.nome AS "unidadeNome",
               (u.senha_hash IS NULL) AS "convitePendente", u.ultimo_acesso AS "ultimoAcesso",
+              u.totp_ativo AS "duasEtapas",
               (SELECT count(*)::int FROM comercial.oportunidades o
                 WHERE o.conta_id = u.conta_id AND o.responsavel_id = u.id AND ${ABERTO}) AS "leadsAbertos"
          FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
@@ -268,4 +278,69 @@ export async function novoConvite(pool: Pool, organizacaoId: number, id: number)
     [id, token],
   );
   return token;
+}
+
+/* ───────────── Marca e segurança da organização ───────────── */
+
+export async function salvarMarca(db: Executor, organizacaoId: number, d: MarcaEntrada): Promise<void> {
+  const sets: string[] = ['marca_atualizada_em = now()'];
+  const valores: unknown[] = [organizacaoId];
+  const set = (coluna: string, v: unknown) => {
+    valores.push(v);
+    sets.push(`${coluna} = $${valores.length}`);
+  };
+  if (d.nome !== undefined) set('marca_nome', d.nome || null);
+  if (d.cor !== undefined) set('marca_cor', d.cor || null);
+  if (d.logo !== undefined) {
+    if (d.logo === null) {
+      set('marca_logo', null);
+      set('marca_logo_tipo', null);
+    } else {
+      const [cabeca, dados] = d.logo.split(',');
+      const tipo = cabeca!.includes('png') ? 'image/png' : 'image/jpeg';
+      const buf = Buffer.from(dados ?? '', 'base64');
+      // Confere o arquivo de verdade (não só o que o navegador disse).
+      const png = buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      const jpg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+      if ((tipo === 'image/png' && !png) || (tipo === 'image/jpeg' && !jpg))
+        throw AppError.invalido('O arquivo não é uma imagem PNG ou JPG válida.');
+      if (buf.length > 300 * 1024)
+        throw AppError.invalido('Logo grande demais: use uma imagem de até 300 KB.');
+      set('marca_logo', buf);
+      set('marca_logo_tipo', tipo);
+    }
+  }
+  await db.query(`UPDATE cadastro.organizacoes SET ${sets.join(', ')} WHERE id = $1`, valores);
+}
+
+export async function logo(db: Executor, organizacaoId: number) {
+  const { rows } = await db.query<{ marca_logo: Buffer | null; marca_logo_tipo: string | null }>(
+    'SELECT marca_logo, marca_logo_tipo FROM cadastro.organizacoes WHERE id = $1',
+    [organizacaoId],
+  );
+  return rows[0]?.marca_logo
+    ? { dados: rows[0].marca_logo, tipo: rows[0].marca_logo_tipo ?? 'image/png' }
+    : null;
+}
+
+export async function marca(db: Executor, organizacaoId: number) {
+  const { rows } = await db.query<{ nome: string; marca_nome: string | null; marca_cor: string | null }>(
+    'SELECT nome, marca_nome, marca_cor FROM cadastro.organizacoes WHERE id = $1',
+    [organizacaoId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Celular perdido: tira a verificação em duas etapas da pessoa (ela configura de novo). */
+export async function zerarDuasEtapas(db: Executor, organizacaoId: number, id: number) {
+  await pessoaDaOrganizacao(db, organizacaoId, id);
+  await db.query(
+    `UPDATE cadastro.usuarios SET totp_ativo = false, totp_segredo = NULL, totp_desde = NULL, totp_recuperacao = '{}'
+      WHERE id = $1`,
+    [id],
+  );
+  await db.query(
+    'UPDATE cadastro.sessoes SET revogada_em = now() WHERE usuario_id = $1 AND revogada_em IS NULL',
+    [id],
+  );
 }

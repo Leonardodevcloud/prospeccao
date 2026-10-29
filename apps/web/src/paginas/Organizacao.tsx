@@ -249,6 +249,11 @@ export function Organizacao() {
                           {ROTULO_PAPEL_QUALQUER[x.papel]}{' '}
                           {!x.ativo && <Badge tone="danger">Desativado</Badge>}
                           {x.ativo && x.convitePendente && <Badge tone="warning">Convite pendente</Badge>}
+                          {x.ativo && !x.convitePendente && x.duasEtapas && (
+                            <span title="Verificação em duas etapas ligada">
+                              <Badge tone="outline">2 etapas</Badge>
+                            </span>
+                          )}
                         </td>
                         <td>
                           {x.papel === 'gestor' || x.papel === 'leitura' ? (
@@ -273,6 +278,7 @@ export function Organizacao() {
               </div>
             )}
           </Panel>
+          {!leitura && <SegurancaEMarca dados={d} />}
           <p className="nota-rodape">
             Uma empresa é trabalhada por uma unidade só: se outra unidade já tem a empresa, ela aparece como
             “da unidade X” e não entra no funil de novo. Gestor e leitura veem todas as unidades; as outras
@@ -521,6 +527,10 @@ function EditarPessoa(props: { dados: DadosOrganizacao; pessoa: PessoaOrganizaca
       }),
   });
   const saiDaUnidade = unidadeId !== x.unidadeId;
+  const zerar = useMutation({
+    mutationFn: () => api(`/organizacao/pessoas/${x.id}/zerar-duas-etapas`, { metodo: 'POST' }),
+    onSuccess: () => cliente.invalidateQueries({ queryKey: ['organizacao'] }),
+  });
   return (
     <Drawer titulo={x.nome} barra="Organização" aoFechar={props.aoFechar}>
       <div className="drawer__corpo form">
@@ -585,6 +595,27 @@ function EditarPessoa(props: { dados: DadosOrganizacao; pessoa: PessoaOrganizaca
           </div>
         )}
         {eu && <Mensagem tipo="aviso">Você não pode mudar o próprio papel nem se desativar.</Mensagem>}
+        {x.duasEtapas && !eu && (
+          <div className="campo">
+            <span className="campo__dica">
+              Perdeu o celular? Zere a verificação em duas etapas: a pessoa sai de todos os aparelhos e
+              configura de novo no próximo acesso.
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={zerar.isPending}
+              onClick={() => {
+                if (window.confirm(`Zerar a verificação em duas etapas de ${x.nome}?`)) zerar.mutate();
+              }}
+            >
+              Zerar duas etapas
+            </Button>
+            {zerar.isSuccess && (
+              <Mensagem tipo="ok">Pronto: ela configura de novo no próximo acesso.</Mensagem>
+            )}
+          </div>
+        )}
         <ErroDaApi erro={salvar.error ?? convite.error} />
         {convite.data && (
           <LinkConvite
@@ -629,5 +660,169 @@ function EditarPessoa(props: { dados: DadosOrganizacao; pessoa: PessoaOrganizaca
         </div>
       </div>
     </Drawer>
+  );
+}
+
+/** Segurança (exigir duas etapas) e marca do cliente (nome, cor e logo no sistema e no PDF). */
+function SegurancaEMarca(props: { dados: DadosOrganizacao }) {
+  const cliente = useQueryClient();
+  const o = props.dados.organizacao;
+  const [nome, setNome] = useState(o.marca.nome ?? '');
+  const [cor, setCor] = useState(o.marca.cor ?? '#0b6b63');
+  const [logo, setLogo] = useState<string | null | undefined>(undefined);
+  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+  const seguranca = useMutation({
+    mutationFn: (exigir: boolean) =>
+      api('/organizacao/seguranca', { metodo: 'PUT', corpo: { exigirDuasEtapas: exigir } }),
+    onSuccess: () => {
+      cliente.invalidateQueries({ queryKey: ['organizacao'] });
+      cliente.invalidateQueries({ queryKey: ['sessao'] });
+    },
+  });
+  const salvar = useMutation({
+    mutationFn: (corpo: Record<string, unknown>) => api('/organizacao/marca', { metodo: 'PUT', corpo }),
+    onSuccess: () => {
+      setLogo(undefined);
+      cliente.invalidateQueries({ queryKey: ['organizacao'] });
+      cliente.invalidateQueries({ queryKey: ['sessao'] });
+    },
+  });
+  const logoAtual = useSessao().data?.marca?.logo;
+  const comDuas = props.dados.pessoas.filter((p) => p.ativo && p.duasEtapas).length;
+  const ativas = props.dados.pessoas.filter((p) => p.ativo).length;
+  return (
+    <div className="grade-relatorio org-painel">
+      <Panel titulo="Segurança">
+        <div className="pilha" style={{ gap: 12 }}>
+          <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+            {comDuas} de {ativas} pessoas ativas usam verificação em duas etapas (senha + código do app do
+            celular).
+          </p>
+          <label className="opcao">
+            <input
+              type="checkbox"
+              checked={o.exigirDuasEtapas}
+              disabled={seguranca.isPending}
+              onChange={(e) => seguranca.mutate(e.target.checked)}
+            />
+            <span>
+              Exigir verificação em duas etapas de todo mundo
+              <span className="campo__dica" style={{ display: 'block' }}>
+                Quem ainda não configurou só consegue usar o sistema depois de configurar. Ligue primeiro na
+                sua conta (Minha conta).
+              </span>
+            </span>
+          </label>
+          <ErroDaApi erro={seguranca.error} />
+          <p className="quieto" style={{ margin: 0, fontSize: 12 }}>
+            Também valem para todos: senha com pelo menos 8 caracteres, letras e números; bloqueio após
+            tentativas erradas; cada login vira uma sessão que a pessoa pode encerrar; e o histórico de
+            acessos e alterações fica em Auditoria.
+          </p>
+        </div>
+      </Panel>
+      <Panel titulo="Marca da empresa">
+        <form
+          className="form"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            salvar.mutate({ nome: nome.trim() || null, cor, ...(logo !== undefined ? { logo } : {}) });
+          }}
+        >
+          <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+            O nome, a cor e o logo aparecem no menu de todas as unidades e no relatório em PDF.
+          </p>
+          <div className="form__duas">
+            <div className="campo">
+              <label htmlFor="mc-nome">Nome no sistema</label>
+              <input
+                id="mc-nome"
+                className="filtro"
+                maxLength={60}
+                placeholder={o.nome}
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+              />
+            </div>
+            <div className="campo">
+              <label htmlFor="mc-cor">Cor principal</label>
+              <div className="copiar">
+                <input
+                  id="mc-cor"
+                  type="color"
+                  className="cor-marca"
+                  value={cor}
+                  onChange={(e) => setCor(e.target.value)}
+                />
+                <input
+                  className="filtro mono"
+                  aria-label="Cor em hexadecimal"
+                  value={cor}
+                  maxLength={7}
+                  onChange={(e) => setCor(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="campo">
+            <label htmlFor="mc-logo">Logo (PNG ou JPG, até 300 KB)</label>
+            <div className="logo-marca">
+              {logo ? (
+                <img src={logo} alt="Logo novo" />
+              ) : o.marca.logo && logo !== null ? (
+                <img src={`/api${logoAtual ?? '/organizacao/marca/logo'}`} alt="Logo atual" />
+              ) : (
+                <span className="quieto" style={{ fontSize: 12 }}>
+                  Sem logo
+                </span>
+              )}
+              <input
+                id="mc-logo"
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={(e) => {
+                  setErroArquivo(null);
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  if (f.size > 300 * 1024) {
+                    setErroArquivo('Logo grande demais: use uma imagem de até 300 KB.');
+                    return;
+                  }
+                  const leitor = new FileReader();
+                  leitor.onload = () => setLogo(String(leitor.result));
+                  leitor.readAsDataURL(f);
+                }}
+              />
+              {(o.marca.logo || logo) && (
+                <Button size="sm" variant="ghost" onClick={() => setLogo(null)}>
+                  Tirar logo
+                </Button>
+              )}
+            </div>
+          </div>
+          {erroArquivo && <Mensagem tipo="erro">{erroArquivo}</Mensagem>}
+          <ErroDaApi erro={salvar.error} />
+          {salvar.isSuccess && <Mensagem tipo="ok">Marca salva.</Mensagem>}
+          <div className="acoes">
+            <Button variant="primary" type="submit" disabled={salvar.isPending}>
+              {salvar.isPending ? 'Salvando…' : 'Salvar marca'}
+            </Button>
+            {(o.marca.cor || o.marca.nome || o.marca.logo) && (
+              <Button
+                variant="ghost"
+                disabled={salvar.isPending}
+                onClick={() => {
+                  setNome('');
+                  setCor('#0b6b63');
+                  salvar.mutate({ nome: null, cor: null, logo: null });
+                }}
+              >
+                Voltar ao padrão
+              </Button>
+            )}
+          </div>
+        </form>
+      </Panel>
+    </div>
   );
 }

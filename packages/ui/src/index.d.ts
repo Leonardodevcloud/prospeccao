@@ -39,6 +39,8 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   href?: string;
   target?: string;
   rel?: string;
+  /** Com href: baixa o arquivo com este nome. */
+  download?: string;
 }
 export declare function Button(props: ButtonProps): React.ReactElement;
 

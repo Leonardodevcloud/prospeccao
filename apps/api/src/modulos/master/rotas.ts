@@ -282,14 +282,14 @@ export function rotasMaster(deps: DepsApi): Router {
     const id = idDaRota(req);
     await repo.obter(pool, id);
     const u = req.usuario!;
-    abrirSessao(res, deps.auth, u.id, id === u.contaPropria ? null : id);
+    abrirSessao(res, deps.auth, u.id, id === u.contaPropria ? null : id, u.sessaoId);
     log.info({ master: u.id, conta: id }, 'master: entrou na conta');
     res.json({ ok: true });
   });
 
   /** Volta para a própria conta. */
   r.post('/sair', async (req, res) => {
-    abrirSessao(res, deps.auth, req.usuario!.id, null);
+    abrirSessao(res, deps.auth, req.usuario!.id, null, req.usuario!.sessaoId);
     res.json({ ok: true });
   });
 

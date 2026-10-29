@@ -21,9 +21,12 @@ export function Convite() {
   });
   const criar = useMutation({
     mutationFn: () => api(`/auth/convite/${encodeURIComponent(token)}`, { metodo: 'POST', corpo: { senha } }),
-    onSuccess: () => {
+    onSuccess: (r) => {
       cliente.clear();
-      navegar('/hoje', { replace: true });
+      // Verificação em duas etapas ligada: falta o código do app (tela de login).
+      const desafio = (r as { desafio?: string } | null)?.desafio;
+      if (desafio) navegar(`/login?desafio=${encodeURIComponent(desafio)}`, { replace: true });
+      else navegar('/hoje', { replace: true });
     },
   });
   const diferentes = !!repetir && senha !== repetir;

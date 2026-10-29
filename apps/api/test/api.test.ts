@@ -3839,4 +3839,168 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await enviar('patch', `/master/organizacoes/${orgId}`, { ativa: false });
     expect((await gil.ler('/auth/eu')).status).toBe(401);
   });
+  it('segurança: duas etapas, sessões, termos, marca do cliente e LGPD (exportar e esquecer)', async () => {
+    const { codigo, decifrarSegredo } = await import('../src/totp.js');
+    const criada = await enviar('post', '/master/contas', {
+      nome: 'Cliente Seguro Teste',
+      primeiroAcesso: 'gestor',
+      admin: { nome: 'Sol Gestora', email: 'sol@clienteseguro.com.br' },
+      plano: { plano: 'time', modulos: [] },
+    });
+    const tokenConvite = criada.body.convite.split('/').at(-1);
+    const ip = '10.9.1.1';
+    const aceite = await request(app)
+      .post(`/auth/convite/${tokenConvite}`)
+      .set('Origin', ORIGEM)
+      .set('X-Forwarded-For', ip)
+      .send({ senha: 'senha-da-sol-1' });
+    let ck = (aceite.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    const sol = {
+      ler: (rota: string) => request(app).get(rota).set('Cookie', ck),
+      enviar: (metodo: 'post' | 'put' | 'patch' | 'delete', rota: string, corpo?: object) =>
+        request(app)[metodo](rota).set('Origin', ORIGEM).set('Cookie', ck).send(corpo),
+    };
+    const eu = (await sol.ler('/auth/eu')).body;
+    expect(eu.termos).toEqual({ versao: '2026-10', aceitos: false });
+    expect(eu.duasEtapas).toEqual({ ativo: false, exigido: false });
+    expect((await sol.enviar('post', '/auth/termos', { versao: '2026-10' })).status).toBe(200);
+    expect((await sol.ler('/auth/eu')).body.termos.aceitos).toBe(true);
+
+    // Sessões: a do convite aparece como a atual.
+    const sessoes = (await sol.ler('/auth/sessoes')).body as { id: string; atual: boolean }[];
+    expect(sessoes).toHaveLength(1);
+    expect(sessoes[0]!.atual).toBe(true);
+
+    // Exigir duas etapas sem ter ligado na própria conta: não deixa.
+    expect((await sol.enviar('put', '/organizacao/seguranca', { exigirDuasEtapas: true })).status).toBe(422);
+
+    // Liga as duas etapas.
+    const ini = (await sol.enviar('post', '/auth/duas-etapas/iniciar')).body;
+    expect(ini.endereco).toMatch(/^otpauth:\/\/totp\//);
+    expect(ini.qr).toMatch(/<svg/);
+    expect((await sol.enviar('post', '/auth/duas-etapas/ativar', { codigo: '000000' })).status).toBe(422);
+    const ativou = await sol.enviar('post', '/auth/duas-etapas/ativar', { codigo: codigo(ini.segredo) });
+    expect(ativou.status).toBe(200);
+    expect(ativou.body.codigos).toHaveLength(8);
+    // O segredo fica cifrado no banco.
+    const guardado = await pool.query<{ totp_segredo: string }>(
+      `SELECT totp_segredo FROM cadastro.usuarios WHERE email = 'sol@clienteseguro.com.br'`,
+    );
+    expect(guardado.rows[0]!.totp_segredo).not.toContain(ini.segredo);
+    expect(decifrarSegredo('x'.repeat(40), guardado.rows[0]!.totp_segredo).length).toBeGreaterThan(0);
+    expect((await sol.enviar('put', '/organizacao/seguranca', { exigirDuasEtapas: true })).status).toBe(200);
+
+    // Login agora pede o código.
+    const login = await request(app)
+      .post('/auth/login')
+      .set('Origin', ORIGEM)
+      .set('X-Forwarded-For', '10.9.1.2')
+      .send({ email: 'sol@clienteseguro.com.br', senha: 'senha-da-sol-1' });
+    expect(login.body.duasEtapas).toBe(true);
+    expect(login.headers['set-cookie']).toBeUndefined();
+    const errado = await request(app)
+      .post('/auth/login/duas-etapas')
+      .set('Origin', ORIGEM)
+      .set('X-Forwarded-For', '10.9.1.2')
+      .send({ desafio: login.body.desafio, codigo: '123456' });
+    expect(errado.status).toBe(401);
+    // Código de recuperação vale uma vez só.
+    const rec = await request(app)
+      .post('/auth/login/duas-etapas')
+      .set('Origin', ORIGEM)
+      .set('X-Forwarded-For', '10.9.1.2')
+      .send({ desafio: login.body.desafio, codigo: ativou.body.codigos[0] });
+    expect(rec.status).toBe(200);
+    const ck2 = (rec.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    const deNovo = await request(app)
+      .post('/auth/login/duas-etapas')
+      .set('Origin', ORIGEM)
+      .set('X-Forwarded-For', '10.9.1.3')
+      .send({ desafio: login.body.desafio, codigo: ativou.body.codigos[0] });
+    expect(deNovo.status).toBe(401);
+    expect((await sol.ler('/auth/sessoes')).body).toHaveLength(2);
+    // Encerrar as outras derruba o segundo aparelho na hora.
+    expect((await sol.enviar('post', '/auth/sessoes/encerrar-outras')).body.encerradas).toBe(1);
+    expect((await request(app).get('/auth/eu').set('Cookie', ck2)).status).toBe(401);
+
+    // Pessoa nova numa organização que exige duas etapas: só a conta funciona até configurar.
+    const pessoa = await sol.enviar('post', '/organizacao/pessoas', {
+      nome: 'Rui SDR',
+      email: 'rui@clienteseguro.com.br',
+      papel: 'sdr',
+      unidadeId: criada.body.id,
+    });
+    const rui = await request(app)
+      .post(`/auth/convite/${pessoa.body.convite.split('/').at(-1)}`)
+      .set('Origin', ORIGEM)
+      .set('X-Forwarded-For', '10.9.1.4')
+      .send({ senha: 'senha-do-rui-1' });
+    const ckRui = (rui.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    const bloqueado = await request(app).get('/funil').set('Cookie', ckRui);
+    expect(bloqueado.status).toBe(403);
+    expect(bloqueado.body.erro.codigo).toBe('configurar_duas_etapas');
+    expect((await request(app).get('/auth/eu').set('Cookie', ckRui)).status).toBe(200);
+    // O gestor zera as duas etapas de alguém (celular perdido).
+    expect(
+      (await sol.enviar('post', `/organizacao/pessoas/${pessoa.body.id}/zerar-duas-etapas`)).status,
+    ).toBe(200);
+
+    // Marca do cliente.
+    expect((await sol.enviar('put', '/organizacao/marca', { cor: '#f5f5a0' })).status).toBe(422);
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    expect(
+      (await sol.enviar('put', '/organizacao/marca', { logo: 'data:image/png;base64,PHN2Zz4=' })).status,
+    ).toBe(422);
+    const marcou = await sol.enviar('put', '/organizacao/marca', {
+      nome: 'Seguro Peças',
+      cor: '#1d4ed8',
+      logo: `data:image/png;base64,${png.toString('base64')}`,
+    });
+    expect(marcou.status).toBe(200);
+    const comMarca = (await sol.ler('/auth/eu')).body.marca;
+    expect(comMarca).toMatchObject({ nome: 'Seguro Peças', cor: '#1d4ed8' });
+    const logo = await sol.ler('/organizacao/marca/logo');
+    expect(logo.headers['content-type']).toBe('image/png');
+    const pdf = await sol.ler('/organizacao/relatorio.pdf');
+    expect(pdf.status).toBe(200);
+
+    // LGPD: exportar e esquecer.
+    await sol.enviar('post', '/nichos/prontos', { ids: ['farmacias'] });
+    const lead = await sol.enviar('post', '/funil/leads', {
+      empresa: 'Farmácia Titular Teste',
+      telefone: '71 98888-4545',
+    });
+    expect(lead.status).toBe(201);
+    const exp = await sol.ler('/lgpd/exportar');
+    expect(exp.status).toBe(200);
+    expect(exp.headers['content-disposition']).toMatch(/dados-unidade-/);
+    const dados = JSON.parse(exp.text);
+    expect(dados.negociacoes).toHaveLength(1);
+    expect(
+      (
+        await sol.enviar('post', '/lgpd/esquecer', {
+          empresaId: lead.body.empresaId,
+          pedidoPor: 'e-mail do titular',
+        })
+      ).status,
+    ).toBe(200);
+    expect((await sol.ler(`/funil/${lead.body.empresaId}`)).body.oportunidade).toBeNull();
+    expect((await sol.ler('/lgpd/supressoes')).body).toEqual([
+      expect.objectContaining({ empresaId: lead.body.empresaId, pedidoPor: 'e-mail do titular' }),
+    ]);
+    // Não volta à mão.
+    const volta = await sol.enviar('post', '/funil/leads', {
+      empresa: 'Farmácia Titular Teste',
+      telefone: '71 98888-4545',
+    });
+    expect(volta.status).toBe(409);
+
+    // Logout encerra a sessão no servidor.
+    await sol.enviar('post', '/auth/logout');
+    expect((await sol.ler('/auth/eu')).status).toBe(401);
+    ck = '';
+  });
 });

@@ -23,6 +23,10 @@ export interface UsuarioSessao {
   master: boolean;
   /** Conta da própria pessoa (o master pode estar "dentro" de outra). */
   contaPropria: number;
+  /** Sessão registrada (null: cookie antigo, de antes do registro de sessões). */
+  sessaoId: string | null;
+  /** A organização exige duas etapas e a pessoa ainda não configurou. */
+  precisaDuasEtapas: boolean;
 }
 
 interface Contexto {

@@ -22,7 +22,7 @@ const pct = (v: number | null) => (v == null ? '—' : `${Math.round(v * 100)}%`
 export function gerarPdf(
   d: PainelOrganizacao,
   organizacao: string,
-  marca?: { cor?: string | null },
+  marca?: { cor?: string | null; logo?: Buffer | null },
 ): Promise<Buffer> {
   const cor = marca?.cor && /^#[0-9a-f]{6}$/i.test(marca.cor) ? marca.cor : COR.marca;
   const doc = new PDFDocument({
@@ -39,6 +39,13 @@ export function gerarPdf(
 
   // Cabeçalho
   doc.rect(0, 0, doc.page.width, 6).fill(cor);
+  // Logo do cliente no canto (PNG ou JPG).
+  if (marca?.logo)
+    try {
+      doc.image(marca.logo, doc.page.width - 48 - 120, 26, { fit: [120, 44], align: 'right' });
+    } catch {
+      // Imagem que o PDF não lê: segue sem logo.
+    }
   doc.fillColor(COR.quieto).font('Helvetica').fontSize(9).text('RELATÓRIO DE PROSPECÇÃO', esquerda, 30);
   doc.fillColor(COR.texto).font('Helvetica-Bold').fontSize(22).text(organizacao, esquerda, 44);
   doc

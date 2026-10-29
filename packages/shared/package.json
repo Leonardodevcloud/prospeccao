@@ -13,7 +13,8 @@
     "./planilha": "./src/planilha.ts",
     "./planos": "./src/planos.ts",
     "./plataforma": "./src/plataforma.ts",
-    "./site": "./src/site.ts"
+    "./site": "./src/site.ts",
+    "./seguranca": "./src/seguranca.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

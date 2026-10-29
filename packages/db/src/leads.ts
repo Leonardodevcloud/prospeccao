@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { type LeadImportado, normalizarCidade, normalizarNome } from '@prospeccao/shared';
 import type { Executor } from './pool.js';
 
@@ -44,7 +45,7 @@ export async function gravarLead(
   campanhaId: number,
   l: LeadImportado,
   origem: OrigemLead = 'importacao',
-): Promise<{ empresaId: number; nova: boolean; ligada: boolean }> {
+): Promise<{ empresaId: number; nova: boolean; ligada: boolean; suprimida?: boolean }> {
   const uf = l.uf ?? '';
   const cidade = normalizarCidade(l.cidade ?? '');
   const achou = await acharEmpresa(db, l, uf, cidade);
@@ -62,6 +63,13 @@ export async function gravarLead(
     nova = (rows[0] as unknown as { nova: boolean }).nova;
   }
   const empresaId = achada;
+  // O titular pediu para ser esquecido (LGPD) nesta organização: não grava nada dele aqui.
+  const { rows: sup } = await db.query(
+    `SELECT 1 FROM cadastro.supressoes s JOIN cadastro.contas c ON c.organizacao_id = s.organizacao_id
+      WHERE c.id = $1 AND (s.empresa_id = $2 OR s.chaves && $3::text[])`,
+    [contaId, empresaId, chavesDoTitular(l)],
+  );
+  if (sup.length) return { empresaId, nova, ligada: false, suprimida: true };
   // Site é público: vale para a empresa (o enriquecimento lê o site), sem tirar o que já havia.
   if (l.site)
     await db.query(`UPDATE descoberta.empresas SET maps_site = coalesce(maps_site, $2) WHERE id = $1`, [
@@ -186,4 +194,14 @@ async function gravarContatos(
       [empresaId, contaId, pessoaId, c.canal, c.valor, c.rotulo, c === principal, fonte],
     );
   }
+}
+
+/** Hash do que identifica o titular (CNPJ, telefones, e-mails) para a lista de esquecidos (LGPD). */
+export function chaveTitular(valor: string): string {
+  return createHash('sha256').update(valor.trim().toLowerCase()).digest('hex');
+}
+
+function chavesDoTitular(l: LeadImportado): string[] {
+  const v = [l.cnpj, ...l.telefones.map((t) => t.numero), ...l.emails].filter((x): x is string => !!x);
+  return v.map(chaveTitular);
 }

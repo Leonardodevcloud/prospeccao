@@ -85,6 +85,10 @@ export async function criarLeadManual(
   };
   const { empresaId } = await comTransacao(pool, async (db) => {
     const g = await gravarLead(db, conta(), campanhaId, lead, 'manual');
+    if (g.suprimida)
+      throw AppError.conflito(
+        'Este contato pediu para ser esquecido (LGPD) e não pode ser cadastrado de novo nesta organização.',
+      );
     // A mesma empresa já é trabalhada por outra unidade da organização: desfaz e avisa.
     const [dona] = await deOutraUnidade(db, [g.empresaId]);
     if (dona)

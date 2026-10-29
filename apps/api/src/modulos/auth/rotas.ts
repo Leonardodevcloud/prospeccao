@@ -3,13 +3,15 @@ import {
   AppError,
   aceitarConvite,
   esqueciSenha,
+  loginDuasEtapas,
   loginEntrada,
   montarEmail,
   perfilEntrada,
+  TERMOS_VERSAO,
   trocarSenha,
 } from '@prospeccao/shared';
 import bcrypt from 'bcryptjs';
-import { type Request, Router } from 'express';
+import { type Request, type Response, Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp } from '../../endereco.js';
@@ -17,7 +19,8 @@ import { corpo } from '../../middlewares/http.js';
 import { COOKIE_SESSAO, exigirSessao } from '../../middlewares/seguranca.js';
 import { ipDe } from '../auditoria/middleware.js';
 import * as auditoria from '../auditoria/repositorio.js';
-import { abrirSessao, opcoesCookie } from './sessao.js';
+import { conferirSegundaEtapa, desafioDuasEtapas, lerDesafio, rotasContaSegura } from './contaSegura.js';
+import { iniciarSessao, opcoesCookie, sessaoDoCookie } from './sessao.js';
 
 /** Hash qualquer para comparar quando o e-mail não existe (o tempo não revela se o e-mail existe). */
 const HASH_FALSO = bcrypt.hashSync('senha-que-ninguem-tem', 10);
@@ -88,6 +91,23 @@ export function rotasAuth(deps: DepsApi): Router {
     return { id, nome: rows[0]?.nome ?? null, contaId: rows[0]?.conta_id ?? null };
   };
 
+  const temDuasEtapas = async (id: number) => {
+    const { rows } = await pool.query<{ ativo: boolean }>(
+      'SELECT totp_ativo AS ativo FROM cadastro.usuarios WHERE id = $1',
+      [id],
+    );
+    return !!rows[0]?.ativo;
+  };
+
+  /** Abre a sessão (registrada) e deixa no histórico. */
+  const entrar = async (req: Request, res: Response, id: number, descricao: string) => {
+    await pool.query('UPDATE cadastro.usuarios SET ultimo_acesso = now() WHERE id = $1', [id]);
+    await iniciarSessao(pool, req, res, auth, id);
+    void registrarAcesso(req, await quem(id), 'acesso', descricao);
+    deps.log.info({ usuario: id }, 'login');
+    res.json({ ok: true });
+  };
+
   r.post('/login', limitarLogin, async (req, res) => {
     const { email, senha } = corpo(req, loginEntrada);
     const { rows } = await pool.query<{
@@ -124,14 +144,44 @@ export function rotasAuth(deps: DepsApi): Router {
         'conta_desativada',
         'O acesso desta empresa está desativado. Fale com o administrador.',
       );
-    await pool.query('UPDATE cadastro.usuarios SET ultimo_acesso = now() WHERE id = $1', [id]);
-    abrirSessao(res, auth, id);
-    void registrarAcesso(req, await quem(id), 'acesso', 'Entrou no sistema');
-    deps.log.info({ usuario: id }, 'login');
-    res.json({ ok: true });
+    // Verificação em duas etapas ligada: a senha conferiu, falta o código do app.
+    if (await temDuasEtapas(id)) {
+      void registrarAcesso(req, await quem(id), 'acesso', 'Senha certa; esperando o código das duas etapas');
+      res.json({ duasEtapas: true, desafio: desafioDuasEtapas(auth.jwtSegredo, id) });
+      return;
+    }
+    await entrar(req, res, id, 'Entrou no sistema');
   });
 
-  r.post('/logout', (_req, res) => {
+  /** Segunda etapa do login: o código do app (ou um código de recuperação). */
+  r.post('/login/duas-etapas', limitarLogin, async (req, res) => {
+    const { desafio, codigo } = corpo(req, loginDuasEtapas);
+    const id = lerDesafio(auth.jwtSegredo, desafio);
+    if (!id)
+      throw new AppError(401, 'desafio_vencido', 'O tempo para digitar o código acabou. Entre de novo.');
+    const como = await conferirSegundaEtapa(pool, auth.jwtSegredo, id, codigo);
+    if (!como) {
+      void registrarAcesso(req, await quem(id), 'acesso', 'Código das duas etapas errado');
+      throw new AppError(
+        401,
+        'codigo_invalido',
+        'Código não confere. Digite o código que está aparecendo agora no app.',
+      );
+    }
+    await entrar(
+      req,
+      res,
+      id,
+      como === 'recuperacao' ? 'Entrou com um código de recuperação' : 'Entrou (verificação em duas etapas)',
+    );
+  });
+
+  r.post('/logout', async (req, res) => {
+    const sid = sessaoDoCookie(req, auth.jwtSegredo);
+    if (sid)
+      await pool
+        .query('UPDATE cadastro.sessoes SET revogada_em = now() WHERE id = $1 AND revogada_em IS NULL', [sid])
+        .catch(() => undefined);
     res.clearCookie(COOKIE_SESSAO, opcoesCookie(auth));
     res.status(204).end();
   });
@@ -159,9 +209,12 @@ export function rotasAuth(deps: DepsApi): Router {
       [req.params.token, hash],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Convite (o link expirou ou já foi usado)');
-    abrirSessao(res, auth, rows[0].id);
-    void registrarAcesso(req, await quem(rows[0].id), 'acesso', 'Criou a senha pelo convite');
-    res.json({ ok: true });
+    if (await temDuasEtapas(rows[0].id)) {
+      void registrarAcesso(req, await quem(rows[0].id), 'acesso', 'Criou a senha pelo convite');
+      res.json({ duasEtapas: true, desafio: desafioDuasEtapas(auth.jwtSegredo, rows[0].id) });
+      return;
+    }
+    await entrar(req, res, rows[0].id, 'Criou a senha pelo convite');
   });
 
   /* ───────────── Senha esquecida ───────────── */
@@ -289,17 +342,37 @@ export function rotasAuth(deps: DepsApi): Router {
       [hashDoToken(String(req.params.token ?? '')), hash],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Link de senha (expirou ou já foi usado)');
-    abrirSessao(res, auth, rows[0].id);
-    void registrarAcesso(req, await quem(rows[0].id), 'acesso', 'Criou uma senha nova pelo link do e-mail');
-    res.json({ ok: true });
+    // Senha nova: as sessões abertas com a senha antiga caem.
+    await pool.query(
+      'UPDATE cadastro.sessoes SET revogada_em = now() WHERE usuario_id = $1 AND revogada_em IS NULL',
+      [rows[0].id],
+    );
+    if (await temDuasEtapas(rows[0].id)) {
+      void registrarAcesso(req, await quem(rows[0].id), 'acesso', 'Criou uma senha nova pelo link do e-mail');
+      res.json({ duasEtapas: true, desafio: desafioDuasEtapas(auth.jwtSegredo, rows[0].id) });
+      return;
+    }
+    await entrar(req, res, rows[0].id, 'Criou uma senha nova pelo link do e-mail');
   });
 
   const sessao = exigirSessao(auth.jwtSegredo, pool);
+  r.use(
+    rotasContaSegura(deps, sessao, (req, descricao) => {
+      const u = req.usuario!;
+      void registrarAcesso(req, { id: u.id, nome: u.nome, contaId: u.contaPropria }, 'acesso', descricao);
+    }),
+  );
 
   r.get('/eu', sessao, async (req, res) => {
     const u = req.usuario!;
-    const { rows } = await pool.query<{ telefone: string | null; agendaToken: string }>(
-      `SELECT telefone, agenda_token AS "agendaToken" FROM cadastro.usuarios WHERE id = $1`,
+    const { rows } = await pool.query<{
+      telefone: string | null;
+      agendaToken: string;
+      totpAtivo: boolean;
+      termosVersao: string | null;
+    }>(
+      `SELECT telefone, agenda_token AS "agendaToken", totp_ativo AS "totpAtivo", termos_versao AS "termosVersao"
+         FROM cadastro.usuarios WHERE id = $1`,
       [u.id],
     );
     const { rows: c } = await pool.query<{
@@ -308,8 +381,15 @@ export function rotasAuth(deps: DepsApi): Router {
       organizacao_id: number;
       organizacao: string;
       unidades: number;
+      exigir_2fa: boolean;
+      marca_nome: string | null;
+      marca_cor: string | null;
+      tem_logo: boolean;
+      marca_versao: string | null;
     }>(
-      `SELECT o.plano, o.modulos, o.id AS organizacao_id, o.nome AS organizacao,
+      `SELECT o.plano, o.modulos, o.id AS organizacao_id, o.nome AS organizacao, o.exigir_2fa,
+              o.marca_nome, o.marca_cor, (o.marca_logo IS NOT NULL) AS tem_logo,
+              extract(epoch FROM o.marca_atualizada_em)::bigint::text AS marca_versao,
               (SELECT count(*)::int FROM cadastro.contas x WHERE x.organizacao_id = o.id AND x.ativa) AS unidades
          FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE c.id = $1`,
       [u.contaId],
@@ -331,6 +411,17 @@ export function rotasAuth(deps: DepsApi): Router {
       organizacao: c[0] ? { id: c[0].organizacao_id, nome: c[0].organizacao, unidades: c[0].unidades } : null,
       master: u.master,
       papelOrganizacao: u.papelOrganizacao,
+      duasEtapas: { ativo: !!rows[0]?.totpAtivo, exigido: !!c[0]?.exigir_2fa },
+      termos: { versao: TERMOS_VERSAO, aceitos: rows[0]?.termosVersao === TERMOS_VERSAO },
+      // Marca do cliente (white label): nome, cor e logo no sistema e nos relatórios.
+      marca:
+        c[0] && (c[0].marca_nome || c[0].marca_cor || c[0].tem_logo)
+          ? {
+              nome: c[0].marca_nome,
+              cor: c[0].marca_cor,
+              logo: c[0].tem_logo ? `/organizacao/marca/logo?v=${c[0].marca_versao ?? '0'}` : null,
+            }
+          : null,
       // O master dentro de outra conta (a tela mostra a faixa "você está na conta X").
       foraDaPropria: u.contaId !== u.contaPropria,
     });
@@ -360,6 +451,12 @@ export function rotasAuth(deps: DepsApi): Router {
       req.usuario!.id,
       await bcrypt.hash(nova, 10),
     ]);
+    // Senha nova: os outros aparelhos saem (este continua).
+    await pool.query(
+      `UPDATE cadastro.sessoes SET revogada_em = now()
+        WHERE usuario_id = $1 AND revogada_em IS NULL AND id IS DISTINCT FROM $2`,
+      [req.usuario!.id, req.usuario!.sessaoId],
+    );
     void registrarAcesso(req, await quem(req.usuario!.id), 'acesso', 'Trocou a própria senha');
     res.json({ ok: true });
   });

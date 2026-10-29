@@ -13,21 +13,86 @@ export function Login() {
   const [params] = useSearchParams();
   const voltar = params.get('voltar');
 
-  const entrar = useMutation({
-    mutationFn: () => api('/auth/login', { metodo: 'POST', corpo: { email, senha } }),
+  const [desafio, setDesafio] = useState<string | null>(params.get('desafio'));
+  const [codigo, setCodigo] = useState('');
+
+  const seguir = async () => {
     // só caminhos internos, para o parâmetro não virar redirecionamento para fora
-    onSuccess: async () => {
-      if (voltar?.startsWith('/') && !voltar.startsWith('//')) return navegar(voltar, { replace: true });
-      // Quem administra a plataforma começa pelo painel dela; o resto, pelos leads.
-      const eu = await api<{ master: boolean }>('/auth/eu').catch(() => null);
-      navegar(eu?.master ? '/plataforma' : '/', { replace: true });
+    if (voltar?.startsWith('/') && !voltar.startsWith('//')) return navegar(voltar, { replace: true });
+    // Quem administra a plataforma começa pelo painel dela; o gestor, pelo da organização.
+    const eu = await api<{ master: boolean; papelOrganizacao: string | null }>('/auth/eu').catch(() => null);
+    navegar(eu?.master ? '/plataforma' : eu?.papelOrganizacao ? '/organizacao' : '/', { replace: true });
+  };
+  const entrar = useMutation({
+    mutationFn: () =>
+      api<{ ok?: boolean; duasEtapas?: boolean; desafio?: string }>('/auth/login', {
+        metodo: 'POST',
+        corpo: { email, senha },
+      }),
+    onSuccess: (r) => {
+      if (r?.duasEtapas && r.desafio) setDesafio(r.desafio);
+      else void seguir();
     },
+  });
+  const confirmar = useMutation({
+    mutationFn: () => api('/auth/login/duas-etapas', { metodo: 'POST', corpo: { desafio, codigo } }),
+    onSuccess: () => void seguir(),
   });
 
   const enviar = (e: FormEvent) => {
     e.preventDefault();
     entrar.mutate();
   };
+
+  if (desafio)
+    return (
+      <TelaAcesso>
+        <form
+          className="login__caixa"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            confirmar.mutate();
+          }}
+          noValidate
+        >
+          <div className="login__cabeca">
+            <h1>Verificação em duas etapas</h1>
+            <p>Abra o app autenticador no celular e digite o código de 6 números da Prospect Team.</p>
+          </div>
+          <TextField
+            rotulo="Código"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            autoFocus
+            value={codigo}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCodigo(e.target.value)}
+          />
+          <ErroDaApi erro={confirmar.error} />
+          <Button
+            className="login__entrar"
+            variant="primary"
+            type="submit"
+            disabled={confirmar.isPending || codigo.trim().length < 6}
+          >
+            {confirmar.isPending ? 'Conferindo…' : 'Entrar'}
+          </Button>
+          <p className="login__nota">
+            Perdeu o celular? Use um dos códigos de recuperação (formato xxxx-xxxx) que você guardou ao ligar
+            a verificação, ou peça ao gestor para zerar a sua.{' '}
+            <button
+              type="button"
+              className="link-botao"
+              onClick={() => {
+                setDesafio(null);
+                setCodigo('');
+              }}
+            >
+              Voltar
+            </button>
+          </p>
+        </form>
+      </TelaAcesso>
+    );
 
   return (
     <TelaAcesso>
