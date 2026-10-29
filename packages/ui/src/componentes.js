@@ -355,6 +355,20 @@ var ICONS = {
     ['path', { d: 'M12 3v8' }],
     ['path', { d: 'M19 3v18' }],
   ],
+  'layout-dashboard': [
+    ['rect', { width: '7', height: '9', x: '3', y: '3', rx: '1' }],
+    ['rect', { width: '7', height: '5', x: '14', y: '3', rx: '1' }],
+    ['rect', { width: '7', height: '9', x: '14', y: '12', rx: '1' }],
+    ['rect', { width: '7', height: '5', x: '3', y: '16', rx: '1' }],
+  ],
+  activity: [['path', { d: 'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2' }]],
+  'trash-2': [
+    ['path', { d: 'M3 6h18' }],
+    ['path', { d: 'M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6' }],
+    ['path', { d: 'M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2' }],
+    ['line', { x1: '10', x2: '10', y1: '11', y2: '17' }],
+    ['line', { x1: '14', x2: '14', y1: '11', y2: '17' }],
+  ],
 };
 
 /* Canal de contato → ícone e rótulo. Ícones genéricos: nunca logos de marca. */

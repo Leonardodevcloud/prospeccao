@@ -8,6 +8,7 @@ import { temAtividade, useAtividade } from '../paginas/Atividade';
 import { useVisaoEmail } from '../paginas/Email';
 import { useFollowupsPendentes } from '../paginas/Funil';
 import { useMeuDiaResumo } from '../paginas/MeuDia';
+import { useNovosPedidos } from '../paginas/Vendas';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
 import { Logo } from './Marca';
 import { MinhaConta } from './MinhaConta';
@@ -44,12 +45,32 @@ const ITENS: {
   { para: '/equipe', rotulo: 'Equipe', icone: 'id-card', secao: 'Gestão' },
   { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', secao: 'Gestão', comPlano: true },
   { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', secao: 'Gestão', admin: true },
-  { para: '/master', rotulo: 'Clientes e planos', icone: 'building-2', secao: 'Plataforma', master: true },
-  { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', secao: 'Plataforma', master: true },
+  {
+    para: '/plataforma',
+    rotulo: 'Painel da plataforma',
+    icone: 'layout-dashboard',
+    secao: 'Plataforma',
+    master: true,
+    fim: true,
+  },
 ];
 
+/** Menu do painel da plataforma (só o master): o negócio, não a prospecção de uma conta. */
+const ITENS_PLATAFORMA: { para: string; rotulo: string; icone: string; secao?: string; fim?: boolean }[] = [
+  { para: '/plataforma', rotulo: 'Visão geral', icone: 'layout-dashboard', fim: true },
+  { para: '/plataforma/vendas', rotulo: 'Vendas', icone: 'kanban', secao: 'Comercial' },
+  { para: '/plataforma/clientes', rotulo: 'Clientes', icone: 'building-2', secao: 'Clientes' },
+  { para: '/plataforma/consumo', rotulo: 'Consumo e custos', icone: 'trending-up', secao: 'Clientes' },
+  { para: '/plataforma/operacao', rotulo: 'Operação', icone: 'activity', secao: 'Sistema' },
+  { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', secao: 'Sistema' },
+];
+
+/** Telas do painel da plataforma (menu próprio). */
+export const ehTelaDaPlataforma = (caminho: string) =>
+  caminho.startsWith('/plataforma') || caminho.startsWith('/base-cnpj') || caminho.startsWith('/master');
+
 /** O que está quebrado (e-mail não sai, chip caiu…): a faixa no topo, para o administrador. */
-function FaixaAlertas() {
+function FaixaAlertas(props: { plataforma: boolean }) {
   const admin = useSessao().data?.papel === 'admin';
   const navegar = useNavigate();
   const q = useQuery({
@@ -58,10 +79,12 @@ function FaixaAlertas() {
     enabled: admin,
     refetchInterval: 60_000,
   });
-  if (!admin || !q.data?.length) return null;
+  // Os da plataforma ficam na tela Operação do painel; no CRM, só os da conta.
+  const itens = props.plataforma ? [] : (q.data ?? []).filter((a) => a.contaId !== null);
+  if (!admin || !itens.length) return null;
   return (
     <ul className="faixa-alertas" aria-label="Alertas">
-      {q.data.map((a) => (
+      {itens.map((a) => (
         <li key={a.id} className="faixa-alerta" data-nivel={a.nivel}>
           <span className="faixa-alerta__icone">
             <Icon name={a.nivel === 'erro' ? 'circle-x' : 'circle-help'} size={16} />
@@ -108,12 +131,13 @@ export function Shell() {
   const ativo = temAtividade(useAtividade(60_000).data);
   const pendentes = useFollowupsPendentes().data?.pendentes ?? 0;
   const doAgente = useAgentePendente().data ?? 0;
+  const pedidosNovos = useNovosPedidos(!!sessao.data?.master).data?.novos ?? 0;
   const voltar = useMutation({
     mutationFn: () => api('/master/sair', { metodo: 'POST' }),
     onSuccess: () => {
       // Tudo que estava na tela era da outra conta.
       cliente.clear();
-      navegar('/master');
+      navegar('/plataforma/clientes');
     },
   });
   const sair = useMutation({
@@ -128,6 +152,8 @@ export function Shell() {
     return <Navigate to={`/login?voltar=${encodeURIComponent(local.pathname + local.search)}`} replace />;
   }
   if (sessao.isPending) return null;
+  const plataforma =
+    !!sessao.data?.master && !sessao.data.foraDaPropria && ehTelaDaPlataforma(local.pathname);
 
   return (
     <div className="app">
@@ -139,49 +165,85 @@ export function Shell() {
             {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
           </span>
         </div>
-        {ITENS.filter((i) =>
-          i.master
-            ? !!sessao.data?.master
-            : (!i.admin || sessao.data?.papel === 'admin') &&
-              (!i.comPlano || !!sessao.data?.conta.plano) &&
-              (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
-        ).map((i, n, visiveis) => (
-          <Fragment key={i.para}>
-            {i.secao && i.secao !== visiveis[n - 1]?.secao && <span className="nav__secao">{i.secao}</span>}
-            <NavLink to={i.para} end={i.fim} className="nav__link">
-              <Icon name={i.icone} size={16} />
-              {i.rotulo}
-              {i.para === '/hoje' && doDia > 0 && (
-                <span className="nav__conta" title="Tarefas e follow-ups atrasados ou para hoje">
-                  {doDia}
-                </span>
-              )}
-              {i.para === '/conversas' && naoLidas > 0 && (
-                <span className="nav__conta nav__conta--marca" title="Conversas com mensagem não lida">
-                  {naoLidas}
-                </span>
-              )}
-              {i.para === '/email' && respostasEmail > 0 && (
-                <span className="nav__conta nav__conta--marca" title="Respostas de e-mail não lidas">
-                  {respostasEmail}
-                </span>
-              )}
-              {i.para === '/funil' && pendentes > 0 && (
-                <span className="nav__conta" title="Follow-ups vencidos ou para hoje">
-                  {pendentes}
-                </span>
-              )}
-              {i.para === '/agente' && doAgente > 0 && (
-                <span className="nav__conta" title="Mensagens para revisar e leads que a IA passou para você">
-                  {doAgente}
-                </span>
-              )}
-              {i.para === '/atividade' && ativo && (
-                <span className="vivo nav__vivo" role="img" aria-label="trabalhando agora" />
-              )}
-            </NavLink>
-          </Fragment>
-        ))}
+        {plataforma && (
+          <>
+            {ITENS_PLATAFORMA.map((i, n) => (
+              <Fragment key={i.para}>
+                {i.secao && i.secao !== ITENS_PLATAFORMA[n - 1]?.secao && (
+                  <span className="nav__secao">{i.secao}</span>
+                )}
+                <NavLink to={i.para} end={i.fim} className="nav__link">
+                  <Icon name={i.icone} size={16} />
+                  {i.rotulo}
+                  {i.para === '/plataforma/vendas' && pedidosNovos > 0 && (
+                    <span className="nav__conta nav__conta--marca" title="Pedidos de demonstração novos">
+                      {pedidosNovos}
+                    </span>
+                  )}
+                </NavLink>
+              </Fragment>
+            ))}
+            <div className="nav__trocar">
+              <span className="nav__secao">Seu CRM</span>
+              <NavLink to="/hoje" className="nav__link">
+                <Icon name="users" size={16} />
+                Usar o CRM ({sessao.data?.conta.nome})
+              </NavLink>
+            </div>
+          </>
+        )}
+        {!plataforma &&
+          ITENS.filter((i) =>
+            i.master
+              ? !!sessao.data?.master
+              : (!i.admin || sessao.data?.papel === 'admin') &&
+                (!i.comPlano || !!sessao.data?.conta.plano) &&
+                (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
+          ).map((i, n, visiveis) => (
+            <Fragment key={i.para}>
+              {i.secao && i.secao !== visiveis[n - 1]?.secao && <span className="nav__secao">{i.secao}</span>}
+              <NavLink to={i.para} end={i.fim} className="nav__link">
+                <Icon name={i.icone} size={16} />
+                {i.rotulo}
+                {i.para === '/hoje' && doDia > 0 && (
+                  <span className="nav__conta" title="Tarefas e follow-ups atrasados ou para hoje">
+                    {doDia}
+                  </span>
+                )}
+                {i.para === '/conversas' && naoLidas > 0 && (
+                  <span className="nav__conta nav__conta--marca" title="Conversas com mensagem não lida">
+                    {naoLidas}
+                  </span>
+                )}
+                {i.para === '/email' && respostasEmail > 0 && (
+                  <span className="nav__conta nav__conta--marca" title="Respostas de e-mail não lidas">
+                    {respostasEmail}
+                  </span>
+                )}
+                {i.para === '/funil' && pendentes > 0 && (
+                  <span className="nav__conta" title="Follow-ups vencidos ou para hoje">
+                    {pendentes}
+                  </span>
+                )}
+                {i.para === '/agente' && doAgente > 0 && (
+                  <span
+                    className="nav__conta"
+                    title="Mensagens para revisar e leads que a IA passou para você"
+                  >
+                    {doAgente}
+                  </span>
+                )}
+                {i.para === '/plataforma' && pedidosNovos > 0 && (
+                  <span className="nav__conta nav__conta--marca" title="Pedidos de demonstração novos">
+                    {pedidosNovos}
+                  </span>
+                )}
+                {i.para === '/atividade' && ativo && (
+                  <span className="vivo nav__vivo" role="img" aria-label="trabalhando agora" />
+                )}
+              </NavLink>
+            </Fragment>
+          ))}
         <div className="nav__rodape">
           <div className="nav__eu">
             <button
@@ -216,7 +278,7 @@ export function Shell() {
             </Button>
           </div>
         )}
-        <FaixaAlertas />
+        <FaixaAlertas plataforma={plataforma} />
         <Outlet />
       </main>
       {conta && <MinhaConta aoFechar={() => setConta(false)} />}

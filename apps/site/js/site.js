@@ -2,7 +2,7 @@
 
 /**
  * Contato: o WhatsApp e o e-mail do comercial vêm do painel master do sistema (Pedidos do site), pela
- * mesma origem (/api, que o Vercel repassa para a API). Cada pedido também vira lead no funil.
+ * mesma origem (/api, que o Vercel repassa para a API). Cada pedido cai no quadro de Vendas do painel.
  */
 const API = '/api/site';
 
@@ -547,7 +547,7 @@ function iniciarTour() {
   }
 }
 
-/* ---------- contato: grava o pedido (vira lead no funil) e abre o WhatsApp com a mensagem pronta ---------- */
+/* ---------- contato: grava o pedido (quadro de Vendas do painel) e abre o WhatsApp com a mensagem pronta ---------- */
 function soDigitos(v) {
   return String(v || '').replace(/\D/g, '');
 }

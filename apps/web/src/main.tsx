@@ -3,7 +3,7 @@ import './app.css';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
+import { createBrowserRouter, Navigate, RouterProvider, useLocation } from 'react-router';
 import { ErroApi } from './api';
 import { ErroDaTela } from './componentes/ErroDaTela';
 import { Shell } from './componentes/Shell';
@@ -23,11 +23,19 @@ import { Master } from './paginas/Master';
 import { MeuDia } from './paginas/MeuDia';
 import { MeuPlano } from './paginas/MeuPlano';
 import { Nichos } from './paginas/Nichos';
+import { PlataformaConsumo, PlataformaOperacao, PlataformaVisao } from './paginas/Plataforma';
 import { Relatorios } from './paginas/Relatorios';
 import { EsqueciSenha, RedefinirSenha } from './paginas/Senha';
+import { PlataformaVendas } from './paginas/Vendas';
 
 // Tema claro sempre (preferência da operação).
 document.documentElement.setAttribute('data-theme', 'light');
+
+/** Endereço antigo do painel master (links salvos e avisos): vai para Clientes. */
+function ParaClientes() {
+  const { search } = useLocation();
+  return <Navigate to={`/plataforma/clientes${search}`} replace />;
+}
 
 const roteador = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -52,7 +60,12 @@ const roteador = createBrowserRouter([
       { path: 'atividade', element: <Atividade /> },
       { path: 'nichos', element: <Nichos /> },
       { path: 'base-cnpj', element: <BaseCnpj /> },
-      { path: 'master', element: <Master /> },
+      { path: 'master', element: <ParaClientes /> },
+      { path: 'plataforma', element: <PlataformaVisao /> },
+      { path: 'plataforma/vendas', element: <PlataformaVendas /> },
+      { path: 'plataforma/clientes', element: <Master /> },
+      { path: 'plataforma/consumo', element: <PlataformaConsumo /> },
+      { path: 'plataforma/operacao', element: <PlataformaOperacao /> },
       { path: 'auditoria', element: <Auditoria /> },
       { path: 'configuracoes', element: <Navigate to="/base-cnpj" replace /> },
     ],

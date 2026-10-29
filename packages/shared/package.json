@@ -11,7 +11,9 @@
     "./nichos-prontos": "./src/nichosProntos.ts",
     "./normalizar": "./src/normalizar.ts",
     "./planilha": "./src/planilha.ts",
-    "./planos": "./src/planos.ts"
+    "./planos": "./src/planos.ts",
+    "./plataforma": "./src/plataforma.ts",
+    "./site": "./src/site.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

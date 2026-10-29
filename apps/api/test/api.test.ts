@@ -3594,29 +3594,23 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     for (const n of nichos.filter((x) => ['Farmácias e drogarias', 'Óticas'].includes(x.nome)))
       await enviar('delete', `/nichos/${n.id}`);
   });
-  it('site: pedido de demonstração vira lead no funil do master e aparece no painel', async () => {
-    // Contato que o site mostra (painel master).
+  it('site: pedido de demonstração cai no quadro de vendas do master (não no CRM)', async () => {
     expect(
       (await enviar('put', '/master/site/config', { whatsapp: '(71) 99955-7040', email: '' })).body,
-    ).toEqual({
-      whatsapp: '5571999557040',
-      email: null,
-    });
+    ).toEqual({ whatsapp: '5571999557040', email: null });
     expect((await request(app).get('/site/contato')).body).toEqual({
       whatsapp: '5571999557040',
       email: null,
     });
 
-    // Público: sem login e de outro domínio.
+    const funilAntes = (await ler('/funil')).body;
     const ruim = await request(app)
       .post('/site/demonstracao')
       .set('Origin', 'https://site-qualquer.example')
       .send({ nome: 'Ana', empresa: 'Loja', whatsapp: '123' });
     expect(ruim.status).toBe(422);
-    const r = await request(app)
-      .post('/site/demonstracao')
-      .set('Origin', 'https://site-qualquer.example')
-      .send({
+    const pedir = () =>
+      request(app).post('/site/demonstracao').set('Origin', 'https://site-qualquer.example').send({
         nome: 'Ana Souza',
         empresa: 'Autopeças Demonstração',
         whatsapp: '(71) 98888-1212',
@@ -3625,34 +3619,80 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
         canal: 'whatsapp',
         site: '',
       });
-    expect(r.status).toBe(200);
+    expect((await pedir()).status).toBe(200);
+    // Pedir de novo com o mesmo número não cria outro card: anota no que está aberto.
+    expect((await pedir()).status).toBe(200);
     // Robô (campo-isca preenchido): responde ok e não grava.
     await request(app)
       .post('/site/demonstracao')
       .send({ nome: 'Robo', empresa: 'Spam', whatsapp: '71988881313', site: 'http://spam' });
 
     const painel = (await ler('/master/site')).body as {
-      pedidos: {
-        id: number;
-        empresa: string;
-        empresaId: number | null;
-        erroLead: string | null;
-        plano: string;
-      }[];
+      pedidos: { id: number; empresa: string; etapa: string; plano: string }[];
     };
     expect(painel.pedidos.map((p) => p.empresa)).toEqual(['Autopeças Demonstração']);
     const pedido = painel.pedidos[0]!;
-    expect(pedido).toMatchObject({ plano: 'Time', erroLead: null });
-    expect(pedido.empresaId).toBeTruthy();
+    expect(pedido).toMatchObject({ plano: 'Time', etapa: 'novo' });
     expect((await ler('/master/site/novos')).body).toEqual({ novos: 1 });
-    // O lead está no funil da conta principal, com a observação.
-    const ficha = await ler(`/empresas/${pedido.empresaId}`);
-    expect(ficha.status).toBe(200);
-    expect(ficha.body.nome).toBe('Autopeças Demonstração');
+    // O funil da conta principal não mudou.
+    expect((await ler('/funil')).body).toEqual(funilAntes);
 
-    expect((await enviar('patch', `/master/site/pedidos/${pedido.id}`, { status: 'atendido' })).status).toBe(
-      200,
-    );
+    // Andar no quadro: etapa, demonstração e histórico.
+    const demo = await enviar('patch', `/master/site/pedidos/${pedido.id}`, {
+      etapa: 'demonstracao',
+      demonstracaoEm: '2026-11-03T14:00:00-03:00',
+    });
+    expect(demo.status).toBe(200);
+    expect(demo.body.etapa).toBe('demonstracao');
+    await enviar('post', `/master/site/pedidos/${pedido.id}/notas`, { texto: 'Ligou e confirmou.' });
+    const detalhe = (await ler(`/master/site/pedidos/${pedido.id}`)).body as {
+      historico: { texto: string }[];
+    };
+    expect(detalhe.historico.map((h) => h.texto)).toEqual([
+      'Ligou e confirmou.',
+      expect.stringContaining('Novo pedido → Demonstração marcada'),
+      expect.stringContaining('Pediu demonstração de novo'),
+      expect.stringContaining('Pedido pelo site'),
+    ]);
+    // Virou cliente: liga à conta criada.
+    const conta = (await ler('/master/contas')).body.find((c: { principal: boolean }) => !c.principal);
+    const fechado = await enviar('patch', `/master/site/pedidos/${pedido.id}`, {
+      etapa: 'cliente',
+      contaId: conta.id,
+    });
+    expect(fechado.body).toMatchObject({ etapa: 'cliente', contaId: conta.id });
     expect((await ler('/master/site/novos')).body).toEqual({ novos: 0 });
+
+    // Pedido à mão.
+    const mao = await enviar('post', '/master/site/pedidos', {
+      nome: 'João',
+      empresa: 'Indicação Peças',
+      whatsapp: '71 98888-3434',
+      plano: 'Escala',
+    });
+    expect(mao.status).toBe(201);
+    expect((await enviar('delete', `/master/site/pedidos/${mao.body.id}`)).status).toBe(204);
+  });
+
+  it('painel da plataforma: visão geral, consumo e custo por cliente, custos unitários e operação', async () => {
+    const visao = await ler('/master/plataforma/visao');
+    expect(visao.status).toBe(200);
+    expect(visao.body.receita).toMatchObject({ mrr: expect.any(Number), clientesAtivos: expect.any(Number) });
+    expect(visao.body.vendas.porEtapa.cliente).toBeGreaterThanOrEqual(1);
+
+    const clientes = (await ler('/master/plataforma/clientes')).body as {
+      clientes: { id: number; principal: boolean; custo: { total: number; infra: number }; saude: string }[];
+    };
+    expect(clientes.clientes.find((c) => c.principal)?.custo.infra).toBe(0);
+
+    const custos = (await ler('/master/plataforma/custos')).body;
+    expect(custos.serperMil).toBeGreaterThan(0);
+    const salvo = await enviar('put', '/master/plataforma/custos', { ...custos, infraMes: 0, serperMil: 10 });
+    expect(salvo.body).toMatchObject({ infraMes: 0, serperMil: 10 });
+    expect((await enviar('put', '/master/plataforma/custos', { ...custos, dolar: -1 })).status).toBe(422);
+
+    const op = await ler('/master/plataforma/operacao');
+    expect(op.status).toBe(200);
+    expect(op.body.enriquecimentoPorDia).toHaveLength(14);
   });
 });

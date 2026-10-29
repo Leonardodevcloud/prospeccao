@@ -1997,7 +1997,7 @@ function Configuracao(props: { v: VisaoEmail }) {
                 {!master && ' Peça para quem administra o sistema.'}
               </p>
               {master && (
-                <Button size="sm" icon="building-2" href="/master">
+                <Button size="sm" icon="building-2" href="/plataforma/clientes">
                   Abrir o painel master
                 </Button>
               )}

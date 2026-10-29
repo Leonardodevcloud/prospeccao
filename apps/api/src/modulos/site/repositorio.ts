@@ -1,6 +1,7 @@
-import type { Pool } from '@prospeccao/db';
+import type { Executor, Pool } from '@prospeccao/db';
+import type { PedidoSiteAtualizar } from '@prospeccao/shared';
 
-/** Pedidos de demonstração do site e o contato comercial que ele mostra. */
+/** Pedidos de demonstração (site e cadastro à mão) e o contato comercial que o site mostra. */
 
 export interface ConfigSite {
   whatsapp: string | null;
@@ -40,6 +41,16 @@ export async function pedidosRecentes(pool: Pool, ipHash: string): Promise<numbe
   return rows[0]?.n ?? 0;
 }
 
+/** Pedido aberto do mesmo WhatsApp (pedir de novo não cria outro card). */
+export async function pedidoAbertoDoNumero(pool: Pool, whatsapp: string): Promise<number | null> {
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM cadastro.pedidos_site
+      WHERE whatsapp = $1 AND etapa NOT IN ('cliente', 'perdido') ORDER BY id DESC LIMIT 1`,
+    [whatsapp],
+  );
+  return rows[0] ? Number(rows[0].id) : null;
+}
+
 export async function gravarPedido(
   pool: Pool,
   p: {
@@ -50,50 +61,75 @@ export async function gravarPedido(
     nicho: string | null;
     plano: string | null;
     canal: string;
-    ipHash: string;
+    ipHash: string | null;
+    nota?: string | null;
   },
 ): Promise<number> {
-  const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO cadastro.pedidos_site (nome, empresa, whatsapp, email, nicho, plano, canal, ip_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-    [p.nome, p.empresa, p.whatsapp, p.email, p.nicho, p.plano, p.canal, p.ipHash],
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO cadastro.pedidos_site (nome, empresa, whatsapp, email, nicho, plano, canal, ip_hash, nota)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    [p.nome, p.empresa, p.whatsapp, p.email, p.nicho, p.plano, p.canal, p.ipHash, p.nota ?? null],
   );
   return Number(rows[0]!.id);
 }
 
-export async function ligarLead(
-  pool: Pool,
-  id: number,
-  empresaId: number | null,
-  erro: string | null,
-): Promise<void> {
-  await pool.query('UPDATE cadastro.pedidos_site SET empresa_id = $2, erro_lead = $3 WHERE id = $1', [
-    id,
-    empresaId,
-    erro,
-  ]);
+export async function historico(db: Executor, pedidoId: number, texto: string, autor: string | null) {
+  await db.query(
+    'INSERT INTO cadastro.pedidos_site_historico (pedido_id, texto, autor) VALUES ($1, $2, $3)',
+    [pedidoId, texto.slice(0, 1000), autor],
+  );
 }
+
+const CAMPOS = `p.id::int, p.nome, p.empresa, p.whatsapp, p.email, p.nicho, p.plano, p.canal, p.etapa, p.nota,
+  p.motivo_perda AS "motivoPerda", p.demonstracao_em AS "demonstracaoEm", p.conta_id AS "contaId",
+  (SELECT c.nome FROM cadastro.contas c WHERE c.id = p.conta_id) AS "contaNome",
+  p.criado_em AS "criadoEm", p.atualizado_em AS "atualizadoEm"`;
 
 export async function listar(pool: Pool) {
   const { rows } = await pool.query(
-    `SELECT id, nome, empresa, whatsapp, email, nicho, plano, canal, status,
-            empresa_id AS "empresaId", erro_lead AS "erroLead", criado_em AS "criadoEm"
-       FROM cadastro.pedidos_site ORDER BY criado_em DESC LIMIT 300`,
+    `SELECT ${CAMPOS} FROM cadastro.pedidos_site p
+      WHERE p.etapa NOT IN ('cliente', 'perdido') OR p.atualizado_em > now() - interval '90 days'
+      ORDER BY p.atualizado_em DESC LIMIT 500`,
   );
-  return rows.map((r) => ({ ...r, id: Number(r.id), empresaId: r.empresaId ? Number(r.empresaId) : null }));
+  return rows;
+}
+
+export async function obter(pool: Pool, id: number) {
+  const { rows } = await pool.query(`SELECT ${CAMPOS} FROM cadastro.pedidos_site p WHERE p.id = $1`, [id]);
+  if (!rows[0]) return null;
+  const h = await pool.query(
+    `SELECT id::int, texto, autor, criado_em AS "criadoEm" FROM cadastro.pedidos_site_historico
+      WHERE pedido_id = $1 ORDER BY criado_em DESC, id DESC LIMIT 100`,
+    [id],
+  );
+  return { ...rows[0], historico: h.rows };
 }
 
 export async function contarNovos(pool: Pool): Promise<number> {
   const { rows } = await pool.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM cadastro.pedidos_site WHERE status = 'novo'`,
+    `SELECT count(*)::int AS n FROM cadastro.pedidos_site WHERE etapa = 'novo'`,
   );
   return rows[0]?.n ?? 0;
 }
 
-export async function mudarStatus(pool: Pool, id: number, status: string): Promise<boolean> {
-  const { rowCount } = await pool.query('UPDATE cadastro.pedidos_site SET status = $2 WHERE id = $1', [
-    id,
-    status,
-  ]);
-  return !!rowCount;
+/** Atualiza o que veio (undefined = não mexe) e devolve a linha anterior para o histórico. */
+export async function atualizar(pool: Pool, id: number, d: PedidoSiteAtualizar) {
+  const antes = await pool.query<{ etapa: string; conta_id: number | null }>(
+    'SELECT etapa, conta_id FROM cadastro.pedidos_site WHERE id = $1',
+    [id],
+  );
+  if (!antes.rows[0]) return null;
+  const sets: string[] = ['atualizado_em = now()'];
+  const valores: unknown[] = [id];
+  const set = (coluna: string, v: unknown) => {
+    valores.push(v);
+    sets.push(`${coluna} = $${valores.length}`);
+  };
+  if (d.etapa !== undefined) set('etapa', d.etapa);
+  if (d.nota !== undefined) set('nota', d.nota || null);
+  if (d.motivoPerda !== undefined) set('motivo_perda', d.motivoPerda || null);
+  if (d.demonstracaoEm !== undefined) set('demonstracao_em', d.demonstracaoEm);
+  if (d.contaId !== undefined) set('conta_id', d.contaId);
+  await pool.query(`UPDATE cadastro.pedidos_site SET ${sets.join(', ')} WHERE id = $1`, valores);
+  return antes.rows[0];
 }

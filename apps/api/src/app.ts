@@ -33,6 +33,7 @@ import { rotasMaster } from './modulos/master/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
 import { rotasNotificacoes } from './modulos/notificacoes/rotas.js';
 import { rotasPlaces } from './modulos/places/rotas.js';
+import { rotasPlataforma } from './modulos/plataforma/rotas.js';
 import { rotasRelatorios } from './modulos/relatorios/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
 import { rotasSiteMaster, rotasSitePublico } from './modulos/site/rotas.js';
@@ -120,6 +121,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
   // Painel master: contas, credenciais e acesso a qualquer conta.
   protegidas.use('/master/site', exigirMaster, rotasSiteMaster(deps));
+  protegidas.use('/master/plataforma', exigirMaster, rotasPlataforma(deps));
   protegidas.use('/master', exigirMaster, rotasMaster(deps));
   app.use(protegidas);
 

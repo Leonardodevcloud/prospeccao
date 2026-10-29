@@ -20,7 +20,6 @@ import {
 } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { PedidosSite, useNovosDoSite } from '../componentes/PedidosSite';
 import {
   FormPlano,
   ResumoPlano,
@@ -31,6 +30,7 @@ import {
 import { useSessao } from '../componentes/Sessao';
 import { fmtMes, fmtNumero, fmtQuando, fmtReais } from '../formatar';
 import { LinkConvite } from './Equipe';
+import { type ClientePainel, ROTULO_SAUDE, TOM_SAUDE } from './Plataforma';
 
 /* ───────────────────────── Peças ───────────────────────── */
 
@@ -917,7 +917,7 @@ function Conta(props: { id: number; aoFechar: () => void }) {
   const naConta = sessao.data?.conta.id === props.id;
 
   return (
-    <Drawer titulo={c?.nome ?? 'Cliente'} barra="Clientes e planos" aoFechar={props.aoFechar} largo>
+    <Drawer titulo={c?.nome ?? 'Cliente'} barra="Clientes" aoFechar={props.aoFechar} largo>
       <div className="drawer__corpo">
         {q.isPending ? (
           <div className="esqueleto" />
@@ -1084,10 +1084,27 @@ function PlanoDaConta(props: { contaId: number }) {
 
 /* ───────────────────────── Nova conta ───────────────────────── */
 
-function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void }) {
+export function NovaConta(props: {
+  aoFechar: () => void;
+  aoAbrir: (id: number) => void;
+  /** Pedido do quadro de vendas que virou cliente: os dados já vêm preenchidos. */
+  inicial?: {
+    nome?: string;
+    adminNome?: string;
+    email?: string | null;
+    plano?: Plano | null;
+    observacoes?: string;
+  };
+  aoCriar?: (id: number) => void;
+}) {
   const cliente = useQueryClient();
-  const [f, setF] = useState({ nome: '', observacoes: '', admin: { nome: '', email: '' } });
-  const [plano, setPlano] = useState<Plano>('start');
+  const ini = props.inicial;
+  const [f, setF] = useState({
+    nome: ini?.nome ?? '',
+    observacoes: ini?.observacoes ?? '',
+    admin: { nome: ini?.adminNome ?? '', email: ini?.email ?? '' },
+  });
+  const [plano, setPlano] = useState<Plano>(ini?.plano ?? 'start');
   const tabela = useTabelaPrecos().data ?? TABELA_PADRAO;
   const [modulos, setModulos] = useState<Modulo[]>([]);
   const criar = useMutation({
@@ -1104,11 +1121,14 @@ function NovaConta(props: { aoFechar: () => void; aoAbrir: (id: number) => void 
               : { plano, modulos },
         },
       }),
-    onSuccess: () => cliente.invalidateQueries({ queryKey: ['master', 'contas'] }),
+    onSuccess: (r) => {
+      cliente.invalidateQueries({ queryKey: ['master'] });
+      props.aoCriar?.(r.id);
+    },
   });
 
   return (
-    <Drawer titulo="Novo cliente" barra="Clientes e planos" aoFechar={props.aoFechar}>
+    <Drawer titulo="Novo cliente" barra="Clientes" aoFechar={props.aoFechar}>
       <div className="drawer__corpo">
         {criar.data ? (
           <div className="pilha" style={{ gap: 16 }}>
@@ -1268,13 +1288,12 @@ export function Master() {
     queryFn: () => api<ContaResumo[]>('/master/contas'),
     enabled: !!sessao.data?.master,
   });
-  const novosDoSite = useNovosDoSite(!!sessao.data?.master);
-  const pedidosAbertos = params.get('pedidos') === '1';
-  const abrirPedidos = (sim: boolean) => {
-    const p = new URLSearchParams(params);
-    sim ? p.set('pedidos', '1') : p.delete('pedidos');
-    setParams(p, { replace: true });
-  };
+  const painel = useQuery({
+    queryKey: ['master', 'clientes-painel'],
+    queryFn: () => api<{ clientes: ClientePainel[] }>('/master/plataforma/clientes'),
+    enabled: !!sessao.data?.master,
+  });
+  const saude = new Map(painel.data?.clientes.map((c) => [c.id, c]) ?? []);
   const aberta = Number(params.get('conta')) || null;
   const abrir = (id: number | null) => {
     const p = new URLSearchParams(params);
@@ -1298,21 +1317,13 @@ export function Master() {
     <>
       <div className="topo">
         <div>
-          <h1>Clientes e planos</h1>
+          <h1>Clientes</h1>
           <p>
             As empresas que contrataram o Prospect Team: plano, módulos, usuários, uso do mês, chaves de API e
             o acesso para dar suporte.
           </p>
         </div>
         <div className="acoes">
-          <Button variant="ghost" icon="inbox" onClick={() => abrirPedidos(true)}>
-            Pedidos do site
-            {!!novosDoSite.data?.novos && (
-              <Badge tone="brand">
-                {fmtNumero(novosDoSite.data.novos)} {novosDoSite.data.novos === 1 ? 'novo' : 'novos'}
-              </Badge>
-            )}
-          </Button>
           <Button variant="ghost" icon="file-text" onClick={() => setPrecos(true)}>
             Tabela de preços
           </Button>
@@ -1358,6 +1369,7 @@ export function Master() {
               <thead>
                 <tr>
                   <th>Cliente</th>
+                  <th>Saúde</th>
                   <th>Plano</th>
                   <th>Módulos</th>
                   <th>Usuários</th>
@@ -1384,6 +1396,17 @@ export function Master() {
                         {c.principal && <Badge tone="brand">Sua conta</Badge>}
                         {!c.ativa && <Badge tone="danger">Desativada</Badge>}
                         {sessao.data?.conta.id === c.id && <Badge tone="outline">Você está aqui</Badge>}
+                      </td>
+                      <td>
+                        {(() => {
+                          const x = saude.get(c.id);
+                          if (!x || c.principal) return <span className="quieto">—</span>;
+                          return (
+                            <span title={x.saudeTexto}>
+                              <Badge tone={TOM_SAUDE[x.saude]}>{ROTULO_SAUDE[x.saude]}</Badge>
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td>{p.plano ? ROTULO_PLANO[p.plano] : <span className="quieto">Sem plano</span>}</td>
                       <td>
@@ -1440,17 +1463,8 @@ export function Master() {
         />
       )}
       {aberta && <Conta key={aberta} id={aberta} aoFechar={() => abrir(null)} />}
-      {pedidosAbertos && (
-        <Drawer titulo="Pedidos do site" barra="Clientes e planos" aoFechar={() => abrirPedidos(false)} largo>
-          <div className="drawer__corpo">
-            <PedidosSite
-              naContaPrincipal={!!contas.find((c) => c.principal && c.id === sessao.data?.conta.id)}
-            />
-          </div>
-        </Drawer>
-      )}
       {precos && (
-        <Drawer titulo="Tabela de preços" barra="Clientes e planos" aoFechar={() => setPrecos(false)} largo>
+        <Drawer titulo="Tabela de preços" barra="Clientes" aoFechar={() => setPrecos(false)} largo>
           <div className="drawer__corpo">
             <TabelaDePrecos />
           </div>

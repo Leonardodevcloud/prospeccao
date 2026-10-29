@@ -241,3 +241,7 @@ export function iniciais(nome: string | null | undefined): string {
     ((partes[0]?.[0] ?? '') + (partes.length > 1 ? (partes.at(-1)?.[0] ?? '') : '')).toUpperCase() || '?'
   );
 }
+
+const reaisCentavos = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+/** "R$ 12,34" (custos pequenos, onde os centavos importam). */
+export const fmtReaisCentavos = (n: number | null | undefined) => (n == null ? '—' : reaisCentavos.format(n));

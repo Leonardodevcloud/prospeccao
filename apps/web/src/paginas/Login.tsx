@@ -16,8 +16,12 @@ export function Login() {
   const entrar = useMutation({
     mutationFn: () => api('/auth/login', { metodo: 'POST', corpo: { email, senha } }),
     // só caminhos internos, para o parâmetro não virar redirecionamento para fora
-    onSuccess: () =>
-      navegar(voltar?.startsWith('/') && !voltar.startsWith('//') ? voltar : '/', { replace: true }),
+    onSuccess: async () => {
+      if (voltar?.startsWith('/') && !voltar.startsWith('//')) return navegar(voltar, { replace: true });
+      // Quem administra a plataforma começa pelo painel dela; o resto, pelos leads.
+      const eu = await api<{ master: boolean }>('/auth/eu').catch(() => null);
+      navegar(eu?.master ? '/plataforma' : '/', { replace: true });
+    },
   });
 
   const enviar = (e: FormEvent) => {

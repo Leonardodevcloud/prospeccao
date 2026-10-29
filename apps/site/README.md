@@ -15,7 +15,7 @@ apps/site/
 
 ## Antes de publicar
 
-1. O WhatsApp e o e-mail do comercial ficam no sistema: painel master → **Pedidos do site**. Cada pedido do formulário vira lead no funil da conta principal e aparece nessa tela. O `vercel.json` repassa `/api/site/*` para a API (troque o endereço se a API mudar de domínio).
+1. O WhatsApp e o e-mail do comercial ficam no sistema: painel da plataforma → **Vendas → Contato do site**. Cada pedido do formulário cai no quadro de Vendas do painel (não no CRM). O `vercel.json` repassa `/api/site/*` para a API (troque o endereço se a API mudar de domínio).
 2. Quando tiver o domínio, troque `app.prospectteam.com.br` (barra das telas) e acrescente a URL completa em `og:image` / `canonical` no `index.html`.
 
 ## Rodar localmente

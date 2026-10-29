@@ -41,4 +41,28 @@ export const configSiteEntrada = z.object({
   email: z.string().trim().toLowerCase().email('E-mail inválido.').max(200).nullish().or(z.literal('')),
 });
 
-export const pedidoSiteStatusEntrada = z.object({ status: z.enum(['novo', 'atendido', 'descartado']) });
+/** Quadro de vendas da plataforma (painel master): o caminho do pedido do site até virar cliente. */
+export const ETAPAS_VENDA = ['novo', 'contato', 'demonstracao', 'proposta', 'cliente', 'perdido'] as const;
+export type EtapaVenda = (typeof ETAPAS_VENDA)[number];
+export const ROTULO_ETAPA_VENDA: Record<EtapaVenda, string> = {
+  novo: 'Novo pedido',
+  contato: 'Em contato',
+  demonstracao: 'Demonstração marcada',
+  proposta: 'Proposta enviada',
+  cliente: 'Virou cliente',
+  perdido: 'Perdido',
+};
+
+export const pedidoSiteAtualizar = z.object({
+  etapa: z.enum(ETAPAS_VENDA).optional(),
+  nota: z.string().trim().max(2000).nullish(),
+  motivoPerda: z.string().trim().max(300).nullish(),
+  demonstracaoEm: z.string().datetime({ offset: true }).nullish(),
+  contaId: z.number().int().positive().nullish(),
+});
+export type PedidoSiteAtualizar = z.infer<typeof pedidoSiteAtualizar>;
+
+/** Pedido cadastrado à mão no quadro de vendas (indicação, contato que chegou por outro canal). */
+export const pedidoVendaNovo = pedidoSiteEntrada
+  .pick({ nome: true, empresa: true, whatsapp: true, email: true, nicho: true, plano: true })
+  .extend({ nota: z.string().trim().max(2000).nullish() });

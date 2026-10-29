@@ -2,28 +2,39 @@ import { createHash } from 'node:crypto';
 import {
   AppError,
   configSiteEntrada,
+  type EtapaVenda,
   formatarTelefone,
   normalizarTelefone,
+  pedidoSiteAtualizar,
   pedidoSiteEntrada,
-  pedidoSiteStatusEntrada,
+  pedidoVendaNovo,
+  ROTULO_ETAPA_VENDA,
   whatsappComDdi,
 } from '@prospeccao/shared';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
+import { z } from 'zod';
 import { comConta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
-import { criarLeadManual, LeadExistente } from '../funil/novoLead.js';
-import { registrarAtividade } from '../funil/repositorio.js';
-import { notificar, notificarDono } from '../notificacoes/repositorio.js';
+import { notificar } from '../notificacoes/repositorio.js';
 import * as repo from './repositorio.js';
 
-/** Quem preenche o formulário do site: o lead entra no funil da conta principal com esta origem. */
-const AUTOR = 'Site (pedido de demonstração)';
+const pedidoNotaEntrada = z.object({ texto: z.string().trim().min(1, 'Escreva a anotação.').max(1000) });
+
+const fmtData = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
 /**
  * Rotas públicas do site institucional (sem login, chamadas pelo próprio site via /api do Vercel):
- * o contato comercial a mostrar e o pedido de demonstração, que vira lead no funil do master.
+ * o contato comercial a mostrar e o pedido de demonstração, que cai no quadro de vendas do master
+ * (não no CRM: é venda da plataforma, não prospecção da conta principal).
  */
 export function rotasSitePublico(deps: DepsApi): Router {
   const { pool, log } = deps;
@@ -67,101 +78,65 @@ export function rotasSitePublico(deps: DepsApi): Router {
     }
     const telefone = normalizarTelefone(d.whatsapp)!;
     const plano = d.plano && d.plano !== 'Ainda não sei' ? d.plano : null;
-    const id = await repo.gravarPedido(pool, {
-      nome: d.nome,
-      empresa: d.empresa,
-      whatsapp: telefone,
-      email: d.email || null,
-      nicho: d.nicho || null,
-      plano,
-      canal: d.canal,
-      ipHash,
-    });
-    log.info({ pedido: id, canal: d.canal }, 'site: pedido de demonstração');
+    const resumo = [
+      d.nicho ? `Vende para: ${d.nicho}.` : '',
+      plano ? `Plano de interesse: ${plano}.` : '',
+      d.canal === 'whatsapp'
+        ? 'Seguiu para o WhatsApp com a mensagem pronta.'
+        : d.canal === 'email'
+          ? 'Seguiu para o e-mail com a mensagem pronta.'
+          : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
 
-    // Vira lead no funil da conta principal. Se não der (conta sem nicho, etc.), o pedido fica
-    // registrado no painel master do mesmo jeito.
+    // A mesma pessoa pedindo de novo: anota no pedido que já está aberto.
+    const aberto = await repo.pedidoAbertoDoNumero(pool, telefone);
+    const id =
+      aberto ??
+      (await repo.gravarPedido(pool, {
+        nome: d.nome,
+        empresa: d.empresa,
+        whatsapp: telefone,
+        email: d.email || null,
+        nicho: d.nicho || null,
+        plano,
+        canal: d.canal,
+        ipHash,
+      }));
+    await repo.historico(
+      pool,
+      id,
+      aberto ? `Pediu demonstração de novo pelo site. ${resumo}` : `Pedido pelo site. ${resumo}`,
+      d.nome,
+    );
+    log.info({ pedido: id, canal: d.canal, repetido: !!aberto }, 'site: pedido de demonstração');
+
+    // Aviso no sino (e no celular) de quem administra a plataforma.
     const contaId = await repo.contaPrincipal(pool);
-    if (contaId) {
-      const observacao = [
-        'Pedido de demonstração pelo site.',
-        d.nicho ? `Vende para: ${d.nicho}.` : '',
-        plano ? `Plano de interesse: ${plano}.` : '',
-        d.canal === 'whatsapp'
-          ? 'Seguiu para o WhatsApp com a mensagem pronta.'
-          : d.canal === 'email'
-            ? 'Seguiu para o e-mail com a mensagem pronta.'
-            : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
+    if (contaId)
       await comConta(contaId, async () => {
-        let empresaId: number | null = null;
-        let erro: string | null = null;
-        try {
-          const lead = await criarLeadManual(
-            deps,
-            {
-              empresa: d.empresa,
-              contato: d.nome,
-              cargo: null,
-              telefone,
-              whatsapp: true,
-              email: d.email || null,
-              cnpj: null,
-              cidade: null,
-              uf: null,
-              site: null,
-              instagram: null,
-              observacao,
-              etapaId: null,
-              responsavelId: null,
-              agente: false,
-              enriquecer: false,
-              telefoneConversa: null,
-            },
-            AUTOR,
-          );
-          empresaId = lead.empresaId;
-        } catch (e) {
-          if (e instanceof LeadExistente) {
-            empresaId = (e.detalhes as { empresaId: number }).empresaId;
-            await registrarAtividade(
-              pool,
-              empresaId,
-              { tipo: 'nota', direcao: null, texto: observacao },
-              AUTOR,
-            );
-          } else {
-            erro = e instanceof Error ? e.message.slice(0, 300) : String(e);
-            log.warn({ pedido: id, erro }, 'site: pedido sem lead no funil');
-          }
-        }
-        await repo.ligarLead(pool, id, empresaId, erro);
-        const aviso = {
-          tipo: 'sistema' as const,
-          titulo: `Pedido de demonstração: ${d.empresa}`,
-          texto: `${d.nome} · ${formatarTelefone(telefone)}${plano ? ` · ${plano}` : ''}`,
-        };
-        if (empresaId) await notificarDono(pool, empresaId, aviso);
-        else {
-          const { rows } = await pool.query<{ id: number }>(
-            'SELECT id FROM cadastro.usuarios WHERE conta_id = $1 AND (master OR papel = $2) AND ativo',
-            [contaId, 'admin'],
-          );
-          for (const u of rows) await notificar(pool, u.id, { ...aviso, link: '/master?pedidos=1' });
-        }
+        const { rows } = await pool.query<{ id: number }>(
+          'SELECT id FROM cadastro.usuarios WHERE conta_id = $1 AND master AND ativo',
+          [contaId],
+        );
+        for (const u of rows)
+          await notificar(pool, u.id, {
+            tipo: 'sistema',
+            titulo: `Pedido de demonstração: ${d.empresa}`,
+            texto: `${d.nome} · ${formatarTelefone(telefone)}${plano ? ` · ${plano}` : ''}`,
+            link: `/plataforma/vendas?pedido=${id}`,
+          });
       }).catch((e: unknown) =>
         log.error({ pedido: id, erro: (e as Error).message }, 'site: aviso do pedido'),
       );
-    }
     res.json({ ok: true });
   });
 
   return r;
 }
 
-/** Painel master: pedidos que chegaram pelo site e o contato comercial que ele mostra. */
+/** Painel master: quadro de vendas da plataforma e o contato comercial que o site mostra. */
 export function rotasSiteMaster({ pool }: DepsApi): Router {
   const r = Router();
   r.get('/', async (_req, res) => {
@@ -177,10 +152,82 @@ export function rotasSiteMaster({ pool }: DepsApi): Router {
     await repo.salvarConfig(pool, config, req.usuario!.id);
     res.json(config);
   });
+
+  /** Oportunidade que chegou por outro canal (indicação, ligação): entra no quadro à mão. */
+  r.post('/pedidos', async (req, res) => {
+    const d = corpo(req, pedidoVendaNovo);
+    const plano = d.plano && d.plano !== 'Ainda não sei' ? d.plano : null;
+    const id = await repo.gravarPedido(pool, {
+      nome: d.nome,
+      empresa: d.empresa,
+      whatsapp: normalizarTelefone(d.whatsapp)!,
+      email: d.email || null,
+      nicho: d.nicho || null,
+      plano,
+      canal: 'formulario',
+      ipHash: null,
+      nota: d.nota || null,
+    });
+    await repo.historico(pool, id, 'Cadastrado à mão no quadro de vendas.', req.usuario!.nome);
+    res.status(201).json(await repo.obter(pool, id));
+  });
+
+  r.get('/pedidos/:id', async (req, res) => {
+    const p = await repo.obter(pool, idDaRota(req));
+    if (!p) throw AppError.naoEncontrado('Pedido');
+    res.json(p);
+  });
+
   r.patch('/pedidos/:id', async (req, res) => {
-    const { status } = corpo(req, pedidoSiteStatusEntrada);
-    if (!(await repo.mudarStatus(pool, idDaRota(req), status))) throw AppError.naoEncontrado('Pedido');
-    res.json({ ok: true });
+    const id = idDaRota(req);
+    const d = corpo(req, pedidoSiteAtualizar);
+    if (d.contaId) {
+      const { rowCount } = await pool.query('SELECT 1 FROM cadastro.contas WHERE id = $1', [d.contaId]);
+      if (!rowCount) throw AppError.naoEncontrado('Conta');
+    }
+    const antes = await repo.atualizar(pool, id, d);
+    if (!antes) throw AppError.naoEncontrado('Pedido');
+    const autor = req.usuario!.nome;
+    if (d.etapa && d.etapa !== antes.etapa) {
+      const extra =
+        d.etapa === 'perdido' && d.motivoPerda
+          ? ` Motivo: ${d.motivoPerda}.`
+          : d.etapa === 'demonstracao' && d.demonstracaoEm
+            ? ` Para ${fmtData(d.demonstracaoEm)}.`
+            : '';
+      await repo.historico(
+        pool,
+        id,
+        `${ROTULO_ETAPA_VENDA[antes.etapa as EtapaVenda]} → ${ROTULO_ETAPA_VENDA[d.etapa]}.${extra}`,
+        autor,
+      );
+    } else if (d.demonstracaoEm) {
+      await repo.historico(pool, id, `Demonstração marcada para ${fmtData(d.demonstracaoEm)}.`, autor);
+    }
+    if (d.contaId && d.contaId !== antes.conta_id) {
+      const { rows } = await pool.query<{ nome: string }>('SELECT nome FROM cadastro.contas WHERE id = $1', [
+        d.contaId,
+      ]);
+      await repo.historico(pool, id, `Conta criada no sistema: ${rows[0]?.nome ?? d.contaId}.`, autor);
+    }
+    res.json(await repo.obter(pool, id));
+  });
+
+  /** Anotação no histórico (ligou, mandou proposta, etc.). */
+  r.post('/pedidos/:id/notas', async (req, res) => {
+    const id = idDaRota(req);
+    const { texto } = corpo(req, pedidoNotaEntrada);
+    const p = await repo.obter(pool, id);
+    if (!p) throw AppError.naoEncontrado('Pedido');
+    await repo.historico(pool, id, texto, req.usuario!.nome);
+    await pool.query('UPDATE cadastro.pedidos_site SET atualizado_em = now() WHERE id = $1', [id]);
+    res.status(201).json(await repo.obter(pool, id));
+  });
+
+  r.delete('/pedidos/:id', async (req, res) => {
+    const { rowCount } = await pool.query('DELETE FROM cadastro.pedidos_site WHERE id = $1', [idDaRota(req)]);
+    if (!rowCount) throw AppError.naoEncontrado('Pedido');
+    res.status(204).end();
   });
   return r;
 }

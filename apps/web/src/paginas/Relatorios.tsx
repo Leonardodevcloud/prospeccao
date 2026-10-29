@@ -41,7 +41,10 @@ const ETAPAS_FUNIL = [
 const NOME_FAIXA: Record<string, string> = { A: 'Nota A', B: 'Nota B', C: 'Nota C', sem_nota: 'Sem nota' };
 
 /** Barras horizontais de uma série só (cor da marca), com o número escrito ao lado. */
-function Barras(props: { itens: { rotulo: string; valor: number; detalhe?: string }[]; rotulo: string }) {
+export function Barras(props: {
+  itens: { rotulo: string; valor: number; detalhe?: string }[];
+  rotulo: string;
+}) {
   const max = Math.max(1, ...props.itens.map((i) => i.valor));
   return (
     <ul className="barras" aria-label={props.rotulo}>

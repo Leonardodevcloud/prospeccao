@@ -143,8 +143,33 @@ async function fontesDa(contaId: number): Promise<Fontes> {
   const serperConta = serper
     ? { ...serper, aoBuscar: (n: number) => void contarBuscas(pool, contaId, n) }
     : null;
+  // Apify (Instagram e, sem Serper, o Google) também conta no consumo da conta (painel da plataforma).
+  const apifyConta = {
+    ...(fontesDaPlataforma.instagram
+      ? {
+          instagram: {
+            ler: (usuario: string) => {
+              void contarBuscas(pool, contaId, 1, 'apify_instagram');
+              return fontesDaPlataforma.instagram!.ler(usuario);
+            },
+          },
+        }
+      : {}),
+    ...(!serper && fontesDaPlataforma.google
+      ? {
+          google: {
+            nome: fontesDaPlataforma.google.nome,
+            buscar: (consultas: string[]) => {
+              void contarBuscas(pool, contaId, consultas.length, 'apify_google');
+              return fontesDaPlataforma.google!.buscar(consultas);
+            },
+          },
+        }
+      : {}),
+  };
   return {
     ...fontesDaPlataforma,
+    ...apifyConta,
     ...(serperConta
       ? {
           google: {

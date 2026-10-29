@@ -12,5 +12,6 @@ export * from './nichosProntos.js';
 export * from './normalizar.js';
 export * from './planilha.js';
 export * from './planos.js';
+export * from './plataforma.js';
 export * from './postgres.js';
 export * from './site.js';
