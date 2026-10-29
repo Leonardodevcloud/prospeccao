@@ -5,7 +5,11 @@ import { visivel } from '../../visibilidade.js';
 
 /** Agente de abordagem (schema comercial, só a API escreve). */
 
-export interface ConfigAgente extends ConfigAgenteEntrada {
+export interface ConfigAgente
+  extends Omit<ConfigAgenteEntrada, 'sobreEmpresa' | 'regras' | 'horariosReuniao'> {
+  sobreEmpresa: string;
+  regras: string;
+  horariosReuniao: string;
   webhookToken: string;
   /** Conversa nova no WhatsApp (número que não é lead): espera alguém decidir ou já vira lead. */
   conversaNova?: 'perguntar' | 'criar_lead';
@@ -29,8 +33,9 @@ export async function salvarConfig(db: Executor, c: ConfigAgenteEntrada): Promis
   await db.query(
     `UPDATE comercial.config_agente
         SET ligado = $1, revisar_antes = $2, hora_inicio = $3, hora_fim = $4, dias_semana = $5,
-            limite_dia = $6, intervalo_seg = $7, respostas_dia_lead = $8, sobre_empresa = $9, regras = $10,
-            horarios_reuniao = $11, aviso_passagem = $12, atualizado_em = now()
+            limite_dia = $6, intervalo_seg = $7, respostas_dia_lead = $8,
+            sobre_empresa = coalesce(nullif($9, ''), sobre_empresa), regras = coalesce(nullif($10, ''), regras),
+            horarios_reuniao = coalesce(nullif($11, ''), horarios_reuniao), aviso_passagem = $12, atualizado_em = now()
       WHERE conta_id = ${contaSql()}`,
     [
       c.ligado,
@@ -41,9 +46,9 @@ export async function salvarConfig(db: Executor, c: ConfigAgenteEntrada): Promis
       c.limiteDia,
       c.intervaloSeg,
       c.respostasDiaLead,
-      c.sobreEmpresa,
-      c.regras,
-      c.horariosReuniao,
+      c.sobreEmpresa ?? null,
+      c.regras ?? null,
+      c.horariosReuniao ?? null,
       c.avisoPassagem ?? true,
     ],
   );

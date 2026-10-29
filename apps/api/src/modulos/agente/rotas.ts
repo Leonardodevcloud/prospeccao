@@ -4,13 +4,18 @@ import { eventoDeConexao, interpretarWebhook } from '@prospeccao/integrations/wh
 import {
   AppError,
   aprovarRascunho,
+  avaliarCenario,
+  cenarioProprio,
   chipAtualizar,
   configAgenteEntrada,
   conhecimentoArquivo,
   conhecimentoAtualizar,
   conhecimentoEntrada,
   ensinarLacuna,
+  fonteSugestaoIa,
   indicacoesNoTexto,
+  SECOES_IA,
+  salvarSecaoIa,
 } from '@prospeccao/shared';
 import { type Request, type Response, Router } from 'express';
 import { z } from 'zod';
@@ -30,6 +35,7 @@ import * as chips from './chips.js';
 import * as base from './conhecimento.js';
 import { desempenho } from './desempenho.js';
 import { dentroDoHorario, proximaAbertura } from './horario.js';
+import * as perfil from './perfil.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -44,7 +50,8 @@ function enderecoPublico(req: Request): string {
 }
 
 /** Tela do Agente: configuração, mensagens para revisar e leads que a IA passou para você. */
-export function rotasAgente({ pool, log, servicos, credenciais }: DepsApi): Router {
+export function rotasAgente(deps: DepsApi): Router {
+  const { pool, log, servicos, credenciais } = deps;
   const r = Router();
 
   r.get('/', async (req: Request, res) => {
@@ -188,9 +195,76 @@ export function rotasAgente({ pool, log, servicos, credenciais }: DepsApi): Rout
 
   r.put('/config', exigirAdmin, async (req, res) => {
     const dados = corpo(req, configAgenteEntrada);
+    // Ligar a IA só com a configuração toda conferida e a prova aprovada.
+    if (dados.ligado && !(await repo.obterConfig(pool)).ligado) {
+      const falta = await perfil.impedimentosParaLigar(deps);
+      if (falta.length) throw AppError.invalido(`Ainda não dá para ligar a IA: ${falta.join('; ')}.`);
+    }
     await repo.salvarConfig(pool, dados);
     log.info({ ligado: dados.ligado, revisarAntes: dados.revisarAntes }, 'agente: configuração salva');
     res.json({ ok: true });
+  });
+
+  /* ───────── Configuração da IA de atendimento (perfil, sugestões e prova) ───────── */
+
+  r.get('/ia', async (_req, res) => {
+    res.json(await perfil.tela(deps));
+  });
+
+  r.put('/ia/secoes/:secao', exigirAdmin, async (req, res) => {
+    const secao = z.enum(SECOES_IA).parse(req.params.secao);
+    const d = corpo(req, salvarSecaoIa);
+    await perfil.salvarSecao(pool, secao, d.dados, d.conferir, req.usuario!);
+    await perfil.sincronizarCenarios(pool);
+    res.json(await perfil.tela(deps));
+  });
+
+  /** A IA lê a fonte (site, documento, conversa, base, entrevista) e sugere; nada vale até aceitar. */
+  r.post('/ia/sugestoes', exigirAdmin, async (req, res) => {
+    const r2 = await perfil.gerarSugestoes(deps, corpo(req, fonteSugestaoIa));
+    res.json({ ...r2, tela: await perfil.tela(deps) });
+  });
+
+  r.post('/ia/sugestoes/:id/:acao', exigirAdmin, async (req, res) => {
+    const acao = z.enum(['aceitar', 'descartar']).parse(req.params.acao);
+    const { valor } = corpo(req, z.object({ valor: z.unknown().optional() }));
+    await perfil.resolverSugestao(pool, idDaRota(req), acao, req.usuario!, valor);
+    await perfil.sincronizarCenarios(pool);
+    res.json(await perfil.tela(deps));
+  });
+
+  r.get('/ia/entrevista', async (_req, res) => {
+    res.json({ perguntas: await perfil.entrevista(pool) });
+  });
+
+  r.get('/ia/prova', async (_req, res) => {
+    await perfil.sincronizarCenarios(pool);
+    res.json({ cenarios: await perfil.listarProva(pool), rodando: perfil.provaRodando() });
+  });
+
+  r.post('/ia/prova/rodar', exigirAdmin, async (req, res) => {
+    const { ids } = corpo(req, z.object({ ids: z.array(z.number().int().positive()).max(50).optional() }));
+    const { ia } = await servicos(conta());
+    if (!ia) throw AppError.invalido('A IA desta conta ainda não está ativa.');
+    await perfil.sincronizarCenarios(pool);
+    res.status(202).json({ iniciou: perfil.rodarTodos(deps, ids) });
+  });
+
+  r.post('/ia/prova', exigirAdmin, async (req, res) => {
+    const id = await perfil.criarCenario(pool, corpo(req, cenarioProprio));
+    perfil.rodarTodos(deps, [id]);
+    res.status(201).json({ id });
+  });
+
+  r.post('/ia/prova/:id/avaliar', exigirAdmin, async (req, res) => {
+    const d = corpo(req, avaliarCenario);
+    await perfil.avaliar(deps, idDaRota(req), d.aprovar, d.correcao, req.usuario!);
+    res.json({ cenarios: await perfil.listarProva(pool), rodando: perfil.provaRodando() });
+  });
+
+  r.delete('/ia/prova/:id', exigirAdmin, async (req, res) => {
+    await perfil.apagarCenario(pool, idDaRota(req));
+    res.status(204).end();
   });
 
   r.post('/rascunhos/:id/aprovar', async (req, res) => {
@@ -325,6 +399,7 @@ export function rotasAgente({ pool, log, servicos, credenciais }: DepsApi): Rout
       primeiraResposta: p.primeiraResposta,
       problemasIniciais: p.problemasIniciais,
       barrada: p.barrada,
+      conferencia: p.conferencia,
       aviso: passa && (p.barrada.length || !decisao.resposta) ? aviso('outro') : null,
     });
   });

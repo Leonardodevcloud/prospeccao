@@ -318,9 +318,10 @@ export const configAgenteEntrada = z
     limiteDia: z.number().int().min(1).max(500),
     intervaloSeg: z.number().int().min(20).max(3600),
     respostasDiaLead: z.number().int().min(1).max(30),
-    sobreEmpresa: z.string().trim().min(20, 'Conte um pouco da sua empresa para a IA.').max(6000),
-    regras: z.string().trim().max(3000),
-    horariosReuniao: z.string().trim().min(3).max(300),
+    /** Vêm do perfil da IA (Configuração da IA); aqui só para quem ainda manda o texto antigo. */
+    sobreEmpresa: z.string().trim().max(6000).optional(),
+    regras: z.string().trim().max(3000).optional(),
+    horariosReuniao: z.string().trim().min(3).max(300).optional(),
     /** Quando a IA passa para o time, o lead recebe "vou chamar alguém do time". */
     avisoPassagem: z.boolean().default(true),
   })

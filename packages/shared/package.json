@@ -15,7 +15,8 @@
     "./plataforma": "./src/plataforma.ts",
     "./site": "./src/site.ts",
     "./seguranca": "./src/seguranca.ts",
-    "./assistente": "./src/assistente.ts"
+    "./assistente": "./src/assistente.ts",
+    "./ia-perfil": "./src/iaPerfil.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

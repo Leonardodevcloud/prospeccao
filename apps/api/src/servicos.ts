@@ -12,14 +12,19 @@ import {
   type Aprendizado,
   type ContextoAgente,
   classificarRespostaEmail,
+  conferirFatos,
   type DecisaoAgente,
   decidirComIa,
   type EntradaAbertura,
   type EntradaResumo,
   extrairAprendizado,
+  type FonteConferencia,
+  type FraseConferidaIa,
   personalizarAbertura,
   type ResumoPassagem,
   resumirPassagem,
+  type SugestaoPerfil,
+  sugerirPerfil,
 } from '@prospeccao/integrations/agente';
 import {
   buscarRecebido,
@@ -118,6 +123,14 @@ export interface ServicosConta {
     resumir?(e: EntradaResumo): Promise<ResumoPassagem | null>;
     /** A resposta do time a uma pergunta que a IA não sabia, escrita para a base. */
     aprender?(e: { empresa: string; pergunta: string; respostaDoTime: string }): Promise<Aprendizado | null>;
+    /** Confere cada frase da resposta contra as fontes (null: a conferência falhou). */
+    conferir?(e: { resposta: string; fontes: FonteConferencia[] }): Promise<FraseConferidaIa[] | null>;
+    /** Sugestões para o perfil da IA, tiradas de uma fonte (site, documento, conversa). */
+    sugerir?(e: {
+      empresa: string;
+      perfilAtual: string;
+      fonte: { tipo: string; rotulo: string; texto: string };
+    }): Promise<SugestaoPerfil[]>;
   } | null;
   /** IA que lê a resposta do e-mail (tem interesse?). Sem ela, uma regra de palavras decide. */
   classificarEmail:
@@ -201,6 +214,8 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
             decidir: (ctx) => decidirComIa(iaCfg, ctx),
             resumir: (e) => resumirPassagem(iaCfg, e),
             aprender: (e) => extrairAprendizado(iaCfg, e),
+            conferir: (e) => conferirFatos(iaCfg, e),
+            sugerir: (e) => sugerirPerfil(iaCfg, e),
           }
         : null,
     classificarEmail: iaCfg && temEmail ? (ctx) => classificarRespostaEmail(iaCfg, ctx) : null,

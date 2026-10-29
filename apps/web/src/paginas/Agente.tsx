@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { api, type ConfigAgente, type RascunhoAgente, ROTULO_ETAPA, type TelaAgente } from '../api';
 import { Aprendizados, BaseConhecimento, useConhecimento } from '../componentes/BaseConhecimento';
 import { Chips } from '../componentes/Chips';
+import { ConfiguracaoIa, usePerfilIa } from '../componentes/ConfiguracaoIa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
 import { useSessao } from '../componentes/Sessao';
@@ -82,13 +83,16 @@ function Rascunho(props: { r: RascunhoAgente; aoAbrir: () => void }) {
   );
 }
 
-function FormConfig(props: { config: ConfigAgente }) {
+function FormConfig(props: { config: ConfigAgente; aoConfigurar: () => void }) {
   const cliente = useQueryClient();
+  const perfil = usePerfilIa();
   const [f, setF] = useState(props.config);
   useEffect(() => setF(props.config), [props.config]);
   const mudar = <K extends keyof ConfigAgente>(k: K, v: ConfigAgente[K]) => setF((x) => ({ ...x, [k]: v }));
   const salvar = useMutation({
-    mutationFn: (c: ConfigAgente) => api('/agente/config', { metodo: 'PUT', corpo: c }),
+    // O texto da IA (empresa, regras, horários de reunião) vem da Configuração da IA: não vai daqui.
+    mutationFn: ({ sobreEmpresa: _s, regras: _r, horariosReuniao: _h, ...c }: ConfigAgente) =>
+      api('/agente/config', { metodo: 'PUT', corpo: c }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['agente'] }),
   });
   const enviar = (e: FormEvent) => {
@@ -108,9 +112,23 @@ function FormConfig(props: { config: ConfigAgente }) {
   return (
     <form className="form" onSubmit={enviar}>
       <label className="opcao">
-        <input type="checkbox" checked={f.ligado} onChange={(e) => mudar('ligado', e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={f.ligado}
+          disabled={!f.ligado && !props.config.ligado && !perfil.data?.pronto}
+          onChange={(e) => mudar('ligado', e.target.checked)}
+        />
         <b>Agente ligado</b>: aborda os leads com a IA ligada e responde quem escrever
       </label>
+      {!props.config.ligado && perfil.data && !perfil.data.pronto && (
+        <p className="campo__dica" style={{ margin: 0 }}>
+          Para ligar, a Configuração da IA precisa estar toda conferida e a prova aprovada (
+          {perfil.data.prontidao}% pronta).{' '}
+          <button type="button" className="link-botao" onClick={props.aoConfigurar}>
+            Abrir a Configuração da IA
+          </button>
+        </p>
+      )}
       <label className="opcao">
         <input
           type="checkbox"
@@ -174,37 +192,6 @@ function FormConfig(props: { config: ConfigAgente }) {
           ))}
         </div>
       </fieldset>
-      <div className="campo">
-        <label htmlFor="ag-sobre">O que a IA sabe da sua empresa</label>
-        <textarea
-          id="ag-sobre"
-          rows={6}
-          value={f.sobreEmpresa}
-          onChange={(e) => mudar('sobreEmpresa', e.target.value)}
-        />
-        <span className="campo__dica">
-          O resumo que a IA lê em toda conversa: o que a empresa faz, para quem e o diferencial. Detalhes
-          (preços, cidades, condições, perguntas frequentes) ficam na aba Base de conhecimento.
-        </span>
-      </div>
-      <div className="campo">
-        <label htmlFor="ag-regras">Regras</label>
-        <textarea
-          id="ag-regras"
-          rows={4}
-          value={f.regras}
-          onChange={(e) => mudar('regras', e.target.value)}
-        />
-      </div>
-      <div className="campo">
-        <label htmlFor="ag-horarios">Horários para reunião</label>
-        <input
-          id="ag-horarios"
-          className="filtro"
-          value={f.horariosReuniao}
-          onChange={(e) => mudar('horariosReuniao', e.target.value)}
-        />
-      </div>
       <ErroDaApi erro={salvar.error} />
       {salvar.isSuccess && <Mensagem tipo="ok">Configuração salva.</Mensagem>}
       <div className="acoes">
@@ -216,7 +203,7 @@ function FormConfig(props: { config: ConfigAgente }) {
   );
 }
 
-type AbaAgente = 'atendimento' | 'base' | 'ensinar' | 'simulador' | 'desempenho';
+type AbaAgente = 'atendimento' | 'configuracao' | 'base' | 'ensinar' | 'simulador' | 'desempenho';
 
 export function Agente() {
   const navegar = useNavigate();
@@ -257,6 +244,7 @@ export function Agente() {
   const nb = base.data?.numeros;
   const abas: { id: AbaAgente; rotulo: string; conta?: number; nova?: boolean }[] = [
     { id: 'atendimento', rotulo: 'Atendimento', conta: d.rascunhos.length + d.pausados.length, nova: true },
+    { id: 'configuracao', rotulo: 'Configuração da IA' },
     { id: 'base', rotulo: 'Base de conhecimento', conta: nb?.sugeridos, nova: true },
     { id: 'ensinar', rotulo: 'O que falta ensinar', conta: nb?.lacunas, nova: true },
     { id: 'simulador', rotulo: 'Simulador' },
@@ -341,6 +329,9 @@ export function Agente() {
           ))}
       </div>
 
+      {aba === 'configuracao' && (
+        <ConfiguracaoIa config={d.config} aoVerBase={() => setParams({ aba: 'base' }, { replace: true })} />
+      )}
       {aba === 'base' && <BaseConhecimento />}
       {aba === 'simulador' && <SimuladorIa />}
       {aba === 'desempenho' && <DesempenhoAgente />}
@@ -424,7 +415,10 @@ export function Agente() {
                 IA ligada em {fmtNumero(emMassa.data.ligados)} lead(s) de "A abordar".
               </Mensagem>
             )}
-            <FormConfig config={d.config} />
+            <FormConfig
+              config={d.config}
+              aoConfigurar={() => setParams({ aba: 'configuracao' }, { replace: true })}
+            />
           </Panel>
 
           <Chips />

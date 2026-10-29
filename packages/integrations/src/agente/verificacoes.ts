@@ -16,7 +16,8 @@ export type RegraVerificacao =
   | 'texto_de_robo'
   | 'promessa'
   | 'retorno_sem_passar'
-  | 'agenda_sem_reuniao';
+  | 'agenda_sem_reuniao'
+  | 'sem_fonte';
 
 export interface ProblemaVerificacao {
   regra: RegraVerificacao;

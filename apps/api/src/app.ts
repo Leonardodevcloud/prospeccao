@@ -65,7 +65,7 @@ export function criarApp(deps: DepsApi): Express {
   app.use((req, res, next) =>
     req.path === '/importacoes-leads/analisar'
       ? jsonPlanilha(req, res, next)
-      : /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$/.test(
+      : /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$|^\/agente\/ia\/sugestoes$/.test(
             req.path,
           )
         ? jsonGrande(req, res, next)

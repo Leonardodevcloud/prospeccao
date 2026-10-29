@@ -4,13 +4,19 @@ import {
   avisoDePassagem,
   type ContextoAgente,
   type DecisaoAgente,
+  type FonteConferencia,
+  type FraseConferidaIa,
+  fontesDoPerfil,
   juntarMemoria,
   type ProblemaVerificacao,
   pediuHumano,
   pediuParaParar,
   resumoEmTexto,
+  semFonte,
+  textoDoPerfil,
   verificarMensagem,
 } from '@prospeccao/integrations/agente';
+import type { PerfilIa } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
 import type { DepsApi, ServicosConta } from '../../dependencias.js';
 import { visivel } from '../../visibilidade.js';
@@ -18,9 +24,10 @@ import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { fatosDoLead } from '../email/repositorio.js';
 import { obterConfig as configCadencia, mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
-import { notificarDono } from '../notificacoes/repositorio.js';
+import { notificar, notificarDono } from '../notificacoes/repositorio.js';
 import * as base from './conhecimento.js';
 import { dentroDoHorario, proximaAbertura } from './horario.js';
+import { perfilParaAtendimento } from './perfil.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -30,8 +37,9 @@ import * as repo from './repositorio.js';
  *  - a IA recebe a ficha do lead, o que ele já contou (memória) e só os trechos da base de
  *    conhecimento que combinam com o que ele escreveu;
  *  - a resposta passa pelas verificações (preço, link ou contato fora da base, repetição,
- *    promessa, "te retorno" sem passar para o time…); o que não passa volta para a IA reescrever
- *    uma vez; se ainda não passar, não sai e o lead vai para o time.
+ *    promessa, "te retorno" sem passar para o time…) e depois pela conferência frase a frase (uma
+ *    segunda IA procura a fonte de cada afirmação no perfil e na base); o que não passa volta para
+ *    a IA reescrever uma vez; se ainda não passar, não sai e o lead vai para o time.
  * Quando passa para o time, o vendedor recebe um resumo (combinado, objeções, próximo passo).
  */
 
@@ -141,6 +149,7 @@ export async function passarParaTime(
     AUTOR,
   );
 
+  const perfil = await perfilParaAtendimento(pool);
   // Aviso ao lead: "vou chamar alguém do time" (fora do horário, quando o time volta).
   if (cfg?.avisoPassagem && opcoes.avisarLead !== false && contexto) {
     const { rows: ja } = await pool.query(
@@ -153,11 +162,15 @@ export async function passarParaTime(
       await repo.criarMensagem(pool, {
         empresaId,
         direcao: 'enviada',
-        texto: avisoDePassagem({
-          dentroDoHorario: dentroDoHorario(cfg),
-          volta: proximaAbertura(cfg),
-          motivo: tipo === 'pediu_pessoa' ? 'pediu_pessoa' : tipo === 'sensivel' ? 'sensivel' : 'outro',
-        }),
+        // A frase que o gestor escreveu no perfil vale dentro do horário; fora dele, a que diz quando o time volta.
+        texto:
+          perfil?.limites.fraseDePassagem && dentroDoHorario(cfg)
+            ? perfil.limites.fraseDePassagem
+            : avisoDePassagem({
+                dentroDoHorario: dentroDoHorario(cfg),
+                volta: proximaAbertura(cfg),
+                motivo: tipo === 'pediu_pessoa' ? 'pediu_pessoa' : tipo === 'sensivel' ? 'sensivel' : 'outro',
+              }),
         telefone,
         status: 'aprovada',
         origem: 'agente',
@@ -194,11 +207,17 @@ export async function passarParaTime(
       textoAviso = resumoEmTexto(resumo);
     }
   }
-  await notificarDono(pool, empresaId, {
-    tipo: 'mensagem',
+  const aviso = {
+    tipo: 'mensagem' as const,
     titulo: `${contexto?.leadNome || 'Lead'}: a IA passou a conversa para você`,
     texto: textoAviso,
-  }).catch((erro) => deps.log.warn({ err: erro, empresaId }, 'agente: não consegui avisar o dono'));
+    empresaId,
+  };
+  // Quem recebe: uma pessoa fixa (escolhida no perfil) ou o responsável pelo lead.
+  const fixo = typeof perfil?.limites.quemRecebe === 'number' ? perfil.limites.quemRecebe : null;
+  await (fixo ? notificar(pool, fixo, aviso) : notificarDono(pool, empresaId, aviso)).catch((erro) =>
+    deps.log.warn({ err: erro, empresaId }, 'agente: não consegui avisar quem recebe'),
+  );
 }
 
 async function registrarVerificacao(
@@ -248,6 +267,8 @@ export interface Pensamento {
   primeiraResposta: string | null;
   /** O que sobrou depois da reescrita: a mensagem não sai. */
   barrada: ProblemaVerificacao[];
+  /** Conferência frase a frase da resposta final (null: sem conferência, ex.: sem mensagem). */
+  conferencia: FraseConferidaIa[] | null;
 }
 
 /**
@@ -260,7 +281,11 @@ export async function pensar(
   ia: NonNullable<DepsAtendimento['ia']>,
   cfg: repo.ConfigAgente,
   e: EntradaPensar,
+  opcoes: { perfil?: PerfilIa | null; forcarPerfil?: boolean; sempreConferir?: boolean } = {},
 ): Promise<Pensamento> {
+  // Perfil da IA (seções conferidas pelo gestor). Sem nenhuma conferida, vale o texto antigo.
+  const perfil = opcoes.forcarPerfil ? (opcoes.perfil ?? null) : await perfilParaAtendimento(pool);
+  const textoPerfil = perfil ? textoDoPerfil(perfil, e.empresaNome) : null;
   const doLead: string[] = [];
   for (let i = e.conversa.length - 1; i >= 0 && e.conversa[i]!.de === 'lead'; i--)
     doLead.unshift(e.conversa[i]!.texto);
@@ -284,11 +309,11 @@ export async function pensar(
     memoria: e.memoria,
     ficha: e.ficha,
     retomada: e.retomada ?? null,
+    perfil: textoPerfil,
   };
   // O que a IA podia usar: só isso vale para preço, link, telefone e promessa.
   const fontes = [
-    cfg.sobreEmpresa,
-    cfg.regras,
+    ...(textoPerfil ? [textoPerfil] : [cfg.sobreEmpresa, cfg.regras]),
     cfg.horariosReuniao,
     ...trechos.map((t) => t.texto),
     ...e.ficha,
@@ -304,8 +329,59 @@ export async function pensar(
       ? verificarMensagem({ texto: d.resposta, fontes, enviadasAntes, acao: d.acao })
       : [];
 
+  // Fontes da conferência frase a frase: o perfil por seção, a base, o lead e a agenda.
+  const fontesConferencia: FonteConferencia[] = [
+    ...(perfil
+      ? fontesDoPerfil(perfil, e.empresaNome)
+      : [
+          { rotulo: 'Sobre a empresa', texto: cfg.sobreEmpresa },
+          { rotulo: 'Regras', texto: cfg.regras },
+        ]),
+    ...trechos.map((t) => ({ rotulo: `Base: ${t.titulo}`, texto: t.texto })),
+    { rotulo: 'Horários', texto: `${cfg.horariosReuniao}\nAgora: ${ctx.agora}` },
+    { rotulo: 'O que sabemos do lead', texto: [...e.ficha, ...e.memoria].join('\n') },
+    { rotulo: 'Conversa', texto: e.conversa.map((c) => c.texto).join('\n') },
+  ].filter((f) => f.texto.trim());
+
+  // Regras fixas primeiro (rápidas); passou nelas, a conferência frase a frase.
+  const conferir = async (
+    d: DecisaoAgente,
+  ): Promise<{ problemas: ProblemaVerificacao[]; frases: FraseConferidaIa[] | null }> => {
+    const fixas = verificar(d);
+    // Barrada nas regras fixas já não sai; a prova confere mesmo assim (para mostrar o porquê).
+    if ((fixas.length && !opcoes.sempreConferir) || !COM_MENSAGEM.has(d.acao) || !d.resposta || !ia.conferir)
+      return { problemas: fixas, frases: null };
+    let frases: FraseConferidaIa[] | null = null;
+    try {
+      frases = await ia.conferir({ resposta: d.resposta, fontes: fontesConferencia });
+    } catch {
+      frases = null;
+    }
+    // Sem conferência, por segurança a mensagem não sai.
+    if (!frases)
+      return {
+        problemas: [
+          ...fixas,
+          { regra: 'sem_fonte', detalhe: 'Não deu para conferir a resposta: por segurança ela não saiu.' },
+        ],
+        frases: null,
+      };
+    return {
+      problemas: [
+        ...fixas,
+        ...semFonte(frases).map((f) => ({
+          regra: 'sem_fonte' as const,
+          detalhe: `"${f}" não está nas informações da empresa: tire ou passe para o time.`,
+        })),
+      ],
+      frases,
+    };
+  };
+
   let decisao = await ia.decidir(ctx);
-  const problemasIniciais = verificar(decisao);
+  const primeira = await conferir(decisao);
+  const problemasIniciais = primeira.problemas;
+  let conferencia = primeira.frases;
   let barrada: ProblemaVerificacao[] = [];
   let primeiraResposta: string | null = null;
   if (problemasIniciais.length) {
@@ -314,9 +390,11 @@ export async function pensar(
       ...ctx,
       correcao: { texto: decisao.resposta, problemas: problemasIniciais.map((p) => p.detalhe) },
     });
-    barrada = verificar(decisao);
+    const segunda = await conferir(decisao);
+    barrada = segunda.problemas;
+    conferencia = segunda.frases ?? conferencia;
   }
-  return { decisao, trechos, problemasIniciais, primeiraResposta, barrada };
+  return { decisao, trechos, problemasIniciais, primeiraResposta, barrada, conferencia };
 }
 
 async function dadosDaConversa(pool: Pool, empresaId: number) {

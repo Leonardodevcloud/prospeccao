@@ -39,6 +39,8 @@ describe.skipIf(!URL_TESTE)('Argos: acesso aos dados por escopo', () => {
   /** O "roteiro" da IA falsa: devolve estas respostas em ordem. */
   let roteiro: ((p: PedidoConversa) => string)[] = [];
   const pedidosIa: PedidoConversa[] = [];
+  /** IA do atendimento (perfil, sugestões e prova): cada teste monta a sua. */
+  let iaFalsa: ServicosConta['ia'] = null;
 
   const escopo = (tudo: boolean, contas: number[], validade = 60) =>
     assinarEscopo(chave, { tudo, contas }, validade);
@@ -131,7 +133,7 @@ describe.skipIf(!URL_TESTE)('Argos: acesso aos dados por escopo', () => {
         ({
           contaId,
           whatsapp: null,
-          ia: null,
+          ia: iaFalsa,
           classificarEmail: null,
           personalizarAbertura: null,
           email: null,
@@ -626,5 +628,181 @@ describe.skipIf(!URL_TESTE)('Argos: acesso aos dados por escopo', () => {
       .set('Origin', ORIGEM)
       .set('Cookie', await entrar('sara@alfa.com'));
     expect(sara.status).toBe(403);
+  });
+
+  it('IA de atendimento: só liga com tudo conferido e a prova aprovada', async () => {
+    await pool.query('SELECT cadastro.preparar_conta($1)', [ids.b1]);
+    const cookie = await entrar('beto@beta.com');
+    const pedir = (metodo: 'get' | 'put' | 'post', url: string, corpo?: object) => {
+      const r = request(app)[metodo](url).set('Origin', ORIGEM).set('Cookie', cookie);
+      return corpo ? r.send(corpo) : r;
+    };
+    // IA falsa: responde conforme a mensagem e confere com regras simples.
+    iaFalsa = {
+      decidir: async (ctx) => {
+        const ultima = ctx.conversa.at(-1)?.texto ?? '';
+        if (/desconto/i.test(ultima))
+          return {
+            acao: 'responder',
+            resposta: 'Consigo 10% de desconto pra você.',
+            reuniaoEm: null,
+            motivo: 'pediu desconto',
+          };
+        return {
+          acao: 'responder',
+          resposta: 'O pedido mínimo é R$ 500. Quanto vocês compram por mês?',
+          reuniaoEm: null,
+          motivo: 'ok',
+        };
+      },
+      conferir: async ({ resposta }) =>
+        resposta.includes('desconto')
+          ? [{ frase: 'Consigo 10% de desconto', tipo: 'fato', fonte: null, trecho: null }]
+          : [
+              {
+                frase: 'O pedido mínimo é R$ 500',
+                tipo: 'fato',
+                fonte: 'O que vende',
+                trecho: 'Pedido mínimo de R$ 500',
+              },
+              { frase: 'Quanto vocês compram por mês?', tipo: 'pergunta', fonte: null, trecho: null },
+            ],
+      sugerir: async () => [
+        {
+          secao: 'oferta',
+          campo: 'prazos',
+          valor: 'Entrega no mesmo dia em Salvador',
+          trecho: 'mesmo dia em Salvador',
+        },
+      ],
+    };
+    try {
+      let tela = (await pedir('get', '/agente/ia')).body;
+      expect(tela.pronto).toBe(false);
+      expect(tela.prontidao).toBeLessThan(20);
+      const cfg = (await pedir('get', '/agente')).body.config;
+      const ligar = await pedir('put', '/agente/config', { ...cfg, ligado: true });
+      expect(ligar.status).toBe(422);
+      expect(ligar.body.erro.mensagem).toContain('Ainda não dá para ligar');
+
+      // Seção incompleta não pode ser conferida.
+      const incompleta = await pedir('put', '/agente/ia/secoes/oferta', {
+        dados: { linhas: [] },
+        conferir: true,
+      });
+      expect(incompleta.status).toBe(422);
+
+      const secoes: Record<string, object> = {
+        quem: {
+          nome: 'Ana',
+          apresentacao: 'assistente virtual da Beta',
+          tom: 'proximo',
+          tratamento: 'voce',
+          emojis: 'pouco',
+          exemplos: ['Oi!', 'Bom dia', 'Fechado'],
+        },
+        empresa: {
+          oQueFaz: 'Distribuidora de autopeças para oficinas e lojas de todo o estado.',
+          paraQuem: 'Oficinas e lojas',
+          diferenciais: [
+            { texto: 'Entrega rápida', prova: '' },
+            { texto: 'Boleto 28 dias', prova: '' },
+          ],
+          funcionamento: 'Seg a sex, 8h às 18h',
+        },
+        regiao: { ufs: ['BA'] },
+        oferta: {
+          linhas: [{ nome: 'Linha leve', descricao: '' }],
+          naoFazemos: ['Consumidor final'],
+          precoPolitica: 'so_o_escrito',
+          precoTexto: 'Pedido mínimo de R$ 500',
+          pagamento: 'Boleto em 28 dias',
+          prazos: 'Mesmo dia em Salvador',
+        },
+        objetivo: { meta: 'reuniao', perguntas: ['Quanto compram por mês?'] },
+        objecoes: {
+          itens: [
+            { diz: 'Já tenho fornecedor', resposta: 'Segunda opção.' },
+            { diz: 'Está caro', resposta: 'Confirmo com o time.' },
+            { diz: 'Agora não', resposta: 'Te chamo depois?' },
+          ],
+        },
+        limites: {
+          nunca: ['Desconto'],
+          gatilhos: ['preco'],
+          quemRecebe: 'responsavel',
+          fraseDePassagem: 'Vou chamar quem cuida disso.',
+        },
+        reuniao: { formato: 'video', duracaoMin: 15, horarios: 'Seg a sex, 9h às 12h' },
+      };
+      for (const [s, dados] of Object.entries(secoes)) {
+        const r = await pedir('put', `/agente/ia/secoes/${s}`, { dados, conferir: true });
+        expect(r.status, s).toBe(200);
+      }
+      await pool.query(
+        `INSERT INTO comercial.conhecimento (conta_id, tipo, titulo, conteudo) VALUES ($1, 'texto', 'Catálogo', 'Linha leve: freios e filtros.')`,
+        [ids.b1],
+      );
+
+      // Sugestão da IA: fica pendente, impede conferir a seção; aceita, a seção volta a precisar de conferência.
+      const sug = await pedir('post', '/agente/ia/sugestoes', {
+        tipo: 'texto',
+        rotulo: 'Conversa',
+        texto: 'x'.repeat(50),
+      });
+      expect(sug.body.novas).toBe(1);
+      const idSug = sug.body.tela.sugestoes[0].id;
+      expect(
+        (await pedir('put', '/agente/ia/secoes/oferta', { dados: secoes.oferta, conferir: true })).status,
+      ).toBe(422);
+      tela = (await pedir('post', `/agente/ia/sugestoes/${idSug}/aceitar`, {})).body;
+      expect(tela.perfil.oferta.prazos).toBe('Entrega no mesmo dia em Salvador');
+      expect(tela.secoes.find((x: { id: string }) => x.id === 'oferta').conferida).toBeNull();
+      await pedir('put', '/agente/ia/secoes/oferta', { dados: tela.perfil.oferta, conferir: true });
+
+      // Prova: roda tudo (em segundo plano) e espera.
+      expect((await pedir('post', '/agente/ia/prova/rodar', {})).status).toBe(202);
+      let prova = (await pedir('get', '/agente/ia/prova')).body;
+      for (let i = 0; i < 50 && prova.rodando; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        prova = (await pedir('get', '/agente/ia/prova')).body;
+      }
+      expect(prova.cenarios.length).toBeGreaterThanOrEqual(11);
+      const desconto = prova.cenarios.find((c: { chave: string }) => c.chave === 'desconto');
+      // A frase sem fonte foi barrada (na vida real a mensagem não sairia).
+      expect(desconto.barrada.length).toBeGreaterThan(0);
+      expect(desconto.conferencia[0].fonte).toBeNull();
+      const normal = prova.cenarios.find((c: { chave: string }) => c.chave === 'quem');
+      expect(normal.barrada).toEqual([]);
+      expect(normal.conferencia[0].fonte).toBe('O que vende');
+
+      // Reprovar com correção vira regra em Limites.
+      await pedir('post', `/agente/ia/prova/${desconto.id}/avaliar`, {
+        aprovar: false,
+        correcao: 'Nunca oferecer desconto: chamar o time.',
+      });
+      tela = (await pedir('get', '/agente/ia')).body;
+      expect(tela.perfil.limites.daProva).toContain('Nunca oferecer desconto: chamar o time.');
+      prova = (await pedir('get', '/agente/ia/prova')).body;
+      for (let i = 0; i < 50 && prova.rodando; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        prova = (await pedir('get', '/agente/ia/prova')).body;
+      }
+      for (const c of prova.cenarios)
+        await pedir('post', `/agente/ia/prova/${c.id}/avaliar`, { aprovar: true });
+
+      tela = (await pedir('get', '/agente/ia')).body;
+      expect(tela.impedimentos).toEqual([]);
+      expect(tela.pronto).toBe(true);
+      expect((await pedir('put', '/agente/config', { ...cfg, ligado: true })).status).toBe(200);
+      // O texto antigo acompanha o perfil (e-mail e resumo usam).
+      const { rows } = await pool.query(
+        'SELECT sobre_empresa FROM comercial.config_agente WHERE conta_id = $1',
+        [ids.b1],
+      );
+      expect(rows[0].sobre_empresa).toContain('Distribuidora de autopeças');
+    } finally {
+      iaFalsa = null;
+    }
   });
 });

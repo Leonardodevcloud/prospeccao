@@ -759,6 +759,9 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(tela.body.status).toMatchObject({ whatsapp: false, ia: false });
     expect(tela.body.webhook).toMatch(/\/webhooks\/whatsapp\/[0-9a-f]{32}$/);
     const token = tela.body.webhook.split('/').at(-1);
+    // Ligar pela tela pede o perfil da IA conferido e a prova (testado em assistente.test.ts);
+    // aqui o motor é o assunto, então a IA já vem ligada.
+    await pool.query('UPDATE comercial.config_agente SET ligado = true WHERE conta_id = 1');
     const salvo = await enviar('put', '/agente/config', {
       ...tela.body.config,
       ligado: true,
@@ -934,6 +937,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     await enviar('post', '/funil', { empresaIds: [78], forcar: true });
     await enviar('patch', '/funil/78', { agente: true });
     const config = (await ler('/agente')).body.config;
+    await pool.query('UPDATE comercial.config_agente SET ligado = true WHERE conta_id = 1');
     await enviar('put', '/agente/config', {
       ...config,
       ligado: true,
