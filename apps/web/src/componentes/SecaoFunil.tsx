@@ -339,7 +339,12 @@ export function SecaoFunil(props: {
         <h2>Funil</h2>
         <div className="pilha">
           {aviso}
-          {resultado?.duplicadas.length ? (
+          {resultado?.deOutraUnidade?.length ? (
+            <Mensagem tipo="aviso">
+              Não entrou no funil: a unidade {resultado.deOutraUnidade[0]!.unidade} já trabalha esta empresa.
+              Se precisar, peça ao gestor da organização.
+            </Mensagem>
+          ) : resultado?.duplicadas.length ? (
             <Mensagem tipo="aviso">
               Não entrou no funil porque o telefone já está em outra empresa trabalhada. Se for outra loja,
               use "Mandar mesmo assim".

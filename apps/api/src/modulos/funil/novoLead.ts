@@ -17,7 +17,7 @@ import { leadPorTelefone } from '../agente/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
 import { pararSequencia, RESPONDEU_WHATSAPP } from '../email/sequencia.js';
 import { definirResponsavel } from '../equipe/repositorio.js';
-import { adicionar, atualizar, registrarAtividade } from './repositorio.js';
+import { adicionar, atualizar, deOutraUnidade, registrarAtividade } from './repositorio.js';
 
 /**
  * Lead cadastrado à mão: no quadro do funil, a partir de uma conversa de um número que não é lead,
@@ -83,7 +83,16 @@ export async function criarLeadManual(
     semEmpresa: false,
     linhas: [],
   };
-  const { empresaId } = await comTransacao(pool, (db) => gravarLead(db, conta(), campanhaId, lead, 'manual'));
+  const { empresaId } = await comTransacao(pool, async (db) => {
+    const g = await gravarLead(db, conta(), campanhaId, lead, 'manual');
+    // A mesma empresa já é trabalhada por outra unidade da organização: desfaz e avisa.
+    const [dona] = await deOutraUnidade(db, [g.empresaId]);
+    if (dona)
+      throw AppError.conflito(
+        `${dona.nome} já é trabalhada pela unidade ${dona.unidade}. Peça ao gestor se precisar transferir.`,
+      );
+    return g;
+  });
 
   const r = await adicionar(pool, { empresaIds: [empresaId], etapa: 'a_abordar', forcar: true }, autor);
   const jaExistia = r.jaNoFunil > 0;

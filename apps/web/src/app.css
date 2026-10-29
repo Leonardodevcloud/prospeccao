@@ -5659,3 +5659,34 @@ label.plano-opcao[data-ativo] {
 .pedido__evento:last-child {
   border-bottom: 0;
 }
+
+/* Organização (gestor) */
+.nav__unidade {
+  display: grid;
+  gap: 4px;
+  margin-bottom: var(--space-2);
+}
+.nav__unidade .filtro {
+  height: var(--size-control-sm);
+  font-size: 13px;
+}
+.faixa-conta--leitura {
+  background: var(--warning-soft);
+}
+.org-painel {
+  margin-top: var(--space-4);
+}
+.org-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+.tabela-contas__unidade {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-size: 12px;
+}
+.tabela-contas__linha-unidade .tabela-contas__nome {
+  padding-left: var(--space-4);
+  font-size: 13px;
+}

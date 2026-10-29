@@ -10,6 +10,16 @@ export const ROTULO_PAPEL_USUARIO: Record<PapelUsuario, string> = {
   closer: 'Closer (fechamento)',
 };
 
+/** Papéis da organização inteira (todas as unidades): não ficam na equipe de uma unidade. */
+export const PAPEIS_ORGANIZACAO = ['gestor', 'leitura'] as const;
+export type PapelOrganizacao = (typeof PAPEIS_ORGANIZACAO)[number];
+export const ROTULO_PAPEL_ORGANIZACAO: Record<PapelOrganizacao, string> = {
+  gestor: 'Gestor da organização',
+  leitura: 'Só leitura (diretoria)',
+};
+export const PAPEIS_TODOS = [...PAPEIS_USUARIO, ...PAPEIS_ORGANIZACAO] as const;
+export type PapelQualquer = (typeof PAPEIS_TODOS)[number];
+
 const telefone = z
   .string()
   .trim()
@@ -168,3 +178,44 @@ export const configAgendaEntrada = z.object({
   duracaoReuniaoMin: z.number().int().min(5).max(480),
 });
 export type ConfigAgendaEntrada = z.infer<typeof configAgendaEntrada>;
+
+/* ───────────────────────────── Organização (gestor) ───────────────────────────── */
+
+const cota = z.number().int().min(0).max(10_000_000).nullable();
+
+export const unidadeNova = z.object({
+  nome: z.string().trim().min(2, 'Informe o nome da unidade.').max(80),
+  /** Leads do mês reservados para a unidade (null = usa o que sobra da organização). */
+  cotaLeadsMes: cota.optional(),
+});
+export type UnidadeNova = z.infer<typeof unidadeNova>;
+
+export const unidadeAtualizar = z
+  .object({
+    nome: z.string().trim().min(2).max(80).optional(),
+    cotaLeadsMes: cota.optional(),
+    ativa: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
+export type UnidadeAtualizar = z.infer<typeof unidadeAtualizar>;
+
+export const pessoaNova = z.object({
+  nome: z.string().trim().min(2, 'Informe o nome.').max(80),
+  email: z.string().trim().toLowerCase().email('E-mail inválido.'),
+  papel: z.enum(PAPEIS_TODOS),
+  unidadeId: z.number().int().positive(),
+  telefone: telefone.optional(),
+});
+export type PessoaNova = z.infer<typeof pessoaNova>;
+
+export const pessoaAtualizar = z
+  .object({
+    nome: z.string().trim().min(2).max(80).optional(),
+    papel: z.enum(PAPEIS_TODOS).optional(),
+    unidadeId: z.number().int().positive().optional(),
+    ativo: z.boolean().optional(),
+    /** Ao desativar ou trocar de unidade: quem fica com os leads abertos (null = sem dono, rodízio). */
+    transferirPara: z.number().int().positive().nullish(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
+export type PessoaAtualizar = z.infer<typeof pessoaAtualizar>;

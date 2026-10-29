@@ -6,6 +6,7 @@ import type { DepsApi } from './dependencias.js';
 import { rotaNaoEncontrada, tratarErros } from './middlewares/erros.js';
 import {
   adminParaAlterar,
+  exigirEscrita,
   exigirMaster,
   exigirOrigemConhecida,
   exigirSessao,
@@ -32,6 +33,7 @@ import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasMaster } from './modulos/master/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
 import { rotasNotificacoes } from './modulos/notificacoes/rotas.js';
+import { rotasOrganizacao } from './modulos/organizacao/rotas.js';
 import { rotasPlaces } from './modulos/places/rotas.js';
 import { rotasPlataforma } from './modulos/plataforma/rotas.js';
 import { rotasRelatorios } from './modulos/relatorios/rotas.js';
@@ -95,6 +97,8 @@ export function criarApp(deps: DepsApi): Express {
 
   const protegidas = Router();
   protegidas.use(exigirSessao(deps.auth.jwtSegredo, deps.pool));
+  // Acesso só de leitura (diretoria): vê tudo, não altera nada.
+  protegidas.use(exigirEscrita);
   // Quem fez o quê: toda alteração que deu certo fica registrada (depois da resposta).
   protegidas.use(auditar(deps.pool, deps.log));
   // Configuração que gasta dinheiro ou muda a operação: todos veem, só o administrador altera.
@@ -108,6 +112,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/importacoes', adminParaAlterar, rotasImportacoes(deps));
   protegidas.use('/importacoes-leads', rotasImportacaoLeads(deps));
   protegidas.use('/equipe', rotasEquipe(deps));
+  protegidas.use('/organizacao', rotasOrganizacao(deps));
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));
   protegidas.use('/agenda', rotasAgenda(deps));

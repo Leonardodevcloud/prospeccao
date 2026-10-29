@@ -148,6 +148,8 @@ export interface Campanha {
 export interface EmpresaLista {
   id: number;
   nome: string;
+  /** Outra unidade da mesma organização já trabalha esta empresa. */
+  outraUnidade?: string | null;
   razaoSocial: string | null;
   cnpj: string | null;
   cidade: string;
@@ -408,6 +410,8 @@ export interface ResultadoAdicionar {
   adicionadas: number;
   jaNoFunil: number;
   naoEncontradas: number;
+  /** Outra unidade da organização já trabalha estas empresas: ficaram de fora. */
+  deOutraUnidade?: { empresaId: number; nome: string; unidade: string }[];
   duplicadas: Duplicada[];
 }
 
@@ -899,7 +903,11 @@ export interface Sessao {
   };
   /** Administra a plataforma (painel master). */
   master: boolean;
-  /** Master dentro de outra conta (suporte/configuração). */
+  /** Papel na organização inteira: gestor (administra todas as unidades) ou leitura (só olha). */
+  papelOrganizacao: 'gestor' | 'leitura' | null;
+  /** O cliente (organização) e quantas unidades ativas ele tem. */
+  organizacao: { id: number; nome: string; unidades: number } | null;
+  /** Master (ou gestor) dentro de outra conta/unidade. */
   foraDaPropria: boolean;
 }
 
@@ -1358,6 +1366,11 @@ export interface ContaResumo {
   nome: string;
   ativa: boolean;
   principal: boolean;
+  /** Cliente (organização) desta unidade. */
+  organizacaoId: number;
+  organizacaoNome: string;
+  organizacaoAtiva: boolean;
+  cotaLeadsMes: number | null;
   /** Chamadas à IA da plataforma neste mês e o teto (null = sem teto). */
   iaPlataformaMes: number;
   limiteIaMes: number | null;
@@ -1386,7 +1399,11 @@ export interface PlanoConta {
   limiteLeadsProprio: number | null;
   mensalidadeManual: number | null;
   planoDesde: string | null;
+  /** Uso somado da organização (o contrato vale para todas as unidades). */
   uso: { usuarios: number; leadsMes: number; leadsEsperando: number };
+  organizacao: { id: number; nome: string; unidades: number };
+  /** A unidade: cota própria de leads do mês (null = usa o que sobra da organização) e o uso dela. */
+  unidade: { id: number; nome: string; cota: number | null; leadsMes: number; leadsEsperando: number } | null;
 }
 
 export type CampoSegredo =
@@ -1643,4 +1660,52 @@ export interface PreviaImportacao {
   comCnpj: number;
   comContato: number;
   jaNaConta: number;
+}
+
+/* ───────── Organização (gestor) ───────── */
+
+export type PapelOrganizacao = 'gestor' | 'leitura';
+export type PapelQualquer = PapelUsuario | PapelOrganizacao;
+export const ROTULO_PAPEL_QUALQUER: Record<PapelQualquer, string> = {
+  gestor: 'Gestor da organização',
+  leitura: 'Só leitura (diretoria)',
+  admin: 'Administrador da unidade',
+  sdr: 'SDR (prospecção)',
+  closer: 'Closer (fechamento)',
+};
+
+export interface UnidadeOrganizacao {
+  id: number;
+  nome: string;
+  ativa: boolean;
+  principal: boolean;
+  cotaLeadsMes: number | null;
+  leadsMes: number;
+  leadsEsperando: number;
+  pessoas: number;
+  noFunil: number;
+  ganhosMes: number;
+  ultimoAcesso: string | null;
+  criadoEm: string;
+}
+
+export interface PessoaOrganizacao {
+  id: number;
+  nome: string;
+  email: string;
+  papel: PapelQualquer;
+  ativo: boolean;
+  telefone: string | null;
+  unidadeId: number;
+  unidadeNome: string;
+  convitePendente: boolean;
+  ultimoAcesso: string | null;
+  leadsAbertos: number;
+}
+
+export interface Organizacao {
+  organizacao: { id: number; nome: string };
+  plano: PlanoConta;
+  unidades: UnidadeOrganizacao[];
+  pessoas: PessoaOrganizacao[];
 }

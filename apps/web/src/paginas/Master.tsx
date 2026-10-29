@@ -1,7 +1,7 @@
 import { LISTA_MODULOS, MODULOS, type Modulo, type Plano, TABELA_PADRAO } from '@prospeccao/shared/planos';
 import { Badge, Button, EmptyState, Icon, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { type FormEvent, Fragment, type ReactNode, useEffect, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
 import {
   api,
@@ -1075,6 +1075,16 @@ function PlanoDaConta(props: { contaId: number }) {
   if (!q.data) return <ErroDaApi erro={q.error} />;
   return (
     <div className="pilha" style={{ gap: 20 }}>
+      {q.data.organizacao.unidades > 1 && (
+        <Mensagem tipo="aviso">
+          O plano é do cliente {q.data.organizacao.nome} e vale somado para as {q.data.organizacao.unidades}{' '}
+          unidades. Esta unidade
+          {q.data.unidade?.cota != null
+            ? ` tem cota de ${fmtNumero(q.data.unidade.cota)} leads por mês`
+            : ' não tem cota própria (usa o que sobra do total)'}
+          ; já usou {fmtNumero(q.data.unidade?.leadsMes ?? 0)} neste mês.
+        </Mensagem>
+      )}
       <ResumoPlano p={q.data} />
       <hr className="divisor" />
       <FormPlano contaId={props.contaId} p={q.data} />
@@ -1107,6 +1117,8 @@ export function NovaConta(props: {
   const [plano, setPlano] = useState<Plano>(ini?.plano ?? 'start');
   const tabela = useTabelaPrecos().data ?? TABELA_PADRAO;
   const [modulos, setModulos] = useState<Modulo[]>([]);
+  const [varias, setVarias] = useState(false);
+  const [unidade, setUnidade] = useState('');
   const criar = useMutation({
     mutationFn: () =>
       api<{ id: number; convite: string; diasValidade: number }>('/master/contas', {
@@ -1114,6 +1126,8 @@ export function NovaConta(props: {
         corpo: {
           ...f,
           observacoes: f.observacoes || undefined,
+          primeiroAcesso: varias ? 'gestor' : 'admin',
+          unidade: varias && unidade.trim() ? unidade.trim() : undefined,
           // Personalizado: começa com os números do Start; ajuste na aba Plano e módulos.
           plano:
             plano === 'personalizado'
@@ -1224,8 +1238,31 @@ export function NovaConta(props: {
               </div>
               <span className="campo__dica">Números, módulos e mensalidade podem ser ajustados depois.</span>
             </fieldset>
+            <label className="opcao">
+              <input type="checkbox" checked={varias} onChange={(e) => setVarias(e.target.checked)} />
+              <span>
+                Cliente com várias unidades (regionais, filiais ou times)
+                <span className="campo__dica" style={{ display: 'block' }}>
+                  O primeiro acesso vira gestor da organização: ele cria as outras unidades, divide a cota de
+                  leads e convida as pessoas de cada uma.
+                </span>
+              </span>
+            </label>
+            {varias && (
+              <div className="campo">
+                <label htmlFor="nc-unidade">Primeira unidade</label>
+                <input
+                  id="nc-unidade"
+                  className="filtro"
+                  maxLength={80}
+                  placeholder="Ex.: Matriz, Regional Sudeste"
+                  value={unidade}
+                  onChange={(e) => setUnidade(e.target.value)}
+                />
+              </div>
+            )}
             <fieldset className="opcoes">
-              <legend>Primeiro administrador</legend>
+              <legend>{varias ? 'Gestor da organização' : 'Primeiro administrador'}</legend>
               <div className="form__duas">
                 <div className="campo">
                   <label htmlFor="nc-admin-nome">Nome</label>
@@ -1274,6 +1311,69 @@ export function NovaConta(props: {
   );
 }
 
+/** Nova unidade num cliente (o contrato continua o do cliente, somado). */
+function NovaUnidade(props: {
+  organizacao: { id: number; nome: string };
+  aoFechar: () => void;
+  aoCriar: (id: number) => void;
+}) {
+  const cliente = useQueryClient();
+  const [nome, setNome] = useState('');
+  const [cota, setCota] = useState('');
+  const criar = useMutation({
+    mutationFn: () =>
+      api<{ id: number }>(`/master/organizacoes/${props.organizacao.id}/unidades`, {
+        metodo: 'POST',
+        corpo: { nome, cotaLeadsMes: cota.trim() ? Number(cota.replace(/\D/g, '')) : null },
+      }),
+    onSuccess: (r) => {
+      cliente.invalidateQueries({ queryKey: ['master'] });
+      props.aoCriar(r.id);
+    },
+  });
+  return (
+    <Drawer titulo={`Nova unidade de ${props.organizacao.nome}`} barra="Clientes" aoFechar={props.aoFechar}>
+      <form
+        className="drawer__corpo form"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          criar.mutate();
+        }}
+      >
+        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+          A unidade tem funil, campanhas, WhatsApp e equipe próprios; o plano, os usuários e os leads do mês
+          são do cliente, somados. O gestor do cliente também cria unidades pela tela Organização.
+        </p>
+        <div className="campo">
+          <label htmlFor="nu-nome">Nome da unidade</label>
+          <input
+            id="nu-nome"
+            className="filtro"
+            maxLength={80}
+            placeholder="Ex.: Regional Nordeste"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+          />
+        </div>
+        <div className="campo">
+          <label htmlFor="nu-cota">Cota de leads por mês (opcional)</label>
+          <input
+            id="nu-cota"
+            className="filtro"
+            inputMode="numeric"
+            value={cota}
+            onChange={(e) => setCota(e.target.value)}
+          />
+        </div>
+        <ErroDaApi erro={criar.error} />
+        <Button variant="primary" type="submit" disabled={criar.isPending || nome.trim().length < 2}>
+          {criar.isPending ? 'Criando…' : 'Criar unidade'}
+        </Button>
+      </form>
+    </Drawer>
+  );
+}
+
 /* ───────────────────────── Página ───────────────────────── */
 
 /** Painel master: as empresas que usam o sistema, as chaves de cada uma e o acesso de suporte. */
@@ -1283,6 +1383,7 @@ export function Master() {
   const [nova, setNova] = useState(false);
   const [busca, setBusca] = useState('');
   const [precos, setPrecos] = useState(false);
+  const [novaUnidade, setNovaUnidade] = useState<{ id: number; nome: string } | null>(null);
   const q = useQuery({
     queryKey: ['master', 'contas'],
     queryFn: () => api<ContaResumo[]>('/master/contas'),
@@ -1293,6 +1394,7 @@ export function Master() {
     queryFn: () => api<{ clientes: ClientePainel[] }>('/master/plataforma/clientes'),
     enabled: !!sessao.data?.master,
   });
+  // Saúde por cliente (organização).
   const saude = new Map(painel.data?.clientes.map((c) => [c.id, c]) ?? []);
   const aberta = Number(params.get('conta')) || null;
   const abrir = (id: number | null) => {
@@ -1304,14 +1406,25 @@ export function Master() {
   if (sessao.data && !sessao.data.master) return <Navigate to="/" replace />;
 
   const contas = q.data ?? [];
-  const clientes = contas.filter((c) => !c.principal);
-  const ativos = clientes.filter((c) => c.ativa && c.plano.plano);
+  // Um cliente (organização) pode ter várias unidades: o contrato é dele, as unidades vêm abaixo.
+  const grupos = [
+    ...new Map(
+      contas.map((c) => [c.organizacaoId, contas.filter((x) => x.organizacaoId === c.organizacaoId)]),
+    ).values(),
+  ];
+  const clientes = grupos.filter((g) => !g.some((c) => c.principal)).map((g) => g[0]!);
+  const ativos = clientes.filter((c) => c.organizacaoAtiva && c.plano.plano);
   const mrr = ativos.reduce((s, c) => s + (c.plano.mensalidade ?? 0), 0);
   const noLimite = ativos.filter(
     (c) => c.plano.leadsMes != null && c.plano.uso.leadsMes >= c.plano.leadsMes * 0.9,
   ).length;
   const termo = busca.trim().toLowerCase();
-  const visiveis = contas.filter((c) => !termo || c.nome.toLowerCase().includes(termo));
+  const visiveis = grupos.filter(
+    (g) =>
+      !termo ||
+      g[0]!.organizacaoNome.toLowerCase().includes(termo) ||
+      g.some((c) => c.nome.toLowerCase().includes(termo)),
+  );
 
   return (
     <>
@@ -1380,67 +1493,127 @@ export function Master() {
                 </tr>
               </thead>
               <tbody>
-                {visiveis.map((c) => {
+                {visiveis.map((g) => {
+                  const c = g[0]!;
                   const p = c.plano;
                   const pctLeads = p.leadsMes ? p.uso.leadsMes / Math.max(1, p.leadsMes) : 0;
+                  const varias = g.length > 1;
+                  const principal = g.some((x) => x.principal);
+                  const x = saude.get(c.organizacaoId);
                   return (
-                    <tr key={c.id} data-inativo={!c.ativa || undefined}>
-                      <td>
-                        <button
-                          type="button"
-                          className="link-botao tabela-contas__nome"
-                          onClick={() => abrir(c.id)}
-                        >
-                          {c.nome}
-                        </button>{' '}
-                        {c.principal && <Badge tone="brand">Sua conta</Badge>}
-                        {!c.ativa && <Badge tone="danger">Desativada</Badge>}
-                        {sessao.data?.conta.id === c.id && <Badge tone="outline">Você está aqui</Badge>}
-                      </td>
-                      <td>
-                        {(() => {
-                          const x = saude.get(c.id);
-                          if (!x || c.principal) return <span className="quieto">—</span>;
-                          return (
+                    <Fragment key={c.organizacaoId}>
+                      <tr data-inativo={!c.organizacaoAtiva || undefined} data-grupo={varias || undefined}>
+                        <td>
+                          {varias ? (
+                            <b className="tabela-contas__nome">{c.organizacaoNome}</b>
+                          ) : (
+                            <button
+                              type="button"
+                              className="link-botao tabela-contas__nome"
+                              onClick={() => abrir(c.id)}
+                            >
+                              {c.organizacaoNome}
+                            </button>
+                          )}{' '}
+                          {principal && <Badge tone="brand">Sua conta</Badge>}
+                          {varias && <Badge tone="outline">{g.length} unidades</Badge>}
+                          {!c.organizacaoAtiva && <Badge tone="danger">Desativado</Badge>}
+                          {!varias && sessao.data?.conta.id === c.id && (
+                            <Badge tone="outline">Você está aqui</Badge>
+                          )}
+                          {!principal && (
+                            <button
+                              type="button"
+                              className="link-botao tabela-contas__unidade"
+                              onClick={() => setNovaUnidade({ id: c.organizacaoId, nome: c.organizacaoNome })}
+                            >
+                              + unidade
+                            </button>
+                          )}
+                        </td>
+                        <td>
+                          {!x || principal ? (
+                            <span className="quieto">—</span>
+                          ) : (
                             <span title={x.saudeTexto}>
                               <Badge tone={TOM_SAUDE[x.saude]}>{ROTULO_SAUDE[x.saude]}</Badge>
                             </span>
-                          );
-                        })()}
-                      </td>
-                      <td>{p.plano ? ROTULO_PLANO[p.plano] : <span className="quieto">Sem plano</span>}</td>
-                      <td>
-                        {p.plano ? (
-                          p.modulos.length ? (
-                            <span className="modulos-mini">
-                              {p.modulos.map((m) => (
-                                <Badge key={m} tone="outline">
-                                  {m === 'agente_ia' ? 'IA' : m === 'whatsapp' ? 'WhatsApp' : 'E-mail'}
-                                </Badge>
-                              ))}
-                            </span>
+                          )}
+                        </td>
+                        <td>{p.plano ? ROTULO_PLANO[p.plano] : <span className="quieto">Sem plano</span>}</td>
+                        <td>
+                          {p.plano ? (
+                            p.modulos.length ? (
+                              <span className="modulos-mini">
+                                {p.modulos.map((m) => (
+                                  <Badge key={m} tone="outline">
+                                    {m === 'agente_ia' ? 'IA' : m === 'whatsapp' ? 'WhatsApp' : 'E-mail'}
+                                  </Badge>
+                                ))}
+                              </span>
+                            ) : (
+                              <span className="quieto">nenhum</span>
+                            )
                           ) : (
-                            <span className="quieto">nenhum</span>
-                          )
-                        ) : (
-                          <span className="quieto">todos</span>
-                        )}
-                      </td>
-                      <td className="mono">
-                        {fmtNumero(p.uso.usuarios)}
-                        {p.usuarios != null && <span className="quieto"> / {fmtNumero(p.usuarios)}</span>}
-                      </td>
-                      <td
-                        className="mono"
-                        data-alerta={pctLeads >= 1 ? 'cheio' : pctLeads >= 0.9 ? 'quase' : undefined}
-                      >
-                        {fmtNumero(p.uso.leadsMes)}
-                        {p.leadsMes != null && <span className="quieto"> / {fmtNumero(p.leadsMes)}</span>}
-                      </td>
-                      <td className="mono">{p.mensalidade != null ? fmtReais(p.mensalidade) : '—'}</td>
-                      <td className="mono">{fmtNumero(c.leadsNoFunil)}</td>
-                      <td className="quieto">{c.ultimoAcesso ? fmtQuando(c.ultimoAcesso) : 'nunca'}</td>
-                    </tr>
+                            <span className="quieto">todos</span>
+                          )}
+                        </td>
+                        <td className="mono">
+                          {fmtNumero(p.uso.usuarios)}
+                          {p.usuarios != null && <span className="quieto"> / {fmtNumero(p.usuarios)}</span>}
+                        </td>
+                        <td
+                          className="mono"
+                          data-alerta={pctLeads >= 1 ? 'cheio' : pctLeads >= 0.9 ? 'quase' : undefined}
+                        >
+                          {fmtNumero(p.uso.leadsMes)}
+                          {p.leadsMes != null && <span className="quieto"> / {fmtNumero(p.leadsMes)}</span>}
+                        </td>
+                        <td className="mono">{p.mensalidade != null ? fmtReais(p.mensalidade) : '—'}</td>
+                        <td className="mono">{fmtNumero(g.reduce((s, u) => s + u.leadsNoFunil, 0))}</td>
+                        <td className="quieto">
+                          {(() => {
+                            const ultimo = g
+                              .map((u) => u.ultimoAcesso)
+                              .filter((v): v is string => !!v)
+                              .sort()
+                              .at(-1);
+                            return ultimo ? fmtQuando(ultimo) : 'nunca';
+                          })()}
+                        </td>
+                      </tr>
+                      {varias &&
+                        g.map((u) => (
+                          <tr
+                            key={u.id}
+                            className="tabela-contas__linha-unidade"
+                            data-inativo={!u.ativa || undefined}
+                          >
+                            <td>
+                              <button
+                                type="button"
+                                className="link-botao tabela-contas__nome"
+                                onClick={() => abrir(u.id)}
+                              >
+                                {u.nome}
+                              </button>{' '}
+                              {!u.ativa && <Badge tone="danger">Desativada</Badge>}
+                              {sessao.data?.conta.id === u.id && <Badge tone="outline">Você está aqui</Badge>}
+                            </td>
+                            <td />
+                            <td colSpan={2} className="quieto">
+                              {u.cotaLeadsMes != null
+                                ? `Cota de ${fmtNumero(u.cotaLeadsMes)} leads/mês`
+                                : 'Sem cota própria'}
+                            </td>
+                            <td className="mono">{fmtNumero(u.usuarios)}</td>
+                            <td className="mono">{fmtNumero(u.plano.unidade?.leadsMes ?? 0)}</td>
+                            <td />
+                            <td className="mono">{fmtNumero(u.leadsNoFunil)}</td>
+                            <td className="quieto">{u.ultimoAcesso ? fmtQuando(u.ultimoAcesso) : 'nunca'}</td>
+                          </tr>
+                        ))}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1463,6 +1636,16 @@ export function Master() {
         />
       )}
       {aberta && <Conta key={aberta} id={aberta} aoFechar={() => abrir(null)} />}
+      {novaUnidade && (
+        <NovaUnidade
+          organizacao={novaUnidade}
+          aoFechar={() => setNovaUnidade(null)}
+          aoCriar={(id) => {
+            setNovaUnidade(null);
+            abrir(id);
+          }}
+        />
+      )}
       {precos && (
         <Drawer titulo="Tabela de preços" barra="Clientes" aoFechar={() => setPrecos(false)} largo>
           <div className="drawer__corpo">

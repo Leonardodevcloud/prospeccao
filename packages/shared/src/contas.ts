@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PAPEIS_TODOS } from './equipe.js';
 import { planoContaEntrada } from './planos.js';
 
 /* ───────────────────────────── Contas (painel master) ───────────────────────────── */
@@ -13,6 +14,13 @@ export const contaNova = z.object({
   }),
   /** Plano já na criação (pode mudar depois). */
   plano: planoContaEntrada.optional(),
+  /**
+   * Primeiro acesso: administrador da unidade (cliente de uma unidade só) ou gestor da organização
+   * (cliente com várias unidades: ele cria as unidades e as pessoas).
+   */
+  primeiroAcesso: z.enum(['admin', 'gestor']).default('admin'),
+  /** Nome da primeira unidade (padrão: o nome da empresa). */
+  unidade: z.string().trim().min(2).max(80).optional(),
 });
 export type ContaNova = z.infer<typeof contaNova>;
 
@@ -149,3 +157,21 @@ export const inscricaoPush = z.object({
   keys: z.object({ p256dh: z.string().min(10).max(200), auth: z.string().min(8).max(100) }),
   aparelho: z.string().trim().max(120).nullable().optional(),
 });
+
+/** O master mexe em qualquer pessoa, inclusive gestor e leitura da organização. */
+export const pessoaMasterAtualizar = z
+  .object({
+    nome: z.string().trim().min(2).max(80).optional(),
+    papel: z.enum(PAPEIS_TODOS).optional(),
+    ativo: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
+
+export const organizacaoAtualizar = z
+  .object({
+    nome: z.string().trim().min(2).max(80).optional(),
+    ativa: z.boolean().optional(),
+    observacoes: z.string().trim().max(1000).nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
+export type OrganizacaoAtualizar = z.infer<typeof organizacaoAtualizar>;

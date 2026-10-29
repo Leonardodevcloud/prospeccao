@@ -21,8 +21,10 @@ import { Barras } from './Relatorios';
 type PlanoNome = 'start' | 'time' | 'escala' | 'personalizado';
 
 export interface ClientePainel {
+  /** Organização (o cliente). */
   id: number;
   nome: string;
+  unidades: { id: number; nome: string; ativa: boolean; leadsMes: number; custo: number }[];
   ativa: boolean;
   principal: boolean;
   criadoEm: string;
@@ -65,7 +67,14 @@ interface Visao {
     margemEstimada: number;
     custoContaPrincipal: number;
   };
-  atencao: { id: number; nome: string; saude: SinalSaude; texto: string; mensalidade: number | null }[];
+  atencao: {
+    id: number;
+    contaId: number | null;
+    nome: string;
+    saude: SinalSaude;
+    texto: string;
+    mensalidade: number | null;
+  }[];
   vendas: { porEtapa: Record<string, number>; mes: { novos: number; clientes: number; perdidos: number } };
   operacao: {
     alertas: number;
@@ -230,7 +239,7 @@ export function PlataformaVisao() {
                     <li key={a.id} className="lista-atencao__item">
                       <Badge tone={TOM_SAUDE[a.saude]}>{ROTULO_SAUDE[a.saude]}</Badge>
                       <div>
-                        <Link to={`/plataforma/clientes?conta=${a.id}`}>{a.nome}</Link>
+                        <Link to={`/plataforma/clientes?conta=${a.contaId}`}>{a.nome}</Link>
                         <span className="quieto"> · {a.texto}</span>
                       </div>
                       <span className="mono quieto">{fmtReais(a.mensalidade)}</span>
@@ -421,6 +430,7 @@ export function PlataformaConsumo() {
                         {c.principal && <Badge tone="brand">Sua conta</Badge>}
                         <div className="quieto" style={{ fontSize: 12 }}>
                           {c.plano ? ROTULO_PLANO[c.plano] : 'Sem plano'}
+                          {c.unidades.length > 1 ? ` · ${c.unidades.length} unidades` : ''}
                         </div>
                       </td>
                       <td
@@ -551,13 +561,33 @@ function DetalheConsumo(props: { c: ClientePainel; aoFechar: () => void }) {
             ))}
           </tbody>
         </table>
+        {c.unidades.length > 1 && (
+          <table className="pp-table">
+            <thead>
+              <tr>
+                <th>Unidade</th>
+                <th>Leads no mês</th>
+                <th>Custo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.unidades.map((u) => (
+                <tr key={u.id} data-inativo={!u.ativa || undefined}>
+                  <td>{u.nome}</td>
+                  <td className="mono">{fmtNumero(u.leadsMes)}</td>
+                  <td className="mono">{fmtReaisCentavos(u.custo)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
         <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
           Leads: {fmtNumero(c.leads.mes)} neste mês, {fmtNumero(c.leads.mesAnterior)} no mês passado,{' '}
           {fmtNumero(c.leads.ultimos14d)} nos últimos 14 dias
           {c.leads.esperando > 0 && ` · ${fmtNumero(c.leads.esperando)} esperando o limite do plano`}.
           {c.leads.mes > 0 && ` Custo por lead: ${fmtReaisCentavos(c.custo.total / c.leads.mes)}.`}
         </p>
-        <Link className="link-botao" to={`/plataforma/clientes?conta=${c.id}`}>
+        <Link className="link-botao" to={`/plataforma/clientes?conta=${c.unidades[0]?.id ?? ''}`}>
           Abrir o cliente (plano, usuários e chaves)
         </Link>
       </div>

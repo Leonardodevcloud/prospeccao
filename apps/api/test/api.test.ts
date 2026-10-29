@@ -3695,4 +3695,135 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(op.status).toBe(200);
     expect(op.body.enriquecimentoPorDia).toHaveLength(14);
   });
+  it('organização: gestor com várias unidades, cota de leads, pessoas, leitura e uma empresa por unidade', async () => {
+    const criada = await enviar('post', '/master/contas', {
+      nome: 'Rede Nacional Teste',
+      unidade: 'Bahia',
+      primeiroAcesso: 'gestor',
+      admin: { nome: 'Gil Gestor', email: 'gil@redenacional.com.br' },
+      plano: { plano: 'escala', modulos: ['email'] },
+    });
+    expect(criada.status).toBe(201);
+    const bahia = criada.body.id as number;
+    const orgId = criada.body.organizacaoId as number;
+
+    const entrarPorConvite = async (convite: string, senha: string) => {
+      const r = await request(app)
+        .post(`/auth/convite/${convite.split('/').at(-1)}`)
+        .set('Origin', ORIGEM)
+        // Outro endereço: o limite de tentativas de login é por IP.
+        .set('X-Forwarded-For', `10.9.0.${senha.length}`)
+        .send({ senha });
+      expect(r.status).toBe(200);
+      const pessoa = { cookie: (r.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]! };
+      const trocar = <T extends { headers: Record<string, unknown> }>(res: T): T => {
+        const c = res.headers['set-cookie'] as string[] | undefined;
+        if (c?.[0]) pessoa.cookie = c[0].split(';')[0]!;
+        return res;
+      };
+      return {
+        ler: (rota: string) => request(app).get(rota).set('Cookie', pessoa.cookie),
+        enviar: async (metodo: 'post' | 'put' | 'patch' | 'delete', rota: string, corpo?: object) =>
+          trocar(
+            await request(app)[metodo](rota).set('Origin', ORIGEM).set('Cookie', pessoa.cookie).send(corpo),
+          ),
+      };
+    };
+    const gil = await entrarPorConvite(criada.body.convite, 'senha-do-gil-1');
+    expect((await gil.ler('/auth/eu')).body).toMatchObject({
+      papel: 'admin',
+      papelOrganizacao: 'gestor',
+      organizacao: { id: orgId, nome: 'Rede Nacional Teste', unidades: 1 },
+    });
+
+    // Unidades e cotas (somadas não passam do plano: Escala = 10 mil leads).
+    const pe = await gil.enviar('post', '/organizacao/unidades', { nome: 'Pernambuco', cotaLeadsMes: 4000 });
+    expect(pe.status).toBe(201);
+    const demais = await gil.enviar('post', '/organizacao/unidades', { nome: 'Ceará', cotaLeadsMes: 7000 });
+    expect(demais.status).toBe(422);
+    expect(demais.body.erro.mensagem).toMatch(/cotas somadas/);
+    const org = (await gil.ler('/organizacao')).body;
+    expect(org.plano).toMatchObject({ plano: 'escala', leadsMes: 10000, uso: { usuarios: 1 } });
+    expect(org.unidades.map((u: { nome: string }) => u.nome)).toEqual(['Bahia', 'Pernambuco']);
+
+    // Pessoas: SDR em Pernambuco e um acesso só de leitura (diretoria).
+    const sdr = await gil.enviar('post', '/organizacao/pessoas', {
+      nome: 'Sara SDR',
+      email: 'sara@redenacional.com.br',
+      papel: 'sdr',
+      unidadeId: pe.body.id,
+    });
+    expect(sdr.status).toBe(201);
+    const dir = await gil.enviar('post', '/organizacao/pessoas', {
+      nome: 'Diana Diretoria',
+      email: 'diana@redenacional.com.br',
+      papel: 'leitura',
+      unidadeId: bahia,
+    });
+    expect(dir.status).toBe(201);
+    // Ninguém de fora da organização.
+    expect(
+      (
+        await gil.enviar('post', '/organizacao/pessoas', {
+          nome: 'Intruso',
+          email: 'x@y.com.br',
+          papel: 'sdr',
+          unidadeId: 1,
+        })
+      ).status,
+    ).toBe(404);
+
+    // Uma empresa, uma unidade: a Bahia cadastra; Pernambuco não consegue a mesma.
+    await gil.enviar('post', '/nichos/prontos', { ids: ['farmacias'] });
+    const lead = await gil.enviar('post', '/funil/leads', {
+      empresa: 'Farmácia Única Teste',
+      cnpj: '11.222.333/0001-81',
+    });
+    expect(lead.status).toBe(201);
+    expect((await gil.enviar('post', `/organizacao/unidades/${pe.body.id}/entrar`)).status).toBe(200);
+    expect((await gil.ler('/auth/eu')).body.conta).toMatchObject({ id: pe.body.id, nome: 'Pernambuco' });
+    await gil.enviar('post', '/nichos/prontos', { ids: ['farmacias'] });
+    const repetido = await gil.enviar('post', '/funil/leads', {
+      empresa: 'Farmácia Única Teste',
+      cnpj: '11222333000181',
+    });
+    expect(repetido.status).toBe(409);
+    expect(repetido.body.erro.mensagem).toMatch(/unidade Bahia/);
+    // Fora da organização, não entra.
+    expect((await gil.enviar('post', '/organizacao/unidades/1/entrar')).status).toBe(404);
+    await gil.enviar('post', '/organizacao/voltar');
+    expect((await gil.ler('/auth/eu')).body.conta.id).toBe(bahia);
+
+    // Leitura: vê tudo, não muda nada (mas troca de unidade).
+    const diana = await entrarPorConvite(dir.body.convite, 'senha-da-diana-1');
+    expect((await diana.ler('/organizacao')).status).toBe(200);
+    expect((await diana.ler('/funil')).status).toBe(200);
+    const bloqueado = await diana.enviar('post', '/funil/leads', { empresa: 'Qualquer' });
+    expect(bloqueado.status).toBe(403);
+    expect(bloqueado.body.erro.codigo).toBe('somente_leitura');
+    expect((await diana.enviar('post', `/organizacao/unidades/${pe.body.id}/entrar`)).status).toBe(200);
+
+    // O gestor não se desativa; move a SDR para a Bahia.
+    const eu = (await gil.ler('/auth/eu')).body.id;
+    expect((await gil.enviar('patch', `/organizacao/pessoas/${eu}`, { ativo: false })).status).toBe(422);
+    expect(
+      (await gil.enviar('patch', `/organizacao/pessoas/${sdr.body.id}`, { unidadeId: bahia })).status,
+    ).toBe(200);
+    const depois = (await gil.ler('/organizacao')).body;
+    expect(depois.pessoas.find((p: { id: number }) => p.id === sdr.body.id).unidadeNome).toBe('Bahia');
+    // A equipe da unidade não mostra gestor nem leitura.
+    expect((await gil.ler('/equipe')).body.usuarios.map((u: { papel: string }) => u.papel).sort()).toEqual([
+      'sdr',
+    ]);
+
+    // O master vê o cliente com as duas unidades e o plano vale para elas.
+    const orgs = (await ler('/master/organizacoes')).body as { id: number; unidades: { nome: string }[] }[];
+    expect(orgs.find((o) => o.id === orgId)?.unidades.map((u) => u.nome)).toEqual(['Bahia', 'Pernambuco']);
+    expect((await ler(`/master/contas/${pe.body.id}/plano`)).body).toMatchObject({
+      plano: 'escala',
+      unidade: { cota: 4000 },
+    });
+    await enviar('patch', `/master/organizacoes/${orgId}`, { ativa: false });
+    expect((await gil.ler('/auth/eu')).status).toBe(401);
+  });
 });

@@ -33,6 +33,7 @@ export function MeuPlano() {
         <EmptyState icone="badge-check" titulo="Sem plano" texto="Esta conta não tem limites de uso." />
       </div>
     );
+  const varias = p.organizacao.unidades > 1;
   const temWhatsapp = p.modulos.includes('whatsapp');
   const temEmail = p.modulos.includes('email');
 
@@ -43,7 +44,9 @@ export function MeuPlano() {
           <h1>Meu plano</h1>
           <p>
             Plano {ROTULO_PLANO[p.plano]}
-            {p.planoDesde ? ` desde ${fmtData(p.planoDesde)}` : ''}. O uso volta a zero todo dia 1º.
+            {p.planoDesde ? ` desde ${fmtData(p.planoDesde)}` : ''}
+            {varias ? `, de ${p.organizacao.nome} para as ${p.organizacao.unidades} unidades` : ''}. O uso
+            volta a zero todo dia 1º.
           </p>
         </div>
         {admin && p.mensalidade != null && (
@@ -58,7 +61,7 @@ export function MeuPlano() {
         <h2 className="subtitulo">Uso em {mes}</h2>
         <div className="plano-usos">
           <UsoComLimite
-            rotulo="Leads enriquecidos"
+            rotulo={varias ? 'Leads enriquecidos (todas as unidades)' : 'Leads enriquecidos'}
             usado={p.uso.leadsMes}
             limite={p.leadsMes}
             detalhe={
@@ -69,8 +72,20 @@ export function MeuPlano() {
                   : undefined
             }
           />
+          {varias && p.unidade && (
+            <UsoComLimite
+              rotulo={`Leads desta unidade (${p.unidade.nome})`}
+              usado={p.unidade.leadsMes}
+              limite={p.unidade.cota}
+              detalhe={
+                p.unidade.cota == null
+                  ? 'Sem cota própria: usa o que sobra do total da organização.'
+                  : 'Cota definida pelo gestor da organização.'
+              }
+            />
+          )}
           <UsoComLimite
-            rotulo="Usuários ativos"
+            rotulo={varias ? 'Usuários ativos (todas as unidades)' : 'Usuários ativos'}
             usado={p.uso.usuarios}
             limite={p.usuarios}
             detalhe={

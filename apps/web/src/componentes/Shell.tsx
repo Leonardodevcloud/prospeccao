@@ -2,12 +2,13 @@ import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
-import { type Alerta, api, ErroApi, ROTULO_PAPEL_USUARIO } from '../api';
+import { type Alerta, api, ErroApi, ROTULO_PAPEL_QUALQUER, ROTULO_PAPEL_USUARIO } from '../api';
 import { useAgentePendente } from '../paginas/Agente';
 import { temAtividade, useAtividade } from '../paginas/Atividade';
 import { useVisaoEmail } from '../paginas/Email';
 import { useFollowupsPendentes } from '../paginas/Funil';
 import { useMeuDiaResumo } from '../paginas/MeuDia';
+import { useEntrarNaUnidade, useOrganizacao } from '../paginas/Organizacao';
 import { useNovosPedidos } from '../paginas/Vendas';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
 import { Logo } from './Marca';
@@ -31,6 +32,8 @@ const ITENS: {
   comPlano?: boolean;
   /** Só aparece se a conta tem algum destes módulos no plano. */
   modulos?: ('whatsapp' | 'agente_ia' | 'email')[];
+  /** Só para o gestor e a leitura da organização. */
+  organizacao?: boolean;
 }[] = [
   { para: '/hoje', rotulo: 'Meu dia', icone: 'calendar' },
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers', secao: 'Prospecção' },
@@ -41,6 +44,7 @@ const ITENS: {
   { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle', secao: 'Vendas' },
   { para: '/email', rotulo: 'E-mail', icone: 'mail', secao: 'Vendas', modulos: ['email'] },
   { para: '/agente', rotulo: 'Agente', icone: 'bot', secao: 'Vendas', modulos: ['whatsapp', 'agente_ia'] },
+  { para: '/organizacao', rotulo: 'Organização', icone: 'building-2', secao: 'Gestão', organizacao: true },
   { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up', secao: 'Gestão' },
   { para: '/equipe', rotulo: 'Equipe', icone: 'id-card', secao: 'Gestão' },
   { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', secao: 'Gestão', comPlano: true },
@@ -105,6 +109,35 @@ function FaixaAlertas(props: { plataforma: boolean }) {
   );
 }
 
+/** Gestor e leitura: troca de unidade direto no menu. */
+function TrocarUnidade() {
+  const sessao = useSessao();
+  const org = useOrganizacao(true);
+  const entrar = useEntrarNaUnidade();
+  const unidades = org.data?.unidades.filter((u) => u.ativa) ?? [];
+  if (unidades.length < 2) return null;
+  return (
+    <div className="nav__unidade">
+      <label htmlFor="nav-unidade" className="nav__secao">
+        Unidade
+      </label>
+      <select
+        id="nav-unidade"
+        className="filtro"
+        value={sessao.data?.conta.id}
+        disabled={entrar.isPending}
+        onChange={(e) => entrar.mutate(Number(e.target.value))}
+      >
+        {unidades.map((u) => (
+          <option key={u.id} value={u.id}>
+            {u.nome}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /** Conversas com mensagem não lida (para o menu). */
 function useConversasNaoLidas() {
   return useQuery({
@@ -138,6 +171,13 @@ export function Shell() {
       // Tudo que estava na tela era da outra conta.
       cliente.clear();
       navegar('/plataforma/clientes');
+    },
+  });
+  const voltarUnidade = useMutation({
+    mutationFn: () => api('/organizacao/voltar', { metodo: 'POST' }),
+    onSuccess: () => {
+      cliente.clear();
+      navegar('/organizacao');
     },
   });
   const sair = useMutation({
@@ -192,13 +232,18 @@ export function Shell() {
             </div>
           </>
         )}
+        {!plataforma && sessao.data?.papelOrganizacao && (sessao.data.organizacao?.unidades ?? 0) > 1 && (
+          <TrocarUnidade />
+        )}
         {!plataforma &&
           ITENS.filter((i) =>
             i.master
               ? !!sessao.data?.master
-              : (!i.admin || sessao.data?.papel === 'admin') &&
-                (!i.comPlano || !!sessao.data?.conta.plano) &&
-                (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
+              : i.organizacao
+                ? !!sessao.data?.papelOrganizacao
+                : (!i.admin || sessao.data?.papel === 'admin') &&
+                  (!i.comPlano || !!sessao.data?.conta.plano) &&
+                  (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
           ).map((i, n, visiveis) => (
             <Fragment key={i.para}>
               {i.secao && i.secao !== visiveis[n - 1]?.secao && <span className="nav__secao">{i.secao}</span>}
@@ -255,7 +300,13 @@ export function Shell() {
               <Dono id={sessao.data?.id ?? null} nome={sessao.data?.nome ?? null} tamanho={28} rotulo="" />
               <span className="nav__eu-texto">
                 <b>{sessao.data?.nome}</b>
-                <span>{sessao.data ? ROTULO_PAPEL_USUARIO[sessao.data.papel] : ''}</span>
+                <span>
+                  {sessao.data
+                    ? sessao.data.papelOrganizacao
+                      ? ROTULO_PAPEL_QUALQUER[sessao.data.papelOrganizacao]
+                      : ROTULO_PAPEL_USUARIO[sessao.data.papel]
+                    : ''}
+                </span>
               </span>
             </button>
             <BotaoAvisos naoLidas={avisos.data?.naoLidas ?? 0} aoAbrir={() => setAvisosAbertos(true)} />
@@ -266,16 +317,41 @@ export function Shell() {
         </div>
       </nav>
       <main className="conteudo">
-        {sessao.data?.foraDaPropria && (
-          <div className="faixa-conta" role="status">
-            <Icon name="building-2" size={16} />
-            <span>
-              Você está na conta <b>{sessao.data.conta.nome}</b> como administrador. O que fizer aqui vale
-              para ela.
-            </span>
-            <Button size="sm" variant="ghost" disabled={voltar.isPending} onClick={() => voltar.mutate()}>
-              Voltar para a minha conta
-            </Button>
+        {sessao.data?.foraDaPropria &&
+          (sessao.data.master ? (
+            <div className="faixa-conta" role="status">
+              <Icon name="building-2" size={16} />
+              <span>
+                Você está na conta <b>{sessao.data.conta.nome}</b>
+                {sessao.data.organizacao && sessao.data.organizacao.nome !== sessao.data.conta.nome
+                  ? ` (${sessao.data.organizacao.nome})`
+                  : ''}{' '}
+                como administrador. O que fizer aqui vale para ela.
+              </span>
+              <Button size="sm" variant="ghost" disabled={voltar.isPending} onClick={() => voltar.mutate()}>
+                Voltar para a minha conta
+              </Button>
+            </div>
+          ) : (
+            <div className="faixa-conta" role="status">
+              <Icon name="building-2" size={16} />
+              <span>
+                Você está na unidade <b>{sessao.data.conta.nome}</b>.
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={voltarUnidade.isPending}
+                onClick={() => voltarUnidade.mutate()}
+              >
+                Voltar para a minha unidade
+              </Button>
+            </div>
+          ))}
+        {sessao.data?.papelOrganizacao === 'leitura' && (
+          <div className="faixa-conta faixa-conta--leitura" role="status">
+            <Icon name="circle-help" size={16} />
+            <span>Acesso só de leitura: você vê tudo, mas não altera nada.</span>
           </div>
         )}
         <FaixaAlertas plataforma={plataforma} />

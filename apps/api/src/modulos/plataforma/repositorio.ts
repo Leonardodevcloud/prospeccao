@@ -14,7 +14,7 @@ import {
   type SinalSaude,
   type UsoPago,
 } from '@prospeccao/shared';
-import { type PlanoComUso, planoDaConta } from '../plano/repositorio.js';
+import { type PlanoComUso, planoDaOrganizacao } from '../plano/repositorio.js';
 
 /**
  * Painel da plataforma (só o master): receita, consumo e custo de cada cliente, saúde de uso e a
@@ -38,6 +38,11 @@ export async function salvarCustos(db: Executor, c: CustosPlataforma, usuarioId:
 
 interface LinhaConta {
   id: number;
+  organizacaoId: number;
+  organizacao: string;
+  orgAtiva: boolean;
+  orgCriadaEm: string;
+  orgDesativadaEm: string | null;
   nome: string;
   ativa: boolean;
   principal: boolean;
@@ -63,7 +68,9 @@ interface LinhaConta {
 /** Tudo o que o painel precisa de cada conta, numa consulta só (mês corrente, fuso de São Paulo). */
 async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
   const { rows } = await db.query<LinhaConta>(
-    `SELECT c.id, c.nome, c.ativa, c.principal, c.criado_em AS "criadoEm", c.desativada_em AS "desativadaEm",
+    `SELECT c.id, c.organizacao_id AS "organizacaoId", og.nome AS organizacao, og.ativa AS "orgAtiva",
+            og.criado_em AS "orgCriadaEm", og.desativada_em AS "orgDesativadaEm",
+            c.nome, c.ativa, c.principal, c.criado_em AS "criadoEm", c.desativada_em AS "desativadaEm",
             (SELECT max(u.ultimo_acesso) FROM cadastro.usuarios u WHERE u.conta_id = c.id AND NOT u.master) AS "ultimoAcesso",
             (SELECT count(*) FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
               WHERE ca.conta_id = c.id AND l.status = 'concluido' AND l.concluido_em > now() - interval '14 days')::int AS "leads14d",
@@ -87,6 +94,7 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
             coalesce((SELECT sum(gasto_usd) FROM descoberta.v_uso_places_mes v
                        WHERE v.conta_id = c.id AND v.mes = ${INICIO_MES_SP}), 0)::float8 AS "placesUsd"
        FROM cadastro.contas c
+       JOIN cadastro.organizacoes og ON og.id = c.organizacao_id
        LEFT JOIN (
          SELECT conta_id,
                 sum(buscas) FILTER (WHERE servico = 'serper') AS serper,
@@ -108,8 +116,11 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
 }
 
 export interface ClientePainel {
+  /** Organização (o cliente). */
   id: number;
   nome: string;
+  /** Unidades da organização, com o que cada uma usou e custou. */
+  unidades: { id: number; nome: string; ativa: boolean; leadsMes: number; custo: number }[];
   ativa: boolean;
   principal: boolean;
   criadoEm: string;
@@ -179,72 +190,132 @@ export async function clientes(
   credenciais: { chave: string | null; ambiente: CredenciaisAmbiente },
 ): Promise<{ clientes: ClientePainel[]; custos: CustosPlataforma }> {
   const [linhas, custos] = await Promise.all([linhasDasContas(db), lerCustos(db)]);
-  const ativosPagantes = linhas.filter((l) => l.ativa && !l.principal).length || 1;
-  const infraPorConta = custos.infraMes / ativosPagantes;
+  // Infraestrutura rateada por cliente (organização) ativo que não é a sua.
+  const orgsPagantes = new Set(linhas.filter((l) => l.orgAtiva && !l.principal).map((l) => l.organizacaoId));
+  const infraPorCliente = custos.infraMes / (orgsPagantes.size || 1);
   const agora = new Date();
+  const porOrg = new Map<number, LinhaConta[]>();
+  for (const l of linhas) porOrg.set(l.organizacaoId, [...(porOrg.get(l.organizacaoId) ?? []), l]);
+
   const lista = await Promise.all(
-    linhas.map(async (l): Promise<ClientePainel> => {
-      const [p, cred] = await Promise.all([
-        planoDaConta(db, l.id),
-        credenciaisEfetivas(db, l.id, credenciais.chave, credenciais.ambiente).catch(() => null),
-      ]);
-      const paga = {
-        ia: true, // consumo_ia já separa: só as chamadas com a chave da plataforma entram no custo.
-        email: cred?.origem.resend === 'plataforma',
-        whatsapp: cred?.origem.whatsapp === 'plataforma',
-        maps: cred?.origem.places === 'plataforma',
+    [...porOrg.entries()].map(async ([orgId, us]): Promise<ClientePainel> => {
+      const p = await planoDaOrganizacao(db, orgId);
+      const principal = us.some((u) => u.principal);
+      const ativa = us[0]!.orgAtiva;
+      // Custo de cada unidade (cada uma tem as próprias chaves: o que é do cliente não entra).
+      const porUnidade = await Promise.all(
+        us.map(async (l) => {
+          const cred = await credenciaisEfetivas(db, l.id, credenciais.chave, credenciais.ambiente).catch(
+            () => null,
+          );
+          const paga = {
+            email: cred?.origem.resend === 'plataforma',
+            whatsapp: cred?.origem.whatsapp === 'plataforma',
+            maps: cred?.origem.places === 'plataforma',
+          };
+          const usoPago: UsoPago = {
+            serper: l.serper,
+            apifyInstagram: l.apifyInstagram,
+            apifyGoogle: l.apifyGoogle,
+            iaTokensEntrada: l.iaEntrada,
+            iaTokensSaida: l.iaSaida,
+            emails: paga.email ? l.emails : 0,
+            numerosWhatsapp: paga.whatsapp ? l.numeros : 0,
+            placesUsd: paga.maps ? l.placesUsd : 0,
+          };
+          return { l, paga, custo: custoEstimado(usoPago, custos, 0) };
+        }),
+      );
+      const soma = (f: (l: LinhaConta) => number) => us.reduce((t, l) => t + f(l), 0);
+      const somaCusto = (k: keyof CustoEstimado) => porUnidade.reduce((t, u) => t + u.custo[k], 0);
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const infra = ativa && !principal ? infraPorCliente : 0;
+      const custo: CustoEstimado = {
+        buscas: r2(somaCusto('buscas')),
+        ia: r2(somaCusto('ia')),
+        maps: r2(somaCusto('maps')),
+        email: r2(somaCusto('email')),
+        whatsapp: r2(somaCusto('whatsapp')),
+        infra: r2(infra),
+        total: r2(somaCusto('total') + infra),
       };
-      const usoPago: UsoPago = {
-        serper: l.serper,
-        apifyInstagram: l.apifyInstagram,
-        apifyGoogle: l.apifyGoogle,
-        iaTokensEntrada: l.iaEntrada,
-        iaTokensSaida: l.iaSaida,
-        emails: paga.email ? l.emails : 0,
-        numerosWhatsapp: paga.whatsapp ? l.numeros : 0,
-        placesUsd: paga.maps ? l.placesUsd : 0,
+      const ultimoAcesso =
+        us
+          .map((l) => l.ultimoAcesso)
+          .filter((x): x is string => !!x)
+          .sort()
+          .at(-1) ?? null;
+      const linhaOrg: LinhaConta = {
+        ...us[0]!,
+        criadoEm: us[0]!.orgCriadaEm,
+        ultimoAcesso,
+        leads14d: soma((l) => l.leads14d),
       };
-      const custo = custoEstimado(usoPago, custos, l.ativa && !l.principal ? infraPorConta : 0);
-      const s = avaliarSaude(l, p, agora);
+      const s = avaliarSaude(linhaOrg, p, agora);
       return {
-        id: l.id,
-        nome: l.nome,
-        ativa: l.ativa,
-        principal: l.principal,
-        criadoEm: l.criadoEm,
-        desativadaEm: l.desativadaEm,
-        ultimoAcesso: l.ultimoAcesso,
+        id: orgId,
+        nome: us[0]!.organizacao,
+        unidades: porUnidade.map((u) => ({
+          id: u.l.id,
+          nome: u.l.nome,
+          ativa: u.l.ativa,
+          leadsMes: 0,
+          custo: u.custo.total,
+        })),
+        ativa,
+        principal,
+        criadoEm: us[0]!.orgCriadaEm,
+        desativadaEm: us[0]!.orgDesativadaEm,
+        ultimoAcesso,
         plano: p.plano,
         mensalidade: p.mensalidade,
         usuarios: { uso: p.uso.usuarios, limite: p.usuarios },
         leads: {
           mes: p.uso.leadsMes,
           limite: p.leadsMes,
-          ultimos14d: l.leads14d,
-          mesAnterior: l.leadsMesAnterior,
+          ultimos14d: soma((l) => l.leads14d),
+          mesAnterior: soma((l) => l.leadsMesAnterior),
           esperando: p.uso.leadsEsperando,
         },
-        noFunil: l.noFunil,
+        noFunil: soma((l) => l.noFunil),
         uso: {
-          serper: l.serper,
-          apifyInstagram: l.apifyInstagram,
-          apifyGoogle: l.apifyGoogle,
-          iaChamadas: l.iaChamadas,
-          iaTokensEntrada: l.iaEntrada,
-          iaTokensSaida: l.iaSaida,
-          iaChamadasProprias: l.iaChamadasConta,
-          emails: l.emails,
-          whatsappEnviadas: l.whatsappEnviadas,
-          numerosWhatsapp: l.numeros,
-          placesUsd: l.placesUsd,
+          serper: soma((l) => l.serper),
+          apifyInstagram: soma((l) => l.apifyInstagram),
+          apifyGoogle: soma((l) => l.apifyGoogle),
+          iaChamadas: soma((l) => l.iaChamadas),
+          iaTokensEntrada: soma((l) => l.iaEntrada),
+          iaTokensSaida: soma((l) => l.iaSaida),
+          iaChamadasProprias: soma((l) => l.iaChamadasConta),
+          emails: soma((l) => l.emails),
+          whatsappEnviadas: soma((l) => l.whatsappEnviadas),
+          numerosWhatsapp: soma((l) => l.numeros),
+          placesUsd: soma((l) => l.placesUsd),
         },
-        pagaPlataforma: paga,
+        pagaPlataforma: {
+          ia: true, // consumo_ia já separa: só as chamadas com a chave da plataforma entram no custo.
+          email: porUnidade.some((u) => u.paga.email),
+          whatsapp: porUnidade.some((u) => u.paga.whatsapp),
+          maps: porUnidade.some((u) => u.paga.maps),
+        },
         custo,
-        margem: p.mensalidade != null ? Math.round((p.mensalidade - custo.total) * 100) / 100 : null,
-        saude: l.principal ? 'ok' : l.ativa ? s.saude : 'ok',
-        saudeTexto: l.principal ? 'Sua conta.' : l.ativa ? s.texto : 'Conta desativada.',
+        margem: p.mensalidade != null ? r2(p.mensalidade - custo.total) : null,
+        saude: principal ? 'ok' : ativa ? s.saude : 'ok',
+        saudeTexto: principal ? 'Sua conta.' : ativa ? s.texto : 'Cliente desativado.',
       };
     }),
+  );
+  // Leads do mês por unidade (para o detalhe).
+  const { rows: porUnidade } = await db.query<{ conta_id: number; n: number }>(
+    `SELECT ca.conta_id, count(*)::int AS n FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
+      WHERE l.status = 'concluido' AND l.concluido_em >= ${INICIO_MES_SP_TS} GROUP BY ca.conta_id`,
+  );
+  const leadsUnidade = new Map(porUnidade.map((r) => [r.conta_id, r.n]));
+  for (const c of lista) for (const u of c.unidades) u.leadsMes = leadsUnidade.get(u.id) ?? 0;
+  lista.sort(
+    (a, b) =>
+      Number(b.principal) - Number(a.principal) ||
+      Number(b.ativa) - Number(a.ativa) ||
+      a.nome.localeCompare(b.nome),
   );
   return { clientes: lista, custos };
 }

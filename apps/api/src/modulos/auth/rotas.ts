@@ -302,8 +302,16 @@ export function rotasAuth(deps: DepsApi): Router {
       `SELECT telefone, agenda_token AS "agendaToken" FROM cadastro.usuarios WHERE id = $1`,
       [u.id],
     );
-    const { rows: c } = await pool.query<{ plano: string | null; modulos: string[] }>(
-      'SELECT plano, modulos FROM cadastro.contas WHERE id = $1',
+    const { rows: c } = await pool.query<{
+      plano: string | null;
+      modulos: string[];
+      organizacao_id: number;
+      organizacao: string;
+      unidades: number;
+    }>(
+      `SELECT o.plano, o.modulos, o.id AS organizacao_id, o.nome AS organizacao,
+              (SELECT count(*)::int FROM cadastro.contas x WHERE x.organizacao_id = o.id AND x.ativa) AS unidades
+         FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE c.id = $1`,
       [u.contaId],
     );
     res.json({
@@ -320,7 +328,9 @@ export function rotasAuth(deps: DepsApi): Router {
         // Módulos que valem na conta (sem plano: todos).
         modulos: c[0]?.plano ? c[0].modulos : ['whatsapp', 'agente_ia', 'email'],
       },
+      organizacao: c[0] ? { id: c[0].organizacao_id, nome: c[0].organizacao, unidades: c[0].unidades } : null,
       master: u.master,
+      papelOrganizacao: u.papelOrganizacao,
       // O master dentro de outra conta (a tela mostra a faixa "você está na conta X").
       foraDaPropria: u.contaId !== u.contaPropria,
     });

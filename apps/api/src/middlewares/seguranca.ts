@@ -1,5 +1,5 @@
 import type { Executor } from '@prospeccao/db';
-import { AppError } from '@prospeccao/shared';
+import { AppError, type PapelQualquer } from '@prospeccao/shared';
 import type { RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
 import { comUsuario, type UsuarioSessao, usuarioAtual } from '../contexto.js';
@@ -28,40 +28,75 @@ export async function carregarUsuario(
     id: number;
     nome: string;
     email: string;
-    papel: UsuarioSessao['papel'];
+    papel: PapelQualquer;
     master: boolean;
     conta_id: number;
     conta_ativa: boolean;
+    organizacao_id: number;
   }>(
-    `SELECT u.id, u.nome, u.email, u.papel, u.master, u.conta_id, c.ativa AS conta_ativa
+    `SELECT u.id, u.nome, u.email, u.papel, u.master, u.conta_id, (c.ativa AND o.ativa) AS conta_ativa,
+            c.organizacao_id
        FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+       JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
       WHERE u.id = $1 AND u.ativo`,
     [id],
   );
   const u = rows[0];
   if (!u) return null;
   if (!u.conta_ativa && !u.master) return null;
-  const { rows: contas } = await db.query<{ id: number; nome: string }>(
-    'SELECT id, nome FROM cadastro.contas WHERE id = ANY($1::int[])',
-    [[u.conta_id, contaEscolhida ?? u.conta_id]],
-  );
-  const escolhida = u.master && contaEscolhida ? contas.find((c) => c.id === contaEscolhida) : undefined;
+  const { rows: contas } = await db.query<{
+    id: number;
+    nome: string;
+    organizacao_id: number;
+    ativa: boolean;
+  }>('SELECT id, nome, organizacao_id, ativa FROM cadastro.contas WHERE id = ANY($1::int[])', [
+    [u.conta_id, contaEscolhida ?? u.conta_id],
+  ]);
+  const daOrganizacao = u.papel === 'gestor' || u.papel === 'leitura';
+  // O master entra em qualquer conta; o gestor e a leitura, em qualquer unidade ativa da organização.
+  const escolhida = contaEscolhida
+    ? contas.find(
+        (c) =>
+          c.id === contaEscolhida &&
+          (u.master || (daOrganizacao && c.organizacao_id === u.organizacao_id && c.ativa)),
+      )
+    : undefined;
   const conta = escolhida ?? contas.find((c) => c.id === u.conta_id);
   if (!conta) return null;
   const contaId = conta.id;
-  const nomeConta = conta.nome;
   return {
     id: u.id,
     nome: u.nome,
     email: u.email,
-    // Dentro de outra conta, o master age como administrador dela.
-    papel: u.master && contaId !== u.conta_id ? 'admin' : u.papel,
+    // Dentro de outra conta, o master age como administrador dela; o gestor e a leitura veem cada
+    // unidade como o administrador (a leitura não altera nada: exigirEscrita).
+    papel:
+      (u.master && contaId !== u.conta_id) || daOrganizacao ? 'admin' : (u.papel as UsuarioSessao['papel']),
+    papelOrganizacao: daOrganizacao ? (u.papel as 'gestor' | 'leitura') : null,
     contaId,
-    contaNome: nomeConta,
+    contaNome: conta.nome,
+    organizacaoId: conta.organizacao_id,
     master: u.master,
     contaPropria: u.conta_id,
   };
 }
+
+/** Acesso só de leitura (diretoria): pode olhar tudo, não altera nada. */
+export const exigirEscrita: RequestHandler = (req, _res, next) => {
+  if (req.usuario?.papelOrganizacao !== 'leitura' || METODOS_SEGUROS.has(req.method)) return next();
+  // Trocar de unidade e mexer no próprio perfil (senha, aviso no celular) continuam valendo.
+  if (/^\/organizacao\/(unidades\/\d+\/entrar|voltar)$|^\/(notificacoes|push)\b/.test(req.path))
+    return next();
+  next(
+    new AppError(403, 'somente_leitura', 'Seu acesso é só de leitura: você pode ver tudo, mas não alterar.'),
+  );
+};
+
+/** Só o gestor da organização (ou o master). */
+export const exigirGestor: RequestHandler = (req, _res, next) => {
+  const u = req.usuario;
+  next(u && (u.master || u.papelOrganizacao) ? undefined : AppError.proibido());
+};
 
 /** Exige o cookie de sessão válido de um usuário ativo (de uma conta ativa). */
 export function exigirSessao(jwtSegredo: string, db: Executor): RequestHandler {

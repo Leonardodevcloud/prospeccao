@@ -8,7 +8,7 @@ import {
   resolverCredenciais,
 } from '@prospeccao/db';
 import { configIa, ROTULO_PROVEDOR_IA } from '@prospeccao/integrations/ia';
-import { AppError, type ContaAtualizar, type ContaNova } from '@prospeccao/shared';
+import { AppError, type ContaAtualizar, type ContaNova, type OrganizacaoAtualizar } from '@prospeccao/shared';
 import { comConta } from '../../contexto.js';
 import * as equipe from '../equipe/repositorio.js';
 
@@ -20,6 +20,8 @@ import * as equipe from '../equipe/repositorio.js';
 export async function listar(db: Executor) {
   const { rows } = await db.query(
     `SELECT c.id, c.nome, c.ativa, c.principal, c.observacoes, c.criado_em AS "criadoEm",
+            c.organizacao_id AS "organizacaoId", o.nome AS "organizacaoNome", o.ativa AS "organizacaoAtiva",
+            c.cota_leads_mes AS "cotaLeadsMes",
             c.limite_ia_mes AS "limiteIaMes", c.usa_ia_plataforma AS "usaIaPlataforma",
             (SELECT count(*)::int FROM cadastro.usuarios u WHERE u.conta_id = c.id AND u.ativo) AS usuarios,
             (SELECT max(u.ultimo_acesso) FROM cadastro.usuarios u WHERE u.conta_id = c.id) AS "ultimoAcesso",
@@ -33,8 +35,8 @@ export async function listar(db: Executor) {
             (SELECT count(*)::int FROM comercial.mensagens m
               WHERE m.conta_id = c.id AND m.direcao = 'enviada' AND m.criado_em > now() - interval '30 days')
               AS "whatsapp30d"
-       FROM cadastro.contas c
-      ORDER BY c.principal DESC, c.ativa DESC, c.nome`,
+       FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
+      ORDER BY c.principal DESC, o.ativa DESC, o.nome, c.ativa DESC, c.criado_em`,
   );
   return rows;
 }
@@ -47,10 +49,14 @@ export async function obter(db: Executor, id: number) {
     principal: boolean;
     observacoes: string | null;
     criadoEm: string;
+    organizacaoId: number;
+    organizacaoNome: string;
     webhookToken: string;
     webhookWhatsapp: string | null;
   }>(
     `SELECT c.id, c.nome, c.ativa, c.principal, c.observacoes, c.criado_em AS "criadoEm",
+            c.organizacao_id AS "organizacaoId",
+            (SELECT nome FROM cadastro.organizacoes WHERE id = c.organizacao_id) AS "organizacaoNome",
             c.webhook_token AS "webhookToken",
             (SELECT a.webhook_token FROM comercial.config_agente a WHERE a.conta_id = c.id) AS "webhookWhatsapp"
        FROM cadastro.contas c WHERE c.id = $1`,
@@ -72,20 +78,30 @@ export async function usuarios(db: Executor, contaId: number) {
 }
 
 /** Cria a conta com tudo que ela precisa (pipelines, modelos, configurações) e o 1º administrador. */
-export async function criar(pool: Pool, d: ContaNova): Promise<{ id: number; token: string }> {
+export async function criar(
+  pool: Pool,
+  d: ContaNova,
+): Promise<{ id: number; organizacaoId: number; token: string }> {
   return comTransacao(pool, async (tx) => {
-    const { rows } = await tx.query<{ id: number }>(
-      `INSERT INTO cadastro.contas (nome, observacoes) VALUES ($1, $2)
+    const { rows: o } = await tx.query<{ id: number }>(
+      `INSERT INTO cadastro.organizacoes (nome, observacoes) VALUES ($1, $2)
        ON CONFLICT ((lower(nome))) DO NOTHING RETURNING id`,
       [d.nome, d.observacoes ?? null],
     );
-    const id = rows[0]?.id;
-    if (!id) throw AppError.conflito('Já existe uma conta com esse nome.');
+    const organizacaoId = o[0]?.id;
+    if (!organizacaoId) throw AppError.conflito('Já existe um cliente com esse nome.');
+    const { rows } = await tx.query<{ id: number }>(
+      `INSERT INTO cadastro.contas (nome, observacoes, organizacao_id) VALUES ($1, $2, $3) RETURNING id`,
+      [d.unidade ?? d.nome, d.observacoes ?? null, organizacaoId],
+    );
+    const id = rows[0]!.id;
     await tx.query('SELECT cadastro.preparar_conta($1)', [id]);
     const convite = await comConta(id, () =>
       equipe.criar(tx, { nome: d.admin.nome, email: d.admin.email, papel: 'admin' }),
     );
-    return { id, token: convite.token };
+    if (d.primeiroAcesso === 'gestor')
+      await tx.query(`UPDATE cadastro.usuarios SET papel = 'gestor' WHERE id = $1`, [convite.id]);
+    return { id, organizacaoId, token: convite.token };
   });
 }
 
@@ -103,7 +119,54 @@ export async function atualizar(db: Executor, id: number, d: ContaAtualizar): Pr
     );
   } catch (erro) {
     if ((erro as { code?: string }).code === '23505')
-      throw AppError.conflito('Já existe uma conta com esse nome.');
+      throw AppError.conflito('Já existe uma unidade com esse nome neste cliente.');
+    throw erro;
+  }
+  // Cliente de uma unidade só: o nome e o "ativo" do cliente acompanham a unidade.
+  if (d.nome !== undefined || d.ativa !== undefined)
+    await db
+      .query(
+        `UPDATE cadastro.organizacoes o SET nome = coalesce($2, o.nome), ativa = coalesce($3, o.ativa)
+          WHERE o.id = $1 AND (SELECT count(*) FROM cadastro.contas c WHERE c.organizacao_id = o.id) = 1`,
+        [atual.organizacaoId, d.nome ?? null, d.ativa ?? null],
+      )
+      .catch(() => undefined);
+}
+
+/** Clientes (organizações) com as unidades. */
+export async function organizacoes(db: Executor) {
+  const { rows } = await db.query(
+    `SELECT o.id, o.nome, o.ativa, o.observacoes, o.criado_em AS "criadoEm",
+            bool_or(c.principal) AS principal,
+            json_agg(json_build_object('id', c.id, 'nome', c.nome, 'ativa', c.ativa, 'cotaLeadsMes', c.cota_leads_mes)
+                     ORDER BY c.criado_em) AS unidades,
+            (SELECT count(*)::int FROM cadastro.usuarios u JOIN cadastro.contas x ON x.id = u.conta_id
+              WHERE x.organizacao_id = o.id AND u.ativo AND u.papel = 'gestor') AS gestores
+       FROM cadastro.organizacoes o JOIN cadastro.contas c ON c.organizacao_id = o.id
+      GROUP BY o.id ORDER BY bool_or(c.principal) DESC, o.ativa DESC, o.nome`,
+  );
+  return rows;
+}
+
+export async function atualizarOrganizacao(db: Executor, id: number, d: OrganizacaoAtualizar): Promise<void> {
+  const { rows } = await db.query<{ principal: boolean }>(
+    `SELECT bool_or(c.principal) AS principal FROM cadastro.contas c WHERE c.organizacao_id = $1`,
+    [id],
+  );
+  if (!rows[0] || rows[0].principal === null) throw AppError.naoEncontrado('Cliente');
+  if (d.ativa === false && rows[0].principal)
+    throw AppError.invalido('A sua organização não pode ser desativada.');
+  try {
+    await db.query(
+      `UPDATE cadastro.organizacoes
+          SET nome = coalesce($2, nome), ativa = coalesce($3, ativa),
+              observacoes = CASE WHEN $4 THEN $5 ELSE observacoes END
+        WHERE id = $1`,
+      [id, d.nome ?? null, d.ativa ?? null, d.observacoes !== undefined, d.observacoes ?? null],
+    );
+  } catch (erro) {
+    if ((erro as { code?: string }).code === '23505')
+      throw AppError.conflito('Já existe um cliente com esse nome.');
     throw erro;
   }
 }

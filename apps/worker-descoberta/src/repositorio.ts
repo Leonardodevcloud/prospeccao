@@ -616,6 +616,13 @@ export async function reservarParaEnriquecimento(
             -- Importado pelo cliente só vai para o enriquecimento quando ele pede, na importação.
             AND ce.origem <> 'importacao'
             AND ${PODE_SER_LEAD}
+            -- Outra unidade da mesma organização já tem a empresa (no funil ou como lead): não gasta
+            -- enriquecimento nem cota com ela aqui.
+            AND NOT EXISTS (SELECT 1 FROM comercial.unidade_dona(ce.empresa_id, c.conta_id))
+            AND NOT EXISTS (
+              SELECT 1 FROM descoberta.campanha_empresas x JOIN cadastro.contas cx ON cx.id = x.conta_id
+               WHERE x.empresa_id = ce.empresa_id AND x.conta_id <> c.conta_id AND x.liberado_em IS NOT NULL
+                 AND cx.organizacao_id = (SELECT organizacao_id FROM cadastro.contas WHERE id = c.conta_id))
             AND ($1::bigint IS NULL OR ce.campanha_id = $1)
             AND ($2::bigint IS NULL OR ce.empresa_id = $2)
        ),

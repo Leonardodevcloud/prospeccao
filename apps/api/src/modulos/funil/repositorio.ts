@@ -172,6 +172,8 @@ async function criarOportunidade(
        ) ce ON true
        LEFT JOIN enriquecimento.leads l ON l.empresa_id = e.id
       WHERE e.id = $1
+        -- Outra unidade da mesma organização já trabalha esta empresa: não entra (descartar pode).
+        AND ($2 = 'descartado' OR NOT EXISTS (SELECT 1 FROM comercial.unidade_dona(e.id, ${C})))
      ON CONFLICT (conta_id, empresa_id) DO NOTHING`,
     [empresaId, etapa, posicao, motivo, alvo?.id ?? null],
   );
@@ -188,6 +190,24 @@ export interface ResultadoAdicionar {
   jaNoFunil: number;
   duplicadas: Duplicada[];
   naoEncontradas: number;
+  /** Empresas que outra unidade da organização já trabalha (ficam de fora, sempre). */
+  deOutraUnidade: { empresaId: number; nome: string; unidade: string }[];
+}
+
+/** Empresas da lista que outra unidade da mesma organização já trabalha. */
+export async function deOutraUnidade(
+  db: Executor,
+  empresaIds: number[],
+): Promise<{ empresaId: number; nome: string; unidade: string }[]> {
+  if (!empresaIds.length) return [];
+  const { rows } = await db.query<{ empresaId: number; nome: string; unidade: string }>(
+    `SELECT e.id::int AS "empresaId", e.nome, u.nome AS unidade
+       FROM descoberta.empresas e
+       CROSS JOIN LATERAL comercial.unidade_dona(e.id, ${contaSql()}) u
+      WHERE e.id = ANY($1::bigint[])`,
+    [empresaIds],
+  );
+  return rows;
 }
 
 /**
@@ -209,6 +229,7 @@ export async function adicionar(pool: Pool, d: FunilAdicionar, autor: string): P
       jaNoFunil: 0,
       duplicadas: [],
       naoEncontradas: ids.length - existentes.length,
+      deOutraUnidade: [],
     };
 
     if (d.etapa === 'descartado') {
@@ -224,8 +245,14 @@ export async function adicionar(pool: Pool, d: FunilAdicionar, autor: string): P
       return r;
     }
 
-    const candidatas = existentes.filter((e) => e.etapa === null || e.etapa === 'descartado');
-    r.jaNoFunil = existentes.length - candidatas.length;
+    const livres = existentes.filter((e) => e.etapa === null || e.etapa === 'descartado');
+    r.jaNoFunil = existentes.length - livres.length;
+    r.deOutraUnidade = await deOutraUnidade(
+      tx,
+      livres.map((e) => e.id),
+    );
+    const daOutra = new Set(r.deOutraUnidade.map((x) => x.empresaId));
+    const candidatas = livres.filter((e) => !daOutra.has(e.id));
     const bloqueadas = d.forcar
       ? []
       : await duplicadas(

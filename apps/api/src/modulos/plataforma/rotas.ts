@@ -60,6 +60,7 @@ export function rotasPlataforma({ pool, filas, credenciais }: DepsApi): Router {
         .sort((a, b) => GRAVIDADE[a.saude] - GRAVIDADE[b.saude])
         .map((c) => ({
           id: c.id,
+          contaId: c.unidades[0]?.id ?? null,
           nome: c.nome,
           saude: c.saude,
           texto: c.saudeTexto,

@@ -1,7 +1,7 @@
 import type { Logger } from '@prospeccao/shared';
 import type { DepsApi } from '../../dependencias.js';
 import * as alertas from '../alertas/repositorio.js';
-import { planoDaConta } from './repositorio.js';
+import { planoDaConta, vagasDeLeads } from './repositorio.js';
 
 type Deps = Pick<DepsApi, 'pool' | 'filas'> & { log: Logger };
 
@@ -15,14 +15,15 @@ const LOCK = 7_301_037;
  */
 export async function conferirLimitesDeLeads(deps: Deps): Promise<number> {
   const { rows: contas } = await deps.pool.query<{ id: number }>(
-    'SELECT id FROM cadastro.contas WHERE ativa AND plano IS NOT NULL ORDER BY id',
+    `SELECT c.id FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
+      WHERE c.ativa AND o.ativa AND o.plano IS NOT NULL ORDER BY c.id`,
   );
   let voltaram = 0;
   for (const { id } of contas) {
     const p = await planoDaConta(deps.pool, id);
-    if (p.leadsMes == null) continue;
-    const vagas = Math.max(0, p.leadsMes - p.uso.leadsMes);
-    if (vagas && p.uso.leadsEsperando) {
+    const vagas = vagasDeLeads(p);
+    if (vagas == null) continue;
+    if (vagas && p.unidade?.leadsEsperando) {
       const { rows } = await deps.pool.query<{ empresa_id: number; campanha_id: number }>(
         `UPDATE enriquecimento.leads l SET status = 'na_fila'
           WHERE l.empresa_id IN (
@@ -40,7 +41,15 @@ export async function conferirLimitesDeLeads(deps: Deps): Promise<number> {
       if (rows.length)
         deps.log.info({ conta: id, leads: rows.length }, 'plano: leads em espera voltaram para a fila');
     }
-    const usado = p.uso.leadsMes / Math.max(1, p.leadsMes);
+    // O que aperta primeiro: a cota da unidade ou o total da organização.
+    const pelaCota =
+      p.unidade?.cota != null &&
+      (p.leadsMes == null || p.unidade.cota - p.unidade.leadsMes <= p.leadsMes - p.uso.leadsMes);
+    const limite = pelaCota ? p.unidade!.cota! : p.leadsMes!;
+    const usados = pelaCota ? p.unidade!.leadsMes : p.uso.leadsMes;
+    const quem = pelaCota ? 'A unidade' : 'A conta';
+    const esperando = p.unidade?.leadsEsperando ?? 0;
+    const usado = usados / Math.max(1, limite);
     await alertas.conferir(
       deps.pool,
       id,
@@ -48,15 +57,15 @@ export async function conferirLimitesDeLeads(deps: Deps): Promise<number> {
       usado >= 1
         ? {
             nivel: 'aviso',
-            titulo: 'A conta chegou no limite de leads do mês',
-            texto: `${p.uso.leadsMes} de ${p.leadsMes} leads enriquecidos. Os próximos esperam o mês virar${p.uso.leadsEsperando ? ` (${p.uso.leadsEsperando} esperando)` : ''}, ou peça para aumentar o plano.`,
+            titulo: `${quem} chegou no limite de leads do mês`,
+            texto: `${usados} de ${limite} leads enriquecidos. Os próximos esperam o mês virar${esperando ? ` (${esperando} esperando)` : ''}, ${pelaCota ? 'ou peça ao gestor para aumentar a cota da unidade' : 'ou peça para aumentar o plano'}.`,
             link: '/plano',
           }
         : usado >= 0.9
           ? {
               nivel: 'aviso',
-              titulo: 'A conta está perto do limite de leads do mês',
-              texto: `${p.uso.leadsMes} de ${p.leadsMes} leads enriquecidos neste mês.`,
+              titulo: `${quem} está perto do limite de leads do mês`,
+              texto: `${usados} de ${limite} leads enriquecidos neste mês.`,
               link: '/plano',
             }
           : null,

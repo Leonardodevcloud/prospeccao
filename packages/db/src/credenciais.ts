@@ -145,9 +145,10 @@ export async function lerCredenciais(
   const { rows } = await db.query<LinhaCredenciais>(
     `SELECT c.principal, c.usa_ia_plataforma, k.email_remetente, k.resend_dominio_respostas, k.evolution_url, k.evolution_instancia,
             k.ia_provedor, k.ia_modelo, k.ia_base_url, k.segredos, k.dicas, k.atualizado_em,
-            CASE WHEN c.plano IS NULL THEN NULL ELSE c.modulos END AS modulos,
+            CASE WHEN o.plano IS NULL THEN NULL ELSE o.modulos END AS modulos,
             de.dominio, de.situacao AS dominio_situacao, de.remetente AS dominio_remetente
-       FROM cadastro.contas c LEFT JOIN cadastro.credenciais_conta k ON k.conta_id = c.id
+       FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
+       LEFT JOIN cadastro.credenciais_conta k ON k.conta_id = c.id
        LEFT JOIN cadastro.dominios_email de ON de.conta_id = c.id
       WHERE c.id = $1`,
     [contaId],
@@ -436,7 +437,10 @@ export async function contaDaCampanha(db: Executor, campanhaId: number): Promise
 }
 
 export async function contasAtivas(db: Executor): Promise<number[]> {
-  const { rows } = await db.query<{ id: number }>('SELECT id FROM cadastro.contas WHERE ativa ORDER BY id');
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT c.id FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
+      WHERE c.ativa AND o.ativa ORDER BY c.id`,
+  );
   return rows.map((r) => r.id);
 }
 

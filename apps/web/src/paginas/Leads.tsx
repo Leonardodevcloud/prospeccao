@@ -60,6 +60,13 @@ function textoResultado(r: ResultadoAdicionar, descartando: boolean): string {
     partes.push(
       `${fmtNumero(r.duplicadas.length)} ficou de fora por ter o mesmo telefone de uma empresa já trabalhada`,
     );
+  if (r.deOutraUnidade?.length)
+    partes.push(
+      `${fmtNumero(r.deOutraUnidade.length)} ficou de fora porque outra unidade já trabalha (${r.deOutraUnidade
+        .slice(0, 2)
+        .map((x) => `${x.nome}: ${x.unidade}`)
+        .join('; ')}${r.deOutraUnidade.length > 2 ? '…' : ''})`,
+    );
   return `${partes.join(' · ')}.`;
 }
 
@@ -467,6 +474,14 @@ export function Leads() {
                         {e.mei && (
                           <span className="celula-selos">
                             <Badge tone="danger">MEI</Badge>
+                          </span>
+                        )}
+                        {e.outraUnidade && !e.funilEtapa && (
+                          <span
+                            className="celula-selos"
+                            title="Outra unidade da organização já trabalha esta empresa"
+                          >
+                            <Badge tone="warning">Da unidade {e.outraUnidade}</Badge>
                           </span>
                         )}
                         {e.funilEtapa && (

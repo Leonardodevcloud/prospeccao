@@ -7,8 +7,10 @@ export function useSessao() {
   return useQuery({ queryKey: ['sessao'], queryFn: () => api<Sessao>('/auth/eu'), staleTime: 60_000 });
 }
 
+/** Administra a unidade (o gestor da organização também); a leitura (diretoria) só olha. */
 export function useEhAdmin(): boolean {
-  return useSessao().data?.papel === 'admin';
+  const s = useSessao().data;
+  return s?.papel === 'admin' && s.papelOrganizacao !== 'leitura';
 }
 
 /** Quem administra a plataforma: só ele vê chaves, webhooks e o que é técnico. */

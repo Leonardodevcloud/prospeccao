@@ -118,7 +118,7 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
 
   const total = await db.query<{ n: number }>(`SELECT count(*)::int AS n ${base}`, valores);
   const pagina = await db.query(
-    `SELECT ${CAMPOS_LISTA}, ce.origem, ce.dentro_do_raio AS "dentroDoRaio", ce.campanha_id AS "campanhaId",
+    `SELECT ${CAMPOS_LISTA}, (SELECT u.nome FROM comercial.unidade_dona(e.id, ${contaSql()}) u) AS "outraUnidade", ce.origem, ce.dentro_do_raio AS "dentroDoRaio", ce.campanha_id AS "campanhaId",
             (ce.enriquecimento_solicitado_em IS NOT NULL) AS "enriqPedido"
        ${base}
       ORDER BY ${ORDENS[f.ordem]}
@@ -131,7 +131,7 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
 export async function obter(db: Executor, id: number) {
   const C = contaSql();
   const { rows } = await db.query(
-    `SELECT ${CAMPOS_LISTA}, e.cnpj_basico AS "cnpjBasico", e.situacao, e.data_abertura AS "dataAbertura",
+    `SELECT ${CAMPOS_LISTA}, (SELECT u.nome FROM comercial.unidade_dona(e.id, ${contaSql()}) u) AS "outraUnidade", e.cnpj_basico AS "cnpjBasico", e.situacao, e.data_abertura AS "dataAbertura",
             e.logradouro, e.numero, e.cep, e.email_receita AS "emailReceita",
             e.lat, e.lng, e.geo_fonte AS "geoFonte", e.place_id AS "placeId", e.maps_nome AS "mapsNome",
             e.maps_endereco AS "mapsEndereco", coalesce(e.maps_url, l.maps_url) AS "mapsUrl", e.maps_em AS "mapsEm",

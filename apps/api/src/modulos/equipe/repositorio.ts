@@ -37,7 +37,7 @@ export async function listar(db: Executor) {
                                 'reunioesMes', coalesce(m.reunioes_mes, 10),
                                 'ganhosMes', coalesce(m.ganhos_mes, 3)) AS metas
          FROM cadastro.usuarios u LEFT JOIN comercial.metas m ON m.usuario_id = u.id
-        WHERE u.conta_id = ${C}
+        WHERE u.conta_id = ${C} AND u.papel NOT IN ('gestor', 'leitura')
         ORDER BY u.ativo DESC, CASE u.papel WHEN 'admin' THEN 0 WHEN 'sdr' THEN 1 ELSE 2 END, u.nome`,
     ),
     obterDistribuicao(db),
@@ -93,7 +93,8 @@ async function admins(db: Executor, exceto: number): Promise<number> {
 
 export async function atualizar(db: Executor, id: number, d: UsuarioAtualizar): Promise<void> {
   const { rows } = await db.query<{ papel: PapelUsuario; ativo: boolean }>(
-    `SELECT papel, ativo FROM cadastro.usuarios WHERE id = $1 AND conta_id = ${contaSql()}`,
+    `SELECT papel, ativo FROM cadastro.usuarios
+      WHERE id = $1 AND conta_id = ${contaSql()} AND papel NOT IN ('gestor', 'leitura')`,
     [id],
   );
   const u = rows[0];

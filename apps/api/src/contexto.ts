@@ -12,9 +12,13 @@ export interface UsuarioSessao {
   nome: string;
   email: string;
   papel: PapelUsuario;
-  /** Conta em que a pessoa está trabalhando agora. */
+  /** Conta (unidade) em que a pessoa está trabalhando agora. */
   contaId: number;
   contaNome: string;
+  /** Organização da unidade. */
+  organizacaoId: number;
+  /** Papel na organização inteira: gestor (administra todas as unidades) ou leitura (só olha). */
+  papelOrganizacao: 'gestor' | 'leitura' | null;
   /** Administra todas as contas (painel master). */
   master: boolean;
   /** Conta da própria pessoa (o master pode estar "dentro" de outra). */

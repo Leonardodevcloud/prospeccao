@@ -10,10 +10,14 @@ import {
   contaNova,
   credenciaisEntrada,
   limitesConta,
+  organizacaoAtualizar,
+  pessoaMasterAtualizar,
   planoContaEntrada,
   SERVICOS_TESTAVEIS,
   tabelaPrecosEntrada,
-  usuarioAtualizar,
+  type UsuarioAtualizar,
+  unidadeAtualizar,
+  unidadeNova,
   usuarioNovo,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
@@ -26,6 +30,7 @@ import * as auditoria from '../auditoria/repositorio.js';
 import { abrirSessao } from '../auth/sessao.js';
 import * as consumo from '../consumo/repositorio.js';
 import * as equipe from '../equipe/repositorio.js';
+import * as org from '../organizacao/repositorio.js';
 import * as plano from '../plano/repositorio.js';
 import * as repo from './repositorio.js';
 
@@ -60,14 +65,37 @@ export function rotasMaster(deps: DepsApi): Router {
   r.get('/contas/:id/plano', async (req, res) => {
     res.json(await plano.planoDaConta(pool, idDaRota(req)));
   });
+  /** O plano é do cliente (organização): vale para todas as unidades dele. */
   r.put('/contas/:id/plano', async (req, res) => {
     const id = idDaRota(req);
     const d = corpo(req, planoContaEntrada);
-    await plano.salvarPlano(pool, id, d);
-    // Módulos mudam o que a conta pode usar: esquece as credenciais lembradas.
-    credenciais.invalidar(id);
-    log.info({ conta: id, plano: d.plano, modulos: d.modulos }, 'master: plano da conta salvo');
+    const org = await plano.organizacaoDaConta(pool, id);
+    await plano.salvarPlano(pool, org, d);
+    // Módulos mudam o que as unidades podem usar: esquece as credenciais lembradas.
+    credenciais.invalidar();
+    log.info({ organizacao: org, plano: d.plano, modulos: d.modulos }, 'master: plano do cliente salvo');
     res.json(await plano.planoDaConta(pool, id));
+  });
+
+  /** Clientes (organizações) e as unidades de cada um. */
+  r.get('/organizacoes', async (_req, res) => {
+    res.json(await repo.organizacoes(pool));
+  });
+  r.patch('/organizacoes/:id', async (req, res) => {
+    await repo.atualizarOrganizacao(pool, idDaRota(req), corpo(req, organizacaoAtualizar));
+    res.json({ ok: true });
+  });
+  /** Nova unidade no cliente (o gestor também cria pela tela da organização). */
+  r.post('/organizacoes/:id/unidades', async (req, res) => {
+    const id = await org.criarUnidade(pool, idDaRota(req), corpo(req, unidadeNova));
+    log.info({ organizacao: idDaRota(req), unidade: id }, 'master: unidade criada');
+    res.status(201).json({ id });
+  });
+  r.patch('/organizacoes/:id/unidades/:unidade', async (req, res) => {
+    const unidade = Number(req.params.unidade);
+    if (!Number.isInteger(unidade) || unidade <= 0) throw AppError.naoEncontrado('Unidade');
+    await org.atualizarUnidade(pool, idDaRota(req), unidade, corpo(req, unidadeAtualizar));
+    res.json({ ok: true });
   });
 
   /** Usuário de qualquer conta: nome, papel, ativo (reativar respeita a vaga do plano). */
@@ -80,17 +108,28 @@ export function rotasMaster(deps: DepsApi): Router {
     if (!rows[0]) throw AppError.naoEncontrado('Usuário');
     if (rows[0].master && id === req.usuario!.id)
       throw AppError.invalido('Você não pode mudar o seu próprio acesso de master por aqui.');
-    const d = corpo(req, usuarioAtualizar);
-    await comConta(rows[0].conta_id, () => equipe.atualizar(pool, id, d));
+    const d = corpo(req, pessoaMasterAtualizar);
+    const { rows: atual } = await pool.query<{ papel: string; organizacao_id: number }>(
+      `SELECT u.papel, c.organizacao_id FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+        WHERE u.id = $1`,
+      [id],
+    );
+    const daOrganizacao = (p?: string) => p === 'gestor' || p === 'leitura';
+    if (daOrganizacao(atual[0]?.papel) || daOrganizacao(d.papel))
+      await org.atualizarPessoa(pool, atual[0]!.organizacao_id, id, d, { id: req.usuario!.id, master: true });
+    else
+      await comConta(rows[0].conta_id, () =>
+        equipe.atualizar(pool, id, { ...d, papel: d.papel as UsuarioAtualizar['papel'] }),
+      );
     res.json(await repo.usuarios(pool, rows[0].conta_id));
   });
 
   r.post('/contas', async (req, res) => {
     const d = corpo(req, contaNova);
-    const { id, token } = await repo.criar(pool, d);
-    if (d.plano) await plano.salvarPlano(pool, id, d.plano);
+    const { id, organizacaoId, token } = await repo.criar(pool, d);
+    if (d.plano) await plano.salvarPlano(pool, organizacaoId, d.plano);
     log.info({ conta: id, nome: d.nome }, 'master: conta criada');
-    res.status(201).json({ id, convite: link(req, token), diasValidade: equipe.DIAS_CONVITE });
+    res.status(201).json({ id, organizacaoId, convite: link(req, token), diasValidade: equipe.DIAS_CONVITE });
   });
 
   r.get('/contas/:id', async (req, res) => {

@@ -478,22 +478,32 @@ export async function semVagaDeLeads(db: Executor, contaId: number, empresaId: n
     limite_usuarios: number | null;
     limite_leads_mes: number | null;
     modulos: string[];
-    usados: number;
+    cota: number | null;
+    usados_org: number;
+    usados_unidade: number;
     ja_conta: boolean;
     tabela: unknown;
   }>(
-    `SELECT c.plano, c.limite_usuarios, c.limite_leads_mes, c.modulos,
+    `SELECT o.plano, o.limite_usuarios, o.limite_leads_mes, o.modulos, c.cota_leads_mes AS cota,
             (SELECT dados FROM cadastro.tabela_precos WHERE id = 1) AS tabela,
             (SELECT count(*) FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
-              WHERE ca.conta_id = c.id AND l.status = 'concluido' AND l.concluido_em >= ${INICIO_MES_SP_TS})::int AS usados,
+               JOIN cadastro.contas cc ON cc.id = ca.conta_id
+              WHERE cc.organizacao_id = o.id AND l.status = 'concluido'
+                AND l.concluido_em >= ${INICIO_MES_SP_TS})::int AS usados_org,
+            (SELECT count(*) FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
+              WHERE ca.conta_id = c.id AND l.status = 'concluido'
+                AND l.concluido_em >= ${INICIO_MES_SP_TS})::int AS usados_unidade,
             EXISTS (SELECT 1 FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
                      WHERE l.empresa_id = $2 AND ca.conta_id = c.id AND l.status = 'concluido'
                        AND l.concluido_em >= ${INICIO_MES_SP_TS}) AS ja_conta
-       FROM cadastro.contas c WHERE c.id = $1`,
+       FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
+      WHERE c.id = $1`,
     [contaId, empresaId],
   );
   const r = rows[0];
   if (!r?.plano || r.ja_conta) return false;
+  // A cota da unidade (se o gestor deu uma) e o total da organização valem os dois.
+  if (r.cota != null && r.usados_unidade >= r.cota) return true;
   const { leadsMes } = planoEfetivo(
     {
       plano: r.plano,
@@ -504,7 +514,7 @@ export async function semVagaDeLeads(db: Executor, contaId: number, empresaId: n
     },
     tabelaCompleta(r.tabela),
   );
-  return leadsMes != null && r.usados >= leadsMes;
+  return leadsMes != null && r.usados_org >= leadsMes;
 }
 
 /** O lead espera o limite do plano (volta para a fila quando o mês virar ou o plano aumentar). */
