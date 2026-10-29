@@ -11,6 +11,8 @@ import { useMeuDiaResumo } from '../paginas/MeuDia';
 import { useEntrarNaUnidade, useOrganizacao } from '../paginas/Organizacao';
 import { useNovosPedidos } from '../paginas/Vendas';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
+import { Argos } from './argos/Argos';
+import { conversa as conversaArgos } from './argos/conversa';
 import { AceitarTermos, DuasEtapasObrigatoria, useAplicarMarca } from './ContaSegura';
 import { Logo } from './Marca';
 import { MinhaConta } from './MinhaConta';
@@ -201,6 +203,7 @@ export function Shell() {
     mutationFn: () => api('/auth/logout', { metodo: 'POST' }),
     onSettled: () => {
       cliente.clear();
+      conversaArgos.limpar();
       navegar('/login');
     },
   });
@@ -397,6 +400,8 @@ export function Shell() {
       </main>
       {conta && <MinhaConta aoFechar={() => setConta(false)} />}
       {sessao.data && !sessao.data.termos.aceitos && <AceitarTermos versao={sessao.data.termos.versao} />}
+      {/* Argos: o assistente (segundo cérebro), em qualquer tela. Só vê o que a pessoa pode ver. */}
+      {sessao.data?.termos.aceitos && <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />}
       {avisosAbertos && <PainelAvisos aoFechar={() => setAvisosAbertos(false)} />}
     </div>
   );

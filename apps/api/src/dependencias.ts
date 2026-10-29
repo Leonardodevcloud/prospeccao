@@ -1,6 +1,7 @@
 import type { CredenciaisAmbiente, Pool } from '@prospeccao/db';
 import type { Filas } from '@prospeccao/queue';
 import type { Logger } from '@prospeccao/shared';
+import type { DepsAssistente } from './modulos/assistente/rotas.js';
 import type { ServicoDominios } from './modulos/email/dominio.js';
 import type { ResolverServicos } from './servicos.js';
 
@@ -35,4 +36,6 @@ export interface DepsApi {
   };
   /** Domínios de e-mail no Resend da plataforma (padrão: pela RESEND_API_KEY; os testes simulam). */
   dominiosEmail?: ServicoDominios | null;
+  /** Argos (o assistente): acesso só leitura aos dados, ouvir e falar. Sem isso, ele explica o que falta. */
+  assistente?: DepsAssistente | null;
 }

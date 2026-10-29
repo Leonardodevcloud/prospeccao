@@ -5837,3 +5837,28 @@ label.plano-opcao[data-ativo] {
   color: var(--ink-muted);
   font-size: 13px;
 }
+
+/* ── Argos (assistente de voz): tokens usados pelos módulos de componentes/argos ── */
+:root {
+  --curva: cubic-bezier(0.2, 0, 0, 1);
+  --rapido: 120ms;
+  --medio: 200ms;
+  --raio: var(--radius-sm);
+  --texto: var(--ink);
+  --fonte-mono: var(--font-mono);
+  --foco: 0 0 0 3px color-mix(in srgb, var(--brand) 30%, transparent);
+  /* A cor da marca clareada, para texto e bordas sobre o painel escuro do Argos. */
+  --argos-claro: color-mix(in srgb, var(--brand) 55%, white);
+  --argos-texto-marca: color-mix(in srgb, var(--brand) 35%, white);
+}
+.prosa-argos :where(p) {
+  margin: 0 0 6px;
+}
+.prosa-argos :where(ul) {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.prosa-argos :where(code) {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}

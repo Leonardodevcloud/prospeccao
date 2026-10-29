@@ -114,7 +114,12 @@ export const exigirDuasEtapas: RequestHandler = (req, _res, next) => {
 export const exigirEscrita: RequestHandler = (req, _res, next) => {
   if (req.usuario?.papelOrganizacao !== 'leitura' || METODOS_SEGUROS.has(req.method)) return next();
   // Trocar de unidade e mexer no próprio perfil (senha, aviso no celular) continuam valendo.
-  if (/^\/organizacao\/(unidades\/\d+\/entrar|voltar)$|^\/(notificacoes|push)\b/.test(req.path))
+  // Perguntar ao Argos também (ele só lê; criar tarefa pelo Argos é recusado lá dentro).
+  if (
+    /^\/organizacao\/(unidades\/\d+\/entrar|voltar)$|^\/(notificacoes|push)\b|^\/assistente(\/transcrever|\/falar(\/preparar)?)?$/.test(
+      req.path,
+    )
+  )
     return next();
   next(
     new AppError(403, 'somente_leitura', 'Seu acesso é só de leitura: você pode ver tudo, mas não alterar.'),

@@ -14,7 +14,8 @@
     "./planos": "./src/planos.ts",
     "./plataforma": "./src/plataforma.ts",
     "./site": "./src/site.ts",
-    "./seguranca": "./src/seguranca.ts"
+    "./seguranca": "./src/seguranca.ts",
+    "./assistente": "./src/assistente.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

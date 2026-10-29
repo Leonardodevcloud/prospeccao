@@ -230,6 +230,11 @@ const REGRAS: Record<string, Regra | null> = {
   'POST /master/contas/:id/entrar': { acao: 'master', texto: 'Entrou na conta (suporte)' },
 
   // Não mudam nada (ou são só leitura com corpo).
+  'POST /assistente': { acao: 'assistente', texto: (b) => `Perguntou ao Argos: ${txt(b.texto, 160)}` },
+  'POST /assistente/transcrever': null,
+  'POST /assistente/falar': null,
+  'POST /assistente/falar/preparar': null,
+  'PUT /assistente/voz': { acao: 'configuração', texto: (b) => `Mudou a voz do Argos para ${txt(b.voz)}` },
   'POST /email/previa': null,
   'POST /email/campanhas/estimar': null,
   'POST /email/campanhas/:id/previa': null,

@@ -44,6 +44,15 @@ export const esquemaEnvApi = envBase.extend({
   IA_MODELO: opcional(z.string().min(2)),
   /** Só para IA_PROVEDOR=openai (OpenRouter, Groq…): endereço da API. */
   IA_BASE_URL: opcional(z.string().url()),
+  /** Argos (assistente de voz): ouvir pelo Whisper (Groq por padrão) e falar pelo gpt-4o-mini-tts. */
+  GROQ_CHAVE: opcional(z.string().min(10)),
+  VOZ_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
+  VOZ_MODELO: z.string().default('whisper-large-v3-turbo'),
+  OPENAI_CHAVE: opcional(z.string().min(10)),
+  FALA_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+  FALA_MODELO: z.string().default('gpt-4o-mini-tts'),
+  /** Raciocínio da IA antes de responder (desligado = mais rápido). */
+  ARGOS_RACIOCINIO: z.enum(['desligado', 'baixo', 'alto']).catch('desligado').default('desligado'),
   /** Legado: sem IA_API_KEY, a IA é o Gemini com esta chave. */
   GEMINI_API_KEY: opcional(z.string().min(10)),
   GEMINI_MODELO: z.string().default('gemini-3.5-flash-lite'),

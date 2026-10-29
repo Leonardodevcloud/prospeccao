@@ -28,7 +28,7 @@ import {
   enviarEmail,
   verificarResend,
 } from '@prospeccao/integrations/email';
-import { type ConfigIa, configIa } from '@prospeccao/integrations/ia';
+import { type ConfigIa, configIa, conversarJson, type PedidoConversa } from '@prospeccao/integrations/ia';
 import { extrairLeadsDoTexto, mapearColunasComIa } from '@prospeccao/integrations/importacao';
 import * as ors from '@prospeccao/integrations/ors';
 import {
@@ -126,6 +126,8 @@ export interface ServicosConta {
   /** IA que escreve a abertura de cada e-mail para o lead. */
   personalizarAbertura: ((e: EntradaAbertura) => Promise<string | null>) | null;
   email: EmailConta | null;
+  /** IA do Argos (o assistente): conversa em etapas, medida no consumo da conta. */
+  assistente: ((p: PedidoConversa) => Promise<string>) | null;
   /** Endereço → coordenadas (bases de operação). */
   geocodificar: ((endereco: string) => Promise<{ lat: number; lng: number } | null>) | null;
   /** IA que lê a planilha de leads importada (o que é cada coluna) e tira os leads de um PDF. */
@@ -213,6 +215,7 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
           buscarRecebido: (id) => buscarRecebido({ apiKey: resend.apiKey }, id),
         }
       : null,
+    assistente: iaCfg ? (p) => conversarJson(iaCfg, p) : null,
     geocodificar: c.ors
       ? async (endereco) => {
           const r = await ors.geocodificar({ apiKey: c.ors!.apiKey }, endereco);

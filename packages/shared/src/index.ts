@@ -1,3 +1,4 @@
+export * from './assistente.js';
 export * from './contas.js';
 export * from './dominio.js';
 export * from './email.js';

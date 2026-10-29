@@ -279,3 +279,96 @@ export function configIa(
     ...(medidor ? { medidor } : {}),
   };
 }
+
+/* ───────────────────────────── Conversa em etapas (Argos) ───────────────────────────── */
+
+export interface MensagemIa {
+  papel: 'user' | 'assistant';
+  conteudo: string;
+}
+
+export interface PedidoConversa {
+  sistema: string;
+  mensagens: MensagemIa[];
+  temperatura?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+  /**
+   * Raciocínio antes de responder. A DeepSeek liga por padrão (e isso custa segundos): o Argos
+   * desliga para responder rápido; "baixo"/"alto" para quem pode esperar.
+   */
+  raciocinio?: 'desligado' | 'baixo' | 'alto';
+}
+
+const URL_GEMINI_COMPATIVEL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
+/**
+ * Conversa com várias mensagens e resposta em JSON (o laço do Argos). Funciona com os três
+ * provedores: DeepSeek e OpenAI pelo /chat/completions; Gemini pela API compatível do Google.
+ * Passa pelo mesmo medidor (teto do mês e consumo da conta) que as outras chamadas.
+ */
+export async function conversarJson(cfg: ConfigIa, p: PedidoConversa): Promise<string> {
+  if (!cfg.apiKey) throw AppError.invalido('IA sem chave configurada.');
+  await cfg.medidor?.antes();
+  let uso: UsoIa | null = null;
+  let ok = false;
+  try {
+    const base = (
+      cfg.provedor === 'gemini'
+        ? URL_GEMINI_COMPATIVEL
+        : cfg.baseUrl?.trim() || URL_PADRAO[cfg.provedor === 'deepseek' ? 'deepseek' : 'openai']
+    ).replace(/\/+$/, '');
+    const corpo: Record<string, unknown> = {
+      model: cfg.modelo,
+      messages: [
+        { role: 'system', content: p.sistema },
+        ...p.mensagens.map((m) => ({ role: m.papel, content: m.conteudo })),
+      ],
+      temperature: p.temperatura ?? 0.1,
+      max_tokens: p.maxTokens ?? 1200,
+      response_format: { type: 'json_object' },
+      stream: false,
+    };
+    const deepseek = cfg.provedor === 'deepseek' || /deepseek/i.test(base);
+    if (deepseek && p.raciocinio === 'desligado') corpo.thinking = { type: 'disabled' };
+    else if (deepseek && p.raciocinio)
+      Object.assign(corpo, {
+        thinking: { type: 'enabled' },
+        reasoning_effort: p.raciocinio === 'baixo' ? 'low' : 'high',
+      });
+
+    const pedir = () =>
+      requisitarJson<{
+        choices?: { message?: { content?: string | null } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      }>(`${base}/chat/completions`, {
+        servico: nomeServico(cfg),
+        method: 'POST',
+        headers: { authorization: `Bearer ${cfg.apiKey}` },
+        body: corpo,
+        timeoutMs: p.timeoutMs ?? 60_000,
+      });
+
+    let r: Awaited<ReturnType<typeof pedir>>;
+    try {
+      r = await pedir();
+    } catch (erro) {
+      // Modelo ou serviço que não conhece esses campos: tenta do jeito mais simples.
+      const status = ((erro as AppError).detalhes as { status?: number } | undefined)?.status;
+      if (status !== 400) throw erro;
+      delete corpo.thinking;
+      delete corpo.reasoning_effort;
+      delete corpo.response_format;
+      r = await pedir();
+    }
+    uso = r.usage
+      ? { tokensEntrada: r.usage.prompt_tokens ?? 0, tokensSaida: r.usage.completion_tokens ?? 0 }
+      : null;
+    const texto = extrairJson(r.choices?.[0]?.message?.content ?? '');
+    if (!texto) throw AppError.externo(nomeServico(cfg), 'resposta vazia');
+    ok = true;
+    return texto;
+  } finally {
+    await cfg.medidor?.depois(uso, ok).catch(() => undefined);
+  }
+}

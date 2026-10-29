@@ -7,6 +7,7 @@ import { carregarEnvApi, credenciaisDoAmbiente } from './config.js';
 import { iniciarLembretes } from './modulos/agenda/lembretes.js';
 import { iniciarAgente } from './modulos/agente/motor.js';
 import { iniciarAlertas } from './modulos/alertas/rotina.js';
+import { prepararAssistente } from './modulos/assistente/preparar.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
@@ -43,6 +44,9 @@ if (!chave)
     'CHAVE_CREDENCIAIS não configurada: só a conta principal funciona (pelas variáveis do ambiente); o painel master não guarda chaves de outras contas.',
   );
 
+// Argos (assistente): papel só leitura no banco e voz. Falhar aqui não derruba a api.
+const assistente = await prepararAssistente(pool, log, env);
+
 const app = criarApp({
   pool,
   filas,
@@ -57,6 +61,7 @@ const app = criarApp({
   origens: env.APP_ORIGENS,
   servicos,
   credenciais: { chave, ambiente, invalidar },
+  assistente,
 });
 
 const servidor = createServer(app);
@@ -88,5 +93,6 @@ encerrarAoReceberSinal(log, async () => {
   pararSinal();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
   await filas.parar();
+  await assistente.leitura?.end().catch(() => undefined);
   await pool.end();
 });

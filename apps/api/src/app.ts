@@ -15,6 +15,7 @@ import {
 import { rotasAgenda, rotasCalendario } from './modulos/agenda/rotas.js';
 import { rotasAgente, rotasWebhook } from './modulos/agente/rotas.js';
 import { rotasAlertas } from './modulos/alertas/rotas.js';
+import { rotasAssistente } from './modulos/assistente/rotas.js';
 import { rotasAtividade } from './modulos/atividade/rotas.js';
 import { auditar } from './modulos/auditoria/middleware.js';
 import { rotasAuditoria } from './modulos/auditoria/rotas.js';
@@ -129,6 +130,8 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/exportar', rotasExportar(deps));
   protegidas.use('/alertas', rotasAlertas(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
+  // Argos: o assistente (segundo cérebro), só leitura e só no escopo de quem pergunta.
+  protegidas.use('/assistente', rotasAssistente(deps));
   // Painel master: contas, credenciais e acesso a qualquer conta.
   protegidas.use('/master/site', exigirMaster, rotasSiteMaster(deps));
   protegidas.use('/master/plataforma', exigirMaster, rotasPlataforma(deps));

@@ -23,6 +23,7 @@ const semServicos = (contaId: number): ServicosConta => ({
   classificarEmail: null,
   personalizarAbertura: null,
   email: null,
+  assistente: null,
   geocodificar: null,
   origem: { places: null, ors: null, resend: null, whatsapp: null, ia: null },
   iaDescricao: null,

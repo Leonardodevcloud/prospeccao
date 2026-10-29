@@ -1,3 +1,4 @@
+import type { ConfigVozDTO } from '@prospeccao/shared/assistente';
 import {
   CUSTOS_PADRAO,
   type CustoEstimado,
@@ -9,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { Link, Navigate } from 'react-router';
 import { api } from '../api';
+import { ouvirAmostra, recarregarVoz } from '../componentes/argos/fala';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ROTULO_PLANO } from '../componentes/PlanoConta';
@@ -811,9 +813,108 @@ export function PlataformaOperacao() {
                 </li>
               </ul>
             </Panel>
+            <VozDoArgos />
           </div>
         </>
       )}
     </>
+  );
+}
+
+/** Argos: o que está ligado (dados, ouvir, falar) e a voz que vale para todos os clientes. */
+function VozDoArgos() {
+  const cliente = useQueryClient();
+  const sessao = useSessao();
+  const q = useQuery({
+    queryKey: ['assistente', 'voz'],
+    queryFn: () => api<ConfigVozDTO>('/assistente/voz'),
+  });
+  const [voz, setVoz] = useState<string | null>(null);
+  const [velocidade, setVelocidade] = useState<number | null>(null);
+  const [erroAmostra, setErroAmostra] = useState<string | null>(null);
+  const salvar = useMutation({
+    mutationFn: () =>
+      api('/assistente/voz', {
+        metodo: 'PUT',
+        corpo: { voz: voz ?? q.data?.voz, velocidade: velocidade ?? q.data?.velocidade },
+      }),
+    onSuccess: () => {
+      recarregarVoz();
+      cliente.invalidateQueries({ queryKey: ['assistente', 'voz'] });
+    },
+  });
+  const c = q.data;
+  if (!c) return <ErroDaApi erro={q.error} />;
+  const v = voz ?? c.voz;
+  const vel = velocidade ?? c.velocidade;
+  const estado = (ok: boolean) => (
+    <Badge tone={ok ? 'brand' : 'outline'}>{ok ? 'Ligado' : 'Desligado'}</Badge>
+  );
+  return (
+    <Panel titulo="Argos (assistente)">
+      <ul className="lista-operacao">
+        <li className="lista-operacao__item">
+          <span>Consultar os dados (só leitura, por escopo)</span>
+          {estado(c.dados)}
+        </li>
+        <li className="lista-operacao__item">
+          <span>Ouvir (GROQ_CHAVE)</span>
+          {estado(c.ouvir)}
+        </li>
+        <li className="lista-operacao__item">
+          <span>Falar com voz natural (OPENAI_CHAVE)</span>
+          {estado(c.disponivel)}
+        </li>
+      </ul>
+      {c.disponivel && (
+        <div className="pilha" style={{ gap: 10, marginTop: 12 }}>
+          <div className="campo">
+            <label htmlFor="argos-voz">Voz (vale para todos os clientes)</label>
+            <select id="argos-voz" className="filtro" value={v} onChange={(e) => setVoz(e.target.value)}>
+              {c.vozes.map((x) => (
+                <option key={x} value={x}>
+                  {x}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="campo">
+            <label htmlFor="argos-velocidade">Velocidade: {vel.toLocaleString('pt-BR')}×</label>
+            <input
+              id="argos-velocidade"
+              type="range"
+              min={0.8}
+              max={1.5}
+              step={0.02}
+              value={vel}
+              onChange={(e) => setVelocidade(Number(e.target.value))}
+            />
+          </div>
+          {erroAmostra && <Mensagem tipo="erro">{erroAmostra}</Mensagem>}
+          <ErroDaApi erro={salvar.error} />
+          <div className="acoes">
+            <Button
+              variant="ghost"
+              icon="volume-2"
+              onClick={() => {
+                setErroAmostra(null);
+                ouvirAmostra(v, vel, sessao.data?.nome.split(' ')[0] ?? '').catch(() =>
+                  setErroAmostra('Não consegui tocar a amostra agora.'),
+                );
+              }}
+            >
+              Ouvir
+            </Button>
+            <Button
+              variant="primary"
+              disabled={salvar.isPending || (v === c.voz && vel === c.velocidade)}
+              onClick={() => salvar.mutate()}
+            >
+              Salvar voz
+            </Button>
+          </div>
+        </div>
+      )}
+    </Panel>
   );
 }
