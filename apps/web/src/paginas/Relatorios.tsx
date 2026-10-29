@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { api, type Campanha, qs, type Relatorio } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { useEhAdmin } from '../componentes/Sessao';
+import { useEhAdmin, useSoLeitura } from '../componentes/Sessao';
 import { fmtNumero, fmtPct, fmtReais } from '../formatar';
 
 const NOME_FONTE_ERRO: Record<string, string> = {
@@ -128,7 +128,10 @@ export function Relatorios() {
   const [params, setParams] = useSearchParams();
   const dias = params.get('dias') ?? '30';
   const campanhaId = params.get('campanhaId') ?? '';
-  const admin = useEhAdmin();
+  // Exportar é só olhar: a diretoria (leitura) também baixa.
+  const ehAdmin = useEhAdmin();
+  const soLeitura = useSoLeitura();
+  const admin = ehAdmin || soLeitura;
   const mudar = (novos: Record<string, string | null>) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(novos)) v ? p.set(k, v) : p.delete(k);

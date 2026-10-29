@@ -34,7 +34,7 @@ import { Drawer } from './Drawer';
 import { EmailsDoLead } from './EmailsDoLead';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { SecaoFunil } from './SecaoFunil';
-import { useEhAdmin, useEhMaster } from './Sessao';
+import { useEhAdmin, useEhMaster, useSoLeitura } from './Sessao';
 
 const PORTE: Record<string, string> = {
   me: 'Microempresa',
@@ -393,12 +393,16 @@ function BotaoNumeroErrado(props: { c: ContatoEnriq; empresaId: number }) {
 
 function QuemDecide({ e }: { e: EmpresaDetalhe }) {
   const [todos, setTodos] = useState(false);
+  const soLeitura = useSoLeitura();
   const daEmpresa = e.contatos.filter((c) => c.pessoaId == null);
   // Contatos que valem para falar com o decisor: o principal e os WhatsApp confirmados da empresa.
   const melhores = daEmpresa
     .filter((c) => c.principal || (c.canal === 'whatsapp' && c.status === 'verificado'))
     .slice(0, 2)
-    .map((c) => ({ ...paraContactRow(c), acoes: <BotaoNumeroErrado c={c} empresaId={e.id} /> }));
+    .map((c) => ({
+      ...paraContactRow(c),
+      acoes: soLeitura ? undefined : <BotaoNumeroErrado c={c} empresaId={e.id} />,
+    }));
 
   if (e.pessoas.length) {
     const visiveis = todos ? e.pessoas : e.pessoas.slice(0, 3);
@@ -407,7 +411,10 @@ function QuemDecide({ e }: { e: EmpresaDetalhe }) {
         {visiveis.map((p) => {
           const proprios = e.contatos
             .filter((c) => c.pessoaId === p.id && c.canal !== 'linkedin')
-            .map((c) => ({ ...paraContactRow(c), acoes: <BotaoNumeroErrado c={c} empresaId={e.id} /> }));
+            .map((c) => ({
+              ...paraContactRow(c),
+              acoes: soLeitura ? undefined : <BotaoNumeroErrado c={c} empresaId={e.id} />,
+            }));
           return (
             <DecisorCard
               key={p.id}
@@ -477,6 +484,7 @@ export function FichaEmpresa({
   const cliente = useQueryClient();
   const master = useEhMaster();
   const admin = useEhAdmin();
+  const soLeitura = useSoLeitura();
   const q = useQuery({
     queryKey: ['empresa', id],
     queryFn: () => api<EmpresaDetalhe>(`/empresas/${id}`),
@@ -501,7 +509,10 @@ export function FichaEmpresa({
     ? e.contatos.length
       ? e.contatos
           .filter((c) => c.pessoaId == null)
-          .map((c) => ({ ...paraContactRow(c), acoes: <BotaoNumeroErrado c={c} empresaId={e.id} /> }))
+          .map((c) => ({
+            ...paraContactRow(c),
+            acoes: soLeitura ? undefined : <BotaoNumeroErrado c={c} empresaId={e.id} />,
+          }))
       : contatosDaDescoberta(e)
     : [];
 
@@ -561,18 +572,20 @@ export function FichaEmpresa({
                     Instagram
                   </Button>
                 )}
-                <Button
-                  variant="ghost"
-                  icon="loader"
-                  disabled={enriquecer.isPending || en?.status === 'rodando'}
-                  onClick={() => enriquecer.mutate()}
-                >
-                  {en?.status === 'rodando'
-                    ? 'Enriquecendo…'
-                    : en
-                      ? 'Enriquecer de novo'
-                      : 'Enriquecer agora'}
-                </Button>
+                {!soLeitura && (
+                  <Button
+                    variant="ghost"
+                    icon="loader"
+                    disabled={enriquecer.isPending || en?.status === 'rodando'}
+                    onClick={() => enriquecer.mutate()}
+                  >
+                    {en?.status === 'rodando'
+                      ? 'Enriquecendo…'
+                      : en
+                        ? 'Enriquecer de novo'
+                        : 'Enriquecer agora'}
+                  </Button>
+                )}
               </>
             }
           />
@@ -653,7 +666,7 @@ export function FichaEmpresa({
                       {en.pendencias.includes('rodada')
                         ? 'A última tentativa parou no meio; ficou tudo o que já tinha sido achado.'
                         : `Não responderam desta vez: ${en.pendencias.map((x) => NOME_PENDENCIA[x] ?? x).join(', ')}. O que já tinha sido achado ficou.`}{' '}
-                      Use "Enriquecer de novo" mais tarde para completar.
+                      {soLeitura ? '' : 'Use "Enriquecer de novo" mais tarde para completar.'}
                     </>
                   )}
                 </p>

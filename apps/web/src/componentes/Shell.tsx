@@ -14,7 +14,7 @@ import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Av
 import { AceitarTermos, DuasEtapasObrigatoria, useAplicarMarca } from './ContaSegura';
 import { Logo } from './Marca';
 import { MinhaConta } from './MinhaConta';
-import { Dono, useSessao } from './Sessao';
+import { Dono, TELAS_DA_LEITURA, useSessao } from './Sessao';
 
 /**
  * Itens do menu, na ordem do trabalho: o dia, achar os leads (prospecção), vender e acompanhar
@@ -213,6 +213,9 @@ export function Shell() {
   if (sessao.data?.duasEtapas.exigido && !sessao.data.duasEtapas.ativo) return <DuasEtapasObrigatoria />;
   const plataforma =
     !!sessao.data?.master && !sessao.data.foraDaPropria && ehTelaDaPlataforma(local.pathname);
+  const soLeitura = sessao.data?.papelOrganizacao === 'leitura';
+  // A leitura só abre as telas de acompanhar; as de trabalho levam ao painel da organização.
+  if (soLeitura && !TELAS_DA_LEITURA.includes(local.pathname)) return <Navigate to="/organizacao" replace />;
 
   return (
     <div className="app">
@@ -270,13 +273,15 @@ export function Shell() {
         )}
         {!plataforma &&
           ITENS.filter((i) =>
-            i.master
-              ? !!sessao.data?.master
-              : i.organizacao
-                ? !!sessao.data?.papelOrganizacao
-                : (!i.admin || sessao.data?.papel === 'admin') &&
-                  (!i.comPlano || !!sessao.data?.conta.plano) &&
-                  (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
+            soLeitura
+              ? TELAS_DA_LEITURA.includes(i.para)
+              : i.master
+                ? !!sessao.data?.master
+                : i.organizacao
+                  ? !!sessao.data?.papelOrganizacao
+                  : (!i.admin || sessao.data?.papel === 'admin') &&
+                    (!i.comPlano || !!sessao.data?.conta.plano) &&
+                    (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
           ).map((i, n, visiveis) => (
             <Fragment key={i.para}>
               {i.secao && i.secao !== visiveis[n - 1]?.secao && <span className="nav__secao">{i.secao}</span>}

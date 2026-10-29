@@ -1,5 +1,5 @@
 import type { TimelineItem } from '@prospeccao/ui';
-import { Badge, Button, Panel, Timeline } from '@prospeccao/ui';
+import { Badge, Button, DataFields, Panel, Timeline } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
@@ -12,12 +12,12 @@ import {
   ROTULO_ETAPA,
   type TipoAtividade,
 } from '../api';
-import { diaDaqui, diaDoInput, fmtHora, fmtNome, fmtPrazo, formatarTelefone } from '../formatar';
+import { diaDaqui, diaDoInput, fmtHora, fmtNome, fmtPrazo, fmtReais, formatarTelefone } from '../formatar';
 import { ProximaMensagem } from './Cadencia';
 import { CadeiaContatos } from './ContatosNegociacao';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { usePipelines } from './Pipelines';
-import { useEquipe } from './Sessao';
+import { useEquipe, useSoLeitura } from './Sessao';
 import { AgendaDoLead } from './Tarefas';
 
 const TIPOS: { id: Exclude<TipoAtividade, 'etapa'>; rotulo: string }[] = [
@@ -293,6 +293,7 @@ export function SecaoFunil(props: {
   const [proximaAcao, setProximaAcao] = useState('');
   const [proximaEm, setProximaEm] = useState('');
   const [valor, setValor] = useState('');
+  const soLeitura = useSoLeitura();
 
   const op = q.data?.oportunidade ?? null;
   // Mantém os campos de próximo passo e valor em dia com o que vem do servidor.
@@ -330,6 +331,67 @@ export function SecaoFunil(props: {
       abordar duas vezes.
     </Mensagem>
   );
+
+  // Só leitura (diretoria): o retrato da negociação, sem nada para mexer.
+  if (soLeitura) {
+    const responsavel = equipe.data?.usuarios.find((u) => u.id === op?.responsavelId)?.nome;
+    return (
+      <section className="secao">
+        <h2>
+          Funil{' '}
+          {op && (
+            <small>
+              {op.pipelineNome ? `${op.pipelineNome} · ` : ''}
+              {op.etapaNome ?? ROTULO_ETAPA[op.etapa]} desde {fmtHora(op.etapaDesde)}
+            </small>
+          )}
+        </h2>
+        {!op ? (
+          <p className="quieto" style={{ margin: 0, fontSize: 14 }}>
+            Lead ainda não trabalhado pela unidade.
+          </p>
+        ) : (
+          <div className="pilha">
+            {op.motivo && PEDE_MOTIVO.has(op.etapa) && (
+              <Mensagem tipo="aviso">
+                {op.etapa === 'perdido' ? 'Perdido' : 'Descartado'}: {op.motivo}
+              </Mensagem>
+            )}
+            <Panel>
+              <DataFields
+                colunas={2}
+                itens={[
+                  { rotulo: 'Etapa', valor: op.etapaNome ?? ROTULO_ETAPA[op.etapa] },
+                  {
+                    rotulo: 'Potencial',
+                    valor: op.valorMensal != null ? `${fmtReais(op.valorMensal)}/mês` : null,
+                  },
+                  { rotulo: 'Responsável', valor: responsavel ?? 'Sem responsável' },
+                  {
+                    rotulo: 'Próximo passo',
+                    valor: op.proximaAcao
+                      ? `${op.proximaAcao}${prazo ? ` · ${prazo.texto}` : ''}`
+                      : (prazo?.texto ?? null),
+                  },
+                  { rotulo: 'Quem conduz', valor: op.agente ? 'A IA (agente)' : 'A equipe' },
+                  { rotulo: 'Etiquetas', valor: op.etiquetas?.length ? op.etiquetas.join(', ') : 'Nenhuma' },
+                ]}
+              />
+            </Panel>
+            <Panel titulo="Histórico" contagem={d.atividades.length}>
+              {d.atividades.length ? (
+                <Timeline itens={d.atividades.map(itemDaTimeline)} />
+              ) : (
+                <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+                  Nada registrado ainda.
+                </p>
+              )}
+            </Panel>
+          </div>
+        )}
+      </section>
+    );
+  }
 
   // Ainda não trabalhado.
   if (!op) {

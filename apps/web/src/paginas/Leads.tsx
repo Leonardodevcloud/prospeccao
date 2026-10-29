@@ -16,7 +16,7 @@ import {
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ImportarLeads } from '../componentes/ImportarLeads';
-import { useEhAdmin } from '../componentes/Sessao';
+import { useEhAdmin, useSoLeitura } from '../componentes/Sessao';
 import { fmtCidade, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO_ORIGEM } from '../formatar';
 
 const ABAS = [
@@ -108,6 +108,7 @@ export function Leads() {
   const empresaAberta = params.get('empresa');
   const situacao = params.get('situacao') ?? 'novos';
   const admin = useEhAdmin();
+  const soLeitura = useSoLeitura();
   const [busca, setBusca] = useState(params.get('busca') ?? '');
   const [marcados, setMarcados] = useState<Set<number>>(new Set());
   const [descartando, setDescartando] = useState(false);
@@ -404,7 +405,7 @@ export function Leads() {
                 >
                   Limpar filtros
                 </Button>
-              ) : (
+              ) : soLeitura ? undefined : (
                 <Button size="sm" variant="primary" onClick={() => navegar('/campanhas')}>
                   Ir para campanhas
                 </Button>
@@ -418,16 +419,18 @@ export function Leads() {
             <table className="pp-table">
               <thead>
                 <tr>
-                  <th className="col-marcar">
-                    <input
-                      type="checkbox"
-                      aria-label="Marcar todos desta página"
-                      checked={todosMarcados}
-                      onChange={() =>
-                        setMarcados(todosMarcados ? new Set() : new Set(itens.map((e) => e.id)))
-                      }
-                    />
-                  </th>
+                  {!soLeitura && (
+                    <th className="col-marcar">
+                      <input
+                        type="checkbox"
+                        aria-label="Marcar todos desta página"
+                        checked={todosMarcados}
+                        onChange={() =>
+                          setMarcados(todosMarcados ? new Set() : new Set(itens.map((e) => e.id)))
+                        }
+                      />
+                    </th>
+                  )}
                   <th>Empresa</th>
                   <th>Nota</th>
                   <th>Possível decisor</th>
@@ -446,15 +449,17 @@ export function Leads() {
                       className="linha-clicavel"
                       onClick={() => mudar({ empresa: String(e.id) })}
                     >
-                      <td className="col-marcar">
-                        <input
-                          type="checkbox"
-                          onClick={(ev) => ev.stopPropagation()}
-                          aria-label={`Marcar ${fmtNome(e.nome)}`}
-                          checked={marcados.has(e.id)}
-                          onChange={() => alternar(e.id)}
-                        />
-                      </td>
+                      {!soLeitura && (
+                        <td className="col-marcar">
+                          <input
+                            type="checkbox"
+                            onClick={(ev) => ev.stopPropagation()}
+                            aria-label={`Marcar ${fmtNome(e.nome)}`}
+                            checked={marcados.has(e.id)}
+                            onChange={() => alternar(e.id)}
+                          />
+                        </td>
+                      )}
                       <td>
                         <button
                           type="button"

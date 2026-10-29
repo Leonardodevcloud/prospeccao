@@ -5828,3 +5828,12 @@ label.plano-opcao[data-ativo] {
   border-radius: 6px;
   background: #fff;
 }
+
+/* Conversa vista pela diretoria (só leitura): no lugar do campo de resposta. */
+.chat__so-leitura {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+  color: var(--ink-muted);
+  font-size: 13px;
+}

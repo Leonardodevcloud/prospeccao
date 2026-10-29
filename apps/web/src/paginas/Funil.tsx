@@ -17,7 +17,7 @@ import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { type InicialNovoLead, NovoLead } from '../componentes/NovoLead';
 import { EditarPipelines, usePipelines } from '../componentes/Pipelines';
-import { Dono, useEquipe, useSessao } from '../componentes/Sessao';
+import { Dono, useEhAdmin, useEquipe, useSessao, useSoLeitura } from '../componentes/Sessao';
 import {
   diaDaqui,
   diasDesde,
@@ -73,6 +73,8 @@ function Card(props: {
   aoArrastar: (e: DragEvent) => void;
   aoSoltarSobre: (e: DragEvent, depois: boolean) => void;
   marcadorAntes: boolean;
+  /** Só leitura: não arrasta nem manda mensagem. */
+  soLeitura: boolean;
 }) {
   const { c } = props;
   const prazo = fmtPrazo(c.proximaAcaoEm);
@@ -87,7 +89,7 @@ function Card(props: {
       <article
         className="cartao"
         data-arrastando={props.arrastando || undefined}
-        draggable
+        draggable={!props.soLeitura}
         onDragStart={props.aoArrastar}
         onDragOver={(e) => {
           e.preventDefault();
@@ -232,7 +234,7 @@ function Card(props: {
             </span>
           )}
         </button>
-        {COM_MENSAGEM.has(c.etapa) && c.telefone && !c.encerrarEm && !comIa && (
+        {!props.soLeitura && COM_MENSAGEM.has(c.etapa) && c.telefone && !c.encerrarEm && !comIa && (
           <div className="cartao__acoes">
             <Button
               size="sm"
@@ -263,6 +265,8 @@ export function Funil() {
   const etiqueta = params.get('etiqueta') ?? '';
   const responsavel = params.get('responsavel') ?? '';
   const sessao = useSessao();
+  const admin = useEhAdmin();
+  const soLeitura = useSoLeitura();
   const equipe = useEquipe();
   const empresaAberta = params.get('empresa');
   const [busca, setBusca] = useState(params.get('busca') ?? '');
@@ -468,19 +472,23 @@ export function Funil() {
           </p>
         </div>
         <div className="acoes">
-          <Button icon="plus" variant="primary" onClick={() => setNovoLead({ pipelineId: pipeline?.id })}>
-            Novo lead
-          </Button>
+          {!soLeitura && (
+            <Button icon="plus" variant="primary" onClick={() => setNovoLead({ pipelineId: pipeline?.id })}>
+              Novo lead
+            </Button>
+          )}
           {sessao.data?.papel === 'admin' && (
+            <Button
+              icon="file-down"
+              variant="ghost"
+              href={`/api/exportar/funil${qs(filtros)}`}
+              title="Baixa os leads deste pipeline, com os filtros da tela, numa planilha do Excel"
+            >
+              Exportar
+            </Button>
+          )}
+          {admin && (
             <>
-              <Button
-                icon="file-down"
-                variant="ghost"
-                href={`/api/exportar/funil${qs(filtros)}`}
-                title="Baixa os leads deste pipeline, com os filtros da tela, numa planilha do Excel"
-              >
-                Exportar
-              </Button>
               <Button icon="clock" variant="ghost" onClick={() => setConfigurando(true)}>
                 Cadência e mensagens
               </Button>
@@ -732,11 +740,17 @@ export function Funil() {
           <EmptyState
             icone="kanban"
             titulo="O funil está vazio"
-            texto="Na tela de Leads, marque os leads que valem a abordagem e clique em Mandar para o funil. Cada empresa vira um card só, mesmo que apareça em outra campanha."
+            texto={
+              soLeitura
+                ? 'A equipe desta unidade ainda não mandou leads para o funil.'
+                : 'Na tela de Leads, marque os leads que valem a abordagem e clique em Mandar para o funil. Cada empresa vira um card só, mesmo que apareça em outra campanha.'
+            }
             acao={
-              <Button size="sm" variant="primary" onClick={() => navegar('/')}>
-                Ir para os leads novos
-              </Button>
+              soLeitura ? undefined : (
+                <Button size="sm" variant="primary" onClick={() => navegar('/')}>
+                  Ir para os leads novos
+                </Button>
+              )
             }
           />
         </div>
@@ -803,15 +817,17 @@ export function Funil() {
                       <span className="coluna__conta">{fmtNumero(lista.length)}</span>
                     </span>
                     {soma > 0 && <span className="coluna__soma mono">{fmtReais(soma)}</span>}
-                    <button
-                      type="button"
-                      className="botao-icone coluna__novo"
-                      aria-label={`Novo lead em ${etapa.nome}`}
-                      title={`Novo lead em ${etapa.nome}`}
-                      onClick={() => setNovoLead({ etapaId: etapa.id, pipelineId: pipeline?.id })}
-                    >
-                      <Icon name="plus" size={14} />
-                    </button>
+                    {!soLeitura && (
+                      <button
+                        type="button"
+                        className="botao-icone coluna__novo"
+                        aria-label={`Novo lead em ${etapa.nome}`}
+                        title={`Novo lead em ${etapa.nome}`}
+                        onClick={() => setNovoLead({ etapaId: etapa.id, pipelineId: pipeline?.id })}
+                      >
+                        <Icon name="plus" size={14} />
+                      </button>
+                    )}
                   </header>
                   <div className="coluna__cards">
                     {visiveis.map((c, i) => (
@@ -819,6 +835,7 @@ export function Funil() {
                         key={c.empresaId}
                         c={c}
                         totalTentativas={quadro.data?.totalTentativas ?? 4}
+                        soLeitura={soLeitura}
                         aoMandarMensagem={() => setMensagemPara(c)}
                         arrastando={arrastado?.empresaId === c.empresaId}
                         marcadorAntes={recebendo && alvo?.antesDe === c.empresaId}
@@ -856,9 +873,9 @@ export function Funil() {
             })}
           </div>
           <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
-            O próximo passo é marcado sozinho: cada mensagem sem resposta agenda o follow-up seguinte, e quem
-            não responde vai para Perdido. Quando a reunião é marcada, o lead passa sozinho do SDR para o
-            Closer.
+            {soLeitura ? 'Para acompanhar: só a equipe da unidade move os cards. ' : ''}O próximo passo é
+            marcado sozinho: cada mensagem sem resposta agenda o follow-up seguinte, e quem não responde vai
+            para Perdido. Quando a reunião é marcada, o lead passa sozinho do SDR para o Closer.
           </p>
         </>
       )}

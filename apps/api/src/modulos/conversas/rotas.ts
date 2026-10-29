@@ -162,7 +162,8 @@ export function rotasConversas(deps: DepsApi): Router {
   r.get('/:empresaId', async (req, res) => {
     const id = idDaRota(req, 'empresaId');
     const conversa = await repo.abrir(pool, id);
-    await repo.marcarLidas(pool, id);
+    // A diretoria (só leitura) olha sem tirar a conversa de "não lidas" da equipe.
+    if (req.usuario?.papelOrganizacao !== 'leitura') await repo.marcarLidas(pool, id);
     res.json(conversa);
   });
 

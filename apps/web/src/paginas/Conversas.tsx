@@ -16,7 +16,7 @@ import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
-import { Dono } from '../componentes/Sessao';
+import { Dono, useSoLeitura } from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
 import { fmtCidade, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
 import { ListaNaoIdentificados, PainelNaoIdentificado, useNaoIdentificados } from './NaoIdentificados';
@@ -703,6 +703,7 @@ function Conversa(props: {
   aoAbrirFicha: () => void;
 }) {
   const cliente = useQueryClient();
+  const soLeitura = useSoLeitura();
   const [marcando, setMarcando] = useState(false);
   const [respostas, setRespostas] = useState(false);
   const [pessoas, setPessoas] = useState<{ editar: ContatoLead | null } | null>(
@@ -776,27 +777,35 @@ function Conversa(props: {
             {c.cidade && ` · ${fmtCidade(c.cidade)}`}
             {c.telefone && <span className="mono"> · {formatarTelefone(c.telefone)}</span>}
           </span>
-          <EnviarPara
-            empresaId={c.empresaId}
-            telefone={c.telefone}
-            opcoes={c.opcoesEnvio}
-            aoMudar={atualizar}
-          />
+          {!soLeitura && (
+            <EnviarPara
+              empresaId={c.empresaId}
+              telefone={c.telefone}
+              opcoes={c.opcoesEnvio}
+              aoMudar={atualizar}
+            />
+          )}
         </div>
         <Dono id={c.responsavelId} nome={c.responsavelNome} tamanho={26} />
         <div className="acoes">
-          <Button size="sm" variant="ghost" icon="users" onClick={() => setPessoas({ editar: null })}>
-            Pessoas{confirmados ? ` (${confirmados})` : ''}
-          </Button>
-          <Button size="sm" variant="ghost" icon="calendar-plus" onClick={() => setMarcando(true)}>
-            Marcar reunião
-          </Button>
+          {!soLeitura && (
+            <>
+              <Button size="sm" variant="ghost" icon="users" onClick={() => setPessoas({ editar: null })}>
+                Pessoas{confirmados ? ` (${confirmados})` : ''}
+              </Button>
+              <Button size="sm" variant="ghost" icon="calendar-plus" onClick={() => setMarcando(true)}>
+                Marcar reunião
+              </Button>
+            </>
+          )}
           <Button size="sm" variant="ghost" icon="id-card" onClick={props.aoAbrirFicha}>
             Ficha
           </Button>
-          <Button size="sm" variant="ghost" icon="sticky-note" onClick={() => setRespostas(true)}>
-            Respostas rápidas
-          </Button>
+          {!soLeitura && (
+            <Button size="sm" variant="ghost" icon="sticky-note" onClick={() => setRespostas(true)}>
+              Respostas rápidas
+            </Button>
+          )}
         </div>
       </header>
       {c.agente && (
@@ -805,18 +814,21 @@ function Conversa(props: {
           {c.agentePausa ? (
             <>
               <span>A IA está pausada neste lead: {c.agentePausa}</span>
-              <button
-                type="button"
-                className="link-botao"
-                disabled={devolver.isPending}
-                onClick={() => devolver.mutate()}
-              >
-                Devolver para a IA
-              </button>
+              {!soLeitura && (
+                <button
+                  type="button"
+                  className="link-botao"
+                  disabled={devolver.isPending}
+                  onClick={() => devolver.mutate()}
+                >
+                  Devolver para a IA
+                </button>
+              )}
             </>
           ) : (
             <span>
-              A IA está conduzindo esta conversa. Se você responder, ela para e o lead fica com você.
+              A IA está conduzindo esta conversa.
+              {soLeitura ? '' : ' Se você responder, ela para e o lead fica com você.'}
             </span>
           )}
         </div>
@@ -827,7 +839,9 @@ function Conversa(props: {
           <b>A IA já sabe:</b> {c.agenteMemoria.join(' · ')}
         </div>
       )}
-      <FaixaIndicacoes conversa={c} aoRevisar={(x) => setPessoas({ editar: x })} aoMudar={atualizar} />
+      {!soLeitura && (
+        <FaixaIndicacoes conversa={c} aoRevisar={(x) => setPessoas({ editar: x })} aoMudar={atualizar} />
+      )}
       {c.mensagens.length ? (
         <Bolhas mensagens={c.mensagens} variasPessoas={variasPessoas} />
       ) : (
@@ -835,19 +849,27 @@ function Conversa(props: {
           <EmptyState
             icone="message-circle"
             titulo="Nenhuma mensagem ainda"
-            texto="Mande a primeira mensagem por aqui."
+            texto={
+              soLeitura ? 'A equipe ainda não falou com este lead.' : 'Mande a primeira mensagem por aqui.'
+            }
           />
         </div>
       )}
-      <Compositor
-        conversa={c}
-        aoEnviado={(nova) => {
-          cliente.setQueryData(chave, nova);
-          cliente.invalidateQueries({ queryKey: ['conversas'] });
-          cliente.invalidateQueries({ queryKey: ['quadro'] });
-        }}
-        aoGerenciarRespostas={() => setRespostas(true)}
-      />
+      {soLeitura ? (
+        <p className="chat__so-leitura">
+          Acesso só de leitura: você acompanha a conversa, a equipe responde.
+        </p>
+      ) : (
+        <Compositor
+          conversa={c}
+          aoEnviado={(nova) => {
+            cliente.setQueryData(chave, nova);
+            cliente.invalidateQueries({ queryKey: ['conversas'] });
+            cliente.invalidateQueries({ queryKey: ['quadro'] });
+          }}
+          aoGerenciarRespostas={() => setRespostas(true)}
+        />
+      )}
       {marcando && (
         <FormTarefa
           empresaId={c.empresaId}

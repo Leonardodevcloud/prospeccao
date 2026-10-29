@@ -13,6 +13,23 @@ export function useEhAdmin(): boolean {
   return s?.papel === 'admin' && s.papelOrganizacao !== 'leitura';
 }
 
+/** Acesso só de leitura (diretoria): vê tudo, não altera nada. Botões de ação nem aparecem. */
+export function useSoLeitura(): boolean {
+  return useSessao().data?.papelOrganizacao === 'leitura';
+}
+
+/** Telas que a leitura abre; as outras são de trabalho (prospectar, mandar mensagem, configurar). */
+export const TELAS_DA_LEITURA = [
+  '/',
+  '/organizacao',
+  '/organizacao/gestao',
+  '/funil',
+  '/conversas',
+  '/relatorios',
+  '/plano',
+  '/auditoria',
+];
+
 /** Quem administra a plataforma: só ele vê chaves, webhooks e o que é técnico. */
 export function useEhMaster(): boolean {
   return !!useSessao().data?.master;
