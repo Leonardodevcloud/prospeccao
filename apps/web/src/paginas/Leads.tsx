@@ -16,6 +16,7 @@ import {
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ImportarLeads } from '../componentes/ImportarLeads';
+import { PrimeirosPassos } from '../componentes/PrimeirosPassos';
 import { useEhAdmin, useSoLeitura } from '../componentes/Sessao';
 import { fmtCidade, fmtNome, fmtNota, fmtNumero, formatarTelefone, ROTULO_ORIGEM } from '../formatar';
 
@@ -265,6 +266,7 @@ export function Leads() {
           </select>
         </div>
       </div>
+      <PrimeirosPassos />
 
       <Tabs
         rotulo="Filtrar leads"

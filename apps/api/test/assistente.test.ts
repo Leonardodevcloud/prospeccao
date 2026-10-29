@@ -606,4 +606,25 @@ describe.skipIf(!URL_TESTE)('Argos: acesso aos dados por escopo', () => {
       await pool.query('DELETE FROM cadastro.usuarios WHERE id = $1', [cid]);
     }
   });
+
+  it('primeiros passos: conferidos nos dados e o administrador pode esconder', async () => {
+    const cookie = await entrar('beto@beta.com');
+    const r = await request(app).get('/inicio/primeiros-passos').set('Cookie', cookie);
+    expect(r.status).toBe(200);
+    const passo = (id: string) => r.body.passos.find((p: { id: string }) => p.id === id);
+    expect(passo('funil').feito).toBe(true);
+    expect(passo('nicho').feito).toBe(false);
+    expect(r.body.fechado).toBe(false);
+    const fechar = await request(app)
+      .post('/inicio/primeiros-passos/fechar')
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie);
+    expect(fechar.body.fechado).toBe(true);
+    // SDR não fecha a lista da conta.
+    const sara = await request(app)
+      .post('/inicio/primeiros-passos/fechar')
+      .set('Origin', ORIGEM)
+      .set('Cookie', await entrar('sara@alfa.com'));
+    expect(sara.status).toBe(403);
+  });
 });

@@ -177,3 +177,24 @@ export const organizacaoAtualizar = z
   })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
 export type OrganizacaoAtualizar = z.infer<typeof organizacaoAtualizar>;
+
+/* ───────────── Primeiros passos (tela inicial do administrador) ───────────── */
+
+export interface PassoInicial {
+  id: string;
+  titulo: string;
+  texto: string;
+  /** Tela onde se faz o passo. */
+  link: string;
+  /** Conferido nos dados (não é "marcar como feito"). */
+  feito: boolean;
+}
+
+export interface PrimeirosPassosDTO {
+  passos: PassoInicial[];
+  feitos: number;
+  total: number;
+  /** O administrador fechou a lista. */
+  fechado: boolean;
+  concluido: boolean;
+}

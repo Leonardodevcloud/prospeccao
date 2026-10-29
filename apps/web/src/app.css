@@ -6411,3 +6411,125 @@ label.plano-opcao[data-ativo] {
   font-size: 12px;
   padding: 0 6px;
 }
+
+/* Primeiros passos (tela inicial do administrador) */
+.passos-iniciais {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.passos-iniciais__topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.passos-iniciais__topo :where(h2) {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.passos-iniciais__topo :where(p) {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.passos-iniciais__barra {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.passos-iniciais__barra :where(span) {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  transition: width 0.3s ease;
+}
+.passos-iniciais__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+.passos-iniciais__lista :where(li) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.passos-iniciais__lista :where(li)[data-proximo] {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.passos-iniciais__lista :where(li)[data-feito] {
+  color: var(--ink-muted);
+}
+.passos-iniciais__marca {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+}
+.passos-iniciais__lista :where(li)[data-feito] .passos-iniciais__marca {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.passos-iniciais__texto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+.passos-iniciais__texto :where(b) {
+  font-size: 14px;
+  font-weight: 500;
+}
+.passos-iniciais__texto :where(span) {
+  color: var(--ink-muted);
+  line-height: 1.4;
+}
+.botao-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-size: 13px;
+  text-decoration: none;
+}
+.botao-link:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+.botao-link--prim {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.botao-link--prim:hover {
+  background: var(--brand-hover, var(--brand));
+  color: var(--on-brand);
+}
+.botao-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

@@ -32,6 +32,7 @@ import { rotasExportar } from './modulos/exportar/rotas.js';
 import { rotasFunil } from './modulos/funil/rotas.js';
 import { rotasImportacaoLeads } from './modulos/importacao-leads/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
+import { rotasInicio } from './modulos/inicio/rotas.js';
 import { rotasLgpd } from './modulos/lgpd/rotas.js';
 import { rotasMaster } from './modulos/master/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
@@ -117,6 +118,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/importacoes', adminParaAlterar, rotasImportacoes(deps));
   protegidas.use('/importacoes-leads', rotasImportacaoLeads(deps));
   protegidas.use('/equipe', rotasEquipe(deps));
+  protegidas.use('/inicio', rotasInicio(deps));
   protegidas.use('/organizacao', rotasOrganizacao(deps));
   protegidas.use('/lgpd', rotasLgpd(deps));
   protegidas.use('/notificacoes', rotasNotificacoes(deps));

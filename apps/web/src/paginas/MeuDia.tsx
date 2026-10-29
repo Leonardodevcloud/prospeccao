@@ -8,6 +8,7 @@ import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ConectarGoogle } from '../componentes/MinhaConta';
+import { PrimeirosPassos } from '../componentes/PrimeirosPassos';
 import { Radar } from '../componentes/Radar';
 import { useEhAdmin, useEquipe, useSessao } from '../componentes/Sessao';
 import { FormTarefa, LinhaTarefa } from '../componentes/Tarefas';
@@ -285,6 +286,7 @@ export function MeuDia() {
           </Button>
         </div>
       </div>
+      <PrimeirosPassos />
 
       <ErroDaApi erro={q.error} />
       {q.isPending ? (
