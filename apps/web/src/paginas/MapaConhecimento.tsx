@@ -213,8 +213,9 @@ export function MapaConhecimento() {
       )}
       {dados && !empresas && (
         <p className="mapa-tela__aviso">
-          Ainda não há negociações para mostrar. Quando a equipe mandar leads para o funil, eles aparecem
-          aqui.
+          {dados.soPropriaBase
+            ? 'Você ainda não é responsável por nenhuma negociação. Quando um lead ficar com você no funil, ele aparece aqui.'
+            : 'Ainda não há negociações para mostrar. Quando a equipe mandar leads para o funil, eles aparecem aqui.'}
         </p>
       )}
       {dados && empresas > 0 && falhou3d && (
@@ -228,6 +229,11 @@ export function MapaConhecimento() {
             ))}
           </ul>
         </div>
+      )}
+      {dados?.soPropriaBase && empresas > 0 && (
+        <p className="mapa-tela__selo">
+          Mostrando só a sua base: as negociações em que você é a responsável.
+        </p>
       )}
       {dados?.cortado && (
         <p className="mapa-tela__dica">

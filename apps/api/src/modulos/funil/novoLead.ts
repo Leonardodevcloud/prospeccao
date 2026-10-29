@@ -11,6 +11,7 @@ import {
   siteDoTexto,
   ufDoTelefone,
 } from '@prospeccao/shared';
+import { exigirPodeAtribuir } from '../../base.js';
 import { conta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { leadPorTelefone } from '../agente/repositorio.js';
@@ -102,7 +103,10 @@ export async function criarLeadManual(
   const jaExistia = r.jaNoFunil > 0;
   if (!jaExistia) {
     if (d.etapaId) await atualizar(pool, empresaId, { etapaId: d.etapaId }, autor);
-    if (d.responsavelId) await definirResponsavel(pool, empresaId, d.responsavelId, 'cadastro manual');
+    if (d.responsavelId) {
+      exigirPodeAtribuir(d.responsavelId);
+      await definirResponsavel(pool, empresaId, d.responsavelId, 'cadastro manual');
+    }
     if (d.agente) await atualizar(pool, empresaId, { agente: true }, autor);
   }
   if (lead.observacao)

@@ -5,7 +5,7 @@ import { api, type Chip } from '../api';
 import { fmtHoraSo, fmtNumero, fmtQuando } from '../formatar';
 import { Modal } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
-import { useEhAdmin, useEhMaster } from './Sessao';
+import { useEhAdmin, useEhMaster, useEquipe } from './Sessao';
 
 interface TelaChips {
   chips: Chip[];
@@ -104,11 +104,12 @@ function ConectarNumero(props: { chip: Pick<Chip, 'id' | 'nome'>; aoFechar: () =
 function LinhaChip(props: { c: Chip; admin: boolean; master: boolean; conectar: (c: Chip) => void }) {
   const { c } = props;
   const cliente = useQueryClient();
+  const equipe = useEquipe();
   const [limite, setLimite] = useState(String(c.limiteDia));
   const [apagar, setApagar] = useState(false);
   const atualizar = () => cliente.invalidateQueries({ queryKey: ['agente', 'chips'] });
   const editar = useMutation({
-    mutationFn: (d: { ativo?: boolean; limiteDia?: number; aquecer?: boolean }) =>
+    mutationFn: (d: { ativo?: boolean; limiteDia?: number; aquecer?: boolean; usuarioId?: number | null }) =>
       api(`/agente/chips/${c.id}`, { metodo: 'PATCH', corpo: d }),
     onSuccess: atualizar,
   });
@@ -136,6 +137,32 @@ function LinhaChip(props: { c: Chip; admin: boolean; master: boolean; conectar: 
         <b>{c.nome}</b>
         {c.numero && <span className="quieto">{fmtNumeroWhatsapp(c.numero)}</span>}
         {props.master && <span className="quieto mono">{c.instancia}</span>}
+        {props.admin ? (
+          <span className="chip-linha__dono">
+            <label htmlFor={`chip-dono-${c.id}`} className="quieto">
+              De quem é
+            </label>
+            <select
+              id={`chip-dono-${c.id}`}
+              className="filtro"
+              value={c.usuarioId ?? ''}
+              disabled={editar.isPending}
+              title="Número próprio de um comercial: os leads novos que chegam por ele ficam com essa pessoa"
+              onChange={(e) => editar.mutate({ usuarioId: e.target.value ? Number(e.target.value) : null })}
+            >
+              <option value="">Número da equipe</option>
+              {equipe.data?.usuarios
+                .filter((u) => u.ativo || u.id === c.usuarioId)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+            </select>
+          </span>
+        ) : (
+          c.usuarioNome && <span className="quieto">Número de {c.usuarioNome}</span>
+        )}
       </div>
       {ligado || c.numero ? (
         <div className="chip-linha__uso">

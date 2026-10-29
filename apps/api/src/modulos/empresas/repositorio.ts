@@ -1,6 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import type { FiltrosEmpresas } from '@prospeccao/shared';
-import { contaSql } from '../../contexto.js';
+import { contaSql, empresaVisivel } from '../../contexto.js';
 import { visivel } from '../../visibilidade.js';
 
 /**
@@ -100,6 +100,8 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
     );
   if (f.faixa === 'pendente') where.push(`(l.status IS NULL OR l.status <> 'concluido')`);
   else if (f.faixa) where.push(`l.faixa = ${p(f.faixa)}`);
+  // Quem vê só a própria base não vê os leads que estão com colegas.
+  where.push(empresaVisivel('e.id'));
   // MEI não contrata o serviço: fora da lista, a menos que peça para ver.
   if (!f.incluirMei) where.push('NOT e.mei');
   if (f.situacao === 'novos') where.push('op.empresa_id IS NULL');

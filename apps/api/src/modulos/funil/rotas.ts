@@ -11,7 +11,8 @@ import {
   pipelineEntrada,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
-import { contaSql } from '../../contexto.js';
+import { exigirPodeAtribuir, travaDaBase } from '../../base.js';
+import { contaSql, naBase } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
@@ -26,6 +27,8 @@ const autor = (req: Request) => req.usuario?.nome ?? 'sistema';
 export function rotasFunil(deps: DepsApi): Router {
   const { pool, log } = deps;
   const r = Router();
+  // Quem vê só a própria base não abre nem mexe em lead de colega.
+  r.param('empresaId', travaDaBase(pool));
 
   /** Quadro: cards de todas as etapas (menos descartados) e quantos follow-ups vencem hoje. */
   r.get('/', async (req, res) => {
@@ -65,7 +68,8 @@ export function rotasFunil(deps: DepsApi): Router {
 
   r.get('/etiquetas', async (_req, res) => {
     const { rows } = await pool.query<{ e: string }>(
-      `SELECT DISTINCT unnest(etiquetas) AS e FROM comercial.oportunidades WHERE conta_id = ${contaSql()}
+      `SELECT DISTINCT unnest(o.etiquetas) AS e FROM comercial.oportunidades o
+        WHERE o.conta_id = ${contaSql()} AND ${naBase('o')}
         ORDER BY 1 LIMIT 200`,
     );
     res.json(rows.map((x) => x.e));
@@ -124,7 +128,9 @@ export function rotasFunil(deps: DepsApi): Router {
   /** Mover de etapa, reordenar, próximo passo, valor. */
   r.patch('/:empresaId', async (req, res) => {
     const id = idDaRota(req, 'empresaId');
-    await repo.atualizar(pool, id, corpo(req, funilAtualizar), autor(req));
+    const d = corpo(req, funilAtualizar);
+    if (d.responsavelId !== undefined) exigirPodeAtribuir(d.responsavelId);
+    await repo.atualizar(pool, id, d, autor(req));
     res.json(await repo.detalhe(pool, id));
   });
 

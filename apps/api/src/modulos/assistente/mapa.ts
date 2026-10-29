@@ -36,6 +36,7 @@ export async function montarMapa(
   unidade?: number | null,
 ): Promise<MapaDTO> {
   const escopo = await escopoDe(dono, u);
+  const soPropriaBase = !!escopo.dono;
   const assinado = assinarEscopo(chave, escopo, 120);
   const [unidades, funil] = await Promise.all([
     consultar(leitura, assinado, 'SELECT unidade_id, unidade FROM unidades ORDER BY unidade', [], {
@@ -159,6 +160,7 @@ export async function montarMapa(
     ligacoes,
     unidades: unidades.linhas.map((l) => ({ id: Number(l.unidade_id), nome: String(l.unidade) })),
     cortado: funil.cortado,
+    soPropriaBase,
     geradoEm: new Date().toISOString(),
   };
 }

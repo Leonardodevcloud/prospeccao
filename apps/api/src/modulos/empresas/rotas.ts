@@ -1,11 +1,14 @@
 import { AppError, feedbackEntrada, filtrosEmpresas } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
+import { travaDaBase } from '../../base.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import * as repo from './repositorio.js';
 
 export function rotasEmpresas({ pool, filas }: DepsApi): Router {
   const r = Router();
+  // Quem vê só a própria base não abre a ficha de lead de colega.
+  r.param('id', travaDaBase(pool));
 
   r.get('/', async (req, res) => {
     res.json(await repo.listar(pool, consulta(req, filtrosEmpresas)));

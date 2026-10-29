@@ -15,7 +15,7 @@ import {
   type PassoSequencia,
   type VariaveisEmail,
 } from '@prospeccao/shared';
-import { contaSql, usuarioAtual } from '../../contexto.js';
+import { contaSql, empresaNaBase, usuarioAtual } from '../../contexto.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { visivel } from '../../visibilidade.js';
 import { obterConfig as configCadencia } from '../funil/cadencia.js';
@@ -826,7 +826,7 @@ export async function envios(
   },
 ) {
   const C = contaSql();
-  const where = [`en.conta_id = ${C}`];
+  const where = [`en.conta_id = ${C}`, empresaNaBase('en.empresa_id')];
   const valores: unknown[] = [];
   const p = (v: unknown) => {
     valores.push(v);
@@ -874,6 +874,7 @@ export async function respostas(db: Executor, f: { classe?: ClasseResposta; naoL
        LEFT JOIN comercial.envios_email en ON en.id = r.envio_id
        LEFT JOIN comercial.campanhas_email ce ON ce.id = en.campanha_email_id
       WHERE r.conta_id = ${contaSql()} AND ($1::text IS NULL OR r.classe = $1) AND (NOT $2 OR r.lida_em IS NULL)
+        AND ${empresaNaBase('r.empresa_id')}
       ORDER BY r.recebido_em DESC LIMIT 300`,
     [f.classe ?? null, f.naoLidas ?? false],
   );
@@ -888,8 +889,9 @@ export async function resumo(db: Executor) {
             (SELECT count(*) FROM comercial.envios_email en JOIN comercial.campanhas_email ce
                 ON ce.id = en.campanha_email_id
               WHERE en.conta_id = ${C} AND en.status = 'na_fila' AND ce.status = 'enviando')::int AS "naFila",
-            (SELECT count(*) FROM comercial.respostas_email
-              WHERE conta_id = ${C} AND lida_em IS NULL AND classe <> 'automatica')::int AS "respostasNaoLidas"`,
+            (SELECT count(*) FROM comercial.respostas_email r
+              WHERE r.conta_id = ${C} AND r.lida_em IS NULL AND r.classe <> 'automatica'
+                AND ${empresaNaBase('r.empresa_id')})::int AS "respostasNaoLidas"`,
   );
   return rows[0]!;
 }

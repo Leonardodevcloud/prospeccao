@@ -880,6 +880,8 @@ export interface TelaRadar {
 /* ───────────────────────────── Equipe ───────────────────────────── */
 
 export type PapelUsuario = 'admin' | 'sdr' | 'closer';
+/** O que a pessoa vê da unidade no Argos e no mapa: tudo ou só a própria base. */
+export type Alcance = 'unidade' | 'proprios';
 export const ROTULO_PAPEL_USUARIO: Record<PapelUsuario, string> = {
   admin: 'Administrador',
   sdr: 'SDR',
@@ -911,6 +913,8 @@ export interface Sessao {
   marca: { nome: string | null; cor: string | null; logo: string | null } | null;
   /** Papel na organização inteira: gestor (administra todas as unidades) ou leitura (só olha). */
   papelOrganizacao: 'gestor' | 'leitura' | null;
+  /** Vê só a própria base: as negociações em que é a responsável (o gestor escolhe na Equipe). */
+  soPropriaBase: boolean;
   /** O cliente (organização) e quantas unidades ativas ele tem. */
   organizacao: { id: number; nome: string; unidades: number } | null;
   /** Master (ou gestor) dentro de outra conta/unidade. */
@@ -930,6 +934,7 @@ export interface UsuarioEquipe {
   papel: PapelUsuario;
   ativo: boolean;
   recebeLeads: boolean;
+  alcance: Alcance;
   telefone: string | null;
   convitePendente: boolean;
   ultimoAcesso: string | null;
@@ -1523,6 +1528,9 @@ export interface ItemAuditoria {
 export interface Chip {
   id: number;
   nome: string;
+  /** Comercial dono do número (null: número da equipe). */
+  usuarioId: number | null;
+  usuarioNome: string | null;
   instancia: string;
   ativo: boolean;
   limiteDia: number;

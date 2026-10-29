@@ -6384,3 +6384,30 @@ label.plano-opcao[data-ativo] {
     order: -1;
   }
 }
+.mapa-tela__selo {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  translate: -50% 0;
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgb(94 234 212 / 0.35);
+  background: rgb(5 7 12 / 0.75);
+  color: #99f6e4;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.chip-linha__dono {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.chip-linha__dono select {
+  height: 28px;
+  font-size: 12px;
+  padding: 0 6px;
+}

@@ -12,6 +12,7 @@ import {
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
+import { exigirVisivel, travaDaBase } from '../../base.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
@@ -32,6 +33,8 @@ function telefoneDaRota(req: Request): string {
 export function rotasConversas(deps: DepsApi): Router {
   const { pool } = deps;
   const r = Router();
+  // Quem vê só a própria base não abre conversa de lead de colega.
+  r.param('empresaId', travaDaBase(pool));
 
   r.get('/', async (req, res) => {
     res.json(await repo.listar(pool, consulta(req, filtrosConversas), req.usuario!.id));
@@ -91,6 +94,7 @@ export function rotasConversas(deps: DepsApi): Router {
   /** Vincula o número a um lead: vira contato da negociação e as mensagens vão para a conversa dele. */
   r.post('/nao-identificados/:telefone/vincular', async (req, res) => {
     const d = corpo(req, vincularEntrada);
+    await exigirVisivel(pool, d.empresaId);
     await trazerConversa(pool, telefoneDaRota(req), { ...d, autor: req.usuario!.nome });
     res.status(201).json(await repo.abrir(pool, d.empresaId));
   });

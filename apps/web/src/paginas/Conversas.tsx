@@ -16,7 +16,7 @@ import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
-import { Dono, useSoLeitura } from '../componentes/Sessao';
+import { Dono, useSoLeitura, useSoPropriaBase } from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
 import { fmtCidade, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
 import { ListaNaoIdentificados, PainelNaoIdentificado, useNaoIdentificados } from './NaoIdentificados';
@@ -892,6 +892,7 @@ function Conversa(props: {
 }
 
 export function Conversas() {
+  const soPropriaBase = useSoPropriaBase();
   const [params, setParams] = useSearchParams();
   const filtro =
     (params.get('filtro') as 'todas' | 'nao_lidas' | 'minhas' | 'nao_identificados' | null) ?? 'todas';
@@ -928,7 +929,7 @@ export function Conversas() {
   const FILTROS: { id: typeof filtro; rotulo: string }[] = [
     { id: 'todas', rotulo: 'Todas' },
     { id: 'nao_lidas', rotulo: 'Não lidas' },
-    { id: 'minhas', rotulo: 'Meus leads' },
+    ...(soPropriaBase ? [] : [{ id: 'minhas' as const, rotulo: 'Meus leads' }]),
     ...(totalSoltos || soltos
       ? [{ id: 'nao_identificados' as const, rotulo: `Sem lead${totalSoltos ? ` (${totalSoltos})` : ''}` }]
       : []),

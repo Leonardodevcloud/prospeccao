@@ -14,7 +14,7 @@ import { fmtNumero } from '../formatar';
 import { fmtTamanho, lerBase64 } from '../paginas/EmailMarca';
 import { Modal } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
-import { useEquipe } from './Sessao';
+import { useEquipe, useSoPropriaBase } from './Sessao';
 
 type Passo = 'arquivo' | 'colunas' | 'destino' | 'andamento';
 
@@ -369,6 +369,7 @@ function EscolherDestino(props: { d: Destino; setD: (d: Destino) => void; leads:
   const nichos = useQuery({ queryKey: ['nichos'], queryFn: () => api<Nicho[]>('/nichos') });
   const campanhas = useQuery({ queryKey: ['campanhas'], queryFn: () => api<Campanha[]>('/campanhas') });
   const equipe = useEquipe();
+  const soPropriaBase = useSoPropriaBase();
   const abertas = campanhas.data?.filter((c) => c.status !== 'encerrada') ?? [];
   const pessoas = equipe.data?.usuarios.filter((u) => u.ativo && !u.convitePendente) ?? [];
 
@@ -487,7 +488,7 @@ function EscolherDestino(props: { d: Destino; setD: (d: Destino) => void; leads:
             </span>
           </span>
         </label>
-        {d.funil && (
+        {d.funil && !soPropriaBase && (
           <div className="campo" style={{ paddingLeft: 28, maxWidth: 420 }}>
             <label htmlFor="imp-resp">Quem recebe</label>
             <select

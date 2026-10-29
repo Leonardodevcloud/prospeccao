@@ -408,9 +408,12 @@ export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
   type Recebida = NonNullable<ReturnType<typeof interpretarWebhook>>;
 
   /** Primeira mensagem de um número desconhecido: avisa os administradores (uma vez por número). */
-  async function avisarNaoIdentificado(m: Recebida) {
+  async function avisarNaoIdentificado(m: Recebida, chipId: number | null) {
+    // Os administradores e, se o número tem dono, o comercial dono dele.
     const { rows } = await pool.query<{ id: number }>(
-      `SELECT id FROM cadastro.usuarios WHERE conta_id = ${contaSql()} AND papel = 'admin' AND ativo`,
+      `SELECT id FROM cadastro.usuarios WHERE conta_id = ${contaSql()} AND ativo
+          AND (papel = 'admin' OR id = (SELECT usuario_id FROM comercial.chips WHERE id = $1 AND conta_id = ${contaSql()}))`,
+      [chipId],
     );
     const tel = m.telefone.replace(/^(\d{2})(\d+)(\d{4})$/, '($1) $2-$3');
     for (const u of rows)
@@ -462,6 +465,7 @@ export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
       if (daConta) {
         await funil.adicionar(pool, { empresaIds: [daConta], etapa: 'a_abordar', forcar: true }, 'WhatsApp');
         achado = await repo.leadPorTelefone(pool, m.telefone);
+        if (achado) await chips.entregarAoDonoDoNumero(pool, achado.empresaId, chipId);
       }
     }
     if (!achado && (await repo.obterConfig(pool)).conversaNova === 'criar_lead') {
@@ -481,6 +485,7 @@ export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
         );
         log.info({ empresaId }, 'agente: conversa nova no WhatsApp virou lead');
         achado = await repo.leadPorTelefone(pool, m.telefone);
+        await chips.entregarAoDonoDoNumero(pool, empresaId, chipId);
       } catch (erro) {
         log.warn(
           { err: erro },
@@ -501,7 +506,7 @@ export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
         chipId,
         em: m.em,
       });
-      if (primeira && !m.deMim) await avisarNaoIdentificado(m);
+      if (primeira && !m.deMim) await avisarNaoIdentificado(m, chipId);
       return;
     }
     const { empresaId, contatoId } = achado;

@@ -1,6 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import type { FiltrosRelatorio } from '@prospeccao/shared';
-import { contaSql } from '../../contexto.js';
+import { contaSql, empresaNaBase, naBase } from '../../contexto.js';
 import { visivel } from '../../visibilidade.js';
 
 /**
@@ -18,8 +18,10 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
   const daConta = (col: string) =>
     `EXISTS (SELECT 1 FROM descoberta.campanha_empresas cc WHERE cc.empresa_id = ${col} AND cc.conta_id = ${C} AND cc.liberado_em IS NOT NULL)`;
   const noPeriodo = (col: string) => `($1::int = 0 OR ${col} >= now() - make_interval(days => $1::int))`;
+  // Do funil para frente (negociações, contatos, perdas): quem vê só a própria base vê só os dela.
   const daCampanha = (col: string) =>
-    `($2::bigint IS NULL OR EXISTS (SELECT 1 FROM descoberta.campanha_empresas cx WHERE cx.empresa_id = ${col} AND cx.campanha_id = $2))`;
+    `($2::bigint IS NULL OR EXISTS (SELECT 1 FROM descoberta.campanha_empresas cx WHERE cx.empresa_id = ${col} AND cx.campanha_id = $2))
+     AND ${empresaNaBase(col)}`;
 
   // Leads encontrados no período (uma linha por empresa), com nota, decisor e WhatsApp.
   const LEADS = `
@@ -65,11 +67,11 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
               (SELECT count(DISTINCT empresa_id) FROM atv WHERE tipo = 'etapa' AND para_etapa = 'perdido')::int AS perdidos,
               (SELECT count(*) FROM atv WHERE tipo NOT IN ('nota', 'etapa'))::int AS contatos,
               (SELECT coalesce(sum(o.valor_mensal), 0)::float8 FROM comercial.oportunidades o
-                WHERE o.conta_id = ${C} AND o.etapa = 'ganho' AND o.empresa_id IN (SELECT empresa_id FROM atv
+                WHERE o.conta_id = ${C} AND o.etapa = 'ganho' AND ${naBase('o')} AND o.empresa_id IN (SELECT empresa_id FROM atv
                   WHERE tipo = 'etapa' AND para_etapa = 'ganho')) AS "valorGanho",
               (SELECT count(*) FROM comercial.oportunidades o WHERE o.conta_id = ${C}
                  AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
-                 AND o.proxima_acao_em < now())::int AS "followupsAtrasados",
+                 AND o.proxima_acao_em < now() AND ${naBase('o')})::int AS "followupsAtrasados",
               (SELECT count(*) FROM comercial.oportunidades o WHERE o.conta_id = ${C}
                  AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')
                  AND o.proxima_acao_em IS NULL AND ${daCampanha('o.empresa_id')})::int AS "semProximoPasso"`,

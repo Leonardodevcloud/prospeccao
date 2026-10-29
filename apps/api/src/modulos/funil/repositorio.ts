@@ -8,7 +8,7 @@ import {
   type FunilAtualizar,
   ORDEM_ETAPA,
 } from '@prospeccao/shared';
-import { contaSql, usuarioAtual } from '../../contexto.js';
+import { contaSql, empresaVisivel, naBase, usuarioAtual } from '../../contexto.js';
 import { visivel } from '../../visibilidade.js';
 import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { pararSequencia } from '../email/sequencia.js';
@@ -221,7 +221,7 @@ export async function adicionar(pool: Pool, d: FunilAdicionar, autor: string): P
     const { rows: existentes } = await tx.query<{ id: number; etapa: EtapaFunil | null }>(
       `SELECT e.id::int, o.etapa FROM descoberta.empresas e
          LEFT JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = e.id
-        WHERE e.id = ANY($1::bigint[]) AND ${daConta('e.id')}`,
+        WHERE e.id = ANY($1::bigint[]) AND ${daConta('e.id')} AND ${empresaVisivel('e.id')}`,
       [ids],
     );
     const r: ResultadoAdicionar = {
@@ -555,6 +555,7 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
   const where = [
     `o.conta_id = ${C}`,
     `o.etapa <> 'descartado'`,
+    naBase('o'),
     `o.etapa_id IN (SELECT id FROM comercial.etapas WHERE pipeline_id = ${p(pipelineId)})`,
   ];
   if (f.etiqueta) where.push(`${p(f.etiqueta)} = ANY(o.etiquetas)`);
@@ -626,11 +627,12 @@ export async function quadro(db: Executor, f: FiltrosFunil) {
     `SELECT count(*) FILTER (WHERE proxima_acao_em < ${FIM_DE_HOJE}
                                AND etapa NOT IN ('ganho', 'perdido', 'descartado'))::int AS pendentes,
             count(*) FILTER (WHERE etapa = 'descartado')::int AS descartados
-       FROM comercial.oportunidades WHERE conta_id = ${C}`,
+       FROM comercial.oportunidades o WHERE o.conta_id = ${C} AND ${naBase('o')}`,
   );
   const cfg = await obterConfig(db);
   const { rows: etiquetas } = await db.query<{ e: string }>(
-    `SELECT DISTINCT unnest(etiquetas) AS e FROM comercial.oportunidades WHERE conta_id = ${C} ORDER BY 1 LIMIT 100`,
+    `SELECT DISTINCT unnest(o.etiquetas) AS e FROM comercial.oportunidades o
+      WHERE o.conta_id = ${C} AND ${naBase('o')} ORDER BY 1 LIMIT 100`,
   );
   return {
     pipelineId,

@@ -94,6 +94,14 @@ export async function escopoDe(pool: Pool, u: UsuarioSessao): Promise<Escopo & {
       }`,
     };
   }
+  // Na unidade: a pessoa vê a unidade toda ou só a própria base (o gestor escolhe na Equipe).
+  if (u.soPropriaBase)
+    return {
+      tudo: false,
+      contas: [u.contaId],
+      dono: u.id,
+      descricao: `só a base de ${u.nome} na unidade ${u.contaNome}: as negociações em que é a responsável, as tarefas dela e o que vem dessas empresas. Configurações da unidade (nichos, campanhas, etapas) aparecem; o resto da equipe e o consumo de IA, não. Se perguntarem da unidade toda, explique que o acesso é só da própria base.`,
+    };
   return { tudo: false, contas: [u.contaId], descricao: `só a unidade ${u.contaNome}.` };
 }
 

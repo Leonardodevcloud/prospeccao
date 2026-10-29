@@ -7,7 +7,7 @@ import {
   type UsuarioAtualizar,
   type UsuarioNovo,
 } from '@prospeccao/shared';
-import { contaSql, usuarioAtual } from '../../contexto.js';
+import { contaSql, donoDaBase, usuarioAtual } from '../../contexto.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import { exigirVagaDeUsuario } from '../plano/repositorio.js';
 
@@ -29,7 +29,7 @@ export async function listar(db: Executor) {
   const C = contaSql();
   const [usuarios, cfg] = await Promise.all([
     db.query(
-      `SELECT u.id, u.nome, u.email, u.papel, u.ativo, u.recebe_leads AS "recebeLeads", u.telefone,
+      `SELECT u.id, u.nome, u.email, u.papel, u.ativo, u.recebe_leads AS "recebeLeads", u.alcance, u.telefone,
               (u.senha_hash IS NULL) AS "convitePendente", u.ultimo_acesso AS "ultimoAcesso",
               (SELECT count(*)::int FROM comercial.oportunidades o
                 WHERE o.conta_id = ${C} AND o.responsavel_id = u.id AND ${ABERTO}) AS "leadsAbertos",
@@ -57,11 +57,18 @@ export async function criar(db: Executor, d: UsuarioNovo): Promise<{ id: number;
   await exigirVagaDeUsuario(db);
   const token = novoToken();
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO cadastro.usuarios (nome, email, papel, telefone, convite_token, convite_expira, conta_id)
-     VALUES ($1, $2, $3, $4, $5, now() + make_interval(days => ${DIAS_CONVITE}), ${contaSql()})
+    `INSERT INTO cadastro.usuarios (nome, email, papel, telefone, convite_token, convite_expira, conta_id, alcance)
+     VALUES ($1, $2, $3, $4, $5, now() + make_interval(days => ${DIAS_CONVITE}), ${contaSql()}, $6)
      ON CONFLICT ((lower(email))) DO NOTHING
      RETURNING id`,
-    [d.nome, d.email, d.papel, d.telefone ?? null, token],
+    [
+      d.nome,
+      d.email,
+      d.papel,
+      d.telefone ?? null,
+      token,
+      d.papel === 'admin' ? 'unidade' : (d.alcance ?? 'unidade'),
+    ],
   );
   if (!rows[0])
     throw AppError.conflito('Já existe alguém com este e-mail (nesta ou em outra empresa do sistema).');
@@ -115,6 +122,10 @@ export async function atualizar(db: Executor, id: number, d: UsuarioAtualizar): 
   if (d.papel !== undefined) set('papel', d.papel);
   if (d.ativo !== undefined) set('ativo', d.ativo);
   if (d.recebeLeads !== undefined) set('recebe_leads', d.recebeLeads);
+  // Administrador sempre vê a unidade toda.
+  const papelFinal = d.papel ?? u.papel;
+  if (papelFinal === 'admin') set('alcance', 'unidade');
+  else if (d.alcance !== undefined) set('alcance', d.alcance);
   if (d.telefone !== undefined) set('telefone', d.telefone);
   if (sets.length)
     await db.query(
@@ -219,6 +230,9 @@ export async function definirResponsavel(
 
 /** Lead que entrou no funil: rodízio entre os SDRs, ou fica com quem mandou. */
 export async function atribuirNaEntrada(db: Executor, empresaId: number): Promise<void> {
+  // Quem trabalha só a própria base fica com o lead que pôs no funil (fora do rodízio).
+  const dono = donoDaBase();
+  if (dono) return definirResponsavel(db, empresaId, dono);
   const cfg = await obterDistribuicao(db);
   const quem = usuarioDaConta();
   const id = cfg.sdr === 'rodizio' ? ((await proximoDoRodizio(db, 'sdr')) ?? quem) : quem;
@@ -315,7 +329,7 @@ export async function desempenho(db: Executor, dias: number) {
        LEFT JOIN etapas et ON et.usuario_id = u.id
        LEFT JOIN valor v ON v.usuario_id = u.id
        LEFT JOIN abertos ab ON ab.usuario_id = u.id
-      WHERE u.ativo AND u.conta_id = ${C}
+      WHERE u.ativo AND u.conta_id = ${C} AND (${donoDaBase() ?? 'NULL'}::int IS NULL OR u.id = ${donoDaBase() ?? 'NULL'}::int)
       ORDER BY coalesce(et.ganhos, 0) DESC, coalesce(et.reunioes, 0) DESC, coalesce(c.periodo, 0) DESC, u.nome`,
   );
   return rows;

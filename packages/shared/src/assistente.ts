@@ -135,6 +135,8 @@ export interface MapaDTO {
   unidades: { id: number; nome: string }[];
   /** Havia mais empresas do que cabem no mapa (mostra as mais recentes). */
   cortado: boolean;
+  /** A pessoa vê só a própria base (as negociações em que é a responsável). */
+  soPropriaBase: boolean;
   geradoEm: string;
 }
 

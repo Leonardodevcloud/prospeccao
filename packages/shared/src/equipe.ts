@@ -27,13 +27,22 @@ const telefone = z
   .refine((v) => v === '' || /^\d{10,11}$/.test(v), 'Telefone com DDD, ex.: 71 99999-0000.')
   .transform((v) => v || null);
 
+/** O que a pessoa vê da unidade: tudo ou só a própria base (as negociações em que é a responsável). */
+export const ALCANCES = ['unidade', 'proprios'] as const;
+export type Alcance = (typeof ALCANCES)[number];
+export const ROTULO_ALCANCE: Record<Alcance, string> = {
+  unidade: 'A unidade toda',
+  proprios: 'Só a própria base',
+};
+
 export const usuarioNovo = z.object({
   nome: z.string().trim().min(2, 'Informe o nome.').max(80),
   email: z.string().trim().toLowerCase().email('E-mail inválido.'),
   papel: z.enum(PAPEIS_USUARIO),
   telefone: telefone.optional(),
+  alcance: z.enum(ALCANCES).default('unidade'),
 });
-export type UsuarioNovo = z.infer<typeof usuarioNovo>;
+export type UsuarioNovo = Omit<z.infer<typeof usuarioNovo>, 'alcance'> & { alcance?: Alcance };
 
 export const metasEntrada = z.object({
   abordagensDia: z.number().int().min(0).max(1000),
@@ -48,6 +57,7 @@ export const usuarioAtualizar = z
     papel: z.enum(PAPEIS_USUARIO).optional(),
     ativo: z.boolean().optional(),
     recebeLeads: z.boolean().optional(),
+    alcance: z.enum(ALCANCES).optional(),
     telefone: telefone.optional(),
     metas: metasEntrada.optional(),
   })

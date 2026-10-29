@@ -148,6 +148,8 @@ export const chipAtualizar = z
     limiteDia: z.number().int().min(1).max(1000).optional(),
     aquecer: z.boolean().optional(),
     diasDeUso: z.number().int().min(0).max(3650).optional(),
+    /** Comercial dono do número (null: número da equipe). */
+    usuarioId: z.number().int().positive().nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
 

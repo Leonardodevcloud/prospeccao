@@ -27,6 +27,11 @@ export interface UsuarioSessao {
   sessaoId: string | null;
   /** A organização exige duas etapas e a pessoa ainda não configurou. */
   precisaDuasEtapas: boolean;
+  /**
+   * Vê só a própria base: as negociações em que é a responsável (o gestor escolhe na Equipe). Vale
+   * no funil, nos leads, nas conversas, no Argos e no mapa. Administrador sempre vê a unidade toda.
+   */
+  soPropriaBase: boolean;
 }
 
 interface Contexto {
@@ -58,6 +63,41 @@ export function conta(): number {
  */
 export function contaSql(): string {
   return String(conta());
+}
+
+/** Quem vê só a própria base: o id dessa pessoa; quem vê a unidade toda: null. */
+export function donoDaBase(): number | null {
+  const u = usuarioAtual();
+  return u?.soPropriaBase ? u.id : null;
+}
+
+/** Filtro SQL: a negociação (alias de comercial.oportunidades) está na base de quem está logado. */
+export function naBase(alias = 'o'): string {
+  const d = donoDaBase();
+  return d ? `${alias}.responsavel_id = ${d}` : 'true';
+}
+
+/**
+ * Filtro SQL: a empresa não é de um colega. Para quem vê só a própria base, some o que está no funil
+ * com outra pessoa (ou sem dono, esperando a distribuição); o que ainda não entrou no funil (ou foi
+ * descartado) continua aparecendo para ser trabalhado.
+ */
+export function empresaVisivel(coluna: string): string {
+  const d = donoDaBase();
+  return d
+    ? `NOT EXISTS (SELECT 1 FROM comercial.oportunidades rb
+                    WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna} AND rb.etapa <> 'descartado'
+                      AND rb.responsavel_id IS DISTINCT FROM ${d})`
+    : 'true';
+}
+
+/** Filtro SQL: a empresa está em negociação com quem está logado (as mensagens, o histórico). */
+export function empresaNaBase(coluna: string): string {
+  const d = donoDaBase();
+  return d
+    ? `EXISTS (SELECT 1 FROM comercial.oportunidades rb
+                WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna} AND rb.responsavel_id = ${d})`
+    : 'true';
 }
 
 export function comUsuario<T>(usuario: UsuarioSessao, fn: () => T): T {

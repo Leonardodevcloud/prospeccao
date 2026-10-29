@@ -47,9 +47,10 @@ export async function carregarUsuario(
     organizacao_id: number;
     totp_ativo: boolean;
     exigir_2fa: boolean;
+    alcance: string;
   }>(
     `SELECT u.id, u.nome, u.email, u.papel, u.master, u.conta_id, (c.ativa AND o.ativa) AS conta_ativa,
-            c.organizacao_id, u.totp_ativo, o.exigir_2fa
+            c.organizacao_id, u.totp_ativo, o.exigir_2fa, u.alcance
        FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
        JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
       WHERE u.id = $1 AND u.ativo`,
@@ -95,6 +96,13 @@ export async function carregarUsuario(
     sessaoId: sessaoId ?? null,
     // A organização exige verificação em duas etapas e a pessoa ainda não configurou.
     precisaDuasEtapas: u.exigir_2fa && !u.totp_ativo,
+    // Só na própria unidade e só para SDR e closer (administrador, gestor e master veem tudo).
+    soPropriaBase:
+      u.alcance === 'proprios' &&
+      !u.master &&
+      !daOrganizacao &&
+      contaId === u.conta_id &&
+      (u.papel === 'sdr' || u.papel === 'closer'),
   };
 }
 

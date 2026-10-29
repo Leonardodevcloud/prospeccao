@@ -7,8 +7,19 @@ import {
   normalizarTelefone,
   type VincularEntrada,
 } from '@prospeccao/shared';
-import { contaSql, usuarioAtual } from '../../contexto.js';
+import { contaSql, donoDaBase, naBase, usuarioAtual } from '../../contexto.js';
 import { visivel } from '../../visibilidade.js';
+
+/**
+ * Número que não é de nenhum lead: quem vê só a própria base vê só o que chegou no número dela
+ * (o chip que tem essa pessoa como dona, cadastrado no Agente).
+ */
+function doMeuNumero(alias: string): string {
+  const d = donoDaBase();
+  return d
+    ? `${alias}.chip_id IN (SELECT ch.id FROM comercial.chips ch WHERE ch.conta_id = ${contaSql()} AND ch.usuario_id = ${d})`
+    : 'true';
+}
 
 /**
  * Contatos da negociação: as pessoas que a equipe conheceu conversando com a empresa (quem atendeu,
@@ -396,7 +407,7 @@ export async function listarNaoIdentificados(db: Executor): Promise<NaoIdentific
                 AND ${mesmoNumero('cl.telefone', 'n.telefone')}
               ORDER BY cl.criado_em DESC LIMIT 1) AS "indicadoEm"
        FROM comercial.nao_identificadas n
-      WHERE n.conta_id = ${contaSql()} AND n.resolvida_em IS NULL
+      WHERE n.conta_id = ${contaSql()} AND n.resolvida_em IS NULL AND ${doMeuNumero('n')}
       GROUP BY n.conta_id, n.telefone
       ORDER BY max(n.recebida_em) DESC
       LIMIT 200`,
@@ -406,8 +417,8 @@ export async function listarNaoIdentificados(db: Executor): Promise<NaoIdentific
 
 export async function contarNaoIdentificados(db: Executor): Promise<number> {
   const { rows } = await db.query<{ n: number }>(
-    `SELECT count(DISTINCT telefone)::int AS n FROM comercial.nao_identificadas
-      WHERE conta_id = ${contaSql()} AND resolvida_em IS NULL AND direcao = 'recebida'`,
+    `SELECT count(DISTINCT n.telefone)::int AS n FROM comercial.nao_identificadas n
+      WHERE n.conta_id = ${contaSql()} AND n.resolvida_em IS NULL AND n.direcao = 'recebida' AND ${doMeuNumero('n')}`,
   );
   return rows[0]?.n ?? 0;
 }
@@ -436,6 +447,7 @@ export async function vincular(
     `SELECT id::int, direcao, texto, midia_tipo, id_externo, chip_id::int, recebida_em
        FROM comercial.nao_identificadas
       WHERE conta_id = ${C} AND resolvida_em IS NULL AND ${mesmoNumero('telefone', '$1')}
+        AND ${doMeuNumero('comercial.nao_identificadas')}
       ORDER BY recebida_em`,
     [tel],
   );
@@ -482,8 +494,9 @@ export async function vincular(
 
 export async function descartarNaoIdentificado(db: Executor, telefone: string) {
   const { rowCount } = await db.query(
-    `UPDATE comercial.nao_identificadas SET resolvida_em = now(), descartada = true
-      WHERE conta_id = ${contaSql()} AND resolvida_em IS NULL AND ${mesmoNumero('telefone', '$1')}`,
+    `UPDATE comercial.nao_identificadas n SET resolvida_em = now(), descartada = true
+      WHERE n.conta_id = ${contaSql()} AND n.resolvida_em IS NULL AND ${mesmoNumero('n.telefone', '$1')}
+        AND ${doMeuNumero('n')}`,
     [telefone.replace(/\D/g, '')],
   );
   if (!rowCount) throw AppError.naoEncontrado('Conversa sem identificação');
@@ -498,7 +511,7 @@ export async function buscarLeads(db: Executor, busca: string) {
        FROM comercial.oportunidades o
        JOIN descoberta.empresas e ON e.id = o.empresa_id
        LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
-      WHERE o.conta_id = ${C} AND o.etapa <> 'descartado'
+      WHERE o.conta_id = ${C} AND o.etapa <> 'descartado' AND ${naBase('o')}
         AND (e.nome ILIKE $1 OR e.razao_social ILIKE $1
              OR ($2 <> '' AND (e.maps_telefone LIKE $2
                   OR EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.empresa_id = o.empresa_id AND c.valor LIKE $2 AND ${visivel('c')})))

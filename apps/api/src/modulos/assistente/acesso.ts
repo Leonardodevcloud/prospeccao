@@ -17,6 +17,8 @@ export const SCHEMA_VITRINE = 'cerebro';
 export interface Escopo {
   tudo: boolean;
   contas: number[];
+  /** Recorte por pessoa: só as negociações em que ela é a responsável (migration 054). */
+  dono?: number | null;
 }
 
 /** Senha do papel de leitura: derivada do segredo da api (nada novo para configurar). */
@@ -59,7 +61,7 @@ export async function sincronizarAcesso(dono: Pool, senha: string): Promise<void
     }
     await c.query(`GRANT USAGE ON SCHEMA ${SCHEMA_VITRINE}, cerebro_priv TO ${PAPEL_LEITURA}`);
     await c.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${SCHEMA_VITRINE} TO ${PAPEL_LEITURA}`);
-    await c.query(`GRANT EXECUTE ON FUNCTION cerebro_priv.escopo() TO ${PAPEL_LEITURA}`);
+    await c.query(`GRANT EXECUTE ON FUNCTION cerebro_priv.escopo(), cerebro_priv.dono() TO ${PAPEL_LEITURA}`);
     await c.query(`REVOKE ALL ON cerebro_priv.chave FROM ${PAPEL_LEITURA}`);
     await c.query('COMMIT');
   } catch (erro) {
@@ -90,7 +92,8 @@ export async function lerChave(dono: Pool): Promise<string> {
 /** Escopo assinado, válido por pouco tempo (só para a consulta em andamento). */
 export function assinarEscopo(chave: string, e: Escopo, validadeSeg = 120, agora = Date.now()): string {
   const contas = [...new Set(e.contas.filter((c) => Number.isInteger(c) && c > 0))].join(',');
-  const corpo = `v1;${e.tudo ? 1 : 0};${contas};${Math.floor(agora / 1000) + validadeSeg}`;
+  const dono = !e.tudo && e.dono && Number.isInteger(e.dono) && e.dono > 0 ? e.dono : 0;
+  const corpo = `v2;${e.tudo ? 1 : 0};${contas};${dono};${Math.floor(agora / 1000) + validadeSeg}`;
   const assinatura = createHash('sha256').update(`${chave}|${corpo}|${chave}`, 'utf8').digest('hex');
   return `${corpo};${assinatura}`;
 }

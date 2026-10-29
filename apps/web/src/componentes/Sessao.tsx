@@ -18,6 +18,11 @@ export function useSoLeitura(): boolean {
   return useSessao().data?.papelOrganizacao === 'leitura';
 }
 
+/** Vê só a própria base (escolha do gestor na Equipe): os leads dos colegas não aparecem. */
+export function useSoPropriaBase(): boolean {
+  return !!useSessao().data?.soPropriaBase;
+}
+
 /** Telas que a leitura abre; as outras são de trabalho (prospectar, mandar mensagem, configurar). */
 export const TELAS_DA_LEITURA = [
   '/',

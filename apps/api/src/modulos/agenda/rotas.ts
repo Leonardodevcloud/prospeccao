@@ -1,6 +1,14 @@
-import { configAgendaEntrada, filtrosAgenda, tarefaAtualizar, tarefaEntrada } from '@prospeccao/shared';
+import {
+  AppError,
+  configAgendaEntrada,
+  filtrosAgenda,
+  tarefaAtualizar,
+  tarefaEntrada,
+} from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
+import { exigirVisivel, travaDaBase } from '../../base.js';
+import { donoDaBase } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
@@ -8,6 +16,8 @@ import * as repo from './repositorio.js';
 
 /** "eu" → o próprio id; "todos" → null; número → aquela pessoa. */
 function quem(req: Request, valor: string): number | null {
+  // Quem vê só a própria base vê só a própria agenda.
+  if (donoDaBase()) return req.usuario!.id;
   if (valor === 'todos') return null;
   if (valor === 'eu') return req.usuario!.id;
   return Number(valor);
@@ -15,6 +25,15 @@ function quem(req: Request, valor: string): number | null {
 
 export function rotasAgenda({ pool }: DepsApi): Router {
   const r = Router();
+  r.param('empresaId', travaDaBase(pool));
+
+  /** Quem vê só a própria base mexe só nas próprias tarefas (e nos próprios leads). */
+  const exigirMinha = async (id: number) => {
+    const dono = donoDaBase();
+    if (!dono) return;
+    const t = (await repo.obter(pool, id)) as { usuarioId?: number | null };
+    if (t.usuarioId !== dono) throw AppError.naoEncontrado('Tarefa');
+  };
 
   r.get('/', async (req, res) => {
     const f = consulta(req, filtrosAgenda);
@@ -48,17 +67,27 @@ export function rotasAgenda({ pool }: DepsApi): Router {
   });
 
   r.post('/', async (req, res) => {
-    const id = await repo.criar(pool, corpo(req, tarefaEntrada));
+    const d = corpo(req, tarefaEntrada);
+    const dono = donoDaBase();
+    if (dono) {
+      if (d.empresaId) await exigirVisivel(pool, d.empresaId);
+      d.usuarioId = dono;
+    }
+    const id = await repo.criar(pool, d);
     res.status(201).json(await repo.obter(pool, id));
   });
 
   r.patch('/:id', async (req, res) => {
     const id = idDaRota(req);
-    await repo.atualizar(pool, id, corpo(req, tarefaAtualizar));
+    await exigirMinha(id);
+    const d = corpo(req, tarefaAtualizar);
+    if (donoDaBase() && 'usuarioId' in d) d.usuarioId = donoDaBase() ?? undefined;
+    await repo.atualizar(pool, id, d);
     res.json(await repo.obter(pool, id));
   });
 
   r.delete('/:id', async (req, res) => {
+    await exigirMinha(idDaRota(req));
     await repo.apagar(pool, idDaRota(req));
     res.status(204).end();
   });

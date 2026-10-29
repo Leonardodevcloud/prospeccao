@@ -614,7 +614,7 @@ export function Funil() {
           <option value="B">Nota B</option>
           <option value="C">Nota C</option>
         </select>
-        {(equipe.data?.usuarios.filter((u) => u.ativo).length ?? 0) > 1 && (
+        {!sessao.data?.soPropriaBase && (equipe.data?.usuarios.filter((u) => u.ativo).length ?? 0) > 1 && (
           <>
             <label className="pp-sr" htmlFor="funil-responsavel">
               Responsável

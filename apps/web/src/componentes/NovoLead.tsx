@@ -286,22 +286,24 @@ export function NovoLead(props: {
               ))}
             </select>
           </div>
-          <div className="campo">
-            <label htmlFor="nl-resp">Quem cuida</label>
-            <select
-              id="nl-resp"
-              className="filtro"
-              value={f.responsavelId || responsavelPadrao}
-              onChange={set('responsavelId')}
-            >
-              <option value="">Rodízio da equipe</option>
-              {pessoas.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.nome}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!sessao.data?.soPropriaBase && (
+            <div className="campo">
+              <label htmlFor="nl-resp">Quem cuida</label>
+              <select
+                id="nl-resp"
+                className="filtro"
+                value={f.responsavelId || responsavelPadrao}
+                onChange={set('responsavelId')}
+              >
+                <option value="">Rodízio da equipe</option>
+                {pessoas.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <label className="opcao">
           <input

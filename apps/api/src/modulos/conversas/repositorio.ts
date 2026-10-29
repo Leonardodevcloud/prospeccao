@@ -1,6 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import { AppError, LIMITE_MIDIA_BYTES, type MidiaEntrada } from '@prospeccao/shared';
-import { conta, contaSql, usuarioAtual } from '../../contexto.js';
+import { conta, contaSql, naBase, usuarioAtual } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { visivel } from '../../visibilidade.js';
 import { chipParaEquipe, emUso as chipsEmUso } from '../agente/chips.js';
@@ -67,7 +67,7 @@ export async function listar(
   usuarioId: number,
 ) {
   const C = contaSql();
-  const where = ['true'];
+  const where = [naBase('o')];
   const valores: unknown[] = [];
   const p = (v: unknown) => {
     valores.push(v);
@@ -325,7 +325,7 @@ export async function resumo(db: Executor, usuarioId: number | null): Promise<{ 
        SELECT r.empresa_id FROM comercial.respostas_email r
         WHERE r.conta_id = ${C} AND r.lida_em IS NULL AND r.classe <> 'automatica' AND r.empresa_id IS NOT NULL) x
        JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = x.empresa_id
-      WHERE ($1::int IS NULL OR o.responsavel_id = $1 OR o.responsavel_id IS NULL)`,
+      WHERE ($1::int IS NULL OR o.responsavel_id = $1 OR o.responsavel_id IS NULL) AND ${naBase('o')}`,
     [usuarioId],
   );
   return { naoLidas: (rows[0]?.n ?? 0) + (await contatos.contarNaoIdentificados(db)) };

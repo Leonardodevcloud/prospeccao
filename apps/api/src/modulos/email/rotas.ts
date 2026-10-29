@@ -14,7 +14,8 @@ import {
 } from '@prospeccao/shared';
 import { Router } from 'express';
 import { z } from 'zod';
-import { conta, contaSql } from '../../contexto.js';
+import { travaDaBase } from '../../base.js';
+import { conta, contaSql, empresaNaBase, empresaVisivel } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
@@ -42,6 +43,7 @@ const textoPrevia = z.object({
 export function rotasEmail(deps: DepsApi): Router {
   const { pool } = deps;
   const r = Router();
+  r.param('empresaId', travaDaBase(pool));
 
   const servicos = () => deps.servicos(conta());
   const contextoPrevia = async () => {
@@ -179,6 +181,7 @@ export function rotasEmail(deps: DepsApi): Router {
                        WHERE ce.empresa_id = e.id AND ce.conta_id = ${contaSql()} AND ce.liberado_em IS NOT NULL
                          AND ($1::bigint IS NULL OR ce.campanha_id = $1))
           AND ($2::text IS NULL OR e.nome ILIKE $2 OR e.razao_social ILIKE $2)
+          AND ${empresaVisivel('e.id')}
         ORDER BY (EXISTS (SELECT 1 FROM enriquecimento.contatos c WHERE c.empresa_id = e.id AND c.canal = 'email'
                            AND c.status <> 'invalido' AND ${visivel('c')})) DESC, e.nome
         LIMIT 20`,
@@ -379,7 +382,7 @@ export function rotasEmail(deps: DepsApi): Router {
   r.post('/respostas/:id/lida', async (req, res) => {
     await pool.query(
       `UPDATE comercial.respostas_email SET lida_em = coalesce(lida_em, now())
-        WHERE id = $1 AND conta_id = ${contaSql()}`,
+        WHERE id = $1 AND conta_id = ${contaSql()} AND ${empresaNaBase('comercial.respostas_email.empresa_id')}`,
       [idDaRota(req)],
     );
     res.json({ ok: true });
@@ -398,7 +401,7 @@ export function rotasEmail(deps: DepsApi): Router {
       classe: string;
     }>(
       `UPDATE comercial.respostas_email SET classe = $2, classificado_por = 'voce', lida_em = coalesce(lida_em, now())
-        WHERE id = $1 AND conta_id = ${contaSql()}
+        WHERE id = $1 AND conta_id = ${contaSql()} AND ${empresaNaBase('comercial.respostas_email.empresa_id')}
         RETURNING id::int, empresa_id::int AS "empresaId", de_email AS "deEmail", texto, resumo, classe`,
       [id, classe],
     );
@@ -409,6 +412,11 @@ export function rotasEmail(deps: DepsApi): Router {
   });
 
   r.post('/respostas/:id/responder', async (req, res) => {
+    const { rowCount } = await pool.query(
+      `SELECT 1 FROM comercial.respostas_email WHERE id = $1 AND conta_id = ${contaSql()} AND ${empresaNaBase('comercial.respostas_email.empresa_id')}`,
+      [idDaRota(req)],
+    );
+    if (!rowCount) throw AppError.naoEncontrado('Resposta');
     await motor.responder(
       await motor.depsDaConta(deps),
       idDaRota(req),

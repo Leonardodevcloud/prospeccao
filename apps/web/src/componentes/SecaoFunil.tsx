@@ -17,7 +17,7 @@ import { ProximaMensagem } from './Cadencia';
 import { CadeiaContatos } from './ContatosNegociacao';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { usePipelines } from './Pipelines';
-import { useEquipe, useSoLeitura } from './Sessao';
+import { useEquipe, useSoLeitura, useSoPropriaBase } from './Sessao';
 import { AgendaDoLead } from './Tarefas';
 
 const TIPOS: { id: Exclude<TipoAtividade, 'etapa'>; rotulo: string }[] = [
@@ -294,6 +294,7 @@ export function SecaoFunil(props: {
   const [proximaEm, setProximaEm] = useState('');
   const [valor, setValor] = useState('');
   const soLeitura = useSoLeitura();
+  const soPropriaBase = useSoPropriaBase();
 
   const op = q.data?.oportunidade ?? null;
   // Mantém os campos de próximo passo e valor em dia com o que vem do servidor.
@@ -560,26 +561,33 @@ export function SecaoFunil(props: {
                 }}
               />
             </div>
-            <div className="campo">
-              <label htmlFor="funil-responsavel">Responsável</label>
-              <select
-                id="funil-responsavel"
-                value={op.responsavelId ?? ''}
-                disabled={atualizar.isPending || equipe.isPending}
-                onChange={(e) =>
-                  atualizar.mutate({ responsavelId: e.target.value ? Number(e.target.value) : null })
-                }
-              >
-                <option value="">Sem responsável</option>
-                {equipe.data?.usuarios
-                  .filter((u) => u.ativo || u.id === op.responsavelId)
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.nome}
-                    </option>
-                  ))}
-              </select>
-            </div>
+            {soPropriaBase ? (
+              <div className="campo">
+                <span className="campo__rotulo">Responsável</span>
+                <span>{op.responsavelNome ?? 'Você'}</span>
+              </div>
+            ) : (
+              <div className="campo">
+                <label htmlFor="funil-responsavel">Responsável</label>
+                <select
+                  id="funil-responsavel"
+                  value={op.responsavelId ?? ''}
+                  disabled={atualizar.isPending || equipe.isPending}
+                  onChange={(e) =>
+                    atualizar.mutate({ responsavelId: e.target.value ? Number(e.target.value) : null })
+                  }
+                >
+                  <option value="">Sem responsável</option>
+                  {equipe.data?.usuarios
+                    .filter((u) => u.ativo || u.id === op.responsavelId)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nome}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
           </div>
           {!['ganho', 'perdido', 'descartado'].includes(op.etapa) && (
             <label className="opcao" style={{ marginTop: 12 }}>

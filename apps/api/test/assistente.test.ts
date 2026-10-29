@@ -437,4 +437,173 @@ describe.skipIf(!URL_TESTE)('Argos: acesso aos dados por escopo', () => {
     });
     expect(gil.body.ligacoes.filter((l: { tipo: string }) => l.tipo === 'area')).toHaveLength(5);
   });
+
+  it('quem vê só a própria base não enxerga o resto da unidade', async () => {
+    // Uma das 2 negociações da Alfa Bahia fica com a Sara; a outra, sem dono.
+    const { rows } = await pool.query<{ empresa_id: number }>(
+      'SELECT empresa_id FROM comercial.oportunidades WHERE conta_id = $1 ORDER BY empresa_id LIMIT 1',
+      [ids.a1],
+    );
+    const minha = rows[0]!.empresa_id;
+    await pool.query(
+      'UPDATE comercial.oportunidades SET responsavel_id = $1 WHERE conta_id = $2 AND empresa_id = $3',
+      [ids.sdrA1, ids.a1, minha],
+    );
+    try {
+      const base = assinarEscopo(chave, { tudo: false, contas: [ids.a1], dono: ids.sdrA1 }, 60);
+      expect(await contar(base, 'SELECT count(*) AS n FROM funil')).toBe(1);
+      expect(await contar(base, 'SELECT count(*) AS n FROM equipe')).toBe(1);
+      expect(await contar(base, 'SELECT count(*) AS n FROM consumo_ia')).toBe(0);
+      expect(await contar(base, 'SELECT count(*) AS n FROM unidades')).toBe(1);
+      // Tirar o recorte sem refazer a assinatura não vale.
+      expect(await contar(base.replace(`;${ids.sdrA1};`, ';0;'), 'SELECT count(*) AS n FROM funil')).toBe(0);
+      // O master não tem recorte, mesmo que venha um dono.
+      expect(
+        await contar(
+          assinarEscopo(chave, { tudo: true, contas: [], dono: ids.sdrA1 }),
+          'SELECT count(*) AS n FROM funil',
+        ),
+      ).toBe(9);
+
+      // Pela api: com "unidade toda" a Sara vê 2; com "só a própria base", 1.
+      const cookie = await entrar('sara@alfa.com');
+      roteiroContar();
+      expect((await perguntar(cookie, 'Quantas negociações?')).body.fala).toBe('São 2 negociações.');
+      await pool.query(`UPDATE cadastro.usuarios SET alcance = 'proprios' WHERE id = $1`, [ids.sdrA1]);
+      roteiroContar();
+      expect((await perguntar(cookie, 'Quantas negociações?')).body.fala).toBe('São 1 negociações.');
+      const mapa = await request(app).get('/assistente/mapa').set('Cookie', cookie);
+      expect(mapa.body.soPropriaBase).toBe(true);
+      expect(mapa.body.nos.filter((n: { categoria: string }) => n.categoria === 'registro')).toHaveLength(1);
+    } finally {
+      await pool.query(`UPDATE cadastro.usuarios SET alcance = 'unidade' WHERE id = $1`, [ids.sdrA1]);
+      await pool.query('UPDATE comercial.oportunidades SET responsavel_id = NULL WHERE conta_id = $1', [
+        ids.a1,
+      ]);
+    }
+  });
+
+  it('o administrador escolhe a visão de cada pessoa (e administrador vê tudo)', async () => {
+    const cookie = await entrar('beto@beta.com');
+    const criado = await request(app)
+      .post('/equipe')
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie)
+      .send({ nome: 'Caio Closer', email: 'caio@beta.com', papel: 'closer', alcance: 'proprios' });
+    expect(criado.status).toBe(201);
+    const alcance = async () =>
+      (
+        await pool.query<{ alcance: string }>('SELECT alcance FROM cadastro.usuarios WHERE id = $1', [
+          criado.body.id,
+        ])
+      ).rows[0]?.alcance;
+    expect(await alcance()).toBe('proprios');
+    const lista = await request(app).get('/equipe').set('Cookie', cookie);
+    expect(lista.body.usuarios.find((u: { id: number }) => u.id === criado.body.id)?.alcance).toBe(
+      'proprios',
+    );
+    // Virou administrador: passa a ver a unidade toda.
+    const virou = await request(app)
+      .patch(`/equipe/${criado.body.id}`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie)
+      .send({ papel: 'admin' });
+    expect(virou.status).toBe(200);
+    expect(await alcance()).toBe('unidade');
+  });
+
+  it('só a própria base vale nas telas: funil, conversas e números sem lead', async () => {
+    const { rows } = await pool.query<{ empresa_id: number }>(
+      'SELECT empresa_id::int FROM comercial.oportunidades WHERE conta_id = $1 ORDER BY empresa_id',
+      [ids.a1],
+    );
+    const [minha, deColega] = [rows[0]!.empresa_id, rows[1]!.empresa_id];
+    const colega = await pool.query<{ id: number }>(
+      `INSERT INTO cadastro.usuarios (nome, email, papel, conta_id) VALUES ('Cid Colega', 'cid@alfa.com', 'sdr', $1) RETURNING id`,
+      [ids.a1],
+    );
+    const cid = colega.rows[0]!.id;
+    await pool.query(
+      'UPDATE comercial.oportunidades SET responsavel_id = $1 WHERE conta_id = $2 AND empresa_id = $3',
+      [ids.sdrA1, ids.a1, minha],
+    );
+    await pool.query(
+      'UPDATE comercial.oportunidades SET responsavel_id = $1 WHERE conta_id = $2 AND empresa_id = $3',
+      [cid, ids.a1, deColega],
+    );
+    for (const e of [minha, deColega])
+      await pool.query(
+        `INSERT INTO comercial.mensagens (conta_id, empresa_id, direcao, texto, status, origem) VALUES ($1, $2, 'recebida', 'Oi', 'recebida', 'lead')`,
+        [ids.a1, e],
+      );
+    // Dois números: o da Sara e o da equipe; cada um recebeu de um número fora dos leads.
+    const chip = await pool.query<{ id: number }>(
+      `INSERT INTO comercial.chips (conta_id, nome, instancia, usuario_id) VALUES ($1, 'Sara', 'inst-sara', $2) RETURNING id`,
+      [ids.a1, ids.sdrA1],
+    );
+    await pool.query(
+      `INSERT INTO comercial.nao_identificadas (conta_id, telefone, direcao, texto, chip_id)
+       VALUES ($1, '71999990001', 'recebida', 'No número da Sara', $2), ($1, '71999990002', 'recebida', 'No número da equipe', NULL)`,
+      [ids.a1, chip.rows[0]!.id],
+    );
+    try {
+      const cookie = await entrar('sara@alfa.com');
+      const conversas = async () =>
+        (await request(app).get('/conversas').set('Cookie', cookie)).body.map(
+          (c: { empresaId: number }) => c.empresaId,
+        );
+      const soltos = async () =>
+        (await request(app).get('/conversas/nao-identificados').set('Cookie', cookie)).body.map(
+          (n: { telefone: string }) => n.telefone,
+        );
+      // Unidade toda: vê tudo.
+      expect((await conversas()).sort()).toEqual([minha, deColega].sort());
+      expect(await soltos()).toHaveLength(2);
+      expect((await request(app).get(`/funil/${deColega}`).set('Cookie', cookie)).status).toBe(200);
+
+      await pool.query(`UPDATE cadastro.usuarios SET alcance = 'proprios' WHERE id = $1`, [ids.sdrA1]);
+      expect((await request(app).get('/auth/eu').set('Cookie', cookie)).body.soPropriaBase).toBe(true);
+      expect(await conversas()).toEqual([minha]);
+      expect(await soltos()).toEqual(['71999990001']);
+      // O lead do colega não abre nem muda, por nenhuma porta.
+      expect((await request(app).get(`/funil/${minha}`).set('Cookie', cookie)).status).toBe(200);
+      expect((await request(app).get(`/funil/${deColega}`).set('Cookie', cookie)).status).toBe(404);
+      expect((await request(app).get(`/conversas/${deColega}`).set('Cookie', cookie)).status).toBe(404);
+      expect((await request(app).get(`/empresas/${deColega}`).set('Cookie', cookie)).status).toBe(404);
+      const mexer = await request(app)
+        .patch(`/funil/${deColega}`)
+        .set('Origin', ORIGEM)
+        .set('Cookie', cookie)
+        .send({ valorMensal: 1 });
+      expect(mexer.status).toBe(404);
+      // Nem passar o próprio lead para outra pessoa.
+      const passar = await request(app)
+        .patch(`/funil/${minha}`)
+        .set('Origin', ORIGEM)
+        .set('Cookie', cookie)
+        .send({ responsavelId: cid });
+      expect(passar.status).toBe(422);
+      // Administrador (Beto, de outra organização) não é afetado; e a escolha não vale para admin.
+      await pool.query(`UPDATE cadastro.usuarios SET alcance = 'proprios' WHERE id = $1`, [ids.adminB1]);
+      expect(
+        (
+          await request(app)
+            .get('/auth/eu')
+            .set('Cookie', await entrar('beto@beta.com'))
+        ).body.soPropriaBase,
+      ).toBe(false);
+    } finally {
+      await pool.query(`UPDATE cadastro.usuarios SET alcance = 'unidade' WHERE id IN ($1, $2)`, [
+        ids.sdrA1,
+        ids.adminB1,
+      ]);
+      await pool.query('UPDATE comercial.oportunidades SET responsavel_id = NULL WHERE conta_id = $1', [
+        ids.a1,
+      ]);
+      await pool.query('DELETE FROM comercial.mensagens WHERE conta_id = $1', [ids.a1]);
+      await pool.query('DELETE FROM comercial.nao_identificadas WHERE conta_id = $1', [ids.a1]);
+      await pool.query('DELETE FROM comercial.chips WHERE conta_id = $1', [ids.a1]);
+      await pool.query('DELETE FROM cadastro.usuarios WHERE id = $1', [cid]);
+    }
+  });
 });

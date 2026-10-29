@@ -2,6 +2,7 @@ import { Badge, Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import {
+  type Alcance,
   api,
   type DesempenhoUsuario,
   type PapelUsuario,
@@ -21,6 +22,51 @@ const DICA_PAPEL: Record<PapelUsuario, string> = {
   closer: 'Fecha: faz a reunião, manda proposta e fecha contrato.',
   admin: 'Tudo, mais configurar campanhas, cadência, IA e equipe.',
 };
+
+/** Unidade toda ou só a própria base (o administrador sempre vê tudo). */
+function EscolherAlcance(props: {
+  id: string;
+  papel: PapelUsuario;
+  valor: Alcance;
+  aoMudar: (a: Alcance) => void;
+}) {
+  if (props.papel === 'admin')
+    return (
+      <p className="campo__dica" style={{ margin: 0 }}>
+        Administrador vê a unidade toda.
+      </p>
+    );
+  const opcoes: { v: Alcance; titulo: string; dica: string }[] = [
+    {
+      v: 'unidade',
+      titulo: 'A unidade toda',
+      dica: 'todos os leads, conversas e números da unidade',
+    },
+    {
+      v: 'proprios',
+      titulo: 'Só a própria base',
+      dica: 'só os leads em que é a responsável, em todas as telas (funil, conversas, agenda, relatórios, Argos)',
+    },
+  ];
+  return (
+    <fieldset className="opcoes">
+      <legend>O que vê</legend>
+      {opcoes.map((o) => (
+        <label key={o.v} className="opcao">
+          <input
+            type="radio"
+            name={props.id}
+            checked={props.valor === o.v}
+            onChange={() => props.aoMudar(o.v)}
+          />
+          <span>
+            <b>{o.titulo}</b> <span className="quieto">· {o.dica}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
 
 /** Barra de meta: "12 de 30". */
 function Meta(props: { valor: number; meta: number; rotulo: string }) {
@@ -192,7 +238,13 @@ export function LinkConvite(props: {
 
 function Convidar(props: { aoFechar: () => void }) {
   const cliente = useQueryClient();
-  const [f, setF] = useState({ nome: '', email: '', papel: 'sdr' as PapelUsuario, telefone: '' });
+  const [f, setF] = useState({
+    nome: '',
+    email: '',
+    papel: 'sdr' as PapelUsuario,
+    telefone: '',
+    alcance: 'unidade' as Alcance,
+  });
   const criar = useMutation({
     mutationFn: () =>
       api<{ id: number; convite: string; diasValidade: number }>('/equipe', { metodo: 'POST', corpo: f }),
@@ -217,7 +269,7 @@ function Convidar(props: { aoFechar: () => void }) {
                 variant="ghost"
                 onClick={() => {
                   criar.reset();
-                  setF({ nome: '', email: '', papel: f.papel, telefone: '' });
+                  setF({ nome: '', email: '', papel: f.papel, telefone: '', alcance: f.alcance });
                 }}
               >
                 Convidar mais alguém
@@ -270,6 +322,12 @@ function Convidar(props: { aoFechar: () => void }) {
                 </label>
               ))}
             </fieldset>
+            <EscolherAlcance
+              id="conv-alcance"
+              papel={f.papel}
+              valor={f.alcance}
+              aoMudar={(alcance) => setF({ ...f, alcance })}
+            />
             <div className="campo">
               <label htmlFor="conv-tel">WhatsApp (opcional)</label>
               <input
@@ -311,6 +369,7 @@ function EditarPessoa(props: { u: UsuarioEquipe; aoFechar: () => void }) {
     papel: u.papel,
     telefone: u.telefone ? formatarTelefone(u.telefone) : '',
     recebeLeads: u.recebeLeads,
+    alcance: u.alcance,
     metas: u.metas,
   });
   const salvar = useMutation({
@@ -369,6 +428,12 @@ function EditarPessoa(props: { u: UsuarioEquipe; aoFechar: () => void }) {
               </select>
               <span className="campo__dica">{DICA_PAPEL[f.papel]}</span>
             </div>
+            <EscolherAlcance
+              id="pes-alcance"
+              papel={f.papel}
+              valor={f.alcance}
+              aoMudar={(alcance) => setF({ ...f, alcance })}
+            />
             <div className="campo">
               <label htmlFor="pes-tel">WhatsApp</label>
               <input
@@ -662,6 +727,9 @@ export function Equipe() {
                   {u.ativo && u.convitePendente && <Badge tone="warning">Convite pendente</Badge>}
                   {u.ativo && !u.recebeLeads && u.papel !== 'admin' && (
                     <Badge tone="outline">Fora do rodízio</Badge>
+                  )}
+                  {u.ativo && u.alcance === 'proprios' && u.papel !== 'admin' && (
+                    <Badge tone="outline">Só a própria base</Badge>
                   )}
                   <span className="quieto mono" title="Leads abertos">
                     <Icon name="kanban" size={12} /> {fmtNumero(u.leadsAbertos)}

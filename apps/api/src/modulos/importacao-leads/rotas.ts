@@ -15,7 +15,7 @@ import {
   ROTULO_CAMPO_IMPORTACAO,
 } from '@prospeccao/shared';
 import { Router } from 'express';
-import { conta, contaSql, usuarioAtual } from '../../contexto.js';
+import { conta, contaSql, donoDaBase, usuarioAtual } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
@@ -296,6 +296,9 @@ export function rotasImportacaoLeads(deps: DepsApi): Router {
           ? 'Nenhum lead tem cidade e UF. Informe a cidade padrão (ou a coluna da cidade) para importar.'
           : 'Nenhuma linha tem nome de empresa ou de contato. Confira as colunas.',
       );
+    // Quem vê só a própria base importa para si (os leads ficam com ela, fora do rodízio).
+    const dono = donoDaBase();
+    if (dono && d.funil) d.funil.responsavelId = dono;
     if (d.funil?.responsavelId) {
       const { rows } = await pool.query(
         `SELECT 1 FROM cadastro.usuarios WHERE id = $1 AND conta_id = ${contaSql()} AND ativo`,

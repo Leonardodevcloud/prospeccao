@@ -1,7 +1,8 @@
 import type { Executor } from '@prospeccao/db';
 import { AppError } from '@prospeccao/shared';
-import { conta, contaSql } from '../../contexto.js';
+import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import * as alertas from '../alertas/repositorio.js';
+import { definirResponsavel } from '../equipe/repositorio.js';
 import { HOJE_SP } from './repositorio.js';
 
 /**
@@ -56,6 +57,7 @@ export async function listar(db: Executor) {
   const { rows } = await db.query(
     `SELECT c.id, c.nome, c.instancia, c.ativo, c.limite_dia AS "limiteDia", c.estado, c.estado_em AS "estadoEm",
             c.aquecer, c.ativado_em AS "ativadoEm", c.numero, c.provedor,
+            c.usuario_id AS "usuarioId", (SELECT u.nome FROM cadastro.usuarios u WHERE u.id = c.usuario_id) AS "usuarioNome",
             c.token_cifrado IS NOT NULL AS conectavel,
             CASE WHEN c.pausado_ate > now() THEN c.pausado_ate END AS "pausadoAte", c.pausa_motivo AS "pausaMotivo",
             (SELECT count(*)::int FROM comercial.mensagens m
@@ -176,9 +178,36 @@ export async function chipParaEquipe(db: Executor, empresaId: number, chips: Chi
   const doLead = await chipDoLead(db, empresaId);
   const dele = doLead != null ? chips.find((c) => c.id === doLead) : undefined;
   if (dele) return dele;
-  const primeiro = chips[0] ?? null;
+  // Lead sem número ainda: quem tem número próprio manda pelo dele.
+  const eu = usuarioAtual()?.id;
+  const meus = eu ? await chipsDoUsuario(db, eu) : [];
+  const primeiro = chips.find((c) => c.id != null && meus.includes(c.id)) ?? chips[0] ?? null;
   if (primeiro?.id) await fixarChip(db, empresaId, primeiro.id);
   return primeiro;
+}
+
+async function chipsDoUsuario(db: Executor, usuarioId: number): Promise<number[]> {
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM comercial.chips WHERE conta_id = ${contaSql()} AND usuario_id = $1`,
+    [usuarioId],
+  );
+  return rows.map((r) => r.id);
+}
+
+/** Lead novo que chegou por um número com dono: fica com essa pessoa e segue nesse número. */
+export async function entregarAoDonoDoNumero(
+  db: Executor,
+  empresaId: number,
+  chipId: number | null,
+): Promise<void> {
+  if (!chipId) return;
+  const { rows } = await db.query<{ usuario_id: number }>(
+    `SELECT c.usuario_id FROM comercial.chips c JOIN cadastro.usuarios u ON u.id = c.usuario_id AND u.ativo
+      WHERE c.id = $1 AND c.conta_id = ${contaSql()}`,
+    [chipId],
+  );
+  await fixarChip(db, empresaId, chipId);
+  if (rows[0]) await definirResponsavel(db, empresaId, rows[0].usuario_id, 'chegou pelo número dele');
 }
 
 async function chipDoLead(db: Executor, empresaId: number): Promise<number | null> {
@@ -221,8 +250,28 @@ export async function criar(
 export async function atualizar(
   db: Executor,
   id: number,
-  d: { nome?: string; ativo?: boolean; limiteDia?: number; aquecer?: boolean; diasDeUso?: number },
+  d: {
+    nome?: string;
+    ativo?: boolean;
+    limiteDia?: number;
+    aquecer?: boolean;
+    diasDeUso?: number;
+    usuarioId?: number | null;
+  },
 ): Promise<void> {
+  if (d.usuarioId) {
+    const { rowCount } = await db.query(
+      `SELECT 1 FROM cadastro.usuarios WHERE id = $1 AND conta_id = ${contaSql()} AND ativo
+          AND papel IN ('admin', 'sdr', 'closer')`,
+      [d.usuarioId],
+    );
+    if (!rowCount) throw AppError.naoEncontrado('Pessoa da equipe');
+  }
+  if (d.usuarioId !== undefined)
+    await db.query(`UPDATE comercial.chips SET usuario_id = $2 WHERE id = $1 AND conta_id = ${contaSql()}`, [
+      id,
+      d.usuarioId,
+    ]);
   const { rowCount } = await db.query(
     `UPDATE comercial.chips SET nome = coalesce($2, nome), ativo = coalesce($3, ativo), limite_dia = coalesce($4, limite_dia),
             aquecer = coalesce($5, aquecer),
