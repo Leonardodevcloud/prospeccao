@@ -3816,6 +3816,19 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       'sdr',
     ]);
 
+    // Painel do gestor e o relatório em PDF.
+    const painel = (await gil.ler('/organizacao/painel?dias=30')).body;
+    expect(painel.periodo.rotulo).toBe('Últimos 30 dias');
+    expect(painel.unidades.map((u: { nome: string }) => u.nome)).toEqual(['Bahia', 'Pernambuco']);
+    expect(painel.totais).toMatchObject({ noFunil: 1, leads: 0 });
+    expect(painel.pessoas.map((p: { nome: string }) => p.nome)).toContain('Sara SDR');
+    expect((await gil.ler('/organizacao/painel?mes=2026-01')).body.periodo.rotulo).toBe('Janeiro de 2026');
+    const pdf = await gil.ler('/organizacao/relatorio.pdf?dias=30');
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect(pdf.headers['content-disposition']).toMatch(/relatorio-rede-nacional-teste-ultimos-30-dias\.pdf/);
+    expect((await diana.ler('/organizacao/relatorio.pdf')).status).toBe(200);
+
     // O master vê o cliente com as duas unidades e o plano vale para elas.
     const orgs = (await ler('/master/organizacoes')).body as { id: number; unidades: { nome: string }[] }[];
     expect(orgs.find((o) => o.id === orgId)?.unidades.map((u) => u.nome)).toEqual(['Bahia', 'Pernambuco']);

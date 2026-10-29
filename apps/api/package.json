@@ -25,6 +25,7 @@
     "express-rate-limit": "8.7.0",
     "helmet": "8.3.0",
     "jsonwebtoken": "9.0.3",
+    "pdfkit": "0.17.2",
     "pg": "8.23.1",
     "pg-boss": "12.36.0",
     "pino": "10.4.0",
@@ -39,6 +40,7 @@
     "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
     "@types/jsonwebtoken": "9.0.10",
+    "@types/pdfkit": "0.17.3",
     "@types/supertest": "7.2.1",
     "@types/web-push": "3.6.4",
     "supertest": "7.3.1"

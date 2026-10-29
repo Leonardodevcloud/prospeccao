@@ -71,10 +71,10 @@ export function Organizacao() {
     <>
       <div className="topo">
         <div>
-          <h1>{d?.organizacao.nome ?? 'Organização'}</h1>
+          <h1>Unidades e pessoas</h1>
           <p>
-            As unidades, as pessoas de cada uma e a cota de leads do mês. Entre numa unidade para trabalhar
-            nela
+            {d ? `${d.organizacao.nome}: a` : 'A'}s unidades, as pessoas de cada uma e a cota de leads do mês.
+            Entre numa unidade para trabalhar nela
             {leitura ? '' : ' ou para configurar'}.
           </p>
         </div>

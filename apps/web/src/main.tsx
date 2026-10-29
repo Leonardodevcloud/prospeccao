@@ -24,6 +24,7 @@ import { MeuDia } from './paginas/MeuDia';
 import { MeuPlano } from './paginas/MeuPlano';
 import { Nichos } from './paginas/Nichos';
 import { Organizacao } from './paginas/Organizacao';
+import { PainelGestor } from './paginas/PainelGestor';
 import { PlataformaConsumo, PlataformaOperacao, PlataformaVisao } from './paginas/Plataforma';
 import { Relatorios } from './paginas/Relatorios';
 import { EsqueciSenha, RedefinirSenha } from './paginas/Senha';
@@ -52,7 +53,8 @@ const roteador = createBrowserRouter([
       { path: 'hoje', element: <MeuDia /> },
       { path: 'conversas', element: <Conversas /> },
       { path: 'equipe', element: <Equipe /> },
-      { path: 'organizacao', element: <Organizacao /> },
+      { path: 'organizacao', element: <PainelGestor /> },
+      { path: 'organizacao/gestao', element: <Organizacao /> },
       { path: 'plano', element: <MeuPlano /> },
       { path: 'email', element: <Email /> },
       { path: 'funil', element: <Funil /> },

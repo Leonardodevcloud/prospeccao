@@ -6,6 +6,8 @@ import { corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirGestor } from '../../middlewares/seguranca.js';
 import { abrirSessao } from '../auth/sessao.js';
 import { DIAS_CONVITE } from '../equipe/repositorio.js';
+import * as painel from './painel.js';
+import { gerarPdf } from './pdf.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -18,9 +20,37 @@ export function rotasOrganizacao(deps: DepsApi): Router {
   const link = (req: Request, token: string) =>
     `${enderecoDoApp(req.get('origin'), origens)}/convite/${token}`;
   const org = (req: Request) => req.usuario!.organizacaoId;
+  const filtroPeriodo = (req: Request) => ({
+    dias: Number(req.query.dias) || undefined,
+    mes: typeof req.query.mes === 'string' ? req.query.mes : undefined,
+  });
 
   r.get('/', exigirGestor, async (req, res) => {
     res.json(await repo.resumo(pool, org(req)));
+  });
+
+  /** Painel do gestor: a organização somada, por unidade e por pessoa, no período. */
+  r.get('/painel', exigirGestor, async (req, res) => {
+    res.json(await painel.painel(pool, org(req), painel.periodo(filtroPeriodo(req))));
+  });
+
+  /** O mesmo painel em PDF, para a diretoria. */
+  r.get('/relatorio.pdf', exigirGestor, async (req, res) => {
+    const p = painel.periodo(filtroPeriodo(req));
+    const [dados, nome] = await Promise.all([
+      painel.painel(pool, org(req), p),
+      pool.query<{ nome: string }>('SELECT nome FROM cadastro.organizacoes WHERE id = $1', [org(req)]),
+    ]);
+    const organizacao = nome.rows[0]?.nome ?? 'Organização';
+    const pdf = await gerarPdf(dados, organizacao);
+    const arquivo = `relatorio-${organizacao}-${p.rotulo}`
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .toLowerCase();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${arquivo}.pdf"`);
+    res.send(pdf);
   });
 
   r.post('/unidades', exigirGestor, async (req, res) => {
