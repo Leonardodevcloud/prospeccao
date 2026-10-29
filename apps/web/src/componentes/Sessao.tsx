@@ -21,6 +21,8 @@ export function useSoLeitura(): boolean {
 /** Telas que a leitura abre; as outras são de trabalho (prospectar, mandar mensagem, configurar). */
 export const TELAS_DA_LEITURA = [
   '/',
+  '/argos',
+  '/argos/mapa',
   '/organizacao',
   '/organizacao/gestao',
   '/funil',

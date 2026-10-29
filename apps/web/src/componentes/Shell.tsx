@@ -27,7 +27,7 @@ const ITENS: {
   rotulo: string;
   icone: string;
   /** Título do grupo (aparece antes do primeiro item visível do grupo). */
-  secao?: 'Prospecção' | 'Vendas' | 'Gestão' | 'Plataforma';
+  secao?: 'Prospecção' | 'Vendas' | 'Argos' | 'Gestão' | 'Plataforma';
   fim?: boolean;
   admin?: boolean;
   master?: boolean;
@@ -47,6 +47,8 @@ const ITENS: {
   { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle', secao: 'Vendas' },
   { para: '/email', rotulo: 'E-mail', icone: 'mail', secao: 'Vendas', modulos: ['email'] },
   { para: '/agente', rotulo: 'Agente', icone: 'bot', secao: 'Vendas', modulos: ['whatsapp', 'agente_ia'] },
+  { para: '/argos', rotulo: 'Argos', icone: 'orbit', secao: 'Argos', fim: true },
+  { para: '/argos/mapa', rotulo: 'Mapa do conhecimento', icone: 'globe', secao: 'Argos' },
   {
     para: '/organizacao',
     rotulo: 'Painel da organização',
@@ -401,7 +403,10 @@ export function Shell() {
       {conta && <MinhaConta aoFechar={() => setConta(false)} />}
       {sessao.data && !sessao.data.termos.aceitos && <AceitarTermos versao={sessao.data.termos.versao} />}
       {/* Argos: o assistente (segundo cérebro), em qualquer tela. Só vê o que a pessoa pode ver. */}
-      {sessao.data?.termos.aceitos && <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />}
+      {/* Na tela do Argos ele já está na página: o botão flutuante sai (senão os dois ouviriam o Espaço). */}
+      {sessao.data?.termos.aceitos && local.pathname !== '/argos' && (
+        <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />
+      )}
       {avisosAbertos && <PainelAvisos aoFechar={() => setAvisosAbertos(false)} />}
     </div>
   );

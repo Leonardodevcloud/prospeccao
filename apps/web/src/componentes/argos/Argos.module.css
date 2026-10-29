@@ -531,3 +531,316 @@
     animation: none;
   }
 }
+
+/* ── Tela do Argos (modo página) ── */
+.pagina {
+  --a-texto: #e7e5e4;
+  --a-suave: #a8c4bf;
+  --a-borda: rgba(255, 255, 255, 0.09);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 48px);
+  border-radius: 14px;
+  overflow: hidden;
+  color: var(--a-texto);
+  background:
+    radial-gradient(
+      ellipse 70% 55% at 50% 28%,
+      color-mix(in srgb, var(--brand) 42%, transparent),
+      transparent 70%
+    ),
+    #060c0b;
+}
+.paginaFaixa,
+.paginaTopo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+}
+.paginaTopo {
+  border-bottom: 1px solid var(--a-borda);
+}
+.paginaStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--a-suave);
+}
+.paginaEscopo {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--a-suave);
+}
+.paginaTitulo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.paginaTitulo b {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.paginaTitulo span {
+  font-size: 12px;
+  color: var(--a-suave);
+}
+.iconePagina {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: #cfe9e4;
+  cursor: pointer;
+}
+.iconePagina:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.iconePagina:focus-visible,
+.holo:focus-visible,
+.chip:focus-visible,
+.cartaoBotao:focus-visible,
+.microfoneGrande:focus-visible {
+  outline: 2px solid var(--argos-claro);
+  outline-offset: 2px;
+}
+.apresentacao {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 40px 24px;
+  text-align: center;
+}
+.holo {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.saudacao {
+  margin: 0;
+  font-size: 34px;
+  line-height: 42px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.saudacaoFase {
+  margin: 0;
+  min-height: 42px;
+  font-size: 20px;
+  line-height: 42px;
+  color: #dff5f1;
+}
+.intro {
+  margin: 0;
+  max-width: 640px;
+  font-size: 16px;
+  line-height: 24px;
+  color: #b9dcd6;
+}
+.cartoes {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  width: 100%;
+  max-width: 1000px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  text-align: left;
+}
+@media (max-width: 1100px) {
+  .cartoes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .cartoes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .apresentacao {
+    padding: 8px 16px 16px;
+  }
+}
+.cartao,
+.cartaoBotao {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--argos-claro) 20%, transparent);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--argos-claro);
+  font-size: 13px;
+  line-height: 18px;
+}
+.cartao b,
+.cartaoBotao b {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+.cartao span,
+.cartaoBotao span {
+  color: #a9cfc8;
+}
+.cartao:has(.cartaoBotao) {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.cartaoBotao {
+  width: 100%;
+  height: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cartaoBotao:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 900px;
+}
+.chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--argos-claro) 30%, transparent);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d8f3ef;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.chip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--argos-claro) 14%, transparent);
+}
+.chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.fioPagina {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 24px 32px;
+}
+.paginaRodape {
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 12px 32px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.compositor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 14px;
+  background: rgba(20, 26, 25, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.compositor:focus-within,
+.compositorOuvindo {
+  border-color: color-mix(in srgb, var(--argos-claro) 55%, transparent);
+}
+.entradaPagina {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+}
+.entradaPagina::placeholder {
+  color: #8fb8b1;
+}
+.microfoneGrande {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--brand);
+  color: var(--on-brand);
+  cursor: pointer;
+}
+.microfoneGrande:hover {
+  background: var(--brand-hover);
+}
+.dicaPagina {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  color: #8fb8b1;
+}
+.dicaPagina kbd {
+  font-family: var(--fonte-mono);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.onda {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+}
+.onda span {
+  width: 3px;
+  height: 22px;
+  border-radius: 2px;
+  background: var(--argos-claro);
+  transform-origin: 50% 50%;
+  animation: ondaVoz 900ms ease-in-out infinite;
+}
+@keyframes ondaVoz {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onda span {
+    animation: none;
+  }
+}

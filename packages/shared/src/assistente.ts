@@ -16,7 +16,12 @@ export const perguntaAssistente = z.object({
     .default([]),
   /** A interface vai falar a resposta: o servidor já adianta a voz do 1º trecho. */
   falar: z.boolean().default(false),
+  /** Conversa em andamento (o contexto vem do histórico guardado). Sem ela, começa uma nova. */
+  conversaId: z.number().int().positive().nullish(),
+  via: z.enum(['texto', 'voz']).default('texto'),
 });
+
+export const conversaAtualizar = z.object({ titulo: z.string().trim().min(1, 'Dê um nome.').max(120) });
 
 export const textoParaFalar = z.object({ texto: z.string().trim().min(1).max(1200) });
 
@@ -67,6 +72,70 @@ export interface RespostaAssistenteDTO {
   /** O 1º trecho da fala, já sendo gerado no servidor. */
   voz?: { id: string; texto: string } | null;
   tempos?: Record<string, number>;
+  /** Onde esta troca ficou guardada (o histórico da pessoa). */
+  conversaId?: number | null;
+}
+
+/** Uma conversa no histórico (só a própria pessoa vê). */
+export interface ConversaArgosDTO {
+  id: number;
+  titulo: string;
+  unidade: string;
+  trocas: number;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface TrocaArgosDTO {
+  id: number;
+  pergunta: string;
+  resposta: RespostaAssistenteDTO;
+  via: 'texto' | 'voz';
+  criadoEm: string;
+}
+
+/* ───────────── Mapa do conhecimento (grafo em partículas) ───────────── */
+
+export interface NoMapaDTO {
+  id: string;
+  /** area = aglomerado (uma etapa do funil); registro = uma empresa; cliente = uma pessoa da equipe. */
+  categoria: 'area' | 'registro' | 'cliente';
+  rotulo: string;
+  /** Linha curta acima do nome no foco (ex.: "R$ 1.500/mês · Salvador"). */
+  codigo: string | null;
+  /** O aglomerado a que pertence (a etapa do funil). */
+  area: string | null;
+  status: string | null;
+  grau: number;
+  /** Para o painel ao clicar. */
+  detalhe: {
+    empresaId?: number;
+    unidadeId?: number;
+    unidade?: string;
+    etapa?: string;
+    responsavel?: string | null;
+    valorMensal?: number | null;
+    cidade?: string | null;
+    proximaAcao?: string | null;
+    negociacoes?: number;
+  } | null;
+}
+
+export interface LigacaoMapaDTO {
+  origem: string;
+  destino: string;
+  tipo: 'area' | 'cliente' | 'semelhante';
+  peso: number | null;
+}
+
+export interface MapaDTO {
+  nos: NoMapaDTO[];
+  ligacoes: LigacaoMapaDTO[];
+  /** Unidades do escopo (para o filtro). */
+  unidades: { id: number; nome: string }[];
+  /** Havia mais empresas do que cabem no mapa (mostra as mais recentes). */
+  cortado: boolean;
+  geradoEm: string;
 }
 
 export interface ConfigVozDTO {

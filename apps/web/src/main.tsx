@@ -1,3 +1,5 @@
+import { ArgosPagina } from './paginas/ArgosPagina';
+import { MapaConhecimento } from './paginas/MapaConhecimento';
 import '@prospeccao/ui/estilos.css';
 import './app.css';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -53,6 +55,8 @@ const roteador = createBrowserRouter([
       { path: 'hoje', element: <MeuDia /> },
       { path: 'conversas', element: <Conversas /> },
       { path: 'equipe', element: <Equipe /> },
+      { path: 'argos', element: <ArgosPagina /> },
+      { path: 'argos/mapa', element: <MapaConhecimento /> },
       { path: 'organizacao', element: <PainelGestor /> },
       { path: 'organizacao/gestao', element: <Organizacao /> },
       { path: 'plano', element: <MeuPlano /> },

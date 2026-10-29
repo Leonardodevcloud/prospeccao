@@ -1,4 +1,4 @@
-import type { DadosAssistenteDTO, RespostaAssistenteDTO } from '@prospeccao/shared/assistente';
+import type { DadosAssistenteDTO, RespostaAssistenteDTO, TrocaArgosDTO } from '@prospeccao/shared/assistente';
 import { useSyncExternalStore } from 'react';
 
 /**
@@ -16,11 +16,33 @@ export interface TurnoConversa {
 
 const CHAVE = 'prospect:argos:conversa';
 const CHAVE_DONO = 'prospect:argos:dono';
+/** Conversa guardada no servidor que está aberta (o histórico da pessoa). */
+const CHAVE_ID = 'prospect:argos:conversa-id';
 const MAX_TURNOS = 30;
 /** Depois de 30 minutos parado, o histórico deixa de ir para o Argos (a tela continua mostrando). */
 const VALIDADE_CONTEXTO_MS = 30 * 60_000;
 
 let turnos: TurnoConversa[] = carregar();
+let conversaId: number | null = lerId();
+let titulo: string | null = null;
+
+function lerId(): number | null {
+  try {
+    const n = Number(sessionStorage.getItem(CHAVE_ID));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function salvarId() {
+  try {
+    if (conversaId) sessionStorage.setItem(CHAVE_ID, String(conversaId));
+    else sessionStorage.removeItem(CHAVE_ID);
+  } catch {
+    /* sem armazenamento */
+  }
+}
 const ouvintes = new Set<() => void>();
 
 function carregar(): TurnoConversa[] {
@@ -75,7 +97,7 @@ export const conversa = {
     } catch {
       /* sem armazenamento */
     }
-    if (atual !== dono && turnos.length) mudar([]);
+    if (atual !== dono && (turnos.length || conversaId)) conversa.limpar();
   },
 
   adicionar(pergunta: string): number {
@@ -96,8 +118,39 @@ export const conversa = {
     mudar(turnos.filter((t) => t.id !== id));
   },
 
+  /** Nova conversa: a próxima pergunta abre outra no histórico. */
   limpar() {
+    conversaId = null;
+    titulo = null;
+    salvarId();
     mudar([]);
+  },
+
+  /** A conversa guardada no servidor que está aberta (null: a próxima pergunta cria uma). */
+  atual: () => conversaId,
+  titulo: () => titulo,
+
+  definir(id: number | null) {
+    if (id === conversaId) return;
+    conversaId = id;
+    salvarId();
+    for (const fn of ouvintes) fn();
+  },
+
+  /** Abre uma conversa do histórico (troca o que está na tela). */
+  carregar(id: number, nome: string, trocas: TrocaArgosDTO[]) {
+    conversaId = id;
+    titulo = nome;
+    salvarId();
+    mudar(
+      trocas.map((t) => ({
+        id: ++proximo,
+        pergunta: t.pergunta,
+        resposta: t.resposta,
+        erro: null,
+        em: Date.parse(t.criadoEm) || Date.now(),
+      })),
+    );
   },
 
   /** O que vai para o Argos como contexto: as últimas trocas recentes, com o resumo das tabelas. */
@@ -121,4 +174,9 @@ const assinar = (fn: () => void) => {
 
 export function useConversa() {
   return useSyncExternalStore(assinar, conversa.lista, conversa.lista);
+}
+
+/** Id da conversa guardada que está aberta (para marcar no histórico). */
+export function useConversaAtual() {
+  return useSyncExternalStore(assinar, conversa.atual, conversa.atual);
 }

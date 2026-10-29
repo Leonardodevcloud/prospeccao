@@ -1,6 +1,7 @@
 import {
   AppError,
   type ConfigVozDTO,
+  conversaAtualizar,
   dividirFala,
   perguntaAssistente,
   type RespostaAssistenteDTO,
@@ -10,8 +11,10 @@ import {
 import express, { type Request, Router } from 'express';
 import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
-import { corpo } from '../../middlewares/http.js';
+import { corpo, idDaRota } from '../../middlewares/http.js';
 import { agenteArgos } from './agente.js';
+import * as conversas from './conversas.js';
+import { montarMapa } from './mapa.js';
 import {
   type ConfigVoz,
   falaEmCurso,
@@ -51,6 +54,8 @@ const TELAS: Record<string, { destino: string; rotulo: string }> = {
   plano: { destino: '/plano', rotulo: 'Meu plano' },
   organizacao: { destino: '/organizacao', rotulo: 'Painel da organização' },
   plataforma: { destino: '/plataforma', rotulo: 'Painel da plataforma' },
+  mapa: { destino: '/argos/mapa', rotulo: 'Mapa do conhecimento' },
+  argos: { destino: '/argos', rotulo: 'Argos' },
 };
 
 export function rotasAssistente(deps: DepsApi): Router {
@@ -84,8 +89,10 @@ export function rotasAssistente(deps: DepsApi): Router {
   };
 
   r.post('/', async (req, res) => {
-    const { texto, historico, falar } = corpo(req, perguntaAssistente);
+    const { texto, historico: doNavegador, falar, conversaId, via } = corpo(req, perguntaAssistente);
     const u = req.usuario!;
+    // Conversa guardada: o contexto vem do histórico dela (e confere que é da própria pessoa).
+    const historico = conversaId ? await conversas.historico(pool, u.id, conversaId) : doNavegador;
     const servicos = await deps.servicos(u.contaId);
     if (!servicos.assistente)
       throw new AppError(
@@ -126,6 +133,20 @@ export function rotasAssistente(deps: DepsApi): Router {
       aguardaResposta: resposta.confirmar,
       tempos: resposta.tempos,
     };
+    // Guarda no histórico da pessoa (falhar aqui não tira a resposta dela).
+    saida.conversaId = await conversas
+      .guardar(pool, {
+        usuarioId: u.id,
+        contaId: u.contaId,
+        conversaId: conversaId ?? null,
+        pergunta: texto,
+        resposta: saida,
+        via,
+      })
+      .catch((erro: Error) => {
+        log.warn({ erro: erro.message }, 'argos: não consegui guardar a conversa');
+        return conversaId ?? null;
+      });
     // A interface vai falar: já começa a gerar a voz do 1º trecho.
     const primeiro = falar && a?.fala ? dividirFala(resposta.fala)[0] : null;
     if (primeiro && a?.fala) {
@@ -135,6 +156,49 @@ export function rotasAssistente(deps: DepsApi): Router {
       saida.voz = { id, texto: primeiro };
     }
     res.json(saida);
+  });
+
+  /* ───────────── Histórico (só a própria pessoa) ───────────── */
+
+  r.get('/conversas', async (req, res) => {
+    const busca = typeof req.query.busca === 'string' ? req.query.busca : null;
+    res.json(await conversas.listar(pool, req.usuario!.id, busca));
+  });
+
+  r.get('/conversas/:id', async (req, res) => {
+    res.json(await conversas.abrir(pool, req.usuario!.id, idDaRota(req)));
+  });
+
+  r.patch('/conversas/:id', async (req, res) => {
+    const { titulo } = corpo(req, conversaAtualizar);
+    await conversas.renomear(pool, req.usuario!.id, idDaRota(req), titulo);
+    res.status(204).end();
+  });
+
+  r.delete('/conversas/:id', async (req, res) => {
+    await conversas.apagar(pool, req.usuario!.id, idDaRota(req));
+    res.status(204).end();
+  });
+
+  /* ───────────── Mapa do conhecimento (mesmo escopo das respostas) ───────────── */
+
+  r.get('/mapa', async (req, res) => {
+    if (!a?.leitura || !a.chave)
+      throw new AppError(
+        503,
+        'indisponivel',
+        'O mapa precisa do acesso aos dados do Argos, que não está ligado agora.',
+      );
+    const unidade = Number(req.query.unidade);
+    res.json(
+      await montarMapa(
+        pool,
+        a.leitura,
+        a.chave,
+        req.usuario!,
+        Number.isInteger(unidade) && unidade > 0 ? unidade : null,
+      ),
+    );
   });
 
   r.post(

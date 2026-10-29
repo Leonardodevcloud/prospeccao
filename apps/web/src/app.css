@@ -5862,3 +5862,525 @@ label.plano-opcao[data-ativo] {
   font-family: var(--font-mono);
   font-size: 0.92em;
 }
+
+/* ── Tela do Argos: histórico ao lado e o Argos em modo página ── */
+.argos-tela {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: stretch;
+  min-height: calc(100vh - 48px);
+}
+.argos-tela__principal {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.argos-tela__principal > section {
+  flex: 1;
+}
+.argos-historico {
+  flex: 1 1 260px;
+  max-width: 300px;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  max-height: calc(100vh - 48px);
+  position: sticky;
+  top: var(--space-6);
+}
+@media (max-width: 860px) {
+  .argos-historico {
+    max-width: none;
+    position: static;
+    max-height: 320px;
+  }
+}
+.argos-historico__topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+}
+.argos-historico__topo h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.argos-historico__busca {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--size-control-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+}
+.argos-historico__busca:focus-within {
+  box-shadow: var(--focus-ring);
+}
+.argos-historico__busca input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+.argos-historico__lista {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.argos-historico__grupo h3 {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.argos-historico__grupo ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.argos-historico__item {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.argos-historico__item[aria-current="true"] {
+  background: var(--brand-soft);
+}
+.argos-historico__item:hover:not([aria-current="true"]) {
+  background: var(--surface-sunken);
+}
+.argos-historico__abrir {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.argos-historico__abrir:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.argos-historico__titulo {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.argos-historico__meta {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.argos-historico__mais {
+  margin: var(--space-1) var(--space-1) 0 0;
+}
+.argos-historico__menu {
+  flex-basis: 100%;
+  display: flex;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-2);
+}
+.argos-historico__renomear,
+.argos-historico__confirmar {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  font-size: 13px;
+}
+.argos-historico__vazio,
+.argos-historico__nota {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+
+/* Mapa do conhecimento (tela cheia, fundo escuro como o Argos) */
+.mapa-tela {
+  position: relative;
+  margin: calc(-1 * var(--space-6));
+  height: 100vh;
+  min-height: 520px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 45%, #0e1324 0%, #05070c 70%);
+  color: #e2e8f0;
+  isolation: isolate;
+}
+@media (max-width: 860px) {
+  .mapa-tela {
+    margin: calc(-1 * var(--space-4));
+    height: calc(100vh - 64px);
+  }
+}
+.mapa-tela__palco,
+.mapa-tela__canvas,
+.mapa-tela__rotulos {
+  position: absolute;
+  inset: 0;
+}
+.mapa-tela__canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+.mapa-tela__canvas:active {
+  cursor: grabbing;
+}
+.mapa-tela__rotulos {
+  pointer-events: none;
+  overflow: hidden;
+}
+.mapa3d-hub {
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% -140%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+  background: rgb(5 7 12 / 0.72);
+  color: var(--c);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+.mapa3d-hub :where(i) {
+  font-style: normal;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: #94a3b8;
+  font-weight: 500;
+}
+.mapa3d-foco {
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% calc(-100% - 14px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgb(5 7 12 / 0.85);
+  border: 1px solid rgb(148 163 184 / 0.3);
+  white-space: nowrap;
+}
+.mapa3d-foco :where(b) {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.mapa3d-foco :where(span) {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+.mapa-tela__barra {
+  position: absolute;
+  top: var(--space-4);
+  left: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  z-index: 2;
+}
+.mapa-tela__busca {
+  position: relative;
+}
+.mapa-tela__campo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: rgb(15 20 35 / 0.82);
+  border: 1px solid rgb(148 163 184 / 0.22);
+  color: #94a3b8;
+  font-size: 13px;
+}
+.mapa-tela__campo input,
+.mapa-tela__campo select {
+  background: transparent;
+  border: 0;
+  color: #f1f5f9;
+  font: inherit;
+  outline: none;
+  min-width: 0;
+}
+.mapa-tela__campo input {
+  width: 220px;
+}
+.mapa-tela__campo select option {
+  color: #0f172a;
+}
+.mapa-tela__campo:focus-within {
+  border-color: var(--brand, #0b6b63);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand, #0b6b63) 45%, transparent);
+}
+.mapa-tela__achados {
+  position: absolute;
+  top: 42px;
+  left: 0;
+  width: 100%;
+  min-width: 260px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: 10px;
+  background: #0f1423;
+  border: 1px solid rgb(148 163 184 / 0.22);
+}
+.mapa-tela__achados :where(button) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #f1f5f9;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.mapa-tela__achados :where(button):hover,
+.mapa-tela__achados :where(button):focus-visible {
+  background: rgb(148 163 184 / 0.14);
+}
+.mapa-tela__achados :where(span) {
+  color: #94a3b8;
+  font-size: 12px;
+}
+.mapa-tela__legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.mapa-tela__etapa {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(148 163 184 / 0.22);
+  background: rgb(15 20 35 / 0.82);
+  color: #e2e8f0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mapa-tela__etapa :where(span) {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.mapa-tela__etapa :where(b) {
+  font-weight: 500;
+  color: #94a3b8;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.mapa-tela__etapa[aria-pressed="false"] {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.mapa-tela__etapa:focus-visible,
+.mapa-tela__enquadrar:focus-visible,
+.mapa-tela__fechar:focus-visible {
+  outline: 2px solid #5eead4;
+  outline-offset: 2px;
+}
+.mapa-tela__enquadrar {
+  margin-left: auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgb(148 163 184 / 0.22);
+  background: rgb(15 20 35 / 0.82);
+  color: #e2e8f0;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.mapa-tela__aviso {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  max-width: 420px;
+  padding: var(--space-4);
+  border-radius: 12px;
+  background: rgb(15 20 35 / 0.9);
+  border: 1px solid rgb(148 163 184 / 0.22);
+  color: #cbd5e1;
+  text-align: center;
+  z-index: 2;
+}
+.mapa-tela__dica {
+  position: absolute;
+  bottom: var(--space-4);
+  left: 50%;
+  translate: -50% 0;
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.mapa-tela__painel {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  bottom: 88px;
+  width: 340px;
+  max-width: calc(100% - 2 * var(--space-4));
+  margin-top: 96px;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow-y: auto;
+  border-radius: 14px;
+  background: rgb(10 14 26 / 0.92);
+  border: 1px solid rgb(148 163 184 / 0.22);
+  z-index: 3;
+}
+.mapa-tela__painel h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #f8fafc;
+}
+.mapa-tela__painel-topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.mapa-tela__sobre {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  font-weight: 600;
+}
+.mapa-tela__fechar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+.mapa-tela__fechar:hover {
+  background: rgb(148 163 184 / 0.14);
+}
+.mapa-tela__dados {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin: 0;
+}
+.mapa-tela__dados dt {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.mapa-tela__dados dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: #f1f5f9;
+}
+.mapa-tela__largo {
+  grid-column: 1 / -1;
+}
+.mapa-tela__texto {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 14px;
+}
+.mapa-tela__acoes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+@media (max-width: 860px) {
+  .mapa-tela__painel {
+    top: auto;
+    left: var(--space-4);
+    width: auto;
+    max-height: 60%;
+  }
+  .mapa-tela__campo input {
+    width: 150px;
+  }
+  .mapa-tela__dica {
+    display: none;
+  }
+}
+.mapa-tela .mapa-tela__fantasma {
+  color: #e2e8f0;
+  border-color: rgb(148 163 184 / 0.3);
+}
+.mapa-tela .mapa-tela__fantasma:hover {
+  background: rgb(148 163 184 / 0.14);
+}
+.mapa-tela__campo input:focus,
+.mapa-tela__campo select:focus {
+  outline: none;
+  box-shadow: none;
+}
+@media (max-width: 860px) {
+  /* No celular a conversa vem primeiro; o histórico fica embaixo. */
+  .argos-tela__principal {
+    order: -1;
+  }
+}

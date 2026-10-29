@@ -234,6 +234,8 @@ const REGRAS: Record<string, Regra | null> = {
   'POST /assistente/transcrever': null,
   'POST /assistente/falar': null,
   'POST /assistente/falar/preparar': null,
+  'PATCH /assistente/conversas/:id': null,
+  'DELETE /assistente/conversas/:id': null,
   'PUT /assistente/voz': { acao: 'configuração', texto: (b) => `Mudou a voz do Argos para ${txt(b.voz)}` },
   'POST /email/previa': null,
   'POST /email/campanhas/estimar': null,

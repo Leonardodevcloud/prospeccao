@@ -116,7 +116,7 @@ export const exigirEscrita: RequestHandler = (req, _res, next) => {
   // Trocar de unidade e mexer no próprio perfil (senha, aviso no celular) continuam valendo.
   // Perguntar ao Argos também (ele só lê; criar tarefa pelo Argos é recusado lá dentro).
   if (
-    /^\/organizacao\/(unidades\/\d+\/entrar|voltar)$|^\/(notificacoes|push)\b|^\/assistente(\/transcrever|\/falar(\/preparar)?)?$/.test(
+    /^\/organizacao\/(unidades\/\d+\/entrar|voltar)$|^\/(notificacoes|push)\b|^\/assistente(\/transcrever|\/falar(\/preparar)?|\/conversas\/\d+)?$/.test(
       req.path,
     )
   )

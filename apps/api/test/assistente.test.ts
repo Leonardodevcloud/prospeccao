@@ -331,4 +331,110 @@ describe.skipIf(!URL_TESTE)('Argos: acesso aos dados por escopo', () => {
     expect(rows[0]).toMatchObject({ conta_id: ids.a1, usuario_id: ids.sdrA1, tipo: 'ligacao' });
     expect(new Date(rows[0].inicio).toISOString()).toBe('2030-01-10T18:00:00.000Z');
   });
+
+  it('o histórico é guardado e só a própria pessoa vê, continua ou apaga', async () => {
+    // As perguntas dos testes anteriores também ficaram guardadas: começa limpo.
+    await pool.query('DELETE FROM comercial.argos_conversas');
+    const sara = await entrar('sara@alfa.com');
+    const gil = await entrar('gil@alfa.com');
+    const pedir = (cookie: string, corpo: object) =>
+      request(app).post('/assistente').set('Origin', ORIGEM).set('Cookie', cookie).send(corpo);
+
+    roteiro = [() => JSON.stringify({ acao: 'responder', fala: 'Primeira resposta.' })];
+    const r1 = await pedir(sara, { texto: 'Quais campanhas estão ativas?' });
+    expect(r1.status).toBe(200);
+    const conversaId = r1.body.conversaId as number;
+    expect(conversaId).toBeGreaterThan(0);
+
+    // Continuando: o contexto vem do banco (a pergunta anterior volta para a IA).
+    roteiro = [
+      (p) => {
+        expect(JSON.stringify(p.mensagens)).toContain('Primeira resposta.');
+        return JSON.stringify({ acao: 'responder', fala: 'Segunda resposta.' });
+      },
+    ];
+    const r2 = await pedir(sara, { texto: 'E as pausadas?', conversaId, via: 'voz' });
+    expect(r2.status).toBe(200);
+    expect(r2.body.conversaId).toBe(conversaId);
+
+    const lista = await request(app).get('/assistente/conversas').set('Cookie', sara);
+    expect(lista.body).toHaveLength(1);
+    expect(lista.body[0]).toMatchObject({
+      id: conversaId,
+      titulo: 'Quais campanhas estão ativas?',
+      trocas: 2,
+    });
+    const aberta = await request(app).get(`/assistente/conversas/${conversaId}`).set('Cookie', sara);
+    expect(aberta.body.trocas.map((t: { via: string }) => t.via)).toEqual(['texto', 'voz']);
+    expect(aberta.body.trocas[1].resposta.fala).toBe('Segunda resposta.');
+
+    // O gestor (mesmo da mesma organização) não vê, não continua e não apaga a conversa da Sara.
+    expect((await request(app).get('/assistente/conversas').set('Cookie', gil)).body).toHaveLength(0);
+    expect((await request(app).get(`/assistente/conversas/${conversaId}`).set('Cookie', gil)).status).toBe(
+      404,
+    );
+    roteiro = [() => JSON.stringify({ acao: 'responder', fala: 'x' })];
+    expect((await pedir(gil, { texto: 'continuar a da Sara', conversaId })).status).toBe(404);
+    const apagarGil = await request(app)
+      .delete(`/assistente/conversas/${conversaId}`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', gil);
+    expect(apagarGil.status).toBe(404);
+
+    // A própria pessoa renomeia e apaga.
+    const renomear = await request(app)
+      .patch(`/assistente/conversas/${conversaId}`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', sara)
+      .send({ titulo: 'Campanhas' });
+    expect(renomear.status).toBe(204);
+    const apagar = await request(app)
+      .delete(`/assistente/conversas/${conversaId}`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', sara);
+    expect(apagar.status).toBe(204);
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM comercial.argos_trocas');
+    expect(rows[0].n).toBe(0);
+  });
+
+  it('a diretoria também guarda e apaga o próprio histórico', async () => {
+    const dora = await entrar('dora@alfa.com');
+    roteiro = [() => JSON.stringify({ acao: 'responder', fala: 'Oi!' })];
+    const r = await perguntar(dora, 'oi');
+    expect(r.status).toBe(200);
+    const apagar = await request(app)
+      .delete(`/assistente/conversas/${r.body.conversaId}`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', dora);
+    expect(apagar.status).toBe(204);
+  });
+
+  it('o mapa do conhecimento respeita o escopo', async () => {
+    const empresas = (b: { nos: { categoria: string }[] }) =>
+      b.nos.filter((n) => n.categoria === 'registro').length;
+    const sara = await request(app)
+      .get('/assistente/mapa')
+      .set('Cookie', await entrar('sara@alfa.com'));
+    expect(sara.status).toBe(200);
+    expect(empresas(sara.body)).toBe(2);
+    expect(sara.body.unidades).toEqual([{ id: ids.a1, nome: 'Alfa Bahia' }]);
+    const gil = await request(app)
+      .get('/assistente/mapa')
+      .set('Cookie', await entrar('gil@alfa.com'));
+    expect(empresas(gil.body)).toBe(5);
+    // Filtrar por uma unidade de fora do escopo não mostra nada.
+    const fora = await request(app)
+      .get(`/assistente/mapa?unidade=${ids.b1}`)
+      .set('Cookie', await entrar('gil@alfa.com'));
+    expect(empresas(fora.body)).toBe(0);
+    const beto = await request(app)
+      .get('/assistente/mapa')
+      .set('Cookie', await entrar('beto@beta.com'));
+    expect(empresas(beto.body)).toBe(4);
+    // A etapa vira aglomerado e cada empresa se liga a ela.
+    expect(gil.body.nos.find((n: { id: string }) => n.id === 'etapa:abordado')).toMatchObject({
+      categoria: 'area',
+    });
+    expect(gil.body.ligacoes.filter((l: { tipo: string }) => l.tipo === 'area')).toHaveLength(5);
+  });
 });
