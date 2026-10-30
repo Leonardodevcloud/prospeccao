@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Navigate } from 'react-router';
 import { api, type ServicoTestavel } from '../api';
+import { Administradores } from '../componentes/Administradores';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { useAbrirDemonstracao, useRecriarDemonstracao } from '../componentes/Demonstracao';
 import { Drawer } from '../componentes/Drawer';
@@ -287,6 +288,9 @@ export function PlataformaConfiguracoes() {
                 <ErroDaApi erro={abrirDemo.error ?? recriarDemo.error} />
               </Panel>
             </div>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <Administradores />
           </div>
           <p className="nota-rodape">
             As chaves ficam nas variáveis do Railway (nada aparece aqui, só se existe). Para trocar uma chave,

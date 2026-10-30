@@ -181,6 +181,17 @@ export const acessoMasterAtualizar = z
   })
   .refine((v) => v.email !== undefined || v.senha !== undefined, 'Informe o e-mail ou a senha nova.');
 
+/** Novo administrador da plataforma (master). */
+export const administradorNovo = z.object({
+  nome: z.string().trim().min(2, 'Informe o nome.').max(80),
+  email: z.string().trim().toLowerCase().email('E-mail inválido.').max(200),
+});
+
+/** Desativar/reativar um administrador ou tirar o acesso master dele. */
+export const administradorAtualizar = z
+  .object({ ativo: z.boolean().optional(), master: z.literal(false).optional() })
+  .refine((v) => v.ativo !== undefined || v.master !== undefined, 'Nada para atualizar.');
+
 /** Excluir um cliente: digitar o nome dele confirma. */
 export const excluirClienteEntrada = z.object({ confirmacao: z.string().trim().min(1).max(120) });
 

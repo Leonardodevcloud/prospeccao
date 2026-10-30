@@ -5,14 +5,14 @@ export const esquemaEnvApi = envBase.extend({
   PORT: z.coerce.number().int().default(3000),
   /** Origem(ns) do web, separadas por vírgula. Requisições que alteram dados de outra origem são recusadas. */
   APP_ORIGENS: z
-    .string({ message: 'Informe APP_ORIGENS, ex.: https://prospeccao.vercel.app' })
+    .string({ message: 'Informe APP_ORIGENS, ex.: https://app.prospectteam.com.br' })
     .transform((v) =>
       v
         .split(',')
         .map((o) => o.trim().replace(/\/$/, '').toLowerCase())
         .filter(Boolean),
     )
-    .refine((l) => l.length > 0, 'Informe APP_ORIGENS, ex.: https://prospeccao.vercel.app'),
+    .refine((l) => l.length > 0, 'Informe APP_ORIGENS, ex.: https://app.prospectteam.com.br'),
   JWT_SEGREDO: z.string().min(32, 'JWT_SEGREDO precisa ter pelo menos 32 caracteres'),
   ADMIN_EMAIL: z
     .string()

@@ -35,6 +35,7 @@ import * as consumo from '../consumo/repositorio.js';
 import * as equipe from '../equipe/repositorio.js';
 import * as org from '../organizacao/repositorio.js';
 import * as plano from '../plano/repositorio.js';
+import { rotasAdministradores } from './administradores.js';
 import { apagarContas } from './excluir.js';
 import * as repo from './repositorio.js';
 
@@ -47,6 +48,9 @@ export function rotasMaster(deps: DepsApi): Router {
   const r = Router();
   const link = (req: Request, token: string) =>
     `${enderecoDoApp(req.get('origin'), origens)}/convite/${token}`;
+
+  /** Administradores da plataforma (outros masters). */
+  r.use('/administradores', rotasAdministradores(deps));
 
   r.get('/contas', async (_req, res) => {
     const [contas, ia] = await Promise.all([repo.listar(pool), consumo.iaPlataformaPorConta(pool)]);
@@ -147,8 +151,13 @@ export function rotasMaster(deps: DepsApi): Router {
     );
     const u = rows[0];
     if (!u) throw AppError.naoEncontrado('Usuário');
-    if (u.master)
-      throw AppError.invalido('O acesso master não muda por aqui (é o ADMIN_EMAIL e a senha da plataforma).');
+    // Outro administrador da plataforma pode; o seu (Minha conta) e o do ADMIN_EMAIL, não.
+    if (u.master && (id === req.usuario!.id || u.email.toLowerCase() === deps.auth.adminEmail.toLowerCase()))
+      throw AppError.invalido(
+        id === req.usuario!.id
+          ? 'A sua senha você troca em Minha conta.'
+          : 'O acesso de emergência (ADMIN_EMAIL) muda no servidor, não por aqui.',
+      );
     const feito: string[] = [];
     if (d.email !== undefined && d.email !== u.email.toLowerCase()) {
       try {

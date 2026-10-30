@@ -831,7 +831,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Receita e custo de cada cliente, desativar ou excluir, e-mail e senha, os serviços da plataforma e o CRM com dados fictícios.',
     onde: { rotulo: 'Financeiro', para: '/plataforma/financeiro' },
     termos:
-      'master painel plataforma excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
+      'master painel plataforma administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
     corpo: (
       <>
         <p>
@@ -891,6 +891,15 @@ export const ARTIGOS: ArtigoAjuda[] = [
           falta. <b>Testar</b> faz uma chamada mínima ao serviço; <b>Como fazer</b> diz qual variável colocar
           e em qual serviço do Railway. Ao lado ficam a tabela de preços, os custos unitários e o contato do
           site.
+        </p>
+        <h3>Administradores da plataforma</h3>
+        <p>
+          Em Configurações › <b>Administradores da plataforma</b>, <b>Novo administrador</b> cria o acesso
+          master de outra pessoa: ela recebe um link para criar a senha e entra direto no painel, vendo e
+          mudando tudo. Na lista dá para gerar um link de nova senha, mudar e-mail e senha, desativar (sai na
+          hora) ou <b>tirar o acesso</b> (continua na equipe da sua conta, sem o painel). Ninguém mexe no
+          próprio acesso, sempre sobra pelo menos um administrador ativo e o <b>acesso de emergência</b> (o
+          e-mail configurado no servidor) não se desativa por aqui. Tudo fica na Auditoria.
         </p>
         <h3>CRM de demonstração</h3>
         <Passos>

@@ -307,4 +307,78 @@ describe.skipIf(!URL_TESTE)('painel master: financeiro, configurações e CRM de
     );
     expect(aud2.length).toBe(1);
   });
+  it('administradores da plataforma: convidar outro master, que entra no painel; desativar e tirar o acesso', async () => {
+    const criado = await enviar('/master/administradores', {
+      nome: 'Carla Souza',
+      email: 'Carla@Plataforma.com.br',
+    });
+    expect(criado.status).toBe(201);
+    const { id, convite } = criado.body as { id: number; convite: string };
+    expect(convite).toContain('/convite/');
+    // E-mail de alguém de um cliente não vira master; o mesmo master de novo também não.
+    expect(
+      (await enviar('/master/administradores', { nome: 'Xavier', email: 'bia@financeiro.com.br' })).status,
+    ).toBe(409);
+    expect(
+      (await enviar('/master/administradores', { nome: 'Carla', email: 'carla@plataforma.com.br' })).status,
+    ).toBe(409);
+
+    // Aceita o convite e entra: é master (vê o painel).
+    const token = convite.split('/convite/')[1]!;
+    const aceitou = await request(app)
+      .post(`/auth/convite/${token}`)
+      .set('Origin', ORIGEM)
+      .send({ senha: 'carla-senha-1' });
+    expect(aceitou.status).toBe(200);
+    const login = await request(app)
+      .post('/auth/login')
+      .set('Origin', ORIGEM)
+      .send({ email: 'carla@plataforma.com.br', senha: 'carla-senha-1' });
+    expect(login.status).toBe(200);
+    const daCarla = (login.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    expect((await ler('/auth/eu', daCarla)).body.master).toBe(true);
+    expect((await ler('/master/plataforma/clientes', daCarla)).status).toBe(200);
+
+    // A lista mostra quem é quem; ninguém mexe no próprio nem no do ADMIN_EMAIL.
+    const lista = (await ler('/master/administradores', daCarla)).body as {
+      id: number;
+      voce: boolean;
+      doAmbiente: boolean;
+    }[];
+    expect(lista.find((a) => a.id === id)?.voce).toBe(true);
+    const ambiente = lista.find((a) => a.doAmbiente)!;
+    const patch = (alvo: number, corpo: object, c = cookie) =>
+      request(app)
+        .patch(`/master/administradores/${alvo}`)
+        .set('Origin', ORIGEM)
+        .set('Cookie', c)
+        .send(corpo);
+    expect((await patch(ambiente.id, { ativo: false }, daCarla)).status).toBe(422);
+    expect((await patch(id, { ativo: false }, daCarla)).status).toBe(422);
+
+    // Desativado: a sessão cai e o login não passa. Reativado: volta.
+    expect((await patch(id, { ativo: false })).status).toBe(200);
+    expect((await ler('/master/plataforma/clientes', daCarla)).status).toBe(401);
+    expect((await patch(id, { ativo: true })).status).toBe(200);
+    // Sem o acesso master: continua na equipe da conta principal, mas o painel fica fechado.
+    expect((await patch(id, { master: false })).status).toBe(200);
+    const deNovo = await request(app)
+      .post('/auth/login')
+      .set('Origin', ORIGEM)
+      .send({ email: 'carla@plataforma.com.br', senha: 'carla-senha-1' });
+    const c2 = (deNovo.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    expect((await ler('/auth/eu', c2)).body.master).toBe(false);
+    expect((await ler('/master/plataforma/clientes', c2)).status).toBe(403);
+    // E volta a ser master (já tem senha: sem link novo).
+    const volta = await enviar('/master/administradores', {
+      nome: 'Carla Souza',
+      email: 'carla@plataforma.com.br',
+    });
+    expect(volta.status).toBe(201);
+    expect(volta.body.convite).toBeNull();
+    const { rows: aud } = await pool.query(
+      `SELECT count(*)::int AS n FROM cadastro.auditoria WHERE acao = 'administradores'`,
+    );
+    expect(aud[0].n).toBeGreaterThanOrEqual(4);
+  });
 });
