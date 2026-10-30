@@ -2902,6 +2902,9 @@ p {
   line-height: 18px;
   color: var(--ink-muted);
 }
+.modulo--largo {
+  grid-column: 1 / -1;
+}
 .modulo--destaque {
   border-color: var(--brand);
   background: var(--brand-soft);
@@ -2945,38 +2948,6 @@ p {
   flex: 1;
   font-size: 15px;
 }
-.em-todos {
-  margin-top: 16px;
-  padding: 20px 24px;
-  border-radius: var(--radius-lg);
-  background: var(--brand-soft);
-}
-.em-todos__titulo {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--brand);
-}
-.em-todos__lista {
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 8px 20px;
-  font-size: 14px;
-  line-height: 20px;
-}
-.em-todos__lista li {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-.em-todos__lista .ic {
-  flex: none;
-  margin-top: 2px;
-  color: var(--brand);
-}
-
 /* contato: campo-isca (robôs preenchem, gente não vê) e confirmação do envio */
 .campo--isca {
   position: absolute;

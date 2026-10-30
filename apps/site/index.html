@@ -59,6 +59,8 @@
 <symbol id="i-ellipsis" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
 <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v3"/><path d="M16 2v3"/><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></symbol>
+<symbol id="i-video" viewBox="0 0 24 24"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
+<symbol id="i-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M10.4 21.9a10 10 0 0 0 9.941-15.416"/><path d="M13.5 2.1a10 10 0 0 0-9.841 15.416"/></symbol>
 <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
 <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
 <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
@@ -271,13 +273,17 @@
         <p class="chapeu">O sistema por dentro</p>
         <h2 class="titulo">Telas reais. Nada de maquete.</h2>
       </div>
-      <p>Três telas que o seu time vai abrir todo dia. O resto, a gente mostra ao vivo.</p>
+      <p>Da lista de leads à reunião com o cliente e ao Argos: as telas que o seu time vai abrir todo dia.</p>
     </div>
     <div class="tour tour--auto revela" data-tour>
       <div class="abas" role="tablist" aria-label="Partes do sistema">
         <button class="aba" type="button" role="tab" id="aba-leads" aria-controls="painel-leads" aria-selected="true" tabindex="0" data-url="app.prospectteam.com.br/leads"><span class="aba__ic"><svg class="ic" aria-hidden="true"><use href="#i-store"></use></svg></span>Leads<span class="aba__tempo" aria-hidden="true"></span></button>
 <button class="aba" type="button" role="tab" id="aba-ficha" aria-controls="painel-ficha" aria-selected="false" tabindex="-1" data-url="app.prospectteam.com.br/leads/ficha"><span class="aba__ic"><svg class="ic" aria-hidden="true"><use href="#i-user-round"></use></svg></span>Ficha do lead<span class="aba__tempo" aria-hidden="true"></span></button>
 <button class="aba" type="button" role="tab" id="aba-funil" aria-controls="painel-funil" aria-selected="false" tabindex="-1" data-url="app.prospectteam.com.br/funil"><span class="aba__ic"><svg class="ic" aria-hidden="true"><use href="#i-kanban"></use></svg></span>Funil<span class="aba__tempo" aria-hidden="true"></span></button>
+<button class="aba" type="button" role="tab" id="aba-reuniao" aria-controls="painel-reuniao" aria-selected="false" tabindex="-1" data-url="app.prospectteam.com.br/r/abcd-efgh"><span class="aba__ic"><svg class="ic" aria-hidden="true"><use href="#i-video"></use></svg></span>Reunião por vídeo<span class="aba__tempo" aria-hidden="true"></span></button>
+<button class="aba" type="button" role="tab" id="aba-resumo" aria-controls="painel-resumo" aria-selected="false" tabindex="-1" data-url="app.prospectteam.com.br/reunioes/apresentacao"><span class="aba__ic"><svg class="ic" aria-hidden="true"><use href="#i-file-text"></use></svg></span>Gravação e resumo<span class="aba__tempo" aria-hidden="true"></span></button>
+<button class="aba" type="button" role="tab" id="aba-argos" aria-controls="painel-argos" aria-selected="false" tabindex="-1" data-url="app.prospectteam.com.br/argos"><span class="aba__ic"><svg class="ic" aria-hidden="true"><use href="#i-orbit"></use></svg></span>Argos<span class="aba__tempo" aria-hidden="true"></span></button>
+<button class="aba" type="button" role="tab" id="aba-mapa" aria-controls="painel-mapa" aria-selected="false" tabindex="-1" data-url="app.prospectteam.com.br/argos/mapa"><span class="aba__ic"><svg class="ic" aria-hidden="true"><use href="#i-globe"></use></svg></span>Mapa do comercial<span class="aba__tempo" aria-hidden="true"></span></button>
       </div>
       <div class="tour__palco">
         <div class="tela">
@@ -286,11 +292,19 @@
             <img class="ativa" data-img="leads" src="/img/leads.webp" width="1600" height="1000" alt="Lista de leads com nota, possíveis decisores e melhor contato">
 <img class="" data-img="ficha" src="/img/ficha.webp" width="1600" height="1000" alt="Ficha do lead: nota e motivo, funil, possíveis decisores, contatos e como foi encontrada" loading="lazy">
 <img class="" data-img="funil" src="/img/funil.webp" width="1600" height="1000" alt="Funil em colunas" loading="lazy">
+<img class="" data-img="reuniao" src="/img/reuniao-ao-vivo.webp" width="1600" height="1000" alt="Sala de reunião por vídeo com a proposta na tela compartilhada, os participantes e o chat com uma planilha anexada" loading="lazy">
+<img class="" data-img="resumo" src="/img/reuniao-resumo.webp" width="1600" height="1000" alt="Reunião gravada com o resumo da IA: dor principal, quem decide, objeções, próximos passos e momentos marcados no vídeo" loading="lazy">
+<img class="" data-img="argos" src="/img/argos.webp" width="1600" height="1000" alt="Argos respondendo como está o funil do mês, com números em destaque e gráfico de negócios por etapa" loading="lazy">
+<img class="" data-img="mapa" src="/img/argos-mapa.webp" width="1600" height="1000" alt="Mapa do comercial: cada negociação é uma estrela ligada à sua etapa do funil" loading="lazy">
           </div>
         </div>
         <div class="tour__texto" role="tabpanel" id="painel-leads" aria-labelledby="aba-leads"><div><h3>A lista já chega filtrada</h3><p>Cada empresa com nota A, B ou C e o motivo, possíveis decisores e o melhor contato. Quem o time já trabalhou não volta.</p></div></div>
 <div class="tour__texto" role="tabpanel" id="painel-ficha" aria-labelledby="aba-ficha" hidden><div><h3>Tudo sobre a empresa em uma tela</h3><p>O comercial abre a ficha e sabe por onde começar, por quem perguntar e de onde veio cada informação.</p></div></div>
 <div class="tour__texto" role="tabpanel" id="painel-funil" aria-labelledby="aba-funil" hidden><div><h3>O funil do time em quadro</h3><p>Arraste o card e a etapa muda. Cada lead com o próximo passo e o prazo, e o gestor vê o que está parado.</p></div></div>
+<div class="tour__texto" role="tabpanel" id="painel-reuniao" aria-labelledby="aba-reuniao" hidden><div><h3>Reunião por vídeo, sem instalar nada</h3><p>O cliente entra pelo link, sem baixar aplicativo nem criar conta. Tela compartilhada inteira, chat com arquivos e mão levantada, tudo dentro do sistema.</p></div></div>
+<div class="tour__texto" role="tabpanel" id="painel-resumo" aria-labelledby="aba-resumo" hidden><div><h3>A reunião vira resumo e próximos passos</h3><p>Gravação, transcrição e o resumo da IA: a dor do cliente, quem decide, as objeções e os próximos passos, que viram tarefa com um clique.</p></div></div>
+<div class="tour__texto" role="tabpanel" id="painel-argos" aria-labelledby="aba-argos" hidden><div><h3>Pergunte ao Argos, por texto ou voz</h3><p>“Como está o meu funil?” e ele responde com os números do seu comercial, monta o gráfico e diz o que fazer agora.</p></div></div>
+<div class="tour__texto" role="tabpanel" id="painel-mapa" aria-labelledby="aba-mapa" hidden><div><h3>Todo o comercial em um mapa</h3><p>Cada estrela é uma negociação, ligada à etapa e a quem cuida. Gire, aproxime e clique para abrir a negociação ou perguntar ao Argos.</p></div></div>
       </div>
     </div>
   </div>
@@ -305,11 +319,14 @@
       <p class="texto">A base é prospecção + funil. As funções abaixo entram com o plano ou como módulo, quando você quiser, e a gente mostra cada uma funcionando na demonstração.</p>
     </div>
     <div class="funcoes revela">
-      <article class="funcao funcao--modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-bot"></use></svg></span><div><h3>Agente de IA no WhatsApp <span class="funcao__selo">Módulo</span></h3><p>Aborda, responde e marca reunião. Quando sai do roteiro, chama o seu time.</p></div></article>
-      <article class="funcao funcao--modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-send"></use></svg></span><div><h3>Prospecção por e-mail <span class="funcao__selo">Módulo</span></h3><p>E-mails automáticos de apresentação e propostas comerciais, com a sua marca. Respondeu, parou.</p></div></article>
+      <article class="funcao"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-video"></use></svg></span><div><h3>Reuniões por vídeo <span class="funcao__selo">Plano Time</span></h3><p>Sala própria pelo link, sem instalar nada. Gravação, transcrição e resumo da IA com os próximos passos.</p></div></article>
+      <article class="funcao"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-map-pin"></use></svg></span><div><h3>Vendas na rua <span class="funcao__selo">Plano Time</span></h3><p>Roteiro de visitas no mapa, check-in na porta do cliente e painel do gestor com quem visitou o quê.</p></div></article>
+      <article class="funcao"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-orbit"></use></svg></span><div><h3>Argos <span class="funcao__selo">Plano Escala</span></h3><p>Pergunte por texto ou voz e ele responde com os números do seu comercial, gráfico e o que fazer agora.</p></div></article>
+      <article class="funcao funcao--modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-bot"></use></svg></span><div><h3>WhatsApp + Agente de IA <span class="funcao__selo">Módulo</span></h3><p>A IA aborda, responde e marca reunião pelo WhatsApp. Quando sai do roteiro, chama o seu time.</p></div></article>
       <article class="funcao funcao--modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-message-circle"></use></svg></span><div><h3>WhatsApp integrado <span class="funcao__selo">Módulo</span></h3><p>Converse com os leads sem sair do sistema, com o histórico na ficha de cada empresa.</p></div></article>
-      <article class="funcao"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-calendar"></use></svg></span><div><h3>Meu dia e agenda</h3><p>Cada pessoa sabe o que fazer hoje. Integra com o Google Agenda.</p></div></article>
-      <article class="funcao"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-trending-up"></use></svg></span><div><h3>Relatórios e metas <span class="funcao__selo">Plano Time</span></h3><p>O que virou reunião, quem fez e de qual campanha veio.</p></div></article>
+      <article class="funcao funcao--modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-send"></use></svg></span><div><h3>Prospecção por e-mail <span class="funcao__selo">Módulo · incluso no Escala</span></h3><p>E-mails automáticos de apresentação e propostas comerciais, com a sua marca. Respondeu, parou.</p></div></article>
+      <article class="funcao"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-calendar"></use></svg></span><div><h3>Meu dia e agenda <span class="funcao__selo">Todos os planos</span></h3><p>Cada pessoa sabe o que fazer hoje. Integra com o Google Agenda.</p></div></article>
+      <article class="funcao"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-trending-up"></use></svg></span><div><h3>Relatórios e metas <span class="funcao__selo">Plano Time</span></h3><p>O que virou reunião, quem fez, de qual campanha veio e quanto falta para a meta.</p></div></article>
       <article class="funcao"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-inbox"></use></svg></span><div><h3>App no celular <span class="funcao__selo">Plano Time</span></h3><p>Notificação quando o lead responde, mesmo com o sistema fechado.</p></div></article>
     </div>
     <a class="cta-linha revela" href="#contato"><span class="cta-linha__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-star"></use></svg></span><span><b>Quer ver alguma delas funcionando?</b> Escolha na demonstração e a gente mostra com o seu nicho.</span><span class="cta-linha__acao">Agendar demonstração <svg class="ic ic--seta" aria-hidden="true"><use href="#i-arrow-right"></use></svg></span></a>
@@ -372,25 +389,12 @@
         <a class="btn btn--sec" href="#contato" data-plano="Escala">Falar com a gente</a>
       </article>
     </div>
-    <div class="em-todos revela">
-      <p class="em-todos__titulo">Em todos os planos</p>
-      <ul class="em-todos__lista">
-        <li><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg><span>Leads por nicho e cidade (CNPJ + Google Maps)</span></li>
-        <li><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg><span>Possíveis decisores e contatos com a fonte</span></li>
-        <li><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg><span>Funil em quadro com o próximo passo de cada lead</span></li>
-        <li><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg><span>Meu dia, agenda e integração com o Google Agenda</span></li>
-        <li><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg><span>Relatórios do funil e exportação para Excel</span></li>
-        <li><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg><span>Sem taxa de implantação</span></li>
-      </ul>
-    </div>
-
     <div class="modulos revela">
       <p class="modulos__titulo">Módulos para somar a qualquer plano</p>
       <div class="modulos__grade">
+        <div class="modulo modulo--destaque modulo--largo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-bot"></use></svg></span><div><b>WhatsApp + Agente de IA</b><small>O WhatsApp integrado com a IA trabalhando junto: ela puxa conversa com os leads, tira dúvidas e marca a reunião; quando foge do roteiro, chama o seu time. Inclui 2 números e até 1.000 conversas da IA por mês.</small></div><span class="modulo__preco">+ R$ 497<small>/mês</small></span></div>
         <div class="modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-message-circle"></use></svg></span><div><b>WhatsApp integrado</b><small>Converse com os leads pelo WhatsApp sem sair do sistema: o histórico fica na ficha de cada empresa e os follow-ups saem no dia certo. Inclui 2 números.</small></div><span class="modulo__preco">+ R$ 250<small>/mês</small></span></div>
         <div class="modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-phone"></use></svg></span><div><b>Número de WhatsApp extra</b><small>Mais um número conectado (para mais vendedores ou mais volume), além dos 2 que vêm com o módulo.</small></div><span class="modulo__preco">+ R$ 110<small>/número</small></span></div>
-        <div class="modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-bot"></use></svg></span><div><b>Agente de IA</b><small>Puxa conversa com os leads no WhatsApp, tira dúvidas e marca a reunião. Quando foge do roteiro, chama o seu time. Até 1.000 conversas por mês. Usa o WhatsApp integrado.</small></div><span class="modulo__preco">+ R$ 297<small>/mês</small></span></div>
-        <div class="modulo modulo--destaque"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-star"></use></svg></span><div><b>WhatsApp + Agente de IA</b><small>Os dois juntos, com 2 números e até 1.000 conversas da IA por mês.</small></div><span class="modulo__preco">+ R$ 497<small>/mês</small></span></div>
         <div class="modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-send"></use></svg></span><div><b>Prospecção por e-mail</b><small>E-mails automáticos apresentando a sua empresa e enviando propostas comerciais, com a sua marca. Quem responde sai da sequência. Envios ilimitados. Já vem no Escala.</small></div><span class="modulo__preco">+ R$ 200<small>/mês</small></span></div>
         <div class="modulo"><span class="funcao__ic"><svg class="ic ic--20" aria-hidden="true"><use href="#i-users"></use></svg></span><div><b>Usuário adicional</b><small>Mais uma pessoa do time usando o sistema, em qualquer plano.</small></div><span class="modulo__preco">+ R$ 59<small>/usuário</small></span></div>
       </div>
