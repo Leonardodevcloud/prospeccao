@@ -163,7 +163,11 @@ async function liberar(
   });
   if (nova) {
     try {
-      await video.abrirSala({ sala: sessao.salaVideo });
+      await video.abrirSala({
+        sala: sessao.salaVideo,
+        // Para a página da gravação mostrar o título e a marca, como na tela de quem conduz.
+        dados: { titulo: sala.titulo, empresa: sala.marcaNome || sala.contaNome, cor: sala.marcaCor },
+      });
     } catch (erro) {
       d.log.error({ err: erro, sala: sala.id }, 'reuniões: o LiveKit não abriu a sala');
       throw AppError.externo('Vídeo', 'não deu para abrir a sala agora. Tente de novo em instantes.', erro);

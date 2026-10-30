@@ -64,6 +64,8 @@ export const esquemaEnvApi = envBase.extend({
    */
   GRAVACOES_S3_ENDPOINT: opcional(z.string().url()),
   GRAVACOES_S3_REGIAO: z.string().default('auto'),
+  /** Opcional: outra página para a gravação filmar (padrão: <APP_ORIGENS[0]>/gravacao). */
+  GRAVACOES_MODELO_URL: opcional(z.string().url()),
   GRAVACOES_S3_BUCKET: opcional(z.string().min(3)),
   GRAVACOES_S3_CHAVE: opcional(z.string().min(3)),
   GRAVACOES_S3_SEGREDO: opcional(z.string().min(10)),

@@ -167,7 +167,7 @@ export function Sala(props: {
   );
 }
 
-function Cronometro(props: { desde: number }) {
+export function Cronometro(props: { desde: number }) {
   const [agora, setAgora] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setAgora(Date.now()), 1000);
@@ -190,7 +190,7 @@ function useEmDestaque(pessoas: Participant[], fixado: string | null): Participa
   return achar(fixado) ?? achar(ultimo.current) ?? pessoas.find((p) => !p.isLocal) ?? pessoas[0];
 }
 
-function colunasDaGrade(n: number, pequena: boolean): number {
+export function colunasDaGrade(n: number, pequena: boolean): number {
   if (pequena) return n <= 2 ? 1 : 2;
   if (n <= 1) return 1;
   if (n <= 4) return 2;

@@ -1120,3 +1120,34 @@
     animation: none;
   }
 }
+
+/* ───────────── Página da gravação (o que o vídeo gravado mostra) ───────────── */
+.sala--gravacao {
+  padding-bottom: var(--space-5);
+}
+.sala--gravacao .painel-sala {
+  width: 400px;
+}
+.gravacao-vazia {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-3);
+  color: var(--ink-muted);
+  font-size: 15px;
+}
+.grade-inteira {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+.grade-inteira__vidros {
+  display: grid;
+  justify-content: center;
+  align-content: center;
+}
+.sala--gravacao .fita > * {
+  flex-basis: 228px;
+}

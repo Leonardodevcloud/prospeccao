@@ -25,6 +25,8 @@ export function prepararReunioes(env: EnvApi, log: Logger): DepsReunioes {
           apiKey: env.LIVEKIT_API_KEY,
           apiSecret: env.LIVEKIT_API_SECRET,
           armazenamento: armazenamento?.destino ?? null,
+          // A gravação filma a página /gravacao do front (a mesma visão de quem conduz a reunião).
+          modeloGravacao: env.GRAVACOES_MODELO_URL ?? `${env.APP_ORIGENS[0]?.replace(/\/+$/, '')}/gravacao`,
         })
       : null;
   const transcricao = env.GROQ_CHAVE

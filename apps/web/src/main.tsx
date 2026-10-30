@@ -54,6 +54,11 @@ const roteador = createBrowserRouter([
     path: '/r/:codigo',
     lazy: async () => ({ Component: (await import('./reuniao/PaginaReuniao')).PaginaReuniao }),
   },
+  // O que a gravação da reunião filma (o LiveKit abre esta página com o acesso de quem grava).
+  {
+    path: '/gravacao',
+    lazy: async () => ({ Component: (await import('./reuniao/Gravacao')).PaginaGravacao }),
+  },
   {
     path: '/',
     element: <Shell />,
@@ -101,7 +106,8 @@ const cliente = new QueryClient({
         erro instanceof ErroApi &&
         erro.status === 401 &&
         location.pathname !== '/login' &&
-        !location.pathname.startsWith('/r/')
+        !location.pathname.startsWith('/r/') &&
+        location.pathname !== '/gravacao'
       ) {
         roteador.navigate(`/login?voltar=${encodeURIComponent(location.pathname + location.search)}`);
       }

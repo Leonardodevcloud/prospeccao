@@ -33,6 +33,11 @@ export interface ConfigVideo {
   apiSecret: string;
   /** Onde o LiveKit grava (sem isso, as reuniões funcionam sem gravação). */
   armazenamento?: ConfigArmazenamento | null;
+  /**
+   * Página que a gravação filma (a mesma visão de quem conduz: grade com nomes, chat, tela
+   * compartilhada). Sem ela, usa o layout padrão do LiveKit.
+   */
+  modeloGravacao?: string | null;
 }
 
 export interface PessoaNaSala {
@@ -98,8 +103,8 @@ export interface ServicoVideo {
     atributos?: Record<string, string>;
     horas?: number;
   }): Promise<string>;
-  /** Cria a sala no LiveKit (se já existe, nada muda). */
-  abrirSala(p: { sala: string; maxPessoas?: number }): Promise<void>;
+  /** Cria a sala no LiveKit (se já existe, nada muda). Os dados vão para a página da gravação. */
+  abrirSala(p: { sala: string; maxPessoas?: number; dados?: Record<string, unknown> }): Promise<void>;
   /** Grava a sala inteira (vídeo, com a tela compartilhada em destaque). */
   gravarSala(p: { sala: string; chave: string }): Promise<string>;
   /** Grava o microfone de uma pessoa (áudio, para a transcrição saber quem falou). */
@@ -131,15 +136,19 @@ export function urlDaApi(url: string): string {
 const nsParaData = (ns: bigint | undefined): Date | null =>
   ns && ns > 0n ? new Date(Number(ns / 1_000_000n)) : null;
 
-/** Qualidade da gravação: 720p, 24 quadros, ~1,9 Mbps (texto da tela compartilhada legível sem arquivo enorme). */
+/**
+ * Qualidade da gravação: 1080p, 24 quadros, 3 Mbps. A gravação filma a tela inteira da reunião (vídeos,
+ * nomes e chat lado a lado), então precisa de 1080p para o texto e a tela compartilhada ficarem legíveis.
+ * Cerca de 1,4 GB por hora.
+ */
 export function opcoesGravacao(): EncodingOptions {
   return new EncodingOptions({
-    width: 1280,
-    height: 720,
+    width: 1920,
+    height: 1080,
     depth: 24,
     framerate: 24,
     videoCodec: VideoCodec.H264_MAIN,
-    videoBitrate: 1800,
+    videoBitrate: 3000,
     audioCodec: AudioCodec.AAC,
     audioBitrate: 128,
     audioFrequency: 48000,
@@ -295,6 +304,7 @@ export function criarServicoVideo(cfg: ConfigVideo): ServicoVideo {
         emptyTimeout: 30 * 60,
         departureTimeout: 5 * 60,
         maxParticipants: p.maxPessoas ?? 50,
+        ...(p.dados ? { metadata: JSON.stringify(p.dados) } : {}),
       });
     },
 
@@ -309,8 +319,11 @@ export function criarServicoVideo(cfg: ConfigVideo): ServicoVideo {
             output: { case: 's3', value: destinoS3(a) },
           }),
         },
-        // "speaker": quem fala (ou a tela compartilhada) em destaque, os outros ao lado.
-        { layout: 'speaker', encodingOptions: opcoesGravacao() },
+        // Com o modelo: filma a nossa página (a visão de quem conduz). Sem ele, o layout padrão
+        // "speaker" do LiveKit (quem fala ou a tela compartilhada em destaque).
+        cfg.modeloGravacao
+          ? { layout: 'reuniao', customBaseUrl: cfg.modeloGravacao, encodingOptions: opcoesGravacao() }
+          : { layout: 'speaker', encodingOptions: opcoesGravacao() },
       );
       return info.egressId;
     },
