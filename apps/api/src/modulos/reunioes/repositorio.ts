@@ -442,6 +442,37 @@ export async function sessoesParaConferir(db: Executor) {
   return rows;
 }
 
+/** Reuniões acontecendo agora (a api confere no LiveKit quem está e o que gravar). */
+export async function sessoesAoVivo(db: Executor) {
+  const { rows } = await db.query<{ id: number; contaId: number; salaId: number; salaVideo: string }>(
+    `SELECT id::int, conta_id AS "contaId", sala_id::int AS "salaId", sala_video AS "salaVideo"
+       FROM comercial.sala_sessoes WHERE situacao = 'ao_vivo' ORDER BY iniciada_em LIMIT 100`,
+  );
+  return rows;
+}
+
+/** Quem o sistema acha que está na sala (para notar quem saiu sem o aviso chegar). */
+export async function identidadesPresentes(db: Executor, salaId: number): Promise<string[]> {
+  const { rows } = await db.query<{ identidade: string }>(
+    `SELECT identidade FROM comercial.sala_participantes
+      WHERE sala_id = $1 AND conta_id = ${contaSql()} AND presente_desde IS NOT NULL`,
+    [salaId],
+  );
+  return rows.map((r) => r.identidade);
+}
+
+/** Gravações que ainda não terminaram (a api pergunta ao LiveKit como estão). */
+export async function gravacoesParaConferir(db: Executor) {
+  const { rows } = await db.query<{ gravacaoId: string; contaId: number }>(
+    `SELECT g.gravacao_id AS "gravacaoId", g.conta_id AS "contaId"
+       FROM comercial.sala_gravacoes g JOIN comercial.sala_sessoes ss ON ss.id = g.sessao_id
+      WHERE g.situacao = 'gravando' AND g.gravacao_id NOT LIKE 'reserva:%'
+        AND ss.situacao IN ('ao_vivo', 'processando')
+      ORDER BY g.id LIMIT 100`,
+  );
+  return rows;
+}
+
 /* ───────────── Gravações ───────────── */
 
 /**

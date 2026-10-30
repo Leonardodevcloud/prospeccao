@@ -363,7 +363,9 @@ export function rotasAvisoVideo(deps: DepsApi): Router {
     let aviso: Awaited<ReturnType<typeof video.lerAviso>>;
     try {
       aviso = await video.lerAviso(corpoBruto, req.get('authorization') ?? undefined);
-    } catch {
+    } catch (erro) {
+      // Mais comum: o webhook do LiveKit com outra chave de assinatura (tem que ser a LIVEKIT_API_KEY).
+      deps.log.warn({ err: erro }, 'reuniões: aviso do LiveKit recusado (assinatura)');
       throw new AppError(401, 'assinatura_invalida', 'Aviso sem assinatura válida.');
     }
     await tratarAviso(depsServico(deps), aviso);

@@ -6,6 +6,7 @@ import { ErroApi } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { apiSala, type InfoSala, type Liberado, type ResultadoEntrada } from './api';
 import { AntesDeAbrir, quandoReuniao } from './PaginaReuniao';
+import { destravarSons, ehCelular } from './sons';
 
 /** O que a pessoa escolheu antes de entrar (vale dentro da sala). */
 export interface Escolhas {
@@ -14,6 +15,8 @@ export interface Escolhas {
   microfoneId: string | undefined;
   cameraId: string | undefined;
   altoFalanteId: string | undefined;
+  /** No celular: câmera da frente (user) ou de trás (environment). */
+  frente: 'user' | 'environment';
 }
 
 const NOME_GUARDADO = 'reuniao:nome';
@@ -102,6 +105,9 @@ export function Antessala(props: {
   const [microfoneId, setMicrofoneId] = useState<string>();
   const [cameraId, setCameraId] = useState<string>();
   const [altoFalanteId, setAltoFalanteId] = useState<string>();
+  // No celular não há lista de aparelhos: usa o padrão e um botão para virar a câmera.
+  const [celular] = useState(ehCelular);
+  const [frente, setFrente] = useState<'user' | 'environment'>('user');
   const [erroAparelho, setErroAparelho] = useState<string | null>(null);
   const [erro, setErro] = useState<unknown>(null);
   const [entrando, setEntrando] = useState(false);
@@ -114,11 +120,15 @@ export function Antessala(props: {
     () =>
       mostrarPrevia
         ? {
-            audio: microfone ? { deviceId: microfoneId } : false,
-            video: camera ? { deviceId: cameraId, resolution: VideoPresets.h720.resolution } : false,
+            audio: microfone ? (celular || !microfoneId ? true : { deviceId: microfoneId }) : false,
+            video: camera
+              ? celular || !cameraId
+                ? { facingMode: frente, resolution: VideoPresets.h720.resolution }
+                : { deviceId: cameraId, resolution: VideoPresets.h720.resolution }
+              : false,
           }
         : { audio: false, video: false },
-    [mostrarPrevia, microfone, camera, microfoneId, cameraId],
+    [mostrarPrevia, microfone, camera, microfoneId, cameraId, celular, frente],
   );
   const faixas = usePreviewTracks(opcoes, (e) => {
     setErroAparelho(
@@ -142,11 +152,20 @@ export function Antessala(props: {
   if (antes && !testando)
     return <AntesDeAbrir info={info} agora={props.agora} aoTestar={() => setTestando(true)} />;
 
-  const escolhas: Escolhas = { microfone, camera, microfoneId, cameraId, altoFalanteId };
+  const escolhas: Escolhas = {
+    microfone,
+    camera,
+    microfoneId: celular ? undefined : microfoneId,
+    cameraId: celular ? undefined : cameraId,
+    altoFalanteId: celular ? undefined : altoFalanteId,
+    frente,
+  };
   const precisaAceite = info.gravar && !doTime;
 
   const entrar = async (e: FormEvent) => {
     e.preventDefault();
+    // O clique em "Entrar" libera os sons de aviso da sala (o navegador exige um toque antes).
+    destravarSons();
     setErro(null);
     setEntrando(true);
     try {
@@ -183,7 +202,13 @@ export function Antessala(props: {
       <section className="as__previa" aria-label="Sua câmera e seu microfone">
         <div className="as__video">
           {video ? (
-            <video ref={elVideo} muted playsInline autoPlay />
+            <video
+              ref={elVideo}
+              muted
+              playsInline
+              autoPlay
+              data-traseira={frente === 'environment' || undefined}
+            />
           ) : (
             <div className="as__sem-camera">
               {nome.trim() ? <Avatar nome={nome} size={88} /> : <Icon name="video-off" size={28} />}
@@ -214,27 +239,40 @@ export function Antessala(props: {
             >
               <Icon name={camera ? 'video' : 'video-off'} size={22} />
             </button>
+            {celular && camera && (
+              <button
+                type="button"
+                className="as__botao"
+                aria-label={frente === 'user' ? 'Usar a câmera de trás' : 'Usar a câmera da frente'}
+                title={frente === 'user' ? 'Usar a câmera de trás' : 'Usar a câmera da frente'}
+                onClick={() => setFrente((x) => (x === 'user' ? 'environment' : 'user'))}
+              >
+                <Icon name="switch-camera" size={22} />
+              </button>
+            )}
           </div>
         </div>
         <Medidor faixa={microfone ? audio : undefined} />
         {erroAparelho && <Mensagem tipo="aviso">{erroAparelho}</Mensagem>}
-        <div className="as__aparelhos">
-          <Seletor id="as-cam" rotulo="Câmera" tipo="videoinput" valor={cameraId} aoMudar={setCameraId} />
-          <Seletor
-            id="as-mic"
-            rotulo="Microfone"
-            tipo="audioinput"
-            valor={microfoneId}
-            aoMudar={setMicrofoneId}
-          />
-          <Seletor
-            id="as-som"
-            rotulo="Alto-falante"
-            tipo="audiooutput"
-            valor={altoFalanteId}
-            aoMudar={setAltoFalanteId}
-          />
-        </div>
+        {!celular && (
+          <div className="as__aparelhos">
+            <Seletor id="as-cam" rotulo="Câmera" tipo="videoinput" valor={cameraId} aoMudar={setCameraId} />
+            <Seletor
+              id="as-mic"
+              rotulo="Microfone"
+              tipo="audioinput"
+              valor={microfoneId}
+              aoMudar={setMicrofoneId}
+            />
+            <Seletor
+              id="as-som"
+              rotulo="Alto-falante"
+              tipo="audiooutput"
+              valor={altoFalanteId}
+              aoMudar={setAltoFalanteId}
+            />
+          </div>
+        )}
       </section>
 
       <form className="as__entrar" onSubmit={entrar} aria-label="Entrar na reunião">

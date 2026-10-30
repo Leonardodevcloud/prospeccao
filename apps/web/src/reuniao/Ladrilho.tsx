@@ -47,12 +47,14 @@ export function Ladrilho(props: {
   const nome = nomeDe(p);
   const mao = !!attributes?.mao;
   const tela = trackRef.source === Track.Source.ScreenShare;
+  // A câmera de trás do celular não fica espelhada (o texto de um papel, por exemplo, sai legível).
+  const traseira = pub?.track?.mediaStreamTrack?.getSettings?.().facingMode === 'environment';
   return (
     <div
       className={['ladrilho', props.className].filter(Boolean).join(' ')}
       data-falando={(falando && !tela) || undefined}
       data-video={comVideo || undefined}
-      data-espelho={(p.isLocal && trackRef.source === Track.Source.Camera) || undefined}
+      data-espelho={(p.isLocal && trackRef.source === Track.Source.Camera && !traseira) || undefined}
     >
       {comVideo && isTrackReference(trackRef) ? (
         <VideoTrack trackRef={trackRef} style={tela ? { objectFit: 'contain' } : undefined} />

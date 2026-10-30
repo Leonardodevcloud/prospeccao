@@ -41,6 +41,13 @@ export interface PessoaNaSala {
   atributos: Record<string, string>;
 }
 
+/** Quem está na sala agora e os microfones de cada um (o que o webhook avisaria, conferido direto). */
+export interface EstadoDaSala {
+  pessoas: { identidade: string; nome: string; microfones: string[] }[];
+}
+
+export type AvisoGravacao = Extract<AvisoVideo, { tipo: 'gravacao' }>;
+
 /** O que o LiveKit avisa (o webhook), já traduzido para o que o sistema usa. */
 export type AvisoVideo =
   | { tipo: 'sala_aberta'; id: string; sala: string; em: Date }
@@ -106,6 +113,10 @@ export interface ServicoVideo {
   /** Encerra para todos. */
   encerrar(sala: string): Promise<void>;
   presentes(sala: string): Promise<PessoaNaSala[]>;
+  /** Quem está na sala e com quais microfones (null: a sala não existe mais no LiveKit). */
+  estado(sala: string): Promise<EstadoDaSala | null>;
+  /** Situação de uma gravação (null se o LiveKit não a conhece). */
+  gravacao(gravacaoId: string): Promise<AvisoGravacao | null>;
   /** Confere a assinatura do aviso e traduz (lança erro se a assinatura não bater). */
   lerAviso(corpo: string, autorizacao: string | undefined): Promise<AvisoVideo>;
   /** "ok (…)" ou lança o erro. */
@@ -352,6 +363,33 @@ export function criarServicoVideo(cfg: ConfigVideo): ServicoVideo {
       return lista
         .filter((p) => p.kind === 0) // pessoas (não as gravações nem robôs)
         .map((p) => ({ identidade: p.identity, nome: p.name, atributos: { ...p.attributes } }));
+    },
+
+    async estado(sala) {
+      let lista: Awaited<ReturnType<typeof salas.listParticipants>>;
+      try {
+        lista = await salas.listParticipants(sala);
+      } catch (erro) {
+        if (/not.?found|404/i.test((erro as Error).message)) return null;
+        throw erro;
+      }
+      return {
+        pessoas: lista
+          .filter((p) => p.kind === 0)
+          .map((p) => ({
+            identidade: p.identity,
+            nome: p.name,
+            microfones: p.tracks
+              .filter((t) => t.type === TrackType.AUDIO && t.source === TrackSource.MICROPHONE)
+              .map((t) => t.sid),
+          })),
+      };
+    },
+
+    async gravacao(gravacaoId) {
+      const [info] = await gravacoes.listEgress({ egressId: gravacaoId });
+      if (!info) return null;
+      return traduzirGravacao(info, `conferida-${gravacaoId}`, new Date()) as AvisoGravacao;
     },
 
     async lerAviso(corpo, autorizacao) {

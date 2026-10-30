@@ -384,6 +384,67 @@ export async function tratarAviso(d: Deps & { aoEncerrar: AoEncerrar }, a: Aviso
   });
 }
 
+/**
+ * Rede de segurança do webhook: confere no LiveKit quem está em cada reunião ao vivo e como estão as
+ * gravações. Se um aviso não chegou (webhook não configurado, fora do ar ou atrasado), o efeito é o
+ * mesmo: a gravação começa, o áudio de cada microfone é gravado e a presença é contada.
+ */
+export async function acompanharSessoes(d: Deps & { aoEncerrar: AoEncerrar }): Promise<void> {
+  const video = d.reunioes.video;
+  if (!video) return;
+  const agora = new Date();
+  for (const s of await repo.sessoesAoVivo(d.pool)) {
+    try {
+      const estado = await video.estado(s.salaVideo);
+      if (!estado) continue; // a sala ainda não existe ou já fechou (quem cuida é conferirSessoesAbertas)
+      const aqui = new Set(estado.pessoas.map((p) => p.identidade));
+      const antes = await comConta(s.contaId, () => repo.identidadesPresentes(d.pool, s.salaId));
+      for (const id of antes)
+        if (!aqui.has(id))
+          await tratarAviso(d, {
+            tipo: 'saiu',
+            id: `conferido-${s.id}-${id}`,
+            sala: s.salaVideo,
+            identidade: id,
+            em: agora,
+          });
+      for (const p of estado.pessoas) {
+        await tratarAviso(d, {
+          tipo: 'entrou',
+          id: `conferido-${s.id}-${p.identidade}`,
+          sala: s.salaVideo,
+          identidade: p.identidade,
+          nome: p.nome,
+          em: agora,
+        });
+        for (const trilhaId of p.microfones)
+          await tratarAviso(d, {
+            tipo: 'microfone',
+            id: `conferido-${trilhaId}`,
+            sala: s.salaVideo,
+            identidade: p.identidade,
+            nome: p.nome,
+            trilhaId,
+            em: agora,
+          });
+      }
+    } catch (erro) {
+      d.log.warn({ err: erro, sessao: s.id }, 'reuniões: não conferiu quem está na sala');
+    }
+  }
+  for (const g of await repo.gravacoesParaConferir(d.pool)) {
+    try {
+      const aviso = await video.gravacao(g.gravacaoId);
+      if (!aviso || aviso.situacao === 'gravando') continue;
+      await comConta(g.contaId, () => repo.atualizarGravacao(d.pool, g.gravacaoId, aviso));
+      if (aviso.situacao === 'falhou')
+        d.log.warn({ gravacao: g.gravacaoId, erro: aviso.erro }, 'reuniões: gravação falhou');
+    } catch (erro) {
+      d.log.warn({ err: erro, gravacao: g.gravacaoId }, 'reuniões: não conferiu a gravação');
+    }
+  }
+}
+
 /* ───────────── Fim da reunião ───────────── */
 
 export type AoEncerrar = (sessaoId: number) => void;

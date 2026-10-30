@@ -6,7 +6,7 @@ import type { ResolverServicos } from '../../servicos.js';
 import * as funil from '../funil/repositorio.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as repo from './repositorio.js';
-import { type AoEncerrar, conferirSessoesAbertas, type DepsReunioes } from './servico.js';
+import { type AoEncerrar, acompanharSessoes, conferirSessoesAbertas, type DepsReunioes } from './servico.js';
 
 /**
  * Depois da reunião (uma por vez, em segundo plano): espera os arquivos do LiveKit, transcreve o
@@ -15,6 +15,8 @@ import { type AoEncerrar, conferirSessoesAbertas, type DepsReunioes } from './se
  */
 
 const LOCK = 7_301_060;
+/** Trava da conferência das salas ao vivo (uma instância da api por vez). */
+const LOCK_AO_VIVO = 7_301_061;
 const MAX_TENTATIVAS = 4;
 /** Espera máxima pelos arquivos do LiveKit depois que a reunião acabou. */
 const ESPERA_ARQUIVOS_MS = 20 * 60_000;
@@ -232,6 +234,27 @@ export async function rodarProcessamento(d: DepsProcessar & { aoEncerrar: AoEnce
   }
 }
 
+/** A cada 10 s: confere no LiveKit as reuniões ao vivo e as gravações (sem depender do webhook). */
+export async function rodarAcompanhamento(d: DepsProcessar & { aoEncerrar: AoEncerrar }): Promise<void> {
+  if (!d.reunioes.video) return;
+  const cliente = await d.pool.connect();
+  try {
+    const { rows } = await cliente.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [
+      LOCK_AO_VIVO,
+    ]);
+    if (!rows[0]?.ok) return;
+    try {
+      await acompanharSessoes({ ...d, reunioes: d.reunioes });
+    } finally {
+      await cliente.query('SELECT pg_advisory_unlock($1)', [LOCK_AO_VIVO]);
+    }
+  } catch (erro) {
+    d.log.error({ err: erro }, 'reuniões: conferência das salas ao vivo falhou');
+  } finally {
+    cliente.release();
+  }
+}
+
 /** Roda a cada 30 s (e logo depois que uma reunião gravada acaba). */
 export function iniciarProcessamento(d: DepsProcessar): { parar: () => void; aoEncerrar: AoEncerrar } {
   let agendado: NodeJS.Timeout | null = null;
@@ -246,9 +269,19 @@ export function iniciarProcessamento(d: DepsProcessar): { parar: () => void; aoE
   };
   const t = setInterval(() => void rodarProcessamento({ ...d, aoEncerrar }), 30_000);
   t.unref();
+  let acompanhando = false;
+  const v = setInterval(() => {
+    if (acompanhando) return;
+    acompanhando = true;
+    void rodarAcompanhamento({ ...d, aoEncerrar }).finally(() => {
+      acompanhando = false;
+    });
+  }, 10_000);
+  v.unref();
   return {
     parar: () => {
       clearInterval(t);
+      clearInterval(v);
       if (agendado) clearTimeout(agendado);
     },
     aoEncerrar,

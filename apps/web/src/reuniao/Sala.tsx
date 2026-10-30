@@ -17,6 +17,7 @@ import {
   ConnectionQuality,
   ConnectionState,
   DisconnectReason,
+  type LocalVideoTrack,
   type Participant,
   type RemoteParticipant,
   Room,
@@ -31,6 +32,7 @@ import { apiSala, type InfoSala, type Liberado, type MensagemChat } from './api'
 import { Ladrilho, nomeDe } from './Ladrilho';
 import { PainelChat } from './PainelChat';
 import { maosLevantadas, PainelPessoas } from './PainelPessoas';
+import { avisarNaAba, destravarSons, ehCelular, guardarSons, type Som, sonsLigados, tocar } from './sons';
 
 /**
  * A sala de reunião: vídeos (grade, ou a tela compartilhada em destaque), controles (microfone,
@@ -41,15 +43,22 @@ import { maosLevantadas, PainelPessoas } from './PainelPessoas';
 
 export type MotivoSaida = 'saiu' | 'encerrada' | 'removido' | 'erro';
 
-/** Opções da conexão (as mesmas para todo mundo). */
+/**
+ * Opções da conexão (as mesmas para todo mundo).
+ * - Recebe cada vídeo na qualidade do tamanho dele na tela, contando 2 pixels por ponto (nítido como no
+ *   Meet também em telas comuns; com a internet fraca, o servidor baixa a qualidade sozinho).
+ * - Câmera em 720p a até 2,5 Mbps; tela compartilhada em 1080p a 30 quadros (mouse e rolagem fluidos).
+ * - Com a rede apertada, reduz um pouco a nitidez e os quadros juntos ("balanced") em vez de travar
+ *   a imagem ou borrar tudo.
+ */
 function criarSala(escolhas: Escolhas): Room {
   return new Room({
-    adaptiveStream: true,
+    adaptiveStream: { pixelDensity: 2 },
     dynacast: true,
     disconnectOnPageLeave: true,
     videoCaptureDefaults: {
       resolution: VideoPresets.h720.resolution,
-      ...(escolhas.cameraId ? { deviceId: escolhas.cameraId } : {}),
+      ...(escolhas.cameraId ? { deviceId: escolhas.cameraId } : { facingMode: escolhas.frente }),
     },
     audioCaptureDefaults: {
       echoCancellation: true,
@@ -60,10 +69,12 @@ function criarSala(escolhas: Escolhas): Room {
     publishDefaults: {
       simulcast: true,
       videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
+      videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
+      degradationPreference: 'balanced',
       // Áudio com redundância (perda de pacotes no 4G) e sem mandar silêncio.
       red: true,
       dtx: true,
-      screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
+      screenShareEncoding: { maxBitrate: 4_500_000, maxFramerate: 30 },
     },
   });
 }
@@ -86,6 +97,7 @@ const decodificar = new TextDecoder();
 interface Aviso {
   id: number;
   texto: string;
+  icone?: string;
   tom?: 'atencao';
   acao?: { rotulo: string; fazer: () => void };
 }
@@ -183,8 +195,17 @@ function colunasDaGrade(n: number, pequena: boolean): number {
   return 4;
 }
 
-function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; conectado: boolean }) {
+function ConteudoSala(props: {
+  info: InfoSala;
+  acesso: Liberado;
+  escolhas: Escolhas;
+  room: Room;
+  conectado: boolean;
+}) {
   const { info, acesso, room } = props;
+  const [celular] = useState(ehCelular);
+  const [frente, setFrente] = useState(props.escolhas.frente);
+  const [sons, setSons] = useState(sonsLigados);
   const doTime = acesso.papel !== 'convidado';
   const pequena = useTelaPequena();
   const estado = useConnectionState();
@@ -210,11 +231,44 @@ function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; con
   const painelRef = useRef(painel);
   painelRef.current = painel;
 
-  const avisar = useCallback((a: Omit<Aviso, 'id'>, ms = 6000) => {
+  const avisar = useCallback((a: Omit<Aviso, 'id'>, ms = 6000, som?: Som) => {
     const id = Date.now() + Math.random();
     setAvisos((x) => [...x.slice(-2), { ...a, id }]);
     setTimeout(() => setAvisos((x) => x.filter((y) => y.id !== id)), ms);
+    if (som) tocar(som);
+    avisarNaAba(a.texto);
   }, []);
+
+  // O navegador só toca som depois de um toque na página: o primeiro toque libera.
+  useEffect(() => {
+    const liberar = () => destravarSons();
+    window.addEventListener('pointerdown', liberar);
+    window.addEventListener('keydown', liberar);
+    return () => {
+      window.removeEventListener('pointerdown', liberar);
+      window.removeEventListener('keydown', liberar);
+    };
+  }, []);
+
+  // Quem entrou e quem saiu (aviso na tela e som). Os que já estavam quando você entrou não contam.
+  const conectadoEm = useRef(0);
+  if (props.conectado && !conectadoEm.current) conectadoEm.current = Date.now();
+  useEffect(() => {
+    const recente = () => !conectadoEm.current || Date.now() - conectadoEm.current < 2500;
+    const entrou = (p: RemoteParticipant) => {
+      if (recente()) return;
+      avisar({ texto: `${nomeDe(p)} entrou na reunião`, icone: 'user-plus' }, 5000, 'entrou');
+    };
+    const saiu = (p: RemoteParticipant) => {
+      avisar({ texto: `${nomeDe(p)} saiu da reunião`, icone: 'log-out' }, 5000, 'saiu');
+    };
+    room.on(RoomEvent.ParticipantConnected, entrou);
+    room.on(RoomEvent.ParticipantDisconnected, saiu);
+    return () => {
+      room.off(RoomEvent.ParticipantConnected, entrou);
+      room.off(RoomEvent.ParticipantDisconnected, saiu);
+    };
+  }, [room, avisar]);
 
   const juntar = useCallback((m: MensagemChat) => {
     setMensagens((x) => (x.some((y) => y.id === m.id) ? x : [...x, m].sort((a, b) => a.id - b.id)));
@@ -242,13 +296,18 @@ function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; con
         juntar(msg.mensagem);
         if (painelRef.current !== 'chat' && msg.mensagem.participanteId !== acesso.participanteId) {
           setNaoLidas((n) => n + 1);
-          avisar({
-            texto: `${msg.mensagem.autor}: ${msg.mensagem.texto ?? msg.mensagem.arquivo?.nome ?? ''}`.slice(
-              0,
-              120,
-            ),
-            acao: { rotulo: 'Abrir chat', fazer: () => setPainel('chat') },
-          });
+          avisar(
+            {
+              texto: `${msg.mensagem.autor}: ${msg.mensagem.texto ?? msg.mensagem.arquivo?.nome ?? ''}`.slice(
+                0,
+                120,
+              ),
+              icone: 'message-circle',
+              acao: { rotulo: 'Abrir chat', fazer: () => setPainel('chat') },
+            },
+            6000,
+            'mensagem',
+          );
         }
       }
       if (topico === 'sala' && msg.tipo === 'espera') {
@@ -258,10 +317,12 @@ function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; con
           avisar(
             {
               texto: `${msg.nome} quer entrar na reunião`,
+              icone: 'user-plus',
               tom: 'atencao',
               acao: { rotulo: 'Ver', fazer: () => setPainel('pessoas') },
             },
             15_000,
+            'espera',
           );
         }
       }
@@ -272,10 +333,20 @@ function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; con
     };
   }, [room, juntar, avisar, doTime, acesso.participanteId]);
 
-  // Mão levantada de outra pessoa: aviso rápido.
+  // Mão levantada de outra pessoa: aviso em destaque, com som (e o título da aba pisca se estiver em outra).
   useEffect(() => {
     const aoMudar = (mudou: Record<string, string>, p: Participant) => {
-      if ('mao' in mudou && mudou.mao && !p.isLocal) avisar({ texto: `${nomeDe(p)} levantou a mão` });
+      if ('mao' in mudou && mudou.mao && !p.isLocal)
+        avisar(
+          {
+            texto: `${nomeDe(p)} levantou a mão`,
+            icone: 'hand',
+            tom: 'atencao',
+            acao: { rotulo: 'Ver a fila', fazer: () => setPainel('pessoas') },
+          },
+          10_000,
+          'mao',
+        );
     };
     room.on(RoomEvent.ParticipantAttributesChanged, aoMudar);
     return () => {
@@ -310,12 +381,30 @@ function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; con
     () => void lp.setCameraEnabled(!lp.isCameraEnabled).catch(falhou('a câmera')),
     [lp, falhou],
   );
+  // Celular: troca entre a câmera da frente e a de trás sem desligar o vídeo.
+  const virarCamera = () => {
+    const faixa = lp.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
+    if (!faixa) return;
+    const nova = frente === 'user' ? 'environment' : 'user';
+    faixa
+      .restartTrack({ facingMode: nova, resolution: VideoPresets.h720.resolution })
+      .then(() => {
+        setFrente(nova);
+        // Desligar e ligar a câmera depois continua na mesma.
+        room.options.videoCaptureDefaults = {
+          ...room.options.videoCaptureDefaults,
+          facingMode: nova,
+          deviceId: undefined,
+        };
+      })
+      .catch(falhou('a outra câmera'));
+  };
   const alternarTela = () =>
     void lp
       .setScreenShareEnabled(!lp.isScreenShareEnabled, {
         audio: true,
         contentHint: 'detail',
-        resolution: VideoPresets.h1080.resolution,
+        resolution: ScreenSharePresets.h1080fps30.resolution,
         selfBrowserSurface: 'exclude',
         surfaceSwitching: 'include',
       })
@@ -534,6 +623,17 @@ function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; con
           >
             <Icon name={local.isCameraEnabled ? 'video' : 'video-off'} size={22} />
           </button>
+          {celular && local.isCameraEnabled && (
+            <button
+              type="button"
+              className="ctl"
+              aria-label={frente === 'user' ? 'Usar a câmera de trás' : 'Usar a câmera da frente'}
+              title={frente === 'user' ? 'Usar a câmera de trás' : 'Usar a câmera da frente'}
+              onClick={virarCamera}
+            >
+              <Icon name="switch-camera" size={22} />
+            </button>
+          )}
           {podeTela && (
             <button
               type="button"
@@ -622,6 +722,13 @@ function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; con
         <MenuOpcoes
           room={room}
           pequena={pequena}
+          celular={celular}
+          sons={sons}
+          aoSons={(x) => {
+            setSons(x);
+            guardarSons(x);
+            if (x) tocar('entrou');
+          }}
           doTime={doTime}
           modo={modo}
           aoModo={(m) => {
@@ -675,6 +782,7 @@ function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; con
         )}
         {avisos.map((a) => (
           <div key={a.id} className="aviso-flutuante" data-tom={a.tom}>
+            {a.icone && <Icon name={a.icone} size={18} />}
             <span>{a.texto}</span>
             {a.acao && (
               <Button size="sm" variant={a.tom ? 'secondary' : 'ghost'} onClick={a.acao.fazer}>
@@ -749,6 +857,9 @@ function SeletorAparelho(props: { room: Room; tipo: MediaDeviceKind; rotulo: str
 function MenuOpcoes(props: {
   room: Room;
   pequena: boolean;
+  celular: boolean;
+  sons: boolean;
+  aoSons: (ligados: boolean) => void;
   doTime: boolean;
   modo: 'grade' | 'destaque';
   aoModo: (m: 'grade' | 'destaque') => void;
@@ -772,10 +883,25 @@ function MenuOpcoes(props: {
   };
   return (
     <div ref={caixa} className="menu-sala" role="dialog" aria-label="Mais opções">
-      <SeletorAparelho room={props.room} tipo="audioinput" rotulo="Microfone" />
-      <SeletorAparelho room={props.room} tipo="videoinput" rotulo="Câmera" />
-      <SeletorAparelho room={props.room} tipo="audiooutput" rotulo="Alto-falante" />
-      <hr />
+      {!props.celular && (
+        <>
+          <SeletorAparelho room={props.room} tipo="audioinput" rotulo="Microfone" />
+          <SeletorAparelho room={props.room} tipo="videoinput" rotulo="Câmera" />
+          <SeletorAparelho room={props.room} tipo="audiooutput" rotulo="Alto-falante" />
+          <hr />
+        </>
+      )}
+      <button
+        type="button"
+        className="menu-sala__item"
+        aria-pressed={props.sons}
+        onClick={() => props.aoSons(!props.sons)}
+      >
+        <Icon name={props.sons ? 'volume-2' : 'volume-x'} size={18} />
+        {props.sons
+          ? 'Sons de aviso ligados (toque para desligar)'
+          : 'Sons de aviso desligados (toque para ligar)'}
+      </button>
       {props.pequena && (
         <button type="button" className="menu-sala__item" onClick={props.aoPessoas}>
           <Icon name="users" size={18} />

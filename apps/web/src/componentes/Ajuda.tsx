@@ -211,13 +211,19 @@ export const ARTIGOS: ArtigoAjuda[] = [
             sala e <b>Encerrar para todos</b>.
           </li>
           <li>
-            Em <b>Mais opções</b>: trocar de câmera ou microfone, ver em grade ou destaque e tela cheia.
+            Avisos na tela e com som quando alguém entra, sai, levanta a mão, manda mensagem ou pede para
+            entrar. Se você estiver em outra aba, o título dela pisca com o aviso.
+          </li>
+          <li>
+            Em <b>Mais opções</b>: trocar de câmera ou microfone, ligar ou desligar os sons de aviso, ver em
+            grade ou destaque e tela cheia.
           </li>
         </ul>
         <p>
-          No celular, a sala mostra quem está falando em destaque e as outras pessoas em fichas logo abaixo;
-          toque numa ficha para fixar a pessoa. Se a internet oscilar, a imagem se ajusta sozinha para o som
-          não cortar, e a sala avisa quando a conexão está fraca.
+          No celular, a sala já usa a câmera da frente e o microfone do aparelho; o botão com as setas troca
+          para a câmera de trás (e volta). A sala mostra quem está falando em destaque e as outras pessoas em
+          fichas logo abaixo; toque numa ficha para fixar a pessoa. Se a internet oscilar, a imagem se ajusta
+          sozinha para o som não cortar, e a sala avisa quando a conexão está fraca.
         </p>
         <h3>Gravação e consentimento</h3>
         <p>

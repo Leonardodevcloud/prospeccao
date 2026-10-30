@@ -142,6 +142,9 @@
   object-fit: cover;
   transform: scaleX(-1);
 }
+.as__video video[data-traseira] {
+  transform: none;
+}
 .as__sem-camera {
   display: flex;
   flex-direction: column;

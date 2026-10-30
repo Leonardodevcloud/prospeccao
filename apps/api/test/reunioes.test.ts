@@ -1,13 +1,19 @@
 import { criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
-import type { Armazenamento, AvisoVideo, ServicoVideo } from '@prospeccao/integrations/reuniao';
+import type {
+  Armazenamento,
+  AvisoGravacao,
+  AvisoVideo,
+  EstadoDaSala,
+  ServicoVideo,
+} from '@prospeccao/integrations/reuniao';
 import { criarLogger, type ResumoReuniao } from '@prospeccao/shared';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { criarApp } from '../src/app.js';
 import { comLink } from '../src/modulos/agenda/lembretes.js';
-import { rodarProcessamento } from '../src/modulos/reunioes/processar.js';
+import { rodarAcompanhamento, rodarProcessamento } from '../src/modulos/reunioes/processar.js';
 import {
   assinarArquivo,
   conferirArquivo,
@@ -60,6 +66,9 @@ function videoFalso() {
     enviados: [] as { sala: string; topico: string; dados: unknown }[],
     maos: [] as string[],
     encerradas: [] as string[],
+    /** O que o LiveKit responde quando a api confere a sala (sem webhook). */
+    estados: new Map<string, EstadoDaSala>(),
+    situacoes: new Map<string, AvisoGravacao>(),
   };
   let n = 0;
   const video: ServicoVideo = {
@@ -94,6 +103,12 @@ function videoFalso() {
     },
     async presentes() {
       return [];
+    },
+    async estado(sala) {
+      return chamadas.estados.get(sala) ?? null;
+    },
+    async gravacao(id) {
+      return chamadas.situacoes.get(id) ?? null;
     },
     async lerAviso(corpo, autorizacao) {
       if (autorizacao !== 'ok') throw new Error('assinatura');
@@ -616,6 +631,75 @@ describe.skipIf(!URL_TESTE)('reuniões por vídeo (com Postgres)', () => {
     expect(de_novo.body.sessaoId).not.toBe(sessaoId);
     expect(chamadas.salas).toHaveLength(2);
     await enviar('post', `/salas/${codigo}/encerrar`, {}, { 'x-credencial-sala': de_novo.body.credencial });
+  });
+
+  it('sem o webhook: a api confere a sala, grava, conta quem entrou e saiu e acompanha a gravação', async () => {
+    const r = await comCookie('post', '/agenda', {
+      tipo: 'reuniao',
+      titulo: 'Reunião rápida',
+      inicio: new Date().toISOString(),
+      sala: { entrada: 'livre', gravar: true, transcrever: true, abreMinutosAntes: 10 },
+    });
+    const cod = r.body.sala.codigo as string;
+    const entrada = await comCookie('post', `/salas/${cod}/entrar`, {});
+    const sala = chamadas.salas.at(-1)!;
+    const salaCount = chamadas.gravacoesSala.length;
+    const audioCount = chamadas.audios.length;
+    const eu = `u-${(await ler('/auth/eu', { Cookie: cookie })).body.id}`;
+    const rodar = () =>
+      rodarAcompanhamento({
+        pool,
+        log,
+        servicos,
+        reunioes,
+        jwtSegredo: SEGREDO,
+        aoEncerrar: () => undefined,
+      });
+
+    chamadas.estados.set(sala, { pessoas: [{ identidade: eu, nome: 'Dona', microfones: ['TR_SEM_AVISO'] }] });
+    await rodar();
+    await rodar(); // a segunda conferência não grava de novo
+    expect(chamadas.gravacoesSala.length).toBe(salaCount + 1);
+    expect(chamadas.audios.length).toBe(audioCount + 1);
+    expect(chamadas.audios.at(-1)).toMatchObject({ sala, trilhaId: 'TR_SEM_AVISO' });
+    const presenca = async () =>
+      (
+        await pool.query<{ presente: boolean; entrou: boolean }>(
+          `SELECT presente_desde IS NOT NULL AS presente, entrou_em IS NOT NULL AS entrou
+             FROM comercial.sala_participantes WHERE identidade = $1 AND sala_id = (SELECT id FROM comercial.salas WHERE codigo = $2)`,
+          [eu, cod],
+        )
+      ).rows[0];
+    expect(await presenca()).toEqual({ presente: true, entrou: true });
+
+    // A gravação terminou e o aviso não veio: a conferência pega o arquivo.
+    const { rows } = await pool.query<{ gravacaoId: string }>(
+      `SELECT gravacao_id AS "gravacaoId" FROM comercial.sala_gravacoes WHERE sessao_id = $1 AND tipo = 'sala'`,
+      [entrada.body.sessaoId],
+    );
+    expect(rows[0]?.gravacaoId).toMatch(/^EG_sala_/);
+    chamadas.situacoes.set(rows[0]!.gravacaoId, {
+      tipo: 'gravacao',
+      id: 'x',
+      sala,
+      gravacaoId: rows[0]!.gravacaoId,
+      de: 'sala',
+      trilhaId: null,
+      situacao: 'pronta',
+      inicio: new Date(),
+      arquivo: { chave: 'v.mp4', bytes: 1000, segundos: 60, inicio: new Date(), fim: new Date() },
+      erro: null,
+      em: new Date(),
+    });
+    chamadas.estados.set(sala, { pessoas: [] });
+    await rodar();
+    expect(await presenca()).toEqual({ presente: false, entrou: true });
+    const g = await pool.query<{ situacao: string; segundos: number }>(
+      'SELECT situacao, segundos FROM comercial.sala_gravacoes WHERE gravacao_id = $1',
+      [rows[0]!.gravacaoId],
+    );
+    expect(g.rows[0]).toEqual({ situacao: 'pronta', segundos: 60 });
+    await enviar('post', `/salas/${cod}/encerrar`, {}, { 'x-credencial-sala': entrada.body.credencial });
   });
 
   it('tirar a sala da reunião cancela o link', async () => {
