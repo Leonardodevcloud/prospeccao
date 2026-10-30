@@ -71,7 +71,7 @@ export const distribuicaoEntrada = z.object({
 });
 export type DistribuicaoEntrada = z.infer<typeof distribuicaoEntrada>;
 
-const senhaForte = z
+export const senhaForte = z
   .string()
   .min(8, 'A senha precisa de pelo menos 8 caracteres.')
   .max(200)

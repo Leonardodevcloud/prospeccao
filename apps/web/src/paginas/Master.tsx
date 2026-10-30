@@ -20,6 +20,7 @@ import {
 } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { AcessoUsuario, SituacaoCliente } from '../componentes/GerenciarCliente';
 import {
   FormPlano,
   ResumoPlano,
@@ -412,9 +413,10 @@ function Credenciais(props: { conta: ContaDetalhe }) {
 
 /* ───────────────────────── Usuários da conta ───────────────────────── */
 
-function Usuarios(props: { conta: ContaDetalhe }) {
+export function Usuarios(props: { conta: ContaDetalhe }) {
   const cliente = useQueryClient();
   const [novo, setNovo] = useState(false);
+  const [acesso, setAcesso] = useState<number | null>(null);
   const [f, setF] = useState({ nome: '', email: '', papel: 'admin' as PapelUsuario });
   const [link, setLink] = useState<{ link: string; nome: string; dias: number } | null>(null);
   const criar = useMutation({
@@ -510,6 +512,17 @@ function Usuarios(props: { conta: ContaDetalhe }) {
                 <Button
                   size="sm"
                   variant="ghost"
+                  icon="lock"
+                  aria-expanded={acesso === u.id}
+                  onClick={() => setAcesso(acesso === u.id ? null : u.id)}
+                >
+                  E-mail e senha
+                </Button>
+              )}
+              {!u.master && (
+                <Button
+                  size="sm"
+                  variant="ghost"
                   disabled={editar.isPending}
                   onClick={() => editar.mutate({ id: u.id, ativo: !u.ativo })}
                 >
@@ -517,6 +530,7 @@ function Usuarios(props: { conta: ContaDetalhe }) {
                 </Button>
               )}
             </span>
+            {acesso === u.id && <AcessoUsuario usuario={u} aoFechar={() => setAcesso(null)} />}
           </li>
         ))}
       </ul>
@@ -1053,6 +1067,18 @@ function Conta(props: { id: number; aoFechar: () => void }) {
                         </Button>
                       </div>
                     )}
+                  </div>
+                )}
+                {!c.principal && (
+                  <div className="pilha" style={{ gap: 8 }}>
+                    <span className="fin-titulo">Cliente {c.organizacaoNome}</span>
+                    <SituacaoCliente
+                      organizacaoId={c.organizacaoId}
+                      nome={c.organizacaoNome}
+                      ativa={c.organizacaoAtiva}
+                      principal={c.principal}
+                      aoExcluir={props.aoFechar}
+                    />
                   </div>
                 )}
               </form>

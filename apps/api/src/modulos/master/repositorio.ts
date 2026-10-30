@@ -52,12 +52,14 @@ export async function obter(db: Executor, id: number) {
     criadoEm: string;
     organizacaoId: number;
     organizacaoNome: string;
+    organizacaoAtiva: boolean;
     webhookToken: string;
     webhookWhatsapp: string | null;
   }>(
     `SELECT c.id, c.nome, c.ativa, c.principal, c.observacoes, c.criado_em AS "criadoEm",
             c.organizacao_id AS "organizacaoId",
             (SELECT nome FROM cadastro.organizacoes WHERE id = c.organizacao_id) AS "organizacaoNome",
+            (SELECT ativa FROM cadastro.organizacoes WHERE id = c.organizacao_id) AS "organizacaoAtiva",
             c.webhook_token AS "webhookToken",
             (SELECT a.webhook_token FROM comercial.config_agente a WHERE a.conta_id = c.id) AS "webhookWhatsapp"
        FROM cadastro.contas c WHERE c.id = $1`,

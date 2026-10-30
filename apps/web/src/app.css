@@ -5834,6 +5834,33 @@ label.plano-opcao[data-ativo] {
   }
 }
 
+/* Gestão do cliente pelo master: situação, excluir e acesso de cada pessoa */
+.gerenciar-linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  font-size: 13px;
+  line-height: 18px;
+}
+.confirmar--perigo {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.acesso-usuario {
+  flex: 1 1 100%;
+  gap: var(--space-3);
+}
+.acesso-usuario__senha {
+  display: flex;
+  gap: var(--space-2);
+}
+.acesso-usuario__senha .filtro {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* CRM de demonstração: cartão no menu do painel e faixa dentro do CRM */
 .nav__demo {
   display: grid;

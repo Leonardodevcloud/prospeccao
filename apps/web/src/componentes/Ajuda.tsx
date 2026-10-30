@@ -826,11 +826,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
     id: 'painel-plataforma',
     area: 'Painel da plataforma',
     soMaster: true,
-    titulo: 'Financeiro, configurações e CRM de demonstração',
-    resumo: 'Receita e custo de cada cliente, os serviços da plataforma e o CRM com dados fictícios.',
+    titulo: 'Financeiro, clientes, configurações e CRM de demonstração',
+    resumo:
+      'Receita e custo de cada cliente, desativar ou excluir, e-mail e senha, os serviços da plataforma e o CRM com dados fictícios.',
     onde: { rotulo: 'Financeiro', para: '/plataforma/financeiro' },
     termos:
-      'master painel plataforma financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
+      'master painel plataforma excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
     corpo: (
       <>
         <p>
@@ -863,6 +864,26 @@ export const ARTIGOS: ArtigoAjuda[] = [
           pelas suas faturas para a margem ficar certa. Com valor combinado, os itens da mensalidade aparecem
           na proporção.
         </Nota>
+        <h3>Gestão do cliente</h3>
+        <p>No detalhe do cliente (Financeiro) ou em Clientes › Dados da conta e Usuários:</p>
+        <ul>
+          <li>
+            <b>E-mail e senha</b>: muda o e-mail de login de alguém ou define uma senha nova (pelo menos 8
+            caracteres, com letras e números). Quem estava conectado sai e entra com a nova. Passe a senha por
+            um canal seguro; a pessoa pode trocar depois em Minha conta. Fica registrado na Auditoria da
+            conta.
+          </li>
+          <li>
+            <b>Desativar cliente</b>: ninguém dele entra, em nenhuma unidade, e os envios automáticos param.
+            Os dados ficam guardados; <b>Reativar cliente</b> volta tudo como estava. No Financeiro, o filtro
+            de situação mostra os desativados.
+          </li>
+          <li>
+            <b>Excluir cliente</b>: só aparece com o cliente desativado e pede o nome dele digitado. Apaga as
+            unidades, os usuários e tudo o que é deles (funil, conversas, campanhas, reuniões, visitas). Não
+            tem volta. As empresas pesquisadas continuam na base da plataforma.
+          </li>
+        </ul>
         <h3>Configurações da plataforma</h3>
         <p>
           A lista dos serviços que a plataforma usa para todos os clientes (WhatsApp, e-mail, IA, reuniões,

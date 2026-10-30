@@ -119,8 +119,9 @@ export function rotasAuth(deps: DepsApi): Router {
       master: boolean;
       conta_ativa: boolean;
     }>(
-      `SELECT u.id, u.senha_hash, u.ativo, u.master, c.ativa AS conta_ativa
+      `SELECT u.id, u.senha_hash, u.ativo, u.master, (c.ativa AND o.ativa) AS conta_ativa
          FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+         JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
         WHERE lower(u.email) = $1`,
       [email],
     );
@@ -263,7 +264,8 @@ export function rotasAuth(deps: DepsApi): Router {
     }>(
       `SELECT u.id, u.nome, u.email, u.conta_id, c.nome AS conta
          FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
-        WHERE lower(u.email) = $1 AND u.ativo AND (c.ativa OR u.master)`,
+        WHERE lower(u.email) = $1 AND u.ativo
+          AND ((c.ativa AND (SELECT o.ativa FROM cadastro.organizacoes o WHERE o.id = c.organizacao_id)) OR u.master)`,
       [email],
     );
     const u = rows[0];

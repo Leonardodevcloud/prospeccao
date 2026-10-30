@@ -4,12 +4,14 @@ import { Badge, Button, EmptyState, Icon, Panel, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router';
-import { api } from '../api';
+import { api, type ContaDetalhe } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi } from '../componentes/Formulario';
+import { SituacaoCliente } from '../componentes/GerenciarCliente';
 import { ROTULO_PLANO, useTabelaPrecos } from '../componentes/PlanoConta';
 import { fmtNumero, fmtReais, fmtReaisCentavos } from '../formatar';
+import { Usuarios } from './Master';
 import {
   type ClientePainel,
   FormCustos,
@@ -152,6 +154,7 @@ function BarrasReais(props: {
 
 type Ordem = 'margem' | 'receita' | 'custo' | 'nome';
 type FiltroPlano = 'todos' | 'start' | 'time' | 'escala' | 'personalizado' | 'sem';
+type FiltroSituacao = 'ativos' | 'desativados' | 'todos';
 
 /** Planilha (CSV que o Excel abre) com a tabela de clientes. */
 function baixarPlanilha(lista: ClientePainel[]) {
@@ -203,6 +206,7 @@ export function PlataformaFinanceiro() {
   const m = useMaster();
   const [ordem, setOrdem] = useState<Ordem>('margem');
   const [plano, setPlano] = useState<FiltroPlano>('todos');
+  const [situacao, setSituacao] = useState<FiltroSituacao>('ativos');
   const [busca, setBusca] = useState('');
   const [custos, setCustos] = useState(false);
   const [aberto, setAberto] = useState<number | null>(null);
@@ -254,7 +258,11 @@ export function PlataformaFinanceiro() {
     .sort((a, b) => b.valor - a.valor);
 
   const termo = busca.trim().toLowerCase();
-  const lista = clientes
+  // A tabela também mostra os desativados (para reativar ou excluir); os números de cima, não.
+  const todos = (q.data?.clientes ?? []).filter((c) => !c.principal);
+  const desativados = todos.filter((c) => !c.ativa).length;
+  const lista = todos
+    .filter((c) => (situacao === 'todos' ? true : situacao === 'ativos' ? c.ativa : !c.ativa))
     .filter((c) => plano === 'todos' || (plano === 'sem' ? !c.plano : c.plano === plano))
     .filter((c) => !termo || c.nome.toLowerCase().includes(termo))
     .sort((a, b) =>
@@ -267,7 +275,7 @@ export function PlataformaFinanceiro() {
             : a.nome.localeCompare(b.nome),
     );
   const v = visao.data?.receita;
-  const selecionado = clientes.find((c) => c.id === aberto) ?? null;
+  const selecionado = todos.find((c) => c.id === aberto) ?? null;
 
   return (
     <>
@@ -400,6 +408,17 @@ export function PlataformaFinanceiro() {
               <option value="escala">Escala</option>
               <option value="personalizado">Personalizado</option>
               <option value="sem">Sem plano</option>
+            </select>
+            <select
+              className="filtro"
+              aria-label="Situação"
+              style={{ maxWidth: 180 }}
+              value={situacao}
+              onChange={(e) => setSituacao(e.target.value as FiltroSituacao)}
+            >
+              <option value="ativos">Ativos</option>
+              <option value="desativados">Desativados ({desativados})</option>
+              <option value="todos">Ativos e desativados</option>
             </select>
             <select
               className="filtro"
@@ -565,6 +584,11 @@ function DetalheFinanceiro(props: { c: ClientePainel; aoFechar: () => void }) {
   const cliente = useQueryClient();
   const sugestao = useSugestao(c);
   const unidade = c.unidades[0]?.id;
+  const conta = useQuery({
+    queryKey: ['master', 'conta', unidade],
+    queryFn: () => api<ContaDetalhe>(`/master/contas/${unidade}`),
+    enabled: !!unidade,
+  });
   const entrar = useMutation({
     mutationFn: () => api(`/master/contas/${unidade}/entrar`, { metodo: 'POST' }),
     onSuccess: () => {
@@ -746,6 +770,28 @@ function DetalheFinanceiro(props: { c: ClientePainel; aoFechar: () => void }) {
         </div>
         <ErroDaApi erro={entrar.error} />
         {sugestao && <p className="fin-sugestao">Sugestão: {sugestao}</p>}
+
+        <section className="pilha" style={{ gap: 12 }}>
+          <h3 className="fin-titulo">Usuários e acesso</h3>
+          {conta.data ? (
+            <Usuarios conta={conta.data} />
+          ) : (
+            <>
+              <ErroDaApi erro={conta.error} />
+              {conta.isPending && <div className="esqueleto" />}
+            </>
+          )}
+        </section>
+        <section className="pilha" style={{ gap: 12 }}>
+          <h3 className="fin-titulo">Situação do cliente</h3>
+          <SituacaoCliente
+            organizacaoId={c.id}
+            nome={c.nome}
+            ativa={c.ativa}
+            principal={c.principal}
+            aoExcluir={props.aoFechar}
+          />
+        </section>
       </div>
     </Drawer>
   );

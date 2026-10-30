@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import type { Executor } from '@prospeccao/db';
 
 /**
@@ -664,8 +665,11 @@ export async function gerarDados(tx: Executor, contaId: number): Promise<void> {
   }
 
   /* Reuniões: as que já aconteceram (gravadas, com transcrição e resumo) e as de hoje e amanhã. */
+  // O código da sala é único no sistema todo: sorteio de verdade (não o fixo), para não colidir
+  // com a sala de um cliente nem com outra geração.
+  const letra = () => CODIGO[randomInt(CODIGO.length)];
   const codigo = () =>
-    `${Array.from({ length: 4 }, () => s.um([...CODIGO])).join('')}-${Array.from({ length: 4 }, () => s.um([...CODIGO])).join('')}`;
+    `${Array.from({ length: 4 }, letra).join('')}-${Array.from({ length: 4 }, letra).join('')}`;
   for (const [i, r] of reunioesMarcadas.slice(0, 12).entries()) {
     const n = NICHOS[r.nicho]!;
     const feita = i >= 3;

@@ -1,4 +1,4 @@
-import { credenciaisEfetivas, lerChipWhatsapp, salvarCredenciais } from '@prospeccao/db';
+import { comTransacao, credenciaisEfetivas, lerChipWhatsapp, salvarCredenciais } from '@prospeccao/db';
 import { verificarResend } from '@prospeccao/integrations/email';
 import { configIa, testarIa } from '@prospeccao/integrations/ia';
 import * as ors from '@prospeccao/integrations/ors';
@@ -6,9 +6,11 @@ import * as places from '@prospeccao/integrations/places';
 import { estadoConexao } from '@prospeccao/integrations/whatsapp';
 import {
   AppError,
+  acessoMasterAtualizar,
   contaAtualizar,
   contaNova,
   credenciaisEntrada,
+  excluirClienteEntrada,
   limitesConta,
   organizacaoAtualizar,
   pessoaMasterAtualizar,
@@ -20,6 +22,7 @@ import {
   unidadeNova,
   usuarioNovo,
 } from '@prospeccao/shared';
+import bcrypt from 'bcryptjs';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
 import { comConta } from '../../contexto.js';
@@ -32,6 +35,7 @@ import * as consumo from '../consumo/repositorio.js';
 import * as equipe from '../equipe/repositorio.js';
 import * as org from '../organizacao/repositorio.js';
 import * as plano from '../plano/repositorio.js';
+import { apagarContas } from './excluir.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -128,6 +132,109 @@ export function rotasMaster(deps: DepsApi): Router {
         equipe.atualizar(pool, id, { ...d, papel: d.papel as UsuarioAtualizar['papel'] }),
       );
     res.json(await repo.usuarios(pool, rows[0].conta_id));
+  });
+
+  /**
+   * E-mail de login e senha de alguém de um cliente (o cliente perdeu o acesso, trocou de e-mail…).
+   * Senha nova derruba as sessões abertas dessa pessoa e vale como convite aceito.
+   */
+  r.patch('/usuarios/:id/acesso', async (req, res) => {
+    const id = idDaRota(req);
+    const d = corpo(req, acessoMasterAtualizar);
+    const { rows } = await pool.query<{ conta_id: number; master: boolean; nome: string; email: string }>(
+      'SELECT conta_id, master, nome, email FROM cadastro.usuarios WHERE id = $1',
+      [id],
+    );
+    const u = rows[0];
+    if (!u) throw AppError.naoEncontrado('Usuário');
+    if (u.master)
+      throw AppError.invalido('O acesso master não muda por aqui (é o ADMIN_EMAIL e a senha da plataforma).');
+    const feito: string[] = [];
+    if (d.email !== undefined && d.email !== u.email.toLowerCase()) {
+      try {
+        await pool.query('UPDATE cadastro.usuarios SET email = $2 WHERE id = $1', [id, d.email]);
+      } catch (erro) {
+        if ((erro as { code?: string }).code === '23505')
+          throw AppError.conflito('Já existe alguém com esse e-mail no sistema.');
+        throw erro;
+      }
+      feito.push(`mudou o e-mail de ${u.nome} de ${u.email} para ${d.email}`);
+    }
+    if (d.senha !== undefined) {
+      await pool.query(
+        `UPDATE cadastro.usuarios
+            SET senha_hash = $2, convite_token = NULL, convite_expira = NULL, redefinir_hash = NULL, redefinir_expira = NULL
+          WHERE id = $1`,
+        [id, await bcrypt.hash(d.senha, 10)],
+      );
+      await pool.query(
+        'UPDATE cadastro.sessoes SET revogada_em = now() WHERE usuario_id = $1 AND revogada_em IS NULL',
+        [id],
+      );
+      feito.push(`definiu uma senha nova para ${u.nome}`);
+    }
+    if (feito.length)
+      await auditoria.registrar(pool, {
+        contaId: u.conta_id,
+        usuarioId: req.usuario!.id,
+        usuarioNome: req.usuario!.nome,
+        comoMaster: true,
+        acao: 'acesso',
+        descricao: `O suporte ${feito.join(' e ')}.`,
+        metodo: req.method,
+        caminho: req.baseUrl + req.path,
+      });
+    log.info(
+      { usuario: id, email: d.email !== undefined, senha: d.senha !== undefined },
+      'master: acesso alterado',
+    );
+    res.json(await repo.usuarios(pool, u.conta_id));
+  });
+
+  /**
+   * Excluir o cliente de vez: as unidades, os usuários e tudo o que é deles (funil, conversas,
+   * campanhas, reuniões…). Só depois de desativado e digitando o nome dele. Não tem volta.
+   */
+  r.post('/organizacoes/:id/excluir', async (req, res) => {
+    const id = idDaRota(req);
+    const { confirmacao } = corpo(req, excluirClienteEntrada);
+    const { rows } = await pool.query<{
+      nome: string;
+      ativa: boolean;
+      demonstracao: boolean;
+      principal: boolean;
+      contas: number[];
+    }>(
+      `SELECT o.nome, o.ativa, o.demonstracao, coalesce(bool_or(c.principal), false) AS principal,
+              coalesce(array_agg(c.id) FILTER (WHERE c.id IS NOT NULL), '{}') AS contas
+         FROM cadastro.organizacoes o LEFT JOIN cadastro.contas c ON c.organizacao_id = o.id
+        WHERE o.id = $1 GROUP BY o.id`,
+      [id],
+    );
+    const o = rows[0];
+    if (!o) throw AppError.naoEncontrado('Cliente');
+    if (o.principal) throw AppError.invalido('A sua organização não pode ser excluída.');
+    if (o.demonstracao)
+      throw AppError.invalido('O CRM de demonstração não se exclui: use "Recriar os dados".');
+    if (o.ativa) throw AppError.invalido('Desative o cliente antes de excluir.');
+    const norm = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase();
+    if (norm(confirmacao) !== norm(o.nome))
+      throw AppError.invalido('Digite o nome do cliente exatamente como aparece para confirmar.');
+    const contas = o.contas.map(Number);
+    await comTransacao(pool, (tx) => apagarContas(tx, contas, { organizacaoId: id }));
+    credenciais.invalidar();
+    await auditoria.registrar(pool, {
+      contaId: null,
+      usuarioId: req.usuario!.id,
+      usuarioNome: req.usuario!.nome,
+      comoMaster: true,
+      acao: 'excluir_cliente',
+      descricao: `O master excluiu o cliente ${o.nome} (${contas.length} ${contas.length === 1 ? 'unidade' : 'unidades'}).`,
+      metodo: req.method,
+      caminho: req.baseUrl + req.path,
+    });
+    log.warn({ organizacao: id, nome: o.nome, contas }, 'master: cliente excluído');
+    res.json({ ok: true });
   });
 
   r.post('/contas', async (req, res) => {

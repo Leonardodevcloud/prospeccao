@@ -1,10 +1,11 @@
-import { criarPool, migrar, type Pool } from '@prospeccao/db';
+import { comTransacao, criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
 import { criarLogger } from '@prospeccao/shared';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
+import { gerarDados } from '../src/modulos/demonstracao/dados.js';
 import type { ServicosConta } from '../src/servicos.js';
 
 const URL_TESTE = process.env.TEST_DATABASE_URL;
@@ -193,5 +194,117 @@ describe.skipIf(!URL_TESTE)('painel master: financeiro, configurações e CRM de
     });
     expect(r.contaPrincipalId).toBe(1);
     expect(r.demonstracao?.contaId).toBeGreaterThan(1);
+  });
+  it('cliente: mudar e-mail e senha, desativar (não entra) e excluir com tudo o que é dele', async () => {
+    const criado = await enviar('/master/contas', {
+      nome: 'Cliente Para Excluir',
+      admin: { nome: 'Rui', email: 'rui@excluir.com.br' },
+      plano: { plano: 'escala', modulos: ['whatsapp', 'agente_ia'] },
+    });
+    expect(criado.status).toBe(201);
+    const { id: contaId, organizacaoId } = criado.body as { id: number; organizacaoId: number };
+    // Enche a conta: campanhas, funil, conversas, reuniões, roteiro (o mesmo gerador da demonstração).
+    const demo = (await ler('/master/plataforma/servicos')).body.demonstracao.contaId as number;
+    await comTransacao(pool, async (tx) => {
+      // Os vendedores fictícios têm os mesmos e-mails da demonstração: troca enquanto gera.
+      await tx.query(`UPDATE cadastro.usuarios SET email = 'demo-' || email WHERE conta_id = $1`, [demo]);
+      await tx.query('SELECT cadastro.preparar_conta($1)', [contaId]);
+      await gerarDados(tx, contaId);
+      await tx.query(
+        `UPDATE cadastro.usuarios SET email = 'cliente-' || email WHERE conta_id = $1 AND email NOT LIKE 'rui@%'`,
+        [contaId],
+      );
+      await tx.query(`UPDATE cadastro.usuarios SET email = substr(email, 6) WHERE conta_id = $1`, [demo]);
+    });
+    const contarDemo = async () =>
+      (await pool.query('SELECT count(*)::int AS n FROM comercial.oportunidades WHERE conta_id = $1', [demo]))
+        .rows[0].n as number;
+    const oportunidadesDemo = await contarDemo();
+
+    const conta = (await ler(`/master/contas/${contaId}`)).body as {
+      usuarios: { id: number; email: string }[];
+    };
+    const rui = conta.usuarios.find((u) => u.email === 'rui@excluir.com.br')!;
+    // Senha fraca, e-mail de outra pessoa e o próprio master: recusados.
+    expect(
+      (
+        await request(app)
+          .patch(`/master/usuarios/${rui.id}/acesso`)
+          .set('Origin', ORIGEM)
+          .set('Cookie', cookie)
+          .send({ senha: '123' })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await request(app)
+          .patch(`/master/usuarios/${rui.id}/acesso`)
+          .set('Origin', ORIGEM)
+          .set('Cookie', cookie)
+          .send({ email: 'bia@financeiro.com.br' })
+      ).status,
+    ).toBe(409);
+    const ok = await request(app)
+      .patch(`/master/usuarios/${rui.id}/acesso`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie)
+      .send({ email: 'Rui.Novo@Excluir.com.br', senha: 'nova-senha-123' });
+    expect(ok.status).toBe(200);
+    expect((ok.body as { email: string }[]).some((u) => u.email === 'rui.novo@excluir.com.br')).toBe(true);
+    const entrar = () =>
+      request(app)
+        .post('/auth/login')
+        .set('Origin', ORIGEM)
+        .send({ email: 'rui.novo@excluir.com.br', senha: 'nova-senha-123' });
+    expect((await entrar()).status).toBe(200);
+    const { rows: aud } = await pool.query(
+      `SELECT descricao FROM cadastro.auditoria WHERE conta_id = $1 AND acao = 'acesso' AND como_master`,
+      [contaId],
+    );
+    expect(aud[0]?.descricao).toContain('senha nova');
+
+    // Ativo não exclui; desativado não entra; nome errado não exclui.
+    expect(
+      (await enviar(`/master/organizacoes/${organizacaoId}/excluir`, { confirmacao: 'Cliente Para Excluir' }))
+        .status,
+    ).toBe(422);
+    const desativar = await request(app)
+      .patch(`/master/organizacoes/${organizacaoId}`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie)
+      .send({ ativa: false });
+    expect(desativar.status).toBe(200);
+    expect((await entrar()).status).not.toBe(200);
+    expect(
+      (await enviar(`/master/organizacoes/${organizacaoId}/excluir`, { confirmacao: 'Outro nome' })).status,
+    ).toBe(422);
+    // A sua organização e a demonstração não se excluem.
+    expect((await enviar('/master/organizacoes/1/excluir', { confirmacao: 'x' })).status).toBe(422);
+
+    const excluiu = await enviar(`/master/organizacoes/${organizacaoId}/excluir`, {
+      confirmacao: '  cliente para   excluir ',
+    });
+    expect(excluiu.status).toBe(200);
+    const { rows } = await pool.query(
+      `SELECT (SELECT count(*) FROM cadastro.organizacoes WHERE id = $1)::int AS org,
+              (SELECT count(*) FROM cadastro.contas WHERE id = $2)::int AS contas,
+              (SELECT count(*) FROM cadastro.usuarios WHERE conta_id = $2)::int AS usuarios,
+              (SELECT count(*) FROM comercial.oportunidades WHERE conta_id = $2)::int AS oportunidades,
+              (SELECT count(*) FROM comercial.sala_sessoes WHERE conta_id = $2)::int AS reunioes,
+              (SELECT count(*) FROM cadastro.campanhas WHERE conta_id = $2)::int AS campanhas`,
+      [organizacaoId, contaId],
+    );
+    expect(rows[0]).toEqual({ org: 0, contas: 0, usuarios: 0, oportunidades: 0, reunioes: 0, campanhas: 0 });
+    // O que é dos outros fica: a demonstração continua inteira.
+    expect(await contarDemo()).toBe(oportunidadesDemo);
+    expect(
+      (await ler('/master/plataforma/clientes')).body.clientes.some(
+        (c: { id: number }) => c.id === organizacaoId,
+      ),
+    ).toBe(false);
+    const { rows: aud2 } = await pool.query(
+      `SELECT 1 FROM cadastro.auditoria WHERE acao = 'excluir_cliente' AND descricao LIKE '%Cliente Para Excluir%'`,
+    );
+    expect(aud2.length).toBe(1);
   });
 });

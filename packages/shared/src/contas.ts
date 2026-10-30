@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PAPEIS_TODOS } from './equipe.js';
+import { PAPEIS_TODOS, senhaForte } from './equipe.js';
 import { planoContaEntrada } from './planos.js';
 
 /* ───────────────────────────── Contas (painel master) ───────────────────────────── */
@@ -172,6 +172,17 @@ export const pessoaMasterAtualizar = z
     ativo: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
+
+/** O master muda o e-mail de login ou define uma senha nova para alguém de um cliente. */
+export const acessoMasterAtualizar = z
+  .object({
+    email: z.string().trim().toLowerCase().email('E-mail inválido.').max(200).optional(),
+    senha: senhaForte.optional(),
+  })
+  .refine((v) => v.email !== undefined || v.senha !== undefined, 'Informe o e-mail ou a senha nova.');
+
+/** Excluir um cliente: digitar o nome dele confirma. */
+export const excluirClienteEntrada = z.object({ confirmacao: z.string().trim().min(1).max(120) });
 
 export const organizacaoAtualizar = z
   .object({
