@@ -20,6 +20,7 @@ import {
   type LocalVideoTrack,
   type Participant,
   type RemoteParticipant,
+  type RemoteVideoTrack,
   Room,
   RoomEvent,
   ScreenSharePresets,
@@ -47,7 +48,8 @@ export type MotivoSaida = 'saiu' | 'encerrada' | 'removido' | 'erro';
  * Opções da conexão (as mesmas para todo mundo).
  * - Recebe cada vídeo na qualidade do tamanho dele na tela, contando 2 pixels por ponto (nítido como no
  *   Meet também em telas comuns; com a internet fraca, o servidor baixa a qualidade sozinho).
- * - Câmera em 720p a até 2,5 Mbps; tela compartilhada em 1080p a 30 quadros (mouse e rolagem fluidos).
+ * - Câmera em 720p a até 2,9 Mbps; tela compartilhada em 1080p a 30 quadros e até 5,2 Mbps.
+ * - Quem assiste a tela compartilhada recebe com o menor atraso possível (sem folga no buffer).
  * - Com a rede apertada, reduz um pouco a nitidez e os quadros juntos ("balanced") em vez de travar
  *   a imagem ou borrar tudo.
  */
@@ -68,13 +70,14 @@ function criarSala(escolhas: Escolhas): Room {
     },
     publishDefaults: {
       simulcast: true,
-      videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
-      videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
+      // Camada do meio em 540p (antes 360p): quem tem internet mais fraca recebe imagem melhor.
+      videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h540],
+      videoEncoding: { maxBitrate: 2_900_000, maxFramerate: 30 },
       degradationPreference: 'balanced',
       // Áudio com redundância (perda de pacotes no 4G) e sem mandar silêncio.
       red: true,
       dtx: true,
-      screenShareEncoding: { maxBitrate: 4_500_000, maxFramerate: 30 },
+      screenShareEncoding: { maxBitrate: 5_200_000, maxFramerate: 30 },
     },
   });
 }
@@ -452,6 +455,15 @@ function ConteudoSala(props: {
     );
 
   const tela = telas[0];
+  // Tela compartilhada de outra pessoa: o navegador mostra cada quadro assim que chega (sem segurar
+  // no buffer). Mouse e rolagem aparecem com menos atraso; a câmera e o som seguem como estão.
+  useEffect(() => {
+    for (const t of telas) {
+      const faixa = t.publication?.track;
+      if (!t.participant.isLocal && faixa && faixa.kind === Track.Kind.Video && 'setPlayoutDelay' in faixa)
+        (faixa as RemoteVideoTrack).setPlayoutDelay(0);
+    }
+  }, [telas]);
   const emDestaque = useEmDestaque(pessoas, fixado);
   const maos = maosLevantadas(pessoas).length;
 
