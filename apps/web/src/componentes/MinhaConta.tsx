@@ -2,6 +2,7 @@ import { Button } from '@prospeccao/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, ROTULO_PAPEL_QUALQUER, ROTULO_PAPEL_USUARIO } from '../api';
+import { enderecoDoSistema } from '../endereco';
 import { formatarTelefone } from '../formatar';
 import { DuasEtapas, LINK_PRIVACIDADE, LINK_TERMOS, SessoesAbertas } from './ContaSegura';
 import { Drawer } from './Drawer';
@@ -11,7 +12,7 @@ import { useSessao } from './Sessao';
 
 /** Endereço da agenda para o Google Agenda assinar (passa pelo /api do próprio site). */
 export function linkDaAgenda(token: string): string {
-  return `${location.origin}/api/calendario/${token}.ics`;
+  return `${enderecoDoSistema()}/api/calendario/${token}.ics`;
 }
 
 /** Ligar a agenda ao Google Agenda: copiar o link e onde colar. */

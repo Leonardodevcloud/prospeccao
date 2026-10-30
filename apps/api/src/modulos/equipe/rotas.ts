@@ -3,6 +3,7 @@ import { type Request, Router } from 'express';
 import { z } from 'zod';
 import { conta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
+import { enderecoDoApp } from '../../endereco.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import {
@@ -17,16 +18,10 @@ import { consumoDaConta } from '../consumo/repositorio.js';
 import { planoDaConta } from '../plano/repositorio.js';
 import * as repo from './repositorio.js';
 
-/** Endereço da tela (para o link do convite): a origem do navegador ou a primeira configurada. */
-function enderecoDoApp(req: Request, origens: string[]): string {
-  const origem = req.get('origin');
-  if (origem && origens.includes(origem.toLowerCase())) return origem;
-  return origens[0] ?? '';
-}
-
 export function rotasEquipe({ pool, origens }: DepsApi): Router {
   const r = Router();
-  const link = (req: Request, token: string) => `${enderecoDoApp(req, origens)}/convite/${token}`;
+  const link = (req: Request, token: string) =>
+    `${enderecoDoApp(req.get('origin'), origens)}/convite/${token}`;
 
   /** O plano da conta: o que está contratado e quanto já foi usado no mês. */
   r.get('/plano', async (req, res) => {

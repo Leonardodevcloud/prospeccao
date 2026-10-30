@@ -10,6 +10,7 @@ import { apiSala, type InfoSala, type Liberado } from './api';
 import { retomarEnviosPendentes } from './envio';
 import { Sala, useEstadoGravador } from './Sala';
 import './reuniao.css';
+import { linkDaSala } from '../endereco';
 
 /**
  * Página do link da reunião (/r/<código>): antes da hora mostra quanto falta; depois, a antessala
@@ -397,8 +398,8 @@ function linkAgenda(info: InfoSala): string {
     action: 'TEMPLATE',
     text: info.titulo,
     dates: `${f(inicio)}/${f(fim)}`,
-    details: `Entre pelo link: ${location.origin}/r/${info.codigo}`,
-    location: `${location.origin}/r/${info.codigo}`,
+    details: `Entre pelo link: ${linkDaSala(info.codigo)}`,
+    location: linkDaSala(info.codigo),
   });
   return `https://calendar.google.com/calendar/render?${p}`;
 }

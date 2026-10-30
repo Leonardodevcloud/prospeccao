@@ -3,6 +3,7 @@ import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { api, ICONE_TAREFA, ROTULO_TAREFA, type Tarefa, type TipoTarefa } from '../api';
+import { linkDaSala } from '../endereco';
 import { diaDaqui, diaDoInput, fmtCompromisso, fmtNome, horaDoInput, instanteDoInput } from '../formatar';
 import type { EstadoReunioes } from '../reuniao/api';
 import { LinkAjuda } from './Ajuda';
@@ -59,7 +60,7 @@ export function useEstadoReunioes() {
 }
 
 /** Link da sala de vídeo de uma reunião. */
-export const linkDaSala = (codigo: string) => `${location.origin}/r/${codigo}`;
+export { linkDaSala };
 
 /** Copia o link da sala (e mostra "copiado" por um instante). */
 export function CopiarLinkSala(props: { codigo: string; comTexto?: boolean }) {

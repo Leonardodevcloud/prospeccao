@@ -1,11 +1,20 @@
 import type { Recurso } from '@prospeccao/shared/planos';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Equipe, type Sessao } from '../api';
+import { definirEnderecoDoSistema } from '../endereco';
 import { iniciais } from '../formatar';
 
 /** Quem está logado (a mesma consulta que o menu usa). */
 export function useSessao() {
-  return useQuery({ queryKey: ['sessao'], queryFn: () => api<Sessao>('/auth/eu'), staleTime: 60_000 });
+  return useQuery({
+    queryKey: ['sessao'],
+    queryFn: () =>
+      api<Sessao>('/auth/eu').then((s) => {
+        definirEnderecoDoSistema(s.enderecoApp);
+        return s;
+      }),
+    staleTime: 60_000,
+  });
 }
 
 /** Administra a unidade (o gestor da organização também); a leitura (diretoria) só olha. */

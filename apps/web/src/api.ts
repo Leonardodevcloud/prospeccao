@@ -920,6 +920,8 @@ export interface Sessao {
   organizacao: { id: number; nome: string; unidades: number } | null;
   /** Master (ou gestor) dentro de outra conta/unidade. */
   foraDaPropria: boolean;
+  /** Endereço oficial do sistema (os links de reunião e agenda saem com ele). */
+  enderecoApp?: string;
 }
 
 export interface Metas {

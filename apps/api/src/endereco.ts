@@ -10,8 +10,11 @@ export function urlPublicaApi(origens: string[]): string {
   return `${origens[0] ?? ''}/api`;
 }
 
-/** Endereço da tela (para links de convite e de senha): a origem do navegador ou a primeira configurada. */
+/**
+ * Endereço oficial do sistema (links de convite, de senha e das reuniões): o primeiro de APP_ORIGENS,
+ * mesmo que a pessoa esteja usando outro endereço permitido (o antigo do Vercel, por exemplo). Sem
+ * APP_ORIGENS, a origem do navegador.
+ */
 export function enderecoDoApp(origemDoPedido: string | undefined, origens: string[]): string {
-  if (origemDoPedido && origens.includes(origemDoPedido.toLowerCase())) return origemDoPedido;
-  return origens[0] ?? '';
+  return (origens[0] ?? origemDoPedido ?? '').replace(/\/+$/, '');
 }

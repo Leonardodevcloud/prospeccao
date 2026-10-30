@@ -28,6 +28,7 @@ import {
   VideoPresets,
 } from 'livekit-client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { linkDaSala } from '../endereco';
 import type { Escolhas } from './Antessala';
 import { apiSala, type InfoSala, type Liberado, type MensagemChat } from './api';
 import { type EstadoGravador, gravador, pedirCapturaDaAba, podeGravarAba } from './gravador';
@@ -493,7 +494,7 @@ function ConteudoSala(props: {
     );
   };
   const copiarLink = () =>
-    void navigator.clipboard?.writeText(`${location.origin}/r/${info.codigo}`).then(
+    void navigator.clipboard?.writeText(linkDaSala(info.codigo)).then(
       () => avisar({ texto: 'Link do convite copiado.' }),
       () => undefined,
     );

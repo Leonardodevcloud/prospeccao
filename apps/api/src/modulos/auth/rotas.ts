@@ -438,6 +438,8 @@ export function rotasAuth(deps: DepsApi): Router {
           : null,
       // O master dentro de outra conta (a tela mostra a faixa "você está na conta X").
       foraDaPropria: u.contaId !== u.contaPropria,
+      // Endereço oficial do sistema: os links que a tela copia (reunião, agenda) saem com ele.
+      enderecoApp: enderecoDoApp(undefined, deps.origens),
     });
   });
 
