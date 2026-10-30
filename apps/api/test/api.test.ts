@@ -267,7 +267,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       noMaps: true,
     });
 
-    const comCnpj = await ler('/empresas?comCnpj=true&entrega=true');
+    const comCnpj = await ler('/empresas?comCnpj=true');
     expect(comCnpj.body.itens.map((e: { nome: string }) => e.nome)).toEqual(['Autopeças Ladeira Nova']);
 
     const busca = await ler('/empresas?busca=nova%20era');

@@ -99,7 +99,6 @@ export interface EntradaAvaliacao {
     categoriaMaps: string | null;
     notaMaps: number | null;
     avaliacoesMaps: number | null;
-    sinalEntregaMaps: boolean | null;
     temSite: boolean;
     temInstagram: boolean;
     seguidoresInstagram: number | null;
@@ -120,7 +119,6 @@ export interface AvaliacaoIa {
   score: number;
   motivo: string;
   resumo: string;
-  entrega: boolean | null;
   pessoas: {
     nome: string;
     cargo: string | null;
@@ -137,7 +135,6 @@ const ESQUEMA: EsquemaIa = {
     score: { type: 'INTEGER' },
     motivo: { type: 'STRING' },
     resumo: { type: 'STRING' },
-    entrega: { type: 'BOOLEAN', nullable: true },
     pessoas: {
       type: 'ARRAY',
       items: {
@@ -168,7 +165,6 @@ export function montarPrompt(e: EntradaAvaliacao): string {
     '- score: 0 a 100, coerente com a faixa (A ≥ 70, B 40–69, C < 40);',
     '- motivo: uma frase objetiva com os sinais que pesaram (ex.: "vende pelo WhatsApp, 380 avaliações, 12 anos");',
     '- resumo: uma frase dizendo o que a empresa faz;',
-    '- entrega: true se o site/Instagram indicar que entrega, false se indicar que não, null se não der para saber;',
     '- pessoas: SOMENTE quem o texto apresenta como da equipe da empresa, com o cargo escrito no texto (ex.: "Carlos Lima – gerente de compras", "fundada por Ana Souza"). Para cada uma, "trecho" é a frase copiada do texto que mostra nome e cargo juntos.',
     '  NÃO inclua: clientes, autores de depoimentos ou avaliações ("o que dizem nossos clientes", estrelas, "recomendo"), quem comentou ou marcou o perfil, fornecedores, marcas, nomes sem cargo no texto. Na dúvida, deixe de fora: lista vazia é melhor que nome errado. Não repita os sócios.',
     e.cargosAlvo.length
@@ -218,7 +214,6 @@ export function lerAvaliacao(texto: string): AvaliacaoIa {
     score,
     motivo: String(j.motivo ?? '').slice(0, 300),
     resumo: String(j.resumo ?? '').slice(0, 300),
-    entrega: typeof j.entrega === 'boolean' ? j.entrega : null,
     pessoas: (Array.isArray(j.pessoas) ? j.pessoas : [])
       .filter((p) => p && typeof p.nome === 'string' && p.nome.trim().split(' ').length >= 2)
       .slice(0, 10)

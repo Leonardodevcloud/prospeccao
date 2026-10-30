@@ -465,9 +465,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>Prova antes de ligar</h3>
         <p>
           A IA só pode ser ligada depois de passar na prova: conversas de teste com situações comuns e
-          difíceis (“quem é?”, quanto custa, entrega fora da região, “você é um robô?”, pressão por desconto,
-          cliente irritado, tentativa de tirar ela das regras). Você também cria os seus cenários. Use o{' '}
-          <b>Simulador</b> para conversar com ela como se fosse um cliente.
+          difíceis (“quem é?”, quanto custa, atendimento fora da região, “você é um robô?”, pressão por
+          desconto, cliente irritado, tentativa de tirar ela das regras). Você também cria os seus cenários.
+          Use o <b>Simulador</b> para conversar com ela como se fosse um cliente.
         </p>
         <Nota>
           Em <b>O que falta ensinar</b> aparecem as perguntas que ela não soube responder: responda para ela

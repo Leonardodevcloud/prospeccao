@@ -137,7 +137,6 @@ export interface LeadHeaderProps {
   etapa?: string;
   nicho?: string;
   cidade?: string;
-  sinalEntrega?: string;
   distancia?: string;
   motivo?: string;
   acoes?: React.ReactNode;

@@ -205,11 +205,11 @@ const TEXTO_EXEMPLO = `{saudacao}
 
 {abertura}
 
-Distribuímos peças para lojas de autopeças: o pedido feito até as 16h chega no dia seguinte, com prazo para pagar.
+Ajudamos empresas da sua região a vender mais, com um atendimento rápido e organizado.
 
-- Reposição em até 24 horas na sua região
-- Catálogo com mais de 18 mil itens
-- Vendedor dedicado, que conhece a sua loja
+- Implantação em até 7 dias
+- Especialista dedicado, que conhece o seu negócio
+- Sem fidelidade no primeiro mês
 
 [[Ver a proposta|https://exemplo.com.br/proposta]]
 
@@ -369,14 +369,14 @@ function EditorMarca(props: {
   // Prévia instantânea (no navegador): o mesmo montador que o servidor usa no envio.
   const previa = useMemo<PreviaEmail>(() => {
     const e = montarEmail(
-      { assunto: 'Entregas em 1 hora para a {empresa}', corpo: TEXTO_EXEMPLO },
+      { assunto: 'Uma proposta para a {empresa}', corpo: TEXTO_EXEMPLO },
       {
         nome: 'Marcos',
-        empresa: 'Auto Peças Exemplo',
+        empresa: 'Empresa Exemplo',
         cidade: 'Salvador',
         remetente: f.remetenteNome,
         abertura:
-          'Vi que a Auto Peças Exemplo atende oficinas em toda a região do Iguatemi, e entrega rápida costuma pesar na escolha delas.',
+          'Vi que a Empresa Exemplo é muito bem avaliada pelos clientes em Salvador, e quem cresce assim costuma precisar de mais estrutura.',
       },
       {
         assinatura: f.assinatura,
@@ -401,7 +401,7 @@ function EditorMarca(props: {
       texto: e.texto,
       de: { nome: f.remetenteNome || '—', email: f.remetenteEmail || props.remetenteConta },
       responderPara: f.responderPara,
-      lead: { empresaId: null, empresa: 'Auto Peças Exemplo', contato: 'Marcos', cidade: 'Salvador' },
+      lead: { empresaId: null, empresa: 'Empresa Exemplo', contato: 'Marcos', cidade: 'Salvador' },
       abertura: null,
       aviso: null,
       anexos: [],

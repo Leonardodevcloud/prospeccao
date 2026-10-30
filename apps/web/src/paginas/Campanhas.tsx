@@ -89,7 +89,7 @@ function FormCampanha({ aoFechar }: { aoFechar: () => void }) {
           rotulo="Nome da campanha"
           value={f.nome}
           onChange={mudar('nome')}
-          placeholder="Ex.: Autopeças · Salvador e região"
+          placeholder="Ex.: Clínicas odontológicas · Salvador e região"
         />
         <div className="campo">
           <label htmlFor="nicho">Nicho</label>

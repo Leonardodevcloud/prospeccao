@@ -13,7 +13,6 @@ const base: EntradaAvaliacao = {
     categoriaMaps: 'Loja de tintas',
     notaMaps: 4.6,
     avaliacoesMaps: 120,
-    sinalEntregaMaps: null,
     temSite: false,
     temInstagram: true,
     seguidoresInstagram: 900,

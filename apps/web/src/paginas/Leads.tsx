@@ -26,7 +26,6 @@ const ABAS = [
   { id: 'B', rotulo: 'Nota B' },
   { id: 'decisor', rotulo: 'Com possível decisor' },
   { id: 'whatsapp', rotulo: 'Com WhatsApp' },
-  { id: 'entrega', rotulo: 'Com entrega' },
   { id: 'pendente', rotulo: 'Aguardando enriquecimento' },
 ];
 
@@ -161,7 +160,6 @@ export function Leads() {
     ordem,
     pagina,
     porPagina: POR_PAGINA,
-    entrega: aba === 'entrega' ? true : undefined,
     faixa: aba === 'A' || aba === 'B' || aba === 'pendente' ? aba : undefined,
     comWhatsapp: aba === 'whatsapp' ? true : undefined,
     comDecisor: aba === 'decisor' ? true : undefined,
@@ -300,7 +298,7 @@ export function Leads() {
                 id="motivo-descarte"
                 className="filtro"
                 style={{ flex: '1 1 220px' }}
-                placeholder="Motivo (ex.: atacadista, não entrega)"
+                placeholder="Motivo (ex.: fora do perfil)"
                 value={motivo}
                 // biome-ignore lint/a11y/noAutofocus: aparece por ação do usuário
                 autoFocus
@@ -562,14 +560,9 @@ export function Leads() {
                         ) : (
                           <span className="quieto">—</span>
                         )}
-                        {(e.sinalEntrega || e.origem === 'maps') && (
+                        {e.origem === 'maps' && (
                           <span className="celula-selos">
-                            {e.sinalEntrega && (
-                              <Badge tone="brand" icon="package">
-                                Entrega
-                              </Badge>
-                            )}
-                            {e.origem === 'maps' && <Badge tone="neutral">{ROTULO_ORIGEM[e.origem]}</Badge>}
+                            <Badge tone="neutral">{ROTULO_ORIGEM[e.origem]}</Badge>
                           </span>
                         )}
                       </td>

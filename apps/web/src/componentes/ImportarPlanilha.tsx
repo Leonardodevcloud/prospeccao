@@ -105,9 +105,9 @@ export function ImportarPlanilha(props: { campanha: Campanha; aoFechar: () => vo
         ) : (
           <div className="pilha">
             <Mensagem tipo="aviso">
-              <b>Como exportar:</b> no Google Maps, busque "autopeças em [bairro], [cidade]", role a lista até
-              o fim, abra a extensão Instant Data Scraper e clique em "Download CSV". Repita por bairro para
-              cobrir a cidade. Não gasta a cota do Google.
+              <b>Como exportar:</b> no Google Maps, busque o seu nicho, por exemplo "clínicas odontológicas em
+              [bairro], [cidade]", role a lista até o fim, abra a extensão Instant Data Scraper e clique em
+              "Download CSV". Repita por bairro para cobrir a cidade. Não gasta a cota do Google.
             </Mensagem>
 
             <div className="campo">

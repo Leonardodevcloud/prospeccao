@@ -156,7 +156,6 @@ export const filtrosEmpresas = z.object({
   origem: z.enum(ORIGENS_EMPRESA).optional(),
   comCnpj: booleanoQuery,
   dentroDoRaio: booleanoQuery,
-  entrega: booleanoQuery,
   pagina: z.coerce.number().int().min(1).default(1),
   porPagina: z.coerce.number().int().min(1).max(200).default(50),
   ordem: z.enum(['nota', 'recentes', 'distancia', 'avaliacoes', 'nome']).default('nota'),

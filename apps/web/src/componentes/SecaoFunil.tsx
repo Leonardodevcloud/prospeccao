@@ -84,7 +84,7 @@ function itemDaTimeline(a: AtividadeFunil): TimelineItem {
   };
 }
 
-/** Suas etiquetas no lead (Indicação, Farma, +50 entregas…). Enter adiciona; × tira. */
+/** Suas etiquetas no lead (Indicação, Prioridade, Grande conta…). Enter adiciona; × tira. */
 function Etiquetas(props: { atuais: string[]; salvando: boolean; aoSalvar: (e: string[]) => void }) {
   const [nova, setNova] = useState('');
   const sugestoes = useQuery({
@@ -165,7 +165,9 @@ function PedirMotivo(props: {
           // biome-ignore lint/a11y/noAutofocus: o campo aparece por ação do usuário
           autoFocus
           placeholder={
-            props.etapa === 'perdido' ? 'Ex.: já tem fornecedor, achou caro' : 'Ex.: atacadista, não entrega'
+            props.etapa === 'perdido'
+              ? 'Ex.: já tem fornecedor, achou caro'
+              : 'Ex.: fora do perfil, sem demanda agora'
           }
           onChange={(e) => setMotivo(e.target.value)}
           onKeyDown={(e) => {

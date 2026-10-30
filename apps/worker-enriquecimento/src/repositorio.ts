@@ -199,7 +199,6 @@ export interface Conclusao {
   score: number;
   motivo: string;
   resumo: string | null;
-  entrega: boolean | null;
   cnpjAchado: string | null;
   site: string | null;
   instagram: string | null;
@@ -327,7 +326,7 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
               faixa = CASE WHEN cardinality($17::text[]) > 0 AND l.score > $3 THEN l.faixa ELSE $2 END,
               motivo = CASE WHEN cardinality($17::text[]) > 0 AND l.score > $3 THEN l.motivo ELSE $4 END,
               score = CASE WHEN cardinality($17::text[]) > 0 AND l.score > $3 THEN l.score ELSE $3 END,
-              resumo = coalesce($5, l.resumo), entrega = coalesce($6, l.entrega), cnpj_achado = coalesce($7, l.cnpj_achado),
+              resumo = coalesce($5, l.resumo), entrega = coalesce($6::boolean, l.entrega), cnpj_achado = coalesce($7, l.cnpj_achado),
               site_url = coalesce($8, l.site_url), instagram = coalesce($9, l.instagram),
               facebook = coalesce($10, l.facebook), linkedin_empresa = coalesce($11, l.linkedin_empresa),
               maps_aberto = coalesce($12, l.maps_aberto),
@@ -340,7 +339,7 @@ export async function concluir(pool: Pool, empresaId: number, coletor: Coletor, 
         c.score,
         c.motivo,
         c.resumo,
-        c.entrega,
+        null, // $6: antigo "faz entrega" (era próprio de um nicho; não é mais preenchido)
         c.cnpjAchado,
         c.site,
         c.instagram,

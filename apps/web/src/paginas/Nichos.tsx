@@ -376,7 +376,7 @@ export function Nichos() {
           <EmptyState
             icone="store"
             titulo="Nenhum nicho cadastrado"
-            texto="Escolha um dos nichos prontos (autopeças, farmácias, pet shops…) ou monte o seu. Depois crie uma campanha com ele."
+            texto="Escolha um dos nichos prontos (farmácias, pet shops, clínicas…) ou monte o seu. Depois crie uma campanha com ele."
             acao={
               <Button size="sm" variant="primary" icon="plus" onClick={novo}>
                 Novo nicho

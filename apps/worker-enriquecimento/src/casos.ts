@@ -920,7 +920,6 @@ export async function enriquecerEmpresa(
             categoriaMaps: empresa.maps_categoria,
             notaMaps: empresa.maps_nota,
             avaliacoesMaps: empresa.maps_avaliacoes,
-            sinalEntregaMaps: empresa.sinal_entrega,
             temSite: !!site,
             temInstagram: !!perfil,
             seguidoresInstagram: perfil?.seguidores ?? null,
@@ -950,7 +949,6 @@ export async function enriquecerEmpresa(
     const regras = notaPorRegras({
       avaliacoes: empresa.maps_avaliacoes,
       nota: empresa.maps_nota,
-      entrega: empresa.sinal_entrega,
       temWhatsapp,
       temInstagram: !!perfil,
       temSite: !!site,
@@ -1363,7 +1361,6 @@ export async function enriquecerEmpresa(
       score,
       motivo,
       resumo: avaliacao?.resumo ?? null,
-      entrega: avaliacao?.entrega ?? empresa.sinal_entrega,
       cnpjAchado,
       site: site?.urlFinal ?? siteParaLer,
       instagram,

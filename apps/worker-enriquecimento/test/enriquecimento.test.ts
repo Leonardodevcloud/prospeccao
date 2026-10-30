@@ -80,7 +80,6 @@ describe('coletor', () => {
     const forte = notaPorRegras({
       avaliacoes: 380,
       nota: 4.7,
-      entrega: true,
       temWhatsapp: true,
       temInstagram: true,
       temSite: true,
@@ -88,12 +87,13 @@ describe('coletor', () => {
       porte: 'epp',
     });
     expect(forte.faixa).toBe('A');
-    expect(forte.motivo).toContain('faz entrega');
+    expect(forte.motivo).toContain('380 avaliações no Google');
+    // Nada próprio de um nicho (como "faz entrega") entra na nota por regras.
+    expect(forte.motivo).not.toMatch(/entrega/);
     expect(
       notaPorRegras({
         avaliacoes: 3,
         nota: 3,
-        entrega: null,
         temWhatsapp: false,
         temInstagram: false,
         temSite: false,
@@ -297,14 +297,13 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(await enriquecerEmpresa(deps(fontesCompletas()), { empresaId: 1, campanhaId: 1 })).toBe('feito');
 
     const { rows: lead } = await pool.query(
-      `SELECT status, faixa, score, motivo, instagram, entrega FROM enriquecimento.leads WHERE empresa_id = 1`,
+      `SELECT status, faixa, score, motivo, instagram FROM enriquecimento.leads WHERE empresa_id = 1`,
     );
     expect(lead[0]).toMatchObject({
       status: 'concluido',
       faixa: 'A',
       score: 84,
       instagram: 'ladeirapecas',
-      entrega: true,
     });
 
     const { rows: pessoas } = await pool.query(
@@ -623,7 +622,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       },
     );
     const { rows } = await pool.query(`SELECT faixa, motivo FROM enriquecimento.leads WHERE empresa_id = 1`);
-    expect(rows[0].motivo).toMatch(/^Por regras: faz entrega/);
+    expect(rows[0].motivo).toMatch(/^Por regras: 380 avaliações no Google/);
     const { rows: etapas } = await pool.query(
       `SELECT etapa, status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 1 ORDER BY ordem`,
     );

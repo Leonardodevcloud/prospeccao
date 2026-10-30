@@ -79,7 +79,6 @@ export interface ProgressoCampanha {
   soMaps: number;
   dentroDoRaio: number;
   semLocalizacao: number;
-  comSinalEntrega: number;
   buscasPendentes: number;
   buscasConcluidas: number;
   buscasComErro: number;
@@ -163,7 +162,6 @@ export interface EmpresaLista {
   mapsSite: string | null;
   mapsTelefone: string | null;
   telefonesReceita: string[];
-  sinalEntrega: boolean | null;
   distanciaBaseKm: number | null;
   mapsFechada: boolean | null;
   noMaps: boolean;
@@ -555,7 +553,6 @@ export interface Enriquecimento {
   score: number | null;
   motivo: string | null;
   resumo: string | null;
-  entrega: boolean | null;
   cnpjAchado: string | null;
   site: string | null;
   instagram: string | null;
@@ -594,7 +591,6 @@ export interface EmpresaDetalhe extends EmpresaLista {
   mapsNome: string | null;
   mapsEndereco: string | null;
   mapsUrl: string | null;
-  sinalEntregaFonte: string | null;
   baseNome: string | null;
   socios: Socio[];
   campanhas: {

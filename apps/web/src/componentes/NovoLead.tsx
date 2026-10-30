@@ -265,7 +265,7 @@ export function NovoLead(props: {
             className="filtro"
             rows={2}
             maxLength={2000}
-            placeholder="Ex.: indicado pelo João; quer cotação de entregas para 3 lojas"
+            placeholder="Ex.: indicado pelo João; quer uma proposta para 3 unidades"
             value={f.observacao}
             onChange={set('observacao')}
           />

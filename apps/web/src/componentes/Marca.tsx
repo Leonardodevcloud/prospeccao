@@ -101,7 +101,7 @@ const EVENTOS: { icone: string; titulo: string; texto: string; tom?: 'marca' | '
     texto: 'Telefone visto no site e no Google',
     tom: 'marca',
   },
-  { icone: 'trending-up', titulo: 'Nota A · 88', texto: 'Entrega própria e 289 avaliações' },
+  { icone: 'trending-up', titulo: 'Nota A · 88', texto: 'WhatsApp, site e 289 avaliações' },
 ];
 
 function Avisos() {

@@ -365,45 +365,41 @@ export class Coletor {
 
 /**
  * Nota por regras, para quando a IA não está configurada ou falhou. Mesma escala da IA:
- * A ≥ 70, B 40–69, C < 40.
+ * A ≥ 70, B 40–69, C < 40. Só sinais que valem para qualquer nicho B2B (movimento, canais para
+ * conversar, tempo de empresa); o que é próprio do nicho fica com a IA (sinais da campanha).
  */
 export function notaPorRegras(s: {
   avaliacoes: number | null;
   nota: number | null;
-  entrega: boolean | null;
   temWhatsapp: boolean;
   temInstagram: boolean;
   temSite: boolean;
   anos: number | null;
   porte: string | null;
 }): { faixa: 'A' | 'B' | 'C'; score: number; motivo: string } {
-  let score = 25;
+  let score = 30;
   const sinais: string[] = [];
-  if (s.entrega) {
-    score += 20;
-    sinais.push('faz entrega');
-  }
   if ((s.avaliacoes ?? 0) >= 200) {
-    score += 20;
+    score += 25;
     sinais.push(`${s.avaliacoes} avaliações no Google`);
   } else if ((s.avaliacoes ?? 0) >= 50) {
-    score += 12;
+    score += 15;
     sinais.push(`${s.avaliacoes} avaliações no Google`);
   }
   if (s.temWhatsapp) {
-    score += 10;
+    score += 12;
     sinais.push('WhatsApp encontrado');
   }
   if (s.temInstagram) {
-    score += 8;
+    score += 10;
     sinais.push('Instagram ativo');
   }
-  if (s.temSite) score += 4;
+  if (s.temSite) score += 6;
   if ((s.anos ?? 0) >= 3) {
-    score += 8;
+    score += 10;
     sinais.push(`${s.anos} anos de empresa`);
   }
-  if (s.porte === 'me' || s.porte === 'epp') score += 5;
+  if (s.porte === 'me' || s.porte === 'epp') score += 7;
   if (s.nota != null && s.nota < 3.5) {
     score -= 10;
     sinais.push(`nota baixa no Google (${s.nota})`);

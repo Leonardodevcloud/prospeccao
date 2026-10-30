@@ -603,7 +603,7 @@ export function Argos({
               <li className={css.cartao}>
                 <Icon name="calendar-plus" size={20} />
                 <b>Anote na sua agenda</b>
-                <span>"Marca uma ligação com a Autopeças Farol amanhã às 15h."</span>
+                <span>"Marca uma ligação com a Construtora Farol amanhã às 15h."</span>
               </li>
               <li className={css.cartao}>
                 <button type="button" className={css.cartaoBotao} onClick={() => navegar('/argos/mapa')}>

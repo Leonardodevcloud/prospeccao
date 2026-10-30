@@ -62,7 +62,7 @@ function NovoCenario(props: { aoCriar: () => void }) {
         <textarea
           id="cen-msg"
           rows={2}
-          placeholder="Ex.: vocês entregam em Aracaju no sábado?"
+          placeholder="Ex.: vocês atendem em Aracaju no sábado?"
           value={f.mensagem}
           onChange={(e) =>
             setF({ ...f, mensagem: e.target.value, titulo: f.titulo || e.target.value.slice(0, 60) })

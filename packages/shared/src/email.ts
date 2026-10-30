@@ -413,7 +413,7 @@ export function classificarRespostaSimples(assunto: string, texto: string): Clas
   )
     return 'descadastro';
   if (
-    /(nao (temos|tenho|ha) interesse|sem interesse|nao precisamos|ja (temos|possuimos) (motoboy|entregador|fornecedor)|nao e do nosso interesse)/.test(
+    /(nao (temos|tenho|ha) interesse|sem interesse|nao precisamos|ja (temos|possuimos) (fornecedor|parceiro|empresa que faz)|nao e do nosso interesse)/.test(
       t,
     )
   )

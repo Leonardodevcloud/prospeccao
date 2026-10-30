@@ -544,7 +544,6 @@ export function FichaEmpresa({
             motivo={en?.motivo ?? undefined}
             nicho={e.mapsCategoria ?? undefined}
             cidade={`${fmtCidade(e.cidade)}, ${e.uf}`}
-            sinalEntrega={e.sinalEntrega || en?.entrega ? 'Faz entregas' : undefined}
             acoes={
               <>
                 {e.mapsUrl && (

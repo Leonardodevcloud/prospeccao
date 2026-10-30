@@ -957,7 +957,6 @@ function LeadHeader(props) {
       props.etapa ? h(Badge, { tone: 'brand' }, props.etapa) : null,
       props.nicho ? h(Badge, { icon: 'store' }, props.nicho) : null,
       props.cidade ? h(Badge, { icon: 'map-pin' }, props.cidade) : null,
-      props.sinalEntrega ? h(Badge, { icon: 'package' }, props.sinalEntrega) : null,
       props.distancia ? h(Badge, { tone: 'outline' }, props.distancia) : null,
     ),
     props.motivo

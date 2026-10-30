@@ -156,9 +156,8 @@ const ICONE_CANAL: Record<CanalSequencia, string> = {
   ligacao: 'phone',
 };
 const TEXTO_PADRAO: Record<'whatsapp' | 'ligacao', string> = {
-  whatsapp:
-    '{saudacao} Aqui é {remetente}. Te mandei um e-mail sobre entregas para a {empresa}: conseguiu ver?',
-  ligacao: 'Confirme se recebeu o e-mail e pergunte quantas entregas a {empresa} faz por dia.',
+  whatsapp: '{saudacao} Aqui é {remetente}. Te mandei um e-mail para a {empresa}: conseguiu ver?',
+  ligacao: 'Confirme se recebeu o e-mail e pergunte qual é hoje o maior desafio da {empresa} nesse assunto.',
 };
 
 /** Canais que a sequência usa (para a estimativa de quem pode entrar). */
@@ -391,7 +390,7 @@ function EditorMarcaIa(props: {
           rows={5}
           maxLength={3000}
           placeholder={
-            'Ex.: São lojas de autopeças que vendem no balcão e por WhatsApp. A dor é o cliente da oficina que não espera. Cite o bairro ou a especialidade da loja quando der; nunca invente número. Tom direto, de quem conhece o ramo.'
+            'Ex.: São empresas de médio porte que compram por cotação. A dor é perder tempo com fornecedor que não responde. Cite o bairro ou a especialidade da empresa quando der; nunca invente número. Tom direto, de quem conhece o ramo.'
           }
           value={v.instrucoesIa}
           onChange={(e) => props.aoMudar({ ...v, instrucoesIa: e.target.value })}

@@ -13,7 +13,7 @@ const CAMPOS_LISTA = `
   e.cnae_principal AS "cnaePrincipal", e.porte,
   coalesce(e.maps_nota, l.maps_nota)::float8 AS "mapsNota", coalesce(e.maps_avaliacoes, l.maps_avaliacoes) AS "mapsAvaliacoes",
   coalesce(e.maps_categoria, l.maps_categoria) AS "mapsCategoria", e.maps_site AS "mapsSite", e.maps_telefone AS "mapsTelefone",
-  e.telefones_receita AS "telefonesReceita", e.sinal_entrega AS "sinalEntrega",
+  e.telefones_receita AS "telefonesReceita",
   ce.distancia_base_km::float8 AS "distanciaBaseKm", e.maps_fechada AS "mapsFechada",
   (e.place_id IS NOT NULL OR l.maps_url IS NOT NULL) AS "noMaps", e.criado_em AS "criadoEm", e.mei,
   l.status AS "enriqStatus", l.faixa, l.score, l.motivo, cardinality(l.pendencias) > 0 AS "enriqParcial",
@@ -94,10 +94,6 @@ export async function listar(db: Executor, f: FiltrosEmpresas) {
   if (f.comCnpj != null) where.push(f.comCnpj ? 'e.cnpj IS NOT NULL' : 'e.cnpj IS NULL');
   if (f.dentroDoRaio != null)
     where.push(f.dentroDoRaio ? 'ce.dentro_do_raio' : 'ce.dentro_do_raio IS NOT TRUE');
-  if (f.entrega != null)
-    where.push(
-      f.entrega ? '(e.sinal_entrega OR l.entrega)' : 'NOT coalesce(e.sinal_entrega OR l.entrega, false)',
-    );
   if (f.faixa === 'pendente') where.push(`(l.status IS NULL OR l.status <> 'concluido')`);
   else if (f.faixa) where.push(`l.faixa = ${p(f.faixa)}`);
   // Quem vê só a própria base não vê os leads que estão com colegas.
@@ -137,7 +133,6 @@ export async function obter(db: Executor, id: number) {
             e.logradouro, e.numero, e.cep, e.email_receita AS "emailReceita",
             e.lat, e.lng, e.geo_fonte AS "geoFonte", e.place_id AS "placeId", e.maps_nome AS "mapsNome",
             e.maps_endereco AS "mapsEndereco", coalesce(e.maps_url, l.maps_url) AS "mapsUrl", e.maps_em AS "mapsEm",
-            e.sinal_entrega_fonte AS "sinalEntregaFonte",
             b.nome AS "baseNome"
        FROM descoberta.empresas e
        JOIN LATERAL (
@@ -176,7 +171,7 @@ export async function obter(db: Executor, id: number) {
       [id],
     ),
     db.query(
-      `SELECT status, faixa, score, motivo, resumo, entrega, cnpj_achado AS "cnpjAchado", site_url AS "site",
+      `SELECT status, faixa, score, motivo, resumo, cnpj_achado AS "cnpjAchado", site_url AS "site",
               instagram, facebook, linkedin_empresa AS "linkedinEmpresa", maps_aberto AS "mapsAberto",
               erro, pendencias, solicitado_em AS "solicitadoEm", iniciado_em AS "iniciadoEm", concluido_em AS "concluidoEm"
          FROM enriquecimento.leads WHERE empresa_id = $1`,

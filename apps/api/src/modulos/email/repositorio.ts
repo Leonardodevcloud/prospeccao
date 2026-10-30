@@ -427,11 +427,11 @@ export async function leadDaPrevia(
 }
 
 export const LEAD_INVENTADO: EntradaAbertura['lead'] = {
-  empresa: 'Auto Peças Exemplo',
+  empresa: 'Empresa Exemplo',
   cidade: 'Salvador',
   contato: 'Marcos',
-  categoria: 'Loja de autopeças',
-  resumo: 'Vende peças para carros populares e faz entregas no bairro.',
+  categoria: 'Empresa de serviços',
+  resumo: 'Atende empresas da região há 9 anos, com boa avaliação dos clientes.',
   notaGoogle: 4.6,
   avaliacoesGoogle: 214,
   site: null,

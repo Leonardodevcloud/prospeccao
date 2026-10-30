@@ -58,7 +58,7 @@ export function lerSegmentos(segmentos: SegmentoWhisper[]): TrechoTranscrito[] {
 }
 
 const VOCABULARIO =
-  'Reunião comercial em português do Brasil. Proposta, contrato, prazo, orçamento, entregas, pedidos por mês, WhatsApp, Prospect Team.';
+  'Reunião comercial em português do Brasil. Proposta, contrato, prazo, orçamento, valores, condições de pagamento, WhatsApp, Prospect Team.';
 
 /**
  * Transcreve um arquivo de áudio pelo link (a Groq baixa direto do armazenamento, até 100 MB; não

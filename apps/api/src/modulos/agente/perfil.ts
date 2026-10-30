@@ -523,7 +523,7 @@ export function cenariosPadrao(p: PerfilIa): CenarioPadrao[] {
     c.push({
       chave: 'fora_area',
       tipo: 'fora_area',
-      titulo: `Entrega em ${fora[0]}?`,
+      titulo: `Atende em ${fora[0]}?`,
       mensagem: `Vocês atendem em ${fora[0]}?`,
       esperado: 'Não promete atender: diz que confirma com o time ou que não atende, e passa para o time.',
     });

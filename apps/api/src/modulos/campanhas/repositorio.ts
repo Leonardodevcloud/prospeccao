@@ -23,7 +23,6 @@ const SELECT = `
            'soMaps', coalesce(p.so_maps, 0),
            'dentroDoRaio', coalesce(p.dentro_do_raio, 0),
            'semLocalizacao', coalesce(p.sem_localizacao, 0),
-           'comSinalEntrega', coalesce(p.com_sinal_entrega, 0),
            'buscasPendentes', coalesce(b.pendentes, 0) + coalesce(b.rodando, 0),
            'buscasConcluidas', coalesce(b.concluidas, 0),
            'buscasComErro', coalesce(b.com_erro, 0),
