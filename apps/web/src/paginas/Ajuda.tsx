@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { ARTIGOS, type ArtigoAjuda } from '../componentes/Ajuda';
+import { type ArtigoAjuda, ARTIGOS as TODOS } from '../componentes/Ajuda';
+import { useSessao } from '../componentes/Sessao';
 
 const semAcento = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -8,6 +9,9 @@ const semAcento = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLo
 export function Ajuda() {
   const { artigo: id } = useParams();
   const [busca, setBusca] = useState('');
+  // Os artigos do painel da plataforma só para quem administra a plataforma.
+  const master = !!useSessao().data?.master;
+  const ARTIGOS = useMemo(() => TODOS.filter((a) => !a.soMaster || master), [master]);
   const artigo = ARTIGOS.find((a) => a.id === id) ?? null;
 
   const grupos = useMemo(() => {
@@ -18,7 +22,7 @@ export function Ajuda() {
     const porArea = new Map<string, ArtigoAjuda[]>();
     for (const a of achados) porArea.set(a.area, [...(porArea.get(a.area) ?? []), a]);
     return [...porArea.entries()];
-  }, [busca]);
+  }, [busca, ARTIGOS]);
 
   return (
     <div className="ajuda" data-aberto={artigo ? true : undefined}>

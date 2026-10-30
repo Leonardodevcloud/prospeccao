@@ -11,10 +11,11 @@ import {
   custoEstimado,
   custosCompletos,
   type Plano,
+  type PlanoEfetivo,
   type SinalSaude,
   type UsoPago,
 } from '@prospeccao/shared';
-import { type PlanoComUso, planoDaOrganizacao } from '../plano/repositorio.js';
+import { type PlanoComUso, planoDaOrganizacao, tabelaDePrecos } from '../plano/repositorio.js';
 
 /**
  * Painel da plataforma (só o master): receita, consumo e custo de cada cliente, saúde de uso e a
@@ -63,6 +64,25 @@ interface LinhaConta {
   whatsappEnviadas: number;
   numeros: number;
   placesUsd: number;
+  demonstracao: boolean;
+  /** Reuniões por vídeo no mês: segundos de cada pessoa na sala, duração e o que foi transcrito. */
+  reuniaoSegundosPessoas: number;
+  reuniaoSegundos: number;
+  transcricaoSegundos: number;
+  /** Tudo o que está guardado (gravações), em bytes. */
+  armazenamentoBytes: number;
+  conversasIa: number;
+  /** Configuração da conta. */
+  chipsConectados: number;
+  dominioSituacao: string | null;
+  dominioNome: string | null;
+  dominioDesde: string | null;
+  agenteLigado: boolean;
+  agenteRevisar: boolean;
+  usuariosAtivos: number;
+  convitesPendentes: number;
+  campanhas: number;
+  campanhasAtivas: number;
 }
 
 /** Tudo o que o painel precisa de cada conta, numa consulta só (mês corrente, fuso de São Paulo). */
@@ -92,8 +112,37 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
                 AND m.enviado_em >= ${INICIO_MES_SP_TS})::int AS "whatsappEnviadas",
             (SELECT count(*) FROM comercial.chips h WHERE h.conta_id = c.id AND h.token_cifrado IS NOT NULL)::int AS numeros,
             coalesce((SELECT sum(gasto_usd) FROM descoberta.v_uso_places_mes v
-                       WHERE v.conta_id = c.id AND v.mes = ${INICIO_MES_SP}), 0)::float8 AS "placesUsd"
+                       WHERE v.conta_id = c.id AND v.mes = ${INICIO_MES_SP}), 0)::float8 AS "placesUsd",
+            og.demonstracao,
+            coalesce((SELECT sum(coalesce(sp.segundos_na_sala, 0)) FROM comercial.sala_participantes sp
+                       WHERE sp.conta_id = c.id AND sp.entrou_em >= ${INICIO_MES_SP_TS}), 0)::float8
+              AS "reuniaoSegundosPessoas",
+            coalesce((SELECT sum(extract(epoch FROM (coalesce(ss.encerrada_em, now()) - ss.iniciada_em)))
+                        FROM comercial.sala_sessoes ss
+                       WHERE ss.conta_id = c.id AND ss.iniciada_em >= ${INICIO_MES_SP_TS}), 0)::float8 AS "reuniaoSegundos",
+            coalesce((SELECT sum(ss.duracao_segundos) FROM comercial.sala_sessoes ss
+                       WHERE ss.conta_id = c.id AND ss.transcricao = 'pronta'
+                         AND ss.iniciada_em >= ${INICIO_MES_SP_TS}), 0)::float8 AS "transcricaoSegundos",
+            coalesce((SELECT sum(ss.video_bytes) FROM comercial.sala_sessoes ss WHERE ss.conta_id = c.id), 0)::float8
+              AS "armazenamentoBytes",
+            (SELECT count(DISTINCT a.empresa_id) FROM comercial.atividades a
+              WHERE a.conta_id = c.id AND a.autor = 'agente' AND a.direcao = 'enviada'
+                AND a.criado_em >= ${INICIO_MES_SP_TS})::int AS "conversasIa",
+            (SELECT count(*) FROM comercial.chips h
+              WHERE h.conta_id = c.id AND h.ativo AND h.token_cifrado IS NOT NULL AND h.estado LIKE 'ok%')::int
+              AS "chipsConectados",
+            d.situacao AS "dominioSituacao", d.dominio AS "dominioNome", d.criado_em AS "dominioDesde",
+            coalesce(ag.ligado, false) AS "agenteLigado", coalesce(ag.revisar_antes, true) AS "agenteRevisar",
+            (SELECT count(*) FROM cadastro.usuarios u
+              WHERE u.conta_id = c.id AND u.ativo AND NOT u.master AND u.senha_hash IS NOT NULL)::int AS "usuariosAtivos",
+            (SELECT count(*) FROM cadastro.usuarios u
+              WHERE u.conta_id = c.id AND u.ativo AND NOT u.master AND u.senha_hash IS NULL)::int AS "convitesPendentes",
+            (SELECT count(*) FROM cadastro.campanhas ca WHERE ca.conta_id = c.id)::int AS campanhas,
+            (SELECT count(*) FROM cadastro.campanhas ca WHERE ca.conta_id = c.id AND ca.status = 'ativa')::int
+              AS "campanhasAtivas"
        FROM cadastro.contas c
+       LEFT JOIN cadastro.dominios_email d ON d.conta_id = c.id
+       LEFT JOIN comercial.config_agente ag ON ag.conta_id = c.id
        JOIN cadastro.organizacoes og ON og.id = c.organizacao_id
        LEFT JOIN (
          SELECT conta_id,
@@ -144,16 +193,148 @@ export interface ClientePainel {
     whatsappEnviadas: number;
     numerosWhatsapp: number;
     placesUsd: number;
+    /** Reuniões por vídeo no mês. */
+    reuniaoMinutosPessoas: number;
+    horasReuniao: number;
+    transcricaoHoras: number;
+    armazenamentoGb: number;
+    conversasIa: number;
   };
   /** Quem paga cada serviço: a plataforma (custo seu) ou o cliente (chave dele). */
   pagaPlataforma: { ia: boolean; email: boolean; whatsapp: boolean; maps: boolean };
+  /** O que foi contratado e de onde vem cada real da mensalidade. */
+  contratado: {
+    modulos: string[];
+    numerosExtras: number;
+    usuariosExtras: number;
+    /** Mensalidade combinada (no lugar da calculada pela tabela). */
+    valorCombinado: boolean;
+    mensalidadeCalculada: number | null;
+    itens: { rotulo: string; valor: number; grupo: GrupoReceita }[];
+  };
+  /** Quanto já usou de cada franquia do mês (limite null = sem limite; 0 = o plano não tem). */
+  franquias: Record<'usuarios' | 'leads' | 'horasReuniao' | 'conversasIa' | 'numeros', Franquia>;
+  /** A conta está pronta para usar? (o que o plano não tem fica "fora"). */
+  configuracao: ItemConfiguracao[];
   custo: CustoEstimado;
   margem: number | null;
   saude: SinalSaude;
   saudeTexto: string;
 }
 
+/** Para onde vai cada item da mensalidade (receita por módulo no Financeiro). */
+export type GrupoReceita = 'plano' | 'whatsapp_ia' | 'numeros' | 'usuarios' | 'leads' | 'modulos' | 'incluso';
+
+export interface Franquia {
+  uso: number;
+  limite: number | null;
+}
+
+export interface ItemConfiguracao {
+  item: 'whatsapp' | 'email' | 'ia' | 'equipe' | 'campanha';
+  estado: 'ok' | 'pendente' | 'fora';
+  texto: string;
+}
+
+/** Classifica um item da mensalidade (os rótulos vêm de planoEfetivo). */
+export function grupoDoItem(rotulo: string): GrupoReceita {
+  if (rotulo.startsWith('Plano ')) return 'plano';
+  if (rotulo.includes('(incluso no plano)')) return 'incluso';
+  if (rotulo === 'WhatsApp + Agente de IA') return 'whatsapp_ia';
+  if (/WhatsApp extra/.test(rotulo)) return 'numeros';
+  if (/usuári/.test(rotulo)) return 'usuarios';
+  if (/leads/.test(rotulo)) return 'leads';
+  return 'modulos';
+}
+
 const DIA = 86_400_000;
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+const fmtData = (iso: string) =>
+  new Date(iso).toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: 'short',
+  });
+
+/** A conta (organização) está pronta? Um item por coisa que o cliente precisa configurar. */
+function configuracaoDa(us: LinhaConta[], p: PlanoEfetivo, emailProprio: boolean): ItemConfiguracao[] {
+  const soma = (f: (l: LinhaConta) => number) => us.reduce((t, l) => t + f(l), 0);
+  const itens: ItemConfiguracao[] = [];
+  // WhatsApp
+  if (!p.modulos.includes('whatsapp'))
+    itens.push({ item: 'whatsapp', estado: 'fora', texto: 'Sem o módulo de WhatsApp' });
+  else {
+    const n = soma((l) => l.chipsConectados);
+    itens.push(
+      n
+        ? { item: 'whatsapp', estado: 'ok', texto: `${plural(n, 'número conectado', 'números conectados')}` }
+        : { item: 'whatsapp', estado: 'pendente', texto: 'Nenhum número de WhatsApp conectado' },
+    );
+  }
+  // E-mail
+  if (!p.modulos.includes('email'))
+    itens.push({ item: 'email', estado: 'fora', texto: 'Sem e-mail no plano' });
+  else {
+    const verificado = us.find((l) => l.dominioSituacao === 'verificado');
+    const pendente = us.find((l) => l.dominioNome && l.dominioSituacao !== 'verificado');
+    itens.push(
+      verificado
+        ? { item: 'email', estado: 'ok', texto: `Domínio ${verificado.dominioNome} verificado` }
+        : emailProprio
+          ? { item: 'email', estado: 'ok', texto: 'E-mail configurado pelo suporte (conta própria)' }
+          : pendente
+            ? {
+                item: 'email',
+                estado: 'pendente',
+                texto: `Domínio ${pendente.dominioNome} aguardando o DNS${pendente.dominioDesde ? ` desde ${fmtData(pendente.dominioDesde)}` : ''}`,
+              }
+            : { item: 'email', estado: 'pendente', texto: 'Nenhum domínio de e-mail cadastrado' },
+    );
+  }
+  // IA de atendimento
+  if (!p.modulos.includes('agente_ia'))
+    itens.push({ item: 'ia', estado: 'fora', texto: 'Sem o Agente de IA' });
+  else {
+    const ligada = us.find((l) => l.agenteLigado);
+    itens.push(
+      ligada
+        ? {
+            item: 'ia',
+            estado: 'ok',
+            texto: ligada.agenteRevisar
+              ? 'IA ligada, revisando antes de enviar'
+              : 'IA ligada, enviando sozinha',
+          }
+        : { item: 'ia', estado: 'pendente', texto: 'A IA de atendimento ainda não foi ligada' },
+    );
+  }
+  // Equipe
+  const ativos = soma((l) => l.usuariosAtivos);
+  const pendentes = soma((l) => l.convitesPendentes);
+  itens.push(
+    !ativos
+      ? { item: 'equipe', estado: 'pendente', texto: 'Ninguém aceitou o convite ainda' }
+      : pendentes
+        ? {
+            item: 'equipe',
+            estado: 'pendente',
+            texto: `${plural(ativos, 'pessoa usando', 'pessoas usando')}, ${plural(pendentes, 'convite', 'convites')} sem aceitar`,
+          }
+        : { item: 'equipe', estado: 'ok', texto: `${plural(ativos, 'pessoa usando', 'pessoas usando')}` },
+  );
+  // Campanhas
+  const campanhas = soma((l) => l.campanhas);
+  itens.push(
+    campanhas
+      ? {
+          item: 'campanha',
+          estado: 'ok',
+          texto: `${plural(campanhas, 'campanha', 'campanhas')} (${soma((l) => l.campanhasAtivas)} rodando)`,
+        }
+      : { item: 'campanha', estado: 'pendente', texto: 'Nenhuma campanha criada' },
+  );
+  return itens;
+}
 
 function avaliarSaude(l: LinhaConta, p: PlanoComUso, agora: Date): { saude: SinalSaude; texto: string } {
   const idade = (agora.getTime() - new Date(l.criadoEm).getTime()) / DIA;
@@ -189,7 +370,9 @@ export async function clientes(
   db: Executor,
   credenciais: { chave: string | null; ambiente: CredenciaisAmbiente },
 ): Promise<{ clientes: ClientePainel[]; custos: CustosPlataforma }> {
-  const [linhas, custos] = await Promise.all([linhasDasContas(db), lerCustos(db)]);
+  const [todas, custos, tabela] = await Promise.all([linhasDasContas(db), lerCustos(db), tabelaDePrecos(db)]);
+  // O CRM de demonstração não é cliente: fica fora do financeiro.
+  const linhas = todas.filter((l) => !l.demonstracao);
   // Infraestrutura rateada por cliente (organização) ativo que não é a sua.
   const orgsPagantes = new Set(linhas.filter((l) => l.orgAtiva && !l.principal).map((l) => l.organizacaoId));
   const infraPorCliente = custos.infraMes / (orgsPagantes.size || 1);
@@ -222,8 +405,16 @@ export async function clientes(
             emails: paga.email ? l.emails : 0,
             numerosWhatsapp: paga.whatsapp ? l.numeros : 0,
             placesUsd: paga.maps ? l.placesUsd : 0,
+            reuniaoMinutos: l.reuniaoSegundosPessoas / 60,
+            transcricaoHoras: l.transcricaoSegundos / 3600,
+            armazenamentoGb: l.armazenamentoBytes / 1e9,
           };
-          return { l, paga, custo: custoEstimado(usoPago, custos, 0) };
+          return {
+            l,
+            paga,
+            origemResend: cred?.origem.resend ?? null,
+            custo: custoEstimado(usoPago, custos, 0),
+          };
         }),
       );
       const soma = (f: (l: LinhaConta) => number) => us.reduce((t, l) => t + f(l), 0);
@@ -236,6 +427,7 @@ export async function clientes(
         maps: r2(somaCusto('maps')),
         email: r2(somaCusto('email')),
         whatsapp: r2(somaCusto('whatsapp')),
+        reunioes: r2(somaCusto('reunioes')),
         infra: r2(infra),
         total: r2(somaCusto('total') + infra),
       };
@@ -278,6 +470,32 @@ export async function clientes(
           esperando: p.uso.leadsEsperando,
         },
         noFunil: soma((l) => l.noFunil),
+        contratado: {
+          modulos: p.modulos,
+          numerosExtras: p.numerosExtras,
+          usuariosExtras:
+            p.plano && p.plano !== 'personalizado' && p.usuarios != null
+              ? Math.max(0, p.usuarios - (tabela.planos[p.plano]?.usuarios ?? p.usuarios))
+              : 0,
+          valorCombinado: p.mensalidadeManual != null,
+          mensalidadeCalculada: p.mensalidadeCalculada,
+          itens: p.itens.map((i) => ({ ...i, grupo: grupoDoItem(i.rotulo) })),
+        },
+        franquias: {
+          usuarios: { uso: p.uso.usuarios, limite: p.usuarios },
+          leads: { uso: p.uso.leadsMes, limite: p.leadsMes },
+          horasReuniao: {
+            uso: Math.round((soma((l) => l.reuniaoSegundos) / 3600) * 10) / 10,
+            limite: p.horasReuniao,
+          },
+          conversasIa: { uso: soma((l) => l.conversasIa), limite: p.conversasIa },
+          numeros: { uso: soma((l) => l.numeros), limite: p.numerosWhatsapp },
+        },
+        configuracao: configuracaoDa(
+          us,
+          p,
+          porUnidade.some((u) => u.origemResend === 'conta'),
+        ),
         uso: {
           serper: soma((l) => l.serper),
           apifyInstagram: soma((l) => l.apifyInstagram),
@@ -290,6 +508,11 @@ export async function clientes(
           whatsappEnviadas: soma((l) => l.whatsappEnviadas),
           numerosWhatsapp: soma((l) => l.numeros),
           placesUsd: soma((l) => l.placesUsd),
+          reuniaoMinutosPessoas: Math.round(soma((l) => l.reuniaoSegundosPessoas) / 60),
+          horasReuniao: Math.round((soma((l) => l.reuniaoSegundos) / 3600) * 10) / 10,
+          transcricaoHoras: Math.round((soma((l) => l.transcricaoSegundos) / 3600) * 10) / 10,
+          armazenamentoGb: Math.round((soma((l) => l.armazenamentoBytes) / 1e9) * 100) / 100,
+          conversasIa: soma((l) => l.conversasIa),
         },
         pagaPlataforma: {
           ia: true, // consumo_ia já separa: só as chamadas com a chave da plataforma entram no custo.

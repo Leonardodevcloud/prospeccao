@@ -24,6 +24,12 @@ export interface CustosPlataforma {
   whatsappNumeroMes: number;
   /** Infraestrutura (servidores, banco) rateada igualmente entre os clientes ativos, por mês. */
   infraMes: number;
+  /** Reuniões por vídeo (LiveKit): cada 1.000 minutos de participante. */
+  reuniaoMilMinutos: number;
+  /** Transcrição das reuniões (Groq): cada hora de áudio. */
+  transcricaoHora: number;
+  /** Gravações e fotos guardadas (R2): cada GB por mês. */
+  armazenamentoGbMes: number;
 }
 
 export const CUSTOS_PADRAO: CustosPlataforma = {
@@ -36,6 +42,9 @@ export const CUSTOS_PADRAO: CustosPlataforma = {
   emailMil: 2.2,
   whatsappNumeroMes: 99.99,
   infraMes: 250,
+  reuniaoMilMinutos: 2.75,
+  transcricaoHora: 0.22,
+  armazenamentoGbMes: 0.08,
 };
 
 const valor = z.number().min(0).max(1_000_000);
@@ -49,6 +58,9 @@ export const custosPlataformaEntrada = z.object({
   emailMil: valor,
   whatsappNumeroMes: valor,
   infraMes: valor,
+  reuniaoMilMinutos: valor,
+  transcricaoHora: valor,
+  armazenamentoGbMes: valor,
 });
 
 /** Junta o que veio do banco com os padrões (campo faltando = padrão). */
@@ -67,6 +79,12 @@ export interface UsoPago {
   emails: number;
   numerosWhatsapp: number;
   placesUsd: number;
+  /** Minutos de participante nas reuniões por vídeo (soma de todas as pessoas na sala). */
+  reuniaoMinutos?: number;
+  /** Horas de reunião transcritas. */
+  transcricaoHoras?: number;
+  /** GB guardados (gravações e fotos). */
+  armazenamentoGb?: number;
 }
 
 export interface CustoEstimado {
@@ -75,6 +93,8 @@ export interface CustoEstimado {
   maps: number;
   email: number;
   whatsapp: number;
+  /** Reuniões por vídeo: sala, transcrição e o que fica guardado. */
+  reunioes: number;
   infra: number;
   total: number;
 }
@@ -91,6 +111,11 @@ export function custoEstimado(u: UsoPago, c: CustosPlataforma, infraPorConta: nu
   const maps = r2(u.placesUsd * c.dolar);
   const email = r2((u.emails / 1000) * c.emailMil);
   const whatsapp = r2(u.numerosWhatsapp * c.whatsappNumeroMes);
+  const reunioes = r2(
+    ((u.reuniaoMinutos ?? 0) / 1000) * c.reuniaoMilMinutos +
+      (u.transcricaoHoras ?? 0) * c.transcricaoHora +
+      (u.armazenamentoGb ?? 0) * c.armazenamentoGbMes,
+  );
   const infra = r2(infraPorConta);
   return {
     buscas,
@@ -98,8 +123,9 @@ export function custoEstimado(u: UsoPago, c: CustosPlataforma, infraPorConta: nu
     maps,
     email,
     whatsapp,
+    reunioes,
     infra,
-    total: r2(buscas + ia + maps + email + whatsapp + infra),
+    total: r2(buscas + ia + maps + email + whatsapp + reunioes + infra),
   };
 }
 

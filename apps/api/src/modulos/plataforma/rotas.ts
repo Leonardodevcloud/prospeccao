@@ -2,12 +2,16 @@ import { custosPlataformaEntrada } from '@prospeccao/shared';
 import { Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo } from '../../middlewares/http.js';
+import { abrirSessao } from '../auth/sessao.js';
+import * as demo from '../demonstracao/repositorio.js';
 import * as repo from './repositorio.js';
+import { servicosDaPlataforma, testarServico } from './servicos.js';
 
 const GRAVIDADE = { parado: 0, pouco_uso: 1, no_limite: 2, novo: 3, ok: 4 } as const;
 
 /** Painel da plataforma (só o master): visão geral, clientes com consumo e custo, operação. */
-export function rotasPlataforma({ pool, filas, credenciais }: DepsApi): Router {
+export function rotasPlataforma(deps: DepsApi): Router {
+  const { pool, filas, credenciais, log } = deps;
   const r = Router();
 
   /** Visão geral: receita, saúde dos clientes, vendas e o que está quebrado. */
@@ -90,6 +94,46 @@ export function rotasPlataforma({ pool, filas, credenciais }: DepsApi): Router {
     const c = corpo(req, custosPlataformaEntrada);
     await repo.salvarCustos(pool, c, req.usuario!.id);
     res.json(await repo.lerCustos(pool));
+  });
+
+  /** Configurações da plataforma: cada serviço, o contato do site e o CRM de demonstração. */
+  r.get('/servicos', async (_req, res) => {
+    const [servicos, principal, contato, demonstracao, pedidos] = await Promise.all([
+      servicosDaPlataforma(deps),
+      pool.query<{ id: number }>('SELECT id FROM cadastro.contas WHERE principal ORDER BY id LIMIT 1'),
+      pool.query<{ whatsapp: string | null; email: string | null }>(
+        'SELECT whatsapp, email FROM cadastro.config_site WHERE id = 1',
+      ),
+      demo.obter(pool),
+      pool.query<{ n: number }>(
+        `SELECT count(DISTINCT pedido_id)::int AS n FROM cadastro.pedidos_site_historico
+          WHERE texto LIKE '%pela apresentação comercial%' AND criado_em >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'`,
+      ),
+    ]);
+    res.json({
+      servicos,
+      contaPrincipalId: principal.rows[0]?.id ?? null,
+      contato: contato.rows[0] ?? { whatsapp: null, email: null },
+      pedidosApresentacaoMes: pedidos.rows[0]?.n ?? 0,
+      demonstracao,
+    });
+  });
+  r.post('/servicos/:id/testar', async (req, res) => {
+    res.json(await testarServico(deps, String(req.params.id)));
+  });
+
+  /** CRM de demonstração: recriar os dados e entrar nele. */
+  r.post('/demonstracao/recriar', async (req, res) => {
+    const d = await demo.recriar(pool);
+    log.info({ master: req.usuario!.id, conta: d.contaId }, 'demonstração: dados recriados');
+    res.json(d);
+  });
+  r.post('/demonstracao/entrar', async (req, res) => {
+    const d = (await demo.obter(pool)) ?? (await demo.recriar(pool));
+    const u = req.usuario!;
+    abrirSessao(res, deps.auth, u.id, d.contaId, u.sessaoId);
+    log.info({ master: u.id, conta: d.contaId }, 'demonstração: master entrou');
+    res.json(d);
   });
 
   r.get('/operacao', async (_req, res) => {

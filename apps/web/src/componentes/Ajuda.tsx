@@ -9,7 +9,9 @@ import { Link } from 'react-router';
  */
 export interface ArtigoAjuda {
   id: string;
-  area: 'Começo' | 'Prospecção' | 'Vendas' | 'WhatsApp e IA' | 'Gestão' | 'Argos';
+  area: 'Começo' | 'Prospecção' | 'Vendas' | 'WhatsApp e IA' | 'Gestão' | 'Argos' | 'Painel da plataforma';
+  /** Só quem administra a plataforma vê (o painel master). */
+  soMaster?: boolean;
   titulo: string;
   resumo: string;
   /** Tela onde isso fica no sistema. */
@@ -817,6 +819,77 @@ export const ARTIGOS: ArtigoAjuda[] = [
           aglomerado, cada empresa em negociação uma estrela, e as pessoas da equipe ficam no meio das
           empresas que conduzem.
         </p>
+      </>
+    ),
+  },
+  {
+    id: 'painel-plataforma',
+    area: 'Painel da plataforma',
+    soMaster: true,
+    titulo: 'Financeiro, configurações e CRM de demonstração',
+    resumo: 'Receita e custo de cada cliente, os serviços da plataforma e o CRM com dados fictícios.',
+    onde: { rotulo: 'Financeiro', para: '/plataforma/financeiro' },
+    termos:
+      'master painel plataforma financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
+    corpo: (
+      <>
+        <p>
+          Quem administra a plataforma entra direto no painel: Visão geral, Vendas, Clientes, Financeiro,
+          Configurações, Operação e Base CNPJ. A sua própria conta e o CRM de demonstração não entram nos
+          números de clientes.
+        </p>
+        <h3>Financeiro</h3>
+        <ul>
+          <li>
+            <b>Números do mês</b>: receita mensal (e por ano), clientes pagantes, ticket médio, custo, margem
+            e quanto da receita vem de módulos e extras.
+          </li>
+          <li>
+            <b>Receita por plano</b>, <b>módulos e extras</b> (WhatsApp + IA, números e usuários a mais) e{' '}
+            <b>custo por serviço</b> (IA, WhatsApp, reuniões e gravações, buscas, e-mail e infraestrutura).
+          </li>
+          <li>
+            <b>Tabela de clientes</b>: o que cada um contratou, quanto já usou das franquias (leads, horas de
+            reunião, conversas da IA), as bolinhas de configuração, mensalidade, custo, margem e situação.
+            Filtre por plano, ordene por menor margem e baixe a planilha.
+          </li>
+          <li>
+            Clique no nome para ver <b>de onde vem a receita</b> e <b>para onde vai o custo</b>, as franquias,
+            o que falta configurar e uma sugestão de venda quando o cliente está no limite do plano.
+          </li>
+        </ul>
+        <Nota>
+          Custo é estimativa: o uso real vezes os custos unitários (botão Custos unitários). Ajuste os valores
+          pelas suas faturas para a margem ficar certa. Com valor combinado, os itens da mensalidade aparecem
+          na proporção.
+        </Nota>
+        <h3>Configurações da plataforma</h3>
+        <p>
+          A lista dos serviços que a plataforma usa para todos os clientes (WhatsApp, e-mail, IA, reuniões,
+          gravações, transcrição, voz do Argos, rotas, Google Maps e buscas), se estão funcionando e o que
+          falta. <b>Testar</b> faz uma chamada mínima ao serviço; <b>Como fazer</b> diz qual variável colocar
+          e em qual serviço do Railway. Ao lado ficam a tabela de preços, os custos unitários e o contato do
+          site.
+        </p>
+        <h3>CRM de demonstração</h3>
+        <Passos>
+          <li>
+            Clique em <b>Abrir a demonstração</b> (no menu ou em Configurações). Na primeira vez os dados são
+            gerados na hora.
+          </li>
+          <li>
+            Apresente à vontade: campanhas de clínicas, construtoras e pet shops em Salvador, funil, conversas
+            no WhatsApp, reuniões gravadas com resumo e um roteiro de visitas.
+          </li>
+          <li>
+            Depois, <b>Recriar os dados</b> volta tudo ao ponto de partida, e{' '}
+            <b>Voltar ao painel da plataforma</b> sai da demonstração.
+          </li>
+        </Passos>
+        <Nota>
+          A demonstração é uma conta separada: não aparece em Clientes nem no Financeiro e as campanhas dela
+          nunca buscam empresas de verdade. Nada que você fizer lá afeta um cliente.
+        </Nota>
       </>
     ),
   },

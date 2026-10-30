@@ -36,6 +36,7 @@ export async function listar(db: Executor) {
               WHERE m.conta_id = c.id AND m.direcao = 'enviada' AND m.criado_em > now() - interval '30 days')
               AS "whatsapp30d"
        FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
+      WHERE NOT o.demonstracao
       ORDER BY c.principal DESC, o.ativa DESC, o.nome, c.ativa DESC, c.criado_em`,
   );
   return rows;
@@ -143,6 +144,7 @@ export async function organizacoes(db: Executor) {
             (SELECT count(*)::int FROM cadastro.usuarios u JOIN cadastro.contas x ON x.id = u.conta_id
               WHERE x.organizacao_id = o.id AND u.ativo AND u.papel = 'gestor') AS gestores
        FROM cadastro.organizacoes o JOIN cadastro.contas c ON c.organizacao_id = o.id
+      WHERE NOT o.demonstracao
       GROUP BY o.id ORDER BY bool_or(c.principal) DESC, o.ativa DESC, o.nome`,
   );
   return rows;

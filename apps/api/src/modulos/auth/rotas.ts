@@ -388,8 +388,9 @@ export function rotasAuth(deps: DepsApi): Router {
       marca_cor: string | null;
       tem_logo: boolean;
       marca_versao: string | null;
+      demonstracao: boolean;
     }>(
-      `SELECT o.plano, o.modulos, o.id AS organizacao_id, o.nome AS organizacao, o.exigir_2fa,
+      `SELECT o.plano, o.modulos, o.id AS organizacao_id, o.nome AS organizacao, o.exigir_2fa, o.demonstracao,
               o.marca_nome, o.marca_cor, (o.marca_logo IS NOT NULL) AS tem_logo,
               extract(epoch FROM o.marca_atualizada_em)::bigint::text AS marca_versao,
               (SELECT count(*)::int FROM cadastro.contas x WHERE x.organizacao_id = o.id AND x.ativa) AS unidades
@@ -412,6 +413,8 @@ export function rotasAuth(deps: DepsApi): Router {
         modulos: contrato?.modulos ?? (c[0]?.plano ? c[0].modulos : ['whatsapp', 'agente_ia', 'email']),
         // Recursos que o plano libera (as telas de fora mostram "disponível a partir do plano X").
         recursos: contrato?.recursos ?? [...LISTA_RECURSOS],
+        // CRM de demonstração (dados fictícios): a tela mostra a faixa e o botão de recriar.
+        demonstracao: !!c[0]?.demonstracao,
       },
       organizacao: c[0] ? { id: c[0].organizacao_id, nome: c[0].organizacao, unidades: c[0].unidades } : null,
       master: u.master,

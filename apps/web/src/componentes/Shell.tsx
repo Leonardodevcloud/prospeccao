@@ -15,6 +15,7 @@ import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Av
 import { Argos } from './argos/Argos';
 import { conversa as conversaArgos } from './argos/conversa';
 import { AceitarTermos, DuasEtapasObrigatoria, useAplicarMarca } from './ContaSegura';
+import { CartaoDemonstracao, FaixaDemonstracao } from './Demonstracao';
 import { ForaDoPlano, recursoDaTela } from './ForaDoPlano';
 import { Logo } from './Marca';
 import { MinhaConta } from './MinhaConta';
@@ -104,7 +105,8 @@ const ITENS_PLATAFORMA: { para: string; rotulo: string; icone: string; secao?: s
   { para: '/plataforma', rotulo: 'Visão geral', icone: 'layout-dashboard', fim: true },
   { para: '/plataforma/vendas', rotulo: 'Vendas', icone: 'kanban', secao: 'Comercial' },
   { para: '/plataforma/clientes', rotulo: 'Clientes', icone: 'building-2', secao: 'Clientes' },
-  { para: '/plataforma/consumo', rotulo: 'Consumo e custos', icone: 'trending-up', secao: 'Clientes' },
+  { para: '/plataforma/financeiro', rotulo: 'Financeiro', icone: 'trending-up', secao: 'Clientes' },
+  { para: '/plataforma/configuracoes', rotulo: 'Configurações', icone: 'settings', secao: 'Sistema' },
   { para: '/plataforma/operacao', rotulo: 'Operação', icone: 'activity', secao: 'Sistema' },
   { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', secao: 'Sistema' },
 ];
@@ -290,13 +292,7 @@ export function Shell() {
                 </NavLink>
               </Fragment>
             ))}
-            <div className="nav__trocar">
-              <span className="nav__secao">Seu CRM</span>
-              <NavLink to="/hoje" className="nav__link">
-                <Icon name="users" size={16} />
-                Usar o CRM ({sessao.data?.conta.nome})
-              </NavLink>
-            </div>
+            <CartaoDemonstracao />
           </>
         )}
         {!plataforma && sessao.data?.papelOrganizacao && (sessao.data.organizacao?.unidades ?? 0) > 1 && (
@@ -391,7 +387,9 @@ export function Shell() {
         </div>
       </nav>
       <main className="conteudo">
+        <FaixaDemonstracao />
         {sessao.data?.foraDaPropria &&
+          !sessao.data.conta.demonstracao &&
           (sessao.data.master ? (
             <div className="faixa-conta" role="status">
               <Icon name="building-2" size={16} />

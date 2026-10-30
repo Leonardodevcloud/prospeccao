@@ -205,7 +205,8 @@ export function MeuDia() {
   const sessao = useSessao();
   const admin = useEhAdmin();
   const equipe = useEquipe();
-  const quem = params.get('de') ?? 'eu';
+  // No CRM de demonstração o master não é da equipe: abre no dia da equipe toda.
+  const quem = params.get('de') ?? (sessao.data?.conta.demonstracao ? 'todos' : 'eu');
   const empresaAberta = params.get('empresa');
   const [nova, setNova] = useState(false);
   const [editando, setEditando] = useState<Tarefa | null>(null);

@@ -1,17 +1,11 @@
 import type { ConfigVozDTO } from '@prospeccao/shared/assistente';
-import {
-  CUSTOS_PADRAO,
-  type CustoEstimado,
-  type CustosPlataforma,
-  type SinalSaude,
-} from '@prospeccao/shared/plataforma';
-import { Badge, Button, EmptyState, Panel, Stat } from '@prospeccao/ui';
+import type { CustoEstimado, CustosPlataforma, SinalSaude } from '@prospeccao/shared/plataforma';
+import { Badge, Button, Panel, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { Link, Navigate } from 'react-router';
 import { api } from '../api';
 import { ouvirAmostra, recarregarVoz } from '../componentes/argos/fala';
-import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ROTULO_PLANO } from '../componentes/PlanoConta';
 import { useSessao } from '../componentes/Sessao';
@@ -49,15 +43,48 @@ export interface ClientePainel {
     whatsappEnviadas: number;
     numerosWhatsapp: number;
     placesUsd: number;
+    /** Reuniões por vídeo no mês. */
+    reuniaoMinutosPessoas: number;
+    horasReuniao: number;
+    transcricaoHoras: number;
+    armazenamentoGb: number;
+    /** Leads diferentes com quem a IA de atendimento conversou. */
+    conversasIa: number;
   };
   pagaPlataforma: { ia: boolean; email: boolean; whatsapp: boolean; maps: boolean };
+  /** O que foi contratado e de onde vem cada real da mensalidade. */
+  contratado: {
+    modulos: string[];
+    numerosExtras: number;
+    usuariosExtras: number;
+    valorCombinado: boolean;
+    mensalidadeCalculada: number | null;
+    itens: { rotulo: string; valor: number; grupo: GrupoReceita }[];
+  };
+  /** Uso de cada franquia do mês (limite null = sem limite; 0 = o plano não tem). */
+  franquias: Record<'usuarios' | 'leads' | 'horasReuniao' | 'conversasIa' | 'numeros', Franquia>;
+  /** A conta está pronta para usar? */
+  configuracao: ItemConfiguracao[];
   custo: CustoEstimado;
   margem: number | null;
   saude: SinalSaude;
   saudeTexto: string;
 }
 
-interface Visao {
+export type GrupoReceita = 'plano' | 'whatsapp_ia' | 'numeros' | 'usuarios' | 'leads' | 'modulos' | 'incluso';
+
+export interface Franquia {
+  uso: number;
+  limite: number | null;
+}
+
+export interface ItemConfiguracao {
+  item: 'whatsapp' | 'email' | 'ia' | 'equipe' | 'campanha';
+  estado: 'ok' | 'pendente' | 'fora';
+  texto: string;
+}
+
+export interface Visao {
   receita: {
     mrr: number;
     clientesAtivos: number;
@@ -154,12 +181,12 @@ const NOME_FILA: Record<string, string> = {
   'maps.importar_planilha': 'Planilha do Maps',
 };
 
-function useMaster() {
+export function useMaster() {
   const sessao = useSessao();
   return { carregando: sessao.isPending, master: !!sessao.data?.master };
 }
 
-function Topo(props: { titulo: string; texto: string; acoes?: React.ReactNode }) {
+export function Topo(props: { titulo: string; texto: React.ReactNode; acoes?: React.ReactNode }) {
   return (
     <div className="topo">
       <div>
@@ -171,7 +198,7 @@ function Topo(props: { titulo: string; texto: string; acoes?: React.ReactNode })
   );
 }
 
-const pct = (parte: number, total: number | null) =>
+export const pct = (parte: number, total: number | null) =>
   total ? `${Math.round((parte / Math.max(1, total)) * 100)}%` : null;
 
 /* ───────────────────────── Visão geral ───────────────────────── */
@@ -316,8 +343,8 @@ export function PlataformaVisao() {
             </Panel>
           </div>
           <p className="nota-rodape">
-            Custo e margem são estimativas: consumo real de cada cliente vezes os custos unitários de Consumo
-            e custos (ajuste para os valores das suas faturas). O uso da sua própria conta (
+            Custo e margem são estimativas: consumo real de cada cliente vezes os custos unitários do
+            Financeiro (ajuste para os valores das suas faturas). O uso da sua própria conta (
             {fmtReaisCentavos(r.custoContaPrincipal)} no mês) não entra na margem.
           </p>
         </>
@@ -326,276 +353,7 @@ export function PlataformaVisao() {
   );
 }
 
-/* ───────────────────────── Consumo e custos ───────────────────────── */
-
-type Ordem = 'custo' | 'margem' | 'leads' | 'nome';
-
-export function PlataformaConsumo() {
-  const m = useMaster();
-  const [ordem, setOrdem] = useState<Ordem>('custo');
-  const [custos, setCustos] = useState(false);
-  const [aberto, setAberto] = useState<ClientePainel | null>(null);
-  const q = useQuery({
-    queryKey: ['master', 'clientes-painel'],
-    queryFn: () =>
-      api<{ clientes: ClientePainel[]; custos: CustosPlataforma }>('/master/plataforma/clientes'),
-    enabled: m.master,
-  });
-  if (!m.carregando && !m.master) return <Navigate to="/" replace />;
-  const lista = (q.data?.clientes ?? []).filter((c) => c.ativa || c.custo.total > 0);
-  const ordenada = [...lista].sort((a, b) =>
-    ordem === 'custo'
-      ? b.custo.total - a.custo.total
-      : ordem === 'margem'
-        ? (a.margem ?? Number.POSITIVE_INFINITY) - (b.margem ?? Number.POSITIVE_INFINITY)
-        : ordem === 'leads'
-          ? b.leads.mes - a.leads.mes
-          : a.nome.localeCompare(b.nome),
-  );
-  const soma = (f: (c: ClientePainel) => number) => lista.reduce((s, c) => s + f(c), 0);
-  const clientes = lista.filter((c) => !c.principal);
-
-  return (
-    <>
-      <Topo
-        titulo="Consumo e custos"
-        texto="O que cada cliente usou neste mês, quanto isso custa para a plataforma e quanto sobra da mensalidade."
-        acoes={
-          <Button variant="ghost" icon="settings" onClick={() => setCustos(true)}>
-            Custos unitários
-          </Button>
-        }
-      />
-      <ErroDaApi erro={q.error} />
-      {q.isPending ? (
-        <div className="esqueleto" />
-      ) : (
-        <>
-          <div className="kpis">
-            <Stat rotulo="Leads enriquecidos no mês" valor={fmtNumero(soma((c) => c.leads.mes))} />
-            <Stat rotulo="Buscas no Google (Serper)" valor={fmtNumero(soma((c) => c.uso.serper))} />
-            <Stat rotulo="Chamadas à IA da plataforma" valor={fmtNumero(soma((c) => c.uso.iaChamadas))} />
-            <Stat
-              rotulo="Custo estimado (clientes)"
-              valor={fmtReais(clientes.reduce((s, c) => s + c.custo.total, 0))}
-            />
-            <Stat
-              rotulo="Mensalidades − custo"
-              valor={fmtReais(clientes.reduce((s, c) => s + (c.margem ?? 0), 0))}
-            />
-          </div>
-          <div className="filtros-linha">
-            <label className="quieto" htmlFor="consumo-ordem" style={{ fontSize: 13 }}>
-              Ordenar por
-            </label>
-            <select
-              id="consumo-ordem"
-              className="filtro"
-              style={{ maxWidth: 220 }}
-              value={ordem}
-              onChange={(e) => setOrdem(e.target.value as Ordem)}
-            >
-              <option value="custo">Maior custo</option>
-              <option value="margem">Menor margem</option>
-              <option value="leads">Mais leads</option>
-              <option value="nome">Nome</option>
-            </select>
-          </div>
-          {!ordenada.length ? (
-            <div className="pp-panel">
-              <EmptyState icone="building-2" titulo="Nenhum cliente" texto="Cadastre clientes em Clientes." />
-            </div>
-          ) : (
-            <div className="pp-tablewrap">
-              <table className="pp-table tabela-consumo">
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Leads no mês</th>
-                    <th title="Buscas no Google pelo Serper">Buscas</th>
-                    <th title="Perfis do Instagram lidos pelo Apify">Instagram</th>
-                    <th title="Chamadas à IA com a chave da plataforma">IA</th>
-                    <th>E-mails</th>
-                    <th title="Mensagens enviadas e números conectados">WhatsApp</th>
-                    <th>Custo</th>
-                    <th>Mensalidade</th>
-                    <th>Margem</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ordenada.map((c) => (
-                    <tr key={c.id} data-inativo={!c.ativa || undefined}>
-                      <td>
-                        <button type="button" className="link-botao" onClick={() => setAberto(c)}>
-                          {c.nome}
-                        </button>{' '}
-                        {c.principal && <Badge tone="brand">Sua conta</Badge>}
-                        <div className="quieto" style={{ fontSize: 12 }}>
-                          {c.plano ? ROTULO_PLANO[c.plano] : 'Sem plano'}
-                          {c.unidades.length > 1 ? ` · ${c.unidades.length} unidades` : ''}
-                        </div>
-                      </td>
-                      <td
-                        className="mono"
-                        data-alerta={
-                          c.leads.limite && c.leads.mes >= c.leads.limite
-                            ? 'cheio'
-                            : c.leads.limite && c.leads.mes >= c.leads.limite * 0.9
-                              ? 'quase'
-                              : undefined
-                        }
-                      >
-                        {fmtNumero(c.leads.mes)}
-                        {c.leads.limite != null && (
-                          <span className="quieto"> / {fmtNumero(c.leads.limite)}</span>
-                        )}
-                      </td>
-                      <td className="mono">{fmtNumero(c.uso.serper + c.uso.apifyGoogle)}</td>
-                      <td className="mono">{fmtNumero(c.uso.apifyInstagram)}</td>
-                      <td className="mono">
-                        {fmtNumero(c.uso.iaChamadas)}
-                        {c.uso.iaChamadasProprias > 0 && (
-                          <div className="quieto" style={{ fontSize: 12 }}>
-                            + {fmtNumero(c.uso.iaChamadasProprias)} chave dele
-                          </div>
-                        )}
-                      </td>
-                      <td className="mono">{fmtNumero(c.uso.emails)}</td>
-                      <td className="mono">
-                        {fmtNumero(c.uso.whatsappEnviadas)}
-                        <div className="quieto" style={{ fontSize: 12 }}>
-                          {c.uso.numerosWhatsapp} {c.uso.numerosWhatsapp === 1 ? 'número' : 'números'}
-                        </div>
-                      </td>
-                      <td className="mono">{fmtReaisCentavos(c.custo.total)}</td>
-                      <td className="mono">{fmtReais(c.mensalidade)}</td>
-                      <td
-                        className="mono"
-                        data-alerta={c.margem != null && c.margem < 0 ? 'cheio' : undefined}
-                      >
-                        {c.margem != null ? fmtReais(c.margem) : '—'}
-                        {c.margem != null && c.mensalidade ? (
-                          <div className="quieto" style={{ fontSize: 12 }}>
-                            {pct(c.margem, c.mensalidade)}
-                          </div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="nota-rodape">
-            Mês corrente (fuso de Brasília). O custo conta só o que a plataforma paga: serviço com a chave do
-            próprio cliente (IA, e-mail, WhatsApp ou Maps) fica fora. A infraestrutura é dividida igualmente
-            entre os clientes ativos.
-          </p>
-        </>
-      )}
-      {aberto && <DetalheConsumo c={aberto} aoFechar={() => setAberto(null)} />}
-      {custos && (
-        <Drawer titulo="Custos unitários" barra="Consumo e custos" aoFechar={() => setCustos(false)}>
-          <div className="drawer__corpo">
-            <FormCustos inicial={q.data?.custos ?? CUSTOS_PADRAO} aoSalvar={() => setCustos(false)} />
-          </div>
-        </Drawer>
-      )}
-    </>
-  );
-}
-
-function DetalheConsumo(props: { c: ClientePainel; aoFechar: () => void }) {
-  const { c } = props;
-  const linhas: [string, number, string][] = [
-    [
-      'Buscas no Google e Instagram',
-      c.custo.buscas,
-      `${fmtNumero(c.uso.serper + c.uso.apifyGoogle)} buscas · ${fmtNumero(c.uso.apifyInstagram)} perfis`,
-    ],
-    [
-      'IA da plataforma',
-      c.custo.ia,
-      `${fmtNumero(c.uso.iaChamadas)} chamadas · ${fmtNumero(Math.round((c.uso.iaTokensEntrada + c.uso.iaTokensSaida) / 1000))} mil tokens`,
-    ],
-    [
-      'Google Maps',
-      c.custo.maps,
-      c.pagaPlataforma.maps ? `US$ ${c.uso.placesUsd.toFixed(2)}` : 'chave do cliente',
-    ],
-    [
-      'E-mail',
-      c.custo.email,
-      c.pagaPlataforma.email ? `${fmtNumero(c.uso.emails)} enviados` : 'conta de e-mail do cliente',
-    ],
-    [
-      'WhatsApp',
-      c.custo.whatsapp,
-      c.pagaPlataforma.whatsapp
-        ? `${c.uso.numerosWhatsapp} ${c.uso.numerosWhatsapp === 1 ? 'número' : 'números'} conectados`
-        : 'Z-API do cliente',
-    ],
-    ['Infraestrutura (rateio)', c.custo.infra, ''],
-  ];
-  return (
-    <Drawer titulo={c.nome} barra="Consumo e custos" aoFechar={props.aoFechar}>
-      <div className="drawer__corpo pilha" style={{ gap: 16 }}>
-        <div className="kpis">
-          <Stat rotulo="Mensalidade" valor={fmtReais(c.mensalidade)} />
-          <Stat rotulo="Custo estimado" valor={fmtReaisCentavos(c.custo.total)} />
-          <Stat rotulo="Margem" valor={c.margem != null ? fmtReais(c.margem) : '—'} />
-        </div>
-        <table className="pp-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Uso no mês</th>
-              <th>Custo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {linhas.map(([rotulo, valor, uso]) => (
-              <tr key={rotulo}>
-                <td>{rotulo}</td>
-                <td className="quieto">{uso}</td>
-                <td className="mono">{fmtReaisCentavos(valor)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {c.unidades.length > 1 && (
-          <table className="pp-table">
-            <thead>
-              <tr>
-                <th>Unidade</th>
-                <th>Leads no mês</th>
-                <th>Custo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {c.unidades.map((u) => (
-                <tr key={u.id} data-inativo={!u.ativa || undefined}>
-                  <td>{u.nome}</td>
-                  <td className="mono">{fmtNumero(u.leadsMes)}</td>
-                  <td className="mono">{fmtReaisCentavos(u.custo)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-          Leads: {fmtNumero(c.leads.mes)} neste mês, {fmtNumero(c.leads.mesAnterior)} no mês passado,{' '}
-          {fmtNumero(c.leads.ultimos14d)} nos últimos 14 dias
-          {c.leads.esperando > 0 && ` · ${fmtNumero(c.leads.esperando)} esperando o limite do plano`}.
-          {c.leads.mes > 0 && ` Custo por lead: ${fmtReaisCentavos(c.custo.total / c.leads.mes)}.`}
-        </p>
-        <Link className="link-botao" to={`/plataforma/clientes?conta=${c.unidades[0]?.id ?? ''}`}>
-          Abrir o cliente (plano, usuários e chaves)
-        </Link>
-      </div>
-    </Drawer>
-  );
-}
+/* ───────────────────────── Custos unitários ───────────────────────── */
 
 const CAMPOS_CUSTO: { k: keyof CustosPlataforma; rotulo: string; dica: string }[] = [
   { k: 'serperMil', rotulo: 'Serper: 1.000 buscas (R$)', dica: 'Busca no Google do enriquecimento.' },
@@ -613,6 +371,17 @@ const CAMPOS_CUSTO: { k: keyof CustosPlataforma; rotulo: string; dica: string }[
   { k: 'iaSaidaMilhao', rotulo: 'IA: 1 milhão de tokens recebidos (R$)', dica: 'Chave de IA da plataforma.' },
   { k: 'emailMil', rotulo: 'E-mail: 1.000 enviados (R$)', dica: 'Resend da plataforma.' },
   { k: 'whatsappNumeroMes', rotulo: 'WhatsApp: cada número por mês (R$)', dica: 'Z-API da plataforma.' },
+  {
+    k: 'reuniaoMilMinutos',
+    rotulo: 'Reuniões: 1.000 minutos de participante (R$)',
+    dica: 'LiveKit: cada pessoa na sala conta seus minutos.',
+  },
+  { k: 'transcricaoHora', rotulo: 'Transcrição: cada hora de reunião (R$)', dica: 'Groq (Whisper).' },
+  {
+    k: 'armazenamentoGbMes',
+    rotulo: 'Gravações: cada GB guardado por mês (R$)',
+    dica: 'Cloudflare R2 (os vídeos das reuniões).',
+  },
   { k: 'dolar', rotulo: 'Dólar (R$)', dica: 'Converte o que o Google Maps cobra em dólar.' },
   {
     k: 'infraMes',
@@ -621,7 +390,7 @@ const CAMPOS_CUSTO: { k: keyof CustosPlataforma; rotulo: string; dica: string }[
   },
 ];
 
-function FormCustos(props: { inicial: CustosPlataforma; aoSalvar: () => void }) {
+export function FormCustos(props: { inicial: CustosPlataforma; aoSalvar: () => void }) {
   const cliente = useQueryClient();
   const [f, setF] = useState<Record<keyof CustosPlataforma, string>>(
     Object.fromEntries(

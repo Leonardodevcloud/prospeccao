@@ -591,7 +591,7 @@ function NovoPedido(props: { aoFechar: () => void; aoCriar: (id: number) => void
 }
 
 /** WhatsApp e e-mail que o botão do site abre com a mensagem pronta. */
-function ContatoDoSite(props: { inicial: DadosVendas['config']; aoSalvar: () => void }) {
+export function ContatoDoSite(props: { inicial: DadosVendas['config']; aoSalvar: () => void }) {
   const cliente = useQueryClient();
   const [f, setF] = useState({
     whatsapp: props.inicial.whatsapp ? formatarTelefone(props.inicial.whatsapp.slice(2)) : '',

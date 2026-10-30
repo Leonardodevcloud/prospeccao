@@ -901,6 +901,8 @@ export interface Sessao {
     modulos: ('whatsapp' | 'agente_ia' | 'email')[];
     /** Recursos que o plano libera (sem plano: todos). */
     recursos: Recurso[];
+    /** CRM de demonstração (dados fictícios, só o master entra). */
+    demonstracao?: boolean;
   };
   /** Administra a plataforma (painel master). */
   master: boolean;
