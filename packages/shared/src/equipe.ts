@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { opcoesSala } from './reunioes.js';
 
 /* ───────────────────────────── Equipe ───────────────────────────── */
 
@@ -141,10 +142,10 @@ const instante = z
   .datetime({ offset: true })
   .transform((v) => new Date(v).toISOString());
 
-export const tarefaEntrada = z.object({
+const tarefaCampos = z.object({
   empresaId: z.number().int().positive().nullable().optional(),
   usuarioId: z.number().int().positive().nullable().optional(),
-  tipo: z.enum(TIPOS_TAREFA).default('tarefa'),
+  tipo: z.enum(TIPOS_TAREFA),
   titulo: z.string().trim().min(1, 'Diga o que é.').max(200),
   descricao: z
     .string()
@@ -160,10 +161,18 @@ export const tarefaEntrada = z.object({
     .max(300)
     .transform((v) => v || null)
     .optional(),
+  /** Reunião na sala de vídeo do próprio sistema (o link vira o "local"); null tira a sala. */
+  sala: opcoesSala.nullable().optional(),
 });
+
+export const tarefaEntrada = tarefaCampos.extend({ tipo: z.enum(TIPOS_TAREFA).default('tarefa') });
 export type TarefaEntrada = z.infer<typeof tarefaEntrada>;
 
-export const tarefaAtualizar = tarefaEntrada
+/**
+ * Atualizar só o que veio (sem valor padrão: marcar uma reunião como feita não pode virar
+ * "tarefa").
+ */
+export const tarefaAtualizar = tarefaCampos
   .partial()
   .extend({ concluida: z.boolean().optional() })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');

@@ -143,6 +143,108 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Ao marcar como perdido ou descartado, diga o motivo: ele aparece em Relatórios › Por que perdemos ou
           descartamos.
         </Nota>
+        <p>
+          Na ficha do lead, em <b>Agenda</b>, você marca reuniões, ligações e tarefas. A reunião pode
+          acontecer na sala de vídeo do próprio sistema: depois dela, o quadro <b>Reuniões gravadas</b> mostra
+          a gravação e o resumo da IA (<Link to="/ajuda/reunioes">veja como funciona</Link>).
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'reunioes',
+    area: 'Vendas',
+    titulo: 'Reuniões por vídeo',
+    resumo: 'Sala de vídeo com link para o lead, gravação, transcrição e resumo da IA.',
+    onde: { rotulo: 'Reuniões', para: '/reunioes' },
+    termos:
+      'videochamada video chamada meet sala link gravar gravação transcrição resumo ata convite celular compartilhar tela levantar mão chat arquivo sala de espera',
+    corpo: (
+      <>
+        <p>
+          A reunião acontece dentro do sistema, sem limite de tempo e sem precisar instalar nada: o lead entra
+          pelo navegador, no computador ou no celular. Quando acaba, a gravação, a transcrição e o resumo da
+          IA aparecem na ficha do lead.
+        </p>
+        <h3>Marcar</h3>
+        <Passos>
+          <li>
+            Na ficha do lead, em <b>Agenda › Marcar reunião</b>, deixe <b>Sala de vídeo do sistema</b> (ou use
+            <b>Reuniões › Marcar reunião</b>).
+          </li>
+          <li>
+            Escolha quanto tempo antes a sala abre para os convidados (10 minutos, por exemplo), se você quer
+            aprovar quem entra, e se a reunião será gravada e transcrita.
+          </li>
+          <li>
+            Mande o link: <b>Mandar convite no WhatsApp</b> envia a mensagem para o lead pelo WhatsApp do
+            sistema, ou use <b>Copiar link</b> para mandar por onde quiser. O lembrete da agenda já leva o
+            link.
+          </li>
+        </Passos>
+        <p>
+          Para uma conversa que precisa acontecer já, use <b>Reuniões › Reunião agora</b>: a sala abre na hora
+          e é só mandar o link.
+        </p>
+        <h3>Quando o convidado consegue entrar</h3>
+        <p>
+          Antes do horário de abrir, o link mostra quanto falta e um botão para testar a câmera e o microfone.
+          Na hora, a pessoa digita o nome, vê a própria imagem, escolhe câmera e microfone e entra. Se você
+          escolheu <b>Eu aprovo cada pessoa que chegar</b>, ela fica na sala de espera até alguém do time
+          deixar entrar.
+        </p>
+        <p>
+          Quem é do time entra a qualquer momento, inclusive antes de abrir para os convidados, e pode abrir a
+          sala de novo depois de encerrada.
+        </p>
+        <h3>Na sala</h3>
+        <ul>
+          <li>Ligar e desligar o microfone e a câmera (no computador: Ctrl+D e Ctrl+E).</li>
+          <li>
+            Compartilhar a tela, uma janela ou uma aba (no computador). A gravação mostra o que foi
+            compartilhado.
+          </li>
+          <li>Levantar a mão para pedir a vez; quem conduz vê a fila na ordem em que as mãos subiram.</li>
+          <li>Chat para todos, com envio de arquivos de até 10 MB. Tudo fica guardado com a reunião.</li>
+          <li>
+            Quem é do time pode silenciar alguém (ou todos), baixar a mão de alguém, tirar um convidado da
+            sala e <b>Encerrar para todos</b>.
+          </li>
+          <li>
+            Em <b>Mais opções</b>: trocar de câmera ou microfone, ver em grade ou destaque e tela cheia.
+          </li>
+        </ul>
+        <p>
+          No celular, a sala mostra quem está falando em destaque e as outras pessoas em fichas logo abaixo;
+          toque numa ficha para fixar a pessoa. Se a internet oscilar, a imagem se ajusta sozinha para o som
+          não cortar, e a sala avisa quando a conexão está fraca.
+        </p>
+        <h3>Gravação e consentimento</h3>
+        <p>
+          Em reunião gravada, quem entra vê o aviso e precisa concordar com a gravação antes de entrar. A
+          gravação começa quando a primeira pessoa entra e para quando todos saem.
+        </p>
+        <h3>Depois da reunião</h3>
+        <p>
+          Em alguns minutos aparecem em <b>Reuniões › Realizadas</b> e na ficha do lead:
+        </p>
+        <ul>
+          <li>a gravação, com os momentos importantes para pular direto (preço, objeção, decisão);</li>
+          <li>o resumo da IA: o que o lead precisa, objeções, quem decide, prazos e o interesse;</li>
+          <li>
+            a transcrição com quem falou cada trecho, com busca; clique no horário para ver aquele momento;
+          </li>
+          <li>os próximos passos, que viram tarefas na agenda com um clique;</li>
+          <li>quem participou, por quanto tempo e quanto cada um falou, além do chat e dos arquivos.</li>
+        </ul>
+        <p>
+          Se a IA sugerir mudar o lead de etapa, o botão aparece no resumo. A reunião também entra no
+          histórico do lead e o Argos passa a saber o que foi conversado.
+        </p>
+        <Nota>
+          Só um administrador pode apagar a gravação e a transcrição de uma reunião. O resumo e o histórico
+          ficam. Ao usar “Esquecer este contato” (LGPD), as reuniões dele também são apagadas.
+        </Nota>
       </>
     ),
   },

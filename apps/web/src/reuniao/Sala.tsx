@@ -1,0 +1,811 @@
+import {
+  RoomAudioRenderer,
+  RoomContext,
+  type TrackReferenceOrPlaceholder,
+  useAudioPlayback,
+  useConnectionQualityIndicator,
+  useConnectionState,
+  useIsRecording,
+  useLocalParticipant,
+  useMediaDeviceSelect,
+  useParticipants,
+  useSpeakingParticipants,
+  useTracks,
+} from '@livekit/components-react';
+import { Avatar, Button, Icon } from '@prospeccao/ui';
+import {
+  ConnectionQuality,
+  ConnectionState,
+  DisconnectReason,
+  type Participant,
+  type RemoteParticipant,
+  Room,
+  RoomEvent,
+  ScreenSharePresets,
+  Track,
+  VideoPresets,
+} from 'livekit-client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Escolhas } from './Antessala';
+import { apiSala, type InfoSala, type Liberado, type MensagemChat } from './api';
+import { Ladrilho, nomeDe } from './Ladrilho';
+import { PainelChat } from './PainelChat';
+import { maosLevantadas, PainelPessoas } from './PainelPessoas';
+
+/**
+ * A sala de reunião: vídeos (grade, ou a tela compartilhada em destaque), controles (microfone,
+ * câmera, tela, mão, mais opções, sair), chat com arquivos e pessoas. A qualidade fica com o LiveKit:
+ * cada câmera manda o vídeo em três qualidades e cada pessoa recebe a que a internet dela aguenta;
+ * o áudio tem prioridade e redundância contra perda de pacotes.
+ */
+
+export type MotivoSaida = 'saiu' | 'encerrada' | 'removido' | 'erro';
+
+/** Opções da conexão (as mesmas para todo mundo). */
+function criarSala(escolhas: Escolhas): Room {
+  return new Room({
+    adaptiveStream: true,
+    dynacast: true,
+    disconnectOnPageLeave: true,
+    videoCaptureDefaults: {
+      resolution: VideoPresets.h720.resolution,
+      ...(escolhas.cameraId ? { deviceId: escolhas.cameraId } : {}),
+    },
+    audioCaptureDefaults: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      ...(escolhas.microfoneId ? { deviceId: escolhas.microfoneId } : {}),
+    },
+    publishDefaults: {
+      simulcast: true,
+      videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
+      // Áudio com redundância (perda de pacotes no 4G) e sem mandar silêncio.
+      red: true,
+      dtx: true,
+      screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
+    },
+  });
+}
+
+function useTelaPequena(): boolean {
+  const consulta = '(max-width: 760px)';
+  const [pequena, setPequena] = useState(() => globalThis.matchMedia?.(consulta).matches ?? false);
+  useEffect(() => {
+    const m = globalThis.matchMedia?.(consulta);
+    if (!m) return;
+    const mudar = () => setPequena(m.matches);
+    m.addEventListener('change', mudar);
+    return () => m.removeEventListener('change', mudar);
+  }, []);
+  return pequena;
+}
+
+const decodificar = new TextDecoder();
+
+interface Aviso {
+  id: number;
+  texto: string;
+  tom?: 'atencao';
+  acao?: { rotulo: string; fazer: () => void };
+}
+
+export function Sala(props: {
+  info: InfoSala;
+  acesso: Liberado;
+  escolhas: Escolhas;
+  aoSair: (motivo: MotivoSaida, detalhe?: string) => void;
+}) {
+  const { acesso, escolhas, aoSair } = props;
+  const [room] = useState(() => criarSala(escolhas));
+  const [conectado, setConectado] = useState(false);
+  const saida = useRef(aoSair);
+  saida.current = aoSair;
+
+  useEffect(() => {
+    let vivo = true;
+    const aoDesconectar = (motivo?: DisconnectReason) => {
+      if (!vivo) return;
+      if (motivo === DisconnectReason.ROOM_DELETED) saida.current('encerrada');
+      else if (motivo === DisconnectReason.PARTICIPANT_REMOVED) saida.current('removido');
+      else if (motivo === DisconnectReason.CLIENT_INITIATED) saida.current('saiu');
+      else if (motivo === DisconnectReason.DUPLICATE_IDENTITY)
+        saida.current('erro', 'Você entrou nesta reunião em outra aba ou aparelho.');
+      else saida.current('erro', 'A internet caiu e não deu para voltar sozinho. Tente entrar de novo.');
+    };
+    room.on(RoomEvent.Disconnected, aoDesconectar);
+    room
+      .connect(acesso.url, acesso.token)
+      .then(async () => {
+        if (!vivo) return;
+        setConectado(true);
+        if (escolhas.altoFalanteId)
+          await room.switchActiveDevice('audiooutput', escolhas.altoFalanteId).catch(() => undefined);
+        await Promise.allSettled([
+          room.localParticipant.setMicrophoneEnabled(escolhas.microfone),
+          room.localParticipant.setCameraEnabled(escolhas.camera),
+        ]);
+      })
+      .catch((erro: Error) => {
+        if (vivo)
+          saida.current(
+            'erro',
+            /permission|notallowed/i.test(erro.message)
+              ? 'O navegador bloqueou a conexão. Recarregue a página e tente de novo.'
+              : 'Não deu para conectar na sala. Confira a internet e tente de novo.',
+          );
+      });
+    return () => {
+      vivo = false;
+      room.off(RoomEvent.Disconnected, aoDesconectar);
+      void room.disconnect();
+    };
+  }, [room, acesso.url, acesso.token, escolhas]);
+
+  return (
+    <RoomContext.Provider value={room}>
+      <div className="sala" data-theme="dark">
+        <RoomAudioRenderer />
+        <ConteudoSala {...props} room={room} conectado={conectado} />
+      </div>
+    </RoomContext.Provider>
+  );
+}
+
+function Cronometro(props: { desde: number }) {
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.max(0, Math.floor((agora - props.desde) / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const dois = (n: number) => String(n).padStart(2, '0');
+  return <span className="mono">{h ? `${h}:${dois(m)}:${dois(s % 60)}` : `${dois(m)}:${dois(s % 60)}`}</span>;
+}
+
+/** Quem aparece em destaque no celular (ou no modo "destaque"): quem falou por último, sem ser você. */
+function useEmDestaque(pessoas: Participant[], fixado: string | null): Participant | undefined {
+  const falando = useSpeakingParticipants();
+  const ultimo = useRef<string | null>(null);
+  const outro = falando.find((p) => !p.isLocal);
+  if (outro) ultimo.current = outro.identity;
+  const achar = (id: string | null) => (id ? pessoas.find((p) => p.identity === id) : undefined);
+  return achar(fixado) ?? achar(ultimo.current) ?? pessoas.find((p) => !p.isLocal) ?? pessoas[0];
+}
+
+function colunasDaGrade(n: number, pequena: boolean): number {
+  if (pequena) return n <= 2 ? 1 : 2;
+  if (n <= 1) return 1;
+  if (n <= 4) return 2;
+  if (n <= 9) return 3;
+  return 4;
+}
+
+function ConteudoSala(props: { info: InfoSala; acesso: Liberado; room: Room; conectado: boolean }) {
+  const { info, acesso, room } = props;
+  const doTime = acesso.papel !== 'convidado';
+  const pequena = useTelaPequena();
+  const estado = useConnectionState();
+  const gravando = useIsRecording();
+  const { canPlayAudio, startAudio } = useAudioPlayback();
+  const local = useLocalParticipant();
+  const { quality } = useConnectionQualityIndicator({ participant: local.localParticipant });
+  const pessoas = useParticipants();
+  const cameras = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }], {
+    onlySubscribed: false,
+  });
+  const telas = useTracks([Track.Source.ScreenShare], { onlySubscribed: false });
+  const [inicio] = useState(() => Date.now());
+  const [painel, setPainel] = useState<'chat' | 'pessoas' | null>(null);
+  const [menu, setMenu] = useState<'opcoes' | 'sair' | null>(null);
+  const [modo, setModo] = useState<'grade' | 'destaque'>('grade');
+  const [fixado, setFixado] = useState<string | null>(null);
+  const [avisos, setAvisos] = useState<Aviso[]>([]);
+  const [mensagens, setMensagens] = useState<MensagemChat[]>([]);
+  const [naoLidas, setNaoLidas] = useState(0);
+  const [versaoEspera, setVersaoEspera] = useState(0);
+  const [esperando, setEsperando] = useState(0);
+  const painelRef = useRef(painel);
+  painelRef.current = painel;
+
+  const avisar = useCallback((a: Omit<Aviso, 'id'>, ms = 6000) => {
+    const id = Date.now() + Math.random();
+    setAvisos((x) => [...x.slice(-2), { ...a, id }]);
+    setTimeout(() => setAvisos((x) => x.filter((y) => y.id !== id)), ms);
+  }, []);
+
+  const juntar = useCallback((m: MensagemChat) => {
+    setMensagens((x) => (x.some((y) => y.id === m.id) ? x : [...x, m].sort((a, b) => a.id - b.id)));
+  }, []);
+
+  // O que já foi mandado no chat (quem entra no meio vê).
+  useEffect(() => {
+    apiSala<MensagemChat[]>(`/${info.codigo}/mensagens`, { credencial: acesso.credencial })
+      .then((lista) => {
+        for (const m of lista) juntar(m);
+      })
+      .catch(() => undefined);
+  }, [info.codigo, acesso.credencial, juntar]);
+
+  // Avisos da api pela sala: mensagem nova no chat, alguém na sala de espera.
+  useEffect(() => {
+    const aoReceber = (dados: Uint8Array, _p?: RemoteParticipant, _k?: unknown, topico?: string) => {
+      let msg: { tipo?: string; mensagem?: MensagemChat; nome?: string };
+      try {
+        msg = JSON.parse(decodificar.decode(dados));
+      } catch {
+        return;
+      }
+      if (topico === 'chat' && msg.mensagem) {
+        juntar(msg.mensagem);
+        if (painelRef.current !== 'chat' && msg.mensagem.participanteId !== acesso.participanteId) {
+          setNaoLidas((n) => n + 1);
+          avisar({
+            texto: `${msg.mensagem.autor}: ${msg.mensagem.texto ?? msg.mensagem.arquivo?.nome ?? ''}`.slice(
+              0,
+              120,
+            ),
+            acao: { rotulo: 'Abrir chat', fazer: () => setPainel('chat') },
+          });
+        }
+      }
+      if (topico === 'sala' && msg.tipo === 'espera') {
+        setVersaoEspera((v) => v + 1);
+        if (doTime && msg.nome) {
+          setEsperando((n) => n + 1);
+          avisar(
+            {
+              texto: `${msg.nome} quer entrar na reunião`,
+              tom: 'atencao',
+              acao: { rotulo: 'Ver', fazer: () => setPainel('pessoas') },
+            },
+            15_000,
+          );
+        }
+      }
+    };
+    room.on(RoomEvent.DataReceived, aoReceber);
+    return () => {
+      room.off(RoomEvent.DataReceived, aoReceber);
+    };
+  }, [room, juntar, avisar, doTime, acesso.participanteId]);
+
+  // Mão levantada de outra pessoa: aviso rápido.
+  useEffect(() => {
+    const aoMudar = (mudou: Record<string, string>, p: Participant) => {
+      if ('mao' in mudou && mudou.mao && !p.isLocal) avisar({ texto: `${nomeDe(p)} levantou a mão` });
+    };
+    room.on(RoomEvent.ParticipantAttributesChanged, aoMudar);
+    return () => {
+      room.off(RoomEvent.ParticipantAttributesChanged, aoMudar);
+    };
+  }, [room, avisar]);
+
+  useEffect(() => {
+    if (painel === 'chat') setNaoLidas(0);
+    if (painel === 'pessoas') setEsperando(0);
+  }, [painel]);
+
+  const lp = local.localParticipant;
+  const minhaMao = !!lp.attributes.mao;
+  const podeTela = !pequena && !!navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices;
+
+  const falhou = useCallback(
+    (o: string) => (erro: Error) =>
+      avisar({
+        tom: 'atencao',
+        texto: /permission|notallowed/i.test(`${erro.name} ${erro.message}`)
+          ? `O navegador bloqueou ${o}. Toque no cadeado ao lado do endereço e permita.`
+          : `Não deu para ligar ${o}.`,
+      }),
+    [avisar],
+  );
+  const alternarMic = useCallback(
+    () => void lp.setMicrophoneEnabled(!lp.isMicrophoneEnabled).catch(falhou('o microfone')),
+    [lp, falhou],
+  );
+  const alternarCam = useCallback(
+    () => void lp.setCameraEnabled(!lp.isCameraEnabled).catch(falhou('a câmera')),
+    [lp, falhou],
+  );
+  const alternarTela = () =>
+    void lp
+      .setScreenShareEnabled(!lp.isScreenShareEnabled, {
+        audio: true,
+        contentHint: 'detail',
+        resolution: VideoPresets.h1080.resolution,
+        selfBrowserSurface: 'exclude',
+        surfaceSwitching: 'include',
+      })
+      .catch((e: Error) => {
+        // Cancelar a escolha da janela não é erro.
+        if (!/notallowed|aborted|cancel/i.test(`${e.name} ${e.message}`)) falhou('o compartilhamento')(e);
+      });
+  const alternarMao = () => void lp.setAttributes({ mao: minhaMao ? '' : String(Date.now()) });
+
+  // Atalhos como no Meet: Ctrl+D microfone, Ctrl+E câmera.
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const alvo = e.target as HTMLElement | null;
+      if (alvo && /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName)) return;
+      if (e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        alternarMic();
+      } else if (e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        alternarCam();
+      }
+    };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, [alternarMic, alternarCam]);
+
+  const sair = () => void room.disconnect();
+  const encerrar = () => {
+    setMenu(null);
+    apiSala(`/${info.codigo}/encerrar`, { metodo: 'POST', corpo: {}, credencial: acesso.credencial }).catch(
+      () => avisar({ tom: 'atencao', texto: 'Não deu para encerrar agora. Tente de novo.' }),
+    );
+  };
+  const copiarLink = () =>
+    void navigator.clipboard?.writeText(`${location.origin}/r/${info.codigo}`).then(
+      () => avisar({ texto: 'Link do convite copiado.' }),
+      () => undefined,
+    );
+
+  const tela = telas[0];
+  const emDestaque = useEmDestaque(pessoas, fixado);
+  const maos = maosLevantadas(pessoas).length;
+
+  /* ── Palco ── */
+  let palco: React.ReactNode;
+  if (tela) {
+    const meu = tela.participant.isLocal;
+    palco = (
+      <>
+        {meu && (
+          <div className="faixa-tela">
+            <Icon name="monitor-up" size={18} />
+            <span>
+              Você está mostrando a sua tela. Todos veem{gravando ? ' e a gravação inclui a tela' : ''}.
+            </span>
+            <Button size="sm" onClick={alternarTela}>
+              Parar de compartilhar
+            </Button>
+          </div>
+        )}
+        <div className="destaque-tela">
+          <Ladrilho trackRef={tela} className="ladrilho--tela" />
+        </div>
+        {pequena ? (
+          <Fichas pessoas={pessoas} fixado={fixado} aoFixar={setFixado} />
+        ) : (
+          <div className="fita">
+            {cameras.map((t) => (
+              <Ladrilho key={`${t.participant.identity}-${t.source}`} trackRef={t} mini />
+            ))}
+          </div>
+        )}
+      </>
+    );
+  } else if ((pequena || modo === 'destaque') && pessoas.length > 1 && emDestaque) {
+    const principal = cameras.find((t) => t.participant.identity === emDestaque.identity);
+    const meu = cameras.find((t) => t.participant.isLocal);
+    palco = (
+      <>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'grid' }}>
+          {principal && <Ladrilho trackRef={principal} />}
+          {meu && !emDestaque.isLocal && <Ladrilho trackRef={meu} className="mini-voce" mini />}
+        </div>
+        <Fichas pessoas={pessoas.filter((p) => !p.isLocal)} fixado={fixado} aoFixar={setFixado} />
+      </>
+    );
+  } else {
+    const mostrados = cameras.slice(0, 16);
+    palco = (
+      <div
+        className="grade"
+        style={{ '--colunas': colunasDaGrade(mostrados.length, pequena) } as React.CSSProperties}
+      >
+        {mostrados.map((t: TrackReferenceOrPlaceholder) => (
+          <Ladrilho key={`${t.participant.identity}-${t.source}`} trackRef={t} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <header className="sala__topo">
+        {gravando && (
+          <span className="sala__gravando" title="A reunião está sendo gravada">
+            <span className="ponto-gravando" aria-hidden="true" />
+            {pequena ? 'Gravando' : info.transcrever ? 'Gravando e transcrevendo' : 'Gravando'}
+            <Cronometro desde={inicio} />
+          </span>
+        )}
+        <div className="sala__titulo">
+          <b>{info.titulo}</b>
+          <span>
+            {info.empresa.nome}
+            {!gravando && (
+              <>
+                {' · '}
+                <Cronometro desde={inicio} />
+              </>
+            )}
+          </span>
+        </div>
+        <span className="sala__espaco" />
+        {doTime && !pequena && (
+          <Button size="sm" variant="ghost" icon="copy" onClick={copiarLink}>
+            Copiar link do convite
+          </Button>
+        )}
+      </header>
+
+      <div className="sala__corpo">
+        <main className="sala__palco" aria-label="Vídeos da reunião">
+          {props.conectado ? palco : <p className="quieto">Conectando…</p>}
+        </main>
+        {painel && (
+          <aside className="painel-sala" aria-label={painel === 'chat' ? 'Chat' : 'Pessoas'}>
+            <div className="painel-sala__topo" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                className="aba-sala"
+                aria-selected={painel === 'chat'}
+                onClick={() => setPainel('chat')}
+              >
+                Chat
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className="aba-sala"
+                aria-selected={painel === 'pessoas'}
+                onClick={() => setPainel('pessoas')}
+              >
+                Pessoas ({pessoas.length})
+              </button>
+              <span className="sala__espaco" />
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="x"
+                aria-label="Fechar painel"
+                onClick={() => setPainel(null)}
+              />
+            </div>
+            {painel === 'chat' ? (
+              <PainelChat
+                codigo={info.codigo}
+                credencial={acesso.credencial}
+                participanteId={acesso.participanteId}
+                mensagens={mensagens}
+                aoEnviar={juntar}
+              />
+            ) : (
+              <PainelPessoas
+                codigo={info.codigo}
+                credencial={acesso.credencial}
+                doTime={doTime}
+                versaoEspera={versaoEspera}
+              />
+            )}
+          </aside>
+        )}
+      </div>
+
+      <footer className="sala__rodape">
+        <div className="sala__lado">
+          <span className="mono" style={{ color: 'var(--ink)' }}>
+            {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {info.titulo}
+          </span>
+        </div>
+        <div className="sala__controles" role="toolbar" aria-label="Controles da reunião">
+          <button
+            type="button"
+            className="ctl"
+            data-desligado={!local.isMicrophoneEnabled || undefined}
+            aria-pressed={!local.isMicrophoneEnabled}
+            aria-label={local.isMicrophoneEnabled ? 'Desligar o microfone' : 'Ligar o microfone'}
+            title={`${local.isMicrophoneEnabled ? 'Desligar' : 'Ligar'} o microfone (Ctrl+D)`}
+            onClick={alternarMic}
+          >
+            <Icon name={local.isMicrophoneEnabled ? 'mic' : 'mic-off'} size={22} />
+          </button>
+          <button
+            type="button"
+            className="ctl"
+            data-desligado={!local.isCameraEnabled || undefined}
+            aria-pressed={!local.isCameraEnabled}
+            aria-label={local.isCameraEnabled ? 'Desligar a câmera' : 'Ligar a câmera'}
+            title={`${local.isCameraEnabled ? 'Desligar' : 'Ligar'} a câmera (Ctrl+E)`}
+            onClick={alternarCam}
+          >
+            <Icon name={local.isCameraEnabled ? 'video' : 'video-off'} size={22} />
+          </button>
+          {podeTela && (
+            <button
+              type="button"
+              className="ctl"
+              data-ligado={local.isScreenShareEnabled || undefined}
+              aria-pressed={local.isScreenShareEnabled}
+              aria-label={local.isScreenShareEnabled ? 'Parar de compartilhar a tela' : 'Compartilhar a tela'}
+              title={local.isScreenShareEnabled ? 'Parar de compartilhar a tela' : 'Compartilhar a tela'}
+              onClick={alternarTela}
+            >
+              <Icon name={local.isScreenShareEnabled ? 'monitor-off' : 'monitor-up'} size={22} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="ctl"
+            data-mao={minhaMao || undefined}
+            aria-pressed={minhaMao}
+            aria-label={minhaMao ? 'Baixar a mão' : 'Levantar a mão'}
+            title={minhaMao ? 'Baixar a mão' : 'Levantar a mão'}
+            onClick={alternarMao}
+          >
+            <Icon name="hand" size={22} />
+          </button>
+          {pequena && (
+            <button
+              type="button"
+              className="ctl"
+              aria-label={`Chat${naoLidas ? `, ${naoLidas} mensagens novas` : ''}`}
+              title="Chat"
+              onClick={() => setPainel(painel === 'chat' ? null : 'chat')}
+            >
+              <Icon name="message-circle" size={22} />
+              {naoLidas > 0 && <span className="selo">{naoLidas}</span>}
+            </button>
+          )}
+          <button
+            type="button"
+            className="ctl"
+            aria-label="Mais opções"
+            aria-expanded={menu === 'opcoes'}
+            title="Mais opções"
+            onClick={() => setMenu(menu === 'opcoes' ? null : 'opcoes')}
+          >
+            <Icon name="ellipsis" size={22} />
+            {pequena && (esperando > 0 || maos > 0) && <span className="selo selo--ponto" />}
+          </button>
+          <button
+            type="button"
+            className="ctl ctl--sair"
+            aria-label={doTime ? 'Sair ou encerrar a reunião' : 'Sair da reunião'}
+            title="Sair"
+            onClick={() => (doTime ? setMenu(menu === 'sair' ? null : 'sair') : sair())}
+          >
+            <Icon name="phone-off" size={20} />
+            <span className="rotulo-sair">Sair</span>
+          </button>
+        </div>
+        <div className="sala__lado sala__lado--fim">
+          <button
+            type="button"
+            className="ico"
+            data-ativo={painel === 'chat' || undefined}
+            aria-label={`Chat${naoLidas ? `, ${naoLidas} mensagens novas` : ''}`}
+            title="Chat"
+            onClick={() => setPainel(painel === 'chat' ? null : 'chat')}
+          >
+            <Icon name="message-circle" size={22} />
+            {naoLidas > 0 && <span className="selo">{naoLidas}</span>}
+          </button>
+          <button
+            type="button"
+            className="ico"
+            data-ativo={painel === 'pessoas' || undefined}
+            aria-label={`Pessoas na sala, ${pessoas.length}${esperando ? `, ${esperando} esperando para entrar` : ''}`}
+            title="Pessoas"
+            onClick={() => setPainel(painel === 'pessoas' ? null : 'pessoas')}
+          >
+            <Icon name="users" size={22} />
+            {(esperando > 0 || maos > 0) && <span className="selo selo--ponto" />}
+          </button>
+        </div>
+      </footer>
+
+      {menu === 'opcoes' && (
+        <MenuOpcoes
+          room={room}
+          pequena={pequena}
+          doTime={doTime}
+          modo={modo}
+          aoModo={(m) => {
+            setModo(m);
+            setFixado(null);
+            setMenu(null);
+          }}
+          aoPessoas={() => {
+            setPainel('pessoas');
+            setMenu(null);
+          }}
+          aoCopiar={() => {
+            copiarLink();
+            setMenu(null);
+          }}
+          aoFechar={() => setMenu(null)}
+        />
+      )}
+      {menu === 'sair' && (
+        <div className="menu-sala" role="menu" aria-label="Sair da reunião">
+          <button type="button" role="menuitem" className="menu-sala__item" onClick={sair}>
+            <Icon name="log-out" size={18} />
+            Sair da reunião (ela continua para os outros)
+          </button>
+          <button type="button" role="menuitem" className="menu-sala__item" data-perigo onClick={encerrar}>
+            <Icon name="phone-off" size={18} />
+            Encerrar para todos
+          </button>
+          <button type="button" role="menuitem" className="menu-sala__item" onClick={() => setMenu(null)}>
+            <Icon name="x" size={18} />
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      <div className="avisos-sala" aria-live="polite">
+        {quality === ConnectionQuality.Poor && estado === ConnectionState.Connected && (
+          <div className="aviso-flutuante" data-tom="atencao">
+            <Icon name="wifi-off" size={18} />
+            <span>Sua internet está instável. Desligar a câmera ajuda o som a não cortar.</span>
+          </div>
+        )}
+        {!canPlayAudio && (
+          <div className="aviso-flutuante" data-tom="atencao">
+            <Icon name="volume-x" size={18} />
+            <span>O navegador pausou o som da reunião.</span>
+            <Button size="sm" onClick={() => void startAudio()}>
+              Ativar o som
+            </Button>
+          </div>
+        )}
+        {avisos.map((a) => (
+          <div key={a.id} className="aviso-flutuante" data-tom={a.tom}>
+            <span>{a.texto}</span>
+            {a.acao && (
+              <Button size="sm" variant={a.tom ? 'secondary' : 'ghost'} onClick={a.acao.fazer}>
+                {a.acao.rotulo}
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {estado === ConnectionState.Reconnecting || estado === ConnectionState.SignalReconnecting ? (
+        <div className="cobertura" role="alert">
+          <div className="cobertura__caixa">
+            <Icon name="loader" spin size={28} />
+            <h2>Reconectando…</h2>
+            <p>A internet oscilou. Você volta sozinho para a reunião em instantes.</p>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** No celular (e no modo destaque): os outros participantes em fichas; tocar fixa a pessoa. */
+function Fichas(props: {
+  pessoas: Participant[];
+  fixado: string | null;
+  aoFixar: (id: string | null) => void;
+}) {
+  if (!props.pessoas.length) return null;
+  return (
+    <ul className="fichas" aria-label="Quem está na reunião">
+      {props.pessoas.map((p) => (
+        <li key={p.identity}>
+          <button
+            type="button"
+            className="ficha-pessoa"
+            data-ativo={props.fixado === p.identity || undefined}
+            aria-pressed={props.fixado === p.identity}
+            onClick={() => props.aoFixar(props.fixado === p.identity ? null : p.identity)}
+          >
+            <Avatar nome={nomeDe(p)} size={24} />
+            {nomeDe(p).split(' ')[0]}
+            {p.isLocal ? ' (você)' : ''}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SeletorAparelho(props: { room: Room; tipo: MediaDeviceKind; rotulo: string }) {
+  const { devices, activeDeviceId, setActiveMediaDevice } = useMediaDeviceSelect({
+    kind: props.tipo,
+    room: props.room,
+  });
+  if (!devices.length) return null;
+  return (
+    <label>
+      {props.rotulo}
+      <select value={activeDeviceId} onChange={(e) => void setActiveMediaDevice(e.target.value)}>
+        {devices.map((d, i) => (
+          <option key={d.deviceId || i} value={d.deviceId}>
+            {d.label || `${props.rotulo} ${i + 1}`}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function MenuOpcoes(props: {
+  room: Room;
+  pequena: boolean;
+  doTime: boolean;
+  modo: 'grade' | 'destaque';
+  aoModo: (m: 'grade' | 'destaque') => void;
+  aoPessoas: () => void;
+  aoCopiar: () => void;
+  aoFechar: () => void;
+}) {
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    caixa.current?.querySelector<HTMLElement>('select, button')?.focus();
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') props.aoFechar();
+    };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, [props.aoFechar]);
+  const telaCheia = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen?.().catch(() => undefined);
+    props.aoFechar();
+  };
+  return (
+    <div ref={caixa} className="menu-sala" role="dialog" aria-label="Mais opções">
+      <SeletorAparelho room={props.room} tipo="audioinput" rotulo="Microfone" />
+      <SeletorAparelho room={props.room} tipo="videoinput" rotulo="Câmera" />
+      <SeletorAparelho room={props.room} tipo="audiooutput" rotulo="Alto-falante" />
+      <hr />
+      {props.pequena && (
+        <button type="button" className="menu-sala__item" onClick={props.aoPessoas}>
+          <Icon name="users" size={18} />
+          Pessoas e mãos levantadas
+        </button>
+      )}
+      {!props.pequena && (
+        <button
+          type="button"
+          className="menu-sala__item"
+          onClick={() => props.aoModo(props.modo === 'grade' ? 'destaque' : 'grade')}
+        >
+          <Icon name={props.modo === 'grade' ? 'maximize-2' : 'layout-grid'} size={18} />
+          {props.modo === 'grade' ? 'Mostrar quem fala em destaque' : 'Mostrar todos em grade'}
+        </button>
+      )}
+      <button type="button" className="menu-sala__item" onClick={telaCheia}>
+        <Icon name="maximize-2" size={18} />
+        Tela cheia
+      </button>
+      {props.doTime && (
+        <button type="button" className="menu-sala__item" onClick={props.aoCopiar}>
+          <Icon name="link" size={18} />
+          Copiar link do convite
+        </button>
+      )}
+      <button type="button" className="menu-sala__item" onClick={props.aoFechar}>
+        <Icon name="x" size={18} />
+        Fechar
+      </button>
+    </div>
+  );
+}

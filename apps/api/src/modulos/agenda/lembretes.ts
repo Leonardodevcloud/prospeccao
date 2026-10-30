@@ -42,11 +42,26 @@ export function quando(inicio: Date, agora = new Date()): string {
   return `dia ${fmtDia.format(inicio)} às ${h}`;
 }
 
+/**
+ * Link da reunião no lembrete: no lugar de {link}, ou no fim quando o local é um link (a sala de
+ * vídeo do sistema, Meet, Zoom). Endereço de visita não entra.
+ */
+export function comLink(texto: string, local: string | null): string {
+  const link = local && /^https?:\/\//.test(local) ? local : null;
+  if (texto.includes('{link}')) return texto.replace(/\{link\}/g, link ?? '').trim();
+  return link ? `${texto}\n\nLink para entrar: ${link}` : texto;
+}
+
 async function lembrarLeads(deps: Deps, whatsapp: WhatsappConta | null): Promise<number> {
   const cfg = await obterConfig(deps.pool);
   if (!cfg.lembreteLead || !whatsapp) return 0;
   const C = contaSql();
-  const { rows } = await deps.pool.query<{ id: number; empresa_id: number; inicio: Date }>(
+  const { rows } = await deps.pool.query<{
+    id: number;
+    empresa_id: number;
+    inicio: Date;
+    local: string | null;
+  }>(
     `UPDATE comercial.tarefas t SET lembrete_lead_em = now()
       WHERE t.id IN (
         SELECT id FROM comercial.tarefas
@@ -56,7 +71,7 @@ async function lembrarLeads(deps: Deps, whatsapp: WhatsappConta | null): Promise
            -- marcada já dentro da janela do lembrete (ex.: para daqui a 1 h): não manda
            AND criado_em < inicio - make_interval(mins => $1)
          LIMIT 20 FOR UPDATE SKIP LOCKED)
-      RETURNING t.id::int, t.empresa_id::int, t.inicio`,
+      RETURNING t.id::int, t.empresa_id::int, t.inicio, t.local`,
     [cfg.lembreteLeadMinutos],
   );
   let n = 0;
@@ -64,9 +79,9 @@ async function lembrarLeads(deps: Deps, whatsapp: WhatsappConta | null): Promise
     try {
       const l = await dadosDoLead(deps.pool, t.empresa_id);
       if (!l.telefone) continue;
-      const texto = montarMensagem(
-        cfg.textoLembreteLead.replace(/\{quando\}/g, quando(new Date(t.inicio))),
-        l.variaveis,
+      const texto = comLink(
+        montarMensagem(cfg.textoLembreteLead.replace(/\{quando\}/g, quando(new Date(t.inicio))), l.variaveis),
+        t.local,
       );
       // Pelo chip do lead (o número com que ele já conversa).
       const chip = await chipParaEquipe(deps.pool, t.empresa_id, await chipsEmUso(deps.pool, whatsapp));

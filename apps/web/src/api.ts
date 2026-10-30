@@ -1146,6 +1146,19 @@ export interface Tarefa {
   concluidaEm: string | null;
   lembreteLeadEm: string | null;
   atrasada: boolean;
+  /** Reunião na sala de vídeo do sistema (o link está em "local"). */
+  sala: SalaDaTarefa | null;
+}
+
+export interface SalaDaTarefa {
+  id: number;
+  codigo: string;
+  status: 'marcada' | 'ao_vivo' | 'encerrada' | 'cancelada';
+  entrada: 'livre' | 'aprovacao';
+  gravar: boolean;
+  transcrever: boolean;
+  abreMinutosAntes: number;
+  conviteEnviadoEm: string | null;
 }
 
 export interface FollowupDoDia {

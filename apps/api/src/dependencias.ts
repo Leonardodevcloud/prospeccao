@@ -3,6 +3,7 @@ import type { Filas } from '@prospeccao/queue';
 import type { Logger } from '@prospeccao/shared';
 import type { DepsAssistente } from './modulos/assistente/rotas.js';
 import type { ServicoDominios } from './modulos/email/dominio.js';
+import type { AoEncerrar, DepsReunioes } from './modulos/reunioes/servico.js';
 import type { ResolverServicos } from './servicos.js';
 
 export type {
@@ -38,4 +39,9 @@ export interface DepsApi {
   dominiosEmail?: ServicoDominios | null;
   /** Argos (o assistente): acesso só leitura aos dados, ouvir e falar. Sem isso, ele explica o que falta. */
   assistente?: DepsAssistente | null;
+  /**
+   * Reuniões por vídeo: LiveKit, armazenamento das gravações e transcrição (o que faltar fica
+   * desligado e a tela explica). aoEncerrar chama o processamento logo que uma reunião gravada acaba.
+   */
+  reunioes?: (DepsReunioes & { aoEncerrar?: AoEncerrar }) | null;
 }

@@ -45,6 +45,7 @@ const ITENS: {
   { para: '/atividade', rotulo: 'Atividade', icone: 'clock', secao: 'Prospecção', admin: true },
   { para: '/funil', rotulo: 'Funil', icone: 'kanban', secao: 'Vendas' },
   { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle', secao: 'Vendas' },
+  { para: '/reunioes', rotulo: 'Reuniões', icone: 'video', secao: 'Vendas' },
   { para: '/email', rotulo: 'E-mail', icone: 'mail', secao: 'Vendas', modulos: ['email'] },
   { para: '/agente', rotulo: 'Agente', icone: 'bot', secao: 'Vendas', modulos: ['whatsapp', 'agente_ia'] },
   { para: '/argos', rotulo: 'Argos', icone: 'orbit', secao: 'Argos', fim: true },
@@ -221,7 +222,8 @@ export function Shell() {
     !!sessao.data?.master && !sessao.data.foraDaPropria && ehTelaDaPlataforma(local.pathname);
   const soLeitura = sessao.data?.papelOrganizacao === 'leitura';
   // A leitura só abre as telas de acompanhar; as de trabalho levam ao painel da organização.
-  if (soLeitura && !TELAS_DA_LEITURA.includes(local.pathname)) return <Navigate to="/organizacao" replace />;
+  if (soLeitura && !TELAS_DA_LEITURA.includes(local.pathname) && !local.pathname.startsWith('/reunioes/'))
+    return <Navigate to="/organizacao" replace />;
 
   return (
     <div className="app">

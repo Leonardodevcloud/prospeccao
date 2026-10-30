@@ -2,6 +2,7 @@ import type { ConversaArgosDTO, MemoriaArgosDTO, TrocaArgosDTO } from '@prospecc
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Argos } from '../componentes/argos/Argos';
@@ -57,13 +58,15 @@ const hora = (iso: string) => {
 
 export function ArgosPagina() {
   const sessao = useSessao();
+  // Pergunta sugerida por outra tela (ex.: a reunião gravada: "o que ele falou sobre prazo?").
+  const [busca] = useSearchParams();
+  const sugerida = busca.get('pergunta')?.trim().slice(0, 300);
   const s = sessao.data;
   if (!s) return null;
-  const sugestoes = s.master
-    ? SUGESTOES.master
-    : s.papelOrganizacao
-      ? SUGESTOES.organizacao
-      : SUGESTOES.unidade;
+  const sugestoes = [
+    ...(sugerida ? [sugerida] : []),
+    ...(s.master ? SUGESTOES.master : s.papelOrganizacao ? SUGESTOES.organizacao : SUGESTOES.unidade),
+  ].slice(0, 4);
   return (
     <div className="argos-tela">
       <HistoricoArgos />

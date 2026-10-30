@@ -36,6 +36,7 @@ import {
 import { type ConfigIa, configIa, conversarJson, type PedidoConversa } from '@prospeccao/integrations/ia';
 import { extrairLeadsDoTexto, mapearColunasComIa } from '@prospeccao/integrations/importacao';
 import * as ors from '@prospeccao/integrations/ors';
+import { type EntradaResumoReuniao, resumirReuniao } from '@prospeccao/integrations/reuniao';
 import {
   assinarInstancia,
   baixarMidia,
@@ -53,7 +54,13 @@ import {
   type StatusWhatsapp,
   statusInstancia,
 } from '@prospeccao/integrations/whatsapp';
-import { AppError, LISTA_MODULOS, type MapaImportacao, type Modulo } from '@prospeccao/shared';
+import {
+  AppError,
+  LISTA_MODULOS,
+  type MapaImportacao,
+  type Modulo,
+  type ResumoReuniao,
+} from '@prospeccao/shared';
 
 /**
  * Serviços de fora de cada conta (WhatsApp, IA, e-mail, geocodificação), montados com as
@@ -145,6 +152,8 @@ export interface ServicosConta {
   email: EmailConta | null;
   /** IA do Argos (o assistente): conversa em etapas, medida no consumo da conta. */
   assistente: ((p: PedidoConversa) => Promise<string>) | null;
+  /** IA que resume as reuniões gravadas (o que foi dito, objeções, próximos passos). */
+  reuniao?: { resumir(e: EntradaResumoReuniao): Promise<ResumoReuniao | null> } | null;
   /** Endereço → coordenadas (bases de operação). */
   geocodificar: ((endereco: string) => Promise<{ lat: number; lng: number } | null>) | null;
   /** IA que lê a planilha de leads importada (o que é cada coluna) e tira os leads de um PDF. */
@@ -236,6 +245,7 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
         }
       : null,
     assistente: iaCfg ? (p) => conversarJson(iaCfg, p) : null,
+    reuniao: iaCfg ? { resumir: (e) => resumirReuniao(iaCfg, e) } : null,
     geocodificar: c.ors
       ? async (endereco) => {
           const r = await ors.geocodificar({ apiKey: c.ors!.apiKey }, endereco);

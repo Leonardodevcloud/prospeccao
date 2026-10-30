@@ -14,7 +14,8 @@
     "./agente": "./src/agente/index.ts",
     "./email": "./src/email/index.ts",
     "./ia": "./src/ia/index.ts",
-    "./importacao": "./src/importacao/index.ts"
+    "./importacao": "./src/importacao/index.ts",
+    "./reuniao": "./src/reuniao/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -22,8 +23,10 @@
   },
   "dependencies": {
     "@prospeccao/shared": "workspace:*",
+    "aws4fetch": "1.0.20",
     "csv-parse": "7.0.3",
     "iconv-lite": "0.7.3",
+    "livekit-server-sdk": "2.19.1",
     "yauzl": "3.4.0",
     "zod": "4.6.5"
   },

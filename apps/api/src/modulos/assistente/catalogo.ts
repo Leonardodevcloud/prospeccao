@@ -16,6 +16,8 @@ export const DESCRICAO_TABELA: Record<string, string> = {
     'tudo o que aconteceu nas negociações: mudanças de etapa, contatos registrados, notas (texto até 500 caracteres)',
   mensagens_whatsapp: 'mensagens de WhatsApp enviadas e recebidas (direcao enviada/recebida), status e texto',
   tarefas: 'tarefas e reuniões agendadas (tipo reuniao/ligacao/tarefa), responsável e se foi concluída',
+  reunioes:
+    'reuniões por vídeo que aconteceram (uma linha por reunião): duração, se foi gravada, resumo da IA, interesse do lead, destaques (dor, volume, objeções, quem decide) e próximos passos combinados',
   campanhas_email: 'campanhas de e-mail de prospecção',
   emails_enviados: 'cada e-mail (ou passo) enviado: entregue, aberto, clicado, respondido',
   respostas_email: 'respostas de e-mail dos leads, com o interesse lido pela IA e um resumo',

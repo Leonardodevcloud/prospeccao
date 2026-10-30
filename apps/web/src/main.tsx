@@ -30,6 +30,8 @@ import { Organizacao } from './paginas/Organizacao';
 import { PainelGestor } from './paginas/PainelGestor';
 import { PlataformaConsumo, PlataformaOperacao, PlataformaVisao } from './paginas/Plataforma';
 import { Relatorios } from './paginas/Relatorios';
+import { ReuniaoDetalhe } from './paginas/ReuniaoDetalhe';
+import { Reunioes } from './paginas/Reunioes';
 import { EsqueciSenha, RedefinirSenha } from './paginas/Senha';
 import { PlataformaVendas } from './paginas/Vendas';
 
@@ -47,6 +49,11 @@ const roteador = createBrowserRouter([
   { path: '/convite/:token', element: <Convite /> },
   { path: '/esqueci', element: <EsqueciSenha /> },
   { path: '/redefinir/:token', element: <RedefinirSenha /> },
+  // Link da reunião por vídeo (o convidado não tem login). O vídeo só carrega aqui.
+  {
+    path: '/r/:codigo',
+    lazy: async () => ({ Component: (await import('./reuniao/PaginaReuniao')).PaginaReuniao }),
+  },
   {
     path: '/',
     element: <Shell />,
@@ -64,6 +71,8 @@ const roteador = createBrowserRouter([
       { path: 'email', element: <Email /> },
       { path: 'funil', element: <Funil /> },
       { path: 'relatorios', element: <Relatorios /> },
+      { path: 'reunioes', element: <Reunioes /> },
+      { path: 'reunioes/:id', element: <ReuniaoDetalhe /> },
       { path: 'agente', element: <Agente /> },
       { path: 'campanhas', element: <Campanhas /> },
       { path: 'atividade', element: <Atividade /> },
@@ -87,7 +96,13 @@ const cliente = new QueryClient({
   queryCache: new QueryCache({
     onError: (erro) => {
       // Sessão expirada em qualquer tela: volta para o login.
-      if (erro instanceof ErroApi && erro.status === 401 && location.pathname !== '/login') {
+      // (Na sala de reunião pelo link, o convidado não tem login: nada de mandar para o login.)
+      if (
+        erro instanceof ErroApi &&
+        erro.status === 401 &&
+        location.pathname !== '/login' &&
+        !location.pathname.startsWith('/r/')
+      ) {
         roteador.navigate(`/login?voltar=${encodeURIComponent(location.pathname + location.search)}`);
       }
     },

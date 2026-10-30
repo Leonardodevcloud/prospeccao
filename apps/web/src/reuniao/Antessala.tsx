@@ -1,0 +1,329 @@
+import { useMediaDevices, usePreviewTracks, useTrackVolume } from '@livekit/components-react';
+import { Avatar, Button, Icon } from '@prospeccao/ui';
+import { type LocalAudioTrack, type LocalVideoTrack, Track, VideoPresets } from 'livekit-client';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ErroApi } from '../api';
+import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { apiSala, type InfoSala, type Liberado, type ResultadoEntrada } from './api';
+import { AntesDeAbrir, quandoReuniao } from './PaginaReuniao';
+
+/** O que a pessoa escolheu antes de entrar (vale dentro da sala). */
+export interface Escolhas {
+  microfone: boolean;
+  camera: boolean;
+  microfoneId: string | undefined;
+  cameraId: string | undefined;
+  altoFalanteId: string | undefined;
+}
+
+const NOME_GUARDADO = 'reuniao:nome';
+const chaveVolta = (codigo: string) => `reuniao:${codigo}:participante`;
+
+function lerLocal(chave: string, onde: Storage | undefined): string | null {
+  try {
+    return onde?.getItem(chave) ?? null;
+  } catch {
+    return null;
+  }
+}
+function gravarLocal(chave: string, valor: string, onde: Storage | undefined) {
+  try {
+    onde?.setItem(chave, valor);
+  } catch {
+    // modo privado: sem lembrar
+  }
+}
+
+/** Nível do microfone em 10 barrinhas (para a pessoa ver que está captando a voz). */
+function Medidor(props: { faixa: LocalAudioTrack | undefined }) {
+  const volume = useTrackVolume(props.faixa);
+  const acesas = Math.min(10, Math.round(volume * 30));
+  return (
+    <div className="as__medidor">
+      <span>Seu microfone</span>
+      <meter className="pp-sr" min={0} max={10} value={acesas} aria-label="Volume do microfone" />
+      <div className="as__barras" aria-hidden="true">
+        {Array.from({ length: 10 }, (_, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: barrinhas fixas do medidor
+          <span key={i} data-aceso={i < acesas || undefined} />
+        ))}
+      </div>
+      <span style={{ color: acesas > 1 ? 'var(--brand)' : undefined, fontWeight: 500 }}>
+        {props.faixa ? (acesas > 1 ? 'Captando sua voz' : 'Fale algo para testar') : 'Desligado'}
+      </span>
+    </div>
+  );
+}
+
+function Seletor(props: {
+  id: string;
+  rotulo: string;
+  tipo: MediaDeviceKind;
+  valor: string | undefined;
+  aoMudar: (id: string) => void;
+}) {
+  const aparelhos = useMediaDevices({ kind: props.tipo });
+  if (!aparelhos.length) return null;
+  return (
+    <div className="campo">
+      <label htmlFor={props.id}>{props.rotulo}</label>
+      <select
+        id={props.id}
+        value={props.valor ?? aparelhos[0]?.deviceId}
+        onChange={(e) => props.aoMudar(e.target.value)}
+      >
+        {aparelhos.map((a, i) => (
+          <option key={a.deviceId || i} value={a.deviceId}>
+            {a.label || `${props.rotulo} ${i + 1}`}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export function Antessala(props: {
+  info: InfoSala;
+  agora: () => Date;
+  aoAguardar: (r: { participanteId: string; segredo: string }, escolhas: Escolhas) => void;
+  aoEntrar: (acesso: Liberado, escolhas: Escolhas) => void;
+  aoRecusar: () => void;
+  aoAtualizar: () => void;
+}) {
+  const { info } = props;
+  const doTime = !!info.voce;
+  const [testando, setTestando] = useState(false);
+  const [nome, setNome] = useState(
+    () => info.voce?.nome ?? lerLocal(NOME_GUARDADO, globalThis.localStorage) ?? '',
+  );
+  const [aceite, setAceite] = useState(doTime);
+  const [microfone, setMicrofone] = useState(true);
+  const [camera, setCamera] = useState(true);
+  const [microfoneId, setMicrofoneId] = useState<string>();
+  const [cameraId, setCameraId] = useState<string>();
+  const [altoFalanteId, setAltoFalanteId] = useState<string>();
+  const [erroAparelho, setErroAparelho] = useState<string | null>(null);
+  const [erro, setErro] = useState<unknown>(null);
+  const [entrando, setEntrando] = useState(false);
+
+  const antes = info.situacao === 'antes' && !doTime;
+  const mostrarPrevia = !antes || testando;
+
+  // Prévia da câmera e do microfone (as mesmas escolhas valem dentro da sala).
+  const opcoes = useMemo(
+    () =>
+      mostrarPrevia
+        ? {
+            audio: microfone ? { deviceId: microfoneId } : false,
+            video: camera ? { deviceId: cameraId, resolution: VideoPresets.h720.resolution } : false,
+          }
+        : { audio: false, video: false },
+    [mostrarPrevia, microfone, camera, microfoneId, cameraId],
+  );
+  const faixas = usePreviewTracks(opcoes, (e) => {
+    setErroAparelho(
+      /permission|notallowed/i.test(`${e.name} ${e.message}`)
+        ? 'O navegador não deixou usar a câmera ou o microfone. Toque no cadeado ao lado do endereço, permita e recarregue a página.'
+        : 'Não encontramos câmera ou microfone livres. Feche outros programas que estejam usando e tente de novo.',
+    );
+  });
+  const video = faixas?.find((f) => f.kind === Track.Kind.Video) as LocalVideoTrack | undefined;
+  const audio = faixas?.find((f) => f.kind === Track.Kind.Audio) as LocalAudioTrack | undefined;
+  const elVideo = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const el = elVideo.current;
+    if (!video || !el) return;
+    video.attach(el);
+    return () => {
+      video.detach(el);
+    };
+  }, [video]);
+
+  if (antes && !testando)
+    return <AntesDeAbrir info={info} agora={props.agora} aoTestar={() => setTestando(true)} />;
+
+  const escolhas: Escolhas = { microfone, camera, microfoneId, cameraId, altoFalanteId };
+  const precisaAceite = info.gravar && !doTime;
+
+  const entrar = async (e: FormEvent) => {
+    e.preventDefault();
+    setErro(null);
+    setEntrando(true);
+    try {
+      const volta = lerLocal(chaveVolta(info.codigo), globalThis.sessionStorage);
+      const anterior = volta ? (JSON.parse(volta) as { participanteId: string; segredo: string }) : null;
+      const r = await apiSala<ResultadoEntrada>(`/${info.codigo}/entrar`, {
+        metodo: 'POST',
+        corpo: { nome: nome.trim(), aceitouGravacao: aceite, ...(anterior ?? {}) },
+      });
+      if (!doTime) gravarLocal(NOME_GUARDADO, nome.trim(), globalThis.localStorage);
+      if (r.estado === 'recusado') return props.aoRecusar();
+      if (r.segredo)
+        gravarLocal(
+          chaveVolta(info.codigo),
+          JSON.stringify({ participanteId: r.participanteId, segredo: r.segredo }),
+          globalThis.sessionStorage,
+        );
+      // A prévia para: a sala pega a câmera e o microfone de novo (sem pedir permissão outra vez).
+      for (const f of faixas ?? []) f.stop();
+      if (r.estado === 'aguardando')
+        props.aoAguardar({ participanteId: r.participanteId, segredo: r.segredo }, escolhas);
+      else props.aoEntrar(r, escolhas);
+    } catch (x) {
+      setErro(x);
+      if (x instanceof ErroApi && (x.codigo === 'sala_fechada' || x.status === 410)) props.aoAtualizar();
+    } finally {
+      setEntrando(false);
+    }
+  };
+
+  const reabrir = doTime && info.situacao === 'encerrada';
+  return (
+    <div className="as">
+      <section className="as__previa" aria-label="Sua câmera e seu microfone">
+        <div className="as__video">
+          {video ? (
+            <video ref={elVideo} muted playsInline autoPlay />
+          ) : (
+            <div className="as__sem-camera">
+              {nome.trim() ? <Avatar nome={nome} size={88} /> : <Icon name="video-off" size={28} />}
+              <span>{camera ? 'Ligando a câmera…' : 'Câmera desligada'}</span>
+            </div>
+          )}
+          {nome.trim() && <span className="as__nome">{nome.trim()}</span>}
+          <div className="as__botoes">
+            <button
+              type="button"
+              className="as__botao"
+              data-desligado={!microfone || undefined}
+              aria-pressed={!microfone}
+              aria-label={microfone ? 'Desligar o microfone' : 'Ligar o microfone'}
+              title={microfone ? 'Desligar o microfone' : 'Ligar o microfone'}
+              onClick={() => setMicrofone((x) => !x)}
+            >
+              <Icon name={microfone ? 'mic' : 'mic-off'} size={22} />
+            </button>
+            <button
+              type="button"
+              className="as__botao"
+              data-desligado={!camera || undefined}
+              aria-pressed={!camera}
+              aria-label={camera ? 'Desligar a câmera' : 'Ligar a câmera'}
+              title={camera ? 'Desligar a câmera' : 'Ligar a câmera'}
+              onClick={() => setCamera((x) => !x)}
+            >
+              <Icon name={camera ? 'video' : 'video-off'} size={22} />
+            </button>
+          </div>
+        </div>
+        <Medidor faixa={microfone ? audio : undefined} />
+        {erroAparelho && <Mensagem tipo="aviso">{erroAparelho}</Mensagem>}
+        <div className="as__aparelhos">
+          <Seletor id="as-cam" rotulo="Câmera" tipo="videoinput" valor={cameraId} aoMudar={setCameraId} />
+          <Seletor
+            id="as-mic"
+            rotulo="Microfone"
+            tipo="audioinput"
+            valor={microfoneId}
+            aoMudar={setMicrofoneId}
+          />
+          <Seletor
+            id="as-som"
+            rotulo="Alto-falante"
+            tipo="audiooutput"
+            valor={altoFalanteId}
+            aoMudar={setAltoFalanteId}
+          />
+        </div>
+      </section>
+
+      <form className="as__entrar" onSubmit={entrar} aria-label="Entrar na reunião">
+        <div className="pilha" style={{ gap: 8 }}>
+          <h1 className="rp__titulo">{info.titulo}</h1>
+          <span className="quieto" style={{ fontSize: 14 }}>
+            {quandoReuniao(info.inicio, info.fim)}
+            {info.anfitriao ? ` · com ${info.anfitriao}` : ''}
+          </span>
+          {info.presentes.length > 0 && (
+            <div className="as__quem">
+              <span style={{ display: 'flex' }}>
+                {info.presentes.slice(0, 3).map((p) => (
+                  <span key={p} style={{ marginRight: -6 }}>
+                    <Avatar nome={p} size={28} />
+                  </span>
+                ))}
+              </span>
+              <span style={{ marginLeft: 8 }}>
+                {info.presentes.length === 1
+                  ? `${info.presentes[0]} já está na sala`
+                  : `${info.presentes.slice(0, 2).join(' e ')}${info.presentes.length > 2 ? ` e mais ${info.presentes.length - 2}` : ''} já estão na sala`}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {doTime ? (
+          <Mensagem tipo="ok">Você entra como {info.voce?.nome}, do time.</Mensagem>
+        ) : (
+          <div className="campo">
+            <label htmlFor="as-nome">Seu nome</label>
+            <input
+              id="as-nome"
+              className="filtro"
+              required
+              minLength={2}
+              maxLength={60}
+              autoComplete="name"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+            />
+            <span className="campo__dica">É assim que as outras pessoas vão ver você.</span>
+          </div>
+        )}
+
+        {info.gravar && (
+          <div className="as__aviso">
+            <p style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span className="ponto-gravando" style={{ marginTop: 5 }} aria-hidden="true" />
+              <span>
+                <b>Esta reunião será gravada{info.transcrever ? ' e transcrita' : ''}.</b> A gravação fica com{' '}
+                {info.empresa.nome}, para registrar o que foi combinado.
+              </span>
+            </p>
+            {precisaAceite && (
+              <label className="as__aceite">
+                <input
+                  type="checkbox"
+                  checked={aceite}
+                  onChange={(e) => setAceite(e.target.checked)}
+                  required
+                />
+                Entendi que a reunião será gravada
+              </label>
+            )}
+          </div>
+        )}
+
+        {antes && (
+          <Mensagem tipo="aviso">
+            A sala abre às{' '}
+            {new Date(info.abreEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Você
+            já pode testar a câmera e o microfone.
+          </Mensagem>
+        )}
+        <ErroDaApi erro={erro} />
+        <div className="pilha" style={{ gap: 8 }}>
+          <Button
+            type="submit"
+            variant="primary"
+            className="as__grande"
+            disabled={entrando || antes || (!doTime && nome.trim().length < 2) || (precisaAceite && !aceite)}
+          >
+            {entrando ? 'Entrando…' : reabrir ? 'Abrir a sala de novo' : 'Entrar na reunião'}
+          </Button>
+          <span className="rp__nota">Câmera e microfone podem ser desligados a qualquer momento.</span>
+        </div>
+      </form>
+    </div>
+  );
+}

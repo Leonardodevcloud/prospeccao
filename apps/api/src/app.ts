@@ -41,6 +41,8 @@ import { rotasOrganizacao } from './modulos/organizacao/rotas.js';
 import { rotasPlaces } from './modulos/places/rotas.js';
 import { rotasPlataforma } from './modulos/plataforma/rotas.js';
 import { rotasRelatorios } from './modulos/relatorios/rotas.js';
+import { definirEnderecoDasSalas } from './modulos/reunioes/repositorio.js';
+import { rotasAvisoVideo, rotasReunioes, rotasSalaPublica } from './modulos/reunioes/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
 import { rotasSiteMaster, rotasSitePublico } from './modulos/site/rotas.js';
 
@@ -51,9 +53,13 @@ export function criarApp(deps: DepsApi): Express {
   app.set('trust proxy', 1); // atrás do proxy do Railway/Vercel: IP real para o rate limit
 
   app.use(helmet());
+  // Link das salas de reunião: <endereço do sistema>/r/<código>.
+  definirEnderecoDasSalas(deps.origens[0]);
   // Webhook do WhatsApp: vem da Evolution (sem origem do navegador, sem sessão); protegido por token.
   // Antes do limite de 200 kb: mensagem com mídia chega grande.
   app.use('/webhooks', express.json({ limit: '10mb' }), rotasWebhook(deps));
+  // Avisos do LiveKit (reuniões): corpo cru, a assinatura é conferida sobre os bytes exatos.
+  app.use('/livekit', express.raw({ type: '*/*', limit: '1mb' }), rotasAvisoVideo(deps));
   // Webhook do Resend: corpo cru (a assinatura é conferida sobre os bytes exatos).
   app.use('/e/resend', rotasWebhookResend(deps));
   // Anexo da conversa e do e-mail (até 10 MB em base64) e imagem da marca são os corpos grandes;
@@ -65,7 +71,7 @@ export function criarApp(deps: DepsApi): Express {
   app.use((req, res, next) =>
     req.path === '/importacoes-leads/analisar'
       ? jsonPlanilha(req, res, next)
-      : /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$|^\/agente\/ia\/sugestoes$/.test(
+      : /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$|^\/agente\/ia\/sugestoes$|^\/salas\/[a-z0-9-]+\/arquivos$/.test(
             req.path,
           )
         ? jsonGrande(req, res, next)
@@ -98,6 +104,8 @@ export function criarApp(deps: DepsApi): Express {
   app.use('/site', rotasSitePublico(deps));
   app.use(exigirOrigemConhecida(deps.origens));
   app.use('/auth', rotasAuth(deps));
+  // Sala de reunião pelo link (o convidado não tem login; quem é do time entra pelo cookie).
+  app.use('/salas', rotasSalaPublica(deps));
 
   const protegidas = Router();
   protegidas.use(exigirSessao(deps.auth.jwtSegredo, deps.pool));
@@ -124,6 +132,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));
   protegidas.use('/agenda', rotasAgenda(deps));
+  protegidas.use('/reunioes', rotasReunioes(deps));
   protegidas.use('/email/dominio', rotasDominioEmail(deps));
   protegidas.use('/email', rotasEmail(deps));
   protegidas.use('/atividade', rotasAtividade(deps));

@@ -32,6 +32,7 @@ export const TELAS_DA_LEITURA = [
   '/organizacao/gestao',
   '/funil',
   '/conversas',
+  '/reunioes',
   '/relatorios',
   '/plano',
   '/auditoria',

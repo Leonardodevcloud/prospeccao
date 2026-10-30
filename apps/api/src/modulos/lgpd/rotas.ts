@@ -5,6 +5,7 @@ import { conta, contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
+import * as salas from '../reunioes/repositorio.js';
 
 /**
  * LGPD na unidade (administrador ou gestor):
@@ -17,7 +18,7 @@ import { exigirAdmin } from '../../middlewares/seguranca.js';
 const semLeitura: RequestHandler = (req, _res, next) =>
   next(req.usuario?.papelOrganizacao === 'leitura' ? AppError.proibido() : undefined);
 
-export function rotasLgpd({ pool, log }: DepsApi): Router {
+export function rotasLgpd({ pool, log, reunioes }: DepsApi): Router {
   const r = Router();
   r.use(exigirAdmin, semLeitura);
 
@@ -43,6 +44,11 @@ export function rotasLgpd({ pool, log }: DepsApi): Router {
                              FROM enriquecimento.pessoas WHERE conta_id = ${C}`,
       tarefas: `SELECT empresa_id, tipo, titulo, descricao, inicio, fim, concluida_em, criado_em
                 FROM comercial.tarefas WHERE conta_id = ${C}`,
+      reunioes: `SELECT s.empresa_id, s.titulo, s.inicio, ss.iniciada_em, ss.encerrada_em, ss.duracao_segundos,
+                        ss.resumo FROM comercial.sala_sessoes ss JOIN comercial.salas s ON s.id = ss.sala_id
+                  WHERE ss.conta_id = ${C}`,
+      transcricoes: `SELECT f.sessao_id, f.nome, f.inicio_ms, f.texto FROM comercial.sala_falas f
+                      WHERE f.conta_id = ${C} ORDER BY f.sessao_id, f.inicio_ms LIMIT 500000`,
     };
     const saida: Record<string, unknown> = { geradoEm: new Date().toISOString() };
     for (const [k, sql] of Object.entries(consultas)) {
@@ -73,6 +79,8 @@ export function rotasLgpd({ pool, log }: DepsApi): Router {
     const d = corpo(req, esquecerTitular);
     const C = contaSql();
     const autor = req.usuario!.nome;
+    // Gravações das reuniões com o titular: os arquivos saem do armazenamento depois do banco.
+    let gravacoes: string[] = [];
     await comTransacao(pool, async (tx) => {
       const { rows } = await tx.query<{ org: number }>(
         `SELECT c.organizacao_id AS org FROM cadastro.contas c WHERE c.id = ${C}
@@ -92,6 +100,11 @@ export function rotasLgpd({ pool, log }: DepsApi): Router {
       const unidades = `(SELECT id FROM cadastro.contas WHERE organizacao_id = ${Number(org)})`;
       // Em todas as unidades da organização: negociação (atividades, tarefas e contatos da negociação
       // vão junto), conversas, contatos e pessoas guardados só por ela, e os vínculos com as listas.
+      const salasDoTitular = await salas.salasDoLead(tx, d.empresaId, unidades);
+      if (salasDoTitular.length) {
+        gravacoes = await salas.chavesGravadas(tx, { salaIds: salasDoTitular });
+        await tx.query('DELETE FROM comercial.salas WHERE id = ANY($1::bigint[])', [salasDoTitular]);
+      }
       await tx.query(`DELETE FROM comercial.mensagens WHERE conta_id IN ${unidades} AND empresa_id = $1`, [
         d.empresaId,
       ]);
@@ -117,6 +130,12 @@ export function rotasLgpd({ pool, log }: DepsApi): Router {
         [org, d.empresaId, d.motivo ?? null, d.pedidoPor ?? null, chaves],
       );
     });
+    if (gravacoes.length)
+      await reunioes?.armazenamento
+        ?.apagar(gravacoes)
+        .catch((erro) =>
+          log.error({ err: erro, empresa: d.empresaId }, 'lgpd: gravações não saíram do armazenamento'),
+        );
     log.info({ conta: conta(), empresa: d.empresaId, autor }, 'lgpd: titular esquecido');
     res.json({ ok: true });
   });

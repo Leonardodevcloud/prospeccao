@@ -13,6 +13,7 @@ import {
   type TipoAtividade,
 } from '../api';
 import { diaDaqui, diaDoInput, fmtHora, fmtNome, fmtPrazo, fmtReais, formatarTelefone } from '../formatar';
+import { ReunioesDoLead } from '../paginas/Reunioes';
 import { ProximaMensagem } from './Cadencia';
 import { CadeiaContatos } from './ContatosNegociacao';
 import { ErroDaApi, Mensagem } from './Formulario';
@@ -693,6 +694,8 @@ export function SecaoFunil(props: {
         >
           <AgendaDoLead empresaId={empresaId} empresaNome={props.empresaNome ?? 'o lead'} />
         </Panel>
+
+        <ReunioesDoLead empresaId={empresaId} />
 
         <PessoasNaNegociacao empresaId={empresaId} />
 

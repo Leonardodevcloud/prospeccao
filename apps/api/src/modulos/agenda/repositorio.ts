@@ -9,6 +9,7 @@ import {
 } from '@prospeccao/shared';
 import { contaSql, usuarioAtual } from '../../contexto.js';
 import { usuarioDaConta } from '../equipe/repositorio.js';
+import * as salas from '../reunioes/repositorio.js';
 
 /** Agenda: reuniões com data e hora, ligações, visitas e tarefas. */
 
@@ -47,9 +48,14 @@ export async function salvarConfig(db: Executor, c: ConfigAgendaEntrada): Promis
 const CAMPOS = `t.id::int, t.empresa_id::int AS "empresaId", e.nome AS "empresaNome", e.cidade AS "empresaCidade",
   t.usuario_id AS "usuarioId", u.nome AS "usuarioNome", t.tipo, t.titulo, t.descricao, t.inicio, t.fim,
   t.local, t.concluida_em AS "concluidaEm", t.lembrete_lead_em AS "lembreteLeadEm",
-  (t.concluida_em IS NULL AND t.inicio < now() - interval '1 hour') AS atrasada`;
+  (t.concluida_em IS NULL AND t.inicio < now() - interval '1 hour') AS atrasada,
+  CASE WHEN sl.id IS NULL OR sl.status = 'cancelada' THEN NULL
+       ELSE json_build_object('id', sl.id, 'codigo', sl.codigo, 'status', sl.status, 'entrada', sl.entrada,
+                              'gravar', sl.gravar, 'transcrever', sl.transcrever,
+                              'abreMinutosAntes', sl.abre_minutos_antes, 'conviteEnviadoEm', sl.convite_enviado_em) END AS sala`;
 const JUNCOES = `LEFT JOIN descoberta.empresas e ON e.id = t.empresa_id
-  LEFT JOIN cadastro.usuarios u ON u.id = t.usuario_id`;
+  LEFT JOIN cadastro.usuarios u ON u.id = t.usuario_id
+  LEFT JOIN comercial.salas sl ON sl.tarefa_id = t.id`;
 
 /** O responsável da tarefa precisa ser alguém da conta. */
 async function conferirUsuario(db: Executor, usuarioId: number) {
@@ -123,8 +129,14 @@ export async function criar(db: Executor, d: TarefaEntrada): Promise<number> {
       usuarioAtual()?.id ?? null,
     ],
   );
+  const id = rows[0]!.id;
+  // Reunião na sala de vídeo do sistema: o link da sala vira o local.
+  if (d.tipo === 'reuniao' && d.sala) {
+    const link = await salas.criarSalaDaTarefa(db, id, d.sala);
+    await db.query(`UPDATE comercial.tarefas SET local = $2 WHERE id = $1`, [id, link]);
+  }
   if (d.empresaId) await sincronizarProximoPasso(db, d.empresaId, d.tipo, d.inicio);
-  return rows[0]!.id;
+  return id;
 }
 
 /** Reunião marcada para o lead (pela tela ou pela IA). */
@@ -179,11 +191,53 @@ export async function atualizar(db: Executor, id: number, d: TarefaAtualizar): P
       `UPDATE comercial.tarefas SET ${sets.join(', ')} WHERE id = $1 AND conta_id = ${contaSql()}`,
       valores,
     );
+  await atualizarSala(db, id, d, atual.tipo);
   const empresaId = d.empresaId ?? atual.empresaId;
   if (empresaId && d.inicio) await sincronizarProximoPasso(db, empresaId, d.tipo ?? atual.tipo, d.inicio);
 }
 
+/**
+ * A sala de vídeo acompanha a reunião: criada quando a pessoa escolhe a sala do sistema, com o
+ * título e o horário da tarefa; cancelada quando deixa de ser reunião na sala ou outro local é posto.
+ */
+async function atualizarSala(
+  db: Executor,
+  id: number,
+  d: TarefaAtualizar,
+  tipoAntes: TipoTarefa,
+): Promise<void> {
+  const sala = await salas.salaDaTarefa(db, id);
+  const tipo = d.tipo ?? tipoAntes;
+  const querSala =
+    tipo === 'reuniao' && (d.sala !== undefined ? d.sala !== null : !!sala && sala.status !== 'cancelada');
+  if (querSala) {
+    if (!sala) {
+      const link = await salas.criarSalaDaTarefa(db, id, d.sala!);
+      await db.query(`UPDATE comercial.tarefas SET local = $2 WHERE id = $1`, [id, link]);
+      return;
+    }
+    if (d.sala) await salas.atualizarOpcoes(db, sala.id, d.sala);
+    await salas.sincronizarComTarefa(db, id);
+    // O link volta a ser o local (a pessoa podia ter apagado o campo).
+    await db.query(`UPDATE comercial.tarefas SET local = $2 WHERE id = $1`, [
+      id,
+      salas.linkDaSala(sala.codigo),
+    ]);
+    return;
+  }
+  if (sala && sala.status !== 'cancelada') {
+    await salas.cancelarSalaDaTarefa(db, id);
+    // O local era o link da sala: sai junto (se a pessoa pôs outro, fica o dela).
+    await db.query(`UPDATE comercial.tarefas SET local = NULL WHERE id = $1 AND local = $2`, [
+      id,
+      salas.linkDaSala(sala.codigo),
+    ]);
+  }
+}
+
 export async function apagar(db: Executor, id: number): Promise<void> {
+  // A sala para de funcionar (o que já foi gravado fica, sem a tarefa).
+  await salas.cancelarSalaDaTarefa(db, id);
   const { rowCount } = await db.query(
     `DELETE FROM comercial.tarefas WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id],

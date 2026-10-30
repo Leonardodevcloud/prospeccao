@@ -13,6 +13,8 @@ import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
 import { iniciarPlanos } from './modulos/plano/rotina.js';
 import { iniciarPush } from './modulos/push/servico.js';
+import { prepararReunioes } from './modulos/reunioes/preparar.js';
+import { iniciarProcessamento } from './modulos/reunioes/processar.js';
 import { criarServicos } from './servicos.js';
 
 const env = carregarEnvApi();
@@ -47,6 +49,16 @@ if (!chave)
 // Argos (assistente): papel só leitura no banco e voz. Falhar aqui não derruba a api.
 const assistente = await prepararAssistente(pool, log, env);
 
+// Reuniões por vídeo: LiveKit, gravações e transcrição; o processamento roda depois de cada reunião.
+const reunioes = prepararReunioes(env, log);
+const processamento = iniciarProcessamento({
+  pool,
+  log,
+  servicos,
+  reunioes,
+  jwtSegredo: env.JWT_SEGREDO,
+});
+
 const app = criarApp({
   pool,
   filas,
@@ -62,6 +74,7 @@ const app = criarApp({
   servicos,
   credenciais: { chave, ambiente, invalidar },
   assistente,
+  reunioes: { ...reunioes, aoEncerrar: processamento.aoEncerrar },
 });
 
 const servidor = createServer(app);
@@ -91,6 +104,7 @@ encerrarAoReceberSinal(log, async () => {
   pararEmail();
   pararAlertas();
   pararSinal();
+  processamento.parar();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
   await filas.parar();
   await assistente.leitura?.end().catch(() => undefined);

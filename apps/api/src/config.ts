@@ -51,6 +51,22 @@ export const esquemaEnvApi = envBase.extend({
   OPENAI_CHAVE: opcional(z.string().min(10)),
   FALA_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   FALA_MODELO: z.string().default('gpt-4o-mini-tts'),
+  /**
+   * Reuniões por vídeo (LiveKit Cloud ou servidor próprio): endereço wss://… e as chaves do projeto.
+   * Sem elas, a sala de reunião fica desligada.
+   */
+  LIVEKIT_URL: opcional(z.string().regex(/^wss?:\/\//, 'LIVEKIT_URL começa com wss://')),
+  LIVEKIT_API_KEY: opcional(z.string().min(3)),
+  LIVEKIT_API_SECRET: opcional(z.string().min(10)),
+  /**
+   * Onde as gravações das reuniões ficam (qualquer serviço compatível com S3; ex.: Cloudflare R2).
+   * Sem isso, as reuniões funcionam sem gravar. A transcrição usa a GROQ_CHAVE do Argos.
+   */
+  GRAVACOES_S3_ENDPOINT: opcional(z.string().url()),
+  GRAVACOES_S3_REGIAO: z.string().default('auto'),
+  GRAVACOES_S3_BUCKET: opcional(z.string().min(3)),
+  GRAVACOES_S3_CHAVE: opcional(z.string().min(3)),
+  GRAVACOES_S3_SEGREDO: opcional(z.string().min(10)),
   /** Raciocínio da IA antes de responder (desligado = mais rápido). */
   ARGOS_RACIOCINIO: z.enum(['desligado', 'baixo', 'alto']).catch('desligado').default('desligado'),
   /** Legado: sem IA_API_KEY, a IA é o Gemini com esta chave. */
