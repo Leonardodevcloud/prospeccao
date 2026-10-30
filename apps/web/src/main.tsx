@@ -22,6 +22,7 @@ import { Equipe } from './paginas/Equipe';
 import { Funil } from './paginas/Funil';
 import { Leads } from './paginas/Leads';
 import { Login } from './paginas/Login';
+import { MarcaEDominio } from './paginas/MarcaEDominio';
 import { Master } from './paginas/Master';
 import { MeuDia } from './paginas/MeuDia';
 import { MeuPlano } from './paginas/MeuPlano';
@@ -70,6 +71,7 @@ const roteador = createBrowserRouter([
       { path: 'hoje', element: <MeuDia /> },
       { path: 'conversas', element: <Conversas /> },
       { path: 'equipe', element: <Equipe /> },
+      { path: 'marca', element: <MarcaEDominio /> },
       { path: 'argos', element: <ArgosPagina /> },
       { path: 'argos/mapa', element: <MapaConhecimento /> },
       { path: 'organizacao', element: <PainelGestor /> },

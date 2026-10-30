@@ -57,7 +57,7 @@ export function Login() {
         >
           <div className="login__cabeca">
             <h1>Verificação em duas etapas</h1>
-            <p>Abra o app autenticador no celular e digite o código de 6 números da Prospect Team.</p>
+            <p>Abra o app autenticador no celular e digite o código de 6 números que aparece nele.</p>
           </div>
           <TextField
             rotulo="Código"

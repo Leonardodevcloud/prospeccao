@@ -3,6 +3,7 @@ import { AppError, type PapelQualquer } from '@prospeccao/shared';
 import type { RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
 import { comUsuario, type UsuarioSessao, usuarioAtual } from '../contexto.js';
+import { origemDeCliente } from '../dominios.js';
 
 export const COOKIE_SESSAO = 'sessao';
 
@@ -204,7 +205,8 @@ export function exigirOrigemConhecida(origens: string[]): RequestHandler {
           return undefined;
         }
       })();
-    if (origem && permitidas.has(origem.toLowerCase())) return next();
+    // As de APP_ORIGENS e o domínio próprio ativo de cada cliente (marca própria).
+    if (origem && (permitidas.has(origem.toLowerCase()) || origemDeCliente(origem))) return next();
     next(new AppError(403, 'origem_recusada', 'Requisição de origem desconhecida.'));
   };
 }

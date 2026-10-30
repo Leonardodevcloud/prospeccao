@@ -669,6 +669,7 @@ function EditarPessoa(props: { dados: DadosOrganizacao; pessoa: PessoaOrganizaca
 
 /** Segurança (exigir duas etapas) e marca do cliente (nome, cor e logo no sistema e no PDF). */
 function SegurancaEMarca(props: { dados: DadosOrganizacao }) {
+  const navegar = useNavigate();
   const cliente = useQueryClient();
   const seguro = useRecurso('seguranca');
   const comMarca = useRecurso('marca');
@@ -728,109 +729,19 @@ function SegurancaEMarca(props: { dados: DadosOrganizacao }) {
           </p>
         </div>
       </Panel>
-      <Panel titulo="Marca da empresa">
-        {!comMarca && <ForaDoPlano recurso="marca" compacto />}
-        <form
-          hidden={!comMarca}
-          className="form"
-          onSubmit={(e: FormEvent) => {
-            e.preventDefault();
-            salvar.mutate({ nome: nome.trim() || null, cor, ...(logo !== undefined ? { logo } : {}) });
-          }}
-        >
+      <Panel titulo="Marca e domínio">
+        <div className="pilha" style={{ gap: 12 }}>
           <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-            O nome, a cor e o logo aparecem no menu de todas as unidades e no relatório em PDF.
+            O nome, a cor, o logo, o ícone e o endereço próprio (crm.suaempresa.com.br) ficam numa tela só e
+            valem para todas as unidades.
           </p>
-          <div className="form__duas">
-            <div className="campo">
-              <label htmlFor="mc-nome">Nome no sistema</label>
-              <input
-                id="mc-nome"
-                className="filtro"
-                maxLength={60}
-                placeholder={o.nome}
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-              />
-            </div>
-            <div className="campo">
-              <label htmlFor="mc-cor">Cor principal</label>
-              <div className="copiar">
-                <input
-                  id="mc-cor"
-                  type="color"
-                  className="cor-marca"
-                  value={cor}
-                  onChange={(e) => setCor(e.target.value)}
-                />
-                <input
-                  className="filtro mono"
-                  aria-label="Cor em hexadecimal"
-                  value={cor}
-                  maxLength={7}
-                  onChange={(e) => setCor(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="campo">
-            <label htmlFor="mc-logo">Logo (PNG ou JPG, até 300 KB)</label>
-            <div className="logo-marca">
-              {logo ? (
-                <img src={logo} alt="Logo novo" />
-              ) : o.marca.logo && logo !== null ? (
-                <img src={`/api${logoAtual ?? '/organizacao/marca/logo'}`} alt="Logo atual" />
-              ) : (
-                <span className="quieto" style={{ fontSize: 12 }}>
-                  Sem logo
-                </span>
-              )}
-              <input
-                id="mc-logo"
-                type="file"
-                accept="image/png,image/jpeg"
-                onChange={(e) => {
-                  setErroArquivo(null);
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  if (f.size > 300 * 1024) {
-                    setErroArquivo('Logo grande demais: use uma imagem de até 300 KB.');
-                    return;
-                  }
-                  const leitor = new FileReader();
-                  leitor.onload = () => setLogo(String(leitor.result));
-                  leitor.readAsDataURL(f);
-                }}
-              />
-              {(o.marca.logo || logo) && (
-                <Button size="sm" variant="ghost" onClick={() => setLogo(null)}>
-                  Tirar logo
-                </Button>
-              )}
-            </div>
-          </div>
-          {erroArquivo && <Mensagem tipo="erro">{erroArquivo}</Mensagem>}
-          <ErroDaApi erro={salvar.error} />
-          {salvar.isSuccess && <Mensagem tipo="ok">Marca salva.</Mensagem>}
+          {!comMarca && <ForaDoPlano recurso="marca" compacto />}
           <div className="acoes">
-            <Button variant="primary" type="submit" disabled={salvar.isPending}>
-              {salvar.isPending ? 'Salvando…' : 'Salvar marca'}
+            <Button size="sm" onClick={() => navegar('/marca')}>
+              Abrir Marca e domínio
             </Button>
-            {(o.marca.cor || o.marca.nome || o.marca.logo) && (
-              <Button
-                variant="ghost"
-                disabled={salvar.isPending}
-                onClick={() => {
-                  setNome('');
-                  setCor('#0b6b63');
-                  salvar.mutate({ nome: null, cor: null, logo: null });
-                }}
-              >
-                Voltar ao padrão
-              </Button>
-            )}
           </div>
-        </form>
+        </div>
       </Panel>
     </div>
   );

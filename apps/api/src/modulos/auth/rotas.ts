@@ -18,7 +18,7 @@ import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp } from '../../endereco.js';
 import { corpo } from '../../middlewares/http.js';
 import { COOKIE_SESSAO, exigirSessao } from '../../middlewares/seguranca.js';
-import { contratoDaConta } from '../../recursos.js';
+import { contratoDaConta, temRecurso } from '../../recursos.js';
 import { ipDe } from '../auditoria/middleware.js';
 import * as auditoria from '../auditoria/repositorio.js';
 import { conferirSegundaEtapa, desafioDuasEtapas, lerDesafio, rotasContaSegura } from './contaSegura.js';
@@ -261,8 +261,12 @@ export function rotasAuth(deps: DepsApi): Router {
       email: string;
       conta_id: number;
       conta: string;
+      marca_nome: string | null;
+      marca_cor: string | null;
     }>(
-      `SELECT u.id, u.nome, u.email, u.conta_id, c.nome AS conta
+      `SELECT u.id, u.nome, u.email, u.conta_id, c.nome AS conta,
+              (SELECT o.marca_nome FROM cadastro.organizacoes o WHERE o.id = c.organizacao_id) AS marca_nome,
+              (SELECT o.marca_cor FROM cadastro.organizacoes o WHERE o.id = c.organizacao_id) AS marca_cor
          FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
         WHERE lower(u.email) = $1 AND u.ativo
           AND ((c.ativa AND (SELECT o.ativa FROM cadastro.organizacoes o WHERE o.id = c.organizacao_id)) OR u.master)`,
@@ -277,19 +281,22 @@ export function rotasAuth(deps: DepsApi): Router {
           WHERE id = $1`,
         [u.id, hashDoToken(token)],
       );
-      const link = `${enderecoDoApp(req.get('origin'), deps.origens)}/redefinir/${token}`;
+      // No domínio próprio do cliente, quando ele tem um; com a marca dele (plano com marca própria).
+      const link = `${enderecoDoApp(req.get('origin'), deps.origens, u.conta_id)}/redefinir/${token}`;
+      const comMarca = !!(u.marca_nome || u.marca_cor) && (await temRecurso(pool, 'marca', u.conta_id));
+      const sistemaNome = comMarca && u.marca_nome ? u.marca_nome : 'Prospect Team';
       const primeiro = u.nome.trim().split(/\s+/)[0] ?? '';
       const e = montarEmail(
         {
-          assunto: 'Criar uma senha nova no Prospect Team',
-          corpo: `{saudacao}\n\nRecebemos um pedido para criar uma senha nova para ${u.email} no Prospect Team da ${u.conta}.\n\n[[Criar senha nova|${link}]]\n\nO link vale ${HORAS_REDEFINIR} hora e só funciona uma vez. Se não foi você, ignore este e-mail: sua senha atual continua a mesma.`,
+          assunto: `Criar uma senha nova no ${sistemaNome}`,
+          corpo: `{saudacao}\n\nRecebemos um pedido para criar uma senha nova para ${u.email} no ${sistemaNome}${sistemaNome === u.conta ? '' : ` da ${u.conta}`}.\n\n[[Criar senha nova|${link}]]\n\nO link vale ${HORAS_REDEFINIR} hora e só funciona uma vez. Se não foi você, ignore este e-mail: sua senha atual continua a mesma.`,
         },
         { nome: primeiro, empresa: u.conta },
         {
           marca: {
-            nome: 'Prospect Team',
+            nome: sistemaNome,
             estilo: 'cartao',
-            corPrimaria: '#0b6b63',
+            corPrimaria: (comMarca && u.marca_cor) || '#0b6b63',
             corFundo: '#f4f4f5',
             corTexto: '#1f2933',
             corCabecalho: '#ffffff',
@@ -298,7 +305,10 @@ export function rotasAuth(deps: DepsApi): Router {
       );
       try {
         await sistema.email.enviar({
-          de: { nome: `Prospect Team · ${sistema.plataforma}`, email: sistema.email.remetente },
+          de: {
+            nome: comMarca ? sistemaNome : `Prospect Team · ${sistema.plataforma}`,
+            email: sistema.email.remetente,
+          },
           para: u.email,
           assunto: e.assunto,
           html: e.html,
@@ -389,11 +399,13 @@ export function rotasAuth(deps: DepsApi): Router {
       marca_nome: string | null;
       marca_cor: string | null;
       tem_logo: boolean;
+      tem_icone: boolean;
       marca_versao: string | null;
       demonstracao: boolean;
     }>(
       `SELECT o.plano, o.modulos, o.id AS organizacao_id, o.nome AS organizacao, o.exigir_2fa, o.demonstracao,
               o.marca_nome, o.marca_cor, (o.marca_logo IS NOT NULL) AS tem_logo,
+              (o.marca_icone IS NOT NULL) AS tem_icone,
               extract(epoch FROM o.marca_atualizada_em)::bigint::text AS marca_versao,
               (SELECT count(*)::int FROM cadastro.contas x WHERE x.organizacao_id = o.id AND x.ativa) AS unidades
          FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE c.id = $1`,
@@ -428,18 +440,19 @@ export function rotasAuth(deps: DepsApi): Router {
       // Marca do cliente (white label): nome, cor e logo no sistema e nos relatórios.
       marca:
         c[0] &&
-        (c[0].marca_nome || c[0].marca_cor || c[0].tem_logo) &&
+        (c[0].marca_nome || c[0].marca_cor || c[0].tem_logo || c[0].tem_icone) &&
         (contrato?.recursos.includes('marca') ?? true)
           ? {
               nome: c[0].marca_nome,
               cor: c[0].marca_cor,
               logo: c[0].tem_logo ? `/organizacao/marca/logo?v=${c[0].marca_versao ?? '0'}` : null,
+              icone: c[0].tem_icone ? `/marca/arquivo/icone?v=${c[0].marca_versao ?? '0'}` : null,
             }
           : null,
       // O master dentro de outra conta (a tela mostra a faixa "você está na conta X").
       foraDaPropria: u.contaId !== u.contaPropria,
       // Endereço oficial do sistema: os links que a tela copia (reunião, agenda) saem com ele.
-      enderecoApp: enderecoDoApp(undefined, deps.origens),
+      enderecoApp: enderecoDoApp(undefined, deps.origens, u.contaId),
     });
   });
 

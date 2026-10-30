@@ -38,6 +38,8 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
     places_usd: number;
     buscas: number;
     buscas_7d: number;
+    dominios_ativos: number;
+    dominios_pendentes: number;
   }>(
     `SELECT (SELECT count(*) FROM comercial.chips WHERE ativo AND token_cifrado IS NOT NULL AND estado LIKE 'ok%')::int AS numeros,
             (SELECT count(DISTINCT conta_id) FROM comercial.chips WHERE ativo AND token_cifrado IS NOT NULL AND estado LIKE 'ok%')::int AS contas_numeros,
@@ -49,7 +51,9 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
             coalesce((SELECT sum(video_bytes) FROM comercial.sala_sessoes), 0)::float8 / 1e9 AS gb,
             coalesce((SELECT sum(gasto_usd) FROM descoberta.v_uso_places_mes WHERE mes = ${INICIO_MES_SP}), 0)::float8 AS places_usd,
             coalesce((SELECT sum(buscas) FROM cadastro.consumo_buscas WHERE dia >= ${INICIO_MES_SP}), 0)::int AS buscas,
-            coalesce((SELECT sum(buscas) FROM cadastro.consumo_buscas WHERE dia >= current_date - 7), 0)::int AS buscas_7d`,
+            coalesce((SELECT sum(buscas) FROM cadastro.consumo_buscas WHERE dia >= current_date - 7), 0)::int AS buscas_7d,
+            (SELECT count(*) FROM cadastro.organizacoes WHERE dominio_situacao = 'ativo')::int AS dominios_ativos,
+            (SELECT count(*) FROM cadastro.organizacoes WHERE dominio_situacao = 'pendente')::int AS dominios_pendentes`,
   );
   const u = rows[0]!;
   const reun = deps.reunioes ?? null;
@@ -211,6 +215,23 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
       u.buscas_7d > 0
         ? null
         : 'Se há campanhas rodando, confira SERPER_API_KEY e APIFY_TOKEN no worker-enriquecimento.',
+    testavel: false,
+  });
+
+  // Domínio próprio dos clientes (marca própria, plano Escala)
+  const temVercel = !!(amb.vercelToken && amb.vercelProjeto);
+  lista.push({
+    id: 'dominios',
+    nome: 'Domínio próprio dos clientes · Vercel',
+    papel:
+      'Cadastra no projeto do painel o domínio que o cliente configura (crm.empresa.com.br) e gera o HTTPS.',
+    estado: temVercel ? 'ok' : 'falta',
+    detalhe: temVercel
+      ? `${n(u.dominios_ativos)} ${u.dominios_ativos === 1 ? 'domínio ativo' : 'domínios ativos'}${u.dominios_pendentes ? ` · ${n(u.dominios_pendentes)} esperando o DNS` : ''}`
+      : 'Sem o token do Vercel: o cliente não consegue usar o domínio próprio.',
+    comoFazer: temVercel
+      ? null
+      : 'No Vercel: Account Settings › Tokens › Create (escopo do time do projeto). Coloque em VERCEL_TOKEN, o nome do projeto do painel em VERCEL_PROJETO e, se o projeto é de um time, o ID do time em VERCEL_TIME, na api do Railway.',
     testavel: false,
   });
   return lista;

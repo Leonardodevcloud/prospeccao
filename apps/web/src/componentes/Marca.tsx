@@ -1,5 +1,12 @@
 import { Icon } from '@prospeccao/ui';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  iniciais,
+  type MarcaPublica,
+  SITE_PROSPECT_TEAM,
+  useMarcaDoEndereco,
+  useMarcaNoNavegador,
+} from '../marcaPublica';
 
 const menosMovimento = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -133,11 +140,98 @@ function Avisos() {
   );
 }
 
+/** Selo da empresa: o ícone dela ou as iniciais na cor da marca. */
+export function SeloDaMarca(props: {
+  marca: Pick<MarcaPublica, 'nome' | 'cor' | 'icone'>;
+  tamanho?: number;
+  /** Fundo branco com as letras na cor da marca (sobre a cor da marca). */
+  claro?: boolean;
+}) {
+  const t = props.tamanho ?? 44;
+  const cor = props.marca.cor ?? '#0b6b63';
+  return (
+    <span
+      className="selo-marca"
+      aria-hidden="true"
+      style={{
+        width: t,
+        height: t,
+        fontSize: Math.round(t * 0.42),
+        background: props.claro ? '#fff' : cor,
+        color: props.claro ? cor : '#fff',
+      }}
+    >
+      {props.marca.icone ? <img src={`/api${props.marca.icone}`} alt="" /> : iniciais(props.marca.nome)}
+    </span>
+  );
+}
+
+/** "Tecnologia Prospect Team", discreto, no rodapé das telas com a marca do cliente. */
+export function TecnologiaProspectTeam(props: { className?: string }) {
+  return (
+    <p className={['tecnologia-pt', props.className].filter(Boolean).join(' ')}>
+      Tecnologia{' '}
+      <a href={SITE_PROSPECT_TEAM} target="_blank" rel="noopener">
+        Prospect Team
+      </a>
+    </p>
+  );
+}
+
+/** Painel da esquerda com a marca do cliente: a imagem de divulgação ou a cor dele com o logo. */
+function PainelDoCliente(props: { marca: MarcaPublica }) {
+  const m = props.marca;
+  return (
+    <section
+      className="acesso__marca acesso__marca--cliente"
+      aria-label={m.nome}
+      style={{ '--marca-cor': m.cor ?? '#0b6b63' } as React.CSSProperties}
+    >
+      <div className="acesso__cliente">
+        {m.logo ? (
+          <span className="acesso__cliente-logo">
+            <img src={`/api${m.logo}`} alt={m.nome} />
+          </span>
+        ) : (
+          <>
+            <SeloDaMarca marca={m} tamanho={44} claro />
+            <b>{m.nome}</b>
+          </>
+        )}
+      </div>
+      {m.imagem ? (
+        <img className="acesso__imagem" src={`/api${m.imagem}`} alt="" />
+      ) : (
+        <div className="acesso__chamada">
+          <h2>{m.nome}</h2>
+          <p>Acesso da equipe comercial.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /**
  * Moldura das telas de entrada (login, convite, senha): painel da marca à esquerda, formulário à direita.
- * No celular, o painel vira uma faixa no topo.
+ * No celular, o painel vira uma faixa no topo. No domínio próprio de um cliente, tudo com a marca dele.
  */
 export function TelaAcesso(props: { children: ReactNode }) {
+  const { marca, carregando } = useMarcaDoEndereco();
+  useMarcaNoNavegador(marca);
+  if (carregando) return <main className="acesso acesso--esperando" aria-busy="true" />;
+  if (marca)
+    return (
+      <main className="acesso acesso--cliente">
+        <PainelDoCliente marca={marca} />
+        <section className="acesso__lado">
+          <div className="acesso__selo">
+            <SeloDaMarca marca={marca} tamanho={48} />
+          </div>
+          {props.children}
+          <TecnologiaProspectTeam className="acesso__tecnologia" />
+        </section>
+      </main>
+    );
   return (
     <main className="acesso">
       <section className="acesso__marca" aria-label="Prospect Team">

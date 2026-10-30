@@ -65,6 +65,10 @@ export interface CredenciaisAmbiente {
   iaKey?: string | null;
   iaModelo?: string | null;
   iaBaseUrl?: string | null;
+  /** Vercel (domínio próprio dos clientes): token, projeto do painel e time. */
+  vercelToken?: string | null;
+  vercelProjeto?: string | null;
+  vercelTime?: string | null;
 }
 
 export type Origem = 'conta' | 'plataforma' | null;

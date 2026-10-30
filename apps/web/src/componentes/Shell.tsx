@@ -17,7 +17,7 @@ import { conversa as conversaArgos } from './argos/conversa';
 import { AceitarTermos, DuasEtapasObrigatoria, useAplicarMarca } from './ContaSegura';
 import { CartaoDemonstracao, FaixaDemonstracao } from './Demonstracao';
 import { ForaDoPlano, recursoDaTela } from './ForaDoPlano';
-import { Logo } from './Marca';
+import { Logo, TecnologiaProspectTeam } from './Marca';
 import { MinhaConta } from './MinhaConta';
 import { Dono, TELAS_DA_LEITURA, useSessao } from './Sessao';
 
@@ -80,6 +80,14 @@ const ITENS: {
   },
   { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up', secao: 'Gestão' },
   { para: '/equipe', rotulo: 'Equipe', icone: 'id-card', secao: 'Gestão' },
+  {
+    para: '/marca',
+    rotulo: 'Marca e domínio',
+    icone: 'image',
+    secao: 'Gestão',
+    admin: true,
+    recurso: 'marca',
+  },
   { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', secao: 'Gestão', comPlano: true },
   {
     para: '/auditoria',
@@ -392,6 +400,8 @@ export function Shell() {
           <Button variant="ghost" size="sm" icon="log-out" onClick={() => sair.mutate()}>
             Sair
           </Button>
+          {/* Com a marca do cliente, o Prospect Team fica só aqui, discreto. */}
+          {!plataforma && marca && <TecnologiaProspectTeam className="nav__tecnologia" />}
         </div>
       </nav>
       <main className="conteudo">

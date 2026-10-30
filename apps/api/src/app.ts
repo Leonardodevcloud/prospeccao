@@ -34,6 +34,8 @@ import { rotasImportacaoLeads } from './modulos/importacao-leads/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasInicio } from './modulos/inicio/rotas.js';
 import { rotasLgpd } from './modulos/lgpd/rotas.js';
+import { rotasMarcaPublica } from './modulos/marca/publico.js';
+import { rotasMarca } from './modulos/marca/rotas.js';
 import { rotasMaster } from './modulos/master/rotas.js';
 import { rotasNichos } from './modulos/nichos/rotas.js';
 import { rotasNotificacoes } from './modulos/notificacoes/rotas.js';
@@ -73,7 +75,7 @@ export function criarApp(deps: DepsApi): Express {
   app.use((req, res, next) =>
     req.path === '/importacoes-leads/analisar'
       ? jsonPlanilha(req, res, next)
-      : /^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$|^\/agente\/ia\/sugestoes$|^\/salas\/[a-z0-9-]+\/arquivos$/.test(
+      : /^\/marca$|^\/organizacao\/marca$|^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$|^\/agente\/ia\/sugestoes$|^\/salas\/[a-z0-9-]+\/arquivos$/.test(
             req.path,
           )
         ? jsonGrande(req, res, next)
@@ -104,6 +106,8 @@ export function criarApp(deps: DepsApi): Express {
   app.use('/e', rotasEmailPublico(deps));
   // Formulário do site institucional (outro domínio, sem login): limite por IP e campo-isca.
   app.use('/site', rotasSitePublico(deps));
+  // Marca pelo endereço (login, ícone, app do celular): sem login, só leitura.
+  app.use('/publico/marca', rotasMarcaPublica(deps));
   app.use(exigirOrigemConhecida(deps.origens));
   app.use('/auth', rotasAuth(deps));
   // Sala de reunião pelo link (o convidado não tem login; quem é do time entra pelo cookie).
@@ -130,6 +134,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/equipe', rotasEquipe(deps));
   protegidas.use('/inicio', rotasInicio(deps));
   protegidas.use('/organizacao', rotasOrganizacao(deps));
+  protegidas.use('/marca', rotasMarca(deps));
   protegidas.use('/lgpd', rotasLgpd(deps));
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));

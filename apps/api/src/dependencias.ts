@@ -3,6 +3,7 @@ import type { Filas } from '@prospeccao/queue';
 import type { Logger } from '@prospeccao/shared';
 import type { DepsAssistente } from './modulos/assistente/rotas.js';
 import type { ServicoDominios } from './modulos/email/dominio.js';
+import type { DominiosSite } from './modulos/marca/vercel.js';
 import type { AoEncerrar, DepsReunioes } from './modulos/reunioes/servico.js';
 import type { ResolverServicos } from './servicos.js';
 
@@ -44,4 +45,6 @@ export interface DepsApi {
    * desligado e a tela explica). aoEncerrar chama o processamento logo que uma reunião gravada acaba.
    */
   reunioes?: (DepsReunioes & { aoEncerrar?: AoEncerrar }) | null;
+  /** Domínio próprio dos clientes no Vercel (padrão: pelas variáveis VERCEL_*; os testes simulam). */
+  dominiosSite?: DominiosSite | null;
 }

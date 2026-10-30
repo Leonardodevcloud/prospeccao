@@ -103,7 +103,7 @@ export function RedefinirSenha() {
             <div>
               <h1>Senha nova</h1>
               <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-                {link.data.nome.split(' ')[0]}, crie a senha nova para {link.data.email} no Prospect Team da{' '}
+                {link.data.nome.split(' ')[0]}, crie a senha nova para {link.data.email} no sistema da{' '}
                 {link.data.conta}.
               </p>
             </div>

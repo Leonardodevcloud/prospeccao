@@ -4,6 +4,7 @@ import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { criarApp } from './app.js';
 import { carregarEnvApi, credenciaisDoAmbiente } from './config.js';
+import { manterDominios } from './dominios.js';
 import { iniciarLembretes } from './modulos/agenda/lembretes.js';
 import { iniciarAgente } from './modulos/agente/motor.js';
 import { iniciarAlertas } from './modulos/alertas/rotina.js';
@@ -11,6 +12,8 @@ import { prepararAssistente } from './modulos/assistente/preparar.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
+import { iniciarDominios } from './modulos/marca/rotina.js';
+import { dominiosDoAmbiente } from './modulos/marca/vercel.js';
 import { iniciarPlanos } from './modulos/plano/rotina.js';
 import { iniciarPush } from './modulos/push/servico.js';
 import { prepararReunioes } from './modulos/reunioes/preparar.js';
@@ -94,6 +97,11 @@ const pararPlanos = iniciarPlanos({ pool, log, filas });
 // Importação de leads: põe no funil o que o worker terminou de gravar (quando o cliente pediu).
 const pararImportacao = iniciarImportacaoLeads(pool, log);
 const pararSinal = manterSinalDeVida(pool, 'api');
+// Marca própria: domínios ativos dos clientes (links e origens) e conferência dos que esperam o DNS.
+const pararListaDominios = manterDominios(pool, (erro) =>
+  log.warn({ err: erro }, 'marca: lista de domínios falhou'),
+);
+const pararDominios = iniciarDominios({ pool, log, site: () => dominiosDoAmbiente(ambiente) });
 
 encerrarAoReceberSinal(log, async () => {
   pararAutomacao();
@@ -104,6 +112,8 @@ encerrarAoReceberSinal(log, async () => {
   pararEmail();
   pararAlertas();
   pararSinal();
+  pararListaDominios();
+  pararDominios();
   processamento.parar();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
   await filas.parar();

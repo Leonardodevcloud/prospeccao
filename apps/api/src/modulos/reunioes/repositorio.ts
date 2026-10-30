@@ -9,7 +9,8 @@ import {
   type ResumoReuniao,
   type StatusSala,
 } from '@prospeccao/shared';
-import { contaSql, donoDaBase, empresaNaBase } from '../../contexto.js';
+import { contaAtual, contaSql, donoDaBase, empresaNaBase } from '../../contexto.js';
+import { enderecoDaConta } from '../../dominios.js';
 import { exigirRecurso } from '../../recursos.js';
 
 /**
@@ -27,7 +28,9 @@ export function definirEnderecoDasSalas(origem: string | undefined): void {
   if (origem) enderecoBase = origem.replace(/\/+$/, '');
 }
 
-export const linkDaSala = (codigo: string) => `${enderecoBase}/r/${codigo}`;
+/** Link da sala: no domínio próprio do cliente da conta, quando ele tem um; senão, no do sistema. */
+export const linkDaSala = (codigo: string, contaId: number | null = contaAtual()) =>
+  `${enderecoDaConta(contaId) ?? enderecoBase}/r/${codigo}`;
 
 /** O "local" da tarefa é o link de uma sala do sistema? */
 export const ehLinkDeSala = (local: string | null | undefined) =>

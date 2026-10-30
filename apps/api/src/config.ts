@@ -46,6 +46,14 @@ export const esquemaEnvApi = envBase.extend({
   IA_BASE_URL: opcional(z.string().url()),
   /** Argos (assistente de voz): ouvir pelo Whisper (Groq por padrão) e falar pelo gpt-4o-mini-tts. */
   GROQ_CHAVE: opcional(z.string().min(10)),
+  /**
+   * Domínio próprio dos clientes (marca própria): token da API do Vercel, o projeto do painel (id ou
+   * nome) e o time (id, quando o projeto é de um time). Com eles, o sistema cadastra sozinho o
+   * domínio que o cliente configurar e confere quando fica ativo.
+   */
+  VERCEL_TOKEN: opcional(z.string().min(10)),
+  VERCEL_PROJETO: opcional(z.string().min(2)),
+  VERCEL_TIME: opcional(z.string().min(2)),
   VOZ_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
   VOZ_MODELO: z.string().default('whisper-large-v3-turbo'),
   OPENAI_CHAVE: opcional(z.string().min(10)),
@@ -117,6 +125,9 @@ export function credenciaisDoAmbiente(env: EnvApi) {
     iaKey: env.IA_API_KEY ?? env.GEMINI_API_KEY ?? null,
     iaModelo: iaLegada ? env.GEMINI_MODELO : (env.IA_MODELO ?? null),
     iaBaseUrl: env.IA_BASE_URL ?? null,
+    vercelToken: env.VERCEL_TOKEN ?? null,
+    vercelProjeto: env.VERCEL_PROJETO ?? null,
+    vercelTime: env.VERCEL_TIME ?? null,
   };
 }
 

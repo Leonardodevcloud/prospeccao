@@ -911,7 +911,7 @@ export interface Sessao {
   /** Termos de uso e política de privacidade: a versão em vigor e se a pessoa já aceitou. */
   termos: { versao: string; aceitos: boolean };
   /** Marca do cliente (white label). `logo`: caminho na api. */
-  marca: { nome: string | null; cor: string | null; logo: string | null } | null;
+  marca: { nome: string | null; cor: string | null; logo: string | null; icone?: string | null } | null;
   /** Papel na organização inteira: gestor (administra todas as unidades) ou leitura (só olha). */
   papelOrganizacao: 'gestor' | 'leitura' | null;
   /** Vê só a própria base: as negociações em que é a responsável (o gestor escolhe na Equipe). */

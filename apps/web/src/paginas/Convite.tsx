@@ -54,7 +54,7 @@ export function Convite() {
             <div>
               <h1>Olá, {convite.data.nome.split(' ')[0]}!</h1>
               <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-                Crie sua senha para entrar no Prospect Team
+                Crie sua senha para entrar no sistema
                 {convite.data.conta ? ` da ${convite.data.conta}` : ''} com {convite.data.email}.
               </p>
             </div>

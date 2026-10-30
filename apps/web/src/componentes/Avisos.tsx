@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api, type Notificacao } from '../api';
 import { fmtQuando } from '../formatar';
+import { nomeDaAba } from '../marcaPublica';
 import { Drawer } from './Drawer';
 
 const ICONE: Record<Notificacao['tipo'], string> = {
@@ -40,7 +41,7 @@ export function useAvisosNoNavegador(itens: Notificacao[] | undefined, naoLidas:
   const vistos = useRef<Set<number> | null>(null);
   const navegar = useNavigate();
   useEffect(() => {
-    document.title = naoLidas > 0 ? `(${naoLidas}) Prospect Team` : 'Prospect Team';
+    document.title = naoLidas > 0 ? `(${naoLidas}) ${nomeDaAba()}` : nomeDaAba();
   }, [naoLidas]);
   useEffect(() => {
     if (!itens) return;

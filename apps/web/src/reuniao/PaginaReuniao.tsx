@@ -5,12 +5,14 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 import { ErroApi } from '../api';
 import { Mensagem } from '../componentes/Formulario';
+import { TecnologiaProspectTeam } from '../componentes/Marca';
 import { Antessala, type Escolhas } from './Antessala';
 import { apiSala, type InfoSala, type Liberado } from './api';
 import { retomarEnviosPendentes } from './envio';
 import { Sala, useEstadoGravador } from './Sala';
 import './reuniao.css';
 import { linkDaSala } from '../endereco';
+import { useMarcaDoEndereco, useMarcaNoNavegador } from '../marcaPublica';
 
 /**
  * Página do link da reunião (/r/<código>): antes da hora mostra quanto falta; depois, a antessala
@@ -57,7 +59,9 @@ function Moldura(props: { info?: InfoSala; children: React.ReactNode }) {
     <div className="rp" data-theme="light">
       {props.info && <Marca empresa={props.info.empresa} />}
       <main className="rp__meio">{props.children}</main>
-      <footer className="rp__rodape">Reunião feita pelo Prospect Team</footer>
+      <footer className="rp__rodape">
+        <TecnologiaProspectTeam />
+      </footer>
     </div>
   );
 }
@@ -128,6 +132,8 @@ export function PaginaReuniao() {
     retry: (n, erro) => !(erro instanceof ErroApi && erro.status < 500) && n < 3,
   });
   const agora = useRelogio(info.data?.agora);
+  // No domínio próprio do cliente: ícone, nome e cor dele na aba.
+  useMarcaNoNavegador(useMarcaDoEndereco().marca);
   // Gravação de uma reunião anterior que não terminou de subir (a aba fechou): sobe agora.
   useEffect(() => {
     void retomarEnviosPendentes();

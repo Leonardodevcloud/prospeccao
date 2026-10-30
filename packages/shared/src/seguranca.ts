@@ -50,8 +50,43 @@ export const marcaEntrada = z.object({
     .max(420_000, 'Logo grande demais: use uma imagem de até 300 KB.')
     .regex(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/, 'Use uma imagem PNG ou JPG.')
     .nullish(),
+  /** Ícone quadrado (aba do navegador e app no celular), PNG ou JPEG até 200 KB. */
+  icone: z
+    .string()
+    .max(280_000, 'Ícone grande demais: use uma imagem de até 200 KB.')
+    .regex(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/, 'Use uma imagem PNG ou JPG.')
+    .nullish(),
+  /** Imagem de divulgação (ao lado do login e na prévia do link), PNG ou JPEG até 1 MB. */
+  imagem: z
+    .string()
+    .max(1_400_000, 'Imagem grande demais: use uma imagem de até 1 MB.')
+    .regex(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/, 'Use uma imagem PNG ou JPG.')
+    .nullish(),
 });
 export type MarcaEntrada = z.infer<typeof marcaEntrada>;
+
+/** Domínio próprio do cliente (crm.suaempresa.com.br): aceita colar com https:// ou barra no fim. */
+export const dominioEntrada = z.object({
+  dominio: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .transform((d) =>
+      d
+        .replace(/^[a-z]+:\/\//, '')
+        .replace(/[/?#].*$/, '')
+        .replace(/\.$/, ''),
+    )
+    .pipe(
+      z
+        .string()
+        .max(200)
+        .regex(
+          /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/,
+          'Use um endereço como crm.suaempresa.com.br (sem espaços nem acentos).',
+        ),
+    ),
+});
 
 export const segurancaOrganizacao = z.object({ exigirDuasEtapas: z.boolean() });
 

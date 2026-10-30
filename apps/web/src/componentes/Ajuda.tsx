@@ -673,6 +673,90 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'marca-dominio',
+    area: 'Gestão',
+    titulo: 'Marca e domínio próprio',
+    resumo:
+      'O sistema com o nome, a cor, o logo e o endereço da sua empresa (crm.suaempresa.com.br). Você mesmo configura.',
+    onde: { rotulo: 'Marca e domínio', para: '/marca' },
+    termos:
+      'marca white label logo logotipo cor ícone icone favicon imagem divulgação domínio dominio próprio endereço subdomínio crm dns cname registro.br cloudflare hostinger godaddy whatsapp prévia link personalizar',
+    corpo: (
+      <>
+        <p>
+          No plano Escala, o sistema fica com a cara da sua empresa: o nome, a cor e o logo aparecem no menu,
+          no login, na sala de reunião e nos relatórios, e a equipe e os clientes usam o endereço da empresa.
+          O Prospect Team fica só num discreto “Tecnologia Prospect Team” no rodapé. Quem configura é o gestor
+          da organização (ou o administrador, quando a empresa tem uma unidade só), e vale para todas as
+          unidades.
+        </p>
+        <h3>Marca</h3>
+        <ul>
+          <li>
+            <b>Nome</b> e <b>cor principal</b>: a cor vira a cor dos botões e destaques. Cores muito claras
+            não são aceitas, porque o texto branco dos botões ficaria ilegível.
+          </li>
+          <li>
+            <b>Logo</b>: PNG com fundo transparente fica melhor. Vai no menu, no login e na sala de reunião.
+          </li>
+          <li>
+            <b>Ícone</b>: uma imagem quadrada (o sistema ajusta o tamanho). É o ícone da aba do navegador e do
+            app instalado no celular.
+          </li>
+          <li>
+            <b>Imagem de divulgação</b>: aparece ao lado do login e na prévia quando alguém manda um link do
+            sistema no WhatsApp (convite, reunião). Sem ela, usamos a cor com o logo.
+          </li>
+        </ul>
+        <p>
+          O quadro <b>Como fica</b> mostra o resultado antes de salvar. <b>Voltar ao padrão</b> tira tudo.
+        </p>
+        <h3>Domínio próprio, passo a passo</h3>
+        <Passos>
+          <li>
+            Escolha um <b>subdomínio</b> do site da empresa, como <b>crm.</b>suaempresa.com.br ou{' '}
+            <b>sistema.</b>suaempresa.com.br, e clique em <b>Usar este endereço</b>. O site da empresa
+            continua igual.
+          </li>
+          <li>
+            A tela mostra um registro (tipo <b>CNAME</b>, nome e valor) com botões de copiar. Escolha onde o
+            seu domínio está (Registro.br, Cloudflare, Hostinger, GoDaddy ou outro) e siga o passo a passo que
+            aparece. Não tem acesso ao DNS? <b>Copiar instruções</b> gera um texto pronto para mandar a quem
+            cuida do site.
+          </li>
+          <li>
+            Pronto. O sistema confere sozinho a cada 5 minutos e o domínio passa a valer assim que o DNS
+            chegar (de minutos a algumas horas). Se quiser, clique em <b>Conferir agora</b>.
+          </li>
+        </Passos>
+        <p>
+          Quando aparece <b>Ativo</b>, o login, os links de reunião, os convites e o “esqueci a senha” saem
+          com o seu endereço, com cadeado (HTTPS) renovado sozinho. O endereço de antes continua funcionando.
+          Na primeira vez no endereço novo, cada pessoa entra de novo com e-mail e senha.
+        </p>
+        <h3>Se não ativar</h3>
+        <ul>
+          <li>
+            Muitos painéis completam o nome sozinhos com o domínio: se a tela mostra o nome <b>crm</b>, digite
+            só <b>crm</b> (e não crm.suaempresa.com.br).
+          </li>
+          <li>
+            No Cloudflare, deixe a nuvem <b>cinza</b> (Proxy desligado, “DNS only”). Com a nuvem laranja o
+            endereço não ativa.
+          </li>
+          <li>
+            Se aparecer também um registro <b>TXT</b>, o endereço já foi usado em outro site: crie os dois.
+          </li>
+          <li>Passou um dia e continua aguardando: fale com o suporte do Prospect Team.</li>
+        </ul>
+        <Nota>
+          A marca própria é para usar o sistema com a marca da sua empresa, com a sua equipe e os seus
+          clientes. Não inclui revender o sistema para outras empresas.
+        </Nota>
+      </>
+    ),
+  },
+  {
     id: 'meu-plano',
     area: 'Gestão',
     titulo: 'Planos, módulos e limites',
@@ -831,7 +915,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Receita e custo de cada cliente, desativar ou excluir, e-mail e senha, os serviços da plataforma e o CRM com dados fictícios.',
     onde: { rotulo: 'Financeiro', para: '/plataforma/financeiro' },
     termos:
-      'master painel plataforma administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
+      'master painel plataforma domínio dominio vercel white label marca administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
     corpo: (
       <>
         <p>
@@ -908,6 +992,14 @@ export const ARTIGOS: ArtigoAjuda[] = [
           entrando na conta de um cliente). Se sobrou algo de quando ela era usada como CRM, Configurações ›{' '}
           <b>Conta da plataforma</b> › <b>Zerar dados antigos</b> apaga campanhas, funil, conversas, reuniões
           e avisos, e mantém administradores, chaves, números, configurações e o histórico de custo.
+        </p>
+        <h3>Domínio próprio dos clientes</h3>
+        <p>
+          Os clientes do plano Escala configuram sozinhos o endereço próprio (Marca e domínio). Para isso
+          funcionar, a plataforma precisa do acesso ao Vercel: em Configurações, o serviço{' '}
+          <b>Domínio próprio dos clientes</b> mostra se está tudo certo e, em <b>Como fazer</b>, quais
+          variáveis colocar no Railway. Nada de domínio é feito à mão: o sistema cadastra o endereço no
+          projeto do painel, confere o DNS e gera o cadeado.
         </p>
         <h3>CRM de demonstração</h3>
         <Passos>

@@ -46,8 +46,9 @@ import * as repo from './repositorio.js';
 export function rotasMaster(deps: DepsApi): Router {
   const { pool, credenciais, origens, log } = deps;
   const r = Router();
-  const link = (req: Request, token: string) =>
-    `${enderecoDoApp(req.get('origin'), origens)}/convite/${token}`;
+  // No domínio próprio do cliente da conta, quando ele tem um.
+  const link = (req: Request, token: string, contaId?: number) =>
+    `${enderecoDoApp(req.get('origin'), origens, contaId)}/convite/${token}`;
 
   /** Administradores da plataforma (outros masters). */
   r.use('/administradores', rotasAdministradores(deps));
@@ -384,7 +385,7 @@ export function rotasMaster(deps: DepsApi): Router {
     await repo.obter(pool, id);
     const d = corpo(req, usuarioNovo);
     const { id: usuarioId, token } = await comConta(id, () => equipe.criar(pool, d));
-    res.status(201).json({ id: usuarioId, convite: link(req, token), diasValidade: equipe.DIAS_CONVITE });
+    res.status(201).json({ id: usuarioId, convite: link(req, token, id), diasValidade: equipe.DIAS_CONVITE });
   });
 
   /** Novo link de acesso para alguém de qualquer conta (convite vencido, senha esquecida). */
@@ -396,7 +397,7 @@ export function rotasMaster(deps: DepsApi): Router {
     );
     if (!rows[0]) throw AppError.naoEncontrado('Usuário');
     const token = await comConta(rows[0].conta_id, () => equipe.novoConvite(pool, id));
-    res.json({ convite: link(req, token), diasValidade: equipe.DIAS_CONVITE });
+    res.json({ convite: link(req, token, rows[0].conta_id), diasValidade: equipe.DIAS_CONVITE });
   });
 
   /** Entra na conta (o sistema todo passa a mostrar os dados dela; você age como administrador). */

@@ -282,6 +282,23 @@ export async function novoConvite(pool: Pool, organizacaoId: number, id: number)
 
 /* ───────────── Marca e segurança da organização ───────────── */
 
+/** Confere uma imagem em data URL (PNG ou JPEG de verdade, no tamanho) e devolve os bytes. */
+function imagemDaMarca(dataUrl: string, limiteKb: number, oQue: string): { buf: Buffer; tipo: string } {
+  const [cabeca, dados] = dataUrl.split(',');
+  const tipo = cabeca!.includes('png') ? 'image/png' : 'image/jpeg';
+  const buf = Buffer.from(dados ?? '', 'base64');
+  // Confere o arquivo de verdade (não só o que o navegador disse).
+  const png = buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const jpg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  if ((tipo === 'image/png' && !png) || (tipo === 'image/jpeg' && !jpg))
+    throw AppError.invalido(`${oQue}: o arquivo não é uma imagem PNG ou JPG válida.`);
+  if (buf.length > limiteKb * 1024)
+    throw AppError.invalido(
+      `${oQue} grande demais: use uma imagem de até ${limiteKb >= 1024 ? `${limiteKb / 1024} MB` : `${limiteKb} KB`}.`,
+    );
+  return { buf, tipo };
+}
+
 export async function salvarMarca(db: Executor, organizacaoId: number, d: MarcaEntrada): Promise<void> {
   const sets: string[] = ['marca_atualizada_em = now()'];
   const valores: unknown[] = [organizacaoId];
@@ -291,23 +308,21 @@ export async function salvarMarca(db: Executor, organizacaoId: number, d: MarcaE
   };
   if (d.nome !== undefined) set('marca_nome', d.nome || null);
   if (d.cor !== undefined) set('marca_cor', d.cor || null);
-  if (d.logo !== undefined) {
-    if (d.logo === null) {
-      set('marca_logo', null);
-      set('marca_logo_tipo', null);
+  const arquivos: [keyof MarcaEntrada, string, number, string][] = [
+    ['logo', 'marca_logo', 300, 'Logo'],
+    ['icone', 'marca_icone', 200, 'Ícone'],
+    ['imagem', 'marca_imagem', 1024, 'Imagem de divulgação'],
+  ];
+  for (const [campo, coluna, limiteKb, oQue] of arquivos) {
+    const v = d[campo];
+    if (v === undefined) continue;
+    if (v === null) {
+      set(coluna, null);
+      set(`${coluna}_tipo`, null);
     } else {
-      const [cabeca, dados] = d.logo.split(',');
-      const tipo = cabeca!.includes('png') ? 'image/png' : 'image/jpeg';
-      const buf = Buffer.from(dados ?? '', 'base64');
-      // Confere o arquivo de verdade (não só o que o navegador disse).
-      const png = buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-      const jpg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
-      if ((tipo === 'image/png' && !png) || (tipo === 'image/jpeg' && !jpg))
-        throw AppError.invalido('O arquivo não é uma imagem PNG ou JPG válida.');
-      if (buf.length > 300 * 1024)
-        throw AppError.invalido('Logo grande demais: use uma imagem de até 300 KB.');
-      set('marca_logo', buf);
-      set('marca_logo_tipo', tipo);
+      const { buf, tipo } = imagemDaMarca(v, limiteKb, oQue);
+      set(coluna, buf);
+      set(`${coluna}_tipo`, tipo);
     }
   }
   await db.query(`UPDATE cadastro.organizacoes SET ${sets.join(', ')} WHERE id = $1`, valores);

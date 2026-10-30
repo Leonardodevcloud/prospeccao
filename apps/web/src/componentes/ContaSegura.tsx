@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import { fmtQuando } from '../formatar';
+import { aplicarCor, aplicarNoNavegador } from '../marcaPublica';
 import { Modal } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { useSessao } from './Sessao';
@@ -391,23 +392,19 @@ export function AceitarTermos(props: { versao: string }) {
   );
 }
 
-/** Marca do cliente: a cor vira a cor do sistema (botões, links, destaques). */
+/**
+ * Marca do cliente: a cor vira a cor do sistema (botões, links, destaques) e o ícone e o nome vão
+ * para a aba do navegador e o app do celular.
+ */
 export function useAplicarMarca() {
-  const marca = useSessao().data?.marca;
+  const sessao = useSessao().data;
+  const marca = sessao?.marca;
   const cor = marca?.cor ?? null;
+  const nome = marca?.nome ?? sessao?.organizacao?.nome ?? null;
+  const icone = marca?.icone ?? null;
+  const comMarca = !!marca;
   useEffect(() => {
-    const raiz = document.documentElement.style;
-    const vars = ['--brand', '--brand-hover', '--brand-soft', '--focus-ring'];
-    if (!cor) {
-      for (const v of vars) raiz.removeProperty(v);
-      return;
-    }
-    raiz.setProperty('--brand', cor);
-    raiz.setProperty('--brand-hover', `color-mix(in srgb, ${cor} 85%, black)`);
-    raiz.setProperty('--brand-soft', `color-mix(in srgb, ${cor} 12%, white)`);
-    raiz.setProperty('--focus-ring', `0 0 0 2px #f7f7f5, 0 0 0 4px ${cor}`);
-    return () => {
-      for (const v of vars) raiz.removeProperty(v);
-    };
-  }, [cor]);
+    aplicarNoNavegador(comMarca ? { nome: nome || 'Prospect Team', cor, icone } : null);
+    return aplicarCor(cor);
+  }, [comMarca, nome, cor, icone]);
 }
