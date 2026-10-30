@@ -78,6 +78,9 @@ const roteador = createBrowserRouter([
       { path: 'relatorios', element: <Relatorios /> },
       { path: 'reunioes', element: <Reunioes /> },
       { path: 'reunioes/:id', element: <ReuniaoDetalhe /> },
+      // Vendas na rua (o mapa só carrega aqui).
+      { path: 'rua', lazy: async () => ({ Component: (await import('./paginas/NaRua')).NaRua }) },
+      { path: 'rua/visita/:id', lazy: async () => ({ Component: (await import('./rua/Visita')).Visita }) },
       { path: 'agente', element: <Agente /> },
       { path: 'campanhas', element: <Campanhas /> },
       { path: 'atividade', element: <Atividade /> },

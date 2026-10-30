@@ -46,6 +46,7 @@ const ITENS: {
   { para: '/funil', rotulo: 'Funil', icone: 'kanban', secao: 'Vendas' },
   { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle', secao: 'Vendas' },
   { para: '/reunioes', rotulo: 'Reuniões', icone: 'video', secao: 'Vendas' },
+  { para: '/rua', rotulo: 'Na rua', icone: 'route', secao: 'Vendas' },
   { para: '/email', rotulo: 'E-mail', icone: 'mail', secao: 'Vendas', modulos: ['email'] },
   { para: '/agente', rotulo: 'Agente', icone: 'bot', secao: 'Vendas', modulos: ['whatsapp', 'agente_ia'] },
   { para: '/argos', rotulo: 'Argos', icone: 'orbit', secao: 'Argos', fim: true },

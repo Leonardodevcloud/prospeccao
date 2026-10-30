@@ -156,6 +156,19 @@ export interface ServicosConta {
   reuniao?: { resumir(e: EntradaResumoReuniao): Promise<ResumoReuniao | null> } | null;
   /** Endereço → coordenadas (bases de operação). */
   geocodificar: ((endereco: string) => Promise<{ lat: number; lng: number } | null>) | null;
+  /**
+   * Caminho pelas ruas (vendas na rua): tempo e distância entre os pontos e a linha para o mapa.
+   * Sem ele, o roteiro usa a estimativa em linha reta.
+   */
+  rotas?: {
+    matriz(pontos: { lat: number; lng: number }[]): Promise<{
+      minutos: (number | null)[][];
+      km: (number | null)[][];
+    }>;
+    tracado(
+      pontos: { lat: number; lng: number }[],
+    ): Promise<{ linha: [number, number][]; km: number; minutos: number }>;
+  } | null;
   /** IA que lê a planilha de leads importada (o que é cada coluna) e tira os leads de um PDF. */
   iaImportacao?: {
     mapear(e: { linhas: string[][]; palpite: MapaImportacao; cabecalho: number | null }): Promise<{
@@ -250,6 +263,12 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
       ? async (endereco) => {
           const r = await ors.geocodificar({ apiKey: c.ors!.apiKey }, endereco);
           return r && r.confianca >= 0.6 ? { lat: r.lat, lng: r.lng } : null;
+        }
+      : null,
+    rotas: c.ors
+      ? {
+          matriz: (pontos) => ors.matriz({ apiKey: c.ors!.apiKey }, pontos),
+          tracado: (pontos) => ors.tracado({ apiKey: c.ors!.apiKey }, pontos),
         }
       : null,
     iaImportacao: iaCfg

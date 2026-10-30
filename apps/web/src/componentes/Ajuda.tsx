@@ -278,6 +278,95 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'vendas-na-rua',
+    area: 'Vendas',
+    titulo: 'Vendas na rua (roteiro de visitas)',
+    resumo: 'Monte o dia de visitas pelos leads da campanha, siga no celular e registre cada visita.',
+    onde: { rotulo: 'Na rua', para: '/rua' },
+    termos:
+      'visita visitas rota roteiro mapa campo rua externo vendedor externo check-in checkin waze google maps celular foto fachada km quilometragem gestor',
+    corpo: (
+      <>
+        <p>
+          Para quem vende visitando os clientes. O sistema escolhe, entre os leads de uma campanha, os
+          melhores que cabem no dia, coloca na ordem que anda menos e diz a hora de chegada em cada um. No
+          celular, o vendedor segue o roteiro, faz o check-in e registra como foi cada visita; o lead anda no
+          funil sozinho.
+        </p>
+        <h3>Planejar o dia (no computador)</h3>
+        <Passos>
+          <li>
+            Em <b>Vendas › Na rua › Planejar o dia</b>, escolha o dia e, se você é administrador, de quem é o
+            roteiro.
+          </li>
+          <li>
+            Em <b>Quais leads entram</b>, escolha a campanha, as notas (A, B, C) e a situação: nunca
+            visitados, em negociação ou clientes.
+          </li>
+          <li>
+            Diga de onde o vendedor sai (a base da empresa, a localização do celular ou outro endereço; o
+            administrador pode guardar o endereço digitado como base da empresa), o horário, quanto tempo dura
+            cada visita, o almoço e até quantos km da saída.
+          </li>
+          <li>
+            Clique em <b>Sugerir roteiro do dia</b>. Os leads mais importantes entram primeiro (nota, quem já
+            está em conversa e quem tem próximo passo vencido), até o dia acabar.
+          </li>
+          <li>
+            Ajuste à mão se quiser: tire uma visita no <b>×</b>, mude a ordem com as setas ou clique num lead
+            do mapa para incluir. <b>Otimizar a ordem</b> refaz o caminho para andar menos.
+          </li>
+          <li>
+            Clique em <b>Mandar para o celular</b> do vendedor. Ele recebe o aviso e o roteiro aparece em{' '}
+            <b>Na rua</b>.
+          </li>
+        </Passos>
+        <p>
+          Os pontinhos do mapa são os leads da campanha, na cor da nota. Os apagados não entram pelos filtros
+          escolhidos ou já estão no roteiro de outra pessoa nesse dia. Lead que foi visitado nos últimos dias
+          não é sugerido de novo.
+        </p>
+        <h3>No celular</h3>
+        <Passos>
+          <li>
+            Abra <b>Na rua</b>: aparece a próxima visita, com o endereço, com quem falar e em que pé está a
+            negociação.
+          </li>
+          <li>
+            <b>Ir com o Waze</b> (ou Google Maps) abre o caminho. Ao chegar, toque em <b>Cheguei</b>: o
+            sistema guarda a hora e confere se você está no endereço da empresa.
+          </li>
+          <li>
+            Na visita, escolha <b>como foi</b> (falei com quem decide, pediu proposta, marcou reunião, não
+            estava, sem interesse, fechou), escreva ou fale a anotação e, se quiser, tire a foto da fachada.
+          </li>
+          <li>
+            O próximo passo vem sugerido (lido da sua anotação, quando a IA está ligada); troque se quiser.{' '}
+            <b>Concluir e ir para a próxima</b> volta para o roteiro.
+          </li>
+        </Passos>
+        <p>
+          A visita entra no histórico do lead e o funil anda conforme o resultado: pediu proposta vai para
+          Proposta; marcou reunião, para Reunião; fechou, para Ganho; sem interesse, para Perdido. O lead
+          nunca volta de etapa. Não deu para ir? Use <b>Pular esta visita</b> (dá para voltar depois).
+        </p>
+        <h3>Acompanhar a equipe</h3>
+        <p>
+          Em <b>Visitas da equipe</b>, o gestor vê, por dia, semana ou mês: visitas feitas, quantas foram com
+          quem decide, propostas e reuniões, e os km planejados. Cada vendedor aparece com o andamento e onde
+          está agora (na visita tal desde que horas, a caminho da próxima, terminou), e as últimas visitas
+          trazem a anotação e a foto.
+        </p>
+        <Nota>
+          A localização do vendedor só é usada no momento do check-in, para conferir a chegada: o sistema não
+          acompanha o celular durante o dia. Sem o cálculo pelas ruas ligado (chave do OpenRouteService), os
+          tempos são estimados pela distância. A foto da fachada precisa do armazenamento de arquivos (o mesmo
+          das gravações), e falar a anotação precisa da voz do Argos.
+        </Nota>
+      </>
+    ),
+  },
+  {
     id: 'conversas',
     area: 'Vendas',
     titulo: 'Conversas e “Sem lead”',

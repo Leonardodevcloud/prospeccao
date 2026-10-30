@@ -43,6 +43,7 @@ import { rotasPlataforma } from './modulos/plataforma/rotas.js';
 import { rotasRelatorios } from './modulos/relatorios/rotas.js';
 import { definirEnderecoDasSalas } from './modulos/reunioes/repositorio.js';
 import { rotasAvisoVideo, rotasReunioes, rotasSalaPublica } from './modulos/reunioes/rotas.js';
+import { rotasRua } from './modulos/rua/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
 import { rotasSiteMaster, rotasSitePublico } from './modulos/site/rotas.js';
 
@@ -133,6 +134,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/conversas', rotasConversas(deps));
   protegidas.use('/agenda', rotasAgenda(deps));
   protegidas.use('/reunioes', rotasReunioes(deps));
+  protegidas.use('/rua', rotasRua(deps));
   protegidas.use('/email/dominio', rotasDominioEmail(deps));
   protegidas.use('/email', rotasEmail(deps));
   protegidas.use('/atividade', rotasAtividade(deps));
