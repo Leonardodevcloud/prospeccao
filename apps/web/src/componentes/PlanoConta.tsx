@@ -418,7 +418,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
                   id="pl-horas"
                   className="filtro mono"
                   inputMode="numeric"
-                  placeholder={`Do plano: ${pronto?.horasReuniao ?? 0}`}
+                  placeholder={`Do plano: ${pronto ? (pronto.horasReuniao ?? 'sem limite') : 0}`}
                   value={f.horas}
                   onChange={(e) => setF({ ...f, horas: e.target.value.replace(/\D/g, '') })}
                 />
@@ -429,7 +429,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
                   id="pl-conversas"
                   className="filtro mono"
                   inputMode="numeric"
-                  placeholder={`Padrão: ${fmtNumero(tabela.conversasIaMes)}`}
+                  placeholder={`Padrão: ${tabela.conversasIaMes == null ? 'sem limite' : fmtNumero(tabela.conversasIaMes)}`}
                   value={f.conversas}
                   onChange={(e) => setF({ ...f, conversas: e.target.value.replace(/\D/g, '') })}
                 />
@@ -523,6 +523,29 @@ export function TabelaDePrecos() {
       />
     </div>
   );
+  /** Número com "em branco = sem limite". */
+  const campoLimite = (
+    id: string,
+    rotulo: string,
+    valor: number | null,
+    aoMudar: (v: number | null) => void,
+  ) => (
+    <div className="campo">
+      <label htmlFor={id}>{rotulo}</label>
+      <input
+        id={id}
+        className="filtro mono"
+        inputMode="numeric"
+        placeholder="Sem limite"
+        value={valor == null ? '' : String(valor)}
+        onChange={(e) => {
+          const d = e.target.value.replace(/\D/g, '');
+          aoMudar(d === '' ? null : Number(d));
+        }}
+      />
+      <span className="campo__dica">Em branco: sem limite.</span>
+    </div>
+  );
   return (
     <form
       className="form"
@@ -556,12 +579,8 @@ export function TabelaDePrecos() {
               (v) => setT({ ...t, planos: { ...t.planos, [id]: { ...t.planos[id], leadsMes: v } } }),
               false,
             )}
-            {campo(
-              `tp-${id}-horas`,
-              'Horas de reunião por mês',
-              t.planos[id].horasReuniao,
-              (v) => setT({ ...t, planos: { ...t.planos, [id]: { ...t.planos[id], horasReuniao: v } } }),
-              false,
+            {campoLimite(`tp-${id}-horas`, 'Horas de reunião por mês', t.planos[id].horasReuniao, (v) =>
+              setT({ ...t, planos: { ...t.planos, [id]: { ...t.planos[id], horasReuniao: v } } }),
             )}
             <fieldset className="campo">
               <legend>O que o plano libera</legend>
@@ -618,8 +637,9 @@ export function TabelaDePrecos() {
         ))}
         <fieldset className="caixa">
           <legend>Módulos e ajustes</legend>
-          {LISTA_MODULOS.map((m) =>
-            campo(`tp-${m}`, `${MODULOS[m].nome} (R$/mês)`, t.modulos[m], (v) =>
+          {/* O Agente de IA só é vendido junto com o WhatsApp (combo abaixo). */}
+          {LISTA_MODULOS.filter((m) => m !== 'agente_ia').map((m) =>
+            campo(`tp-${m}`, `${MODULOS[m].nome} sozinho (R$/mês)`, t.modulos[m], (v) =>
               setT({ ...t, modulos: { ...t.modulos, [m]: v } }),
             ),
           )}
@@ -636,12 +656,8 @@ export function TabelaDePrecos() {
           {campo('tp-numero-extra', 'Cada número de WhatsApp extra (R$/mês)', t.numeroExtra, (v) =>
             setT({ ...t, numeroExtra: v }),
           )}
-          {campo(
-            'tp-conversas',
-            'Conversas do Agente de IA por mês',
-            t.conversasIaMes,
-            (v) => setT({ ...t, conversasIaMes: v }),
-            false,
+          {campoLimite('tp-conversas', 'Conversas do Agente de IA por mês', t.conversasIaMes, (v) =>
+            setT({ ...t, conversasIaMes: v }),
           )}
           {campo('tp-usuario', 'Cada usuário a mais ou a menos (R$)', t.usuario, (v) =>
             setT({ ...t, usuario: v }),

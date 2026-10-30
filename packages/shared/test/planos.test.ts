@@ -18,7 +18,8 @@ describe('planos', () => {
       mensalidadeManual: null,
     });
     expect(p).toMatchObject({ usuarios: 6, leadsMes: 5000, modulos: ['whatsapp', 'email'] });
-    expect(p.mensalidadeCalculada).toBe(599 + 2 * 59 + 250 + 200);
+    // O e-mail já vem no Time: não cobra.
+    expect(p.mensalidadeCalculada).toBe(1300 + 2 * 59 + 250);
     expect(p.mensalidade).toBe(p.mensalidadeCalculada);
     // Menos usuários desconta, mais leads soma; o preço combinado vale.
     expect(
@@ -33,7 +34,7 @@ describe('planos', () => {
       usuarios: 3,
       leadsMes: 40000,
       // 3 usuários a menos (−177) e 30 mil leads a mais (+600)
-      mensalidadeCalculada: 999 - 3 * 59 + 30 * 20,
+      mensalidadeCalculada: 2500 - 3 * 59 + 30 * 20,
       mensalidade: 800,
     });
   });
@@ -53,7 +54,7 @@ describe('planos', () => {
         { plano: 'start', limiteUsuarios: 4, limiteLeadsMes: null, modulos: [], mensalidadeManual: null },
         t,
       ).mensalidadeCalculada,
-    ).toBe(297 + 80);
+    ).toBe(497 + 80);
     expect(tabelaCompleta({ lixo: true })).toEqual(TABELA_PADRAO);
   });
 
@@ -88,7 +89,10 @@ describe('planos', () => {
     const time = planoEfetivo({ plano: 'time', ...base });
     expect(time.recursos).toContain('reunioes');
     expect(time.recursos).not.toContain('argos');
-    expect(time.horasReuniao).toBe(20);
+    expect(time.horasReuniao).toBe(30);
+    expect(time.modulos).toEqual(['email']);
+    // Escala: reuniões sem limite.
+    expect(planoEfetivo({ plano: 'escala', ...base }).horasReuniao).toBeNull();
     expect(planoEfetivo({ plano: 'escala', ...base }).recursos).toEqual(LISTA_RECURSOS);
     // Liberado só para este cliente (sem mudar o plano), com a franquia combinada.
     const start = planoEfetivo({
@@ -108,30 +112,36 @@ describe('planos', () => {
     });
   });
 
-  it('WhatsApp + IA pelo combo, números extras e e-mail incluso no Escala', () => {
+  it('WhatsApp + IA pelo combo, números extras e e-mail incluso a partir do Time', () => {
     const base = { limiteUsuarios: null, limiteLeadsMes: null, mensalidadeManual: null };
     const p = planoEfetivo({ plano: 'start', ...base, modulos: ['whatsapp', 'agente_ia'], numerosExtras: 3 });
     expect(p.itens).toEqual([
-      { rotulo: 'Plano Start', valor: 297 },
-      { rotulo: 'WhatsApp + Agente de IA', valor: 497 },
+      { rotulo: 'Plano Start', valor: 497 },
+      { rotulo: 'WhatsApp + Agente de IA', valor: 999 },
       { rotulo: '3 números de WhatsApp extras', valor: 330 },
     ]);
-    expect(p).toMatchObject({ numerosWhatsapp: 5, conversasIa: 1000, mensalidadeCalculada: 297 + 497 + 330 });
-    // Só o WhatsApp: 2 números, sem conversas da IA.
+    // 3 números no módulo + 3 extras; conversas da IA sem limite.
+    expect(p).toMatchObject({ numerosWhatsapp: 6, conversasIa: null, mensalidadeCalculada: 497 + 999 + 330 });
+    // Limite de conversas combinado só para um cliente.
+    expect(
+      planoEfetivo({ plano: 'start', ...base, modulos: ['whatsapp', 'agente_ia'], conversasIa: 500 })
+        .conversasIa,
+    ).toBe(500);
+    // Só o WhatsApp (contas antigas): 3 números, sem conversas da IA.
     expect(planoEfetivo({ plano: 'time', ...base, modulos: ['whatsapp'] })).toMatchObject({
-      numerosWhatsapp: 2,
+      numerosWhatsapp: 3,
       conversasIa: 0,
-      mensalidadeCalculada: 599 + 250,
+      mensalidadeCalculada: 1300 + 250,
     });
     // Sem WhatsApp, número extra não vale nem cobra.
     expect(planoEfetivo({ plano: 'time', ...base, modulos: [], numerosExtras: 2 })).toMatchObject({
       numerosWhatsapp: 0,
-      mensalidadeCalculada: 599,
+      mensalidadeCalculada: 1300,
     });
     // Escala: o e-mail já vem no plano.
     const e = planoEfetivo({ plano: 'escala', ...base, modulos: [] });
     expect(e.modulos).toEqual(['email']);
-    expect(e.mensalidadeCalculada).toBe(999);
+    expect(e.mensalidadeCalculada).toBe(2500);
   });
 
   it('tabela salva antes dos campos novos ganha o padrão só no que falta', () => {

@@ -3449,12 +3449,13 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       usuarios: 2,
       leadsMes: 2000,
       modulos: ['email'],
-      mensalidade: 497,
+      // Start R$ 497 + e-mail R$ 200 (no Start o e-mail é à parte).
+      mensalidade: 697,
       uso: { usuarios: 1, leadsMes: 0 },
     });
     // A lista do master traz o plano de cada cliente.
     const lista = (await ler('/master/contas')).body;
-    expect(lista.find((c: { id: number }) => c.id === contaId).plano.mensalidade).toBe(497);
+    expect(lista.find((c: { id: number }) => c.id === contaId).plano.mensalidade).toBe(697);
 
     // Vaga de usuário: o 2º entra, o 3º não (até o master aumentar).
     expect(
@@ -3498,7 +3499,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       usuarios: 3,
       leadsMes: 8000,
       // WhatsApp + Agente de IA saem pelo combo.
-      mensalidadeCalculada: 297 + 59 + 6 * 20 + 497,
+      mensalidadeCalculada: 497 + 59 + 6 * 20 + 999,
       mensalidade: 650,
     });
     expect(
@@ -3615,19 +3616,24 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       .set('Origin', 'https://site-qualquer.example')
       .send({ nome: 'Ana', empresa: 'Loja', whatsapp: '123' });
     expect(ruim.status).toBe(422);
-    const pedir = () =>
-      request(app).post('/site/demonstracao').set('Origin', 'https://site-qualquer.example').send({
-        nome: 'Ana Souza',
-        empresa: 'Autopeças Demonstração',
-        whatsapp: '(71) 98888-1212',
-        nicho: 'oficinas em Salvador',
-        plano: 'Time',
-        canal: 'whatsapp',
-        site: '',
-      });
+    const pedir = (origem?: string) =>
+      request(app)
+        .post('/site/demonstracao')
+        .set('Origin', 'https://site-qualquer.example')
+        .send({
+          ...(origem ? { origem } : {}),
+          nome: 'Ana Souza',
+          empresa: 'Autopeças Demonstração',
+          whatsapp: '(71) 98888-1212',
+          nicho: 'oficinas em Salvador',
+          plano: 'Time',
+          canal: 'whatsapp',
+          site: '',
+        });
     expect((await pedir()).status).toBe(200);
-    // Pedir de novo com o mesmo número não cria outro card: anota no que está aberto.
-    expect((await pedir()).status).toBe(200);
+    // Pedir de novo com o mesmo número (agora pelo botão da apresentação) não cria outro card:
+    // anota no que está aberto, dizendo de onde veio.
+    expect((await pedir('apresentacao')).status).toBe(200);
     // Robô (campo-isca preenchido): responde ok e não grava.
     await request(app)
       .post('/site/demonstracao')
@@ -3640,6 +3646,9 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     const pedido = painel.pedidos[0]!;
     expect(pedido).toMatchObject({ plano: 'Time', etapa: 'novo' });
     expect((await ler('/master/site/novos')).body).toEqual({ novos: 1 });
+    expect(JSON.stringify((await ler(`/master/site/pedidos/${pedido.id}`)).body)).toContain(
+      'Pediu demonstração de novo pela apresentação comercial.',
+    );
     // O funil da conta principal não mudou.
     expect((await ler('/funil')).body).toEqual(funilAntes);
 

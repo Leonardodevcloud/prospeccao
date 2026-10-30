@@ -94,8 +94,8 @@ export interface TabelaPrecos {
       leadsMes: number;
       /** O que o plano libera além da base. */
       recursos: Recurso[];
-      /** Horas de reunião por vídeo no mês (0 = sem reuniões). */
-      horasReuniao: number;
+      /** Horas de reunião por vídeo no mês (0 = sem reuniões; null = sem limite). */
+      horasReuniao: number | null;
       /** Módulos que já vêm no plano (sem cobrar à parte). */
       modulosInclusos: Modulo[];
     }
@@ -107,8 +107,8 @@ export interface TabelaPrecos {
   numerosInclusos: number;
   /** Cada número de WhatsApp além dos inclusos. */
   numeroExtra: number;
-  /** Conversas do Agente de IA por mês (leads diferentes com quem a IA falou). */
-  conversasIaMes: number;
+  /** Conversas do Agente de IA por mês (leads diferentes com quem a IA falou; null = sem limite). */
+  conversasIaMes: number | null;
   /** Cada usuário a mais (ou a menos) que o plano inclui. */
   usuario: number;
   /** Cada 1.000 leads/mês a mais (ou a menos) que o plano inclui. */
@@ -119,29 +119,29 @@ const RECURSOS_TIME: Recurso[] = ['equipe', 'funis', 'cadencia', 'relatorios', '
 
 export const TABELA_PADRAO: TabelaPrecos = {
   planos: {
-    start: { preco: 297, usuarios: 2, leadsMes: 2000, recursos: [], horasReuniao: 0, modulosInclusos: [] },
+    start: { preco: 497, usuarios: 2, leadsMes: 2000, recursos: [], horasReuniao: 0, modulosInclusos: [] },
     time: {
-      preco: 599,
+      preco: 1300,
       usuarios: 4,
       leadsMes: 5000,
       recursos: RECURSOS_TIME,
-      horasReuniao: 20,
-      modulosInclusos: [],
+      horasReuniao: 30,
+      modulosInclusos: ['email'],
     },
     escala: {
-      preco: 999,
+      preco: 2500,
       usuarios: 6,
       leadsMes: 10000,
       recursos: [...LISTA_RECURSOS],
-      horasReuniao: 60,
+      horasReuniao: null,
       modulosInclusos: ['email'],
     },
   },
   modulos: { whatsapp: 250, agente_ia: 297, email: 200 },
-  comboWhatsappIa: 497,
-  numerosInclusos: 2,
+  comboWhatsappIa: 999,
+  numerosInclusos: 3,
   numeroExtra: 110,
-  conversasIaMes: 1000,
+  conversasIaMes: null,
   usuario: 59,
   milLeads: 20,
 };
@@ -153,7 +153,7 @@ const linhaPlano = z.object({
   usuarios: inteiro(1, 500),
   leadsMes: inteiro(0, 1_000_000),
   recursos: z.array(z.enum(LISTA_RECURSOS as [Recurso, ...Recurso[]])),
-  horasReuniao: inteiro(0, 10_000),
+  horasReuniao: inteiro(0, 10_000).nullable(),
   modulosInclusos: z.array(z.enum(['whatsapp', 'agente_ia', 'email'])),
 });
 export const tabelaPrecosEntrada = z.object({
@@ -166,7 +166,7 @@ export const tabelaPrecosEntrada = z.object({
   comboWhatsappIa: numero(0, 100_000),
   numerosInclusos: inteiro(0, 100),
   numeroExtra: numero(0, 100_000),
-  conversasIaMes: inteiro(0, 1_000_000),
+  conversasIaMes: inteiro(0, 1_000_000).nullable(),
   usuario: numero(0, 100_000),
   milLeads: numero(0, 100_000),
 });
@@ -332,7 +332,13 @@ export function planoEfetivo(c: PlanoDaConta, tabela: TabelaPrecos = TABELA_PADR
     recursos,
     numerosWhatsapp: temWhatsapp ? tabela.numerosInclusos + numerosExtras : 0,
     numerosExtras,
-    horasReuniao: recursos.includes('reunioes') ? (c.horasReuniao ?? pronto?.horasReuniao ?? 0) : 0,
+    horasReuniao: !recursos.includes('reunioes')
+      ? 0
+      : c.horasReuniao != null
+        ? c.horasReuniao
+        : pronto
+          ? pronto.horasReuniao
+          : 0,
     conversasIa: modulos.includes('agente_ia') ? (c.conversasIa ?? tabela.conversasIaMes) : 0,
     itens,
     mensalidadeCalculada,

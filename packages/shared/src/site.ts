@@ -20,6 +20,8 @@ export const pedidoSiteEntrada = z.object({
   nicho: z.string().trim().max(200).nullish(),
   plano: z.enum(PLANOS_DO_SITE).nullish().catch(null),
   canal: z.enum(['whatsapp', 'email', 'formulario']).default('formulario'),
+  /** De onde veio o pedido: o site ou o botão da apresentação comercial. */
+  origem: z.enum(['site', 'apresentacao']).default('site').catch('site'),
   /** Campo escondido: gente não preenche, robô sim. */
   site: z.string().max(200).nullish(),
 });

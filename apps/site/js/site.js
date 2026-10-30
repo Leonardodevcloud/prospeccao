@@ -637,7 +637,19 @@ function iniciarContato() {
     if (canal === 'whatsapp' && !contato.whatsapp) canal = 'formulario';
     if (canal === 'email' && !contato.email) canal = 'formulario';
 
-    const pedido = JSON.stringify({ nome, empresa, whatsapp, nicho, plano, canal, site: dados.site || '' });
+    // Quem chega pelo botão da apresentação comercial (?origem=apresentacao) fica marcado no quadro de vendas.
+    const origem =
+      new URLSearchParams(window.location.search).get('origem') === 'apresentacao' ? 'apresentacao' : 'site';
+    const pedido = JSON.stringify({
+      nome,
+      empresa,
+      whatsapp,
+      nicho,
+      plano,
+      canal,
+      origem,
+      site: dados.site || '',
+    });
     const enviar = () =>
       fetch(`${API}/demonstracao`, {
         method: 'POST',

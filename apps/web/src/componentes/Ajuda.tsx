@@ -611,28 +611,26 @@ export const ARTIGOS: ArtigoAjuda[] = [
           <li>
             <b>Time</b>: soma o trabalho em equipe (distribuição automática dos leads, metas e “só a própria
             base”), vários funis, a cadência automática de follow-up, os relatórios completos (desempenho,
-            radar e atividade), reuniões por vídeo (20 horas por mês), vendas na rua e as notificações no
-            celular.
+            radar e atividade), reuniões por vídeo (30 horas por mês), vendas na rua, as notificações no
+            celular e a prospecção por e-mail.
           </li>
           <li>
             <b>Escala</b>: tudo do Time, mais o Argos, várias unidades com o painel do gestor, marca própria,
-            auditoria com duas etapas obrigatória, prospecção por e-mail inclusa e 60 horas de reunião por
-            mês.
+            auditoria com duas etapas obrigatória e reuniões por vídeo sem limite de horas.
           </li>
         </ul>
         <h3>Módulos à parte (em qualquer plano)</h3>
         <ul>
           <li>
-            <b>WhatsApp integrado</b>, com 2 números. Cada número a mais é contratado à parte. Com todos os
-            números em uso, “Conectar número” avisa que chegou ao limite.
+            <b>WhatsApp + Agente de IA</b>: o WhatsApp integrado com 3 números e a IA que aborda, responde e
+            marca reunião, sem limite de conversas. Com todos os números em uso, “Conectar número” avisa que
+            chegou ao limite.
           </li>
           <li>
-            <b>Agente de IA</b> (usa o WhatsApp), com uma franquia de conversas por mês. Conversa é cada lead
-            diferente com quem a IA falou no mês. Acabou a franquia: a IA para de responder e as mensagens
-            passam para o time até o dia 1º.
+            <b>Número de WhatsApp extra</b>: cada número além dos 3 do módulo.
           </li>
           <li>
-            <b>E-mail automatizado</b> (já vem no Escala).
+            <b>Usuário adicional</b>: cada pessoa a mais que o plano inclui.
           </li>
         </ul>
         <h3>Quando algo não está no plano</h3>

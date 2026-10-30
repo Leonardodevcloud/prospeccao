@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agendar demonstração · Prospect Team</title>
+<meta name="description" content="Peça uma demonstração do Prospect Team: a gente monta uma campanha com o seu nicho e a sua cidade e mostra o sistema funcionando.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0b6b63">
+<link rel="canonical" href="https://prospectteam.com.br/demonstracao">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/img/icone-180.png">
+<link rel="preload" href="/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/componentes.css">
+<link rel="stylesheet" href="/css/site.css">
+<script>document.documentElement.classList.add('js');</script>
+<script src="/js/site.js" defer></script>
+</head>
+<body class="pagina-demo">
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+<symbol id="i-message-circle" viewBox="0 0 24 24"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"/><rect x="2" y="4" width="20" height="16" rx="2"/></symbol>
+<symbol id="i-phone" viewBox="0 0 24 24"><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+</svg>
+<header class="topo topo--simples">
+  <div class="wrap topo__linha">
+    <a class="marca" href="/" aria-label="Prospect Team, página inicial">
+      <svg class="logo" viewBox="0 0 64 64" width="38" height="38" aria-hidden="true"><g class="logo__fig"><rect x="7" y="35" width="13" height="22" rx="6.5"/><circle cx="13.5" cy="26" r="6"/></g><g class="logo__fig"><rect x="25.5" y="27" width="13" height="30" rx="6.5"/><circle cx="32" cy="18" r="6"/></g><g class="logo__fig logo__acento"><rect x="44" y="19" width="13" height="38" rx="6.5"/><circle cx="50.5" cy="10" r="6"/></g></svg>
+      <span class="marca__nome"><b>Prospect Team</b><span>dados + time</span></span>
+    </a>
+    <a class="btn btn--sec" href="/#planos">Ver os planos</a>
+  </div>
+</header>
+
+<main id="conteudo">
+<section class="secao demo" id="contato">
+  <div class="wrap">
+    <div class="chamada">
+      <div class="chamada__texto">
+        <h1 class="chamada__titulo">Vamos ver o Prospect Team com o seu nicho?</h1>
+        <p class="chamada__sub">Deixe os seus dados e a gente marca a demonstração: em 30 minutos, ao vivo, montamos uma campanha real com o seu nicho e a sua cidade.</p>
+        <ul class="demo__contatos">
+          <li><svg class="ic" aria-hidden="true"><use href="#i-message-circle"></use></svg><a href="https://wa.me/5571993635290" target="_blank" rel="noopener">(71) 99363-5290</a></li>
+          <li><svg class="ic" aria-hidden="true"><use href="#i-mail"></use></svg><a href="mailto:prospectteam@gmail.com">prospectteam@gmail.com</a></li>
+        </ul>
+      </div>
+      <form class="formulario" data-contato novalidate>
+        <div class="campo">
+          <label for="ct-nome">Seu nome</label>
+          <input id="ct-nome" name="nome" autocomplete="name" required>
+        </div>
+        <div class="campo">
+          <label for="ct-empresa">Empresa</label>
+          <input id="ct-empresa" name="empresa" autocomplete="organization" required>
+        </div>
+        <div class="campo">
+          <label for="ct-whats">Seu WhatsApp</label>
+          <input id="ct-whats" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="(71) 99999-1234" required>
+        </div>
+        <div class="campo campo--isca" aria-hidden="true">
+          <label for="ct-site">Deixe em branco</label>
+          <input id="ct-site" name="site" tabindex="-1" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="ct-nicho">Para quem você vende</label>
+          <input id="ct-nicho" name="nicho" placeholder="Ex.: clínicas em Salvador e região">
+        </div>
+        <div class="campo">
+          <label for="ct-plano">Plano de interesse</label>
+          <select id="ct-plano" name="plano">
+            <option>Ainda não sei</option>
+            <option>Start</option>
+            <option>Time</option>
+            <option>Escala</option>
+          </select>
+        </div>
+        <p class="campo__erro" data-erro role="alert" hidden>Preencha o seu nome, o da empresa e o seu WhatsApp para a gente saber com quem fala.</p>
+        <div class="formulario__acoes">
+          <button class="btn btn--pri" type="submit" data-canal="formulario"><svg class="ic" aria-hidden="true"><use href="#i-message-circle"></use></svg><span data-rotulo>Agendar demonstração</span></button>
+          <button class="btn btn--sec" type="submit" data-canal="email" hidden><svg class="ic" aria-hidden="true"><use href="#i-mail"></use></svg>Mandar por e-mail</button>
+        </div>
+        <p class="formulario__ok" data-ok role="status" hidden></p>
+        <p class="formulario__nota" data-nota>A gente responde pelo WhatsApp que você informar, em horário comercial.</p>
+      </form>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="rodape">
+  <div class="wrap">
+    <small>© <span data-ano>2026</span> Prospect Team · <a href="/termos">Termos</a> · <a href="/privacidade">Privacidade</a></small>
+  </div>
+</footer>
+</body>
+</html>

@@ -450,16 +450,16 @@ describe.skipIf(!URL_TESTE)('vendas na rua (com Postgres)', () => {
     expect((await ler(cookieDona, '/assistente/mapa')).status).toBe(403);
     expect((await ler(cookieDona, '/auditoria')).status).toBe(403);
 
-    // WhatsApp: 2 números inclusos; com os dois conectados, não cabe outro.
-    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 2, usados: 0 });
+    // WhatsApp: 3 números inclusos; com os três conectados, não cabe outro.
+    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 3, usados: 0 });
     await pool.query(
-      `INSERT INTO comercial.chips (conta_id, nome, instancia, token_cifrado) VALUES (1, 'A', 'i-a', 'x'), (1, 'B', 'i-b', 'y')`,
+      `INSERT INTO comercial.chips (conta_id, nome, instancia, token_cifrado) VALUES (1, 'A', 'i-a', 'x'), (1, 'B', 'i-b', 'y'), (1, 'C', 'i-c', 'z')`,
     );
-    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 2, usados: 2 });
+    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 3, usados: 3 });
     // Um número extra contratado: cabe mais um.
     await pool.query(`UPDATE cadastro.organizacoes SET numeros_extras = 1 WHERE id = ${org}`);
     esquecerRecursos();
-    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 3, usados: 2 });
+    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 4, usados: 3 });
 
     // Liberado à parte (sem mudar o plano): Vendas na rua volta a abrir.
     await pool.query(`UPDATE cadastro.organizacoes SET recursos_extras = '{rua}' WHERE id = ${org}`);
@@ -469,7 +469,7 @@ describe.skipIf(!URL_TESTE)('vendas na rua (com Postgres)', () => {
     // O meu plano mostra as franquias.
     const meu = (await ler(cookieDona, '/equipe/plano')).body;
     expect(meu.recursos).toEqual(['rua']);
-    expect(meu.consumo.numerosWhatsapp).toEqual({ usados: 2, limite: 3 });
+    expect(meu.consumo.numerosWhatsapp).toEqual({ usados: 3, limite: 4 });
     expect(meu.consumo.horasReuniao).toMatchObject({ limite: 0 });
 
     await pool.query(

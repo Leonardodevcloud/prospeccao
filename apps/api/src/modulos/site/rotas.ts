@@ -78,6 +78,7 @@ export function rotasSitePublico(deps: DepsApi): Router {
     }
     const telefone = normalizarTelefone(d.whatsapp)!;
     const plano = d.plano && d.plano !== 'Ainda não sei' ? d.plano : null;
+    const deOnde = d.origem === 'apresentacao' ? 'pela apresentação comercial' : 'pelo site';
     const resumo = [
       d.nicho ? `Vende para: ${d.nicho}.` : '',
       plano ? `Plano de interesse: ${plano}.` : '',
@@ -107,10 +108,13 @@ export function rotasSitePublico(deps: DepsApi): Router {
     await repo.historico(
       pool,
       id,
-      aberto ? `Pediu demonstração de novo pelo site. ${resumo}` : `Pedido pelo site. ${resumo}`,
+      aberto ? `Pediu demonstração de novo ${deOnde}. ${resumo}` : `Pedido ${deOnde}. ${resumo}`,
       d.nome,
     );
-    log.info({ pedido: id, canal: d.canal, repetido: !!aberto }, 'site: pedido de demonstração');
+    log.info(
+      { pedido: id, canal: d.canal, origem: d.origem, repetido: !!aberto },
+      'site: pedido de demonstração',
+    );
 
     // Aviso no sino (e no celular) de quem administra a plataforma.
     const contaId = await repo.contaPrincipal(pool);
@@ -124,7 +128,7 @@ export function rotasSitePublico(deps: DepsApi): Router {
           await notificar(pool, u.id, {
             tipo: 'sistema',
             titulo: `Pedido de demonstração: ${d.empresa}`,
-            texto: `${d.nome} · ${formatarTelefone(telefone)}${plano ? ` · ${plano}` : ''}`,
+            texto: `${d.nome} · ${formatarTelefone(telefone)}${plano ? ` · ${plano}` : ''}${d.origem === 'apresentacao' ? ' · pela apresentação' : ''}`,
             link: `/plataforma/vendas?pedido=${id}`,
           });
       }).catch((e: unknown) =>

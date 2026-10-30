@@ -130,7 +130,11 @@ export function MeuPlano() {
               rotulo="Horas de reunião por vídeo"
               usado={p.consumo.horasReuniao.usadas}
               limite={p.consumo.horasReuniao.limite}
-              detalhe="Soma do tempo das reuniões abertas no mês. Acabou: as novas reuniões esperam o dia 1º ou mais horas."
+              detalhe={
+                p.consumo.horasReuniao.limite == null
+                  ? 'Soma do tempo das reuniões abertas no mês.'
+                  : 'Soma do tempo das reuniões abertas no mês. Acabou: as novas reuniões esperam o dia 1º ou mais horas.'
+              }
             />
           )}
           {p.modulos.includes('agente_ia') && (
@@ -138,7 +142,11 @@ export function MeuPlano() {
               rotulo="Conversas do Agente de IA"
               usado={p.consumo.conversasIa.usadas}
               limite={p.consumo.conversasIa.limite}
-              detalhe="Leads diferentes com quem a IA falou no mês. Acabou: as respostas passam para o time até o dia 1º."
+              detalhe={
+                p.consumo.conversasIa.limite == null
+                  ? 'Leads diferentes com quem a IA falou no mês.'
+                  : 'Leads diferentes com quem a IA falou no mês. Acabou: as respostas passam para o time até o dia 1º.'
+              }
             />
           )}
         </div>
