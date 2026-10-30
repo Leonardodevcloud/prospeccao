@@ -1,8 +1,9 @@
-import type { ConversaArgosDTO, TrocaArgosDTO } from '@prospeccao/shared/assistente';
+import type { ConversaArgosDTO, MemoriaArgosDTO, TrocaArgosDTO } from '@prospeccao/shared/assistente';
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { api } from '../api';
+import { LinkAjuda } from '../componentes/Ajuda';
 import { Argos } from '../componentes/argos/Argos';
 import { conversa, useConversaAtual } from '../componentes/argos/conversa';
 import { ErroDaApi } from '../componentes/Formulario';
@@ -263,7 +264,92 @@ function HistoricoArgos() {
           ))
         )}
       </div>
-      <p className="argos-historico__nota">Suas conversas ficam só com você. Apague quando quiser.</p>
+      <MemoriaArgos />
+      <p className="argos-historico__nota">
+        Suas conversas e a memória ficam só com você. Apague quando quiser.
+      </p>
     </aside>
+  );
+}
+
+/** O que o Argos lembra desta pessoa: ela vê, apaga e acrescenta (também dá para pedir na conversa). */
+function MemoriaArgos() {
+  const cliente = useQueryClient();
+  const [texto, setTexto] = useState('');
+  const q = useQuery({
+    queryKey: ['argos', 'memorias'],
+    queryFn: () => api<MemoriaArgosDTO[]>('/assistente/memorias'),
+  });
+  const atualizar = () => cliente.invalidateQueries({ queryKey: ['argos', 'memorias'] });
+  const guardar = useMutation({
+    mutationFn: () => api('/assistente/memorias', { metodo: 'POST', corpo: { texto: texto.trim() } }),
+    onSuccess: () => {
+      setTexto('');
+      atualizar();
+    },
+  });
+  const esquecer = useMutation({
+    mutationFn: (id: number) => api(`/assistente/memorias/${id}`, { metodo: 'DELETE' }),
+    onSuccess: atualizar,
+  });
+  const lista = q.data ?? [];
+  return (
+    <details className="argos-memoria">
+      <summary>
+        <Icon name="circle-help" size={14} aria-hidden />O que o Argos lembra
+        {lista.length ? ` (${lista.length})` : ''}
+      </summary>
+      <p className="argos-historico__nota" style={{ padding: 0 }}>
+        Diga “lembra que…” na conversa ou escreva aqui: metas, apelidos de campanhas, como prefere as
+        respostas. <LinkAjuda artigo="argos">Como funciona</LinkAjuda>
+      </p>
+      {lista.length > 0 && (
+        <ul className="argos-memoria__lista">
+          {lista.map((m) => (
+            <li key={m.id}>
+              <span>{m.texto}</span>
+              <button
+                type="button"
+                className="botao-icone"
+                aria-label={`Esquecer: ${m.texto}`}
+                title="Esquecer"
+                disabled={esquecer.isPending}
+                onClick={() => esquecer.mutate(m.id)}
+              >
+                <Icon name="x" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="argos-memoria__nova"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          if (texto.trim().length >= 3) guardar.mutate();
+        }}
+      >
+        <label className="pp-sr" htmlFor="argos-memoria-nova">
+          Algo para o Argos lembrar
+        </label>
+        <input
+          id="argos-memoria-nova"
+          className="filtro"
+          maxLength={300}
+          placeholder="Ex.: minha meta é 30 reuniões por mês"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+        />
+        <Button
+          size="sm"
+          type="submit"
+          variant="ghost"
+          disabled={guardar.isPending || texto.trim().length < 3}
+        >
+          Guardar
+        </Button>
+      </form>
+      <ErroDaApi erro={q.error ?? guardar.error ?? esquecer.error} />
+    </details>
   );
 }

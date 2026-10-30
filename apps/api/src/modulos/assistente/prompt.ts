@@ -10,6 +10,8 @@ Se a conversa já trouxer um resultado que responde a pergunta, responda direto,
 - {"acao":"sql","sql":"SELECT ...","titulo":"o que essa consulta mostra","pensamento":"..."} → executa e devolve as linhas (no máximo 200). Só SELECT/WITH, PostgreSQL, sem ponto e vírgula, sem prefixo de schema.
 - {"acao":"pronta","nome":"resumo_funil|desempenho_equipe|campanhas|follow_ups|por_unidade","parametros":{...},"pensamento":"..."} → consultas prontas e testadas; prefira quando servirem.
 - {"acao":"criar_tarefa","titulo":"...","inicio":"AAAA-MM-DDTHH:MM (horário de Brasília) ou null","tipo":"tarefa|ligacao|reuniao","descricao":"... ou null"} → só quando a pessoa PEDIR para anotar uma tarefa, lembrete, ligação ou reunião. Vai para a agenda dela. Sem dia e hora numa reunião → pergunte antes (confirmar).
+- {"acao":"lembrar","texto":"frase curta e completa, em terceira pessoa"} → só quando a pessoa PEDIR para você guardar algo ("lembra que…", "anota pra você…", "a partir de agora…", "quando eu falar X é Y"). Guarde a preferência ou definição dela, não números que mudam (o funil de hoje).
+- {"acao":"esquecer","id":"m12"} → quando a pessoa pedir para esquecer algo que está na Memória.
 - {"acao":"responder","fala":"...","analise":"markdown ou null","destaques":[{"rotulo":"...","valor":"..."}],"mostrar":"r2 ou null","grafico":{"tipo":"linha|barras|pizza","x":"coluna","y":["coluna numérica"],"titulo":"..."} ou null,"abrir":"tela ou null","confirmar":false} → resposta final.
 - {"acao":"responder","fala":"pergunta curta","confirmar":true} → quando você NÃO tem certeza do que a pessoa quis: devolva uma pergunta curta e nada mais.
 
@@ -28,6 +30,12 @@ Entender antes de responder (o mais importante):
 - Se a pergunta terminar com "[áudio pouco claro]", confirme o que entendeu antes de responder, a não ser que esteja claríssimo.
 - Quando der para entender com segurança pelo contexto da conversa, siga sem perguntar.
 - Nunca afirme um número, nome, data ou fato que não veio de uma consulta desta conversa. Sem dado, diga que não encontrou.
+- Cada número da sua resposta é conferido automaticamente com os resultados das consultas: número que não veio de lá faz a resposta voltar. Conta simples (soma, diferença, percentual) sobre números consultados pode.
+
+O que você já recebe junto com a pergunta (dentro de <dados>):
+- Memória: o que esta pessoa pediu para você guardar. Use sempre que combinar com a pergunta (apelidos de campanhas, metas, preferências de como responder). Se a memória disser uma coisa e o banco outra, vale o banco, e diga isso.
+- O que a unidade faz e vende: a configuração da IA de atendimento conferida pela equipe. Sobre produtos, serviços, preços, região e diferenciais, fale só o que estiver aí ou na tabela conhecimento (consulte quando precisar de mais detalhe). Se não estiver, diga que não está cadastrado e sugira cadastrar na Base de conhecimento.
+- Trechos da base de conhecimento que combinam com a pergunta (quando houver).
 - Pergunte uma coisa só por vez, em uma frase.
 
 Regras:
@@ -41,7 +49,7 @@ Regras:
 - Devolva só o JSON, sem texto fora dele.`;
 
 export interface PassoAgente {
-  acao: 'colunas' | 'sql' | 'pronta' | 'criar_tarefa' | 'responder';
+  acao: 'colunas' | 'sql' | 'pronta' | 'criar_tarefa' | 'lembrar' | 'esquecer' | 'responder';
   pensamento?: string;
   tabelas?: string[];
   sql?: string;
@@ -49,6 +57,10 @@ export interface PassoAgente {
   nome?: string;
   parametros?: Record<string, unknown>;
   inicio?: string | null;
+  /** lembrar: o que guardar. */
+  texto?: string;
+  /** esquecer: id da memória (m12). */
+  id?: string | number;
   tipo?: string;
   descricao?: string | null;
   fala?: string;

@@ -3,6 +3,7 @@ import {
   type ConfigVozDTO,
   conversaAtualizar,
   dividirFala,
+  memoriaArgosEntrada,
   perguntaAssistente,
   type RespostaAssistenteDTO,
   textoParaFalar,
@@ -15,6 +16,7 @@ import { corpo, idDaRota } from '../../middlewares/http.js';
 import { agenteArgos } from './agente.js';
 import * as conversas from './conversas.js';
 import { montarMapa } from './mapa.js';
+import * as memoria from './memoria.js';
 import {
   type ConfigVoz,
   falaEmCurso,
@@ -132,6 +134,7 @@ export function rotasAssistente(deps: DepsApi): Router {
       dados: resposta.dados,
       aguardaResposta: resposta.confirmar,
       tempos: resposta.tempos,
+      memoria: resposta.memoria,
     };
     // Guarda no histórico da pessoa (falhar aqui não tira a resposta dela).
     saida.conversaId = await conversas
@@ -177,6 +180,25 @@ export function rotasAssistente(deps: DepsApi): Router {
 
   r.delete('/conversas/:id', async (req, res) => {
     await conversas.apagar(pool, req.usuario!.id, idDaRota(req));
+    res.status(204).end();
+  });
+
+  /* ───────────── Memória (só a própria pessoa) ───────────── */
+
+  r.get('/memorias', async (req, res) => {
+    res.json(await memoria.listar(pool, req.usuario!.id));
+  });
+
+  r.post('/memorias', async (req, res) => {
+    const { texto } = corpo(req, memoriaArgosEntrada);
+    const u = req.usuario!;
+    await memoria.lembrar(pool, { id: u.id, contaId: u.contaId }, texto);
+    res.status(201).json(await memoria.listar(pool, u.id));
+  });
+
+  r.delete('/memorias/:id', async (req, res) => {
+    if (!(await memoria.esquecer(pool, req.usuario!.id, idDaRota(req))))
+      throw AppError.naoEncontrado('Essa memória');
     res.status(204).end();
   });
 

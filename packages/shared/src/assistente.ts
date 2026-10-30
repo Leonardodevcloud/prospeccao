@@ -74,7 +74,18 @@ export interface RespostaAssistenteDTO {
   tempos?: Record<string, number>;
   /** Onde esta troca ficou guardada (o histórico da pessoa). */
   conversaId?: number | null;
+  /** O Argos guardou ou esqueceu algo na memória da pessoa. */
+  memoria?: { acao: 'lembrou' | 'esqueceu'; texto: string } | null;
 }
+
+/** Algo que a pessoa pediu para o Argos guardar (só ela vê). */
+export interface MemoriaArgosDTO {
+  id: number;
+  texto: string;
+  criadoEm: string;
+}
+
+export const memoriaArgosEntrada = z.object({ texto: z.string().trim().min(3).max(300) });
 
 /** Uma conversa no histórico (só a própria pessoa vê). */
 export interface ConversaArgosDTO {

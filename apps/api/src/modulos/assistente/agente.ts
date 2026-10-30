@@ -18,9 +18,12 @@ import {
   resumoDoCatalogo,
   type TabelaCatalogo,
 } from './catalogo.js';
+import { numerosConhecidos, numerosSemFonte } from './conferencia.js';
 import { mascarar, restaurar } from './mascara.js';
+import * as memoria from './memoria.js';
 import { embrulharDados, lerJson, montarContextoAgente, type PassoAgente, SISTEMA_AGENTE } from './prompt.js';
 import { CONSULTAS_PRONTAS, consultaPronta, planoRapido } from './prontas.js';
+import { carregarSaber, type SaberArgos, textoDoSaber } from './saber.js';
 
 export interface DepsAgente {
   /** Dono do banco (só para criar tarefas, pelas regras normais do sistema). */
@@ -41,6 +44,8 @@ export interface RespostaAgente {
   dados: DadosAssistenteDTO | null;
   abrir: string | null;
   tarefa: { id: number; titulo: string } | null;
+  /** O que foi guardado ou esquecido na memória nesta pergunta. */
+  memoria: { acao: 'lembrou' | 'esqueceu'; texto: string } | null;
   passos: number;
   tempos: Record<string, number>;
   confirmar: boolean;
@@ -133,8 +138,9 @@ export async function agenteArgos(
   const assinado = deps.chave ? assinarEscopo(deps.chave, escopo, 300, agora.getTime()) : '';
   const leitura = deps.leitura;
 
-  // Tudo o que não depende da IA sai junto: o catálogo e, se der para prever, os dados.
-  const [cat, preBusca] = await Promise.all([
+  // Tudo o que não depende da IA sai junto: o catálogo, a memória, o que a empresa vende, a base
+  // de conhecimento e, se der para prever, os dados.
+  const [cat, preBusca, saber] = await Promise.all([
     comDados && leitura
       ? carregarCatalogo(leitura).then(
           (c) => ({ c, erro: null as Error | null }),
@@ -142,6 +148,9 @@ export async function agenteArgos(
         )
       : null,
     plano && leitura ? rodarPronta(leitura, assinado, plano.nome, plano.parametros).catch(() => null) : null,
+    carregarSaber(deps.pool, u, pergunta).catch(
+      (): SaberArgos => ({ memorias: [], empresa: '', trechos: '' }),
+    ),
   ]);
   tempos.preparo = Date.now() - inicio;
 
@@ -196,13 +205,40 @@ export async function agenteArgos(
     minute: '2-digit',
     timeZone: 'America/Sao_Paulo',
   });
+  const blocoSaber = textoDoSaber(saber, u.contaNome);
   mensagens.push({
     papel: 'user',
     conteudo: esconder(
-      `Agora são ${hora}.${avisoDados ? ` ${avisoDados}` : ''}\nPergunta:\n${embrulharDados(pergunta)}`,
-      nomesBase,
+      `${embrulharDados(blocoSaber)}\n\nAgora são ${hora}.${avisoDados ? ` ${avisoDados}` : ''}\nPergunta:\n${embrulharDados(pergunta)}`,
+      [...nomesBase, ...nomesNoTexto(blocoSaber)],
     ),
   });
+  // Fontes dos números que ele pode falar (além dos resultados das consultas).
+  const textoDasFontes = [
+    pergunta,
+    blocoSaber,
+    hora,
+    hojeLocal(agora),
+    ...historico.slice(-8).flatMap((t) => [t.pergunta, t.resposta]),
+  ].join('\n');
+  let conhecidos: { n: number; valores: Set<number> } | null = null;
+  const numerosDaConversa = () => {
+    if (!conhecidos || conhecidos.n !== resultados.length)
+      conhecidos = {
+        n: resultados.length,
+        valores: numerosConhecidos(
+          [
+            { texto: textoDasFontes },
+            // O SQL também é fonte ("últimos 30 dias", "os 5 maiores").
+            ...resultados.map((r) => ({ linhas: r.linhas, totais: r.totais, texto: r.sql })),
+          ],
+          agora.getTime(),
+        ),
+      };
+    return conhecidos.valores;
+  };
+  let correcoes = 0;
+  let memoriaFeita: RespostaAgente['memoria'] = null;
 
   const resultados: Resultado[] = [];
   let tarefaCriada: RespostaAgente['tarefa'] = null;
@@ -268,6 +304,47 @@ export async function agenteArgos(
     deps.log.info({ passo, acao: p.acao, pensamento: p.pensamento?.slice(0, 200) }, 'argos: etapa');
 
     if (p.acao === 'responder' || ultimo) {
+      const confirmando = p.confirmar === true;
+      // Conferência: todo número da resposta tem de ter saído desta conversa (consultas, pergunta,
+      // histórico, memória, perfil). Confere no texto ainda mascarado (telefone e CNPJ não contam).
+      const semFonte = confirmando
+        ? []
+        : numerosSemFonte(
+            [p.fala, p.analise, ...(p.destaques ?? []).map((d) => d?.valor)]
+              .filter((x): x is string => typeof x === 'string')
+              .join('\n')
+              .replace(/\[[A-Z]+_\d+\]/g, ' '),
+            numerosDaConversa(),
+          );
+      if (semFonte.length && correcoes < 1 && !ultimo) {
+        correcoes++;
+        deps.log.info({ semFonte }, 'argos: número sem fonte, pedindo correção');
+        observar(
+          `Conferência automática: estes números da sua resposta não aparecem em nenhum resultado desta conversa: ${semFonte.join(', ')}. ` +
+            'Consulte o que falta (sql/pronta) ou responda sem eles. Não estime nem arredonde de cabeça.',
+        );
+        continue;
+      }
+      if (semFonte.length) {
+        deps.log.warn({ semFonte }, 'argos: resposta com número sem fonte bloqueada');
+        tempos.total = Date.now() - inicio;
+        const ultimoComDados = [...resultados].reverse().find((r) => r.linhas.length) ?? null;
+        return {
+          fala: ultimoComDados
+            ? 'Não consegui conferir todos os números da resposta, então deixo na tela só o que veio do banco. Quer que eu detalhe alguma parte?'
+            : 'Não consegui conferir esse número nos dados, então prefiro não afirmar. Pode perguntar de outro jeito?',
+          analise: null,
+          dados: ultimoComDados
+            ? paraTela(ultimoComDados, resultados, { acao: 'responder' }, pergunta)
+            : null,
+          abrir: null,
+          tarefa: tarefaCriada,
+          memoria: memoriaFeita,
+          passos: passo,
+          tempos,
+          confirmar: false,
+        };
+      }
       const final = lerJson<PassoAgente>(restaurar(bruto, mapa));
       const escolhido =
         (final.mostrar && resultados.find((r) => r.id === final.mostrar)) ||
@@ -281,8 +358,9 @@ export async function agenteArgos(
         fala: (final.fala ?? '').trim() || 'Pronto.',
         analise: confirmar ? null : final.analise?.trim() || null,
         dados: !confirmar && escolhido ? paraTela(escolhido, resultados, final, pergunta) : null,
-        abrir: confirmar ? null : final.abrir?.trim() || null,
+        abrir: confirmar ? null : conferirAbrir(final.abrir, resultados),
         tarefa: tarefaCriada,
+        memoria: memoriaFeita,
         passos: passo,
         tempos,
         confirmar,
@@ -397,8 +475,39 @@ export async function agenteArgos(
         break;
       }
 
+      case 'lembrar': {
+        const texto = restaurar(p.texto ?? '', mapa).trim();
+        try {
+          const r = await memoria.lembrar(deps.pool, u, texto);
+          memoriaFeita = { acao: 'lembrou', texto: texto.slice(0, 300) };
+          observar(
+            r.nova
+              ? `Guardado na memória: "${texto.slice(0, 300)}". Confirme em uma frase.`
+              : 'Isso já estava na memória. Diga que já sabia.',
+          );
+        } catch (erro) {
+          observar(`Não consegui guardar: ${(erro as Error).message.slice(0, 200)}`);
+        }
+        break;
+      }
+
+      case 'esquecer': {
+        const id = Number(String(p.id ?? '').replace(/^m/i, ''));
+        const alvo = saber.memorias.find((m) => m.id === id);
+        if (!alvo) {
+          observar('Essa memória não existe. Veja os ids [m…] na lista da memória.');
+          break;
+        }
+        await memoria.esquecer(deps.pool, u.id, id);
+        memoriaFeita = { acao: 'esqueceu', texto: alvo.texto };
+        observar(`Esquecido: "${alvo.texto}". Confirme em uma frase.`);
+        break;
+      }
+
       default:
-        observar(`Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, criar_tarefa ou responder.`);
+        observar(
+          `Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, criar_tarefa, lembrar, esquecer ou responder.`,
+        );
     }
   }
   return {
@@ -407,10 +516,24 @@ export async function agenteArgos(
     dados: null,
     abrir: null,
     tarefa: tarefaCriada,
+    memoria: memoriaFeita,
     passos: MAX_PASSOS,
     tempos: { ...tempos, total: Date.now() - inicio },
     confirmar: false,
   };
+}
+
+/** "empresa:123" só abre se essa empresa apareceu nos resultados (nada de id inventado). */
+function conferirAbrir(abrir: string | null | undefined, resultados: Resultado[]): string | null {
+  const a = abrir?.trim() || null;
+  if (!a?.toLowerCase().startsWith('empresa:')) return a;
+  const id = Number(a.split(':')[1]);
+  const visto = resultados.some((r) =>
+    r.linhas.some((l) =>
+      Object.entries(l).some(([c, v]) => /(^|_)(empresa_)?id$/.test(c) && Number(v) === id),
+    ),
+  );
+  return visto ? `empresa:${id}` : null;
 }
 
 async function rodarPronta(

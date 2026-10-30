@@ -164,6 +164,7 @@ export function Argos({
         // Guardada no histórico: as próximas perguntas continuam a mesma conversa.
         if (r.conversaId) fio.definir(r.conversaId);
         void qc.invalidateQueries({ queryKey: ['argos', 'conversas'] });
+        if (r.memoria) void qc.invalidateQueries({ queryKey: ['argos', 'memorias'] });
         // O Argos pode ter criado tarefa, reunião ou rascunho: as telas abertas se atualizam.
         void qc.invalidateQueries({ queryKey: ['agenda'] });
         void qc.invalidateQueries({ queryKey: ['meu-dia'] });

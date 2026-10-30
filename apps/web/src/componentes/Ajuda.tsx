@@ -416,12 +416,35 @@ export const ARTIGOS: ArtigoAjuda[] = [
     titulo: 'Argos e o Mapa do conhecimento',
     resumo: 'O assistente que responde sobre o seu comercial, por voz ou texto.',
     onde: { rotulo: 'Argos', para: '/argos' },
-    termos: 'assistente voz perguntar mapa galáxia',
+    termos: 'assistente voz perguntar mapa galáxia memória lembrar esquecer inventar números conferência',
     corpo: (
       <>
         <p>
           Pergunte ao <b>Argos</b> sobre o seu comercial, por voz ou por texto. O histórico das conversas é só
           seu. Ele vê os mesmos dados que você: quem só vê a própria base recebe respostas só sobre ela.
+        </p>
+        <h3>De onde vêm as respostas</h3>
+        <ul>
+          <li>
+            <b>Números do comercial</b>: ele consulta o banco na hora (funil, campanhas, conversas, tarefas,
+            e-mails). Cada número da resposta é conferido com o resultado da consulta antes de chegar a você;
+            se não bater, ele refaz, e se ainda assim não conferir, ele não fala o número e mostra só a tabela
+            do banco.
+          </li>
+          <li>
+            <b>O que a empresa vende</b>: a Configuração da IA de atendimento (só as partes conferidas) e a
+            Base de conhecimento. O que não estiver cadastrado, ele diz que não está.
+          </li>
+          <li>
+            <b>A sua memória</b>: o que você pediu para ele guardar.
+          </li>
+        </ul>
+        <h3>Memória</h3>
+        <p>
+          Diga “lembra que minha meta é 30 reuniões por mês” ou “quando eu falar farmácias, é a campanha
+          Farmácias de Maceió”, e ele usa isso nas próximas perguntas. Para tirar, diga “esquece…” ou apague
+          em <b>O que o Argos lembra</b>, no painel de conversas. A memória é só sua: ninguém da equipe vê. Se
+          a memória e o banco disserem coisas diferentes, vale o banco.
         </p>
         <p>
           O <b>Mapa do conhecimento</b> mostra o comercial como uma galáxia: cada etapa do funil é um

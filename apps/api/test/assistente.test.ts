@@ -15,6 +15,7 @@ import {
   sincronizarAcesso,
   validarSql,
 } from '../src/modulos/assistente/acesso.js';
+import { numerosConhecidos, numerosDoTexto, numerosSemFonte } from '../src/modulos/assistente/conferencia.js';
 import { mascarar, restaurar } from '../src/modulos/assistente/mascara.js';
 import type { ServicosConta } from '../src/servicos.js';
 
@@ -804,5 +805,173 @@ describe.skipIf(!URL_TESTE)('Argos: acesso aos dados por escopo', () => {
     } finally {
       iaFalsa = null;
     }
+  });
+
+  it('número que não saiu da consulta volta para correção; se insistir, não é falado', async () => {
+    const cookie = await entrar('sara@alfa.com');
+    let correcao = '';
+    roteiro = [
+      () => JSON.stringify({ acao: 'sql', sql: 'SELECT count(*) AS n FROM funil', titulo: 'Total' }),
+      // Inventa 37 (o banco disse 2).
+      () => JSON.stringify({ acao: 'responder', fala: 'São 37 negociações, 12% a mais.', mostrar: 'r1' }),
+      (p) => {
+        correcao = p.mensagens.at(-1)?.conteudo ?? '';
+        return JSON.stringify({ acao: 'responder', fala: 'São 2 negociações.', mostrar: 'r1' });
+      },
+    ];
+    const r = await perguntar(cookie, 'quantas negociações eu tenho?');
+    expect(r.status).toBe(200);
+    expect(correcao).toMatch(/Conferência automática/);
+    expect(correcao).toContain('37');
+    expect(r.body.fala).toBe('São 2 negociações.');
+
+    roteiro = [
+      () => JSON.stringify({ acao: 'sql', sql: 'SELECT count(*) AS n FROM funil', titulo: 'Total' }),
+      () => JSON.stringify({ acao: 'responder', fala: 'São 37 negociações.', mostrar: 'r1' }),
+      () => JSON.stringify({ acao: 'responder', fala: 'São 41 negociações.', mostrar: 'r1' }),
+    ];
+    const r2 = await perguntar(cookie, 'quantas negociações eu tenho?');
+    expect(r2.status).toBe(200);
+    expect(r2.body.fala).not.toMatch(/37|41/);
+    expect(r2.body.fala).toMatch(/conferir/);
+    // A tabela do banco continua na tela (é dado de verdade).
+    expect(Number(r2.body.dados.linhas[0].n)).toBe(2);
+  });
+
+  it('memória: guarda quando a pessoa pede, entra nas próximas perguntas e é só dela', async () => {
+    await pool.query('DELETE FROM comercial.argos_memorias');
+    const sara = await entrar('sara@alfa.com');
+    const gil = await entrar('gil@alfa.com');
+    roteiro = [
+      () =>
+        JSON.stringify({
+          acao: 'lembrar',
+          texto: 'A meta da Sara é 30 reuniões por mês e ela prefere respostas curtas.',
+        }),
+      () => JSON.stringify({ acao: 'responder', fala: 'Guardado.' }),
+    ];
+    const r = await perguntar(
+      sara,
+      'lembra que minha meta é 30 reuniões por mês e que prefiro respostas curtas',
+    );
+    expect(r.status).toBe(200);
+    expect(r.body.memoria).toMatchObject({ acao: 'lembrou' });
+
+    pedidosIa.length = 0;
+    roteiro = [
+      (p) => {
+        const ultima = p.mensagens.at(-1)?.conteudo ?? '';
+        expect(ultima).toContain('30 reuniões por mês');
+        // Número da memória pode ser falado.
+        return JSON.stringify({ acao: 'responder', fala: 'Sua meta é 30 reuniões por mês.' });
+      },
+    ];
+    const r2 = await perguntar(sara, 'qual é a minha meta?');
+    expect(r2.body.fala).toBe('Sua meta é 30 reuniões por mês.');
+
+    // Outra pessoa não recebe a memória da Sara (nem pela api).
+    roteiro = [
+      (p) => {
+        expect(p.mensagens.at(-1)?.conteudo ?? '').not.toContain('30 reuniões');
+        return JSON.stringify({ acao: 'responder', fala: 'Não tenho isso guardado.' });
+      },
+    ];
+    await perguntar(gil, 'qual é a minha meta?');
+    expect((await request(app).get('/assistente/memorias').set('Cookie', gil)).body).toHaveLength(0);
+
+    const lista = (await request(app).get('/assistente/memorias').set('Cookie', sara)).body;
+    expect(lista).toHaveLength(1);
+    expect(
+      (
+        await request(app)
+          .delete(`/assistente/memorias/${lista[0].id}`)
+          .set('Origin', ORIGEM)
+          .set('Cookie', gil)
+      ).status,
+    ).toBe(404);
+
+    // Esquecer pela conversa.
+    roteiro = [
+      () => JSON.stringify({ acao: 'esquecer', id: `m${lista[0].id}` }),
+      () => JSON.stringify({ acao: 'responder', fala: 'Esquecido.' }),
+    ];
+    const r3 = await perguntar(sara, 'esquece a minha meta');
+    expect(r3.body.memoria).toMatchObject({ acao: 'esqueceu' });
+    expect((await request(app).get('/assistente/memorias').set('Cookie', sara)).body).toHaveLength(0);
+  });
+
+  it('o que a unidade vende (perfil conferido) e a base de conhecimento vão junto com a pergunta', async () => {
+    await pool.query(
+      `INSERT INTO comercial.ia_perfil (conta_id, dados, conferidas) VALUES ($1, $2, $3)
+       ON CONFLICT (conta_id) DO UPDATE SET dados = EXCLUDED.dados, conferidas = EXCLUDED.conferidas`,
+      [
+        ids.a1,
+        JSON.stringify({
+          empresa: {
+            oQueFaz: 'Distribuímos rolamentos e retentores para oficinas da Bahia.',
+            diferenciais: [],
+          },
+          oferta: { produtos: [{ nome: 'Kit rolamento', detalhe: 'entrega em 24 horas' }] },
+        }),
+        JSON.stringify({ empresa: { por: 'Gil', porId: null, em: '2026-10-01' } }),
+      ],
+    );
+    const sara = await entrar('sara@alfa.com');
+    roteiro = [
+      (p) => {
+        const ultima = p.mensagens.at(-1)?.conteudo ?? '';
+        expect(ultima).toContain('rolamentos e retentores');
+        // Seção não conferida não entra.
+        expect(ultima).not.toContain('Kit rolamento');
+        return JSON.stringify({ acao: 'responder', fala: 'Vocês distribuem rolamentos e retentores.' });
+      },
+    ];
+    const r = await perguntar(sara, 'o que a gente vende mesmo?');
+    expect(r.status).toBe(200);
+    // Outra organização não recebe o perfil da Alfa Bahia.
+    roteiro = [
+      (p) => {
+        expect(p.mensagens.at(-1)?.conteudo ?? '').not.toContain('rolamentos');
+        return JSON.stringify({ acao: 'responder', fala: 'Ok.' });
+      },
+    ];
+    await perguntar(await entrar('beto@beta.com'), 'o que a gente vende mesmo?');
+    await pool.query('DELETE FROM comercial.ia_perfil WHERE conta_id = $1', [ids.a1]);
+  });
+});
+
+describe('Argos: conferência dos números', () => {
+  it('lê números em português e ignora datas e horas', () => {
+    expect(
+      numerosDoTexto('São 1.234,50 reais, 87% e 12 mil leads em 2026, às 15:30 de 10/11.').map(
+        (n) => n.valor,
+      ),
+    ).toEqual([1234.5, 87, 12000]);
+  });
+
+  it('aceita o que veio das consultas e as contas simples sobre eles', () => {
+    const k = numerosConhecidos([
+      {
+        linhas: [
+          { etapa: 'ganho', n: '12' },
+          { etapa: 'perdido', n: '4' },
+        ],
+      },
+      { texto: 'quantas negociações em outubro?' },
+    ]);
+    expect(
+      numerosSemFonte('Foram 12 ganhos e 4 perdas: 75% de conversão, 16 no total, 8 a mais.', k),
+    ).toEqual([]);
+    expect(numerosSemFonte('Ganhou 19 e a taxa foi 80%.', k)).toEqual(['19', '80%']);
+  });
+
+  it('datas dos resultados: dia, hora e há quantos dias', () => {
+    const agora = new Date('2026-10-29T15:00:00-03:00').getTime();
+    const k = numerosConhecidos(
+      [{ linhas: [{ etapa_desde: new Date('2026-10-17T09:30:00-03:00') }] }],
+      agora,
+    );
+    expect(numerosSemFonte('Está parada desde o dia 17, às 9h30: são 12 dias.', k)).toEqual([]);
+    expect(numerosSemFonte('Está parada há 20 dias.', k)).toEqual(['20']);
   });
 });
