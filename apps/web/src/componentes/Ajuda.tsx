@@ -248,8 +248,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <p>
           Se a gravação não estiver ligada, a sala mostra o botão <b>Gravar esta reunião</b>. Só uma pessoa do
           time grava por vez; se ela sair, outra pessoa do time pode continuar. Com a internet fraca, a
-          gravação continua e o envio espera, para não atrapalhar a reunião. Para apresentar, compartilhe uma
-          janela ou outra aba (não a tela inteira), para a gravação não mostrar uma tela dentro da outra.
+          gravação continua e o envio espera, para não atrapalhar a reunião; se o computador apertar, a
+          gravação fica um pouco menos fluida para a sua câmera ao vivo não perder qualidade. Enquanto você
+          grava, dá para apresentar uma janela ou outra aba (a tela inteira não aparece na lista, porque
+          repetiria a reunião dentro dela).
         </p>
         <h3>Depois da reunião</h3>
         <p>

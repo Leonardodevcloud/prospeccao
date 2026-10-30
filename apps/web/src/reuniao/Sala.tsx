@@ -435,19 +435,44 @@ function ConteudoSala(props: {
       })
       .catch(falhou('a outra câmera'));
   };
-  const alternarTela = () =>
-    void lp
-      .setScreenShareEnabled(!lp.isScreenShareEnabled, {
+  const alternarTela = () => {
+    const cancelou = (e: Error) => {
+      // Cancelar a escolha da janela não é erro.
+      if (!/notallowed|aborted|cancel/i.test(`${e.name} ${e.message}`)) falhou('o compartilhamento')(e);
+    };
+    if (lp.isScreenShareEnabled || !gravandoAqui) {
+      void lp
+        .setScreenShareEnabled(!lp.isScreenShareEnabled, {
+          audio: true,
+          contentHint: 'detail',
+          resolution: ScreenSharePresets.h1080fps30.resolution,
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
+        })
+        .catch(cancelou);
+      return;
+    }
+    // Gravando por esta aba: só janela ou outra aba. A tela inteira mostraria a própria reunião
+    // dentro dela, e a gravação sairia com uma tela dentro da outra.
+    void navigator.mediaDevices
+      .getDisplayMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } },
         audio: true,
-        contentHint: 'detail',
-        resolution: ScreenSharePresets.h1080fps30.resolution,
         selfBrowserSurface: 'exclude',
         surfaceSwitching: 'include',
+        monitorTypeSurfaces: 'exclude',
+        systemAudio: 'exclude',
+      } as DisplayMediaStreamOptions)
+      .then(async (s) => {
+        const [video] = s.getVideoTracks();
+        if (!video) return;
+        video.contentHint = 'detail';
+        await lp.publishTrack(video, { source: Track.Source.ScreenShare });
+        const [som] = s.getAudioTracks();
+        if (som) await lp.publishTrack(som, { source: Track.Source.ScreenShareAudio });
       })
-      .catch((e: Error) => {
-        // Cancelar a escolha da janela não é erro.
-        if (!/notallowed|aborted|cancel/i.test(`${e.name} ${e.message}`)) falhou('o compartilhamento')(e);
-      });
+      .catch(cancelou);
+  };
   const alternarMao = () => void lp.setAttributes({ mao: minhaMao ? '' : String(Date.now()) });
 
   // Atalhos como no Meet: Ctrl+D microfone, Ctrl+E câmera.
@@ -506,7 +531,7 @@ function ConteudoSala(props: {
             <span>
               Você está mostrando a sua tela. Todos veem{gravando ? ' e a gravação inclui a tela' : ''}.
               {gravandoAqui &&
-                ' Para a gravação sair limpa, compartilhe uma janela ou outra aba (não a tela inteira).'}
+                ' Enquanto grava, dá para mostrar uma janela ou outra aba (a tela inteira repetiria a reunião dentro dela).'}
             </span>
             <Button size="sm" onClick={alternarTela}>
               Parar de compartilhar

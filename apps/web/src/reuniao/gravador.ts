@@ -1,4 +1,11 @@
-import { ConnectionQuality, ConnectionState, type Room, RoomEvent, Track } from 'livekit-client';
+import {
+  ConnectionQuality,
+  ConnectionState,
+  type LocalVideoTrack,
+  type Room,
+  RoomEvent,
+  Track,
+} from 'livekit-client';
 import { type Criacao, EnvioEmPedacos } from './envio';
 import { ehCelular } from './sons';
 
@@ -6,7 +13,9 @@ import { ehCelular } from './sons';
  * Gravação da reunião no navegador de quem conduz (sem custo de gravação na nuvem).
  *
  * - Vídeo: a própria aba da reunião, exatamente como quem conduz vê (grade, nomes, chat, tela
- *   compartilhada), em até 1080p e 30 quadros. Computador mais fraco (4 núcleos ou menos): 720p.
+ *   compartilhada), em até 1080p e 24 quadros. Computador mais fraco (4 núcleos ou menos): 720p.
+ *   Se a câmera ao vivo começar a perder qualidade por falta de processador, a gravação cai para
+ *   12 quadros até o aperto passar (a reunião vem primeiro).
  * - Som do vídeo: todas as vozes misturadas (as de quem está na sala e a sua), mais o som de uma tela
  *   compartilhada; os bipes de aviso da sala não entram.
  * - Transcrição: o microfone de cada pessoa gravado à parte (é o que dá o nome de quem falou).
@@ -43,13 +52,19 @@ export function podeGravarAba(): boolean {
 }
 
 const fraco = () => (navigator.hardwareConcurrency ?? 8) <= 4;
+/** Quadros por segundo da gravação (e o mínimo quando o computador aperta). */
+const QUADROS = 24;
+const QUADROS_ALIVIO = 12;
 
 /**
  * Pede para gravar esta aba. Precisa ser chamado direto no clique (o navegador exige). O Chrome
  * mostra "Compartilhar esta aba?": a pessoa clica em Compartilhar. Devolve null se ela cancelar.
  */
 export async function pedirCapturaDaAba(): Promise<MediaStream | null> {
-  const limite = fraco() ? { width: 1280, height: 720, fps: 24 } : { width: 1920, height: 1080, fps: 30 };
+  // 24 quadros bastam para a tela da reunião e deixam o processador livre para a câmera ao vivo.
+  const limite = fraco()
+    ? { width: 1280, height: 720, fps: 20 }
+    : { width: 1920, height: 1080, fps: QUADROS };
   try {
     return await navigator.mediaDevices.getDisplayMedia({
       video: {
@@ -88,10 +103,10 @@ const formatoVideo = () =>
 const formatoAudio = () =>
   escolherFormato(['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4']);
 
-/** Qualidade do vídeo pelo tamanho da aba: 1080p30 ≈ 4,4 Mbps; 720p ≈ 2 Mbps (texto nítido). */
+/** Qualidade do vídeo pelo tamanho da aba: 1080p24 ≈ 3,5 Mbps; 720p ≈ 2 Mbps (texto nítido). */
 function bitrateDoVideo(t: MediaStreamTrack): number {
   const s = t.getSettings();
-  const pixels = (s.width ?? 1920) * (s.height ?? 1080) * (s.frameRate ?? 30);
+  const pixels = (s.width ?? 1920) * (s.height ?? 1080) * (s.frameRate ?? QUADROS);
   return Math.round(Math.min(6_000_000, Math.max(2_000_000, pixels * 0.07)));
 }
 
@@ -134,10 +149,47 @@ class Gravador {
       this.mudar({ fase: 'concluido' });
   };
 
+  /** O que a câmera e a tela ao vivo estão sofrendo agora (medido a cada 3 s). */
+  private limitado: { cpu: boolean; banda: boolean } = { cpu: false, banda: false };
+  private aliviado = false;
+  private semAperto = 0;
+
+  /**
+   * A reunião ao vivo tem prioridade sobre a gravação. A cada 3 s confere a câmera e a tela que você
+   * está mandando: se o navegador estiver baixando a qualidade delas por falta de processador, a
+   * gravação passa a 12 quadros (alivia o computador); por falta de internet, o envio da gravação
+   * espera. Passado o aperto (30 s), volta ao normal.
+   */
+  private async vigiar() {
+    const r = this.room;
+    const video = this.captura?.getVideoTracks()[0];
+    if (!r || !video || this.estado.fase !== 'gravando') return;
+    let cpu = false;
+    let banda = false;
+    for (const fonte of [Track.Source.Camera, Track.Source.ScreenShare]) {
+      const faixa = r.localParticipant.getTrackPublication(fonte)?.track as LocalVideoTrack | undefined;
+      if (!faixa || faixa.isMuted) continue;
+      const stats = await faixa.getSenderStats().catch(() => []);
+      cpu ||= stats.some((x) => x.qualityLimitationReason === 'cpu');
+      banda ||= stats.some((x) => x.qualityLimitationReason === 'bandwidth');
+    }
+    this.limitado = { cpu, banda };
+    if (cpu || banda) this.semAperto = 0;
+    else this.semAperto += 3;
+    if (cpu && !this.aliviado) {
+      this.aliviado = true;
+      await video.applyConstraints({ frameRate: { max: QUADROS_ALIVIO } }).catch(() => undefined);
+    } else if (this.aliviado && this.semAperto >= 30) {
+      this.aliviado = false;
+      await video.applyConstraints({ frameRate: { max: fraco() ? 20 : QUADROS } }).catch(() => undefined);
+    }
+  }
+
   /** Reunião primeiro: só sobe pedaço com a internet folgada (o resto sobe quando der ou no fim). */
   private podeEnviar = (): boolean => {
     const r = this.room;
     if (!r || r.state !== ConnectionState.Connected) return true;
+    if (this.limitado.banda) return false;
     const q = r.localParticipant.connectionQuality;
     if (q === ConnectionQuality.Excellent) return true;
     if (q === ConnectionQuality.Good) return !r.localParticipant.isScreenShareEnabled;
@@ -207,7 +259,12 @@ class Gravador {
     const aoSair = () => void this.parar();
     room.on(RoomEvent.Disconnected, aoSair);
     // O microfone pode trocar de aparelho (a faixa muda): confere a cada segundo.
-    this.relogio = setInterval(sincronizar, 1000);
+    // E a cada 3 s, se a gravação está apertando a câmera ao vivo (vigiar).
+    let tique = 0;
+    this.relogio = setInterval(() => {
+      sincronizar();
+      if (++tique % 3 === 0) void this.vigiar();
+    }, 1000);
     this.desligar = () => {
       for (const ev of eventos) room.off(ev, sincronizar);
       room.off(RoomEvent.Disconnected, aoSair);
