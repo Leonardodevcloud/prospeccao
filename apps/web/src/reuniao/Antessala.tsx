@@ -1,7 +1,14 @@
-import { useMediaDevices, usePreviewTracks, useTrackVolume } from '@livekit/components-react';
+import { useMediaDevices, useTrackVolume } from '@livekit/components-react';
 import { Avatar, Button, Icon } from '@prospeccao/ui';
-import { type LocalAudioTrack, type LocalVideoTrack, Track, VideoPresets } from 'livekit-client';
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createLocalAudioTrack,
+  createLocalVideoTrack,
+  type LocalAudioTrack,
+  type LocalTrack,
+  type LocalVideoTrack,
+  VideoPresets,
+} from 'livekit-client';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ErroApi } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { apiSala, type InfoSala, type Liberado, type ResultadoEntrada } from './api';
@@ -35,6 +42,58 @@ function gravarLocal(chave: string, valor: string, onde: Storage | undefined) {
   } catch {
     // modo privado: sem lembrar
   }
+}
+
+/**
+ * Prévia de UM aparelho (câmera ou microfone), separada da outra: sem câmera no computador, o
+ * microfone continua funcionando (antes, um pedido só derrubava os dois).
+ */
+function usePrevia<T extends LocalTrack>(
+  ligado: boolean,
+  chave: string,
+  criar: () => Promise<T>,
+  aoErro: (e: Error) => void,
+): T | undefined {
+  const [faixa, setFaixa] = useState<T>();
+  const criarRef = useRef(criar);
+  criarRef.current = criar;
+  const erroRef = useRef(aoErro);
+  erroRef.current = aoErro;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a chave resume as opções do aparelho
+  useEffect(() => {
+    if (!ligado) return;
+    let vivo = true;
+    let criada: T | undefined;
+    criarRef
+      .current()
+      .then((t) => {
+        if (!vivo) return t.stop();
+        criada = t;
+        setFaixa(t);
+      })
+      .catch((e: Error) => vivo && erroRef.current(e));
+    return () => {
+      vivo = false;
+      criada?.stop();
+      setFaixa(undefined);
+    };
+  }, [ligado, chave]);
+  return faixa;
+}
+
+/** Explica por que a câmera ou o microfone não ligou, do jeito que a pessoa resolve. */
+function porQueNaoLigou(e: Error, o: 'a câmera' | 'o microfone'): string {
+  const t = `${e.name} ${e.message}`;
+  const O = o === 'a câmera' ? 'A câmera' : 'O microfone';
+  if (/notallowed|permission|denied/i.test(t))
+    return `O navegador não deixou usar ${o}. Clique no cadeado ao lado do endereço, permita ${o} e recarregue a página.`;
+  if (/notfound|devicesnotfound|overconstrained/i.test(t))
+    return o === 'a câmera'
+      ? 'Não encontramos câmera neste aparelho. Você entra só com o microfone (dá para ligar a câmera depois).'
+      : 'Não encontramos microfone neste aparelho. Conecte um fone com microfone e recarregue a página.';
+  if (/notreadable|trackstart|could not start|in use/i.test(t))
+    return `${O} está sendo usado por outro programa ou outra aba (outra reunião, Teams, Zoom…). Feche e clique de novo no botão.`;
+  return `Não deu para ligar ${o}. Recarregue a página e tente de novo.`;
 }
 
 /** Nível do microfone em 10 barrinhas (para a pessoa ver que está captando a voz). */
@@ -108,37 +167,43 @@ export function Antessala(props: {
   // No celular não há lista de aparelhos: usa o padrão e um botão para virar a câmera.
   const [celular] = useState(ehCelular);
   const [frente, setFrente] = useState<'user' | 'environment'>('user');
-  const [erroAparelho, setErroAparelho] = useState<string | null>(null);
+  const [erroCamera, setErroCamera] = useState<string | null>(null);
+  const [erroMicrofone, setErroMicrofone] = useState<string | null>(null);
   const [erro, setErro] = useState<unknown>(null);
   const [entrando, setEntrando] = useState(false);
 
   const antes = info.situacao === 'antes' && !doTime;
   const mostrarPrevia = !antes || testando;
 
-  // Prévia da câmera e do microfone (as mesmas escolhas valem dentro da sala).
-  const opcoes = useMemo(
+  // Prévia da câmera e do microfone, cada um no seu pedido (as mesmas escolhas valem dentro da sala).
+  const usarMicId = !celular && microfoneId ? microfoneId : undefined;
+  const usarCamId = !celular && cameraId ? cameraId : undefined;
+  const audio = usePrevia<LocalAudioTrack>(
+    mostrarPrevia && microfone,
+    `mic:${usarMicId ?? ''}`,
     () =>
-      mostrarPrevia
-        ? {
-            audio: microfone ? (celular || !microfoneId ? true : { deviceId: microfoneId }) : false,
-            video: camera
-              ? celular || !cameraId
-                ? { facingMode: frente, resolution: VideoPresets.h720.resolution }
-                : { deviceId: cameraId, resolution: VideoPresets.h720.resolution }
-              : false,
-          }
-        : { audio: false, video: false },
-    [mostrarPrevia, microfone, camera, microfoneId, cameraId, celular, frente],
+      createLocalAudioTrack({
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        ...(usarMicId ? { deviceId: usarMicId } : {}),
+      }),
+    (e) => setErroMicrofone(porQueNaoLigou(e, 'o microfone')),
   );
-  const faixas = usePreviewTracks(opcoes, (e) => {
-    setErroAparelho(
-      /permission|notallowed/i.test(`${e.name} ${e.message}`)
-        ? 'O navegador não deixou usar a câmera ou o microfone. Toque no cadeado ao lado do endereço, permita e recarregue a página.'
-        : 'Não encontramos câmera ou microfone livres. Feche outros programas que estejam usando e tente de novo.',
-    );
-  });
-  const video = faixas?.find((f) => f.kind === Track.Kind.Video) as LocalVideoTrack | undefined;
-  const audio = faixas?.find((f) => f.kind === Track.Kind.Audio) as LocalAudioTrack | undefined;
+  const video = usePrevia<LocalVideoTrack>(
+    mostrarPrevia && camera,
+    `cam:${usarCamId ?? frente}`,
+    () =>
+      createLocalVideoTrack({
+        resolution: VideoPresets.h720.resolution,
+        ...(usarCamId ? { deviceId: usarCamId } : { facingMode: frente }),
+      }),
+    (e) => {
+      setErroCamera(porQueNaoLigou(e, 'a câmera'));
+      // Sem câmera: entra com ela desligada (o microfone segue normal).
+      if (/notfound|devicesnotfound|overconstrained/i.test(`${e.name} ${e.message}`)) setCamera(false);
+    },
+  );
   const elVideo = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = elVideo.current;
@@ -184,7 +249,8 @@ export function Antessala(props: {
           globalThis.sessionStorage,
         );
       // A prévia para: a sala pega a câmera e o microfone de novo (sem pedir permissão outra vez).
-      for (const f of faixas ?? []) f.stop();
+      video?.stop();
+      audio?.stop();
       if (r.estado === 'aguardando')
         props.aoAguardar({ participanteId: r.participanteId, segredo: r.segredo }, escolhas);
       else props.aoEntrar(r, escolhas);
@@ -224,7 +290,10 @@ export function Antessala(props: {
               aria-pressed={!microfone}
               aria-label={microfone ? 'Desligar o microfone' : 'Ligar o microfone'}
               title={microfone ? 'Desligar o microfone' : 'Ligar o microfone'}
-              onClick={() => setMicrofone((x) => !x)}
+              onClick={() => {
+                setErroMicrofone(null);
+                setMicrofone((x) => !x);
+              }}
             >
               <Icon name={microfone ? 'mic' : 'mic-off'} size={22} />
             </button>
@@ -235,7 +304,10 @@ export function Antessala(props: {
               aria-pressed={!camera}
               aria-label={camera ? 'Desligar a câmera' : 'Ligar a câmera'}
               title={camera ? 'Desligar a câmera' : 'Ligar a câmera'}
-              onClick={() => setCamera((x) => !x)}
+              onClick={() => {
+                setErroCamera(null);
+                setCamera((x) => !x);
+              }}
             >
               <Icon name={camera ? 'video' : 'video-off'} size={22} />
             </button>
@@ -253,16 +325,30 @@ export function Antessala(props: {
           </div>
         </div>
         <Medidor faixa={microfone ? audio : undefined} />
-        {erroAparelho && <Mensagem tipo="aviso">{erroAparelho}</Mensagem>}
+        {erroCamera && <Mensagem tipo="aviso">{erroCamera}</Mensagem>}
+        {erroMicrofone && <Mensagem tipo="aviso">{erroMicrofone}</Mensagem>}
         {!celular && (
           <div className="as__aparelhos">
-            <Seletor id="as-cam" rotulo="Câmera" tipo="videoinput" valor={cameraId} aoMudar={setCameraId} />
+            <Seletor
+              id="as-cam"
+              rotulo="Câmera"
+              tipo="videoinput"
+              valor={cameraId}
+              aoMudar={(id) => {
+                setErroCamera(null);
+                setCamera(true);
+                setCameraId(id);
+              }}
+            />
             <Seletor
               id="as-mic"
               rotulo="Microfone"
               tipo="audioinput"
               valor={microfoneId}
-              aoMudar={setMicrofoneId}
+              aoMudar={(id) => {
+                setErroMicrofone(null);
+                setMicrofoneId(id);
+              }}
             />
             <Seletor
               id="as-som"

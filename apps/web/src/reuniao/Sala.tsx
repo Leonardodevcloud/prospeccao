@@ -223,6 +223,12 @@ function ConteudoSala(props: {
   const [menu, setMenu] = useState<'opcoes' | 'sair' | null>(null);
   const [modo, setModo] = useState<'grade' | 'destaque'>('grade');
   const [fixado, setFixado] = useState<string | null>(null);
+  // Quem apresenta não vê a própria tela (evita o efeito "tela dentro da tela"), a não ser que peça.
+  const [verMinhaTela, setVerMinhaTela] = useState(false);
+  const apresentando = local.isScreenShareEnabled;
+  useEffect(() => {
+    if (!apresentando) setVerMinhaTela(false);
+  }, [apresentando]);
   const [avisos, setAvisos] = useState<Aviso[]>([]);
   const [mensagens, setMensagens] = useState<MensagemChat[]>([]);
   const [naoLidas, setNaoLidas] = useState(0);
@@ -467,7 +473,26 @@ function ConteudoSala(props: {
           </div>
         )}
         <div className="destaque-tela">
-          <Ladrilho trackRef={tela} className="ladrilho--tela" />
+          {meu && !verMinhaTela ? (
+            <div className="apresentando">
+              <Icon name="monitor-up" size={40} />
+              <b>Você está apresentando para todos</b>
+              <span>
+                Sua tela fica escondida aqui para não aparecer uma tela dentro da outra. Os outros veem
+                normalmente.
+              </span>
+              <div className="acoes">
+                <Button size="sm" variant="ghost" onClick={() => setVerMinhaTela(true)}>
+                  Ver mesmo assim
+                </Button>
+                <Button size="sm" onClick={alternarTela}>
+                  Parar de apresentar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Ladrilho trackRef={tela} className="ladrilho--tela" />
+          )}
         </div>
         {pequena ? (
           <Fichas pessoas={pessoas} fixado={fixado} aoFixar={setFixado} />
