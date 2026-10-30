@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api } from '../api';
 import { fmtQuando } from '../formatar';
+import { LinkAjuda } from './Ajuda';
 import { ErroDaApi, Mensagem } from './Formulario';
 
 type Situacao = 'pendente' | 'verificado' | 'falhou';
@@ -161,7 +162,12 @@ export function DominioEmail() {
   return (
     <Panel
       titulo="Domínio de e-mail"
-      acoes={d ? <Badge tone={SITUACAO[d.situacao].tom}>{SITUACAO[d.situacao].texto}</Badge> : undefined}
+      acoes={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+          <LinkAjuda artigo="email-dominio">Passo a passo</LinkAjuda>
+          {d && <Badge tone={SITUACAO[d.situacao].tom}>{SITUACAO[d.situacao].texto}</Badge>}
+        </span>
+      }
     >
       {!t.disponivel && (
         <Mensagem tipo="aviso">

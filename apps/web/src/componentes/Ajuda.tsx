@@ -586,6 +586,87 @@ export const ARTIGOS: ArtigoAjuda[] = [
           monte os passos.
         </p>
         <Nota>Mande um teste para você antes de ligar a sequência.</Nota>
+        <p>
+          Antes da primeira sequência, o administrador cadastra o domínio de e-mail da empresa (veja o artigo
+          “Domínio de e-mail: como configurar”).
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'email-dominio',
+    area: 'Vendas',
+    titulo: 'Domínio de e-mail: como configurar',
+    resumo:
+      'Os e-mails saem com o domínio da sua empresa. Passo a passo do DNS, sem criar conta em outro serviço.',
+    onde: { rotulo: 'E-mail › Configuração', para: '/email?aba=config' },
+    termos:
+      'email e-mail domínio dominio dns registro txt mx spf dkim dmarc remetente registro.br godaddy hostinger cloudflare locaweb verificar configurar envio',
+    corpo: (
+      <>
+        <p>
+          Os e-mails das sequências saem com o domínio da sua empresa (ex.:
+          comercial@contato.suaempresa.com.br). Você não precisa criar conta em nenhum serviço de e-mail:
+          basta copiar alguns registros para o DNS do seu domínio. Só o administrador da conta vê essa parte.
+        </p>
+        <h3>Antes de começar</h3>
+        <ul>
+          <li>
+            Você precisa de um domínio próprio da empresa (ex.: suaempresa.com.br). Gmail, Hotmail, Outlook e
+            parecidos não servem, porque o domínio não é seu.
+          </li>
+          <li>
+            Saiba onde o domínio está registrado: Registro.br, GoDaddy, Hostinger, Locaweb, Cloudflare… É lá
+            que ficam os registros de DNS. Se não souber, pergunte a quem cuida do site da empresa.
+          </li>
+          <li>
+            Use um <b>subdomínio só para prospecção</b>, como <b>contato.</b>suaempresa.com.br. Assim o e-mail
+            do dia a dia da empresa fica protegido se algum envio de prospecção for marcado como spam.
+          </li>
+        </ul>
+        <h3>Passo a passo</h3>
+        <ol>
+          <li>
+            Em <b>E-mail › Configuração › Domínio de e-mail</b>, digite o domínio (ex.:
+            contato.suaempresa.com.br) e clique em <b>Cadastrar domínio</b>.
+          </li>
+          <li>
+            A tela mostra 3 ou 4 registros (tipo, nome e valor), cada um com o botão de copiar. Abra o painel
+            onde o domínio está, entre na parte de <b>DNS</b> ou <b>Zona DNS</b> e crie cada registro com o
+            mesmo tipo, nome e valor.
+          </li>
+          <li>
+            Volte ao sistema e clique em <b>Já configurei, conferir</b>. O DNS costuma levar de minutos a
+            algumas horas para valer; se ainda não achar, espere um pouco e confira de novo.
+          </li>
+          <li>
+            Quando aparecer <b>Verificado</b>, escolha o <b>remetente</b> (a parte antes do @, ex.: comercial)
+            e clique em <b>Salvar remetente</b>.
+          </li>
+          <li>
+            Na aba <b>Identidade visual</b>, coloque o nome que o lead vê, a assinatura e o logo. Depois mande
+            um teste para você numa sequência antes de ligar.
+          </li>
+        </ol>
+        <h3>Se não verificar</h3>
+        <ul>
+          <li>
+            Muitos painéis completam o domínio sozinhos no campo do nome. Se a tela mostra o nome
+            <b> send.contato.suaempresa.com.br</b> e o painel já acrescenta “.suaempresa.com.br”, digite só
+            <b> send.contato</b>.
+          </li>
+          <li>Confira se o valor foi colado inteiro, sem espaço no começo ou no fim.</li>
+          <li>
+            Não apague os registros que já existem no DNS (do site e do e-mail do dia a dia). Só acrescente os
+            novos.
+          </li>
+          <li>Passou um dia e continua “Não encontrado”: fale com o suporte do Prospect Team.</li>
+        </ul>
+        <Nota>
+          As respostas dos leads voltam para o próprio sistema (aba Respostas e a ficha de cada empresa). Quem
+          responde sai da sequência sozinho. No começo, mande poucos e-mails por dia: domínio novo precisa
+          ganhar confiança aos poucos.
+        </Nota>
       </>
     ),
   },
