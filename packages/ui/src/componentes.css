@@ -29,12 +29,20 @@ body {
 .pp-muted {
   color: var(--ink-muted);
 }
+/* Texto só para leitor de tela. Preso no canto (top/left 0): sem isso, dentro de uma lista que rola
+   ele fica na posição natural, escapa do recorte da lista e estica a página (rolagem à toa). */
 .pp-sr {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
   clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
