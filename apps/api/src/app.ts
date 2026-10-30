@@ -46,6 +46,7 @@ import { rotasAvisoVideo, rotasReunioes, rotasSalaPublica } from './modulos/reun
 import { rotasRua } from './modulos/rua/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
 import { rotasSiteMaster, rotasSitePublico } from './modulos/site/rotas.js';
+import { rotaComRecurso } from './recursos.js';
 
 /** Monta a aplicação a partir das dependências (os testes passam as suas). */
 export function criarApp(deps: DepsApi): Express {
@@ -133,18 +134,33 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));
   protegidas.use('/agenda', rotasAgenda(deps));
-  protegidas.use('/reunioes', rotasReunioes(deps));
-  protegidas.use('/rua', rotasRua(deps));
+  // Reuniões: ver as que já aconteceram vale sempre; marcar e mexer é do plano (e das horas do mês).
+  protegidas.use(
+    '/reunioes',
+    rotaComRecurso(deps.pool, 'reunioes', (req) => req.method === 'GET'),
+    rotasReunioes(deps),
+  );
+  protegidas.use('/rua', rotaComRecurso(deps.pool, 'rua'), rotasRua(deps));
   protegidas.use('/email/dominio', rotasDominioEmail(deps));
   protegidas.use('/email', rotasEmail(deps));
-  protegidas.use('/atividade', rotasAtividade(deps));
+  protegidas.use('/atividade', rotaComRecurso(deps.pool, 'relatorios'), rotasAtividade(deps));
   protegidas.use('/places', rotasPlaces(deps));
-  protegidas.use('/auditoria', rotasAuditoria(deps));
+  protegidas.use('/auditoria', rotaComRecurso(deps.pool, 'seguranca'), rotasAuditoria(deps));
   protegidas.use('/exportar', rotasExportar(deps));
   protegidas.use('/alertas', rotasAlertas(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
   // Argos: o assistente (segundo cérebro), só leitura e só no escopo de quem pergunta.
-  protegidas.use('/assistente', rotasAssistente(deps));
+  // Argos é do plano Escala; a transcrição de voz também serve a anotação falada das visitas.
+  protegidas.use(
+    '/assistente',
+    // A voz do Argos é configurada no painel da plataforma (só o master).
+    rotaComRecurso(
+      deps.pool,
+      'argos',
+      (req) => req.path === '/transcrever' || (req.path === '/voz' && !!req.usuario?.master),
+    ),
+    rotasAssistente(deps),
+  );
   // Painel master: contas, credenciais e acesso a qualquer conta.
   protegidas.use('/master/site', exigirMaster, rotasSiteMaster(deps));
   protegidas.use('/master/plataforma', exigirMaster, rotasPlataforma(deps));

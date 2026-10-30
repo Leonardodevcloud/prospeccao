@@ -1,5 +1,6 @@
 import type { Pool } from '@prospeccao/db';
 import type { Logger } from '@prospeccao/shared';
+import { temRecurso } from '../../recursos.js';
 import { paraCadaConta } from '../../rotinas.js';
 import { encerrarSemResposta } from './repositorio.js';
 
@@ -15,6 +16,7 @@ export async function rodarAutomacaoFunil(pool: Pool, log: Logger): Promise<void
     if (!rows[0]?.ok) return;
     try {
       await paraCadaConta(pool, log, 'funil', async (conta) => {
+        if (!(await temRecurso(pool, 'cadencia', conta))) return;
         const n = await encerrarSemResposta(pool);
         if (n) log.info({ conta, encerrados: n }, 'funil: leads sem resposta foram para Perdido');
       });

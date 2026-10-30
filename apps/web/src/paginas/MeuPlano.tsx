@@ -1,7 +1,9 @@
-import { LISTA_MODULOS, MODULOS } from '@prospeccao/shared/planos';
+import { LISTA_MODULOS, LISTA_RECURSOS, MODULOS, RECURSOS } from '@prospeccao/shared/planos';
 import { Badge, EmptyState } from '@prospeccao/ui';
 import { useQuery } from '@tanstack/react-query';
 import { api, type PlanoConta } from '../api';
+import { LinkAjuda } from '../componentes/Ajuda';
+import { textoDoPlano } from '../componentes/ForaDoPlano';
 import { ErroDaApi } from '../componentes/Formulario';
 import { ROTULO_PLANO, UsoComLimite } from '../componentes/PlanoConta';
 import { useEhAdmin } from '../componentes/Sessao';
@@ -11,6 +13,9 @@ interface TelaMeuPlano extends PlanoConta {
   consumo: {
     emails: { enviados: number; limite: number | null };
     whatsapp: { automaticas: number; limite: number | null };
+    horasReuniao: { usadas: number; limite: number | null };
+    conversasIa: { usadas: number; limite: number | null };
+    numerosWhatsapp: { usados: number; limite: number | null };
   };
 }
 
@@ -46,7 +51,7 @@ export function MeuPlano() {
             Plano {ROTULO_PLANO[p.plano]}
             {p.planoDesde ? ` desde ${fmtData(p.planoDesde)}` : ''}
             {varias ? `, de ${p.organizacao.nome} para as ${p.organizacao.unidades} unidades` : ''}. O uso
-            volta a zero todo dia 1º.
+            volta a zero todo dia 1º. <LinkAjuda artigo="meu-plano" />
           </p>
         </div>
         {admin && p.mensalidade != null && (
@@ -108,6 +113,34 @@ export function MeuPlano() {
               limite={p.consumo.whatsapp.limite}
             />
           )}
+          {temWhatsapp && (
+            <UsoComLimite
+              rotulo="Números de WhatsApp conectados"
+              usado={p.consumo.numerosWhatsapp.usados}
+              limite={p.consumo.numerosWhatsapp.limite}
+              detalhe={
+                p.numerosExtras
+                  ? `Inclui ${p.numerosExtras} contratado${p.numerosExtras > 1 ? 's' : ''} à parte.`
+                  : undefined
+              }
+            />
+          )}
+          {p.recursos.includes('reunioes') && (
+            <UsoComLimite
+              rotulo="Horas de reunião por vídeo"
+              usado={p.consumo.horasReuniao.usadas}
+              limite={p.consumo.horasReuniao.limite}
+              detalhe="Soma do tempo das reuniões abertas no mês. Acabou: as novas reuniões esperam o dia 1º ou mais horas."
+            />
+          )}
+          {p.modulos.includes('agente_ia') && (
+            <UsoComLimite
+              rotulo="Conversas do Agente de IA"
+              usado={p.consumo.conversasIa.usadas}
+              limite={p.consumo.conversasIa.limite}
+              detalhe="Leads diferentes com quem a IA falou no mês. Acabou: as respostas passam para o time até o dia 1º."
+            />
+          )}
         </div>
       </section>
 
@@ -120,16 +153,38 @@ export function MeuPlano() {
               <b>Prospecção e CRM</b>
               <span className="quieto">
                 {' '}
-                · Busca de empresas por nicho, enriquecimento de contatos, funil (Kanban), conversas, agenda e
-                relatórios.
+                · Campanhas por nicho e cidade, enriquecimento com decisor e contatos, nota A-B-C, funil,
+                ficha do lead, tarefas, Meu dia e relatórios básicos.
               </span>
             </span>
           </li>
+          {LISTA_RECURSOS.map((r) => {
+            const tem = p.recursos.includes(r);
+            return (
+              <li key={r} className="plano-modulos__item" data-ativo={tem || undefined}>
+                {tem ? (
+                  <Badge tone="brand">Incluído</Badge>
+                ) : (
+                  <Badge tone="outline" icon="lock">
+                    Fora do plano
+                  </Badge>
+                )}
+                <span>
+                  <b>{RECURSOS[r].nome}</b>
+                  <span className="quieto">
+                    {' '}
+                    · {RECURSOS[r].descricao}
+                    {!tem && ` ${textoDoPlano(r)}`}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
           {LISTA_MODULOS.map((m) => {
             const tem = p.modulos.includes(m);
             return (
               <li key={m} className="plano-modulos__item" data-ativo={tem || undefined}>
-                <Badge tone={tem ? 'brand' : 'outline'}>{tem ? 'Contratado' : 'Disponível'}</Badge>
+                <Badge tone={tem ? 'brand' : 'outline'}>{tem ? 'Contratado' : 'Módulo à parte'}</Badge>
                 <span>
                   <b>{MODULOS[m].nome}</b>
                   <span className="quieto"> · {MODULOS[m].descricao}</span>

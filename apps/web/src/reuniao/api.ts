@@ -103,6 +103,8 @@ export interface PessoaNaEspera {
 /* ───────────── CRM ───────────── */
 
 export interface EstadoReunioes {
+  /** O plano da empresa não tem reuniões por vídeo. */
+  foraDoPlano?: boolean;
   video: boolean;
   gravacao: boolean;
   transcricao: boolean;

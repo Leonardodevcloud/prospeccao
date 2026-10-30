@@ -1,3 +1,4 @@
+import type { Recurso } from '@prospeccao/shared/planos';
 /**
  * Cliente da API. Tudo passa por /api (mesma origem): em produção o Vercel
  * repassa para o Railway; em desenvolvimento, o proxy do Vite.
@@ -896,8 +897,10 @@ export interface Sessao {
     id: number;
     nome: string;
     plano: string | null;
-    /** Módulos que valem na conta (sem plano: todos). */
+    /** Módulos que valem na conta (contratados e inclusos no plano; sem plano: todos). */
     modulos: ('whatsapp' | 'agente_ia' | 'email')[];
+    /** Recursos que o plano libera (sem plano: todos). */
+    recursos: Recurso[];
   };
   /** Administra a plataforma (painel master). */
   master: boolean;
@@ -1419,6 +1422,18 @@ export interface PlanoConta {
   limiteLeadsProprio: number | null;
   mensalidadeManual: number | null;
   planoDesde: string | null;
+  /** Recursos que o plano libera (com os liberados à parte). */
+  recursos: Recurso[];
+  /** Recursos liberados só para esta organização, além do plano. */
+  recursosExtras: Recurso[];
+  /** Números de WhatsApp que pode conectar (null: sem limite) e os extras contratados. */
+  numerosWhatsapp: number | null;
+  numerosExtras: number;
+  /** Franquias do mês (null: sem limite). */
+  horasReuniao: number | null;
+  conversasIa: number | null;
+  limiteHorasReuniaoProprio: number | null;
+  limiteConversasIaProprio: number | null;
   /** Uso somado da organização (o contrato vale para todas as unidades). */
   uso: { usuarios: number; leadsMes: number; leadsEsperando: number };
   organizacao: { id: number; nome: string; unidades: number };

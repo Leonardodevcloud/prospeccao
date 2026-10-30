@@ -9,6 +9,7 @@ import {
   tabelaCompleta,
 } from '@prospeccao/shared';
 import { conta } from '../../contexto.js';
+import { esquecerRecursos } from '../../recursos.js';
 
 /**
  * Plano de cada conta: o que foi contratado (plano, usuários, leads por mês, módulos) e quanto
@@ -20,6 +21,11 @@ export interface PlanoComUso extends PlanoEfetivo {
   limiteLeadsProprio: number | null;
   mensalidadeManual: number | null;
   planoDesde: string | null;
+  /** Recursos liberados à parte para esta organização (o master marca no painel). */
+  recursosExtras: string[];
+  /** Franquias combinadas só para esta organização (null = a do plano). */
+  limiteHorasReuniaoProprio: number | null;
+  limiteConversasIaProprio: number | null;
   /** Uso somado da organização inteira (o contrato vale para todas as unidades). */
   uso: { usuarios: number; leadsMes: number; leadsEsperando: number };
   organizacao: { id: number; nome: string; unidades: number };
@@ -57,6 +63,7 @@ export async function salvarTabelaDePrecos(db: Executor, t: TabelaPrecos, usuari
      ON CONFLICT (id) DO UPDATE SET dados = EXCLUDED.dados, atualizado_em = now(), atualizado_por = EXCLUDED.atualizado_por`,
     [JSON.stringify(t), usuarioId],
   );
+  esquecerRecursos();
 }
 
 interface LinhaContrato {
@@ -68,6 +75,10 @@ interface LinhaContrato {
   modulos: string[];
   mensalidade_manual: string | null;
   plano_desde: string | null;
+  numeros_extras: number;
+  recursos_extras: string[];
+  limite_horas_reuniao: number | null;
+  limite_conversas_ia: number | null;
   usuarios: number;
   leads: number;
   esperando: number;
@@ -77,6 +88,7 @@ interface LinhaContrato {
 const SQL_CONTRATO = (filtro: string) =>
   `SELECT o.id AS org_id, o.nome AS org_nome, o.plano, o.limite_usuarios, o.limite_leads_mes, o.modulos,
           o.mensalidade_manual, to_char(o.plano_desde, 'YYYY-MM-DD') AS plano_desde,
+          o.numeros_extras, o.recursos_extras, o.limite_horas_reuniao, o.limite_conversas_ia,
           ${sqlUsuariosAtivos('o.id')} AS usuarios, ${sqlLeadsDoMesDaOrganizacao('o.id')} AS leads,
           (SELECT count(*) FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
              JOIN cadastro.contas cc ON cc.id = ca.conta_id
@@ -95,6 +107,10 @@ async function montar(db: Executor, r: LinhaContrato): Promise<Omit<PlanoComUso,
         limiteLeadsMes: r.limite_leads_mes,
         modulos: r.modulos,
         mensalidadeManual: manual,
+        numerosExtras: r.numeros_extras,
+        recursosExtras: r.recursos_extras,
+        horasReuniao: r.limite_horas_reuniao,
+        conversasIa: r.limite_conversas_ia,
       },
       tabela,
     ),
@@ -102,6 +118,9 @@ async function montar(db: Executor, r: LinhaContrato): Promise<Omit<PlanoComUso,
     limiteLeadsProprio: r.limite_leads_mes,
     mensalidadeManual: manual,
     planoDesde: r.plano_desde,
+    recursosExtras: r.recursos_extras,
+    limiteHorasReuniaoProprio: r.limite_horas_reuniao,
+    limiteConversasIaProprio: r.limite_conversas_ia,
     uso: { usuarios: r.usuarios, leadsMes: r.leads, leadsEsperando: r.esperando },
     organizacao: { id: r.org_id, nome: r.org_nome, unidades: r.unidades },
   };
@@ -148,6 +167,7 @@ export async function salvarPlano(db: Executor, organizacaoId: number, d: PlanoC
   const { rowCount } = await db.query(
     `UPDATE cadastro.organizacoes
         SET plano = $2, limite_usuarios = $3, limite_leads_mes = $4, modulos = $5, mensalidade_manual = $6,
+            numeros_extras = $7, recursos_extras = $8, limite_horas_reuniao = $9, limite_conversas_ia = $10,
             plano_desde = CASE WHEN $2::text IS NULL THEN NULL
                                WHEN plano IS DISTINCT FROM $2 THEN current_date ELSE plano_desde END
       WHERE id = $1`,
@@ -158,9 +178,14 @@ export async function salvarPlano(db: Executor, organizacaoId: number, d: PlanoC
       d.plano ? d.limiteLeadsMes : null,
       d.plano ? d.modulos : [],
       d.plano ? d.mensalidadeManual : null,
+      d.plano && d.modulos.includes('whatsapp') ? d.numerosExtras : 0,
+      d.plano ? d.recursosExtras : [],
+      d.plano ? d.horasReuniao : null,
+      d.plano ? d.conversasIa : null,
     ],
   );
   if (!rowCount) throw AppError.naoEncontrado('Organização');
+  esquecerRecursos();
 }
 
 /** Organização da conta (unidade). */

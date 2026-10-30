@@ -2,6 +2,7 @@ import type { Executor } from '@prospeccao/db';
 import type { ConversaExistente } from '@prospeccao/integrations/whatsapp';
 import { AppError } from '@prospeccao/shared';
 import { conta, contaSql, usuarioAtual } from '../../contexto.js';
+import { numerosDeWhatsapp } from '../../recursos.js';
 import * as alertas from '../alertas/repositorio.js';
 import { definirResponsavel } from '../equipe/repositorio.js';
 import { HOJE_SP } from './repositorio.js';
@@ -328,14 +329,22 @@ export async function obter(db: Executor, id: number): Promise<ChipCadastro> {
 
 /* ───────────── Números pela Z-API (o cliente conecta sozinho) ───────────── */
 
-/** Quantos números a conta pode conectar: o do plano (master) ou, sem plano, sem limite. */
+/**
+ * Quantos números esta unidade pode conectar: os do plano da organização (2 com o módulo de
+ * WhatsApp, mais os extras contratados), divididos entre as unidades, e o limite próprio da
+ * unidade (master), se houver. Sem plano: sem limite.
+ */
 export async function limiteDeNumeros(db: Executor): Promise<{ limite: number | null; usados: number }> {
   const { rows } = await db.query<{ limite: number | null; usados: number }>(
     `SELECT c.limite_chips AS limite,
             (SELECT count(*)::int FROM comercial.chips h WHERE h.conta_id = c.id AND h.token_cifrado IS NOT NULL) AS usados
        FROM cadastro.contas c WHERE c.id = ${contaSql()}`,
   );
-  return rows[0] ?? { limite: null, usados: 0 };
+  const daConta = rows[0] ?? { limite: null, usados: 0 };
+  const org = await numerosDeWhatsapp(db);
+  const daOrganizacao = org.limite == null ? null : daConta.usados + Math.max(0, org.limite - org.usados);
+  const limites = [daConta.limite, daOrganizacao].filter((x): x is number => x != null);
+  return { limite: limites.length ? Math.min(...limites) : null, usados: daConta.usados };
 }
 
 /** Número novo: a instância já criada na Z-API, com o token cifrado. Começa aquecendo. */

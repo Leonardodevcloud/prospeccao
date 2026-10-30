@@ -3,6 +3,7 @@ import {
   AppError,
   aceitarConvite,
   esqueciSenha,
+  LISTA_RECURSOS,
   loginDuasEtapas,
   loginEntrada,
   montarEmail,
@@ -17,6 +18,7 @@ import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp } from '../../endereco.js';
 import { corpo } from '../../middlewares/http.js';
 import { COOKIE_SESSAO, exigirSessao } from '../../middlewares/seguranca.js';
+import { contratoDaConta } from '../../recursos.js';
 import { ipDe } from '../auditoria/middleware.js';
 import * as auditoria from '../auditoria/repositorio.js';
 import { conferirSegundaEtapa, desafioDuasEtapas, lerDesafio, rotasContaSegura } from './contaSegura.js';
@@ -394,6 +396,7 @@ export function rotasAuth(deps: DepsApi): Router {
          FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE c.id = $1`,
       [u.contaId],
     );
+    const contrato = await contratoDaConta(pool, u.contaId).catch(() => null);
     res.json({
       id: u.id,
       nome: u.nome,
@@ -405,8 +408,10 @@ export function rotasAuth(deps: DepsApi): Router {
         id: u.contaId,
         nome: u.contaNome,
         plano: c[0]?.plano ?? null,
-        // Módulos que valem na conta (sem plano: todos).
-        modulos: c[0]?.plano ? c[0].modulos : ['whatsapp', 'agente_ia', 'email'],
+        // Módulos que valem na conta (contratados e inclusos no plano; sem plano: todos).
+        modulos: contrato?.modulos ?? (c[0]?.plano ? c[0].modulos : ['whatsapp', 'agente_ia', 'email']),
+        // Recursos que o plano libera (as telas de fora mostram "disponível a partir do plano X").
+        recursos: contrato?.recursos ?? [...LISTA_RECURSOS],
       },
       organizacao: c[0] ? { id: c[0].organizacao_id, nome: c[0].organizacao, unidades: c[0].unidades } : null,
       master: u.master,
@@ -417,7 +422,9 @@ export function rotasAuth(deps: DepsApi): Router {
       termos: { versao: TERMOS_VERSAO, aceitos: rows[0]?.termosVersao === TERMOS_VERSAO },
       // Marca do cliente (white label): nome, cor e logo no sistema e nos relatórios.
       marca:
-        c[0] && (c[0].marca_nome || c[0].marca_cor || c[0].tem_logo)
+        c[0] &&
+        (c[0].marca_nome || c[0].marca_cor || c[0].tem_logo) &&
+        (contrato?.recursos.includes('marca') ?? true)
           ? {
               nome: c[0].marca_nome,
               cor: c[0].marca_cor,

@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { fmtQuando } from '../formatar';
+import { ForaDoPlano } from './ForaDoPlano';
 import { ErroDaApi, Mensagem } from './Formulario';
+import { useRecurso } from './Sessao';
 
 interface TelaPush {
   /** Chave pública VAPID (null: o servidor ainda não ligou o envio). */
@@ -55,6 +57,12 @@ const instalado = () => window.matchMedia?.('(display-mode: standalone)').matche
  * quebra, o aviso chega no aparelho mesmo com o sistema fechado.
  */
 export function NotificacoesCelular() {
+  // Notificação no celular é do plano Time em diante.
+  if (!useRecurso('celular')) return <ForaDoPlano recurso="celular" compacto />;
+  return <LigarNotificacoes />;
+}
+
+function LigarNotificacoes() {
   const cliente = useQueryClient();
   const q = useQuery({ queryKey: ['push'], queryFn: () => api<TelaPush>('/notificacoes/push') });
   const [endpointAqui, setEndpointAqui] = useState<string | null>(null);

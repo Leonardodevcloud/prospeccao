@@ -87,6 +87,12 @@ export function rotasMaster(deps: DepsApi): Router {
   });
   /** Nova unidade no cliente (o gestor também cria pela tela da organização). */
   r.post('/organizacoes/:id/unidades', async (req, res) => {
+    // A segunda unidade em diante é do recurso "Várias unidades" (plano Escala ou liberado à parte).
+    const contrato = await plano.planoDaOrganizacao(pool, idDaRota(req));
+    if (contrato.organizacao.unidades >= 1 && !contrato.recursos.includes('unidades'))
+      throw AppError.invalido(
+        'O plano deste cliente não inclui várias unidades. Mude o plano para Escala ou libere "Várias unidades" no plano dele.',
+      );
     const id = await org.criarUnidade(pool, idDaRota(req), corpo(req, unidadeNova));
     log.info({ organizacao: idDaRota(req), unidade: id }, 'master: unidade criada');
     res.status(201).json({ id });

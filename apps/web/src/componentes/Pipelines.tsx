@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, type EtapaPipeline, type PapelEtapa, type Pipeline, ROTULO_PAPEL } from '../api';
 import { Drawer } from './Drawer';
+import { ForaDoPlano } from './ForaDoPlano';
 import { ErroDaApi, Mensagem } from './Formulario';
+import { useRecurso } from './Sessao';
 
 export const PAPEIS: PapelEtapa[] = [
   'a_abordar',
@@ -168,6 +170,7 @@ export function EditarPipelines(props: {
     cor: CORES[3] as string,
   });
   const [novoPipe, setNovoPipe] = useState('');
+  const variosFunis = useRecurso('funis');
   const [apagandoPipe, setApagandoPipe] = useState(false);
 
   const renomear = useMutation({
@@ -322,8 +325,10 @@ export function EditarPipelines(props: {
               </div>
             </form>
 
+            {!variosFunis && <ForaDoPlano recurso="funis" compacto />}
             <form
               className="form"
+              hidden={!variosFunis}
               onSubmit={(e) => {
                 e.preventDefault();
                 setErro(null);

@@ -39,10 +39,11 @@ export function temAtividade(d: DadosAtividade | undefined): boolean {
   );
 }
 
-export function useAtividade(intervaloParado = 30_000) {
+export function useAtividade(intervaloParado = 30_000, ligado = true) {
   return useQuery({
     queryKey: ['atividade'],
     queryFn: () => api<DadosAtividade>('/atividade'),
+    enabled: ligado,
     refetchInterval: (q) => (temAtividade(q.state.data) ? 5_000 : intervaloParado),
   });
 }

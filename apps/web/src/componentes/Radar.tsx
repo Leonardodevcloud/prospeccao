@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, ROTULO_ETAPA, type TelaRadar } from '../api';
 import { fmtCidade, fmtNome, fmtReais } from '../formatar';
+import { useRecurso } from './Sessao';
 
 /**
  * Radar dos negócios parados: críticos e em risco, com o motivo de cada um (o lead escreveu e
@@ -10,10 +11,13 @@ import { fmtCidade, fmtNome, fmtReais } from '../formatar';
  */
 export function Radar(props: { todos: boolean; aoAbrirLead: (id: number) => void }) {
   const [mais, setMais] = useState(false);
+  // Radar é dos relatórios completos (plano Time em diante); fora do plano, simplesmente não aparece.
+  const completo = useRecurso('relatorios');
   const q = useQuery({
     queryKey: ['radar', props.todos],
     queryFn: () => api<TelaRadar>(`/funil/radar${props.todos ? '' : '?meus=1'}`),
     refetchInterval: 120_000,
+    enabled: completo,
   });
   const d = q.data;
   if (!d?.itens.length) return null;

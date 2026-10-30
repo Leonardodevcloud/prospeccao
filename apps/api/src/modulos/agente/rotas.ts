@@ -133,7 +133,7 @@ export function rotasAgente(deps: DepsApi): Router {
     const { limite, usados } = await chips.limiteDeNumeros(pool);
     if (limite != null && usados >= limite)
       throw AppError.invalido(
-        `Seu plano permite ${limite} ${limite === 1 ? 'número' : 'números'} de WhatsApp. Para conectar mais, fale com o suporte do Prospect Team.`,
+        `Seu plano permite ${limite} ${limite === 1 ? 'número' : 'números'} de WhatsApp e todos estão conectados. Cada número a mais é contratado à parte: fale com o suporte do Prospect Team para liberar.`,
       );
     if (!credenciais.chave)
       throw AppError.invalido(

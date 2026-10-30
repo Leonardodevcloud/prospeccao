@@ -15,6 +15,7 @@ import {
 } from '@prospeccao/shared';
 import jwt from 'jsonwebtoken';
 import { comConta, type UsuarioSessao } from '../../contexto.js';
+import { exigirHorasDeReuniao } from '../../recursos.js';
 import * as funil from '../funil/repositorio.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import { chaveDoPedaco } from './montar.js';
@@ -166,6 +167,8 @@ async function liberar(
   const video = d.reunioes.video;
   if (!video) throw semVideo();
   const gravar = sala.gravar && video.gravaArquivos;
+  // Reunião começando agora (ninguém na sala): confere o plano e as horas do mês.
+  if (!(await repo.sessaoAoVivo(d.pool, sala.id))) await exigirHorasDeReuniao(d.pool);
   const { sessao, nova } = await abrirSessaoTransacao(d.pool, sala.id, {
     gravar,
     transcrever: sala.transcrever && !!d.reunioes.transcricao,

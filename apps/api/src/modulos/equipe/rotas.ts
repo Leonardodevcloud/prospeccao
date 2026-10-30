@@ -5,6 +5,14 @@ import { conta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
+import {
+  conversasDaIaNoMes,
+  exigirRecurso,
+  foraDoPlano,
+  horasDeReuniaoNoMes,
+  numerosDeWhatsapp,
+  temRecurso,
+} from '../../recursos.js';
 import { consumoDaConta } from '../consumo/repositorio.js';
 import { planoDaConta } from '../plano/repositorio.js';
 import * as repo from './repositorio.js';
@@ -22,7 +30,13 @@ export function rotasEquipe({ pool, origens }: DepsApi): Router {
 
   /** O plano da conta: o que está contratado e quanto já foi usado no mês. */
   r.get('/plano', async (req, res) => {
-    const [p, c] = await Promise.all([planoDaConta(pool, conta()), consumoDaConta(pool, conta())]);
+    const [p, c, horas, conversas, numeros] = await Promise.all([
+      planoDaConta(pool, conta()),
+      consumoDaConta(pool, conta()),
+      horasDeReuniaoNoMes(pool),
+      conversasDaIaNoMes(pool),
+      numerosDeWhatsapp(pool),
+    ]);
     const admin = req.usuario?.papel === 'admin';
     res.json({
       ...p,
@@ -34,6 +48,10 @@ export function rotasEquipe({ pool, origens }: DepsApi): Router {
       consumo: {
         emails: { enviados: c.emails.enviados, limite: c.limites.emailsMes },
         whatsapp: { automaticas: c.whatsapp.automaticas, limite: c.limites.whatsappMes },
+        // Franquias do plano (organização toda): horas de reunião, conversas da IA e números.
+        horasReuniao: { usadas: Math.round(horas * 10) / 10, limite: p.horasReuniao },
+        conversasIa: { usadas: conversas, limite: p.conversasIa },
+        numerosWhatsapp: { usados: numeros.usados, limite: p.numerosWhatsapp },
       },
     });
   });
@@ -43,17 +61,27 @@ export function rotasEquipe({ pool, origens }: DepsApi): Router {
   });
 
   r.get('/desempenho', async (req, res) => {
+    await exigirRecurso(pool, 'relatorios');
     const { dias } = consulta(req, z.object({ dias: z.coerce.number().int().min(0).max(3650).default(30) }));
     res.json(await repo.desempenho(pool, dias));
   });
 
   r.post('/', exigirAdmin, async (req, res) => {
-    const { id, token } = await repo.criar(pool, corpo(req, usuarioNovo));
+    const novo = corpo(req, usuarioNovo);
+    if (novo.alcance === 'proprios') await exigirRecurso(pool, 'equipe');
+    const { id, token } = await repo.criar(pool, novo);
     res.status(201).json({ id, convite: link(req, token), diasValidade: repo.DIAS_CONVITE });
   });
 
   r.patch('/:id', exigirAdmin, async (req, res) => {
-    await repo.atualizar(pool, idDaRota(req), corpo(req, usuarioAtualizar));
+    const d = corpo(req, usuarioAtualizar);
+    // "Só a própria base" e metas são do trabalho em equipe (plano Time em diante): sem ele, a
+    // própria base é recusada e as metas ficam como estão.
+    if (!(await temRecurso(pool, 'equipe'))) {
+      if (d.alcance === 'proprios') throw await foraDoPlano(pool, 'equipe');
+      delete d.metas;
+    }
+    await repo.atualizar(pool, idDaRota(req), d);
     res.json(await repo.listar(pool));
   });
 
@@ -63,11 +91,13 @@ export function rotasEquipe({ pool, origens }: DepsApi): Router {
   });
 
   r.put('/distribuicao', exigirAdmin, async (req, res) => {
+    await exigirRecurso(pool, 'equipe');
     await repo.salvarDistribuicao(pool, corpo(req, distribuicaoEntrada));
     res.json({ ok: true });
   });
 
   r.post('/distribuir', exigirAdmin, async (_req, res) => {
+    await exigirRecurso(pool, 'equipe');
     res.json({ distribuidos: await repo.distribuirSemDono(pool) });
   });
 

@@ -8,7 +8,7 @@ import type { EstadoReunioes } from '../reuniao/api';
 import { LinkAjuda } from './Ajuda';
 import { Drawer } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
-import { useEquipe, useSessao } from './Sessao';
+import { useEquipe, useRecurso, useSessao } from './Sessao';
 
 const TIPOS: TipoTarefa[] = ['reuniao', 'ligacao', 'visita', 'tarefa'];
 
@@ -46,9 +46,14 @@ export function linkGoogle(
 
 /** O que está configurado para as reuniões por vídeo (a tela só oferece o que funciona). */
 export function useEstadoReunioes() {
+  // Reuniões por vídeo são do plano Time em diante: fora do plano, a tela não oferece a sala.
+  const noPlano = useRecurso('reunioes');
   return useQuery({
-    queryKey: ['reunioes', 'estado'],
-    queryFn: () => api<EstadoReunioes>('/reunioes/estado'),
+    queryKey: ['reunioes', 'estado', noPlano],
+    queryFn: async () => {
+      const e = await api<EstadoReunioes>('/reunioes/estado');
+      return noPlano ? { ...e, foraDoPlano: false } : { ...e, video: false, foraDoPlano: true };
+    },
     staleTime: 10 * 60_000,
   });
 }

@@ -1,3 +1,4 @@
+import type { Recurso } from '@prospeccao/shared/planos';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Equipe, type Sessao } from '../api';
 import { iniciais } from '../formatar';
@@ -11,6 +12,12 @@ export function useSessao() {
 export function useEhAdmin(): boolean {
   const s = useSessao().data;
   return s?.papel === 'admin' && s.papelOrganizacao !== 'leitura';
+}
+
+/** O plano da conta libera este recurso? (Sem plano: tudo.) */
+export function useRecurso(r: Recurso): boolean {
+  const s = useSessao().data;
+  return !s || (s.conta.recursos ?? []).includes(r);
 }
 
 /** Acesso só de leitura (diretoria): vê tudo, não altera nada. Botões de ação nem aparecem. */

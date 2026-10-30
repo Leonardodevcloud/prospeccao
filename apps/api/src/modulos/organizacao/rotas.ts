@@ -12,6 +12,7 @@ import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp } from '../../endereco.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirGestor } from '../../middlewares/seguranca.js';
+import { exigirRecurso } from '../../recursos.js';
 import { abrirSessao } from '../auth/sessao.js';
 import { DIAS_CONVITE } from '../equipe/repositorio.js';
 import * as painel from './painel.js';
@@ -44,6 +45,7 @@ export function rotasOrganizacao(deps: DepsApi): Router {
   });
 
   r.put('/marca', exigirGestor, async (req, res) => {
+    await exigirRecurso(pool, 'marca');
     await repo.salvarMarca(pool, org(req), corpo(req, marcaEntrada));
     log.info({ organizacao: org(req) }, 'organização: marca salva');
     res.json({ ok: true });
@@ -52,6 +54,7 @@ export function rotasOrganizacao(deps: DepsApi): Router {
   /** Exigir verificação em duas etapas de todo mundo da organização. */
   r.put('/seguranca', exigirGestor, async (req, res) => {
     const { exigirDuasEtapas } = corpo(req, segurancaOrganizacao);
+    if (exigirDuasEtapas) await exigirRecurso(pool, 'seguranca');
     const u = req.usuario!;
     if (exigirDuasEtapas && !u.master) {
       const { rows } = await pool.query<{ ativo: boolean }>(
@@ -106,6 +109,7 @@ export function rotasOrganizacao(deps: DepsApi): Router {
   });
 
   r.post('/unidades', exigirGestor, async (req, res) => {
+    await exigirRecurso(pool, 'unidades');
     const id = await repo.criarUnidade(pool, org(req), corpo(req, unidadeNova));
     log.info({ organizacao: org(req), unidade: id }, 'organização: unidade criada');
     res.status(201).json({ id });

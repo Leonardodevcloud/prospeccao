@@ -11,9 +11,10 @@ import {
   type UnidadeOrganizacao,
 } from '../api';
 import { Drawer } from '../componentes/Drawer';
+import { ForaDoPlano } from '../componentes/ForaDoPlano';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ROTULO_PLANO } from '../componentes/PlanoConta';
-import { useSessao } from '../componentes/Sessao';
+import { useRecurso, useSessao } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando } from '../formatar';
 import { LinkConvite } from './Equipe';
 
@@ -53,6 +54,7 @@ export function Organizacao() {
   const q = useOrganizacao(daOrganizacao);
   const entrar = useEntrarNaUnidade();
   const [novaUnidade, setNovaUnidade] = useState(false);
+  const variasUnidades = useRecurso('unidades');
   const [unidade, setUnidade] = useState<UnidadeOrganizacao | null>(null);
   const [convidar, setConvidar] = useState(false);
   const [pessoa, setPessoa] = useState<PessoaOrganizacao | null>(null);
@@ -83,9 +85,11 @@ export function Organizacao() {
             <Button variant="ghost" icon="user-plus" onClick={() => setConvidar(true)}>
               Convidar pessoa
             </Button>
-            <Button variant="primary" icon="plus" onClick={() => setNovaUnidade(true)}>
-              Nova unidade
-            </Button>
+            {variasUnidades && (
+              <Button variant="primary" icon="plus" onClick={() => setNovaUnidade(true)}>
+                Nova unidade
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -666,6 +670,8 @@ function EditarPessoa(props: { dados: DadosOrganizacao; pessoa: PessoaOrganizaca
 /** Segurança (exigir duas etapas) e marca do cliente (nome, cor e logo no sistema e no PDF). */
 function SegurancaEMarca(props: { dados: DadosOrganizacao }) {
   const cliente = useQueryClient();
+  const seguro = useRecurso('seguranca');
+  const comMarca = useRecurso('marca');
   const o = props.dados.organizacao;
   const [nome, setNome] = useState(o.marca.nome ?? '');
   const [cor, setCor] = useState(o.marca.cor ?? '#0b6b63');
@@ -698,7 +704,8 @@ function SegurancaEMarca(props: { dados: DadosOrganizacao }) {
             {comDuas} de {ativas} pessoas ativas usam verificação em duas etapas (senha + código do app do
             celular).
           </p>
-          <label className="opcao">
+          {!seguro && !o.exigirDuasEtapas && <ForaDoPlano recurso="seguranca" compacto />}
+          <label className="opcao" hidden={!seguro && !o.exigirDuasEtapas}>
             <input
               type="checkbox"
               checked={o.exigirDuasEtapas}
@@ -722,7 +729,9 @@ function SegurancaEMarca(props: { dados: DadosOrganizacao }) {
         </div>
       </Panel>
       <Panel titulo="Marca da empresa">
+        {!comMarca && <ForaDoPlano recurso="marca" compacto />}
         <form
+          hidden={!comMarca}
           className="form"
           onSubmit={(e: FormEvent) => {
             e.preventDefault();

@@ -590,6 +590,67 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'meu-plano',
+    area: 'Gestão',
+    titulo: 'Planos, módulos e limites',
+    resumo: 'O que cada plano libera, os módulos à parte, os números de WhatsApp e as franquias do mês.',
+    onde: { rotulo: 'Meu plano', para: '/plano' },
+    termos:
+      'plano start time escala módulo preço mensalidade limite franquia número whatsapp extra agente ia conversas horas reunião cadeado bloqueado liberar upgrade',
+    corpo: (
+      <>
+        <p>
+          Todos os planos têm a base: campanhas por nicho e cidade, enriquecimento com decisor e contatos,
+          nota A, B e C, funil, ficha do lead, tarefas, Meu dia e os relatórios do funil e das campanhas. O
+          que muda de um plano para o outro:
+        </p>
+        <ul>
+          <li>
+            <b>Start</b>: a base, para até 2 pessoas e 2 mil leads por mês.
+          </li>
+          <li>
+            <b>Time</b>: soma o trabalho em equipe (distribuição automática dos leads, metas e “só a própria
+            base”), vários funis, a cadência automática de follow-up, os relatórios completos (desempenho,
+            radar e atividade), reuniões por vídeo (20 horas por mês), vendas na rua e as notificações no
+            celular.
+          </li>
+          <li>
+            <b>Escala</b>: tudo do Time, mais o Argos, várias unidades com o painel do gestor, marca própria,
+            auditoria com duas etapas obrigatória, prospecção por e-mail inclusa e 60 horas de reunião por
+            mês.
+          </li>
+        </ul>
+        <h3>Módulos à parte (em qualquer plano)</h3>
+        <ul>
+          <li>
+            <b>WhatsApp integrado</b>, com 2 números. Cada número a mais é contratado à parte. Com todos os
+            números em uso, “Conectar número” avisa que chegou ao limite.
+          </li>
+          <li>
+            <b>Agente de IA</b> (usa o WhatsApp), com uma franquia de conversas por mês. Conversa é cada lead
+            diferente com quem a IA falou no mês. Acabou a franquia: a IA para de responder e as mensagens
+            passam para o time até o dia 1º.
+          </li>
+          <li>
+            <b>E-mail automatizado</b> (já vem no Escala).
+          </li>
+        </ul>
+        <h3>Quando algo não está no plano</h3>
+        <p>
+          O item aparece no menu com um cadeado e a tela explica o que ele faz e a partir de qual plano vem.
+          Para liberar, fale com a gente: a mudança vale na hora, sem perder nada do que já está no sistema.
+          Em <b>Meu plano</b> você vê o que está incluído e quanto já usou no mês: leads, usuários, números de
+          WhatsApp, horas de reunião e conversas da IA. Tudo volta a zero no dia 1º.
+        </p>
+        <Nota>
+          As horas de reunião somam o tempo de todas as reuniões abertas no mês, de todas as unidades. Com as
+          horas esgotadas, a reunião que já está acontecendo continua; as novas esperam o dia 1º ou mais
+          horas.
+        </Nota>
+      </>
+    ),
+  },
+  {
     id: 'equipe',
     area: 'Gestão',
     titulo: 'Equipe e o que cada um vê',

@@ -8,6 +8,7 @@ import {
   type UsuarioNovo,
 } from '@prospeccao/shared';
 import { contaSql, donoDaBase, usuarioAtual } from '../../contexto.js';
+import { temRecurso } from '../../recursos.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import { exigirVagaDeUsuario } from '../plano/repositorio.js';
 
@@ -235,14 +236,16 @@ export async function atribuirNaEntrada(db: Executor, empresaId: number): Promis
   if (dono) return definirResponsavel(db, empresaId, dono);
   const cfg = await obterDistribuicao(db);
   const quem = usuarioDaConta();
-  const id = cfg.sdr === 'rodizio' ? ((await proximoDoRodizio(db, 'sdr')) ?? quem) : quem;
-  if (id) await definirResponsavel(db, empresaId, id, cfg.sdr === 'rodizio' ? 'rodízio' : undefined);
+  // O rodízio é do trabalho em equipe; sem ele no plano, o lead fica com quem o pôs no funil.
+  const rodizio = cfg.sdr === 'rodizio' && (await temRecurso(db, 'equipe'));
+  const id = rodizio ? ((await proximoDoRodizio(db, 'sdr')) ?? quem) : quem;
+  if (id) await definirResponsavel(db, empresaId, id, rodizio ? 'rodízio' : undefined);
 }
 
 /** Reunião marcada: passa para um closer (rodízio) ou continua com o SDR. */
 export async function atribuirNaReuniao(db: Executor, empresaId: number): Promise<void> {
   const cfg = await obterDistribuicao(db);
-  if (cfg.closer !== 'rodizio') return;
+  if (cfg.closer !== 'rodizio' || !(await temRecurso(db, 'equipe'))) return;
   const id = await proximoDoRodizio(db, 'closer');
   if (id) await definirResponsavel(db, empresaId, id, 'reunião marcada');
 }

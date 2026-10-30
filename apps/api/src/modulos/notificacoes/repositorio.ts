@@ -1,5 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import { contaSql } from '../../contexto.js';
+import { temRecurso } from '../../recursos.js';
 import { enviarPush } from '../push/servico.js';
 
 /** Avisos para cada pessoa da equipe (o sino do menu). */
@@ -27,6 +28,8 @@ function linkDoAviso(a: Aviso): string {
  */
 export async function notificar(db: Executor, usuarioId: number, a: Aviso): Promise<void> {
   await gravarAviso(db, usuarioId, a);
+  // Notificação no celular é do plano Time em diante (o sino do sistema vale sempre).
+  if (!(await temRecurso(db, 'celular'))) return;
   void enviarPush(usuarioId, {
     titulo: a.titulo,
     texto: a.texto ?? null,

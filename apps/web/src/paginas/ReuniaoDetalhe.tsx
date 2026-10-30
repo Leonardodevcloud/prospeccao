@@ -10,7 +10,7 @@ import { type FormEvent, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { api } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { useEhAdmin, useSessao, useSoLeitura } from '../componentes/Sessao';
+import { useEhAdmin, useRecurso, useSessao, useSoLeitura } from '../componentes/Sessao';
 import { diaDaqui, fmtNome, instanteDoInput } from '../formatar';
 import type { DetalheReuniao } from '../reuniao/api';
 import { fmtTamanho } from '../reuniao/PainelChat';
@@ -506,6 +506,8 @@ function ProximosPassos(props: { d: DetalheReuniao; r: ResumoReuniao; soLeitura:
 
 function PergunteAoArgos(props: { d: DetalheReuniao; aoPerguntar: (p: string) => void }) {
   const [p, setP] = useState('');
+  // O Argos é do plano Escala: sem ele, o quadro some.
+  if (!useRecurso('argos')) return null;
   const sobre = props.d.empresaNome ? ` com ${fmtNome(props.d.empresaNome)}` : '';
   return (
     <Panel titulo="Pergunte ao Argos">

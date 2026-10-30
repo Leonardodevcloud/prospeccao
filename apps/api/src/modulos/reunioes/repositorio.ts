@@ -10,6 +10,7 @@ import {
   type StatusSala,
 } from '@prospeccao/shared';
 import { contaSql, donoDaBase, empresaNaBase } from '../../contexto.js';
+import { exigirRecurso } from '../../recursos.js';
 
 /**
  * Salas de reunião por vídeo: a sala (o link), as sessões (cada vez que foi usada), quem entrou,
@@ -113,6 +114,7 @@ export async function salaPorId(db: Executor, id: number): Promise<Sala> {
  * Devolve o link, que vira o "local" da tarefa.
  */
 export async function criarSalaDaTarefa(db: Executor, tarefaId: number, o: OpcoesSala): Promise<string> {
+  await exigirRecurso(db, 'reunioes');
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     const codigo = codigoSala(randomBytes(8));
     const { rows } = await db.query<{ codigo: string }>(

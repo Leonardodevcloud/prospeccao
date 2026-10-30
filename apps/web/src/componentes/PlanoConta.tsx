@@ -1,15 +1,18 @@
 import {
   LISTA_MODULOS,
+  LISTA_RECURSOS,
   MODULOS,
   type Modulo,
   NOME_PLANO,
   PLANOS_PRONTOS,
   type Plano,
   planoEfetivo,
+  RECURSOS,
+  type Recurso,
   TABELA_PADRAO,
   type TabelaPrecos,
 } from '@prospeccao/shared/planos';
-import { Badge, Button } from '@prospeccao/ui';
+import { Badge, Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, type PlanoConta } from '../api';
@@ -96,6 +99,23 @@ export function ResumoPlano(props: { p: PlanoConta; contato?: boolean; semPreco?
                 <b>{MODULOS[m].nome}</b>
                 <span className="quieto"> · {MODULOS[m].descricao}</span>
               </span>
+            </li>
+          );
+        })}
+      </ul>
+      <ul className="plano-recursos" aria-label="Recursos do plano">
+        {LISTA_RECURSOS.map((r) => {
+          const tem = p.recursos.includes(r);
+          return (
+            <li
+              key={r}
+              className="plano-recursos__item"
+              data-ativo={tem || undefined}
+              title={RECURSOS[r].descricao}
+            >
+              <Icon name={tem ? 'check' : 'lock'} size={14} />
+              {RECURSOS[r].nome}
+              {tem && p.recursosExtras.includes(r) && <span className="quieto"> · à parte</span>}
             </li>
           );
         })}
@@ -191,20 +211,32 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
     plano && plano !== 'personalizado'
       ? { usuarios: t.planos[plano].usuarios, leads: t.planos[plano].leadsMes }
       : { usuarios: 3, leads: 10000 };
+  const inclusosDo = (plano: Plano | ''): Modulo[] =>
+    plano && plano !== 'personalizado' ? tabela.planos[plano].modulosInclusos : [];
+  const inteiroOuNulo = (v: string) => (v.trim() ? Number(v.replace(/\D/g, '')) : null);
   const inicial = () => {
     const plano = (props.p.plano ?? '') as Plano | '';
     return {
       plano,
       usuarios: props.p.usuarios ?? numerosDoPlano(plano, tabela).usuarios,
       leads: props.p.leadsMes ?? numerosDoPlano(plano, tabela).leads,
-      modulos: props.p.plano ? [...props.p.modulos] : ([] as Modulo[]),
+      // Os inclusos no plano não entram como contratados (vêm sozinhos).
+      modulos: props.p.plano
+        ? props.p.modulos.filter((m) => !inclusosDo(plano).includes(m))
+        : ([] as Modulo[]),
       manual: props.p.mensalidadeManual != null ? String(props.p.mensalidadeManual).replace('.', ',') : '',
+      numerosExtras: props.p.numerosExtras ?? 0,
+      recursosExtras: [...(props.p.recursosExtras ?? [])] as Recurso[],
+      horas: props.p.limiteHorasReuniaoProprio != null ? String(props.p.limiteHorasReuniaoProprio) : '',
+      conversas: props.p.limiteConversasIaProprio != null ? String(props.p.limiteConversasIaProprio) : '',
     };
   };
   const [f, setF] = useState(inicial);
   // biome-ignore lint/correctness/useExhaustiveDependencies: recarrega quando o servidor devolve o plano salvo
   useEffect(() => setF(inicial()), [props.p]);
   const pronto = f.plano && f.plano !== 'personalizado' ? tabela.planos[f.plano] : null;
+  const recursosDoPlano: Recurso[] = pronto?.recursos ?? [];
+  const inclusos = inclusosDo(f.plano);
   const salvar = useMutation({
     mutationFn: () =>
       api<PlanoConta>(`/master/contas/${props.contaId}/plano`, {
@@ -216,6 +248,11 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
           limiteLeadsMes: pronto && f.leads === pronto.leadsMes ? null : f.leads,
           modulos: f.modulos,
           mensalidadeManual: reais(f.manual),
+          numerosExtras: f.modulos.includes('whatsapp') ? f.numerosExtras : 0,
+          // Liberado à parte só o que o plano não traz.
+          recursosExtras: f.recursosExtras.filter((r) => !recursosDoPlano.includes(r)),
+          horasReuniao: inteiroOuNulo(f.horas),
+          conversasIa: inteiroOuNulo(f.conversas),
         },
       }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['master'] }),
@@ -227,6 +264,10 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
       limiteLeadsMes: f.leads,
       modulos: f.modulos,
       mensalidadeManual: reais(f.manual),
+      numerosExtras: f.numerosExtras,
+      recursosExtras: f.recursosExtras,
+      horasReuniao: inteiroOuNulo(f.horas),
+      conversasIa: inteiroOuNulo(f.conversas),
     },
     tabela,
   );
@@ -314,17 +355,86 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
                   <label key={m} className="opcao">
                     <input
                       type="checkbox"
-                      checked={f.modulos.includes(m)}
+                      checked={f.modulos.includes(m) || inclusos.includes(m)}
+                      disabled={inclusos.includes(m)}
                       onChange={(e) => alternar(m, e.target.checked)}
                     />
                     <span>
-                      <b>{MODULOS[m].nome}</b> · {fmtReais(tabela.modulos[m])}/mês
+                      <b>{MODULOS[m].nome}</b> ·{' '}
+                      {inclusos.includes(m) ? 'incluso no plano' : `${fmtReais(tabela.modulos[m])}/mês`}
                       <span className="quieto"> · {MODULOS[m].descricao}</span>
                     </span>
                   </label>
                 ))}
+                <span className="campo__dica">
+                  WhatsApp + Agente de IA juntos: {fmtReais(tabela.comboWhatsappIa)}/mês. O WhatsApp inclui{' '}
+                  {tabela.numerosInclusos} números.
+                </span>
               </div>
             </fieldset>
+            {(f.modulos.includes('whatsapp') || inclusos.includes('whatsapp')) && (
+              <Contador
+                id="pl-numeros"
+                rotulo={`Números de WhatsApp extras (${fmtReais(tabela.numeroExtra)} cada)`}
+                valor={f.numerosExtras}
+                passo={1}
+                minimo={0}
+                aoMudar={(v) => setF({ ...f, numerosExtras: v })}
+              />
+            )}
+            <fieldset className="campo">
+              <legend>Recursos</legend>
+              <div className="pilha" style={{ gap: 6 }}>
+                {LISTA_RECURSOS.map((r) => {
+                  const doPlano = recursosDoPlano.includes(r);
+                  return (
+                    <label key={r} className="opcao">
+                      <input
+                        type="checkbox"
+                        checked={doPlano || f.recursosExtras.includes(r)}
+                        disabled={doPlano}
+                        onChange={(e) =>
+                          setF({
+                            ...f,
+                            recursosExtras: e.target.checked
+                              ? [...new Set([...f.recursosExtras, r])]
+                              : f.recursosExtras.filter((x) => x !== r),
+                          })
+                        }
+                      />
+                      <span>
+                        <b>{RECURSOS[r].nome}</b>
+                        <span className="quieto"> · {doPlano ? 'no plano' : 'liberar à parte'}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+            <div className="form__duas">
+              <div className="campo">
+                <label htmlFor="pl-horas">Horas de reunião por mês</label>
+                <input
+                  id="pl-horas"
+                  className="filtro mono"
+                  inputMode="numeric"
+                  placeholder={`Do plano: ${pronto?.horasReuniao ?? 0}`}
+                  value={f.horas}
+                  onChange={(e) => setF({ ...f, horas: e.target.value.replace(/\D/g, '') })}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="pl-conversas">Conversas do Agente de IA por mês</label>
+                <input
+                  id="pl-conversas"
+                  className="filtro mono"
+                  inputMode="numeric"
+                  placeholder={`Padrão: ${fmtNumero(tabela.conversasIaMes)}`}
+                  value={f.conversas}
+                  onChange={(e) => setF({ ...f, conversas: e.target.value.replace(/\D/g, '') })}
+                />
+              </div>
+            </div>
           </div>
 
           <aside className="plano-conta" aria-live="polite">
@@ -446,6 +556,64 @@ export function TabelaDePrecos() {
               (v) => setT({ ...t, planos: { ...t.planos, [id]: { ...t.planos[id], leadsMes: v } } }),
               false,
             )}
+            {campo(
+              `tp-${id}-horas`,
+              'Horas de reunião por mês',
+              t.planos[id].horasReuniao,
+              (v) => setT({ ...t, planos: { ...t.planos, [id]: { ...t.planos[id], horasReuniao: v } } }),
+              false,
+            )}
+            <fieldset className="campo">
+              <legend>O que o plano libera</legend>
+              <div className="pilha" style={{ gap: 4 }}>
+                {LISTA_RECURSOS.map((r) => (
+                  <label key={r} className="opcao">
+                    <input
+                      type="checkbox"
+                      checked={t.planos[id].recursos.includes(r)}
+                      onChange={(e) =>
+                        setT({
+                          ...t,
+                          planos: {
+                            ...t.planos,
+                            [id]: {
+                              ...t.planos[id],
+                              recursos: e.target.checked
+                                ? LISTA_RECURSOS.filter((x) => x === r || t.planos[id].recursos.includes(x))
+                                : t.planos[id].recursos.filter((x) => x !== r),
+                            },
+                          },
+                        })
+                      }
+                    />
+                    <span>{RECURSOS[r].nome}</span>
+                  </label>
+                ))}
+                {LISTA_MODULOS.map((m) => (
+                  <label key={m} className="opcao">
+                    <input
+                      type="checkbox"
+                      checked={t.planos[id].modulosInclusos.includes(m)}
+                      onChange={(e) =>
+                        setT({
+                          ...t,
+                          planos: {
+                            ...t.planos,
+                            [id]: {
+                              ...t.planos[id],
+                              modulosInclusos: e.target.checked
+                                ? [...new Set([...t.planos[id].modulosInclusos, m])]
+                                : t.planos[id].modulosInclusos.filter((x) => x !== m),
+                            },
+                          },
+                        })
+                      }
+                    />
+                    <span>{MODULOS[m].nome} incluso</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           </fieldset>
         ))}
         <fieldset className="caixa">
@@ -454,6 +622,26 @@ export function TabelaDePrecos() {
             campo(`tp-${m}`, `${MODULOS[m].nome} (R$/mês)`, t.modulos[m], (v) =>
               setT({ ...t, modulos: { ...t.modulos, [m]: v } }),
             ),
+          )}
+          {campo('tp-combo', 'WhatsApp + Agente de IA juntos (R$/mês)', t.comboWhatsappIa, (v) =>
+            setT({ ...t, comboWhatsappIa: v }),
+          )}
+          {campo(
+            'tp-numeros',
+            'Números de WhatsApp inclusos no módulo',
+            t.numerosInclusos,
+            (v) => setT({ ...t, numerosInclusos: v }),
+            false,
+          )}
+          {campo('tp-numero-extra', 'Cada número de WhatsApp extra (R$/mês)', t.numeroExtra, (v) =>
+            setT({ ...t, numeroExtra: v }),
+          )}
+          {campo(
+            'tp-conversas',
+            'Conversas do Agente de IA por mês',
+            t.conversasIaMes,
+            (v) => setT({ ...t, conversasIaMes: v }),
+            false,
           )}
           {campo('tp-usuario', 'Cada usuário a mais ou a menos (R$)', t.usuario, (v) =>
             setT({ ...t, usuario: v }),

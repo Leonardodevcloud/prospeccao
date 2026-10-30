@@ -2,6 +2,7 @@ import { emBolhas, tempoDigitando } from '@prospeccao/integrations/agente';
 import type { Logger } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
+import { agenteNoLimite } from '../../recursos.js';
 import { paraCadaConta } from '../../rotinas.js';
 import { limiteDoMes } from '../consumo/repositorio.js';
 import { emSequenciaSql } from '../email/sequencia.js';
@@ -229,10 +230,10 @@ export async function rodarAgente(deps: DepsRodada): Promise<void> {
     try {
       await paraCadaConta(deps.pool, deps.log, 'agente', async (conta) => {
         const { whatsapp, ia, modulos } = await deps.servicos(conta);
-        await rodarAgenteDaConta(
-          { pool: deps.pool, log: deps.log, whatsapp, ia },
-          { semAgente: !!modulos && !modulos.includes('agente_ia') },
-        );
+        // Sem o módulo, ou com as conversas do mês esgotadas: a IA não responde (o time responde).
+        const semAgente =
+          (!!modulos && !modulos.includes('agente_ia')) || (await agenteNoLimite(deps.pool, conta));
+        await rodarAgenteDaConta({ pool: deps.pool, log: deps.log, whatsapp, ia }, { semAgente });
       });
     } finally {
       await cliente.query('SELECT pg_advisory_unlock($1)', [LOCK]);

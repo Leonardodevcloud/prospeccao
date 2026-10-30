@@ -4,7 +4,9 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { api, type ConfigCadencia, type DetalheFunil, type MensagemPronta, MODELOS_MENSAGEM } from '../api';
 import { fmtNome, formatarTelefone } from '../formatar';
 import { Drawer } from './Drawer';
+import { ForaDoPlano } from './ForaDoPlano';
 import { ErroDaApi, Mensagem } from './Formulario';
+import { useRecurso } from './Sessao';
 
 /** Link do WhatsApp com a mensagem já escrita. */
 export function linkWhatsapp(telefone: string, texto: string): string {
@@ -156,6 +158,7 @@ export function resumoCadencia(
 
 /** Configuração da cadência e dos modelos de mensagem. */
 export function ConfigurarCadencia(props: { aoFechar: () => void }) {
+  const automatica = useRecurso('cadencia');
   const cliente = useQueryClient();
   const q = useQuery({ queryKey: ['cadencia'], queryFn: () => api<ConfigCadencia>('/funil/cadencia') });
   const [f, setF] = useState<{
@@ -213,6 +216,7 @@ export function ConfigurarCadencia(props: { aoFechar: () => void }) {
           <div className="esqueleto" />
         ) : (
           <form className="form" onSubmit={enviar}>
+            {!automatica && <ForaDoPlano recurso="cadencia" compacto />}
             <Mensagem tipo="ok">
               <b>Como fica:</b>{' '}
               {resumoCadencia({

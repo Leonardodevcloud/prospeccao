@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { api, type Tarefa } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
+import { ForaDoPlano } from '../componentes/ForaDoPlano';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEquipe, useSessao, useSoLeitura } from '../componentes/Sessao';
 import { ConvidarPeloWhatsapp, CopiarLinkSala, FormTarefa, useEstadoReunioes } from '../componentes/Tarefas';
@@ -137,7 +138,8 @@ export function Reunioes() {
         </div>
       </div>
 
-      {estado.data && !estado.data.video && (
+      {estado.data?.foraDoPlano && <ForaDoPlano recurso="reunioes" compacto />}
+      {estado.data && !estado.data.video && !estado.data.foraDoPlano && (
         <Mensagem tipo="aviso">
           A sala de vídeo ainda não foi configurada neste sistema. Quem administra a plataforma liga em poucos
           minutos (veja a ajuda).

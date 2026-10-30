@@ -419,4 +419,63 @@ describe.skipIf(!URL_TESTE)('vendas na rua (com Postgres)', () => {
     expect(falhou.body.fonte).toBe('padrao');
     respostaIa = '';
   });
+
+  it('planos: o que o plano não libera fica travado, e liberar à parte destrava', async () => {
+    const { esquecerRecursos } = await import('../src/recursos.js');
+    const org = `(SELECT organizacao_id FROM cadastro.contas WHERE id = 1)`;
+    await pool.query(
+      `UPDATE cadastro.organizacoes SET plano = 'start', modulos = '{whatsapp}' WHERE id = ${org}`,
+    );
+    esquecerRecursos();
+
+    const eu = (await ler(cookieDona, '/auth/eu')).body;
+    expect(eu.conta.recursos).toEqual([]);
+    expect(eu.conta.modulos).toEqual(['whatsapp']);
+
+    // Vendas na rua e reuniões novas não estão no Start (a resposta diz o plano que libera).
+    const rua = await ler(cookieDona, '/rua/estado');
+    expect(rua.status).toBe(403);
+    expect(rua.body.erro).toMatchObject({ codigo: 'fora_do_plano' });
+    expect(rua.body.erro.mensagem).toContain('plano Time');
+    expect((await ler(cookieDona, '/reunioes?quais=realizadas')).status).toBe(200);
+    const sala = await enviar(cookieDona, 'post', '/agenda', {
+      tipo: 'reuniao',
+      titulo: 'Reunião',
+      inicio: new Date(Date.now() + 3600_000).toISOString(),
+      sala: { entrada: 'livre', gravar: false, transcrever: false, abreMinutosAntes: 10 },
+    });
+    expect(sala.status).toBe(403);
+    expect((await enviar(cookieDona, 'post', '/funil/pipelines', { nome: 'Pós-venda' })).status).toBe(403);
+    expect((await ler(cookieDona, '/funil/radar')).status).toBe(403);
+    expect((await ler(cookieDona, '/assistente/mapa')).status).toBe(403);
+    expect((await ler(cookieDona, '/auditoria')).status).toBe(403);
+
+    // WhatsApp: 2 números inclusos; com os dois conectados, não cabe outro.
+    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 2, usados: 0 });
+    await pool.query(
+      `INSERT INTO comercial.chips (conta_id, nome, instancia, token_cifrado) VALUES (1, 'A', 'i-a', 'x'), (1, 'B', 'i-b', 'y')`,
+    );
+    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 2, usados: 2 });
+    // Um número extra contratado: cabe mais um.
+    await pool.query(`UPDATE cadastro.organizacoes SET numeros_extras = 1 WHERE id = ${org}`);
+    esquecerRecursos();
+    expect((await ler(cookieDona, '/agente/chips')).body).toMatchObject({ limite: 3, usados: 2 });
+
+    // Liberado à parte (sem mudar o plano): Vendas na rua volta a abrir.
+    await pool.query(`UPDATE cadastro.organizacoes SET recursos_extras = '{rua}' WHERE id = ${org}`);
+    esquecerRecursos();
+    expect((await ler(cookieDona, '/rua/estado')).status).toBe(200);
+
+    // O meu plano mostra as franquias.
+    const meu = (await ler(cookieDona, '/equipe/plano')).body;
+    expect(meu.recursos).toEqual(['rua']);
+    expect(meu.consumo.numerosWhatsapp).toEqual({ usados: 2, limite: 3 });
+    expect(meu.consumo.horasReuniao).toMatchObject({ limite: 0 });
+
+    await pool.query(
+      `UPDATE cadastro.organizacoes SET plano = NULL, modulos = '{}', recursos_extras = '{}', numeros_extras = 0 WHERE id = ${org}`,
+    );
+    await pool.query(`DELETE FROM comercial.chips WHERE conta_id = 1`);
+    esquecerRecursos();
+  });
 });

@@ -12,8 +12,9 @@ import {
 } from '../api';
 import { linkWhatsapp } from '../componentes/Cadencia';
 import { Drawer } from '../componentes/Drawer';
+import { ForaDoPlano } from '../componentes/ForaDoPlano';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { Dono, useEhAdmin, useEquipe, useSessao } from '../componentes/Sessao';
+import { Dono, useEhAdmin, useEquipe, useRecurso, useSessao } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando, fmtReais, formatarTelefone } from '../formatar';
 
 const PAPEIS: PapelUsuario[] = ['sdr', 'closer', 'admin'];
@@ -30,10 +31,18 @@ function EscolherAlcance(props: {
   valor: Alcance;
   aoMudar: (a: Alcance) => void;
 }) {
+  const emEquipe = useRecurso('equipe');
   if (props.papel === 'admin')
     return (
       <p className="campo__dica" style={{ margin: 0 }}>
         Administrador vê a unidade toda.
+      </p>
+    );
+  // "Só a própria base" é do trabalho em equipe: fora do plano, todo mundo vê a unidade toda.
+  if (!emEquipe && props.valor !== 'proprios')
+    return (
+      <p className="campo__dica" style={{ margin: 0 }}>
+        Vê a unidade toda. "Só a própria base" vem a partir do plano Time.
       </p>
     );
   const opcoes: { v: Alcance; titulo: string; dica: string }[] = [
@@ -88,12 +97,21 @@ function Meta(props: { valor: number; meta: number; rotulo: string }) {
 }
 
 function Desempenho() {
+  const completos = useRecurso('relatorios');
   const [dias, setDias] = useState('30');
   const q = useQuery({
     queryKey: ['equipe', 'desempenho', dias],
     queryFn: () => api<DesempenhoUsuario[]>(`/equipe/desempenho?dias=${dias}`),
     refetchInterval: 60_000,
+    enabled: completos,
   });
+  if (!completos)
+    return (
+      <section className="pilha" style={{ gap: 12 }}>
+        <h2 className="subtitulo">Desempenho</h2>
+        <ForaDoPlano recurso="relatorios" compacto />
+      </section>
+    );
   return (
     <section className="pilha" style={{ gap: 12 }}>
       <div className="topo-secao">
@@ -362,6 +380,7 @@ function Convidar(props: { aoFechar: () => void }) {
 }
 
 function EditarPessoa(props: { u: UsuarioEquipe; aoFechar: () => void }) {
+  const emEquipe = useRecurso('equipe');
   const { u } = props;
   const cliente = useQueryClient();
   const [f, setF] = useState({
@@ -444,16 +463,19 @@ function EditarPessoa(props: { u: UsuarioEquipe; aoFechar: () => void }) {
                 onChange={(e) => setF({ ...f, telefone: e.target.value })}
               />
             </div>
-            <label className="opcao">
-              <input
-                type="checkbox"
-                checked={f.recebeLeads}
-                onChange={(e) => setF({ ...f, recebeLeads: e.target.checked })}
-              />
-              Entra no rodízio de leads {f.papel === 'closer' ? '(reuniões marcadas)' : '(leads novos)'}
-            </label>
+            {emEquipe && (
+              <label className="opcao">
+                <input
+                  type="checkbox"
+                  checked={f.recebeLeads}
+                  onChange={(e) => setF({ ...f, recebeLeads: e.target.checked })}
+                />
+                Entra no rodízio de leads {f.papel === 'closer' ? '(reuniões marcadas)' : '(leads novos)'}
+              </label>
+            )}
             <h3 className="subtitulo">Metas</h3>
-            <div className="metas-campos">
+            {!emEquipe && <ForaDoPlano recurso="equipe" compacto />}
+            <div className="metas-campos" hidden={!emEquipe}>
               <div className="campo">
                 <label htmlFor="meta-ab">Contatos por dia</label>
                 <input
@@ -668,6 +690,7 @@ function Distribuicao(props: { equipe: TEquipe }) {
 }
 
 export function Equipe() {
+  const emEquipe = useRecurso('equipe');
   const q = useEquipe();
   const admin = useEhAdmin();
   const [convidando, setConvidando] = useState(false);
@@ -745,7 +768,9 @@ export function Equipe() {
           </ul>
         </section>
 
-        {admin && q.data && <Distribuicao equipe={q.data} />}
+        {admin &&
+          q.data &&
+          (emEquipe ? <Distribuicao equipe={q.data} /> : <ForaDoPlano recurso="equipe" compacto />)}
       </div>
 
       {convidando && <Convidar aoFechar={() => setConvidando(false)} />}

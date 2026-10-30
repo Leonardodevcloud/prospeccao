@@ -13,6 +13,7 @@ import {
   totalTentativas,
 } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
+import { temRecurso } from '../../recursos.js';
 import { visivel } from '../../visibilidade.js';
 import { estaEmSequencia } from '../email/sequencia.js';
 
@@ -80,6 +81,8 @@ export async function aplicarCadencia(
   empresaId: number,
   evento: EventoCadencia,
 ): Promise<void> {
+  // Sem a cadência automática no plano, o próximo passo fica com quem trabalha o lead.
+  if (!(await temRecurso(db, 'cadencia'))) return;
   const { rows } = await db.query<{ etapa: EtapaFunil; tentativas: number }>(
     `SELECT etapa, tentativas FROM comercial.oportunidades WHERE conta_id = ${contaSql()} AND empresa_id = $1`,
     [empresaId],

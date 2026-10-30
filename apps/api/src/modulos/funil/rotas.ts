@@ -16,6 +16,7 @@ import { contaSql, naBase } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
+import { exigirRecurso } from '../../recursos.js';
 import * as cadencia from './cadencia.js';
 import { criarLeadManual } from './novoLead.js';
 import * as pipelines from './pipelines.js';
@@ -62,6 +63,7 @@ export function rotasFunil(deps: DepsApi): Router {
 
   /** Radar dos negócios parados: críticos e em risco, com o motivo (o vendedor vê os dele). */
   r.get('/radar', async (req, res) => {
+    await exigirRecurso(pool, 'relatorios');
     const meus = req.query.meus === '1' || req.usuario?.papel !== 'admin';
     res.json(await radar(pool, { responsavelId: meus ? (req.usuario?.id ?? null) : null }));
   });
@@ -80,6 +82,7 @@ export function rotasFunil(deps: DepsApi): Router {
     res.json(await pipelines.listar(pool));
   });
   r.post('/pipelines', exigirAdmin, async (req, res) => {
+    await exigirRecurso(pool, 'funis');
     const id = await pipelines.criarPipeline(pool, corpo(req, pipelineEntrada).nome);
     res.status(201).json({ id });
   });
@@ -109,6 +112,7 @@ export function rotasFunil(deps: DepsApi): Router {
     res.json(await cadencia.obterConfig(pool));
   });
 
+  // Os modelos de mensagem valem em qualquer plano; os prazos automáticos só rodam com a cadência no plano.
   r.put('/cadencia', exigirAdmin, async (req, res) => {
     const dados = corpo(req, configCadenciaEntrada);
     await cadencia.salvarConfig(pool, dados);

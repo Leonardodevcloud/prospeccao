@@ -1,3 +1,4 @@
+import type { Recurso } from '@prospeccao/shared/planos';
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
@@ -14,6 +15,7 @@ import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Av
 import { Argos } from './argos/Argos';
 import { conversa as conversaArgos } from './argos/conversa';
 import { AceitarTermos, DuasEtapasObrigatoria, useAplicarMarca } from './ContaSegura';
+import { ForaDoPlano, recursoDaTela } from './ForaDoPlano';
 import { Logo } from './Marca';
 import { MinhaConta } from './MinhaConta';
 import { Dono, TELAS_DA_LEITURA, useSessao } from './Sessao';
@@ -37,20 +39,29 @@ const ITENS: {
   modulos?: ('whatsapp' | 'agente_ia' | 'email')[];
   /** Só para o gestor e a leitura da organização. */
   organizacao?: boolean;
+  /** Recurso do plano: sem ele, o item aparece com cadeado e a tela explica como liberar. */
+  recurso?: Recurso;
 }[] = [
   { para: '/hoje', rotulo: 'Meu dia', icone: 'calendar' },
   { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers', secao: 'Prospecção' },
   { para: '/nichos', rotulo: 'Nichos', icone: 'store', secao: 'Prospecção', admin: true },
   { para: '/', rotulo: 'Leads', icone: 'users', secao: 'Prospecção', fim: true },
-  { para: '/atividade', rotulo: 'Atividade', icone: 'clock', secao: 'Prospecção', admin: true },
+  {
+    para: '/atividade',
+    rotulo: 'Atividade',
+    icone: 'clock',
+    secao: 'Prospecção',
+    admin: true,
+    recurso: 'relatorios',
+  },
   { para: '/funil', rotulo: 'Funil', icone: 'kanban', secao: 'Vendas' },
   { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle', secao: 'Vendas' },
   { para: '/reunioes', rotulo: 'Reuniões', icone: 'video', secao: 'Vendas' },
-  { para: '/rua', rotulo: 'Na rua', icone: 'route', secao: 'Vendas' },
+  { para: '/rua', rotulo: 'Na rua', icone: 'route', secao: 'Vendas', recurso: 'rua' },
   { para: '/email', rotulo: 'E-mail', icone: 'mail', secao: 'Vendas', modulos: ['email'] },
   { para: '/agente', rotulo: 'Agente', icone: 'bot', secao: 'Vendas', modulos: ['whatsapp', 'agente_ia'] },
-  { para: '/argos', rotulo: 'Argos', icone: 'orbit', secao: 'Argos', fim: true },
-  { para: '/argos/mapa', rotulo: 'Mapa do conhecimento', icone: 'globe', secao: 'Argos' },
+  { para: '/argos', rotulo: 'Argos', icone: 'orbit', secao: 'Argos', fim: true, recurso: 'argos' },
+  { para: '/argos/mapa', rotulo: 'Mapa do conhecimento', icone: 'globe', secao: 'Argos', recurso: 'argos' },
   {
     para: '/organizacao',
     rotulo: 'Painel da organização',
@@ -69,7 +80,14 @@ const ITENS: {
   { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up', secao: 'Gestão' },
   { para: '/equipe', rotulo: 'Equipe', icone: 'id-card', secao: 'Gestão' },
   { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', secao: 'Gestão', comPlano: true },
-  { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', secao: 'Gestão', admin: true },
+  {
+    para: '/auditoria',
+    rotulo: 'Auditoria',
+    icone: 'list-filter',
+    secao: 'Gestão',
+    admin: true,
+    recurso: 'seguranca',
+  },
   { para: '/ajuda', rotulo: 'Ajuda', icone: 'circle-help', secao: 'Gestão' },
   {
     para: '/plataforma',
@@ -183,7 +201,8 @@ export function Shell() {
   const doDia = useMeuDiaResumo().data ?? 0;
   const respostasEmail = useVisaoEmail().data?.resumo.respostasNaoLidas ?? 0;
   // Ponto pulsando em "Atividade" enquanto o motor trabalha, em qualquer tela.
-  const ativo = temAtividade(useAtividade(60_000).data);
+  const recursos = sessao.data?.conta.recursos ?? [];
+  const ativo = temAtividade(useAtividade(60_000, recursos.includes('relatorios')).data);
   const pendentes = useFollowupsPendentes().data?.pendentes ?? 0;
   const doAgente = useAgentePendente().data ?? 0;
   const pedidosNovos = useNovosPedidos(!!sessao.data?.master).data?.novos ?? 0;
@@ -222,6 +241,9 @@ export function Shell() {
   const plataforma =
     !!sessao.data?.master && !sessao.data.foraDaPropria && ehTelaDaPlataforma(local.pathname);
   const soLeitura = sessao.data?.papelOrganizacao === 'leitura';
+  // Tela de um recurso que o plano não tem: no lugar dela, o cartão de como liberar.
+  const recursoTela = plataforma ? null : recursoDaTela(local.pathname);
+  const telaFora = recursoTela && !recursos.includes(recursoTela) ? recursoTela : null;
   // A leitura só abre as telas de acompanhar; as de trabalho levam ao painel da organização.
   if (soLeitura && !TELAS_DA_LEITURA.includes(local.pathname) && !local.pathname.startsWith('/reunioes/'))
     return <Navigate to="/organizacao" replace />;
@@ -297,6 +319,11 @@ export function Shell() {
               <NavLink to={i.para} end={i.fim} className="nav__link">
                 <Icon name={i.icone} size={16} />
                 {i.rotulo}
+                {i.recurso && !recursos.includes(i.recurso) && (
+                  <span className="nav__cadeado" title="Fora do seu plano">
+                    <Icon name="lock" size={12} label="Fora do seu plano" />
+                  </span>
+                )}
                 {i.para === '/hoje' && doDia > 0 && (
                   <span className="nav__conta" title="Tarefas e follow-ups atrasados ou para hoje">
                     {doDia}
@@ -402,13 +429,13 @@ export function Shell() {
           </div>
         )}
         <FaixaAlertas plataforma={plataforma} />
-        <Outlet />
+        {telaFora ? <ForaDoPlano recurso={telaFora} /> : <Outlet />}
       </main>
       {conta && <MinhaConta aoFechar={() => setConta(false)} />}
       {sessao.data && !sessao.data.termos.aceitos && <AceitarTermos versao={sessao.data.termos.versao} />}
       {/* Argos: o assistente (segundo cérebro), em qualquer tela. Só vê o que a pessoa pode ver. */}
       {/* Na tela do Argos ele já está na página: o botão flutuante sai (senão os dois ouviriam o Espaço). */}
-      {sessao.data?.termos.aceitos && local.pathname !== '/argos' && (
+      {sessao.data?.termos.aceitos && local.pathname !== '/argos' && recursos.includes('argos') && (
         <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />
       )}
       {avisosAbertos && <PainelAvisos aoFechar={() => setAvisosAbertos(false)} />}

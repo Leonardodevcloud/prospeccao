@@ -3497,7 +3497,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(p).toMatchObject({
       usuarios: 3,
       leadsMes: 8000,
-      mensalidadeCalculada: 297 + 59 + 6 * 20 + 250 + 150,
+      // WhatsApp + Agente de IA saem pelo combo.
+      mensalidadeCalculada: 297 + 59 + 6 * 20 + 497,
       mensalidade: 650,
     });
     expect(
@@ -3850,7 +3851,8 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
       nome: 'Cliente Seguro Teste',
       primeiroAcesso: 'gestor',
       admin: { nome: 'Sol Gestora', email: 'sol@clienteseguro.com.br' },
-      plano: { plano: 'time', modulos: [] },
+      // Escala: duas etapas obrigatória e marca própria são deste plano.
+      plano: { plano: 'escala', modulos: [] },
     });
     const tokenConvite = criada.body.convite.split('/').at(-1);
     const ip = '10.9.1.1';

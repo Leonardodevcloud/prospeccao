@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
+import { exigirRecurso } from '../../recursos.js';
 import * as push from '../push/servico.js';
 import * as repo from './repositorio.js';
 
@@ -14,6 +15,7 @@ export function rotasNotificacoes({ pool }: DepsApi): Router {
     res.json({ chave: push.chavePublica(), aparelhos: await push.aparelhos(pool, req.usuario!.id) });
   });
   r.post('/push', async (req, res) => {
+    await exigirRecurso(pool, 'celular');
     await push.inscrever(pool, req.usuario!.id, corpo(req, inscricaoPush));
     res.status(201).json({ aparelhos: await push.aparelhos(pool, req.usuario!.id) });
   });
