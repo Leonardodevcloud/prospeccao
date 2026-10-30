@@ -381,4 +381,53 @@ describe.skipIf(!URL_TESTE)('painel master: financeiro, configurações e CRM de
     );
     expect(aud[0].n).toBeGreaterThanOrEqual(4);
   });
+  it('conta da plataforma: zerar o uso antigo como CRM, sem perder administradores nem chaves', async () => {
+    const demo = (await ler('/master/plataforma/servicos')).body.demonstracao.contaId as number;
+    // A conta principal ganha o uso de um CRM inteiro (campanhas, funil, conversas, reuniões…).
+    await comTransacao(pool, async (tx) => {
+      await tx.query(`UPDATE cadastro.usuarios SET email = 'demo-' || email WHERE conta_id = $1`, [demo]);
+      await gerarDados(tx, 1);
+      await tx.query(`UPDATE cadastro.usuarios SET email = 'p-' || email WHERE conta_id = 1 AND NOT master`);
+      await tx.query(`UPDATE cadastro.usuarios SET email = substr(email, 6) WHERE conta_id = $1`, [demo]);
+      await tx.query(
+        `INSERT INTO comercial.notificacoes (conta_id, usuario_id, tipo, titulo)
+         SELECT 1, id, 'tarefa', 'Aviso antigo' FROM cadastro.usuarios WHERE master LIMIT 1`,
+      );
+    });
+    const antes = (await ler('/master/plataforma/conta-principal')).body;
+    expect(antes.temDados).toBe(true);
+    expect(antes.dados.noFunil).toBeGreaterThan(50);
+    const demoAntes = (
+      await pool.query('SELECT count(*)::int AS n FROM comercial.oportunidades WHERE conta_id = $1', [demo])
+    ).rows[0].n;
+    const { rows: chave } = await pool.query(
+      `SELECT count(*)::int AS n FROM cadastro.usuarios WHERE conta_id = 1`,
+    );
+
+    expect((await enviar('/master/plataforma/conta-principal/zerar', { confirmacao: 'sim' })).status).toBe(
+      422,
+    );
+    const zerou = await enviar('/master/plataforma/conta-principal/zerar', { confirmacao: 'zerar' });
+    expect(zerou.status).toBe(200);
+    expect(zerou.body).toMatchObject({
+      nome: 'Prospect Team',
+      temDados: false,
+      dados: { campanhas: 0, noFunil: 0, mensagens: 0, tarefas: 0, reunioes: 0, avisos: 0 },
+    });
+    // Ficam: os usuários (os administradores entram normalmente), as etapas do funil e a demonstração.
+    const { rows } = await pool.query(
+      `SELECT (SELECT count(*) FROM cadastro.usuarios WHERE conta_id = 1)::int AS usuarios,
+              (SELECT count(*) FROM comercial.etapas WHERE conta_id = 1)::int AS etapas,
+              (SELECT count(*) FROM comercial.oportunidades WHERE conta_id = $1)::int AS demo,
+              (SELECT o.nome FROM cadastro.organizacoes o JOIN cadastro.contas c ON c.organizacao_id = o.id WHERE c.id = 1) AS org`,
+      [demo],
+    );
+    expect(rows[0]).toMatchObject({ usuarios: chave[0].n, demo: demoAntes, org: 'Prospect Team' });
+    expect(rows[0].etapas).toBeGreaterThan(0);
+    expect((await ler('/auth/eu')).body.master).toBe(true);
+    const { rows: aud } = await pool.query(
+      `SELECT 1 FROM cadastro.auditoria WHERE acao = 'zerar_conta_principal'`,
+    );
+    expect(aud.length).toBe(1);
+  });
 });

@@ -6,6 +6,7 @@ import { Navigate } from 'react-router';
 import { api, type ServicoTestavel } from '../api';
 import { Administradores } from '../componentes/Administradores';
 import { LinkAjuda } from '../componentes/Ajuda';
+import { ContaDaPlataforma } from '../componentes/ContaDaPlataforma';
 import { useAbrirDemonstracao, useRecriarDemonstracao } from '../componentes/Demonstracao';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
@@ -289,8 +290,9 @@ export function PlataformaConfiguracoes() {
               </Panel>
             </div>
           </div>
-          <div style={{ marginTop: 16 }}>
+          <div className="pilha" style={{ gap: 16, marginTop: 16 }}>
             <Administradores />
+            <ContaDaPlataforma />
           </div>
           <p className="nota-rodape">
             As chaves ficam nas variáveis do Railway (nada aparece aqui, só se existe). Para trocar uma chave,

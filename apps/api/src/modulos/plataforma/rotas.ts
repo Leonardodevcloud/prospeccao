@@ -1,9 +1,12 @@
-import { custosPlataformaEntrada } from '@prospeccao/shared';
+import { AppError, custosPlataformaEntrada } from '@prospeccao/shared';
 import { Router } from 'express';
+import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo } from '../../middlewares/http.js';
+import * as auditoria from '../auditoria/repositorio.js';
 import { abrirSessao } from '../auth/sessao.js';
 import * as demo from '../demonstracao/repositorio.js';
+import * as principal from './contaPrincipal.js';
 import * as repo from './repositorio.js';
 import { servicosDaPlataforma, testarServico } from './servicos.js';
 
@@ -120,6 +123,30 @@ export function rotasPlataforma(deps: DepsApi): Router {
   });
   r.post('/servicos/:id/testar', async (req, res) => {
     res.json(await testarServico(deps, String(req.params.id)));
+  });
+
+  /** A conta da plataforma (onde ficam os administradores): o que sobrou do uso como CRM. */
+  r.get('/conta-principal', async (_req, res) => {
+    res.json(await principal.resumo(pool));
+  });
+  r.post('/conta-principal/zerar', async (req, res) => {
+    const { confirmacao } = corpo(req, z.object({ confirmacao: z.string().trim() }));
+    if (confirmacao.toUpperCase() !== 'ZERAR') throw AppError.invalido('Digite ZERAR para confirmar.');
+    const antes = await principal.resumo(pool);
+    const depois = await principal.zerar(pool);
+    credenciais.invalidar(depois.id);
+    await auditoria.registrar(pool, {
+      contaId: depois.id,
+      usuarioId: req.usuario!.id,
+      usuarioNome: req.usuario!.nome,
+      comoMaster: true,
+      acao: 'zerar_conta_principal',
+      descricao: `Zerou os dados antigos da conta da plataforma (${antes.nome}): ${antes.dados.campanhas} campanhas, ${antes.dados.noFunil} no funil, ${antes.dados.mensagens} mensagens, ${antes.dados.reunioes} reuniões.`,
+      metodo: req.method,
+      caminho: req.baseUrl + req.path,
+    });
+    log.warn({ master: req.usuario!.id, antes: antes.dados }, 'master: conta principal zerada');
+    res.json(depois);
   });
 
   /** CRM de demonstração: recriar os dados e entrar nele. */

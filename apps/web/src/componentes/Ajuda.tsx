@@ -901,6 +901,14 @@ export const ARTIGOS: ArtigoAjuda[] = [
           próprio acesso, sempre sobra pelo menos um administrador ativo e o <b>acesso de emergência</b> (o
           e-mail configurado no servidor) não se desativa por aqui. Tudo fica na Auditoria.
         </p>
+        <h3>Conta da plataforma</h3>
+        <p>
+          A conta onde ficam os administradores e as chaves da plataforma não é cliente: não aparece em
+          Clientes nem no Financeiro, e quem administra trabalha só no painel (o CRM, pela demonstração ou
+          entrando na conta de um cliente). Se sobrou algo de quando ela era usada como CRM, Configurações ›{' '}
+          <b>Conta da plataforma</b> › <b>Zerar dados antigos</b> apaga campanhas, funil, conversas, reuniões
+          e avisos, e mantém administradores, chaves, números, configurações e o histórico de custo.
+        </p>
         <h3>CRM de demonstração</h3>
         <Passos>
           <li>

@@ -1445,11 +1445,13 @@ export function Master() {
     (c) => c.plano.leadsMes != null && c.plano.uso.leadsMes >= c.plano.leadsMes * 0.9,
   ).length;
   const termo = busca.trim().toLowerCase();
+  // A conta da plataforma (onde ficam os administradores) não é cliente: fica fora da lista.
   const visiveis = grupos.filter(
     (g) =>
-      !termo ||
-      g[0]!.organizacaoNome.toLowerCase().includes(termo) ||
-      g.some((c) => c.nome.toLowerCase().includes(termo)),
+      !g.some((c) => c.principal) &&
+      (!termo ||
+        g[0]!.organizacaoNome.toLowerCase().includes(termo) ||
+        g.some((c) => c.nome.toLowerCase().includes(termo))),
   );
 
   return (

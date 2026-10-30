@@ -240,8 +240,12 @@ export function Shell() {
   if (sessao.isPending) return null;
   // A organização exige duas etapas e a pessoa ainda não configurou: só essa tela.
   if (sessao.data?.duasEtapas.exigido && !sessao.data.duasEtapas.ativo) return <DuasEtapasObrigatoria />;
-  const plataforma =
-    !!sessao.data?.master && !sessao.data.foraDaPropria && ehTelaDaPlataforma(local.pathname);
+  // O master na própria conta só tem o painel da plataforma (a conta dele não é CRM de uso): o CRM
+  // ele vê pelo CRM de demonstração ou entrando na conta de um cliente.
+  const soPainel = !!sessao.data?.master && !sessao.data.foraDaPropria;
+  if (soPainel && !ehTelaDaPlataforma(local.pathname) && !local.pathname.startsWith('/ajuda'))
+    return <Navigate to="/plataforma" replace />;
+  const plataforma = soPainel;
   const soLeitura = sessao.data?.papelOrganizacao === 'leitura';
   // Tela de um recurso que o plano não tem: no lugar dela, o cartão de como liberar.
   const recursoTela = plataforma ? null : recursoDaTela(local.pathname);
@@ -270,7 +274,11 @@ export function Shell() {
             <Logo tamanho={30} />
             <span className="nav__marca-texto">
               Prospect Team
-              {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
+              {plataforma ? (
+                <span className="nav__conta-nome">Painel da plataforma</span>
+              ) : (
+                sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>
+              )}
             </span>
           </div>
         )}
@@ -433,9 +441,10 @@ export function Shell() {
       {sessao.data && !sessao.data.termos.aceitos && <AceitarTermos versao={sessao.data.termos.versao} />}
       {/* Argos: o assistente (segundo cérebro), em qualquer tela. Só vê o que a pessoa pode ver. */}
       {/* Na tela do Argos ele já está na página: o botão flutuante sai (senão os dois ouviriam o Espaço). */}
-      {sessao.data?.termos.aceitos && local.pathname !== '/argos' && recursos.includes('argos') && (
-        <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />
-      )}
+      {sessao.data?.termos.aceitos &&
+        !plataforma &&
+        local.pathname !== '/argos' &&
+        recursos.includes('argos') && <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />}
       {avisosAbertos && <PainelAvisos aoFechar={() => setAvisosAbertos(false)} />}
     </div>
   );

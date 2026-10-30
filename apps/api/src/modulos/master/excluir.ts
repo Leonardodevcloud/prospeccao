@@ -20,6 +20,11 @@ export interface OpcoesApagar {
   empresas?: number[];
   /** Apaga também as contas e a organização (excluir o cliente). */
   organizacaoId?: number;
+  /**
+   * Zerar sem excluir: as contas e os usuários ficam, e estas tabelas (configuração, chaves, histórico
+   * de custo) também. Quem nelas aponta para uma campanha apagada fica com o campo vazio.
+   */
+  manter?: string[];
 }
 
 interface Comando {
@@ -32,7 +37,10 @@ export async function apagarContas(tx: Executor, contaIds: number[], op: OpcoesA
   const ids = async (sql: string) =>
     (await tx.query<{ id: number }>(sql, [contaIds])).rows.map((r) => Number(r.id));
   const campanhas = await ids('SELECT id FROM cadastro.campanhas WHERE conta_id = ANY($1)');
-  const usuarios = await ids('SELECT id FROM cadastro.usuarios WHERE conta_id = ANY($1)');
+  const manter = new Set(op.manter ?? []);
+  const zerar = manter.size > 0;
+  if (zerar) manter.add('cadastro.usuarios');
+  const usuarios = zerar ? [] : await ids('SELECT id FROM cadastro.usuarios WHERE conta_id = ANY($1)');
   const empresas = op.empresas ?? [];
 
   const { rows: comConta } = await tx.query<{ tabela: string; nulo: boolean }>(
@@ -72,6 +80,7 @@ export async function apagarContas(tx: Executor, contaIds: number[], op: OpcoesA
   const comandos: Comando[] = [];
   for (const t of comConta) {
     // Histórico da plataforma: a linha fica, só perde a conta (se a coluna aceita vazio).
+    if (manter.has(t.tabela)) continue;
     if (PRESERVAR.includes(t.tabela)) {
       if (op.organizacaoId && t.nulo)
         comandos.push({
@@ -87,7 +96,8 @@ export async function apagarContas(tx: Executor, contaIds: number[], op: OpcoesA
     if (!v.length) continue;
     if (k.tabela === 'cadastro.contas' && k.coluna === 'organizacao_id') continue; // as contas saem no fim
     // Tabela global (sem conta_id) que aceita vazio: só desliga o vínculo.
-    const soDesliga = (!temConta.has(k.tabela) || PRESERVAR.includes(k.tabela)) && k.nulo;
+    const soDesliga =
+      (!temConta.has(k.tabela) || PRESERVAR.includes(k.tabela) || manter.has(k.tabela)) && k.nulo;
     comandos.push({
       sql: soDesliga
         ? `UPDATE ${k.tabela} SET "${k.coluna}" = NULL WHERE "${k.coluna}" = ANY($1)`
