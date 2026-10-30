@@ -7,7 +7,8 @@ import { ErroApi } from '../api';
 import { Mensagem } from '../componentes/Formulario';
 import { Antessala, type Escolhas } from './Antessala';
 import { apiSala, type InfoSala, type Liberado } from './api';
-import { Sala } from './Sala';
+import { retomarEnviosPendentes } from './envio';
+import { Sala, useEstadoGravador } from './Sala';
 import './reuniao.css';
 
 /**
@@ -85,6 +86,36 @@ type Fase =
   | { tipo: 'na_sala'; acesso: Liberado; escolhas: Escolhas }
   | { tipo: 'saiu'; motivo: 'saiu' | 'encerrada' | 'removido' | 'erro'; detalhe?: string };
 
+/**
+ * Depois de sair: a gravação feita neste navegador termina de subir. Mostra o progresso e pede
+ * para não fechar a aba (se fechar, o que faltou sobe na próxima vez que abrir o sistema).
+ */
+function EnvioDaGravacao() {
+  const e = useEstadoGravador();
+  if (e.fase !== 'enviando' && e.fase !== 'concluido') return null;
+  const pct = e.total ? Math.min(100, Math.round(((e.total - e.pendentes) / e.total) * 100)) : 100;
+  const terminou = e.fase === 'concluido' || e.pendentes === 0;
+  return (
+    <div className="envio-gravacao" role="status" aria-live="polite">
+      <div className="envio-gravacao__linha">
+        <Icon name={terminou ? 'check' : 'loader'} spin={!terminou} size={18} />
+        <b>{terminou ? 'Gravação enviada' : `Enviando a gravação… ${pct}%`}</b>
+      </div>
+      {!terminou && (
+        <div className="envio-gravacao__barra" aria-hidden="true">
+          <span style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      <p className="rp__nota" style={{ margin: 0 }}>
+        {terminou
+          ? 'O vídeo, a transcrição e o resumo ficam prontos em alguns minutos, em Reuniões.'
+          : 'Deixe esta aba aberta até terminar. Se precisar fechar, o que faltou sobe na próxima vez que você abrir o sistema neste computador.'}
+      </p>
+      {e.aviso && <Mensagem tipo="aviso">{e.aviso}</Mensagem>}
+    </div>
+  );
+}
+
 export function PaginaReuniao() {
   const { codigo = '' } = useParams();
   const [fase, setFase] = useState<Fase>({ tipo: 'antessala' });
@@ -96,6 +127,10 @@ export function PaginaReuniao() {
     retry: (n, erro) => !(erro instanceof ErroApi && erro.status < 500) && n < 3,
   });
   const agora = useRelogio(info.data?.agora);
+  // Gravação de uma reunião anterior que não terminou de subir (a aba fechou): sobe agora.
+  useEffect(() => {
+    void retomarEnviosPendentes();
+  }, []);
 
   useEffect(() => {
     document.title = info.data ? `${info.data.titulo} · Reunião` : 'Reunião';
@@ -156,6 +191,7 @@ export function PaginaReuniao() {
     return (
       <Moldura info={d}>
         <Cartao>
+          <EnvioDaGravacao />
           <h1 className="rp__titulo">
             {fase.motivo === 'encerrada'
               ? 'A reunião foi encerrada'

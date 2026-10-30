@@ -64,6 +64,14 @@ export const esquemaEnvApi = envBase.extend({
    */
   GRAVACOES_S3_ENDPOINT: opcional(z.string().url()),
   GRAVACOES_S3_REGIAO: z.string().default('auto'),
+  /**
+   * "sim": as reuniões são gravadas pelo LiveKit (na nuvem, pago por minuto, precisa de plano pago
+   * do LiveKit). Sem ela (padrão), quem grava é o navegador de quem conduz, sem custo.
+   */
+  GRAVACAO_NA_NUVEM: z
+    .string()
+    .optional()
+    .transform((v) => /^(sim|true|1)$/i.test(v?.trim() ?? '')),
   /** Opcional: outra página para a gravação filmar (padrão: <APP_ORIGENS[0]>/gravacao). */
   GRAVACOES_MODELO_URL: opcional(z.string().url()),
   GRAVACOES_S3_BUCKET: opcional(z.string().min(3)),

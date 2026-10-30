@@ -55,22 +55,73 @@ describe('reuniões: armazenamento das gravações', () => {
     expect(url.searchParams.get('response-content-disposition')).toContain('attachment');
   });
 
-  it('apaga ignorando o que já não existe e avisa outros erros', async () => {
-    const pedidos: string[] = [];
+  it('apaga um arquivo (404 é ignorado) e muitos de uma vez, em lote', async () => {
+    const pedidos: { metodo: string; caminho: string; corpo: string; md5: string | null }[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (req: Request) => {
-        pedidos.push(`${req.method} ${new URL(req.url).pathname}`);
-        return new Response(null, { status: req.url.includes('sumiu') ? 404 : 204 });
+        const u = new URL(req.url);
+        pedidos.push({
+          metodo: req.method,
+          caminho: u.pathname + u.search,
+          corpo: await req.text(),
+          md5: req.headers.get('content-md5'),
+        });
+        return new Response(null, { status: req.url.includes('sumiu') ? 404 : 200 });
       }),
     );
-    await arm.apagar(['a/1.mp4', 'a/sumiu.ogg', 'a/1.mp4']);
-    expect(pedidos.sort()).toEqual(['DELETE /gravacoes/a/1.mp4', 'DELETE /gravacoes/a/sumiu.ogg']);
+    await arm.apagar(['a/sumiu.ogg']);
+    expect(pedidos[0]).toMatchObject({ metodo: 'DELETE', caminho: '/gravacoes/a/sumiu.ogg' });
+    pedidos.length = 0;
+    await arm.apagar(['a/p/000000', 'a/p/000001', 'a/p/000000']);
+    expect(pedidos).toHaveLength(1);
+    expect(pedidos[0]!.metodo).toBe('POST');
+    expect(pedidos[0]!.caminho).toBe('/gravacoes?delete');
+    expect(pedidos[0]!.corpo).toContain('<Key>a/p/000000</Key>');
+    expect(pedidos[0]!.corpo).toContain('<Key>a/p/000001</Key>');
+    expect(pedidos[0]!.md5).toMatch(/==$/);
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('negado', { status: 403 })),
     );
     await expect(arm.apagar(['x'])).rejects.toThrow(/403/);
+  });
+
+  it('guarda pedaços e sobe arquivo grande em partes', async () => {
+    const pedidos: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (req: Request) => {
+        const u = new URL(req.url);
+        pedidos.push(`${req.method} ${u.pathname}${u.search}`);
+        if (u.searchParams.has('uploads'))
+          return new Response(
+            '<InitiateMultipartUploadResult><UploadId>UP1</UploadId></InitiateMultipartUploadResult>',
+          );
+        if (u.searchParams.has('partNumber')) return new Response(null, { headers: { etag: '"e1"' } });
+        if (req.method === 'GET') return new Response(new Uint8Array([1, 2, 3]));
+        return new Response('<CompleteMultipartUploadResult/>');
+      }),
+    );
+    await arm.enviar('s/p/000001', new Uint8Array([9]));
+    expect(await arm.ler('s/p/000001')).toEqual(new Uint8Array([1, 2, 3]));
+    const id = await arm.iniciarEmPartes('s/final.mp4', 'video/mp4');
+    expect(id).toBe('UP1');
+    expect(await arm.enviarParte('s/final.mp4', id, 1, new Uint8Array(10))).toBe('"e1"');
+    await arm.concluirEmPartes('s/final.mp4', id, [{ numero: 1, etag: '"e1"' }]);
+    expect(pedidos).toEqual([
+      'PUT /gravacoes/s/p/000001',
+      'GET /gravacoes/s/p/000001',
+      'POST /gravacoes/s/final.mp4?uploads',
+      'PUT /gravacoes/s/final.mp4?partNumber=1&uploadId=UP1',
+      'POST /gravacoes/s/final.mp4?uploadId=UP1',
+    ]);
+    // Erro dentro de um 200 (o S3 faz isso ao concluir) também é erro.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<Error><Code>InvalidPart</Code></Error>')),
+    );
+    await expect(arm.concluirEmPartes('s/final.mp4', id, [])).rejects.toThrow(/InvalidPart/);
   });
 });
 

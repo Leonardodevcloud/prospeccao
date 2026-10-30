@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
 import type {
@@ -123,14 +127,42 @@ function videoFalso() {
   return { video, chamadas };
 }
 
+/** Bucket de mentira na memória (guarda os pedaços e monta os envios em partes). */
+const arquivos = new Map<string, Uint8Array>();
+const emPartes = new Map<string, Map<number, Uint8Array>>();
 const armazenamentoFalso: Armazenamento = {
   destino: { endpoint: 'https://arm', regiao: 'auto', bucket: 'b', chave: 'k', segredo: 's'.repeat(10) },
   async urlAssinada(chave, o) {
     return `https://arm/b/${chave}${o?.baixarComo ? '?baixar' : ''}`;
   },
-  async apagar() {},
+  async apagar(chaves) {
+    for (const k of chaves) arquivos.delete(k);
+  },
   async testar() {
     return 'ok';
+  },
+  async enviar(chave, corpo) {
+    arquivos.set(chave, new Uint8Array(corpo));
+  },
+  async ler(chave) {
+    const a = arquivos.get(chave);
+    if (!a) throw new Error(`sem ${chave}`);
+    return a;
+  },
+  async iniciarEmPartes(chave) {
+    emPartes.set(chave, new Map());
+    return `envio-${chave}`;
+  },
+  async enviarParte(chave, _id, numero, corpo) {
+    emPartes.get(chave)!.set(numero, new Uint8Array(corpo));
+    return `"etag-${numero}"`;
+  },
+  async concluirEmPartes(chave, _id, partes) {
+    const p = emPartes.get(chave)!;
+    arquivos.set(chave, Buffer.concat(partes.map((x) => p.get(x.numero)!)));
+  },
+  async cancelarEmPartes(chave) {
+    emPartes.delete(chave);
   },
 };
 
@@ -173,6 +205,8 @@ describe.skipIf(!URL_TESTE)('reuniões por vídeo (com Postgres)', () => {
     video,
     armazenamento: armazenamentoFalso,
     transcricao: { baseUrl: 'https://api.groq.com/openai/v1', chave: 'gsk_teste', modelo: 'whisper' },
+    // Os primeiros testes usam a gravação do LiveKit; o da gravação pelo navegador desliga.
+    gravacaoNaNuvem: true,
   };
   const log = criarLogger('teste', (process.env.LOG_TESTE as 'error') ?? 'silent');
 
@@ -700,6 +734,242 @@ describe.skipIf(!URL_TESTE)('reuniões por vídeo (com Postgres)', () => {
     );
     expect(g.rows[0]).toEqual({ situacao: 'pronta', segundos: 60 });
     await enviar('post', `/salas/${cod}/encerrar`, {}, { 'x-credencial-sala': entrada.body.credencial });
+  });
+
+  it('gravação pelo navegador: só um do time grava, pedaços chegam, a api monta o vídeo e transcreve', async () => {
+    reunioes.gravacaoNaNuvem = false;
+    const temFfmpeg = (() => {
+      try {
+        execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    // Um vídeo de 3 s como o Chrome grava (H.264 + Opus em WebM/Matroska) e o áudio de uma pessoa.
+    const pasta = mkdtempSync(join(tmpdir(), 'teste-gravacao-'));
+    const gerar = (args: string[], nome: string) => {
+      execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args, join(pasta, nome)]);
+      return readFileSync(join(pasta, nome));
+    };
+    const videoBytes = temFfmpeg
+      ? gerar(
+          [
+            '-f',
+            'lavfi',
+            '-i',
+            'testsrc=size=320x240:rate=15',
+            '-f',
+            'lavfi',
+            '-i',
+            'sine=frequency=440',
+            '-t',
+            '3',
+            '-c:v',
+            'libx264',
+            '-pix_fmt',
+            'yuv420p',
+            '-c:a',
+            'libopus',
+            '-f',
+            'matroska',
+          ],
+          'video.webm',
+        )
+      : Buffer.from('video-sem-ffmpeg'.repeat(1000));
+    const audioBytes = temFfmpeg
+      ? gerar(
+          ['-f', 'lavfi', '-i', 'sine=frequency=300', '-t', '3', '-c:a', 'libopus', '-f', 'webm'],
+          'audio.webm',
+        )
+      : Buffer.from('audio-sem-ffmpeg'.repeat(100));
+
+    const r = await comCookie('post', '/agenda', {
+      tipo: 'reuniao',
+      titulo: 'Reunião gravada no navegador',
+      inicio: new Date().toISOString(),
+      sala: { entrada: 'livre', gravar: true, transcrever: true, abreMinutosAntes: 10 },
+    });
+    const cod = r.body.sala.codigo as string;
+    const entrada = await comCookie('post', `/salas/${cod}/entrar`, {});
+    expect(entrada.body).toMatchObject({ gravacao: 'navegador', transcrever: true });
+    const cred = { 'x-credencial-sala': entrada.body.credencial as string };
+    const egressAntes = chamadas.gravacoesSala.length;
+
+    const v = await enviar(
+      'post',
+      `/salas/${cod}/gravacoes`,
+      { tipo: 'sala', mime: 'video/webm;codecs=h264,opus', desdeMs: 300 },
+      cred,
+    );
+    expect(v.status, JSON.stringify(v.body)).toBe(201);
+    const a = await enviar(
+      'post',
+      `/salas/${cod}/gravacoes`,
+      {
+        tipo: 'audio',
+        identidade: 'c-abc123',
+        nome: 'Carla Souza',
+        trilhaId: 'TR_NAV',
+        mime: 'audio/webm;codecs=opus',
+      },
+      cred,
+    );
+    expect(a.status).toBe(201);
+
+    // Outra pessoa do time não grava junto; convidado não grava.
+    const sala = await pool.query<{ id: number; conta_id: number }>(
+      'SELECT id::int, conta_id FROM comercial.salas WHERE codigo = $1',
+      [cod],
+    );
+    const outro = emitirCredencial(
+      {
+        salaId: sala.rows[0]!.id,
+        contaId: sala.rows[0]!.conta_id,
+        participanteId: '0f0e0d0c-0b0a-4908-8706-050403020101',
+        identidade: 'u-999',
+        nome: 'Bruno',
+        papel: 'equipe',
+      },
+      SEGREDO,
+    );
+    const dupla = await enviar(
+      'post',
+      `/salas/${cod}/gravacoes`,
+      { tipo: 'sala', mime: 'video/webm' },
+      { 'x-credencial-sala': outro },
+    );
+    expect(dupla.status).toBe(409);
+    expect(dupla.body.erro.codigo).toBe('outra_pessoa_gravando');
+    const convidadoCred = emitirCredencial(
+      {
+        salaId: sala.rows[0]!.id,
+        contaId: sala.rows[0]!.conta_id,
+        participanteId: '0f0e0d0c-0b0a-4908-8706-050403020102',
+        identidade: 'c-123',
+        nome: 'Carla',
+        papel: 'convidado',
+      },
+      SEGREDO,
+    );
+    expect(
+      (
+        await enviar(
+          'post',
+          `/salas/${cod}/gravacoes`,
+          { tipo: 'sala', mime: 'video/webm' },
+          { 'x-credencial-sala': convidadoCred },
+        )
+      ).status,
+    ).toBe(403);
+
+    // Pedaços na ordem (um repetido, como numa nova tentativa depois de falha de internet).
+    const mandar = (id: string, bytes: Buffer, partes: number) => {
+      const tam = Math.ceil(bytes.length / partes);
+      return Array.from({ length: partes }, (_, n) => bytes.subarray(n * tam, (n + 1) * tam)).map((b, n) =>
+        request(app)
+          .put(`/salas/${cod}/gravacoes/${id}/pedacos/${n}`)
+          .set('Origin', ORIGEM)
+          .set('x-credencial-sala', cred['x-credencial-sala'])
+          .set('Content-Type', 'application/octet-stream')
+          .send(b),
+      );
+    };
+    for (const p of mandar(v.body.id, videoBytes, 4)) expect((await p).status).toBe(200);
+    for (const p of mandar(v.body.id, videoBytes, 4).slice(1, 2)) expect((await p).status).toBe(200);
+    for (const p of mandar(a.body.id, audioBytes, 2)) expect((await p).status).toBe(200);
+    // Pedaço da gravação de outra pessoa: recusado.
+    expect(
+      (
+        await request(app)
+          .put(`/salas/${cod}/gravacoes/${v.body.id}/pedacos/9`)
+          .set('Origin', ORIGEM)
+          .set('x-credencial-sala', outro)
+          .set('Content-Type', 'application/octet-stream')
+          .send(Buffer.from('x'))
+      ).status,
+    ).toBe(403);
+    // O LiveKit não grava nada neste modo.
+    expect(chamadas.gravacoesSala.length).toBe(egressAntes);
+
+    await enviar('post', `/salas/${cod}/gravacoes/${v.body.id}/concluir`, { pedacos: 4 }, cred);
+    await enviar('post', `/salas/${cod}/gravacoes/${a.body.id}/concluir`, { pedacos: 2 }, cred);
+    await enviar('post', `/salas/${cod}/encerrar`, {}, cred);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ segments: [{ start: 1, end: 2.5, text: 'Quero a proposta até sexta.' }] }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+      ),
+    );
+    const sessao = entrada.body.sessaoId as number;
+    await pool.query(
+      `UPDATE comercial.sala_sessoes SET situacao = 'processando', processar_em = now(),
+              encerrada_em = coalesce(encerrada_em, now()) WHERE id = $1`,
+      [sessao],
+    );
+    await rodarProcessamento({
+      pool,
+      log,
+      servicos,
+      reunioes,
+      jwtSegredo: SEGREDO,
+      aoEncerrar: () => undefined,
+    });
+    vi.unstubAllGlobals();
+
+    const g = await pool.query<{
+      tipo: string;
+      situacao: string;
+      chave: string;
+      segundos: number | null;
+      erro: string | null;
+    }>(
+      `SELECT tipo, situacao, chave, segundos, erro FROM comercial.sala_gravacoes WHERE sessao_id = $1 ORDER BY id`,
+      [sessao],
+    );
+    expect(g.rows.map((x) => [x.tipo, x.situacao, x.erro])).toEqual([
+      ['sala', 'pronta', null],
+      ['audio', 'pronta', null],
+    ]);
+    expect(g.rows[0]!.chave).toMatch(temFfmpeg ? /\.mp4$/ : /\.webm$/);
+    if (temFfmpeg) expect(g.rows[0]!.segundos).toBe(3);
+    // O arquivo final está no bucket e os pedaços foram apagados.
+    expect(arquivos.has(g.rows[0]!.chave)).toBe(true);
+    expect([...arquivos.keys()].some((k) => k.includes('/p/'))).toBe(false);
+    if (temFfmpeg) {
+      writeFileSync(join(pasta, 'final.mp4'), arquivos.get(g.rows[0]!.chave)!);
+      const info = execFileSync('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'stream=codec_name',
+        '-of',
+        'csv=p=0',
+        join(pasta, 'final.mp4'),
+      ]).toString();
+      expect(info).toContain('h264');
+      expect(info).toContain('aac');
+    }
+    const s2 = await pool.query<{ video: string | null; transcricao: string; situacao: string }>(
+      'SELECT video_chave AS video, transcricao, situacao FROM comercial.sala_sessoes WHERE id = $1',
+      [sessao],
+    );
+    expect(s2.rows[0]).toEqual({ video: g.rows[0]!.chave, transcricao: 'pronta', situacao: 'pronta' });
+    const falas = await pool.query<{ nome: string; texto: string }>(
+      'SELECT nome, texto FROM comercial.sala_falas WHERE sessao_id = $1',
+      [sessao],
+    );
+    expect(falas.rows).toEqual([{ nome: 'Carla Souza', texto: 'Quero a proposta até sexta.' }]);
+    rmSync(pasta, { recursive: true, force: true });
+    reunioes.gravacaoNaNuvem = true;
   });
 
   it('tirar a sala da reunião cancela o link', async () => {

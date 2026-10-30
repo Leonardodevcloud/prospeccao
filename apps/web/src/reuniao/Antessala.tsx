@@ -12,6 +12,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ErroApi } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { apiSala, type InfoSala, type Liberado, type ResultadoEntrada } from './api';
+import { pedirCapturaDaAba, podeGravarAba } from './gravador';
 import { AntesDeAbrir, quandoReuniao } from './PaginaReuniao';
 import { destravarSons, ehCelular } from './sons';
 
@@ -24,6 +25,8 @@ export interface Escolhas {
   altoFalanteId: string | undefined;
   /** No celular: câmera da frente (user) ou de trás (environment). */
   frente: 'user' | 'environment';
+  /** Quem conduz no computador: a aba já liberada para a gravação (pedida no clique de entrar). */
+  captura: MediaStream | null;
 }
 
 const NOME_GUARDADO = 'reuniao:nome';
@@ -224,8 +227,11 @@ export function Antessala(props: {
     cameraId: celular ? undefined : cameraId,
     altoFalanteId: celular ? undefined : altoFalanteId,
     frente,
+    captura: null,
   };
   const precisaAceite = info.gravar && !doTime;
+  // Quem é do time, no computador, grava a reunião pelo navegador (o Chrome pede a aba no clique).
+  const vaiGravar = doTime && info.gravacao === 'navegador' && podeGravarAba();
 
   const entrar = async (e: FormEvent) => {
     e.preventDefault();
@@ -233,6 +239,9 @@ export function Antessala(props: {
     destravarSons();
     setErro(null);
     setEntrando(true);
+    // Primeiro a aba para a gravação (tem que ser no clique). Cancelar não impede de entrar: a sala
+    // mostra o botão para gravar depois.
+    const captura = vaiGravar ? await pedirCapturaDaAba() : null;
     try {
       const volta = lerLocal(chaveVolta(info.codigo), globalThis.sessionStorage);
       const anterior = volta ? (JSON.parse(volta) as { participanteId: string; segredo: string }) : null;
@@ -251,10 +260,12 @@ export function Antessala(props: {
       // A prévia para: a sala pega a câmera e o microfone de novo (sem pedir permissão outra vez).
       video?.stop();
       audio?.stop();
-      if (r.estado === 'aguardando')
+      if (r.estado === 'aguardando') {
+        for (const t of captura?.getTracks() ?? []) t.stop();
         props.aoAguardar({ participanteId: r.participanteId, segredo: r.segredo }, escolhas);
-      else props.aoEntrar(r, escolhas);
+      } else props.aoEntrar(r, { ...escolhas, captura });
     } catch (x) {
+      for (const t of captura?.getTracks() ?? []) t.stop();
       setErro(x);
       if (x instanceof ErroApi && (x.codigo === 'sala_fechada' || x.status === 410)) props.aoAtualizar();
     } finally {
@@ -443,9 +454,19 @@ export function Antessala(props: {
             className="as__grande"
             disabled={entrando || antes || (!doTime && nome.trim().length < 2) || (precisaAceite && !aceite)}
           >
-            {entrando ? 'Entrando…' : reabrir ? 'Abrir a sala de novo' : 'Entrar na reunião'}
+            {entrando
+              ? 'Entrando…'
+              : reabrir
+                ? 'Abrir a sala de novo'
+                : vaiGravar
+                  ? 'Entrar e gravar'
+                  : 'Entrar na reunião'}
           </Button>
-          <span className="rp__nota">Câmera e microfone podem ser desligados a qualquer momento.</span>
+          <span className="rp__nota">
+            {vaiGravar
+              ? 'O navegador vai perguntar se pode compartilhar esta aba: clique em Compartilhar. É assim que a reunião é gravada, do jeito que você vê.'
+              : 'Câmera e microfone podem ser desligados a qualquer momento.'}
+          </span>
         </div>
       </form>
     </div>

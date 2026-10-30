@@ -17,6 +17,7 @@ import jwt from 'jsonwebtoken';
 import { comConta, type UsuarioSessao } from '../../contexto.js';
 import * as funil from '../funil/repositorio.js';
 import { notificar } from '../notificacoes/repositorio.js';
+import { chaveDoPedaco } from './montar.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -31,6 +32,11 @@ export interface DepsReunioes {
   armazenamento: Armazenamento | null;
   /** Whisper (sem ele, grava mas não transcreve). */
   transcricao: ConfigTranscricao | null;
+  /**
+   * Gravação pelo LiveKit (na nuvem, paga por minuto). Desligada (padrão), quem grava é o navegador
+   * de quem conduz a reunião, sem custo de gravação.
+   */
+  gravacaoNaNuvem?: boolean;
 }
 
 type Deps = { pool: Pool; log: Logger; jwtSegredo: string; reunioes: DepsReunioes };
@@ -122,6 +128,9 @@ export type ResultadoEntrada =
       credencial: string;
       sessaoId: number;
       gravando: boolean;
+      /** Quem grava: o navegador de alguém do time, o LiveKit, ou ninguém. */
+      gravacao: 'navegador' | 'nuvem' | null;
+      transcrever: boolean;
     }
   | { estado: 'aguardando'; participanteId: string; segredo: string }
   | { estado: 'recusado' };
@@ -201,6 +210,8 @@ async function liberar(
     credencial,
     sessaoId: sessao.id,
     gravando: sessao.gravar,
+    gravacao: sessao.gravar ? (d.reunioes.gravacaoNaNuvem ? 'nuvem' : 'navegador') : null,
+    transcrever: sessao.transcrever,
   };
 }
 
@@ -343,7 +354,7 @@ export async function tratarAviso(d: Deps & { aoEncerrar: AoEncerrar }, a: Aviso
       case 'entrou': {
         await repo.registrarPresenca(d.pool, s.salaId, a.identidade, 'entrou', a.em);
         // A primeira pessoa liga a gravação da sala (só uma vez por sessão).
-        if (s.situacao === 'ao_vivo' && s.gravar && video?.gravaArquivos) {
+        if (s.situacao === 'ao_vivo' && s.gravar && video?.gravaArquivos && d.reunioes.gravacaoNaNuvem) {
           const chave = `${chaveDaSessao(s.contaId, s.salaId, s.id)}/reuniao.mp4`;
           const reserva = await repo.reservarGravacao(d.pool, s.id, { tipo: 'sala', chave });
           if (reserva)
@@ -362,7 +373,13 @@ export async function tratarAviso(d: Deps & { aoEncerrar: AoEncerrar }, a: Aviso
         return;
       case 'microfone': {
         // Áudio de cada pessoa separado: é o que deixa a transcrição saber quem falou.
-        if (s.situacao !== 'ao_vivo' || !s.transcrever || !video?.gravaArquivos) return;
+        if (
+          s.situacao !== 'ao_vivo' ||
+          !s.transcrever ||
+          !video?.gravaArquivos ||
+          !d.reunioes.gravacaoNaNuvem
+        )
+          return;
         const chave = `${chaveDaSessao(s.contaId, s.salaId, s.id)}/audio-${a.identidade}-${a.trilhaId}.ogg`;
         const reserva = await repo.reservarGravacao(d.pool, s.id, {
           tipo: 'audio',
@@ -447,6 +464,103 @@ export async function acompanharSessoes(d: Deps & { aoEncerrar: AoEncerrar }): P
       d.log.warn({ err: erro, gravacao: g.gravacaoId }, 'reuniões: não conferiu a gravação');
     }
   }
+}
+
+/* ───────────── Gravação pelo navegador ───────────── */
+
+/** Maior pedaço aceito (o navegador manda um a cada 2 s; 16 MB sobra até para 4K). */
+export const LIMITE_PEDACO = 16 * 1024 * 1024;
+
+/**
+ * Alguém do time começa a gravar pelo navegador: o vídeo da reunião (só uma pessoa por vez) ou o
+ * microfone de uma pessoa (para a transcrição saber quem falou).
+ */
+export async function comecarGravacao(
+  d: Deps,
+  sala: SalaPublica,
+  cred: Credencial,
+  g: {
+    tipo: 'sala' | 'audio';
+    identidade?: string;
+    nome?: string;
+    trilhaId?: string;
+    mime: string;
+    desdeMs: number;
+  },
+): Promise<{ id: string }> {
+  if (cred.papel === 'convidado') throw AppError.proibido('Só o time grava a reunião.');
+  if (!d.reunioes.armazenamento)
+    throw AppError.conflito('As gravações não estão configuradas neste sistema.');
+  if (d.reunioes.gravacaoNaNuvem) throw AppError.conflito('Esta reunião já é gravada pelo servidor.');
+  const sessao = await repo.sessaoAoVivo(d.pool, sala.id);
+  if (!sessao) throw AppError.conflito('A reunião não está acontecendo agora.');
+  if (!sessao.gravar) throw AppError.conflito('Esta reunião não é gravada.');
+  if (g.tipo === 'audio' && !sessao.transcrever) throw AppError.conflito('Esta reunião não é transcrita.');
+  if (g.tipo === 'sala') {
+    const ativo = await repo.gravadorAtivo(d.pool, sessao.id);
+    if (ativo && ativo.gravadoPor !== cred.identidade)
+      throw new AppError(
+        409,
+        'outra_pessoa_gravando',
+        `${ativo.nome ?? 'Outra pessoa do time'} já está gravando esta reunião.`,
+        { detalhes: { gravadoPor: ativo.nome } },
+      );
+  }
+  const id = await repo.criarGravacaoNavegador(d.pool, {
+    sessaoId: sessao.id,
+    chaveBase: chaveDaSessao(sala.contaId, sala.id, sessao.id),
+    tipo: g.tipo,
+    identidade: g.tipo === 'audio' ? (g.identidade ?? null) : cred.identidade,
+    nome: g.tipo === 'audio' ? (g.nome ?? null) : cred.nome,
+    trilhaId: g.tipo === 'audio' ? (g.trilhaId ?? null) : null,
+    mime: g.mime,
+    gravadoPor: cred.identidade,
+    desdeMs: g.desdeMs,
+  });
+  d.log.info(
+    { sala: sala.id, sessao: sessao.id, tipo: g.tipo, gravacao: id },
+    'reuniões: gravação pelo navegador começou',
+  );
+  return { id };
+}
+
+async function gravacaoDeQuemGrava(d: Deps, sala: SalaPublica, cred: Credencial, gravacaoId: string) {
+  const g = await repo.gravacaoNavegador(d.pool, gravacaoId);
+  if (!g || g.salaId !== sala.id) throw AppError.naoEncontrado('Gravação');
+  if (g.gravadoPor !== cred.identidade) throw AppError.proibido('Esta gravação é de outra pessoa.');
+  if (g.situacao !== 'gravando') throw new AppError(409, 'gravacao_fechada', 'Esta gravação já foi fechada.');
+  return g;
+}
+
+/** Um pedaço da gravação (o navegador manda na ordem e repete o que falhou; repetir não duplica). */
+export async function receberPedaco(
+  d: Deps,
+  sala: SalaPublica,
+  cred: Credencial,
+  gravacaoId: string,
+  n: number,
+  corpo: Buffer,
+): Promise<void> {
+  const arm = d.reunioes.armazenamento;
+  if (!arm) throw AppError.conflito('As gravações não estão configuradas neste sistema.');
+  if (!corpo.length) throw AppError.invalido('Pedaço vazio.');
+  const g = await gravacaoDeQuemGrava(d, sala, cred, gravacaoId);
+  await arm.enviar(chaveDoPedaco(g.chave, n), corpo, 'application/octet-stream');
+  await repo.registrarPedaco(d.pool, gravacaoId, n, corpo.length);
+}
+
+/** O navegador terminou de gravar (e diz quantos pedaços mandou). A montagem é em segundo plano. */
+export async function concluirGravacaoNavegador(
+  d: Deps & { aoEncerrar?: AoEncerrar },
+  sala: SalaPublica,
+  cred: Credencial,
+  gravacaoId: string,
+  pedacos: number,
+): Promise<void> {
+  const g = await gravacaoDeQuemGrava(d, sala, cred, gravacaoId);
+  await repo.concluirPeloNavegador(d.pool, gravacaoId, pedacos);
+  // Reunião já encerrada: o processamento roda logo (em vez de esperar a próxima rodada).
+  if (!g.sessaoAoVivo) d.aoEncerrar?.(g.sessaoId);
 }
 
 /* ───────────── Fim da reunião ───────────── */

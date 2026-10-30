@@ -9,7 +9,7 @@ import {
   mensagemSala,
   situacaoDaSala,
 } from '@prospeccao/shared';
-import { type Request, type RequestHandler, type Response, Router } from 'express';
+import express, { type Request, type RequestHandler, type Response, Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -27,13 +27,17 @@ import * as repo from './repositorio.js';
 import {
   assinarArquivo,
   type Credencial,
+  comecarGravacao,
+  concluirGravacaoNavegador,
   conferirArquivo,
   type DepsReunioes,
   ehDoTime,
   encerrarParaTodos,
   entrar,
+  LIMITE_PEDACO,
   lerCredencial,
   perguntarEspera,
+  receberPedaco,
   type SalaPublica,
   semVideo,
   tratarAviso,
@@ -162,6 +166,13 @@ export function rotasSalaPublica(deps: DepsApi): Router {
       situacao,
       entrada: sala.entrada,
       gravar: sala.gravar && !!reunioes.video?.gravaArquivos,
+      // Quem grava: o navegador de quem conduz (padrão) ou o LiveKit (na nuvem).
+      gravacao:
+        sala.gravar && reunioes.video?.gravaArquivos
+          ? reunioes.gravacaoNaNuvem
+            ? 'nuvem'
+            : 'navegador'
+          : null,
       transcrever:
         sala.gravar && sala.transcrever && !!reunioes.video?.gravaArquivos && !!reunioes.transcricao,
       empresa: {
@@ -327,6 +338,58 @@ export function rotasSalaPublica(deps: DepsApi): Router {
       )
         n++;
     res.json({ silenciados: n });
+  });
+
+  /* ── Gravação pelo navegador de quem conduz (só o time) ── */
+
+  const comecar = z.object({
+    tipo: z.enum(['sala', 'audio']),
+    identidade: z
+      .string()
+      .regex(/^[uc]-[0-9a-f]{1,32}$/)
+      .optional(),
+    nome: z.string().trim().min(1).max(80).optional(),
+    trilhaId: z.string().trim().min(1).max(80).optional(),
+    mime: z
+      .string()
+      .trim()
+      .max(120)
+      .regex(/^(video|audio)\/[\w.+-]+(;[\w=.,+ -]*)?$/),
+    desdeMs: z.number().int().min(0).max(600_000).default(0),
+  });
+  r.post('/:codigo/gravacoes', naSala, doTime, async (req, res) => {
+    const { sala, credencial } = locais(res);
+    res.status(201).json(await comecarGravacao(d(), sala, credencial, corpo(req, comecar)));
+  });
+
+  // Os pedaços chegam crus (sem JSON), um a cada 2 segundos, enquanto a reunião acontece.
+  r.put(
+    '/:codigo/gravacoes/:id/pedacos/:n',
+    express.raw({ type: '*/*', limit: LIMITE_PEDACO }),
+    naSala,
+    doTime,
+    async (req, res) => {
+      const { sala, credencial } = locais(res);
+      const id = z
+        .string()
+        .regex(/^nav-[0-9a-f-]{36}$/)
+        .parse(req.params.id);
+      const n = z.coerce.number().int().min(0).max(1_000_000).parse(req.params.n);
+      const dados = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      await receberPedaco(d(), sala, credencial, id, n, dados);
+      res.json({ ok: true });
+    },
+  );
+
+  r.post('/:codigo/gravacoes/:id/concluir', naSala, doTime, async (req, res) => {
+    const { sala, credencial } = locais(res);
+    const id = z
+      .string()
+      .regex(/^nav-[0-9a-f-]{36}$/)
+      .parse(req.params.id);
+    const { pedacos } = corpo(req, z.object({ pedacos: z.number().int().min(0).max(1_000_000) }));
+    await concluirGravacaoNavegador(d(), sala, credencial, id, pedacos);
+    res.json({ ok: true });
   });
 
   r.post('/:codigo/encerrar', naSala, doTime, async (_req, res) => {

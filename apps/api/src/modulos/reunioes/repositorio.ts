@@ -466,7 +466,7 @@ export async function gravacoesParaConferir(db: Executor) {
   const { rows } = await db.query<{ gravacaoId: string; contaId: number }>(
     `SELECT g.gravacao_id AS "gravacaoId", g.conta_id AS "contaId"
        FROM comercial.sala_gravacoes g JOIN comercial.sala_sessoes ss ON ss.id = g.sessao_id
-      WHERE g.situacao = 'gravando' AND g.gravacao_id NOT LIKE 'reserva:%'
+      WHERE g.situacao = 'gravando' AND g.origem = 'livekit' AND g.gravacao_id NOT LIKE 'reserva:%'
         AND ss.situacao IN ('ao_vivo', 'processando')
       ORDER BY g.id LIMIT 100`,
   );
@@ -558,13 +558,169 @@ export async function gravacoesDaSessao(db: Executor, sessaoId: number) {
     bytes: number | null;
     segundos: number | null;
     erro: string | null;
+    origem: 'livekit' | 'navegador';
   }>(
     `SELECT gravacao_id AS "gravacaoId", tipo, identidade, nome, chave, situacao, iniciada_em AS "iniciadaEm",
-            bytes, segundos, erro
+            bytes, segundos, erro, origem
        FROM comercial.sala_gravacoes WHERE sessao_id = $1 AND conta_id = ${contaSql()} ORDER BY id`,
     [sessaoId],
   );
   return rows;
+}
+
+/* ───────────── Gravação pelo navegador ───────────── */
+
+export interface GravacaoNavegador {
+  gravacaoId: string;
+  sessaoId: number;
+  salaId: number;
+  contaId: number;
+  tipo: 'sala' | 'audio';
+  situacao: 'gravando' | 'pronta' | 'falhou';
+  gravadoPor: string | null;
+  chave: string;
+  mime: string | null;
+  sessaoAoVivo: boolean;
+}
+
+/** Começa uma gravação do navegador (a do vídeo da reunião ou a do microfone de uma pessoa). */
+export async function criarGravacaoNavegador(
+  db: Executor,
+  d: {
+    sessaoId: number;
+    chaveBase: string;
+    tipo: 'sala' | 'audio';
+    identidade: string | null;
+    nome: string | null;
+    trilhaId: string | null;
+    mime: string;
+    gravadoPor: string;
+    /** Há quanto tempo o navegador já está gravando (o início fica na hora da api). */
+    desdeMs: number;
+  },
+): Promise<string> {
+  const id = `nav-${randomUUID()}`;
+  await db.query(
+    `INSERT INTO comercial.sala_gravacoes
+       (sessao_id, conta_id, gravacao_id, tipo, identidade, nome, trilha_id, chave, origem, mime, gravado_por, iniciada_em)
+     VALUES ($1, ${contaSql()}, $2, $3, $4, $5, $6, $7, 'navegador', $8, $9, now() - make_interval(secs => $10))`,
+    [
+      d.sessaoId,
+      id,
+      d.tipo,
+      d.identidade,
+      d.nome,
+      d.trilhaId,
+      `${d.chaveBase}/${id}`,
+      d.mime,
+      d.gravadoPor,
+      Math.min(Math.max(d.desdeMs, 0), 120_000) / 1000,
+    ],
+  );
+  return id;
+}
+
+export async function gravacaoNavegador(db: Executor, gravacaoId: string): Promise<GravacaoNavegador | null> {
+  const { rows } = await db.query<GravacaoNavegador>(
+    `SELECT g.gravacao_id AS "gravacaoId", g.sessao_id::int AS "sessaoId", ss.sala_id::int AS "salaId",
+            g.conta_id AS "contaId", g.tipo, g.situacao, g.gravado_por AS "gravadoPor", g.chave, g.mime,
+            (ss.situacao = 'ao_vivo') AS "sessaoAoVivo"
+       FROM comercial.sala_gravacoes g JOIN comercial.sala_sessoes ss ON ss.id = g.sessao_id
+      WHERE g.gravacao_id = $1 AND g.origem = 'navegador' AND g.conta_id = ${contaSql()}`,
+    [gravacaoId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Quem está gravando o vídeo desta reunião agora (mandou um pedaço há menos de 45 s e não
+ * terminou). Só uma pessoa do time grava por vez.
+ */
+export async function gravadorAtivo(db: Executor, sessaoId: number) {
+  const { rows } = await db.query<{ gravadoPor: string; nome: string | null }>(
+    `SELECT g.gravado_por AS "gravadoPor", p.nome
+       FROM comercial.sala_gravacoes g
+       JOIN comercial.sala_sessoes ss ON ss.id = g.sessao_id
+       LEFT JOIN comercial.sala_participantes p ON p.sala_id = ss.sala_id AND p.identidade = g.gravado_por
+      WHERE g.sessao_id = $1 AND g.conta_id = ${contaSql()} AND g.origem = 'navegador' AND g.tipo = 'sala'
+        AND g.situacao = 'gravando' AND g.concluida_cliente_em IS NULL
+        AND coalesce(g.ultimo_pedaco_em, g.criado_em) > now() - interval '45 seconds'
+      ORDER BY g.id DESC LIMIT 1`,
+    [sessaoId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function registrarPedaco(db: Executor, gravacaoId: string, n: number, bytes: number) {
+  await db.query(
+    `INSERT INTO comercial.sala_gravacao_pedacos (gravacao_id, n, bytes) VALUES ($1, $2, $3)
+     ON CONFLICT (gravacao_id, n) DO UPDATE SET bytes = EXCLUDED.bytes, recebido_em = now()`,
+    [gravacaoId, n, bytes],
+  );
+  await db.query('UPDATE comercial.sala_gravacoes SET ultimo_pedaco_em = now() WHERE gravacao_id = $1', [
+    gravacaoId,
+  ]);
+}
+
+export async function concluirPeloNavegador(db: Executor, gravacaoId: string, pedacos: number) {
+  await db.query(
+    `UPDATE comercial.sala_gravacoes SET concluida_cliente_em = now(), pedacos_esperados = $2
+      WHERE gravacao_id = $1 AND situacao = 'gravando'`,
+    [gravacaoId, pedacos],
+  );
+}
+
+/** Gravações do navegador desta sessão que ainda não viraram arquivo (com o que já chegou). */
+export async function gravacoesParaMontar(db: Executor, sessaoId: number) {
+  const { rows } = await db.query<{
+    gravacaoId: string;
+    tipo: 'sala' | 'audio';
+    chave: string;
+    mime: string | null;
+    concluida: boolean;
+    esperados: number | null;
+    recebidos: number;
+    paradaHaSegundos: number;
+  }>(
+    `SELECT g.gravacao_id AS "gravacaoId", g.tipo, g.chave, g.mime,
+            (g.concluida_cliente_em IS NOT NULL) AS concluida, g.pedacos_esperados AS esperados,
+            (SELECT count(*)::int FROM comercial.sala_gravacao_pedacos p WHERE p.gravacao_id = g.gravacao_id) AS recebidos,
+            extract(epoch FROM now() - coalesce(g.ultimo_pedaco_em, g.criado_em))::int AS "paradaHaSegundos"
+       FROM comercial.sala_gravacoes g
+      WHERE g.sessao_id = $1 AND g.origem = 'navegador' AND g.situacao = 'gravando'
+      ORDER BY g.id`,
+    [sessaoId],
+  );
+  return rows;
+}
+
+export async function pedacosDaGravacao(db: Executor, gravacaoId: string): Promise<number[]> {
+  const { rows } = await db.query<{ n: number }>(
+    'SELECT n FROM comercial.sala_gravacao_pedacos WHERE gravacao_id = $1 ORDER BY n',
+    [gravacaoId],
+  );
+  return rows.map((r) => r.n);
+}
+
+export async function gravacaoMontada(
+  db: Executor,
+  gravacaoId: string,
+  r: { chave: string; bytes: number; segundos: number | null } | { erro: string },
+) {
+  if ('erro' in r)
+    await db.query(
+      `UPDATE comercial.sala_gravacoes SET situacao = 'falhou', erro = $2, encerrada_em = now() WHERE gravacao_id = $1`,
+      [gravacaoId, r.erro.slice(0, 500)],
+    );
+  else
+    await db.query(
+      `UPDATE comercial.sala_gravacoes
+          SET situacao = 'pronta', chave = $2, bytes = $3, segundos = $4,
+              encerrada_em = coalesce(iniciada_em + make_interval(secs => coalesce($4, 0)), now())
+        WHERE gravacao_id = $1`,
+      [gravacaoId, r.chave, r.bytes, r.segundos],
+    );
+  await db.query('DELETE FROM comercial.sala_gravacao_pedacos WHERE gravacao_id = $1', [gravacaoId]);
 }
 
 /** Todas as chaves de arquivos gravados (para apagar do armazenamento). */

@@ -134,3 +134,11 @@ if ('serviceWorker' in navigator && import.meta.env.PROD)
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => undefined);
   });
+
+// Gravação de reunião que não terminou de subir (a aba fechou no meio): sobe em segundo plano.
+if ('indexedDB' in window && location.pathname !== '/gravacao')
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      void import('./reuniao/envio').then((m) => m.retomarEnviosPendentes()).catch(() => undefined);
+    }, 4000);
+  });

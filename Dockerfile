@@ -16,6 +16,12 @@ RUN pnpm --filter "@prospeccao/${SERVICO}" build
 RUN pnpm --filter "@prospeccao/${SERVICO}" deploy --prod --legacy /saida
 
 FROM node:22-slim
+ARG SERVICO
+# A api monta as gravações das reuniões (junta os pedaços que o navegador manda e arruma o arquivo
+# para dar para pular no vídeo): precisa do ffmpeg. Os workers não.
+RUN if [ "$SERVICO" = "api" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*; \
+    fi
 ENV NODE_ENV=production \
     MIGRATIONS_DIR=/app/migrations
 WORKDIR /app

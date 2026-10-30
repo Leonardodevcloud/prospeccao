@@ -47,6 +47,8 @@ export interface InfoSala {
   entrada: EntradaSala;
   gravar: boolean;
   transcrever: boolean;
+  /** Quem grava: o navegador de alguém do time (padrão), o servidor (na nuvem) ou ninguém. */
+  gravacao: 'navegador' | 'nuvem' | null;
   empresa: { nome: string; cor: string | null; logo: string | null };
   anfitriao: string | null;
   presentes: string[];
@@ -67,6 +69,8 @@ export type ResultadoEntrada =
       credencial: string;
       sessaoId: number;
       gravando: boolean;
+      gravacao: 'navegador' | 'nuvem' | null;
+      transcrever: boolean;
     }
   | { estado: 'aguardando'; participanteId: string; segredo: string }
   | { estado: 'recusado' };

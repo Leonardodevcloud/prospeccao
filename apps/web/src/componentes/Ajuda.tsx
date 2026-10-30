@@ -226,9 +226,30 @@ export const ARTIGOS: ArtigoAjuda[] = [
           sozinha para o som não cortar, e a sala avisa quando a conexão está fraca.
         </p>
         <h3>Gravação e consentimento</h3>
+        <p>Em reunião gravada, quem entra vê o aviso e precisa concordar com a gravação antes de entrar.</p>
         <p>
-          Em reunião gravada, quem entra vê o aviso e precisa concordar com a gravação antes de entrar. A
-          gravação começa quando a primeira pessoa entra e para quando todos saem.
+          Quem grava é o computador de quem conduz a reunião, sem custo a mais. A gravação sai exatamente como
+          a sua tela da reunião: os vídeos com os nomes, o chat, a tela compartilhada e as mãos levantadas.
+          Para gravar:
+        </p>
+        <Passos>
+          <li>
+            Entre pelo computador, no <b>Chrome</b> ou no <b>Edge</b>, e clique em <b>Entrar e gravar</b>.
+          </li>
+          <li>
+            O navegador pergunta se pode compartilhar esta aba: clique em <b>Compartilhar</b>. Aparece o selo
+            vermelho <b>Gravando</b> no alto da sala.
+          </li>
+          <li>
+            Ao sair, deixe a aba aberta até aparecer <b>Gravação enviada</b>. Se precisar fechar antes, o que
+            faltou sobe sozinho na próxima vez que você abrir o sistema nesse computador.
+          </li>
+        </Passos>
+        <p>
+          Se a gravação não estiver ligada, a sala mostra o botão <b>Gravar esta reunião</b>. Só uma pessoa do
+          time grava por vez; se ela sair, outra pessoa do time pode continuar. Com a internet fraca, a
+          gravação continua e o envio espera, para não atrapalhar a reunião. Para apresentar, compartilhe uma
+          janela ou outra aba (não a tela inteira), para a gravação não mostrar uma tela dentro da outra.
         </p>
         <h3>Depois da reunião</h3>
         <p>

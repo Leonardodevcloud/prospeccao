@@ -36,8 +36,11 @@ export function prepararReunioes(env: EnvApi, log: Logger): DepsReunioes {
     log.info('reuniões por vídeo desligadas (falta LIVEKIT_URL, LIVEKIT_API_KEY e LIVEKIT_API_SECRET)');
   else
     log.info(
-      { gravacao: !!armazenamento, transcricao: !!(armazenamento && transcricao) },
+      {
+        gravacao: armazenamento ? (env.GRAVACAO_NA_NUVEM ? 'nuvem (LiveKit)' : 'pelo navegador') : false,
+        transcricao: !!(armazenamento && transcricao),
+      },
       'reuniões por vídeo ligadas',
     );
-  return { video, armazenamento, transcricao };
+  return { video, armazenamento, transcricao, gravacaoNaNuvem: env.GRAVACAO_NA_NUVEM };
 }

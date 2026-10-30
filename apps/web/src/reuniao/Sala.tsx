@@ -27,9 +27,10 @@ import {
   Track,
   VideoPresets,
 } from 'livekit-client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Escolhas } from './Antessala';
 import { apiSala, type InfoSala, type Liberado, type MensagemChat } from './api';
+import { type EstadoGravador, gravador, pedirCapturaDaAba, podeGravarAba } from './gravador';
 import { Ladrilho, nomeDe } from './Ladrilho';
 import { PainelChat } from './PainelChat';
 import { maosLevantadas, PainelPessoas } from './PainelPessoas';
@@ -80,6 +81,13 @@ function criarSala(escolhas: Escolhas): Room {
       screenShareEncoding: { maxBitrate: 5_200_000, maxFramerate: 30 },
     },
   });
+}
+
+/** Estado da gravação pelo navegador (gravando, subindo o que falta…). */
+export function useEstadoGravador(): EstadoGravador {
+  const [estado, setEstado] = useState(gravador.estado);
+  useEffect(() => gravador.ouvir(setEstado), []);
+  return estado;
 }
 
 function useTelaPequena(): boolean {
@@ -212,11 +220,15 @@ function ConteudoSala(props: {
   const doTime = acesso.papel !== 'convidado';
   const pequena = useTelaPequena();
   const estado = useConnectionState();
-  const gravando = useIsRecording();
+  const naNuvem = useIsRecording();
+  const estadoGravador = useEstadoGravador();
+  const gravandoAqui = estadoGravador.fase === 'gravando';
   const { canPlayAudio, startAudio } = useAudioPlayback();
   const local = useLocalParticipant();
   const { quality } = useConnectionQualityIndicator({ participant: local.localParticipant });
   const pessoas = useParticipants();
+  // Gravando: pelo servidor (LiveKit) ou pelo navegador de alguém do time (que avisa por um atributo).
+  const gravando = naNuvem || gravandoAqui || pessoas.some((p) => p.attributes.gravando === '1');
   const cameras = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }], {
     onlySubscribed: false,
   });
@@ -228,6 +240,21 @@ function ConteudoSala(props: {
   const [fixado, setFixado] = useState<string | null>(null);
   // Quem apresenta não vê a própria tela (evita o efeito "tela dentro da tela"), a não ser que peça.
   const [verMinhaTela, setVerMinhaTela] = useState(false);
+
+  // Gravação pelo navegador: começa assim que conecta (a aba foi liberada no clique de entrar).
+  const captura = props.escolhas.captura;
+  const cfgGravacao = useMemo(
+    () => ({ codigo: info.codigo, credencial: acesso.credencial, transcrever: acesso.transcrever }),
+    [info.codigo, acesso.credencial, acesso.transcrever],
+  );
+  useEffect(() => {
+    if (props.conectado && captura && acesso.gravacao === 'navegador')
+      gravador.iniciar(room, captura, cfgGravacao);
+  }, [props.conectado, captura, acesso.gravacao, room, cfgGravacao]);
+  const gravarAgora = async () => {
+    const c = await pedirCapturaDaAba();
+    if (c) gravador.iniciar(room, c, cfgGravacao);
+  };
   const apresentando = local.isScreenShareEnabled;
   useEffect(() => {
     if (!apresentando) setVerMinhaTela(false);
@@ -478,6 +505,8 @@ function ConteudoSala(props: {
             <Icon name="monitor-up" size={18} />
             <span>
               Você está mostrando a sua tela. Todos veem{gravando ? ' e a gravação inclui a tela' : ''}.
+              {gravandoAqui &&
+                ' Para a gravação sair limpa, compartilhe uma janela ou outra aba (não a tela inteira).'}
             </span>
             <Button size="sm" onClick={alternarTela}>
               Parar de compartilhar
@@ -485,7 +514,7 @@ function ConteudoSala(props: {
           </div>
         )}
         <div className="destaque-tela">
-          {meu && !verMinhaTela ? (
+          {meu && !verMinhaTela && !gravandoAqui ? (
             <div className="apresentando">
               <Icon name="monitor-up" size={40} />
               <b>Você está apresentando para todos</b>
@@ -572,6 +601,23 @@ function ConteudoSala(props: {
           </Button>
         )}
       </header>
+
+      {doTime && acesso.gravacao === 'navegador' && !gravando && (
+        <div className="faixa-gravar" role="status">
+          <span className="ponto-gravando ponto-gravando--parado" aria-hidden="true" />
+          <span>
+            {estadoGravador.aviso ??
+              (podeGravarAba()
+                ? 'Esta reunião é gravada, mas a gravação não está ligada.'
+                : 'Esta reunião é gravada, mas só dá para gravar pelo computador, no Chrome ou no Edge.')}
+          </span>
+          {podeGravarAba() && (
+            <Button size="sm" variant="primary" icon="radio" onClick={() => void gravarAgora()}>
+              Gravar esta reunião
+            </Button>
+          )}
+        </div>
+      )}
 
       <div className="sala__corpo">
         <main className="sala__palco" aria-label="Vídeos da reunião">
