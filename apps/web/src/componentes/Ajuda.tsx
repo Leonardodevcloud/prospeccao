@@ -225,6 +225,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
           fichas logo abaixo; toque numa ficha para fixar a pessoa. Se a internet oscilar, a imagem se ajusta
           sozinha para o som não cortar, e a sala avisa quando a conexão está fraca.
         </p>
+        <p>
+          A imagem de cada pessoa e a tela compartilhada aparecem sempre inteiras, em qualquer tamanho de
+          janela: a grade se ajusta ao espaço e, quando a proporção da câmera não combina com o quadro (um
+          celular em pé, por exemplo), aparecem faixas escuras nas laterais em vez de cortar a imagem. A
+          gravação fica igual ao que se vê na tela.
+        </p>
         <h3>Gravação e consentimento</h3>
         <p>Em reunião gravada, quem entra vê o aviso e precisa concordar com a gravação antes de entrar.</p>
         <p>

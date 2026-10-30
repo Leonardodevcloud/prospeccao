@@ -31,7 +31,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Escolhas } from './Antessala';
 import { apiSala, type InfoSala, type Liberado, type MensagemChat } from './api';
 import { type EstadoGravador, gravador, pedirCapturaDaAba, podeGravarAba } from './gravador';
-import { Ladrilho, nomeDe } from './Ladrilho';
+import { GradeEncaixada, Ladrilho, nomeDe } from './Ladrilho';
 import { PainelChat } from './PainelChat';
 import { maosLevantadas, PainelPessoas } from './PainelPessoas';
 import { avisarNaAba, destravarSons, ehCelular, guardarSons, type Som, sonsLigados, tocar } from './sons';
@@ -196,14 +196,6 @@ function useEmDestaque(pessoas: Participant[], fixado: string | null): Participa
   if (outro) ultimo.current = outro.identity;
   const achar = (id: string | null) => (id ? pessoas.find((p) => p.identity === id) : undefined);
   return achar(fixado) ?? achar(ultimo.current) ?? pessoas.find((p) => !p.isLocal) ?? pessoas[0];
-}
-
-export function colunasDaGrade(n: number, pequena: boolean): number {
-  if (pequena) return n <= 2 ? 1 : 2;
-  if (n <= 1) return 1;
-  if (n <= 4) return 2;
-  if (n <= 9) return 3;
-  return 4;
 }
 
 function ConteudoSala(props: {
@@ -578,7 +570,7 @@ function ConteudoSala(props: {
       <>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'grid' }}>
           {principal && <Ladrilho trackRef={principal} />}
-          {meu && !emDestaque.isLocal && <Ladrilho trackRef={meu} className="mini-voce" mini />}
+          {meu && !emDestaque.isLocal && <Ladrilho trackRef={meu} className="mini-voce" mini preencher />}
         </div>
         <Fichas pessoas={pessoas.filter((p) => !p.isLocal)} fixado={fixado} aoFixar={setFixado} />
       </>
@@ -586,14 +578,11 @@ function ConteudoSala(props: {
   } else {
     const mostrados = cameras.slice(0, 16);
     palco = (
-      <div
-        className="grade"
-        style={{ '--colunas': colunasDaGrade(mostrados.length, pequena) } as React.CSSProperties}
-      >
+      <GradeEncaixada quantos={mostrados.length}>
         {mostrados.map((t: TrackReferenceOrPlaceholder) => (
           <Ladrilho key={`${t.participant.identity}-${t.source}`} trackRef={t} />
         ))}
-      </div>
+      </GradeEncaixada>
     );
   }
 

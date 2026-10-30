@@ -395,14 +395,19 @@
   justify-content: center;
 }
 
-/* Grade de vídeos */
-.grade {
+/* Grade de vídeos: quadros em 16:9 do maior tamanho que cabe, no centro (GradeEncaixada). */
+.grade-encaixada {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(var(--colunas, 2), minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
+  place-items: center;
+  overflow: hidden;
+}
+.grade-encaixada__vidros {
+  display: grid;
+  justify-content: center;
+  align-content: center;
 }
 .fita {
   display: flex;
@@ -440,11 +445,6 @@
   font-size: 18px;
   line-height: 24px;
 }
-.destaque-tela video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
 .faixa-tela {
   display: flex;
   align-items: center;
@@ -475,13 +475,23 @@
 .ladrilho[data-video] {
   background: #000;
 }
+/* O vídeo fica preso ao tamanho do quadro: nunca empurra a grade para o tamanho original da imagem
+   (era isso que cortava a tela compartilhada em janela grande). Preencher ou inteiro: Ladrilho. */
 .ladrilho video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 .ladrilho[data-espelho] video {
   transform: scaleX(-1);
+}
+/* Tela compartilhada em destaque: ocupa o espaço todo e aparece sempre inteira. */
+.ladrilho--tela {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
 }
 .ladrilho::after {
   content: "";
@@ -1136,17 +1146,6 @@
   gap: var(--space-3);
   color: var(--ink-muted);
   font-size: 15px;
-}
-.grade-inteira {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  place-items: center;
-}
-.grade-inteira__vidros {
-  display: grid;
-  justify-content: center;
-  align-content: center;
 }
 .sala--gravacao .fita > * {
   flex-basis: 228px;

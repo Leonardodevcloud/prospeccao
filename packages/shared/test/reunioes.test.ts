@@ -80,3 +80,34 @@ describe('reuniões', () => {
     expect(tarefaAtualizar.parse({ concluida: true })).toEqual({ concluida: true });
   });
 });
+
+describe('enquadramento dos vídeos', () => {
+  it('preenche o quadro só quando o corte é pequeno; senão mostra inteiro', async () => {
+    const { encaixeDoVideo } = await import('../src/reunioes.js');
+    const hd = { largura: 1280, altura: 720 };
+    expect(encaixeDoVideo(hd, { largura: 640, altura: 360 })).toBe('cover');
+    // Janela maximizada e larga (2,3:1): cortaria 23% da altura → inteiro.
+    expect(encaixeDoVideo(hd, { largura: 1580, altura: 680 })).toBe('contain');
+    // Celular em pé num quadro deitado → inteiro.
+    expect(encaixeDoVideo({ largura: 720, altura: 1280 }, { largura: 640, altura: 360 })).toBe('contain');
+    // Tela compartilhada é sempre inteira; sem saber o tamanho, também.
+    expect(encaixeDoVideo(hd, { largura: 640, altura: 360 }, true)).toBe('contain');
+    expect(encaixeDoVideo(null, { largura: 640, altura: 360 })).toBe('contain');
+  });
+
+  it('monta a grade que cabe no espaço, em 16:9', async () => {
+    const { gradeEncaixada } = await import('../src/reunioes.js');
+    expect(gradeEncaixada(1, { largura: 1600, altura: 700 }, 12)).toEqual({
+      colunas: 1,
+      largura: 1244,
+      altura: 700,
+    });
+    const dois = gradeEncaixada(2, { largura: 1600, altura: 700 }, 12);
+    expect(dois.colunas).toBe(2);
+    expect(dois.largura * 2 + 12).toBeLessThanOrEqual(1600);
+    const quatro = gradeEncaixada(4, { largura: 1000, altura: 800 }, 12);
+    expect(quatro.colunas).toBe(2);
+    expect(quatro.altura * 2 + 12).toBeLessThanOrEqual(800);
+    expect(gradeEncaixada(3, { largura: 0, altura: 0 })).toMatchObject({ largura: 0, altura: 0 });
+  });
+});

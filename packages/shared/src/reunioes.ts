@@ -238,3 +238,49 @@ export function partesDeFala(
   for (const [id, d] of tempo) partes.set(id, Math.round((d / total) * 100));
   return partes;
 }
+
+/* ───────────────────────────── Enquadramento dos vídeos ───────────────────────────── */
+
+/**
+ * Quanto da imagem pode ficar de fora para o vídeo preencher o quadro (como no Meet). Acima disso,
+ * a imagem aparece inteira, com faixas pretas: ninguém fica com a cabeça ou a tela cortada.
+ */
+export const CORTE_MAXIMO_VIDEO = 0.15;
+
+/** "cover" (preenche, cortando pouco) ou "contain" (inteiro) para um vídeo num quadro. */
+export function encaixeDoVideo(
+  video: { largura: number; altura: number } | null,
+  quadro: { largura: number; altura: number },
+  sempreInteiro = false,
+): 'cover' | 'contain' {
+  if (sempreInteiro || !video?.largura || !video.altura || !quadro.largura || !quadro.altura)
+    return 'contain';
+  const rv = video.largura / video.altura;
+  const rq = quadro.largura / quadro.altura;
+  const corte = 1 - Math.min(rv, rq) / Math.max(rv, rq);
+  return corte <= CORTE_MAXIMO_VIDEO ? 'cover' : 'contain';
+}
+
+/**
+ * Grade que cabe no espaço: quantas colunas e o tamanho de cada quadro (na proporção 16:9) para
+ * os vídeos ficarem o maior possível sem passar do espaço disponível.
+ */
+export function gradeEncaixada(
+  n: number,
+  espaco: { largura: number; altura: number },
+  vao = 12,
+  proporcao = 16 / 9,
+): { colunas: number; largura: number; altura: number } {
+  const total = Math.max(1, n);
+  let melhor = { colunas: 1, largura: 0, altura: 0 };
+  for (let colunas = 1; colunas <= total; colunas++) {
+    const linhas = Math.ceil(total / colunas);
+    const largura = Math.min(
+      (espaco.largura - (colunas - 1) * vao) / colunas,
+      ((espaco.altura - (linhas - 1) * vao) / linhas) * proporcao,
+    );
+    if (largura > melhor.largura)
+      melhor = { colunas, largura: Math.floor(largura), altura: Math.floor(largura / proporcao) };
+  }
+  return { ...melhor, largura: Math.max(0, melhor.largura), altura: Math.max(0, melhor.altura) };
+}

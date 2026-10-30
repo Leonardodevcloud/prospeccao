@@ -1,7 +1,6 @@
 import {
   RoomAudioRenderer,
   RoomContext,
-  type TrackReferenceOrPlaceholder,
   useParticipants,
   useRoomInfo,
   useTracks,
@@ -10,7 +9,7 @@ import { Avatar, Icon } from '@prospeccao/ui';
 import { type Participant, type RemoteParticipant, Room, RoomEvent, Track } from 'livekit-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MensagemChat } from './api';
-import { Ladrilho, nomeDe } from './Ladrilho';
+import { GradeEncaixada, Ladrilho, nomeDe } from './Ladrilho';
 import { fmtTamanho } from './PainelChat';
 import { maosLevantadas } from './PainelPessoas';
 import { Cronometro } from './Sala';
@@ -184,7 +183,13 @@ function TelaGravada(props: { room: Room }) {
       </div>
     );
   } else {
-    palco = <GradeInteira cameras={cameras.slice(0, 16)} />;
+    palco = (
+      <GradeEncaixada quantos={Math.min(cameras.length, 16)}>
+        {cameras.slice(0, 16).map((t) => (
+          <Ladrilho key={`${t.participant.identity}-${t.source}`} trackRef={t} />
+        ))}
+      </GradeEncaixada>
+    );
   }
 
   return (
@@ -267,51 +272,5 @@ function TelaGravada(props: { room: Room }) {
         ))}
       </div>
     </>
-  );
-}
-
-/**
- * Grade da gravação: cada vídeo inteiro em 16:9 (sem cortar a câmera), no maior tamanho que cabe,
- * centralizado. Escolhe o número de colunas que deixa os vídeos maiores.
- */
-function GradeInteira(props: { cameras: TrackReferenceOrPlaceholder[] }) {
-  const caixa = useRef<HTMLDivElement>(null);
-  const [tam, setTam] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    const el = caixa.current;
-    if (!el) return;
-    const medir = () => setTam({ w: el.clientWidth, h: el.clientHeight });
-    medir();
-    const obs = new ResizeObserver(medir);
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  const n = Math.max(1, props.cameras.length);
-  const vao = 12;
-  let melhor = { colunas: 1, largura: 0 };
-  for (let colunas = 1; colunas <= n; colunas++) {
-    const linhas = Math.ceil(n / colunas);
-    const largura = Math.min(
-      (tam.w - (colunas - 1) * vao) / colunas,
-      ((tam.h - (linhas - 1) * vao) / linhas) * (16 / 9),
-    );
-    if (largura > melhor.largura) melhor = { colunas, largura };
-  }
-  const largura = Math.floor(Math.max(0, melhor.largura));
-  return (
-    <div ref={caixa} className="grade-inteira">
-      <div
-        className="grade-inteira__vidros"
-        style={{
-          gridTemplateColumns: `repeat(${melhor.colunas}, ${largura}px)`,
-          gridAutoRows: `${Math.floor((largura * 9) / 16)}px`,
-          gap: vao,
-        }}
-      >
-        {props.cameras.map((t) => (
-          <Ladrilho key={`${t.participant.identity}-${t.source}`} trackRef={t} />
-        ))}
-      </div>
-    </div>
   );
 }
