@@ -150,6 +150,10 @@ export const chipAtualizar = z
     diasDeUso: z.number().int().min(0).max(3650).optional(),
     /** Comercial dono do número (null: número da equipe). */
     usuarioId: z.number().int().positive().nullable().optional(),
+    /** Número já usado no dia a dia: as conversas de antes ficam fora do CRM. */
+    usoDiario: z.boolean().optional(),
+    /** Quem escreve pela primeira vez num número de uso diário. */
+    contatoNovo: z.enum(['padrao', 'ignorar', 'sem_lead', 'lead']).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nada para atualizar.');
 

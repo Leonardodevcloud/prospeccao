@@ -4008,4 +4008,73 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect((await sol.ler('/auth/eu')).status).toBe(401);
     ck = '';
   });
+
+  it('número de uso diário: conversa de antes fica só no celular; quem é novo segue a regra do número', async () => {
+    const { rows: cfg } = await pool.query(
+      'SELECT webhook_token FROM comercial.config_agente WHERE conta_id = 1',
+    );
+    const token = cfg[0].webhook_token;
+    const { rows: ch } = await pool.query(
+      `INSERT INTO comercial.chips (conta_id, nome, instancia, uso_diario, contato_novo)
+       VALUES (1, 'Dia a dia', 'inst-dia-a-dia', true, 'ignorar') RETURNING id`,
+    );
+    const chipId = ch[0].id;
+    await pool.query(
+      `INSERT INTO comercial.contatos_antigos (conta_id, chip_id, telefone, nome, origem) VALUES (1, $1, '5571977770001', 'Cliente antigo', 'conversa')`,
+      [chipId],
+    );
+    const zap = (phone: string, id: string, texto: string, fromMe = false) =>
+      request(app)
+        .post(`/webhooks/whatsapp/${token}`)
+        .send({
+          type: 'ReceivedCallback',
+          instanceId: 'inst-dia-a-dia',
+          phone: `55${phone}`,
+          fromMe,
+          messageId: id,
+          momment: Date.now(),
+          senderName: 'Fulano',
+          text: { message: texto },
+        });
+    const naoIdent = async (fone: string) =>
+      (
+        await pool.query(
+          `SELECT count(*)::int AS n FROM comercial.nao_identificadas WHERE conta_id = 1 AND right(telefone, 8) = $1`,
+          [fone.slice(-8)],
+        )
+      ).rows[0].n;
+    try {
+      // Conversa de antes (com e sem o 9 a mais): nada entra no CRM.
+      expect((await zap('71977770001', 'antigo-1', 'Oi, tudo certo para amanhã?')).status).toBe(200);
+      expect(await naoIdent('71977770001')).toBe(0);
+      // Contato novo, regra "ignorar": não entra e vira "de antes".
+      await zap('71966660002', 'novo-1', 'Boa tarde');
+      expect(await naoIdent('71966660002')).toBe(0);
+      const { rows: ign } = await pool.query(
+        `SELECT origem FROM comercial.contatos_antigos WHERE chip_id = $1 AND telefone LIKE '%66660002'`,
+        [chipId],
+      );
+      expect(ign[0]?.origem).toBe('ignorado');
+      // A equipe puxou conversa pelo celular com alguém que não é lead: também fica só no celular.
+      await zap('71955550003', 'eu-1', 'Fala, João! Passo aí amanhã', true);
+      expect(await naoIdent('71955550003')).toBe(0);
+      // Trazido para o CRM: segue o fluxo normal (regra do número agora "Sem lead").
+      await pool.query(`UPDATE comercial.chips SET contato_novo = 'sem_lead' WHERE id = $1`, [chipId]);
+      await pool.query(
+        `UPDATE comercial.contatos_antigos SET trazido_em = now() WHERE chip_id = $1 AND telefone = '5571977770001'`,
+        [chipId],
+      );
+      await zap('71977770001', 'antigo-2', 'Pode me mandar o catálogo?');
+      expect(await naoIdent('71977770001')).toBe(1);
+      // Número que não é de uso diário: regra da conta (conversa nova cai em "Sem lead").
+      await pool.query(`UPDATE comercial.chips SET uso_diario = false WHERE id = $1`, [chipId]);
+      await zap('71944440004', 'novo-2', 'Quero saber de vocês');
+      expect(await naoIdent('71944440004')).toBe(1);
+    } finally {
+      await pool.query('DELETE FROM comercial.nao_identificadas WHERE conta_id = 1 AND chip_id = $1', [
+        chipId,
+      ]);
+      await pool.query('DELETE FROM comercial.chips WHERE id = $1', [chipId]);
+    }
+  });
 });

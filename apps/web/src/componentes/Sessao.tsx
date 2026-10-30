@@ -35,6 +35,7 @@ export const TELAS_DA_LEITURA = [
   '/relatorios',
   '/plano',
   '/auditoria',
+  '/ajuda',
 ];
 
 /** Quem administra a plataforma: só ele vê chaves, webhooks e o que é técnico. */

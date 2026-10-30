@@ -1553,6 +1553,25 @@ export interface Chip {
   provedor: 'zapi' | 'evolution';
   /** Tem instância própria (Z-API): dá para ler o QR Code. */
   conectavel: boolean;
+  /** Número que já era usado no dia a dia: as conversas de antes ficam fora do CRM. */
+  usoDiario: boolean;
+  /** Quem escreve pela primeira vez num número de uso diário. */
+  contatoNovo: ContatoNovoChip;
+  contatosLidosEm: string | null;
+  /** 'lendo', 'N conversas separadas' ou 'erro: …'. */
+  contatosLeitura: string | null;
+  /** Contatos de antes ainda fora do CRM. */
+  contatosDeAntes: number;
+}
+
+export type ContatoNovoChip = 'padrao' | 'ignorar' | 'sem_lead' | 'lead';
+
+export interface ContatoDeAntes {
+  telefone: string;
+  nome: string | null;
+  ultimaEm: string | null;
+  origem: 'conversa' | 'celular' | 'ignorado';
+  trazidoEm: string | null;
 }
 
 /* ───────── Alertas ───────── */

@@ -1,4 +1,5 @@
 import type { Executor } from '@prospeccao/db';
+import type { ConversaExistente } from '@prospeccao/integrations/whatsapp';
 import { AppError } from '@prospeccao/shared';
 import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import * as alertas from '../alertas/repositorio.js';
@@ -58,6 +59,9 @@ export async function listar(db: Executor) {
     `SELECT c.id, c.nome, c.instancia, c.ativo, c.limite_dia AS "limiteDia", c.estado, c.estado_em AS "estadoEm",
             c.aquecer, c.ativado_em AS "ativadoEm", c.numero, c.provedor,
             c.usuario_id AS "usuarioId", (SELECT u.nome FROM cadastro.usuarios u WHERE u.id = c.usuario_id) AS "usuarioNome",
+            c.uso_diario AS "usoDiario", c.contato_novo AS "contatoNovo", c.contatos_lidos_em AS "contatosLidosEm",
+            c.contatos_leitura AS "contatosLeitura",
+            (SELECT count(*)::int FROM comercial.contatos_antigos a WHERE a.chip_id = c.id AND a.trazido_em IS NULL) AS "contatosDeAntes",
             c.token_cifrado IS NOT NULL AS conectavel,
             CASE WHEN c.pausado_ate > now() THEN c.pausado_ate END AS "pausadoAte", c.pausa_motivo AS "pausaMotivo",
             (SELECT count(*)::int FROM comercial.mensagens m
@@ -257,8 +261,16 @@ export async function atualizar(
     aquecer?: boolean;
     diasDeUso?: number;
     usuarioId?: number | null;
+    usoDiario?: boolean;
+    contatoNovo?: 'padrao' | 'ignorar' | 'sem_lead' | 'lead';
   },
 ): Promise<void> {
+  if (d.usoDiario !== undefined || d.contatoNovo !== undefined)
+    await db.query(
+      `UPDATE comercial.chips SET uso_diario = coalesce($2, uso_diario), contato_novo = coalesce($3, contato_novo)
+        WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [id, d.usoDiario ?? null, d.contatoNovo ?? null],
+    );
   if (d.usuarioId) {
     const { rowCount } = await db.query(
       `SELECT 1 FROM cadastro.usuarios WHERE id = $1 AND conta_id = ${contaSql()} AND ativo
@@ -428,4 +440,146 @@ async function fecharAlertaSaude(db: Executor, id: number) {
     [id],
   );
   if (rows[0]) await alertas.fechar(db, conta(), `saude-chip:${rows[0].instancia.toLowerCase()}`);
+}
+
+/* ───────────── Número usado no dia a dia: as conversas que já existiam ───────────── */
+
+/** Mesmo número (DDD + 8 últimos dígitos), com ou sem 55 e o 9 a mais. */
+const MESMO_FONE = (coluna: string, param: string) =>
+  `(right(${coluna}, 8) = right(${param}, 8) AND substr(regexp_replace(${coluna}, '^55(?=\\d{10,11}$)', ''), 1, 2) = substr(regexp_replace(${param}, '^55(?=\\d{10,11}$)', ''), 1, 2))`;
+
+export async function regraDoChip(
+  db: Executor,
+  chipId: number,
+): Promise<{ usoDiario: boolean; contatoNovo: 'padrao' | 'ignorar' | 'sem_lead' | 'lead' } | null> {
+  const { rows } = await db.query<{
+    usoDiario: boolean;
+    contatoNovo: 'padrao' | 'ignorar' | 'sem_lead' | 'lead';
+  }>(
+    `SELECT uso_diario AS "usoDiario", contato_novo AS "contatoNovo" FROM comercial.chips WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [chipId],
+  );
+  return rows[0] ?? null;
+}
+
+/** O contato é "de antes" neste número (e ninguém o trouxe para o CRM)? */
+export async function ehDeAntes(db: Executor, chipId: number, telefone: string): Promise<boolean> {
+  const fone = telefone.replace(/\D/g, '');
+  if (fone.length < 10) return false;
+  const { rowCount } = await db.query(
+    `SELECT 1 FROM comercial.contatos_antigos
+      WHERE conta_id = ${contaSql()} AND chip_id = $1 AND trazido_em IS NULL AND ${MESMO_FONE('telefone', '$2')}
+      LIMIT 1`,
+    [chipId, fone],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function marcarDeAntes(
+  db: Executor,
+  chipId: number,
+  telefone: string,
+  nome: string | null,
+  origem: 'conversa' | 'celular' | 'ignorado',
+  ultimaEm: string | null = null,
+): Promise<void> {
+  const fone = telefone.replace(/\D/g, '');
+  if (fone.length < 10) return;
+  await db.query(
+    `INSERT INTO comercial.contatos_antigos (conta_id, chip_id, telefone, nome, ultima_em, origem)
+     VALUES (${contaSql()}, $1, $2, $3, coalesce($4::timestamptz, now()), $5)
+     ON CONFLICT (chip_id, telefone) DO UPDATE
+        SET nome = coalesce(EXCLUDED.nome, comercial.contatos_antigos.nome),
+            ultima_em = greatest(EXCLUDED.ultima_em, comercial.contatos_antigos.ultima_em)`,
+    [chipId, fone, nome, ultimaEm, origem],
+  );
+}
+
+const LENDO = new Set<number>();
+
+/**
+ * Lê a lista de conversas do WhatsApp do número e guarda todos como "de antes" (segundo plano; uma
+ * leitura por número de cada vez). Contato que já é lead no funil não entra: a conversa dele segue.
+ */
+export async function lerConversasAntigas(
+  db: Executor,
+  chipId: number,
+  instancia: string,
+  conversas: (
+    instancia: string,
+    pagina: number,
+  ) => Promise<{ conversas: ConversaExistente[]; lidas: number }>,
+): Promise<number> {
+  if (LENDO.has(chipId)) return 0;
+  LENDO.add(chipId);
+  let total = 0;
+  try {
+    await db.query(
+      `UPDATE comercial.chips SET contatos_leitura = 'lendo' WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [chipId],
+    );
+    for (let pagina = 1; pagina <= 100; pagina++) {
+      const r = await conversas(instancia, pagina);
+      for (const c of r.conversas) {
+        const { rowCount: jaLead } = await db.query(
+          `SELECT 1 FROM comercial.oportunidades o
+             JOIN comercial.contatos_lead cl ON cl.conta_id = o.conta_id AND cl.empresa_id = o.empresa_id
+            WHERE o.conta_id = ${contaSql()} AND o.etapa <> 'descartado' AND cl.telefone IS NOT NULL
+              AND ${MESMO_FONE('cl.telefone', '$1')}
+           UNION ALL
+           SELECT 1 FROM comercial.oportunidades o
+            WHERE o.conta_id = ${contaSql()} AND o.etapa <> 'descartado' AND o.whatsapp_destino IS NOT NULL
+              AND ${MESMO_FONE('o.whatsapp_destino', '$1')}
+           LIMIT 1`,
+          [c.telefone],
+        );
+        if (jaLead) continue;
+        await marcarDeAntes(db, chipId, c.telefone, c.nome, 'conversa', c.ultimaEm);
+        total++;
+      }
+      if (r.lidas < 100) break;
+    }
+    await db.query(
+      `UPDATE comercial.chips SET contatos_lidos_em = now(), contatos_leitura = $2 WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [chipId, `${total} ${total === 1 ? 'conversa separada' : 'conversas separadas'}`],
+    );
+    return total;
+  } catch (erro) {
+    await db.query(
+      `UPDATE comercial.chips SET contatos_leitura = $2 WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [chipId, `erro: ${(erro instanceof Error ? erro.message : String(erro)).slice(0, 200)}`],
+    );
+    throw erro;
+  } finally {
+    LENDO.delete(chipId);
+  }
+}
+
+export async function listarDeAntes(db: Executor, chipId: number, busca?: string) {
+  const digitos = (busca ?? '').replace(/\D/g, '');
+  const { rows } = await db.query(
+    `SELECT telefone, nome, ultima_em AS "ultimaEm", origem, trazido_em AS "trazidoEm"
+       FROM comercial.contatos_antigos
+      WHERE conta_id = ${contaSql()} AND chip_id = $1
+        AND ($2::text IS NULL OR nome ILIKE $2 OR ($3 <> '' AND telefone LIKE $3))
+      ORDER BY trazido_em IS NOT NULL, ultima_em DESC NULLS LAST
+      LIMIT 300`,
+    [chipId, busca?.trim() ? `%${busca.trim()}%` : null, digitos.length >= 4 ? `%${digitos}%` : ''],
+  );
+  return rows;
+}
+
+/** Trazer para o CRM: daqui em diante a conversa desse contato segue o fluxo normal. */
+export async function trazerParaCrm(
+  db: Executor,
+  chipId: number,
+  telefone: string,
+  usuarioId: number | null,
+) {
+  const { rowCount } = await db.query(
+    `UPDATE comercial.contatos_antigos SET trazido_em = now(), trazido_por = $3
+      WHERE conta_id = ${contaSql()} AND chip_id = $1 AND telefone = $2 AND trazido_em IS NULL`,
+    [chipId, telefone.replace(/\D/g, ''), usuarioId],
+  );
+  if (!rowCount) throw AppError.naoEncontrado('Contato');
 }

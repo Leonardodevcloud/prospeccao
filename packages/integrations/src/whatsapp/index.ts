@@ -114,6 +114,47 @@ export async function desconectar(cfg: ConfigWhatsapp): Promise<void> {
   await requisitarJson(urlDe(cfg, 'disconnect'), { servico: 'Z-API', headers: cabecalhos(cfg) });
 }
 
+export interface ConversaExistente {
+  /** Só dígitos, com 55. */
+  telefone: string;
+  nome: string | null;
+  ultimaEm: string | null;
+}
+
+/**
+ * Conversas que já existem no WhatsApp do número (uma página). Grupos e listas de transmissão ficam
+ * de fora. Vazio: acabou.
+ */
+export async function listarConversas(
+  cfg: ConfigWhatsapp,
+  pagina: number,
+  tamanho = 100,
+): Promise<{ conversas: ConversaExistente[]; lidas: number }> {
+  const r = await requisitarJson<
+    { phone?: string; name?: string; lastMessageTime?: string | number; isGroup?: boolean }[]
+  >(urlDe(cfg, `chats?page=${Math.max(1, pagina)}&pageSize=${Math.max(1, Math.min(tamanho, 500))}`), {
+    servico: 'Z-API',
+    headers: cabecalhos(cfg),
+    timeoutMs: 30_000,
+  });
+  const lista = Array.isArray(r) ? r : [];
+  const conversas: ConversaExistente[] = [];
+  for (const c of lista) {
+    const fone = String(c.phone ?? '');
+    // Grupo ("…-group", "@g.us"), lista de transmissão e status não são conversas com pessoas.
+    if (c.isGroup || /group|broadcast|status|@g\.us|-/.test(fone)) continue;
+    const digitos = fone.replace(/\D/g, '');
+    if (digitos.length < 10 || digitos.length > 13) continue;
+    const t = Number(c.lastMessageTime);
+    conversas.push({
+      telefone: digitos,
+      nome: c.name && !/^\d+$/.test(c.name) ? c.name.slice(0, 120) : null,
+      ultimaEm: Number.isFinite(t) && t > 0 ? new Date(t < 1e12 ? t * 1000 : t).toISOString() : null,
+    });
+  }
+  return { conversas, lidas: lista.length };
+}
+
 /** Aponta todos os webhooks da instância para o sistema (recebidas, enviadas pelo celular, status). */
 export async function configurarWebhook(cfg: ConfigWhatsapp, url: string): Promise<void> {
   await requisitarJson(urlDe(cfg, 'update-every-webhooks'), {

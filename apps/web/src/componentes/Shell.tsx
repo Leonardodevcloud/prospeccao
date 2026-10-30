@@ -68,6 +68,7 @@ const ITENS: {
   { para: '/equipe', rotulo: 'Equipe', icone: 'id-card', secao: 'Gestão' },
   { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', secao: 'Gestão', comPlano: true },
   { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', secao: 'Gestão', admin: true },
+  { para: '/ajuda', rotulo: 'Ajuda', icone: 'circle-help', secao: 'Gestão' },
   {
     para: '/plataforma',
     rotulo: 'Painel da plataforma',

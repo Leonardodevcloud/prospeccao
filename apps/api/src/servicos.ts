@@ -40,6 +40,7 @@ import {
   assinarInstancia,
   baixarMidia,
   type ConfigWhatsapp,
+  type ConversaExistente,
   cancelarInstancia,
   configurarWebhook,
   criarInstancia,
@@ -47,6 +48,7 @@ import {
   enviarMidia,
   enviarTexto,
   estadoConexao,
+  listarConversas,
   qrCode,
   type StatusWhatsapp,
   statusInstancia,
@@ -88,6 +90,8 @@ export interface WhatsappConta {
   estado?(instancia?: string): Promise<string>;
   /** Conexão do número, para a tela de conectar. */
   status?(instancia: string): Promise<StatusWhatsapp>;
+  /** Conversas que já existem no número (uma página), para separar quem é "de antes". */
+  conversas?(instancia: string, pagina: number): Promise<{ conversas: ConversaExistente[]; lidas: number }>;
   /** Cria a instância de um número novo na Z-API (teste de 2 dias) e aponta o webhook para o sistema. */
   criar?(nome: string, webhook: string): Promise<{ instancia: string; token: string }>;
   /** QR Code para o cliente ler no celular. */
@@ -197,6 +201,7 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
             baixarMidia: (url) => baixarMidia(url),
             estado: async (inst) => estadoConexao(await chip(inst)),
             status: async (inst) => statusInstancia(await chip(inst)),
+            conversas: async (inst, pagina) => listarConversas(await chip(inst), pagina),
             criar: async (nome, webhook) => {
               const nova = await criarInstancia(parceiro, nome);
               await configurarWebhook({ ...nova, clientToken: zapi.clientToken }, webhook);

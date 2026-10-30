@@ -10,6 +10,7 @@ import { ErroApi } from './api';
 import { ErroDaTela } from './componentes/ErroDaTela';
 import { Shell } from './componentes/Shell';
 import { Agente } from './paginas/Agente';
+import { Ajuda } from './paginas/Ajuda';
 import { Atividade } from './paginas/Atividade';
 import { Auditoria } from './paginas/Auditoria';
 import { BaseCnpj } from './paginas/BaseCnpj';
@@ -75,6 +76,8 @@ const roteador = createBrowserRouter([
       { path: 'plataforma/consumo', element: <PlataformaConsumo /> },
       { path: 'plataforma/operacao', element: <PlataformaOperacao /> },
       { path: 'auditoria', element: <Auditoria /> },
+      { path: 'ajuda', element: <Ajuda /> },
+      { path: 'ajuda/:artigo', element: <Ajuda /> },
       { path: 'configuracoes', element: <Navigate to="/base-cnpj" replace /> },
     ],
   },

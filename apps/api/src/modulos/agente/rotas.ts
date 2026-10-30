@@ -50,6 +50,37 @@ function enderecoPublico(req: Request): string {
 }
 
 /** Tela do Agente: configuração, mensagens para revisar e leads que a IA passou para você. */
+/**
+ * Número de uso diário conectado e ainda sem a leitura: separa as conversas que já existiam
+ * (em segundo plano; milhares de conversas levam alguns minutos).
+ */
+async function separarConversasDeAntes(
+  pool: Executor,
+  log: DepsApi['log'],
+  chipId: number,
+  whatsapp: WhatsappConta | null,
+  forcar = false,
+) {
+  const { rows } = await pool.query<{
+    uso_diario: boolean;
+    lidos: boolean;
+    instancia: string;
+    conectado: boolean;
+  }>(
+    `SELECT uso_diario, contatos_lidos_em IS NOT NULL AS lidos, instancia, coalesce(estado LIKE 'ok%', false) AS conectado
+       FROM comercial.chips WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [chipId],
+  );
+  const c = rows[0];
+  if (!c?.uso_diario || !c.conectado || (c.lidos && !forcar) || !whatsapp?.conversas) return false;
+  const contaId = conta();
+  const ler = whatsapp.conversas;
+  void comConta(contaId, () => chips.lerConversasAntigas(pool, chipId, c.instancia, ler)).catch((erro) =>
+    log.warn({ err: erro, chip: chipId }, 'agente: não consegui ler as conversas do número'),
+  );
+  return true;
+}
+
 export function rotasAgente(deps: DepsApi): Router {
   const { pool, log, servicos, credenciais } = deps;
   const r = Router();
@@ -146,8 +177,38 @@ export function rotasAgente(deps: DepsApi): Router {
   });
 
   r.patch('/chips/:id', exigirAdmin, async (req, res) => {
-    await chips.atualizar(pool, idDaRota(req), corpo(req, chipAtualizar));
+    const id = idDaRota(req);
+    await chips.atualizar(pool, id, corpo(req, chipAtualizar));
+    // Virou "uso diário" já conectado: separa as conversas de antes agora.
+    await separarConversasDeAntes(pool, log, id, (await servicos(conta())).whatsapp);
     res.json(await chips.listar(pool));
+  });
+
+  /** Ler de novo as conversas do número (ex.: conectou antes de marcar "uso diário"). */
+  r.post('/chips/:id/ler-conversas', exigirAdmin, async (req, res) => {
+    const id = idDaRota(req);
+    await chips.obter(pool, id);
+    const iniciou = await separarConversasDeAntes(pool, log, id, (await servicos(conta())).whatsapp, true);
+    if (!iniciou)
+      throw AppError.invalido(
+        'Para ler as conversas, o número precisa estar conectado e marcado como de uso diário.',
+      );
+    res.status(202).json(await chips.listar(pool));
+  });
+
+  /** Conversas de antes do número (ficam só no celular). */
+  r.get('/chips/:id/de-antes', exigirAdmin, async (req, res) => {
+    const id = idDaRota(req);
+    await chips.obter(pool, id);
+    const { busca } = z.object({ busca: z.string().max(80).optional() }).parse(req.query);
+    res.json(await chips.listarDeAntes(pool, id, busca));
+  });
+
+  /** Trazer um contato de antes para o CRM: a próxima mensagem dele segue o fluxo normal. */
+  r.post('/chips/:id/de-antes/:telefone/trazer', exigirAdmin, async (req, res) => {
+    const id = idDaRota(req);
+    await chips.trazerParaCrm(pool, id, String(req.params.telefone ?? ''), req.usuario?.id ?? null);
+    res.json(await chips.listarDeAntes(pool, id));
   });
 
   /** Remove o número: cancela a instância na Z-API (para de cobrar) e apaga o chip. */
@@ -182,6 +243,7 @@ export function rotasAgente(deps: DepsApi): Router {
   /** Conectou: guarda e, na primeira vez, assina a instância (sai do teste de 2 dias). */
   async function aoConectar(chipId: number, whatsapp: WhatsappConta) {
     const m = await chips.marcarConexao(pool, { id: chipId }, true);
+    await separarConversasDeAntes(pool, log, chipId, whatsapp);
     if (m?.assinar && whatsapp.assinar) {
       try {
         await whatsapp.assinar(m.instancia);
@@ -456,6 +518,7 @@ export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
           await whatsapp.assinar(marcado.instancia);
           await chips.marcarAssinado(pool, marcado.id);
         }
+        if (marcado && conexao.conectado) await separarConversasDeAntes(pool, log, marcado.id, whatsapp);
         if (marcado && !conexao.conectado) await avisarDesconectado(marcado.id);
       } else if (m) await registrarRecebida(m, whatsapp);
     }).catch((erro) => log.error({ err: erro, conta: contaId }, 'webhook do WhatsApp: falha ao registrar'));
@@ -534,6 +597,30 @@ export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
   async function registrarRecebida(m: Recebida, whatsapp: WhatsappConta | null) {
     const chipId = await chips.porInstancia(pool, m.instancia);
     let achado = await repo.leadPorTelefone(pool, m.telefone);
+    // Número usado no dia a dia: conversa que já existia (ou que a equipe puxou pelo celular) segue só
+    // no celular. Não vira lead, não cai em "Sem lead" e a IA nunca responde.
+    const regra = chipId ? await chips.regraDoChip(pool, chipId) : null;
+    if (!achado && chipId && (await chips.ehDeAntes(pool, chipId, m.telefone))) return;
+    if (!achado && regra?.usoDiario && m.deMim && !(await repo.leadDaContaPorTelefone(pool, m.telefone))) {
+      await chips.marcarDeAntes(pool, chipId!, m.telefone, null, 'celular');
+      return;
+    }
+    // Quem escreve pela primeira vez: a regra do número (uso diário) ou a da conta.
+    const contatoNovo =
+      regra?.usoDiario && regra.contatoNovo !== 'padrao'
+        ? regra.contatoNovo
+        : (await repo.obterConfig(pool)).conversaNova === 'criar_lead'
+          ? 'lead'
+          : 'sem_lead';
+    if (
+      !achado &&
+      chipId &&
+      contatoNovo === 'ignorar' &&
+      !(await repo.leadDaContaPorTelefone(pool, m.telefone))
+    ) {
+      await chips.marcarDeAntes(pool, chipId, m.telefone, m.deMim ? null : m.nome, 'ignorado');
+      return;
+    }
     if (!achado) {
       // É de um lead da conta que ainda não estava no funil (só na lista de leads): entra no funil.
       const daConta = await repo.leadDaContaPorTelefone(pool, m.telefone);
@@ -543,7 +630,7 @@ export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
         if (achado) await chips.entregarAoDonoDoNumero(pool, achado.empresaId, chipId);
       }
     }
-    if (!achado && (await repo.obterConfig(pool)).conversaNova === 'criar_lead') {
+    if (!achado && contatoNovo === 'lead') {
       // A conta escolheu: conversa nova no WhatsApp já vira lead no funil (a IA não entra sozinha).
       try {
         const { empresaId } = await criarLeadManual(

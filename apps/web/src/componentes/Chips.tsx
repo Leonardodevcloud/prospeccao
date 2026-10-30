@@ -1,8 +1,9 @@
 import { Badge, Button, Panel } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
-import { api, type Chip } from '../api';
+import { api, type Chip, type ContatoDeAntes, type ContatoNovoChip } from '../api';
 import { fmtHoraSo, fmtNumero, fmtQuando } from '../formatar';
+import { LinkAjuda } from './Ajuda';
 import { Modal } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { useEhAdmin, useEhMaster, useEquipe } from './Sessao';
@@ -40,7 +41,11 @@ export function fmtNumeroWhatsapp(n: string | null): string | null {
  * QR Code para o cliente ler no celular. Pede de novo a cada poucos segundos (o código do WhatsApp
  * muda) até conectar.
  */
-function ConectarNumero(props: { chip: Pick<Chip, 'id' | 'nome'>; aoFechar: () => void }) {
+function ConectarNumero(props: {
+  chip: Pick<Chip, 'id' | 'nome'>;
+  usoDiario?: boolean;
+  aoFechar: () => void;
+}) {
   const cliente = useQueryClient();
   const q = useQuery({
     queryKey: ['agente', 'chips', props.chip.id, 'qr'],
@@ -69,6 +74,8 @@ function ConectarNumero(props: { chip: Pick<Chip, 'id' | 'nome'>; aoFechar: () =
         <Mensagem tipo="ok">
           Pronto! O WhatsApp está conectado. As mensagens do agente e das sequências já podem sair por este
           número.
+          {props.usoDiario &&
+            ' Agora estamos separando as conversas que já existiam: elas continuam só no celular, sem lead e sem IA. Leva alguns minutos.'}
         </Mensagem>
       ) : (
         <div className="qr-conectar">
@@ -98,6 +105,224 @@ function ConectarNumero(props: { chip: Pick<Chip, 'id' | 'nome'>; aoFechar: () =
         </div>
       )}
     </Modal>
+  );
+}
+
+const REGRAS_CONTATO_NOVO: { valor: ContatoNovoChip; rotulo: string; dica: string }[] = [
+  {
+    valor: 'ignorar',
+    rotulo: 'Fica só no celular',
+    dica: 'Não entra no CRM. Bom para número pessoal ou de clientes antigos.',
+  },
+  {
+    valor: 'sem_lead',
+    rotulo: 'Vai para “Sem lead”',
+    dica: 'Aparece em Conversas › Sem lead para alguém decidir. A IA não responde.',
+  },
+  { valor: 'lead', rotulo: 'Vira lead', dica: 'Entra no funil em “A abordar”, sem a IA.' },
+  {
+    valor: 'padrao',
+    rotulo: 'Como no resto da conta',
+    dica: 'Segue a regra escolhida em Conversas › Sem lead.',
+  },
+];
+
+const ORIGEM_DE_ANTES: Record<ContatoDeAntes['origem'], string> = {
+  conversa: 'Conversa que já existia',
+  celular: 'A equipe puxou pelo celular',
+  ignorado: 'Escreveu pela primeira vez',
+};
+
+/** Lista dos contatos que ficam só no celular, com “Trazer para o CRM”. */
+function ConversasDeAntes(props: { chip: Chip; aoFechar: () => void }) {
+  const cliente = useQueryClient();
+  const [busca, setBusca] = useState('');
+  const [termo, setTermo] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setTermo(busca.trim()), 300);
+    return () => clearTimeout(t);
+  }, [busca]);
+  const chave = ['agente', 'chips', props.chip.id, 'de-antes', termo];
+  const q = useQuery({
+    queryKey: chave,
+    queryFn: () =>
+      api<ContatoDeAntes[]>(
+        `/agente/chips/${props.chip.id}/de-antes${termo ? `?busca=${encodeURIComponent(termo)}` : ''}`,
+      ),
+  });
+  const trazer = useMutation({
+    mutationFn: (telefone: string) =>
+      api(`/agente/chips/${props.chip.id}/de-antes/${telefone}/trazer`, { metodo: 'POST' }),
+    onSuccess: () => {
+      cliente.invalidateQueries({ queryKey: ['agente', 'chips'] });
+    },
+  });
+  const lista = q.data ?? [];
+  return (
+    <Modal
+      titulo={`Conversas de antes · ${props.chip.nome}`}
+      subtitulo="Estes contatos falam com vocês só pelo celular: não viram lead, não aparecem em “Sem lead” e a IA não responde."
+      largura="larga"
+      aoFechar={props.aoFechar}
+      rodape={
+        <Button variant="ghost" onClick={props.aoFechar}>
+          Fechar
+        </Button>
+      }
+    >
+      <div className="campo" style={{ maxWidth: 360 }}>
+        <label htmlFor="de-antes-busca">Buscar por nome ou número</label>
+        <input
+          id="de-antes-busca"
+          className="filtro"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Ex.: Maria ou 9999-8888"
+        />
+      </div>
+      <ErroDaApi erro={q.error ?? trazer.error} />
+      {q.isLoading ? (
+        <div className="esqueleto" style={{ height: 120 }} role="status" aria-label="Carregando" />
+      ) : lista.length === 0 ? (
+        <p className="quieto" style={{ margin: 0 }}>
+          {termo
+            ? 'Ninguém com esse nome ou número.'
+            : 'Nenhum contato separado ainda. Se o número acabou de conectar, espere alguns minutos.'}
+        </p>
+      ) : (
+        <ul className="de-antes">
+          {lista.map((c) => (
+            <li key={c.telefone} className="de-antes__item" data-trazido={!!c.trazidoEm || undefined}>
+              <div className="de-antes__quem">
+                <b>{c.nome || fmtNumeroWhatsapp(c.telefone)}</b>
+                <span className="quieto">
+                  {c.nome && `${fmtNumeroWhatsapp(c.telefone)} · `}
+                  {ORIGEM_DE_ANTES[c.origem]}
+                  {c.ultimaEm && ` · última conversa ${fmtQuando(c.ultimaEm)}`}
+                </span>
+              </div>
+              {c.trazidoEm ? (
+                <Badge tone="brand">No CRM desde {fmtQuando(c.trazidoEm)}</Badge>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="plus"
+                  disabled={trazer.isPending}
+                  title="A próxima mensagem desse contato entra no CRM normalmente"
+                  onClick={() => trazer.mutate(c.telefone)}
+                >
+                  Trazer para o CRM
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {lista.length >= 300 && (
+        <p className="quieto" style={{ margin: 0, fontSize: 12 }}>
+          Mostrando os 300 mais recentes. Use a busca para achar os outros.
+        </p>
+      )}
+    </Modal>
+  );
+}
+
+/** Número que já era usado no dia a dia: o que fica fora do CRM e o que fazer com quem é novo. */
+function UsoDiario(props: { c: Chip; ligado: boolean }) {
+  const { c } = props;
+  const cliente = useQueryClient();
+  const [ver, setVer] = useState(false);
+  const atualizar = () => cliente.invalidateQueries({ queryKey: ['agente', 'chips'] });
+  const editar = useMutation({
+    mutationFn: (d: { usoDiario?: boolean; contatoNovo?: ContatoNovoChip }) =>
+      api(`/agente/chips/${c.id}`, { metodo: 'PATCH', corpo: d }),
+    onSuccess: atualizar,
+  });
+  const ler = useMutation({
+    mutationFn: () => api(`/agente/chips/${c.id}/ler-conversas`, { metodo: 'POST' }),
+    onSuccess: atualizar,
+  });
+  const lendo = c.contatosLeitura === 'lendo';
+  const erro = c.contatosLeitura?.startsWith('erro') ? c.contatosLeitura.replace(/^erro:\s*/, '') : null;
+  const regra = REGRAS_CONTATO_NOVO.find((r) => r.valor === c.contatoNovo);
+  return (
+    <div className="chip-dia">
+      <label className="chip-dia__liga">
+        <input
+          type="checkbox"
+          checked={c.usoDiario}
+          disabled={editar.isPending}
+          onChange={(e) => editar.mutate({ usoDiario: e.target.checked })}
+        />
+        <span>
+          <b>Número de uso diário</b>
+          <span className="quieto">
+            {' '}
+            · já conversava com clientes antes. Essas conversas ficam só no celular: sem lead, sem IA.
+          </span>
+        </span>
+      </label>
+      {c.usoDiario && (
+        <div className="chip-dia__corpo">
+          <div className="campo chip-dia__regra">
+            <label htmlFor={`chip-novo-${c.id}`}>Quem escrever pela primeira vez</label>
+            <select
+              id={`chip-novo-${c.id}`}
+              className="filtro"
+              value={c.contatoNovo}
+              disabled={editar.isPending}
+              onChange={(e) => editar.mutate({ contatoNovo: e.target.value as ContatoNovoChip })}
+            >
+              {REGRAS_CONTATO_NOVO.map((r) => (
+                <option key={r.valor} value={r.valor}>
+                  {r.rotulo}
+                </option>
+              ))}
+            </select>
+            {regra && <span className="campo__dica">{regra.dica}</span>}
+          </div>
+          <div className="chip-dia__estado">
+            {lendo ? (
+              <span role="status">Separando as conversas que já existiam…</span>
+            ) : erro ? (
+              <span className="chip-pausa">Não deu para ler as conversas: {erro}</span>
+            ) : c.contatosLidosEm ? (
+              <span>
+                <b>{fmtNumero(c.contatosDeAntes)}</b>{' '}
+                {c.contatosDeAntes === 1 ? 'contato fica' : 'contatos ficam'} só no celular
+                <span className="quieto"> · lido {fmtQuando(c.contatosLidosEm)}</span>
+              </span>
+            ) : (
+              <span className="quieto">
+                {props.ligado
+                  ? 'As conversas ainda não foram lidas.'
+                  : 'Assim que conectar, as conversas que já existem são separadas.'}
+              </span>
+            )}
+            <span className="chip-dia__botoes">
+              <Button size="sm" variant="ghost" onClick={() => setVer(true)}>
+                Ver contatos de antes
+              </Button>
+              {props.ligado && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={lendo || ler.isPending}
+                  title="Lê de novo as conversas do celular (não traz de volta quem você já trouxe para o CRM)"
+                  onClick={() => ler.mutate()}
+                >
+                  {c.contatosLidosEm ? 'Ler de novo' : 'Ler agora'}
+                </Button>
+              )}
+              <LinkAjuda artigo="whatsapp-uso-diario">Como funciona</LinkAjuda>
+            </span>
+          </div>
+        </div>
+      )}
+      <ErroDaApi erro={editar.error ?? ler.error} />
+      {ver && <ConversasDeAntes chip={c} aoFechar={() => setVer(false)} />}
+    </div>
   );
 }
 
@@ -292,6 +517,7 @@ function LinhaChip(props: { c: Chip; admin: boolean; master: boolean; conectar: 
         </span>
       )}
       {c.pausadoAte && c.pausaMotivo && <span className="chip-pausa">{c.pausaMotivo}</span>}
+      {props.admin && c.conectavel && <UsoDiario c={c} ligado={ligado} />}
       {testar.data && (
         <Mensagem tipo={testar.data.ok ? 'ok' : 'aviso'}>
           {testar.data.ok ? 'Conectado.' : 'Desconectado: leia o QR Code de novo.'}
@@ -313,17 +539,23 @@ export function Chips() {
   const cliente = useQueryClient();
   const [novo, setNovo] = useState(false);
   const [nome, setNome] = useState('');
-  const [qr, setQr] = useState<Pick<Chip, 'id' | 'nome'> | null>(null);
+  const [usoDiario, setUsoDiario] = useState<boolean | null>(null);
+  const [qr, setQr] = useState<(Pick<Chip, 'id' | 'nome'> & { usoDiario?: boolean }) | null>(null);
   const q = useQuery({
     queryKey: ['agente', 'chips'],
     queryFn: () => api<TelaChips>('/agente/chips'),
     refetchInterval: 60_000,
   });
   const criar = useMutation({
-    mutationFn: () => api<{ id: number }>('/agente/chips', { metodo: 'POST', corpo: { nome } }),
+    mutationFn: async () => {
+      const r = await api<{ id: number }>('/agente/chips', { metodo: 'POST', corpo: { nome } });
+      if (usoDiario) await api(`/agente/chips/${r.id}`, { metodo: 'PATCH', corpo: { usoDiario: true } });
+      return r;
+    },
     onSuccess: (r) => {
-      setQr({ id: r.id, nome: nome.trim() });
+      setQr({ id: r.id, nome: nome.trim(), usoDiario: !!usoDiario });
       setNome('');
+      setUsoDiario(null);
       setNovo(false);
       cliente.invalidateQueries({ queryKey: ['agente', 'chips'] });
     },
@@ -396,12 +628,52 @@ export function Chips() {
             />
             <span className="campo__dica">Só para você saber qual é qual. Em seguida aparece o QR Code.</span>
           </div>
+          <fieldset className="campo chip-pergunta">
+            <legend>Este número já é usado no dia a dia?</legend>
+            <label className="chip-pergunta__opcao">
+              <input
+                type="radio"
+                name="chip-uso"
+                checked={usoDiario === true}
+                onChange={() => setUsoDiario(true)}
+              />
+              <span>
+                <b>Sim, já converso com clientes por ele</b>
+                <span className="quieto">
+                  As conversas que já existem ficam só no celular: não viram lead e a IA não responde. Depois
+                  você escolhe o que fazer com quem escrever pela primeira vez.
+                </span>
+              </span>
+            </label>
+            <label className="chip-pergunta__opcao">
+              <input
+                type="radio"
+                name="chip-uso"
+                checked={usoDiario === false}
+                onChange={() => setUsoDiario(false)}
+              />
+              <span>
+                <b>Não, é um número só para prospectar</b>
+                <span className="quieto">Toda conversa entra no CRM pela regra da conta.</span>
+              </span>
+            </label>
+          </fieldset>
           <ErroDaApi erro={criar.error} />
           <div className="acoes">
-            <Button type="submit" variant="primary" disabled={criar.isPending || nome.trim().length < 2}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={criar.isPending || nome.trim().length < 2 || usoDiario === null}
+            >
               {criar.isPending ? 'Gerando o QR Code…' : 'Continuar'}
             </Button>
-            <Button variant="ghost" onClick={() => setNovo(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setNovo(false);
+                setUsoDiario(null);
+              }}
+            >
               Cancelar
             </Button>
           </div>
@@ -417,9 +689,10 @@ export function Chips() {
         Mensagens que alguém da equipe manda não contam no limite. Ritmo contra bloqueio: só dentro do horário
         do agente; entre uma mensagem fria e outra, o intervalo mais uma variação aleatória de até 60%;
         resposta a quem escreveu sai antes das frias, com “digitando…” e em mensagens curtas; o lead conversa
-        sempre pelo mesmo número; número novo começa devagar (aquecimento de 30 dias).
+        sempre pelo mesmo número; número novo começa devagar (aquecimento de 30 dias).{' '}
+        <LinkAjuda artigo="whatsapp-numeros">Saiba mais</LinkAjuda>
       </p>
-      {qr && <ConectarNumero chip={qr} aoFechar={() => setQr(null)} />}
+      {qr && <ConectarNumero chip={qr} usoDiario={qr.usoDiario} aoFechar={() => setQr(null)} />}
     </Panel>
   );
 }
