@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospect Team · animação</title>
+<meta name="robots" content="noindex">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:transparent;color:#ededea;overflow:hidden}
+.g{position:absolute;inset:0;display:grid;grid-template-columns:1180px 1fr;gap:24px}
+.esq{display:flex;flex-direction:column;gap:12px}
+.bar{height:48px;display:flex;align-items:center;gap:16px;font-size:24px}
+.bar b{font-weight:600}
+.rec{margin-left:auto;display:flex;align-items:center;gap:10px;color:#f97066;font-family:ui-monospace,Menlo,monospace}
+.rec i{width:14px;height:14px;border-radius:50%;background:#f97066;animation:p 1.2s infinite}
+@keyframes p{50%{opacity:.2}}
+.palco{position:relative;height:340px;background:#000;border-radius:16px;overflow:hidden}
+.tela{position:absolute;left:140px;right:140px;top:0;bottom:0;background:#f6f7f5;color:#18181b;opacity:0;transition:opacity .6s}
+.tela.on{opacity:1}
+.tela .h{background:#0f3d3a;color:#fff;font-weight:700;font-size:26px;padding:14px 28px}
+.tela .t{font-size:32px;font-weight:800;padding:20px 28px 10px}
+.tela p{font-size:24px;padding:6px 28px;color:#33403f}
+.tela p b{color:#0f6b63}
+.vazio{position:absolute;inset:0;display:grid;place-items:center;font-size:24px;color:#a8a8a1}
+.rot{position:absolute;left:14px;bottom:14px;background:rgba(17,17,16,.8);font-size:24px;padding:4px 12px;border-radius:8px}
+.leg{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);max-width:900px;background:rgba(17,17,16,.88);border-radius:10px;padding:10px 18px;font-size:24px;line-height:1.3;opacity:0;transition:opacity .4s;text-align:center}
+.leg.on{opacity:1}.leg b{color:#3cc4b3}
+.mao{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#eaa441;color:#1f1505;font-size:24px;font-weight:600;border-radius:10px;padding:8px 18px;opacity:0;transition:opacity .4s}
+.mao.on{opacity:1}
+.tiles{display:flex;gap:12px;height:112px}
+.tile{width:240px;background:#1f1f1d;border-radius:14px;position:relative;display:grid;place-items:center;border:3px solid transparent;transition:border-color .3s,box-shadow .3s}
+.tile.fala{border-color:#3cc4b3;box-shadow:0 0 24px rgba(60,196,179,.35)}
+.av{width:58px;height:58px;border-radius:50%;background:#3a3a37;display:grid;place-items:center;font-weight:600;font-size:24px;color:#ededea}
+.nm{position:absolute;left:8px;bottom:6px;font-size:24px;line-height:1;background:rgba(17,17,16,.75);padding:3px 8px;border-radius:6px;white-space:nowrap;max-width:224px;overflow:hidden}
+.ondas{position:absolute;right:10px;top:10px;display:flex;gap:3px;align-items:flex-end;height:22px;opacity:0}
+.fala .ondas{opacity:1}
+.ondas i{width:5px;background:#3cc4b3;border-radius:2px;animation:o .5s infinite alternate}
+.ondas i:nth-child(2){animation-delay:.15s}.ondas i:nth-child(3){animation-delay:.3s}
+@keyframes o{from{height:5px}to{height:22px}}
+.ctrl{margin-left:auto;display:flex;gap:10px;align-items:center}
+.ctrl span{width:52px;height:52px;border-radius:50%;background:#2a2a27;display:grid;place-items:center}
+.ctrl svg{width:24px;height:24px;stroke:#ededea;fill:none;stroke-width:2;stroke-linecap:round}
+.ctrl .sair{width:auto;border-radius:999px;padding:0 22px;background:#f97066;color:#1f0907;font-size:24px;font-weight:600}
+.chat{background:#1a1a18;border:1px solid #2f2f2c;border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
+.chat .tt{font-size:24px;font-weight:600;padding:14px 20px;border-bottom:1px solid #2f2f2c}
+.ms{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:12px;padding:16px;overflow:hidden}
+.mg{animation:in .35s ease-out}
+.mg .a{font-size:24px;font-weight:600;color:#ededea}.mg .a span{font-weight:400;color:#a8a8a1;font-family:ui-monospace,Menlo,monospace;margin-left:8px}
+.mg .x{font-size:24px;line-height:1.3;background:#242422;border-radius:10px;padding:8px 12px;margin-top:4px;color:#ededea}
+.arq{display:flex;align-items:center;gap:10px;font-family:ui-monospace,Menlo,monospace;color:#3cc4b3}
+@keyframes in{from{opacity:0;transform:translateY(10px)}}
+#raiz{position:absolute;inset:0}.cromo{display:none}body.vitrine #raiz{inset:auto;left:0;top:0;width:1600px;height:1000px;transform-origin:0 0}body.vitrine{background:#111110}body.vitrine .g{inset:auto;left:32px;right:32px;top:28px;bottom:28px;grid-template-columns:1fr 430px}body.vitrine .palco{height:auto;flex:1}body.vitrine .tela{left:10%;right:10%;top:7%;bottom:7%}body.vitrine .tela .h{font-size:32px;padding:20px 36px}body.vitrine .tela .t{font-size:44px;padding:30px 36px 16px}body.vitrine .tela p{font-size:30px;padding:10px 36px}</style>
+</head>
+<body>
+<div id="raiz">
+<div class="g">
+<div class="esq">
+<div class="bar"><b>Apresentação · Clínica Sorriso Atlântico</b><span class="rec"><i></i>Gravando <span id="tm">00:12:40</span></span></div>
+<div class="palco"><div class="vazio" id="vz">Paula Ribeiro vai compartilhar a tela…</div>
+<div class="tela" id="tela"><div class="h">Proposta · Clínica Sorriso Atlântico</div><div class="t">Retorno de orçamentos em 2 unidades</div>
+<p><b>Hoje:</b> parte dos orçamentos se perde sem retorno</p><p><b>Com a cadência:</b> todo orçamento ganha data de retorno</p><p><b>Implantação:</b> 2 semanas, com treino da recepção</p></div>
+<span class="rot" id="rt">Tela de Paula Ribeiro</span><div class="mao" id="mao">✋ Dr. Renato Lima levantou a mão</div><div class="leg" id="leg"></div></div>
+<div class="tiles">
+<div class="tile" id="t0"><div class="av">PR</div><span class="nm">Paula Ribeiro</span><span class="ondas"><i></i><i></i><i></i></span></div>
+<div class="tile" id="t1"><div class="av">RL</div><span class="nm">Dr. Renato Lima</span><span class="ondas"><i></i><i></i><i></i></span></div>
+<div class="tile" id="t2"><div class="av">CS</div><span class="nm">Camila Souza</span><span class="ondas"><i></i><i></i><i></i></span></div>
+<div class="ctrl"><span><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span><span><svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 13 6 4V7l-6 4"/></svg></span><span><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span><span class="sair">Sair</span></div>
+</div>
+</div>
+<div class="chat"><p class="tt">Chat e arquivos</p><div class="ms" id="ms"></div></div>
+</div>
+</div>
+<script src="reuniao.js"></script>
+</body>
+</html>

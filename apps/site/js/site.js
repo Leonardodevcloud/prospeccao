@@ -489,6 +489,8 @@ function iniciarTour() {
       const img = $(`[data-img="${id}"]`, tour);
       if (img) {
         if (on) img.loading = 'eager';
+        // Animação ao vivo (Argos, reunião, mapa): carrega ao abrir a aba e recomeça do início.
+        if (on && img.dataset.src) img.src = img.dataset.src;
         img.classList.toggle('ativa', on);
       }
     });
@@ -506,10 +508,13 @@ function iniciarTour() {
     clearTimeout(relogio);
     if (!automatico || !visivel) return;
     // reinicia a barrinha de tempo da aba
+    // As abas com animação ficam o tempo da animação inteira.
+    const tempo = Number(abas[atual].dataset.tempo) || TEMPO;
+    tour.style.setProperty('--tempo-aba', `${tempo}ms`);
     tour.classList.remove('tour--auto');
     void tour.offsetWidth;
     tour.classList.add('tour--auto');
-    relogio = setTimeout(() => mostrar(atual + 1), TEMPO);
+    relogio = setTimeout(() => mostrar(atual + 1), tempo);
   };
 
   tour.style.setProperty('--tempo-aba', `${TEMPO}ms`);

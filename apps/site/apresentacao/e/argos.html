@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospect Team · animação</title>
+<meta name="robots" content="noindex">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:transparent;color:#ededea;overflow:hidden}
+.g{position:absolute;inset:0;display:grid;grid-template-columns:500px 1fr;gap:48px}
+.orbe{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+canvas{width:440px;height:440px}
+.est{font:500 24px ui-monospace,"SF Mono",Menlo,monospace;color:#3cc4b3;height:32px}
+.mic{display:flex;gap:6px;align-items:center;height:40px}
+.mic i{width:6px;height:8px;border-radius:3px;background:#3cc4b3;transition:height .12s}
+.dir{display:flex;flex-direction:column;gap:16px;padding-top:4px}
+.perg{align-self:flex-end;background:#12302c;border:1px solid #1f4a44;border-radius:18px 18px 4px 18px;padding:14px 22px;font-size:28px;min-height:62px;max-width:820px}
+.perg:empty{opacity:0}
+.cur{display:inline-block;width:3px;height:28px;background:#3cc4b3;vertical-align:-4px;margin-left:3px;animation:p .8s infinite}
+@keyframes p{50%{opacity:0}}
+.resp{font-size:26px;line-height:1.4;color:#d4d4cf;min-height:74px}
+.resp b{color:#ededea}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.k{background:#161c1b;border:1px solid #2a3533;border-radius:14px;padding:12px 18px;opacity:0;transform:translateY(12px) scale(.97);transition:.45s}
+.k.on{opacity:1;transform:none}
+.k p{font-size:24px;color:#a8a8a1}
+.k b{display:block;font:600 34px ui-monospace,"SF Mono",Menlo,monospace;margin-top:2px}
+.gr{background:#161c1b;border:1px solid #2a3533;border-radius:14px;padding:14px 20px;display:flex;flex-direction:column;gap:6px;opacity:0;transition:opacity .4s}
+.gr.on{opacity:1}
+.gr .t{display:flex;align-items:center;font-size:24px;color:#a8a8a1;margin-bottom:4px}
+.gr .t span{margin-left:auto;background:#0b6b63;color:#fff;border-radius:8px;padding:2px 14px;font-weight:600}
+.l{display:grid;grid-template-columns:160px 1fr 56px;align-items:center;gap:14px;font-size:24px;height:32px}
+.l em{font-style:normal;color:#a8a8a1;text-align:right}
+.tr{height:22px;background:#202826;border-radius:6px;overflow:hidden}
+.tr i{display:block;height:100%;width:0;background:linear-gradient(90deg,#0b6b63,#3cc4b3);border-radius:6px;transition:width 1s cubic-bezier(.2,.8,.2,1)}
+.l b{font-family:ui-monospace,Menlo,monospace;font-weight:500}
+#raiz{position:absolute;inset:0}.cromo{display:none}body.vitrine #raiz{inset:auto;left:0;top:0;width:1600px;height:1000px;transform-origin:0 0}body.vitrine{background:radial-gradient(circle at 20% 60%,#12302c 0%,#0c1110 62%)}body.vitrine .cromo{display:flex}body.vitrine .g{inset:auto;left:48px;right:48px;top:128px;bottom:136px;grid-template-columns:460px 1fr}.topo{position:absolute;left:48px;right:48px;top:36px;align-items:center;gap:18px}.topo i{width:44px;height:44px;border-radius:50%;background:radial-gradient(circle,#9df0e4,#0b6b63 70%);box-shadow:0 0 24px rgba(60,196,179,.5)}.topo p{font-size:28px;font-weight:600}.topo span{font-size:24px;color:#a8a8a1;margin-left:4px}.entrada{position:absolute;left:240px;right:240px;bottom:40px;height:76px;border:1px solid #2a3533;border-radius:18px;background:#161c1b;align-items:center;padding:0 12px 0 28px;font-size:26px;color:#a8a8a1}.entrada b{margin-left:auto;width:54px;height:54px;border-radius:50%;background:#0b6b63}</style>
+</head>
+<body>
+<div id="raiz">
+<div class="topo cromo"><i></i><p>Funil do mês e propostas paradas<span>· Argos</span></p></div>
+<div class="entrada cromo">Pergunte ao Argos…<b></b></div>
+<div class="g">
+<div class="orbe"><canvas id="c" width="880" height="880"></canvas><p class="est" id="est">Toque para falar</p><div class="mic" id="mic"></div></div>
+<div class="dir">
+<div class="perg" id="perg"></div>
+<p class="resp" id="resp"></p>
+<div class="kpis"><div class="k"><p>Ganhos no mês</p><b>4 · R$ 9.600</b></div><div class="k"><p>Taxa de resposta</p><b>23%</b></div><div class="k"><p>Propostas paradas</p><b>3</b></div></div>
+<div class="gr" id="gr"><p class="t">Negócios por etapa<span>Abrir o funil →</span></p><div id="bars"></div></div>
+</div>
+</div>
+</div>
+<script src="argos.js"></script>
+</body>
+</html>

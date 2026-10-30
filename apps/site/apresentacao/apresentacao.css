@@ -1,0 +1,243 @@
+/* Apresentação comercial na web: palco de 1920×1080 que se ajusta à janela, um slide por vez. */
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/geist-mono-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0b0d0c;
+  color: #ededea;
+  font-family: "Geist", Arial, sans-serif;
+  overflow: hidden;
+}
+.apres__area {
+  position: fixed;
+  inset: 0 0 64px;
+  overflow: hidden;
+}
+.apres__tela {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: center center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  background: #111110;
+}
+
+/* Slide: as mesmas regras do formato do deck (div sem display = coluna, textos sem margem). */
+.slide {
+  position: absolute;
+  inset: 0;
+  width: 1920px;
+  height: 1080px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.5s ease,
+    visibility 0s linear 0.5s;
+}
+.slide.ativo {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 0.5s ease,
+    visibility 0s;
+}
+.slide *,
+.slide *::before,
+.slide *::after {
+  box-sizing: border-box;
+  margin: 0;
+}
+/* No formato do deck, div sem display é coluna; com display:flex e sem direção, é linha (CSS normal). */
+.slide div:not([style*="display"]) {
+  display: flex;
+  flex-direction: column;
+}
+.slide h1 {
+  font-size: 96px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.slide h2 {
+  font-size: 64px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.slide h3 {
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.slide p {
+  font-size: 32px;
+  line-height: 1.4;
+}
+.slide ul {
+  padding: 0 0 0 1.1em;
+}
+.slide li::marker {
+  color: #0b6b63;
+}
+.slide a {
+  color: inherit;
+  text-decoration: none;
+}
+.slide hr {
+  border: 0;
+  width: 100%;
+}
+.slide img {
+  display: block;
+}
+
+/* Elementos que entram em sequência ao chegar no slide. */
+.slide [data-build-in] {
+  transition:
+    opacity 0.55s ease,
+    transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.slide [data-build-in].espera {
+  opacity: 0;
+}
+.slide [data-build-in^="rise"].espera {
+  transform: translateY(40px);
+}
+.slide [data-build-in^="pop"].espera,
+.slide [data-build-in^="scale"].espera {
+  transform: scale(0.9);
+}
+
+/* Barra de navegação */
+.apres__barra {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: #111110;
+  border-top: 1px solid #2f2f2c;
+  font-size: 15px;
+}
+.apres__marca {
+  color: #ededea;
+  font-weight: 600;
+  text-decoration: none;
+  flex: 1;
+}
+.apres__nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.apres__conta {
+  min-width: 64px;
+  text-align: center;
+  font-family: "Geist Mono", monospace;
+  color: #a8a8a1;
+}
+.apres__acoes {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+.apres__barra button {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid #2f2f2c;
+  background: #1a1a18;
+  color: #ededea;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.apres__barra button:hover {
+  background: #242422;
+}
+.apres__barra button:focus-visible,
+.apres__barra a:focus-visible {
+  outline: 2px solid #3cc4b3;
+  outline-offset: 2px;
+}
+.apres__barra svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.apres__cta {
+  background: #3cc4b3;
+  color: #0a1f1c;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 999px;
+  padding: 11px 18px;
+  white-space: nowrap;
+}
+.apres__progresso {
+  position: absolute;
+  left: 0;
+  top: -1px;
+  height: 2px;
+  background: #3cc4b3;
+  transition: width 0.4s ease;
+}
+:fullscreen .apres__area {
+  inset: 0;
+}
+:fullscreen .apres__barra {
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+:fullscreen .apres__barra:hover {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .apres__marca {
+    display: none;
+  }
+  .apres__acoes [data-cheia] {
+    display: none;
+  }
+  .apres__cta {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide,
+  .slide.ativo,
+  .slide [data-build-in] {
+    transition: none;
+  }
+}

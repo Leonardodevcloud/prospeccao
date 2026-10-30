@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospect Team · animação</title>
+<meta name="robots" content="noindex">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:transparent;overflow:hidden}
+.m{position:absolute;inset:0;border-radius:22px;overflow:hidden;border:1px solid #e4e4df;box-shadow:0 24px 48px -12px rgba(24,24,27,.18);background:#eceee9}
+svg{position:absolute;inset:0}
+.card{position:absolute;left:20px;top:20px;width:380px;background:#fff;border:1px solid #e4e4df;border-radius:14px;padding:16px 20px;box-shadow:0 4px 12px rgba(24,24,27,.08)}
+.card p{font-size:24px;line-height:1.35;color:#5b5b56}
+.card .t{font-weight:600;color:#18181b}
+.card b{font-family:ui-monospace,"SF Mono",Menlo,monospace;color:#0b6b63;font-weight:600}
+.feito{position:absolute;right:20px;bottom:20px;background:#0b6b63;color:#fff;font-size:24px;font-weight:600;border-radius:999px;padding:10px 22px;opacity:0;transition:opacity .5s}
+.feito.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="m"><svg id="s" viewBox="0 0 980 700" width="980" height="700"></svg>
+<div class="card"><p class="t">Roteiro de hoje · Diego</p><p><b id="nv">0</b> de 6 visitas · <b>31 km</b></p><p>Volta à base às <b>17:40</b></p></div>
+<div class="feito" id="ok">✓ Roteiro concluído</div></div>
+<script src="rua.js"></script>
+</body>
+</html>

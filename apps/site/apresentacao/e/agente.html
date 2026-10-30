@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospect Team · animação</title>
+<meta name="robots" content="noindex">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:transparent;overflow:hidden;color:#18181b}
+.tel{position:absolute;inset:0;background:#efeee9;border:1px solid #e4e4df;border-radius:28px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 48px -12px rgba(24,24,27,.2)}
+.cab{display:flex;align-items:center;gap:16px;padding:20px 26px;background:#fff;border-bottom:1px solid #e4e4df}
+.av{width:56px;height:56px;border-radius:50%;background:#ecece8;display:grid;place-items:center;font-weight:600;font-size:24px;color:#5b5b56}
+.n{font-size:26px;font-weight:600}.s{font-size:24px;color:#5b5b56}
+.ia{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:24px;font-weight:600;color:#0b6b63;background:#e2f1ee;border-radius:999px;padding:6px 16px}
+.ia i{width:12px;height:12px;border-radius:50%;background:#0b6b63;animation:p 1.2s infinite}
+@keyframes p{50%{opacity:.2}}
+.msgs{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:14px;padding:22px 26px;overflow:hidden}
+.b{max-width:80%;font-size:24px;line-height:1.38;padding:14px 18px;border-radius:16px;animation:in .35s ease-out}
+.b small{display:block;font-size:24px;opacity:.75;margin-top:2px;text-align:right;font-family:ui-monospace,Menlo,monospace}
+.eu{align-self:flex-end;background:#d9efe9;border-bottom-right-radius:4px}
+.ele{align-self:flex-start;background:#fff;border-bottom-left-radius:4px}
+.rot{font-size:24px;font-weight:600;color:#0b6b63;margin-bottom:2px}
+.dig{align-self:flex-start;background:#fff;border-radius:16px;padding:16px 22px;display:flex;gap:8px}
+.dig.eu{align-self:flex-end;background:#d9efe9}
+.dig i{width:12px;height:12px;border-radius:50%;background:#8a8a83;animation:d 1s infinite}
+.dig i:nth-child(2){animation-delay:.15s}.dig i:nth-child(3){animation-delay:.3s}
+@keyframes d{50%{transform:translateY(-6px);opacity:.4}}
+.chip{align-self:center;display:flex;align-items:center;gap:12px;background:#0b6b63;color:#fff;font-size:24px;font-weight:600;border-radius:999px;padding:12px 24px;animation:in .4s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(14px)}}
+</style>
+</head>
+<body>
+<div class="tel">
+<div class="cab"><div class="av">RL</div><div><p class="n">Dr. Renato Lima</p><p class="s">Clínica Sorriso Atlântico</p></div><span class="ia"><i></i>IA conversando</span></div>
+<div class="msgs" id="m"></div>
+</div>
+<script src="agente.js"></script>
+</body>
+</html>

@@ -975,7 +975,8 @@ p {
   aspect-ratio: 16 / 10;
   background: var(--bg);
 }
-.palco img {
+.palco img,
+.palco iframe {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -988,7 +989,13 @@ p {
     opacity 420ms ease,
     transform 600ms var(--ease);
 }
-.palco img.ativa {
+.palco iframe {
+  border: 0;
+  display: block;
+  background: #0c1110;
+}
+.palco img.ativa,
+.palco iframe.ativa {
   opacity: 1;
   transform: none;
 }
@@ -3047,4 +3054,19 @@ p {
     font-size: 30px;
     line-height: 36px;
   }
+}
+
+/* link "Ver a apresentação completa" no cabeçalho do tour */
+.link-seta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.link-seta:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

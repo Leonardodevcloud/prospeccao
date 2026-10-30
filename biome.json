@@ -14,7 +14,8 @@
       "!packages/ui/src/componentes.js",
       "!packages/ui/src/componentes.css",
       "!packages/ui/src/tokens.css",
-      "!apps/site/css/componentes.css"
+      "!apps/site/css/componentes.css",
+      "!apps/site/apresentacao/e"
     ]
   },
   "formatter": {
