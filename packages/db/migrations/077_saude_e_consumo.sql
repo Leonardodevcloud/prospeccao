@@ -1,6 +1,4 @@
 -- v98: saúde e consumo dos serviços externos (painel master) e saída do Apify.
--- Só cria tabelas novas e mexe em uma linha de custos: não trava tabela que a versão no ar usa.
-SET LOCAL lock_timeout = '15s';
 
 -- Chamadas para fora (IA, Z-API, LiveKit, Serper…) contadas por minuto pela api e pelos workers.
 -- Guarda 35 dias (a rotina de alertas apaga o resto).
@@ -31,7 +29,7 @@ CREATE TABLE cadastro.consumo_planos (
   id              integer PRIMARY KEY CHECK (id = 1),
   dados           jsonb NOT NULL DEFAULT '{}',
   atualizado_em   timestamptz NOT NULL DEFAULT now(),
-  atualizado_por  integer
+  atualizado_por  integer REFERENCES cadastro.usuarios (id) ON DELETE SET NULL
 );
 
 -- O antigo "Infraestrutura por mês" (Custos unitários) vira o primeiro custo fixo da lista.
