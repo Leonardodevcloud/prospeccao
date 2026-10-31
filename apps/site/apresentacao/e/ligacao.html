@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospect Team · animação</title>
+<meta name="robots" content="noindex">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:transparent;overflow:hidden;color:#18181b}
+#raiz{position:absolute;left:0;top:0;width:900px;height:760px}
+body.vitrine{background:radial-gradient(circle at 80% 15%,#e2f1ee 0%,#f7f7f5 55%)}
+.cena{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transform:translateY(16px) scale(.98);transition:opacity .5s,transform .5s;pointer-events:none}
+.cena.on{opacity:1;transform:none}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+/* chegando */
+.ent{width:640px;background:#111917;color:#ededea;border-radius:28px;padding:34px;display:flex;flex-direction:column;gap:22px;box-shadow:0 30px 60px -20px rgba(10,20,18,.55)}
+.ent .l{display:flex;align-items:center;gap:34px}
+.anel{position:relative;width:84px;height:84px;flex:none;border-radius:50%;background:#0b6b63;display:grid;place-items:center}
+.anel svg{width:40px;height:40px;stroke:#fff;fill:none;stroke-width:2;animation:t .5s infinite alternate}
+.anel:before,.anel:after{content:"";position:absolute;inset:0;border-radius:50%;border:3px solid #3cc4b3;animation:o 1.6s infinite}
+.anel:after{animation-delay:.8s}
+@keyframes o{from{transform:scale(1);opacity:.9}to{transform:scale(1.45);opacity:0}}
+@keyframes t{from{transform:rotate(-12deg)}to{transform:rotate(12deg)}}
+.ent small{font-size:18px;color:#3cc4b3;font-weight:600}
+.ent h4{font-size:34px;line-height:1.1;margin:4px 0}
+.ent p{font-size:20px;color:#a8a8a1}
+.chips{display:flex;flex-wrap:wrap;gap:10px}
+.chips span{font-size:17px;background:#26302e;border-radius:10px;padding:7px 12px;color:#d6d6d0}
+.bts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.bts b{display:flex;align-items:center;justify-content:center;gap:10px;font-size:21px;border-radius:14px;padding:16px;background:#2d3634}
+.bts b.at{background:#0b6b63;color:#fff;animation:pu 1s infinite}
+.bts b.at.ok{animation:none;background:#3cc4b3;color:#0a1f1c}
+@keyframes pu{50%{box-shadow:0 0 0 8px rgba(60,196,179,.25)}}
+/* em ligação */
+.pn{width:600px;background:#fff;border:1px solid #e4e4df;border-radius:28px;overflow:hidden;box-shadow:0 30px 60px -24px rgba(24,24,27,.35)}
+.pn .t{display:flex;align-items:center;gap:16px;padding:24px 28px;border-bottom:1px solid #e4e4df}
+.ini{width:58px;height:58px;border-radius:50%;background:#0b6b63;color:#fff;display:grid;place-items:center;font-weight:700;font-size:22px;flex:none}
+.pn h4{font-size:24px}.pn .num{font-size:18px;color:#5b5b56}
+.tempo{margin-left:auto;text-align:right}
+.tempo b{font-size:36px;display:block}
+.rec{font-size:16px;color:#b42318;font-weight:600;display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.rec i{width:10px;height:10px;border-radius:50%;background:#d92d20;animation:p 1.2s infinite}
+@keyframes p{50%{opacity:.2}}
+.onda{height:120px;display:flex;align-items:center;justify-content:center;gap:6px;background:#f7f7f5}
+.onda i{width:8px;border-radius:4px;background:#0b6b63;height:20px;animation:w .9s ease-in-out infinite}
+@keyframes w{50%{height:84px}}
+.ctrl{display:flex;justify-content:center;gap:40px;padding:20px}
+.ctrl span{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:16px;color:#5b5b56}
+.ctrl span i{width:60px;height:60px;border-radius:50%;border:1px solid #e4e4df;display:grid;place-items:center;font-style:normal;font-size:24px;background:#fff}
+.ctrl span.f i{background:#d92d20;border-color:#d92d20;color:#fff}
+.nota{margin:0 28px 26px;border:1px solid #e4e4df;border-radius:14px;padding:14px 16px;font-size:18px;min-height:56px;color:#18181b}
+.nota:after{content:"|";animation:p 1s infinite;color:#0b6b63}
+/* como foi */
+.cf{width:660px;background:#fff;border:1px solid #e4e4df;border-radius:28px;padding:26px 28px;display:flex;flex-direction:column;gap:16px;box-shadow:0 30px 60px -24px rgba(24,24,27,.35)}
+.cf .t{display:flex;align-items:center;gap:16px}
+.cf .t .tempo b{font-size:30px}
+.cf .t .tempo span{font-size:15px;color:#5b5b56}
+.res{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.res span{border:1px solid #c9c9c3;border-radius:12px;padding:10px;text-align:center;font-size:17px}
+.res span.s{border:2px solid #0b6b63;background:#e2f1ee;font-weight:600}
+.ia{background:#f0f0ec;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.ia .h{display:flex;gap:10px;align-items:center;font-size:16px;font-weight:700;color:#0b6b63}
+.ia .h em{font-style:normal;font-weight:600;background:#d1fadf;color:#067647;border-radius:999px;padding:3px 10px}
+.ia .tx{font-size:18px;line-height:1.45;min-height:78px}
+.ia .px{font-size:17px}
+.sug{display:flex;flex-direction:column;gap:8px}
+.sug div{display:flex;align-items:center;gap:12px;font-size:18px;border:1px solid #e4e4df;border-radius:12px;padding:10px 14px;opacity:0;transform:translateY(8px);transition:.35s}
+.sug div.on{opacity:1;transform:none}
+.sug div i{width:24px;height:24px;border-radius:6px;background:#0b6b63;color:#fff;font-style:normal;display:grid;place-items:center;font-size:15px}
+.sug small{display:block;font-size:14px;color:#5b5b56}
+.ok{align-self:flex-start;background:#0b6b63;color:#fff;font-weight:600;font-size:18px;border-radius:999px;padding:10px 20px;opacity:0;transition:.4s}
+.ok.on{opacity:1}
+</style>
+</head>
+<body>
+<div id="raiz">
+<div class="cena" id="c1"><div class="ent">
+<div class="l"><div class="anel"><svg viewBox="0 0 24 24"><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/></svg></div>
+<div><small>Ligação entrando · para você</small><h4>Clínica Sorriso Atlântico</h4><p class="mono">(71) 98812-4410</p></div></div>
+<div class="chips"><span>seu lead</span><span>Proposta enviada</span><span>reunião ontem, 15h</span><span>para (71) 3333-0400</span></div>
+<div class="bts"><b class="at" id="atender">Atender</b><b>Passar para o time</b></div>
+</div></div>
+<div class="cena" id="c2"><div class="pn">
+<div class="t"><div class="ini">CS</div><div><h4>Clínica Sorriso Atlântico</h4><p class="num mono">(71) 98812-4410</p></div><div class="tempo"><b class="mono" id="rel">00:00</b><span class="rec"><i></i>Gravando</span></div></div>
+<div class="onda" id="onda"></div>
+<div class="ctrl"><span><i>🎙</i>Mudo</span><span><i>⌨</i>Teclado</span><span class="f"><i>✕</i>Desligar</span></div>
+<p class="nota" id="nota"></p>
+</div></div>
+<div class="cena" id="c3"><div class="cf">
+<div class="t"><div class="ini">CS</div><div><h4 style="font-size:23px">Clínica Sorriso Atlântico</h4><p class="num mono" style="font-size:17px;color:#5b5b56">(71) 98812-4410</p></div><div class="tempo"><b class="mono">06:12</b><span>Ligação encerrada</span></div></div>
+<div class="res"><span class="s">Conversou</span><span>Não atendeu</span><span>Caixa postal</span></div>
+<div class="ia"><p class="h">✦ Resumo da IA <em>Clima bom</em></p><p class="tx" id="txt"></p><p class="px" id="px"></p></div>
+<div class="sug"><div id="s1"><i>✓</i><span>Mover para Negociação<small>Proposta enviada → Negociação</small></span></div><div id="s2"><i>✓</i><span>Marcar reunião com o sócio<small>sexta às 15h · com sala de vídeo e convite</small></span></div></div>
+<span class="ok" id="ok">✓ Funil atualizado</span>
+</div></div>
+</div>
+<script src="ligacao.js"></script>
+</body>
+</html>

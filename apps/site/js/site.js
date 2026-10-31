@@ -719,6 +719,31 @@ function iniciarContato() {
   }
 }
 
+/* ---------- vitrines animadas: só carregam perto da tela ---------- */
+function iniciarVitrines() {
+  const quadros = $$('.vitrine__palco iframe[data-src]');
+  if (!quadros.length) return;
+  const carregar = (f) => {
+    if (!f.src) f.src = f.dataset.src;
+  };
+  if (!('IntersectionObserver' in window)) {
+    for (const f of quadros) carregar(f);
+    return;
+  }
+  const obs = new IntersectionObserver(
+    (entradas) => {
+      for (const en of entradas) {
+        if (en.isIntersecting) {
+          carregar(en.target);
+          obs.unobserve(en.target);
+        }
+      }
+    },
+    { rootMargin: '300px 0px' },
+  );
+  for (const f of quadros) obs.observe(f);
+}
+
 function iniciar() {
   const ano = $('[data-ano]');
   if (ano) ano.textContent = String(new Date().getFullYear());
@@ -732,6 +757,7 @@ function iniciar() {
   iniciarRevelar();
   iniciarParalaxe();
   iniciarTour();
+  iniciarVitrines();
   iniciarContato();
 }
 
