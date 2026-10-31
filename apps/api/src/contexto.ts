@@ -32,6 +32,8 @@ export interface UsuarioSessao {
    * no funil, nos leads, nas conversas, no Argos e no mapa. Administrador sempre vê a unidade toda.
    */
   soPropriaBase: boolean;
+  /** O teste (ou a assinatura) venceu: a conta está só para leitura até assinar. */
+  contaSoLeitura?: boolean;
 }
 
 interface Contexto {

@@ -1,13 +1,15 @@
 import { LISTA_MODULOS, LISTA_RECURSOS, MODULOS, RECURSOS } from '@prospeccao/shared/planos';
 import { Badge, EmptyState } from '@prospeccao/ui';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
 import { api, type PlanoConta } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { textoDoPlano } from '../componentes/ForaDoPlano';
-import { ErroDaApi } from '../componentes/Formulario';
+import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ROTULO_PLANO, UsoComLimite } from '../componentes/PlanoConta';
-import { useEhAdmin } from '../componentes/Sessao';
+import { useEhAdmin, useSessao } from '../componentes/Sessao';
 import { fmtData, fmtNomeMes, fmtNumero, fmtReais } from '../formatar';
+import { AssinaturaNoPlano } from './Assinar';
 
 interface TelaMeuPlano extends PlanoConta {
   consumo: {
@@ -22,6 +24,8 @@ interface TelaMeuPlano extends PlanoConta {
 /** O plano da empresa: o que foi contratado, os limites e quanto já foi usado neste mês. */
 export function MeuPlano() {
   const admin = useEhAdmin();
+  const pelaAssinatura = !!useSessao().data?.assinatura;
+  const [params] = useSearchParams();
   const q = useQuery({
     queryKey: ['meu-plano'],
     queryFn: () => api<TelaMeuPlano>('/equipe/plano'),
@@ -61,6 +65,13 @@ export function MeuPlano() {
           </div>
         )}
       </div>
+
+      {params.get('mudou') && (
+        <Mensagem tipo="ok">
+          Assinatura mudada: o plano novo já vale. A próxima mensalidade vem com o valor novo.
+        </Mensagem>
+      )}
+      <AssinaturaNoPlano />
 
       <section className="pp-panel meu-plano">
         <h2 className="subtitulo">Uso em {mes}</h2>
@@ -221,7 +232,9 @@ export function MeuPlano() {
           </div>
         )}
         <p className="quieto" style={{ margin: '12px 0 0', fontSize: 13 }}>
-          Para mudar de plano, aumentar usuários ou leads, ou contratar um módulo, fale com a gente.
+          {pelaAssinatura
+            ? 'Para mudar de plano, aumentar usuários ou contratar um módulo, use o botão da assinatura, acima.'
+            : 'Para mudar de plano, aumentar usuários ou leads, ou contratar um módulo, fale com a gente.'}
         </p>
       </section>
     </>

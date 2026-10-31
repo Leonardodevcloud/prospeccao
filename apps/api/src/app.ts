@@ -15,6 +15,7 @@ import {
 import { rotasAgenda, rotasCalendario } from './modulos/agenda/rotas.js';
 import { rotasAgente, rotasWebhook } from './modulos/agente/rotas.js';
 import { rotasAlertas } from './modulos/alertas/rotas.js';
+import { rotasAssinatura, rotasTesteGratis, rotasWebhookAsaas } from './modulos/assinatura/rotas.js';
 import { rotasAssistente } from './modulos/assistente/rotas.js';
 import { rotasAtividade } from './modulos/atividade/rotas.js';
 import { auditar } from './modulos/auditoria/middleware.js';
@@ -80,6 +81,8 @@ export function criarApp(deps: DepsApi): Express {
   app.use('/livekit', express.raw({ type: '*/*', limit: '1mb' }), rotasAvisoVideo(deps));
   // Webhook do Resend: corpo cru (a assinatura é conferida sobre os bytes exatos).
   app.use('/e/resend', rotasWebhookResend(deps));
+  // Aviso de pagamento do Asaas (sem origem do navegador; token no cabeçalho).
+  app.use('/asaas', rotasWebhookAsaas(deps));
   // Anexo da conversa e do e-mail (até 10 MB em base64) e imagem da marca são os corpos grandes;
   // o resto fica em 200 kb.
   const jsonGrande = express.json({ limit: '15mb' });
@@ -126,6 +129,8 @@ export function criarApp(deps: DepsApi): Express {
   app.use('/publico/marca', rotasMarcaPublica(deps));
   app.use(exigirOrigemConhecida(deps.origens));
   app.use('/auth', rotasAuth(deps));
+  // Teste grátis: cadastro e confirmação do e-mail (sem login).
+  app.use('/teste', rotasTesteGratis(deps));
   // Sala de reunião pelo link (o convidado não tem login; quem é do time entra pelo cookie).
   app.use('/salas', rotasSalaPublica(deps));
 
@@ -162,6 +167,8 @@ export function criarApp(deps: DepsApi): Express {
     rotasInstagram(deps),
   );
   protegidas.use('/agenda', rotasAgenda(deps));
+  // Meu plano › Assinar (cobrança recorrente no Asaas).
+  protegidas.use('/assinatura', rotasAssinatura(deps));
   // API e integrações: do plano Time em diante (o resumo vale sempre: a tela mostra o cadeado).
   protegidas.use(
     '/integracoes',

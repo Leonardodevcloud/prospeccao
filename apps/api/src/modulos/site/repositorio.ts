@@ -1,5 +1,6 @@
 import type { Executor, Pool } from '@prospeccao/db';
 import type { PedidoSiteAtualizar } from '@prospeccao/shared';
+import { sqlLeadsDoMesDaOrganizacao, sqlUsuariosAtivos } from '../plano/repositorio.js';
 
 /** Pedidos de demonstração (site e cadastro à mão) e o contato comercial que o site mostra. */
 
@@ -80,14 +81,24 @@ export async function historico(db: Executor, pedidoId: number, texto: string, a
   );
 }
 
-const CAMPOS = `p.id::int, p.nome, p.empresa, p.whatsapp, p.email, p.nicho, p.plano, p.canal, p.etapa, p.nota,
+const CAMPOS =
+  () => `p.id::int, p.nome, p.empresa, p.whatsapp, p.email, p.nicho, p.plano, p.canal, p.etapa, p.nota,
   p.motivo_perda AS "motivoPerda", p.demonstracao_em AS "demonstracaoEm", p.conta_id AS "contaId",
   (SELECT c.nome FROM cadastro.contas c WHERE c.id = p.conta_id) AS "contaNome",
+  (SELECT json_build_object('situacao', o.assinatura, 'testeAte', o.teste_ate, 'valor', o.assinatura_valor,
+          'forma', o.assinatura_forma, 'plano', o.plano,
+          'leads', ${sqlLeadsDoMesDaOrganizacao('o.id')}, 'usuarios', ${sqlUsuariosAtivos('o.id')},
+          'ultimoAcesso', (SELECT max(u.ultimo_acesso) FROM cadastro.usuarios u JOIN cadastro.contas x ON x.id = u.conta_id
+                            WHERE x.organizacao_id = o.id AND NOT u.master),
+          'reunioes', (SELECT count(*)::int FROM comercial.tarefas t JOIN cadastro.contas x ON x.id = t.conta_id
+                        WHERE x.organizacao_id = o.id AND t.tipo = 'reuniao'))
+     FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
+    WHERE c.id = p.conta_id AND o.assinatura IS NOT NULL) AS assinatura,
   p.criado_em AS "criadoEm", p.atualizado_em AS "atualizadoEm"`;
 
 export async function listar(pool: Pool) {
   const { rows } = await pool.query(
-    `SELECT ${CAMPOS} FROM cadastro.pedidos_site p
+    `SELECT ${CAMPOS()} FROM cadastro.pedidos_site p
       WHERE p.etapa NOT IN ('cliente', 'perdido') OR p.atualizado_em > now() - interval '90 days'
       ORDER BY p.atualizado_em DESC LIMIT 500`,
   );
@@ -95,7 +106,7 @@ export async function listar(pool: Pool) {
 }
 
 export async function obter(pool: Pool, id: number) {
-  const { rows } = await pool.query(`SELECT ${CAMPOS} FROM cadastro.pedidos_site p WHERE p.id = $1`, [id]);
+  const { rows } = await pool.query(`SELECT ${CAMPOS()} FROM cadastro.pedidos_site p WHERE p.id = $1`, [id]);
   if (!rows[0]) return null;
   const h = await pool.query(
     `SELECT id::int, texto, autor, criado_em AS "criadoEm" FROM cadastro.pedidos_site_historico

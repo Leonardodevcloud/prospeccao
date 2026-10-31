@@ -44,12 +44,21 @@ export const configSiteEntrada = z.object({
 });
 
 /** Quadro de vendas da plataforma (painel master): o caminho do pedido do site até virar cliente. */
-export const ETAPAS_VENDA = ['novo', 'contato', 'demonstracao', 'proposta', 'cliente', 'perdido'] as const;
+export const ETAPAS_VENDA = [
+  'novo',
+  'contato',
+  'demonstracao',
+  'teste',
+  'proposta',
+  'cliente',
+  'perdido',
+] as const;
 export type EtapaVenda = (typeof ETAPAS_VENDA)[number];
 export const ROTULO_ETAPA_VENDA: Record<EtapaVenda, string> = {
   novo: 'Novo pedido',
   contato: 'Em contato',
   demonstracao: 'Demonstração marcada',
+  teste: 'Testando',
   proposta: 'Proposta enviada',
   cliente: 'Virou cliente',
   perdido: 'Perdido',

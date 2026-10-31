@@ -19,6 +19,7 @@ import { enderecoDoApp } from '../../endereco.js';
 import { corpo } from '../../middlewares/http.js';
 import { COOKIE_SESSAO, exigirSessao } from '../../middlewares/seguranca.js';
 import { contratoDaConta, temRecurso } from '../../recursos.js';
+import { situacaoDaConta } from '../assinatura/servico.js';
 import { ipDe } from '../auditoria/middleware.js';
 import * as auditoria from '../auditoria/repositorio.js';
 import { conferirSegundaEtapa, desafioDuasEtapas, lerDesafio, rotasContaSegura } from './contaSegura.js';
@@ -476,6 +477,8 @@ export function rotasAuth(deps: DepsApi): Router {
           favicon: o.tem_favicon ? arq('favicon') : o.tem_icone ? arq('icone') : null,
         };
       })(),
+      // Teste grátis ou assinatura pelo sistema (a faixa do teste, o só leitura); null = contrato à mão.
+      assinatura: await situacaoDaConta(pool, u.contaId).catch(() => null),
       // O master dentro de outra conta (a tela mostra a faixa "você está na conta X").
       foraDaPropria: u.contaId !== u.contaPropria,
       // Endereço oficial do sistema: os links que a tela copia (reunião, agenda) saem com ele.

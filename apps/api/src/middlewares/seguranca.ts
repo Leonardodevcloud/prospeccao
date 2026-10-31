@@ -49,9 +49,10 @@ export async function carregarUsuario(
     totp_ativo: boolean;
     exigir_2fa: boolean;
     alcance: string;
+    so_leitura: boolean;
   }>(
     `SELECT u.id, u.nome, u.email, u.papel, u.master, u.conta_id, (c.ativa AND o.ativa) AS conta_ativa,
-            c.organizacao_id, u.totp_ativo, o.exigir_2fa, u.alcance
+            c.organizacao_id, u.totp_ativo, o.exigir_2fa, u.alcance, coalesce(o.assinatura = 'so_leitura', false) AS so_leitura
        FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
        JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
       WHERE u.id = $1 AND u.ativo`,
@@ -104,6 +105,8 @@ export async function carregarUsuario(
       !daOrganizacao &&
       contaId === u.conta_id &&
       (u.papel === 'sdr' || u.papel === 'closer'),
+    // O master continua mexendo (para ajudar o cliente).
+    contaSoLeitura: u.so_leitura && !u.master && conta.organizacao_id === u.organizacao_id,
   };
 }
 
@@ -121,6 +124,22 @@ export const exigirDuasEtapas: RequestHandler = (req, _res, next) => {
 
 /** Acesso só de leitura (diretoria): pode olhar tudo, não altera nada. */
 export const exigirEscrita: RequestHandler = (req, _res, next) => {
+  if (req.usuario?.contaSoLeitura && !METODOS_SEGUROS.has(req.method)) {
+    // Assinar, trocar de unidade e mexer no próprio perfil continuam valendo.
+    if (
+      /^\/assinatura\b|^\/organizacao\/(unidades\/\d+\/entrar|voltar)$|^\/(notificacoes|push)\b/.test(
+        req.path,
+      )
+    )
+      return next();
+    return next(
+      new AppError(
+        403,
+        'conta_so_leitura',
+        'O teste acabou (ou a assinatura venceu): você pode ver tudo, mas para mexer é preciso assinar em Meu plano.',
+      ),
+    );
+  }
   if (req.usuario?.papelOrganizacao !== 'leitura' || METODOS_SEGUROS.has(req.method)) return next();
   // Trocar de unidade e mexer no próprio perfil (senha, aviso no celular) continuam valendo.
   // Perguntar ao Argos também (ele só lê; criar tarefa pelo Argos é recusado lá dentro).

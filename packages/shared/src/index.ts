@@ -1,3 +1,4 @@
+export * from './assinatura.js';
 export * from './assistente.js';
 export * from './contas.js';
 export * from './dominio.js';

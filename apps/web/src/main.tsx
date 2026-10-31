@@ -11,6 +11,7 @@ import { ErroDaTela } from './componentes/ErroDaTela';
 import { Shell } from './componentes/Shell';
 import { Agente } from './paginas/Agente';
 import { Ajuda } from './paginas/Ajuda';
+import { Assinar, Pagar } from './paginas/Assinar';
 import { Atividade } from './paginas/Atividade';
 import { Auditoria } from './paginas/Auditoria';
 import { BaseCnpj } from './paginas/BaseCnpj';
@@ -38,6 +39,7 @@ import { Relatorios } from './paginas/Relatorios';
 import { ReuniaoDetalhe } from './paginas/ReuniaoDetalhe';
 import { Reunioes } from './paginas/Reunioes';
 import { EsqueciSenha, RedefinirSenha } from './paginas/Senha';
+import { ConfirmarTeste, TesteGratis } from './paginas/TesteGratis';
 import { PlataformaVendas } from './paginas/Vendas';
 import { rotularTabelasNoCelular } from './tabelasCelular';
 
@@ -58,6 +60,9 @@ const roteador = createBrowserRouter([
   { path: '/convite/:token', element: <Convite /> },
   { path: '/esqueci', element: <EsqueciSenha /> },
   { path: '/redefinir/:token', element: <RedefinirSenha /> },
+  // Teste grátis de 7 dias (botão do site): cadastro e o link de confirmação do e-mail.
+  { path: '/teste', element: <TesteGratis /> },
+  { path: '/teste/confirmar/:token', element: <ConfirmarTeste /> },
   // Link da reunião por vídeo (o convidado não tem login). O vídeo só carrega aqui.
   {
     path: '/r/:codigo',
@@ -83,6 +88,8 @@ const roteador = createBrowserRouter([
       { path: 'organizacao', element: <PainelGestor /> },
       { path: 'organizacao/gestao', element: <Organizacao /> },
       { path: 'plano', element: <MeuPlano /> },
+      { path: 'plano/assinar', element: <Assinar /> },
+      { path: 'plano/pagar', element: <Pagar /> },
       { path: 'email', element: <Email /> },
       { path: 'instagram', element: <Instagram /> },
       { path: 'instagram/regra/:id', element: <InstagramRegra /> },
@@ -134,6 +141,7 @@ const cliente = new QueryClient({
         erro.status === 401 &&
         location.pathname !== '/login' &&
         !location.pathname.startsWith('/r/') &&
+        !location.pathname.startsWith('/teste') &&
         location.pathname !== '/gravacao'
       ) {
         roteador.navigate(`/login?voltar=${encodeURIComponent(location.pathname + location.search)}`);

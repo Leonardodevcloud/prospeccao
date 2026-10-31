@@ -1,3 +1,9 @@
+import {
+  DIAS_TESTE,
+  LEADS_TESTE,
+  ROTULO_ASSINATURA,
+  type SituacaoAssinatura,
+} from '@prospeccao/shared/assinatura';
 import { ETAPAS_VENDA, type EtapaVenda, ROTULO_ETAPA_VENDA } from '@prospeccao/shared/site';
 import { Badge, Button, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,7 +13,7 @@ import { api } from '../api';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi } from '../componentes/Formulario';
 import { useSessao } from '../componentes/Sessao';
-import { fmtQuando, formatarTelefone } from '../formatar';
+import { fmtBrl, fmtQuando, formatarTelefone } from '../formatar';
 import { NovaConta } from './Master';
 
 /**
@@ -23,13 +29,25 @@ interface Pedido {
   email: string | null;
   nicho: string | null;
   plano: string | null;
-  canal: 'whatsapp' | 'email' | 'formulario';
+  canal: 'whatsapp' | 'email' | 'formulario' | 'teste';
   etapa: EtapaVenda;
   nota: string | null;
   motivoPerda: string | null;
   demonstracaoEm: string | null;
   contaId: number | null;
   contaNome: string | null;
+  /** Teste grátis ou assinatura pelo sistema: a situação e o uso (para o comercial ligar na hora certa). */
+  assinatura: {
+    situacao: SituacaoAssinatura;
+    testeAte: string | null;
+    valor: number | null;
+    forma: string | null;
+    plano: string | null;
+    leads: number;
+    usuarios: number;
+    ultimoAcesso: string | null;
+    reunioes: number;
+  } | null;
   criadoEm: string;
   atualizadoEm: string;
 }
@@ -39,12 +57,24 @@ interface PedidoDetalhe extends Pedido {
 interface DadosVendas {
   config: { whatsapp: string | null; email: string | null };
   pedidos: Pedido[];
+  numeros?: {
+    testando: number;
+    terminamNaSemana: number;
+    ativas: number;
+    mrr: number;
+    atrasadas: number;
+    soLeitura: number;
+    testes30: number;
+    viraram30: number;
+    emAberto: number;
+  };
 }
 
 const PROXIMA: Partial<Record<EtapaVenda, EtapaVenda>> = {
   novo: 'contato',
   contato: 'demonstracao',
   demonstracao: 'proposta',
+  teste: 'proposta',
   proposta: 'cliente',
 };
 
@@ -52,7 +82,42 @@ const ORIGEM: Record<Pedido['canal'], string> = {
   whatsapp: 'Site · foi para o WhatsApp',
   email: 'Site · foi para o e-mail',
   formulario: 'Formulário ou cadastro à mão',
+  teste: 'Teste grátis pelo site',
 };
+
+const DIA = 86_400_000;
+const NOME_FORMA: Record<string, string> = { PIX: 'Pix', BOLETO: 'Boleto', CREDIT_CARD: 'Cartão' };
+
+/** O uso do teste no cartão: dia do teste, usuários, leads e reuniões (e o alerta de sumiço). */
+function UsoDoTeste(props: { a: NonNullable<Pedido['assinatura']> }) {
+  const { a } = props;
+  const agora = Date.now();
+  const fim = a.testeAte ? new Date(a.testeAte).getTime() : agora;
+  const dia = Math.min(DIAS_TESTE, Math.max(1, DIAS_TESTE - Math.ceil((fim - agora) / DIA) + 1));
+  const restam = Math.ceil((fim - agora) / DIA);
+  const semUso = a.ultimoAcesso ? Math.floor((agora - new Date(a.ultimoAcesso).getTime()) / DIA) : null;
+  const alerta = restam <= 1 || (semUso != null && semUso >= 2) || !a.ultimoAcesso;
+  const pct = Math.min(100, Math.round((a.leads / LEADS_TESTE) * 100));
+  return (
+    <div className="cartao-venda__teste">
+      <span className={alerta ? 'cartao-venda__alerta' : undefined}>
+        {restam <= 0 ? 'termina hoje' : restam === 1 ? 'termina amanhã' : `dia ${dia} de ${DIAS_TESTE}`}
+        {semUso != null && semUso >= 2
+          ? ` · sem uso há ${semUso} dias`
+          : !a.ultimoAcesso
+            ? ' · ainda não entrou'
+            : ` · ${a.usuarios} ${a.usuarios === 1 ? 'usuário' : 'usuários'}`}
+      </span>
+      <span className="cartao-venda__barra" aria-hidden="true">
+        <span style={{ width: `${pct}%` }} />
+      </span>
+      <span>
+        {a.leads} de {LEADS_TESTE} leads
+        {a.reunioes ? ` · ${a.reunioes} ${a.reunioes === 1 ? 'reunião' : 'reuniões'}` : ''}
+      </span>
+    </div>
+  );
+}
 
 export function useNovosPedidos(ativo: boolean) {
   return useQuery({
@@ -101,6 +166,7 @@ export function PlataformaVendas() {
   const pedidos = q.data?.pedidos ?? [];
   const em = (e: EtapaVenda) => pedidos.filter((p) => p.etapa === e);
   const andamento = pedidos.filter((p) => !['cliente', 'perdido'].includes(p.etapa)).length;
+  const n = q.data?.numeros;
   const inicioMes = new Date();
   inicioMes.setDate(1);
   inicioMes.setHours(0, 0, 0, 0);
@@ -112,8 +178,8 @@ export function PlataformaVendas() {
         <div>
           <h1>Vendas</h1>
           <p>
-            Quem pediu demonstração pelo site (e os contatos que você cadastrar) até virar cliente. Fica
-            separado do CRM.
+            Quem pediu demonstração ou começou o teste grátis pelo site (e os contatos que você cadastrar) até
+            virar cliente. Fica separado do CRM.
           </p>
         </div>
         <div className="acoes">
@@ -126,10 +192,41 @@ export function PlataformaVendas() {
         </div>
       </div>
       <div className="kpis">
-        <Stat rotulo="Novos pedidos" valor={em('novo').length} />
-        <Stat rotulo="Em andamento" valor={andamento} />
-        <Stat rotulo="Viraram cliente no mês" valor={em('cliente').filter(doMes).length} />
-        <Stat rotulo="Perdidos no mês" valor={em('perdido').filter(doMes).length} />
+        <Stat rotulo="Novos pedidos" valor={em('novo').length} delta={`${andamento} em andamento`} />
+        {n ? (
+          <>
+            <Stat
+              rotulo="Testes em andamento"
+              valor={n.testando}
+              delta={
+                n.terminamNaSemana
+                  ? `${n.terminamNaSemana} ${n.terminamNaSemana === 1 ? 'termina' : 'terminam'} esta semana`
+                  : undefined
+              }
+            />
+            <Stat
+              rotulo="Viraram assinatura (30 dias)"
+              valor={n.viraram30}
+              delta={
+                n.testes30
+                  ? `de ${n.testes30} testes · ${Math.round((n.viraram30 / n.testes30) * 100)}%`
+                  : undefined
+              }
+            />
+            <Stat rotulo="Assinaturas ativas" valor={n.ativas} delta={`MRR ${fmtBrl(n.mrr)}`} />
+            <Stat
+              rotulo="Atrasadas"
+              valor={n.atrasadas}
+              delta={n.emAberto ? `${fmtBrl(n.emAberto)} em aberto` : undefined}
+            />
+            <Stat rotulo="Só leitura" valor={n.soLeitura} delta="teste venceu ou pagamento parou" />
+          </>
+        ) : (
+          <>
+            <Stat rotulo="Viraram cliente no mês" valor={em('cliente').filter(doMes).length} />
+            <Stat rotulo="Perdidos no mês" valor={em('perdido').filter(doMes).length} />
+          </>
+        )}
       </div>
       {q.data && !q.data.config.whatsapp && !q.data.config.email && (
         <p className="aviso-linha">
@@ -169,6 +266,31 @@ export function PlataformaVendas() {
                       {p.plano && <Badge tone="outline">{p.plano}</Badge>}
                       {p.whatsapp && <span className="mono">{formatarTelefone(p.whatsapp)}</span>}
                     </div>
+                    {p.assinatura?.situacao === 'teste' && <UsoDoTeste a={p.assinatura} />}
+                    {p.assinatura && p.assinatura.situacao !== 'teste' && (
+                      <span className="cartao-venda__assinatura">
+                        <Badge
+                          tone={
+                            p.assinatura.situacao === 'ativa'
+                              ? 'brand'
+                              : p.assinatura.situacao === 'atrasada'
+                                ? 'danger'
+                                : 'outline'
+                          }
+                        >
+                          {ROTULO_ASSINATURA[p.assinatura.situacao]}
+                        </Badge>
+                        {p.assinatura.valor != null &&
+                          (p.assinatura.situacao === 'ativa' || p.assinatura.situacao === 'atrasada') && (
+                            <span className="quieto">
+                              {fmtBrl(p.assinatura.valor)}
+                              {p.assinatura.forma
+                                ? ` · ${NOME_FORMA[p.assinatura.forma] ?? p.assinatura.forma}`
+                                : ''}
+                            </span>
+                          )}
+                      </span>
+                    )}
                     {p.etapa === 'demonstracao' && p.demonstracaoEm && (
                       <span className="cartao-venda__demo">Demonstração {fmtDemo(p.demonstracaoEm)}</span>
                     )}
@@ -270,7 +392,9 @@ function DetalhePedido(props: { id: number; aoFechar: () => void }) {
   });
   const p = q.data;
   const texto = p
-    ? `Olá, ${p.nome.split(' ')[0]}! Aqui é do Prospect Team. Vi seu pedido de demonstração para a ${p.empresa}. Qual o melhor horário para conversarmos?`
+    ? p.canal === 'teste'
+      ? `Olá, ${p.nome.split(' ')[0]}! Aqui é do Prospect Team. Vi que a ${p.empresa} está testando o sistema. Posso te ajudar a montar a primeira campanha?`
+      : `Olá, ${p.nome.split(' ')[0]}! Aqui é do Prospect Team. Vi seu pedido de demonstração para a ${p.empresa}. Qual o melhor horário para conversarmos?`
     : '';
 
   return (

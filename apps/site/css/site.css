@@ -3070,3 +3070,11 @@ p {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.plano__outro {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

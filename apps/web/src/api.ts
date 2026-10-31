@@ -1,3 +1,4 @@
+import type { AssinaturaDaConta } from '@prospeccao/shared/assinatura';
 import type { Modulo, Recurso } from '@prospeccao/shared/planos';
 /**
  * Cliente da API. Tudo passa por /api (mesma origem): em produção o Vercel
@@ -944,6 +945,8 @@ export interface Sessao {
   foraDaPropria: boolean;
   /** Endereço oficial do sistema (os links de reunião e agenda saem com ele). */
   enderecoApp?: string;
+  /** Teste grátis ou assinatura pelo sistema (null: contrato combinado com a gente). */
+  assinatura?: AssinaturaDaConta | null;
 }
 
 export interface Metas {

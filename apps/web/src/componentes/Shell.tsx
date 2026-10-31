@@ -30,6 +30,7 @@ import {
 } from './Menu';
 import { MinhaConta } from './MinhaConta';
 import { Dono, TELAS_DA_LEITURA, useSessao } from './Sessao';
+import { FaixaAssinatura, FimDoTeste } from './TesteEAssinatura';
 
 /** Telas do painel da plataforma (menu próprio). */
 export const ehTelaDaPlataforma = (caminho: string) =>
@@ -381,10 +382,12 @@ export function Shell() {
             <span>Acesso só de leitura: você vê tudo, mas não altera nada.</span>
           </div>
         )}
+        {!plataforma && <FaixaAssinatura />}
         <FaixaAlertas plataforma={plataforma} />
         {telaFora ? <ForaDoPlano recurso={telaFora} /> : <Outlet />}
       </main>
       {conta && <MinhaConta aoFechar={() => setConta(false)} />}
+      {!plataforma && <FimDoTeste />}
       {sessao.data && !sessao.data.termos.aceitos && <AceitarTermos versao={sessao.data.termos.versao} />}
       {/* Argos: o assistente (segundo cérebro), em qualquer tela. Só vê o que a pessoa pode ver. */}
       {/* Na tela do Argos ele já está na página: o botão flutuante sai (senão os dois ouviriam o Espaço). */}

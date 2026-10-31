@@ -85,6 +85,20 @@ export const esquemaEnvApi = envBase.extend({
    */
   TELEFONIA_TRONCO_SAIDA: opcional(z.string().regex(/^ST_\w+$/, 'TELEFONIA_TRONCO_SAIDA começa com ST_')),
   /**
+   * Assinatura pelo sistema (teste grátis → pagar): a chave da API do Asaas ($aact_…), "sim" em
+   * ASAAS_SANDBOX para testar sem dinheiro de verdade e o token que você inventa para o aviso de
+   * pagamento (o mesmo no cadastro do webhook no Asaas). Sem a chave, o botão Assinar explica.
+   */
+  ASAAS_CHAVE: opcional(z.string().min(20)),
+  ASAAS_SANDBOX: z
+    .string()
+    .optional()
+    .transform((v) => /^(sim|true|1)$/i.test(v?.trim() ?? '')),
+  ASAAS_TOKEN_WEBHOOK: opcional(z.string().min(16, 'ASAAS_TOKEN_WEBHOOK: use 16 caracteres ou mais')),
+  /** Captcha do cadastro do teste grátis (Cloudflare Turnstile): a chave do site e a secreta. */
+  TURNSTILE_SITE: opcional(z.string().min(10)),
+  TURNSTILE_SEGREDO: opcional(z.string().min(10)),
+  /**
    * Onde as gravações das reuniões ficam (qualquer serviço compatível com S3; ex.: Cloudflare R2).
    * Sem isso, as reuniões funcionam sem gravar. A transcrição usa a GROQ_CHAVE do Argos.
    */

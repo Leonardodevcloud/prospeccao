@@ -219,7 +219,7 @@ function PainelDoCliente(props: { marca: MarcaPublica }) {
  * Moldura das telas de entrada (login, convite, senha): painel da marca à esquerda, formulário à direita.
  * No celular, o painel vira uma faixa no topo. No domínio próprio de um cliente, tudo com a marca dele.
  */
-export function TelaAcesso(props: { children: ReactNode }) {
+export function TelaAcesso(props: { children: ReactNode; chamada?: ReactNode; largo?: boolean }) {
   const { marca, carregando } = useMarcaDoEndereco();
   useMarcaNoNavegador(marca);
   if (carregando) return <main className="acesso acesso--esperando" aria-busy="true" />;
@@ -237,18 +237,22 @@ export function TelaAcesso(props: { children: ReactNode }) {
       </main>
     );
   return (
-    <main className="acesso">
+    <main className={props.largo ? 'acesso acesso--largo' : 'acesso'}>
       <section className="acesso__marca" aria-label="Prospect Team">
         <div className="acesso__grade" aria-hidden="true" />
         <div className="acesso__brilho" aria-hidden="true" />
         <Assinatura escuro tamanho={44} />
-        <div className="acesso__chamada">
-          <h2>
-            Seu comercial mais perto de <em>quem decide</em>.
-          </h2>
-          <p>Empresas do seu nicho, o decisor certo e a conversa no canal certo. Tudo em um lugar.</p>
-        </div>
-        <Avisos />
+        {props.chamada ?? (
+          <>
+            <div className="acesso__chamada">
+              <h2>
+                Seu comercial mais perto de <em>quem decide</em>.
+              </h2>
+              <p>Empresas do seu nicho, o decisor certo e a conversa no canal certo. Tudo em um lugar.</p>
+            </div>
+            <Avisos />
+          </>
+        )}
         <p className="acesso__rodape">Prospecção B2B com dados abertos, IA e o seu time</p>
       </section>
       <section className="acesso__lado">

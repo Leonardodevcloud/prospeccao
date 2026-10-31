@@ -1319,7 +1319,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>Quando algo não está no plano</h3>
         <p>
           O item aparece no menu com um cadeado e a tela explica o que ele faz e a partir de qual plano vem.
-          Para liberar, fale com a gente: a mudança vale na hora, sem perder nada do que já está no sistema.
+          Para liberar, mude a assinatura em <b>Meu plano › Assinar</b> (ou fale com a gente, se o contrato
+          foi combinado com o nosso time): a mudança vale na hora, sem perder nada do que já está no sistema.
           Em <b>Meu plano</b> você vê o que está incluído e quanto já usou no mês: leads, usuários, números de
           WhatsApp, horas de reunião e conversas da IA. Tudo volta a zero no dia 1º.
         </p>
@@ -1327,6 +1328,78 @@ export const ARTIGOS: ArtigoAjuda[] = [
           As horas de reunião somam o tempo de todas as reuniões abertas no mês, de todas as unidades. Com as
           horas esgotadas, a reunião que já está acontecendo continua; as novas esperam o dia 1º ou mais
           horas.
+        </Nota>
+      </>
+    ),
+  },
+  {
+    id: 'assinatura',
+    area: 'Gestão',
+    titulo: 'Teste grátis e assinatura',
+    resumo:
+      'Os 7 dias de teste, como assinar pelo sistema, pagar com Pix, boleto ou cartão, mudar e cancelar.',
+    onde: { rotulo: 'Meu plano', para: '/plano' },
+    termos:
+      'teste grátis 7 dias assinar assinatura pagar pagamento pix boleto cartão cobrança nota fiscal cancelar atrasado só leitura arquivada asaas vencimento',
+    corpo: (
+      <>
+        <p>
+          O <b>teste grátis</b> dura 7 dias, sem cartão. Vale o plano Time para 2 pessoas e 100 leads
+          enriquecidos. O WhatsApp com o Agente de IA e as Ligações ficam para quando assinar. A faixa no topo
+          mostra quantos dias faltam e quantos leads já foram usados; avisamos por e-mail dois dias antes, na
+          véspera e no dia em que termina.
+        </p>
+        <h3>Assinar</h3>
+        <p>
+          Quem administra a conta abre <b>Meu plano › Assinar</b> (ou o botão <b>Assinar</b> da faixa),
+          escolhe o plano, quantos usuários e os módulos, e vê o preço do mês na hora. Depois preenche o CNPJ
+          (ou CPF), a razão social e o e-mail do financeiro, que recebe as cobranças e a nota fiscal, e
+          escolhe a forma de pagamento:
+        </p>
+        <ul>
+          <li>
+            <b>Pix</b>: o QR Code aparece na tela. Pagou, a conta é liberada na hora, sozinha.
+          </li>
+          <li>
+            <b>Boleto</b>: abre a página de pagamento com o boleto. Libera quando o banco confirma (até 2 dias
+            úteis).
+          </li>
+          <li>
+            <b>Cartão de crédito</b>: os dados do cartão vão na página segura de pagamento e a cobrança se
+            repete todo mês.
+          </li>
+        </ul>
+        <p>
+          Até o primeiro pagamento cair, o teste continua normal. Quando cai, o teste vira assinatura: os
+          usuários, os módulos e os limites do plano escolhido passam a valer, e tudo o que foi feito no teste
+          fica. Se já pagou e a tela não mudou, clique em <b>Já paguei</b> para conferir na hora.
+        </p>
+        <h3>Mudar ou cancelar</h3>
+        <p>
+          Em <b>Meu plano</b>, <b>Mudar plano ou pagamento</b> troca o plano, os usuários, os módulos ou a
+          forma de pagamento: vale na hora e a próxima mensalidade já vem com o valor novo. <b>Cancelar</b>
+          para as cobranças; o acesso continua até o fim do período pago. As cobranças (pagas, em aberto e
+          atrasadas) ficam listadas ali mesmo, com o link para pagar ou ver o recibo.
+        </p>
+        <h3>Quando o teste acaba ou o pagamento atrasa</h3>
+        <ul>
+          <li>
+            <b>O teste acabou sem assinar</b>: a conta fica <b>só leitura</b> por 15 dias. Dá para ver tudo,
+            mas não dá para mexer (criar, mudar ou apagar). Assinando nesse tempo, tudo volta do jeito que
+            estava.
+          </li>
+          <li>
+            <b>Pagamento atrasado</b>: a conta continua normal por 7 dias depois do vencimento; depois fica só
+            leitura até o pagamento cair.
+          </li>
+          <li>
+            Depois dos 15 dias só leitura, a conta é <b>arquivada</b>: ninguém entra mais. Os dados ficam
+            guardados por 90 dias; para voltar, fale com a gente.
+          </li>
+        </ul>
+        <Nota>
+          Só quem administra a conta vê os valores e pode assinar, mudar ou cancelar. Um teste por empresa: o
+          mesmo e-mail, WhatsApp ou CNPJ não começa outro teste.
         </Nota>
       </>
     ),

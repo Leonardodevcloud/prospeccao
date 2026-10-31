@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { criarPool, manterSinalDeVida } from '@prospeccao/db';
+import { criarServicoCobranca } from '@prospeccao/integrations/cobranca';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { criarApp } from './app.js';
@@ -8,6 +9,7 @@ import { manterDominios } from './dominios.js';
 import { iniciarLembretes } from './modulos/agenda/lembretes.js';
 import { iniciarAgente } from './modulos/agente/motor.js';
 import { iniciarAlertas } from './modulos/alertas/rotina.js';
+import { iniciarAssinaturas } from './modulos/assinatura/servico.js';
 import { prepararAssistente } from './modulos/assistente/preparar.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
@@ -70,6 +72,16 @@ const processamento = iniciarProcessamento({
 // Ligações pelo CRM: o mesmo LiveKit, com o tronco SIP do provedor de telefonia.
 const telefonia = prepararTelefonia(env, reunioes, assistente, log);
 
+// Assinatura pelo sistema: cobrança no Asaas e o captcha do cadastro do teste grátis.
+const cobranca = env.ASAAS_CHAVE
+  ? criarServicoCobranca({ chave: env.ASAAS_CHAVE, sandbox: env.ASAAS_SANDBOX })
+  : null;
+if (!cobranca) log.info('ASAAS_CHAVE não configurada: a assinatura pelo sistema fica desligada.');
+const captcha =
+  env.TURNSTILE_SITE && env.TURNSTILE_SEGREDO
+    ? { site: env.TURNSTILE_SITE, segredo: env.TURNSTILE_SEGREDO }
+    : null;
+
 const app = criarApp({
   pool,
   filas,
@@ -87,6 +99,9 @@ const app = criarApp({
   assistente,
   reunioes: { ...reunioes, aoEncerrar: processamento.aoEncerrar },
   telefonia,
+  cobranca,
+  asaasTokenWebhook: env.ASAAS_TOKEN_WEBHOOK ?? null,
+  captcha,
 });
 
 const servidor = createServer(app);
@@ -114,6 +129,8 @@ const pararConversoes = iniciarConversoes({ pool, log });
 const pararLigacoes = iniciarLigacoes({ pool, log, servicos, telefonia });
 // API aberta: entrega os avisos (webhooks) aos sistemas dos clientes, com novas tentativas.
 const pararAvisos = iniciarAvisos({ pool, log, chave });
+// Teste grátis e assinatura: avisos do fim do teste, só leitura, arquivar e conferir os pagamentos.
+const pararAssinaturas = iniciarAssinaturas({ pool, log, servicos, cobranca }, env.APP_ORIGENS[0] ?? '');
 // Marca própria: domínios ativos dos clientes (links e origens) e conferência dos que esperam o DNS.
 const pararListaDominios = manterDominios(pool, (erro) =>
   log.warn({ err: erro }, 'marca: lista de domínios falhou'),
@@ -122,6 +139,7 @@ const pararDominios = iniciarDominios({ pool, log, site: () => dominiosDoAmbient
 
 encerrarAoReceberSinal(log, async () => {
   pararAvisos();
+  pararAssinaturas();
   pararAutomacao();
   pararAgente();
   pararPlanos();

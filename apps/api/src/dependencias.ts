@@ -1,4 +1,5 @@
 import type { CredenciaisAmbiente, Pool } from '@prospeccao/db';
+import type { ServicoCobranca } from '@prospeccao/integrations/cobranca';
 import type { Filas } from '@prospeccao/queue';
 import type { Logger } from '@prospeccao/shared';
 import type { DepsAssistente } from './modulos/assistente/rotas.js';
@@ -53,4 +54,10 @@ export interface DepsApi {
   meta?: ClienteMeta | null;
   /** Ligações: LiveKit com o tronco SIP, onde gravar, transcrição e a voz do aviso (o que faltar fica desligado). */
   telefonia?: DepsTelefonia | null;
+  /** Assinatura pelo sistema: cobrança recorrente no Asaas (sem: a tela diz que falta ligar). */
+  cobranca?: ServicoCobranca | null;
+  /** Token que o Asaas manda no aviso de pagamento (cabeçalho asaas-access-token). */
+  asaasTokenWebhook?: string | null;
+  /** Captcha do cadastro do teste grátis (Cloudflare Turnstile). */
+  captcha?: { site: string; segredo: string } | null;
 }

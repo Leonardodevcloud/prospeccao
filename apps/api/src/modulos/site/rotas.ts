@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { comConta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
+import { numerosDaPlataforma } from '../assinatura/servico.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as repo from './repositorio.js';
 
@@ -144,8 +145,12 @@ export function rotasSitePublico(deps: DepsApi): Router {
 export function rotasSiteMaster({ pool }: DepsApi): Router {
   const r = Router();
   r.get('/', async (_req, res) => {
-    const [config, pedidos] = await Promise.all([repo.lerConfig(pool), repo.listar(pool)]);
-    res.json({ config, pedidos });
+    const [config, pedidos, numeros] = await Promise.all([
+      repo.lerConfig(pool),
+      repo.listar(pool),
+      numerosDaPlataforma(pool),
+    ]);
+    res.json({ config, pedidos, numeros });
   });
   r.get('/novos', async (_req, res) => {
     res.json({ novos: await repo.contarNovos(pool) });
