@@ -5,6 +5,7 @@ import { useEhAdmin } from './Sessao';
 /** Telas inteiras que dependem de um recurso do plano (o menu mostra um cadeado nelas). */
 export const RECURSO_DA_TELA: { prefixo: string; recurso: Recurso }[] = [
   { prefixo: '/rua', recurso: 'rua' },
+  { prefixo: '/instagram', recurso: 'instagram' },
   { prefixo: '/argos', recurso: 'argos' },
   { prefixo: '/atividade', recurso: 'relatorios' },
   { prefixo: '/auditoria', recurso: 'seguranca' },

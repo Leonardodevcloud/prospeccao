@@ -7,6 +7,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
 import { type ClienteMeta, clienteMeta } from '../src/modulos/instagram/meta.js';
+import { esquecerRecursos } from '../src/recursos.js';
 import type { ServicosConta } from '../src/servicos.js';
 
 const URL_TESTE = process.env.TEST_DATABASE_URL;
@@ -468,6 +469,23 @@ describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e for
     expect(n[0].n).toBe(1);
     const lista = await ler('/instagram/formularios');
     expect(lista.body[0]).toMatchObject({ cadastros: 1, leads: 1, ultimoNome: 'Clínica Sorriso Pleno' });
+  });
+
+  it('é do plano Time em diante: no Start a tela mostra o cadeado e os avisos não fazem nada', async () => {
+    await pool.query(`UPDATE cadastro.organizacoes SET plano = 'start'`);
+    esquecerRecursos();
+    expect((await ler('/instagram')).status).toBe(200);
+    const r = await ler('/instagram/regras');
+    expect(r.status).toBe(403);
+    expect(r.body.erro.mensagem).toMatch(/plano Time/);
+    const antes = chamadas.filter((c) => c.tipo === 'privada').length;
+    await comentario('C50', 'quero', 'P50');
+    expect(chamadas.filter((c) => c.tipo === 'privada')).toHaveLength(antes);
+    await pool.query(`UPDATE cadastro.organizacoes SET plano = 'time'`);
+    esquecerRecursos();
+    expect((await ler('/instagram/regras')).status).toBe(200);
+    await pool.query(`UPDATE cadastro.organizacoes SET plano = NULL`);
+    esquecerRecursos();
   });
 
   it('desconectar apaga a conexão (as regras ficam)', async () => {

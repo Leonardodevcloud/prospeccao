@@ -150,7 +150,12 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/lgpd', rotasLgpd(deps));
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));
-  protegidas.use('/instagram', rotasInstagram(deps));
+  // Instagram é do plano Time em diante (ver a tela vale sempre: ela mostra o cadeado).
+  protegidas.use(
+    '/instagram',
+    rotaComRecurso(deps.pool, 'instagram', (req) => req.method === 'GET' && req.path === '/'),
+    rotasInstagram(deps),
+  );
   protegidas.use('/agenda', rotasAgenda(deps));
   // Reuniões: ver as que já aconteceram vale sempre; marcar e mexer é do plano (e das horas do mês).
   protegidas.use(

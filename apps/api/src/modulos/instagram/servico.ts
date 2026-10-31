@@ -12,6 +12,7 @@ import {
 } from '@prospeccao/shared';
 import { comConta, conta, contaSql, usuarioAtual } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
+import { temRecurso } from '../../recursos.js';
 import * as agente from '../agente/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
 import { pararSequencia } from '../email/sequencia.js';
@@ -476,6 +477,7 @@ export async function enviarDirectsPendentes(pool: Pool, log: Logger): Promise<n
       ORDER BY criado_em, id LIMIT 10`,
   );
   if (!rows.length) return 0;
+  if (!(await temRecurso(pool, 'instagram'))) return 0;
   const c = await conexaoDaConta(pool);
   let n = 0;
   for (const msg of rows) {
@@ -592,6 +594,8 @@ async function receberComentario(deps: DepsLead, igId: string, v: Record<string,
   // O próprio perfil respondendo, resposta dentro de outro comentário ou aviso sem o essencial: ignora.
   if (!comentarioId || !de.id || !midiaId || de.id === c.igId || v.parent_id) return;
   await comConta(c.contaId, async () => {
+    // Plano sem o Instagram (mudou de plano depois de conectar): os avisos não fazem nada.
+    if (!(await temRecurso(deps.pool, 'instagram'))) return;
     const { rows: regras } = await deps.pool.query<LinhaRegra>(
       `SELECT id::int, alvo, midia_id, palavras, respostas, mensagem, botao_texto, botao_link, criado_em
          FROM comercial.instagram_regras
@@ -724,6 +728,8 @@ async function receberDirect(deps: DepsLead, igId: string, msg: MensagemWebhook)
     (m.attachments ?? []).map((a) => ROTULO_ANEXO[a.type ?? ''] ?? '[anexo]').join(' ') ||
     '[mensagem]';
   await comConta(c.contaId, async () => {
+    // Plano sem o Instagram (mudou de plano depois de conectar): os avisos não fazem nada.
+    if (!(await temRecurso(deps.pool, 'instagram'))) return;
     if (m.is_echo) {
       // Saiu da conta da empresa: se foi o sistema, já está na conversa; se foi alguém pelo app do
       // Instagram, entra no histórico e a IA para de responder este lead.
@@ -1046,6 +1052,8 @@ async function receberCadastro(deps: DepsLead, paginaId: string, v: Record<strin
   const leadgenId = String(v.leadgen_id ?? '');
   if (!leadgenId) return;
   await comConta(c.contaId, async () => {
+    // Plano sem o Instagram (mudou de plano depois de conectar): os avisos não fazem nada.
+    if (!(await temRecurso(deps.pool, 'instagram'))) return;
     const { pool } = deps;
     const { rows: novo } = await pool.query<{ id: number }>(
       `INSERT INTO comercial.instagram_cadastros (conta_id, leadgen_id, form_id)

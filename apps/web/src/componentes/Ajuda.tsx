@@ -672,6 +672,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Em <b>Automação › Instagram</b> o CRM recebe os leads que chegam pelo Instagram da empresa. Lead do
           Instagram não passa pelo enriquecimento: entra direto no funil, com a etiqueta “instagram”.
         </p>
+        <p>
+          Vem a partir do plano <b>Time</b>. A IA respondendo pelo direct precisa também do módulo{' '}
+          <b>WhatsApp + Agente de IA</b>; sem ele, o time responde em Conversas.
+        </p>
         <h3>1. Conectar (uma vez, pelo administrador)</h3>
         <Passos>
           <li>

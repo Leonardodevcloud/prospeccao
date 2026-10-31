@@ -551,7 +551,7 @@ function FormRegra(props: { regra?: Regra; aoFechar: () => void; aoSalvar?: (r: 
           mensagem: f.mensagem,
           botaoTexto: f.botaoTexto.trim() || null,
           botaoLink: f.botaoLink.trim() || null,
-          iaContinua: f.iaContinua,
+          iaContinua: f.iaContinua && temIa,
           avisar: f.avisar,
           etapaId: f.etapaId ? Number(f.etapaId) : null,
           responsavelId: f.responsavelId ? Number(f.responsavelId) : null,
@@ -582,6 +582,8 @@ function FormRegra(props: { regra?: Regra; aoFechar: () => void; aoSalvar?: (r: 
   const pessoas = (equipe.data?.usuarios ?? []).filter((u) => u.ativo);
   const pipeline = pipelines.data?.[0];
   const nomeExemplo = 'Marina';
+  // A IA responder pelo direct é do módulo WhatsApp + Agente de IA.
+  const temIa = sessao.data?.conta.modulos.includes('agente_ia') ?? true;
   const previa = f.mensagem.replace(/\{nome\}/gi, nomeExemplo);
 
   return (
@@ -745,12 +747,18 @@ function FormRegra(props: { regra?: Regra; aoFechar: () => void; aoSalvar?: (r: 
               <label className="opcao">
                 <input
                   type="checkbox"
-                  checked={f.iaContinua}
+                  checked={f.iaContinua && temIa}
+                  disabled={!temIa}
                   onChange={(e) => set('iaContinua', e.target.checked)}
                 />
                 <span>
                   <b>O Agente de IA continua a conversa</b> e pede o WhatsApp (segue o que você ensinou em
                   Agente de IA)
+                  {!temIa && (
+                    <span className="campo__dica" style={{ display: 'block' }}>
+                      Precisa do módulo WhatsApp + Agente de IA. Sem ele, o time responde em Conversas.
+                    </span>
+                  )}
                 </span>
               </label>
               <label className="opcao">

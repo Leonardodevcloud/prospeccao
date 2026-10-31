@@ -66,6 +66,11 @@ export const RECURSOS = {
     nome: 'Vendas na rua',
     descricao: 'Roteiro de visitas no mapa, check-in no celular e painel de visitas.',
   },
+  instagram: {
+    nome: 'Instagram',
+    descricao:
+      'Comente e receba (quem comenta a palavra recebe o seu direct e vira lead), direct nas Conversas e os cadastros dos formulários dos anúncios.',
+  },
   celular: {
     nome: 'Notificações no celular',
     descricao: 'Aviso no celular quando o lead responde ou algo vence.',
@@ -115,7 +120,16 @@ export interface TabelaPrecos {
   milLeads: number;
 }
 
-const RECURSOS_TIME: Recurso[] = ['equipe', 'funis', 'cadencia', 'relatorios', 'reunioes', 'rua', 'celular'];
+const RECURSOS_TIME: Recurso[] = [
+  'equipe',
+  'funis',
+  'cadencia',
+  'relatorios',
+  'reunioes',
+  'rua',
+  'instagram',
+  'celular',
+];
 
 export const TABELA_PADRAO: TabelaPrecos = {
   planos: {

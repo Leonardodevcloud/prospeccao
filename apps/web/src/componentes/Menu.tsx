@@ -84,7 +84,7 @@ export const MENU_CRM: EntradaMenu[] = [
     itens: [
       { para: '/email', rotulo: 'E-mail', icone: 'mail', modulos: ['email'] },
       { para: '/agente', rotulo: 'Agente de IA', icone: 'bot', modulos: ['whatsapp', 'agente_ia'] },
-      { para: '/instagram', rotulo: 'Instagram', icone: 'camera' },
+      { para: '/instagram', rotulo: 'Instagram', icone: 'camera', recurso: 'instagram' },
     ],
   },
   {
