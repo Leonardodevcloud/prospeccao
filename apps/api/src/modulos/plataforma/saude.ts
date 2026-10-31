@@ -1,4 +1,4 @@
-import { type Executor, INICIO_MES_SP, INICIO_MES_SP_TS } from '@prospeccao/db';
+import { DIA_SP, type Executor, INICIO_MES_SP, INICIO_MES_SP_TS } from '@prospeccao/db';
 import {
   type CotaMes,
   type CustoLinha,
@@ -9,10 +9,12 @@ import {
   PAPEL_SERVICO,
   type PlanosConsumo,
   preverMes,
+  type SaldoSerper,
   type SaudeAgora,
   type SaudeMes,
   type ServicoAgora,
   type ServicoExterno,
+  saldoSerper,
 } from '@prospeccao/shared';
 import type { DepsApi } from '../../dependencias.js';
 import { CELULAR, clientes, lerCustos, lerPlanos, SEGUNDOS_COBRADOS } from './repositorio.js';
@@ -304,6 +306,7 @@ export function calcularMes(
   u: UsoDoMes,
   p: PlanosConsumo,
   c: CustosPlataforma,
+  sp: SaldoSerper,
   agora = new Date(),
 ): Pick<SaudeMes, 'periodo' | 'alertas' | 'cotas'> & { variaveis: CustoLinha[] } {
   const { fracao, dia, dias } = fracaoDoMes(agora);
@@ -475,42 +478,92 @@ export function calcularMes(
     fonte: 'medido',
   });
 
-  // Serper.
-  const sp = p.serper;
-  const spPrev = prev(u.serper);
-  const porCredito = sp.creditos ? (sp.mensalUsd / sp.creditos) * d : 0;
+  // Serper: créditos pré-pagos (pacote pago uma vez, vale alguns meses).
+  const spPrevMes = prev(sp.usadosMes);
+  const precoBrl = sp.precoCreditoUsd * d;
+  const semPacotes = !p.serper.pacotes.length;
+  const acabaEm = sp.saldo > 0 && sp.ritmoDia > 0 ? Math.ceil(sp.saldo / sp.ritmoDia) : null;
+  const hojeIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(agora);
+  const dataBr = (iso: string) =>
+    `${iso.slice(8, 10)}/${iso.slice(5, 7)}${iso.slice(0, 4) === hojeIso.slice(0, 4) ? '' : `/${iso.slice(0, 4)}`}`;
+  const diasAte = (iso: string) => Math.round((Date.parse(iso) - Date.parse(hojeIso)) / 86_400_000);
+  // O próximo pacote a vencer com sobra, e quanto dele se perde no ritmo de agora.
+  const proximo = sp.pacotes
+    .filter((x) => !x.vencido && x.compradoEm <= hojeIso && x.restante > 0)
+    .sort((a, b) => a.venceEm.localeCompare(b.venceEm))[0];
+  const vaiPerder = proximo
+    ? Math.max(0, Math.round(proximo.restante - sp.ritmoDia * diasAte(proximo.venceEm)))
+    : 0;
+  const quandoAcaba =
+    acabaEm != null
+      ? dataBr(new Date(Date.parse(hojeIso) + acabaEm * 86_400_000).toISOString().slice(0, 10))
+      : null;
+  const acabou = !semPacotes && sp.saldo <= 0;
   cotas.push({
     id: 'serper',
     grupo: 'outros',
     nome: 'Busca no Google · Serper',
-    sub: 'créditos do mês',
-    valor: fmt(u.serper),
-    de: `de ${fmt(sp.creditos)}`,
-    usado: sp.creditos ? u.serper / sp.creditos : null,
-    previsao: sp.creditos ? spPrev / sp.creditos : null,
-    estado: u.serper >= sp.creditos ? 'erro' : spPrev > sp.creditos ? 'aviso' : 'ok',
-    detalhe:
-      u.serper >= sp.creditos
-        ? 'Os créditos do mês acabaram: compre mais no painel do Serper (o enriquecimento espera e volta sozinho).'
-        : `Previsão: ${fmt(spPrev)} (cerca de ${fmt(spPrev / 3)} leads).`,
+    sub: 'créditos pré-pagos',
+    valor: semPacotes ? fmt(sp.usadosMes) : fmt(sp.saldo),
+    de: semPacotes ? 'usados no mês' : `restantes de ${fmt(sp.totalValendo)}`,
+    usado: sp.totalValendo ? 1 - sp.saldo / sp.totalValendo : null,
+    previsao: null,
+    estado: semPacotes
+      ? 'aviso'
+      : acabou || (acabaEm != null && acabaEm <= 7)
+        ? 'erro'
+        : (acabaEm != null && acabaEm <= 20) || vaiPerder > 0
+          ? 'aviso'
+          : 'ok',
+    detalhe: semPacotes
+      ? 'Informe em Planos dos serviços os pacotes que você comprou para ver o saldo e quando vencem.'
+      : acabou
+        ? 'Os créditos acabaram: compre mais no painel do Serper e informe o pacote em Planos dos serviços (o enriquecimento espera e volta sozinho).'
+        : [
+            `${fmt(sp.usadosMes)} usados no mês (cerca de ${fmt(sp.usadosMes / 3)} leads).`,
+            quandoAcaba ? `No ritmo de agora, acabam por volta de ${quandoAcaba}.` : null,
+            proximo
+              ? vaiPerder > 0
+                ? `${fmt(proximo.restante)} vencem em ${dataBr(proximo.venceEm)}; ${fmt(vaiPerder)} devem sobrar sem uso.`
+                : `O pacote mais antigo vale até ${dataBr(proximo.venceEm)}.`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' '),
     fonte: 'medido',
   });
-  if (spPrev > sp.creditos) {
-    const quando = diaQueAcaba(u.serper, sp.creditos, fracao, dias, agora);
+  if (acabou)
     alertas.push({
       id: 'serper',
-      titulo: quando
-        ? `Os créditos do Serper acabam por volta de ${quando}.`
-        : 'Os créditos do Serper deste mês acabaram.',
-      texto: `O pacote tem ${fmt(sp.creditos)} créditos; no ritmo atual o mês fecha em ${fmt(spPrev)}. Sem crédito, o enriquecimento espera.`,
+      titulo: 'Os créditos do Serper acabaram.',
+      texto:
+        'Sem crédito, o enriquecimento espera. Compre um pacote no painel do Serper e informe em Planos dos serviços.',
     });
-  }
+  else if (acabaEm != null && acabaEm <= 20 && quandoAcaba)
+    alertas.push({
+      id: 'serper',
+      titulo: `Os créditos do Serper acabam por volta de ${quandoAcaba}.`,
+      texto: `Restam ${fmt(sp.saldo)} créditos e o ritmo é de ${fmt(sp.ritmoDia)} por dia. Sem crédito, o enriquecimento espera.`,
+    });
+  if (proximo && vaiPerder > 0 && diasAte(proximo.venceEm) <= 30)
+    alertas.push({
+      id: 'serper_vencimento',
+      titulo: `${fmt(vaiPerder)} créditos do Serper vão vencer sem uso em ${dataBr(proximo.venceEm)}.`,
+      texto: `O pacote comprado em ${dataBr(proximo.compradoEm)} ainda tem ${fmt(proximo.restante)} créditos e, no ritmo de agora, não dá tempo de usar tudo. Da próxima vez, um pacote menor sai mais em conta.`,
+    });
   variaveis.push({
-    nome: 'Serper além do pacote',
-    detalhe: `${fmt(u.serper)} buscas`,
-    ate: r2(Math.max(0, u.serper - sp.creditos) * porCredito),
-    previsao: r2(Math.max(0, spPrev - sp.creditos) * porCredito),
+    nome: 'Serper · créditos usados',
+    detalhe: `${fmt(sp.usadosMes)} buscas · ${brl(precoBrl * 1000)} por mil`,
+    ate: r2(sp.custoMesUsd * d),
+    previsao: r2(sp.custoMesUsd * d + Math.max(0, spPrevMes - sp.usadosMes) * precoBrl),
   });
+  if (sp.perdidosMes > 0)
+    variaveis.push({
+      nome: 'Serper · créditos que venceram',
+      detalhe: `${fmt(sp.perdidosMes)} créditos sem uso`,
+      ate: r2(sp.perdidosMesUsd * d),
+      previsao: r2(sp.perdidosMesUsd * d),
+    });
 
   // Google Maps (Places).
   const plPrev = prev(u.placesUsd);
@@ -624,11 +677,38 @@ export function calcularMes(
   return { periodo: { dia, dias, fracao }, alertas, cotas, variaveis };
 }
 
+/**
+ * Saldo dos créditos do Serper: as buscas de cada dia desde o pacote mais antigo informado (ou do
+ * começo do mês), sem a demonstração.
+ */
+export async function lerSaldoSerper(db: Executor, p: PlanosConsumo): Promise<SaldoSerper> {
+  const desde = p.serper.pacotes.map((x) => x.compradoEm).sort()[0] ?? null;
+  const { rows } = await db.query<{
+    hoje: string;
+    inicio: string;
+    dia: string | null;
+    buscas: number | null;
+  }>(
+    `WITH d AS (SELECT ${DIA_SP} AS hoje, ${INICIO_MES_SP} AS inicio)
+     SELECT to_char(d.hoje, 'YYYY-MM-DD') AS hoje, to_char(d.inicio, 'YYYY-MM-DD') AS inicio,
+            to_char(b.dia, 'YYYY-MM-DD') AS dia, b.buscas::int AS buscas
+       FROM d LEFT JOIN LATERAL (
+         SELECT dia, sum(buscas) AS buscas FROM cadastro.consumo_buscas
+          WHERE servico = 'serper' AND dia >= least(d.inicio, coalesce($1::date, d.inicio)) AND ${NAO_DEMO}
+          GROUP BY dia
+       ) b ON true`,
+    [desde],
+  );
+  const uso = rows.filter((r) => r.dia).map((r) => ({ dia: r.dia!, buscas: r.buscas ?? 0 }));
+  return saldoSerper(p.serper, uso, rows[0]!.hoje, rows[0]!.inicio);
+}
+
 export async function mes(deps: DepsApi): Promise<SaudeMes> {
   const { pool, credenciais } = deps;
   const [u, painel] = await Promise.all([usoDoMes(pool), clientes(pool, credenciais)]);
   const { custos, planos } = painel;
-  const calc = calcularMes(u, planos, custos);
+  const serper = await lerSaldoSerper(pool, planos);
+  const calc = calcularMes(u, planos, custos, serper);
   const pagantes = painel.clientes.filter((c) => !c.principal && c.ativa && c.plano);
   const fixos = fixosDoMes(planos, custos.dolar);
   const fixoTotal = r2(fixos.reduce((t, f) => t + f.valor, 0));
@@ -650,6 +730,7 @@ export async function mes(deps: DepsApi): Promise<SaudeMes> {
       totalPrevisao: r2(fixoTotal + variavelPrevisao),
     },
     planos,
+    serper,
     dolar: custos.dolar,
   };
 }
@@ -657,5 +738,5 @@ export async function mes(deps: DepsApi): Promise<SaudeMes> {
 /** Para a rotina de alertas: só o que precisa avisar (sem a lista de clientes). */
 export async function alertasDoMes(db: Executor) {
   const [u, custos, planos] = await Promise.all([usoDoMes(db), lerCustos(db), lerPlanos(db)]);
-  return calcularMes(u, planos, custos).alertas;
+  return calcularMes(u, planos, custos, await lerSaldoSerper(db, planos)).alertas;
 }

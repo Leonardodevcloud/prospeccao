@@ -184,7 +184,7 @@ export function rotasPlataforma(deps: DepsApi): Router {
       usuarioNome: req.usuario!.nome,
       comoMaster: true,
       acao: 'planos_servicos',
-      descricao: `Atualizou os planos dos serviços (LiveKit ${p.livekit.plano}, ${p.telefone.operadora}, Serper ${p.serper.creditos} créditos) e ${p.fixos.length} custos fixos.`,
+      descricao: `Atualizou os planos dos serviços (LiveKit ${p.livekit.plano}, ${p.telefone.operadora}, ${p.serper.pacotes.length} ${p.serper.pacotes.length === 1 ? 'pacote' : 'pacotes'} do Serper) e ${p.fixos.length} custos fixos.`,
       metodo: req.method,
       caminho: req.baseUrl + req.path,
     });

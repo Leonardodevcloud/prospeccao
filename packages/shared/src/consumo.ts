@@ -99,6 +99,14 @@ export function servicoDoEndereco(url: string): ServicoExterno | null {
 const n = z.number().min(0).max(100_000_000);
 const opcional = n.nullable();
 const texto = z.string().trim().max(60);
+const dataIso = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a data no formato AAAA-MM-DD.')
+  .refine(
+    (d) =>
+      !Number.isNaN(Date.parse(`${d}T12:00:00Z`)) && new Date(`${d}T12:00:00Z`).toISOString().startsWith(d),
+    'Data inválida.',
+  );
 
 export const planosConsumoEntrada = z.object({
   /** LiveKit: o plano (Build, Ship, Scale…), quanto custa e o que inclui por mês. */
@@ -122,8 +130,14 @@ export const planosConsumoEntrada = z.object({
     celularMin: n,
     fixoMin: n,
   }),
-  /** Serper: créditos por mês (o pacote que você compra) e quanto custa. */
-  serper: z.object({ mensalUsd: n, creditos: n }),
+  /**
+   * Serper: pré-pago. Cada pacote é pago uma vez e os créditos valem alguns meses (6 no Serper);
+   * o que não for usado até lá se perde. Não tem mensalidade.
+   */
+  serper: z.object({
+    pacotes: z.array(z.object({ compradoEm: dataIso, creditos: n, usd: n })).max(40),
+    validadeMeses: z.number().int().min(1).max(36),
+  }),
   /** Resend: plano, e-mails inclusos e o preço por mil acima disso. */
   resend: z.object({ plano: texto, mensalUsd: n, emails: n, extraUsdMil: opcional }),
   /** R2: GB grátis (o preço do GB fica em Custos unitários). */
@@ -148,7 +162,7 @@ export const PLANOS_PADRAO: PlanosConsumo = {
     ligacaoExtraUsd: 0.004,
   },
   telefone: { operadora: 'Nvoip', mensal: 0, franquiaMin: 0, celularMin: 0.35, fixoMin: 0.07 },
-  serper: { mensalUsd: 50, creditos: 50_000 },
+  serper: { pacotes: [], validadeMeses: 6 },
   resend: { plano: 'Pro', mensalUsd: 20, emails: 50_000, extraUsdMil: 0.9 },
   r2: { gbGratis: 10 },
   ia: { limiteMes: null },
@@ -171,7 +185,7 @@ export function planosCompletos(dados: unknown): PlanosConsumo {
   return saida as PlanosConsumo;
 }
 
-/** Custo fixo do mês: os planos pagos dos serviços e os outros fixos, em reais. */
+/** Custo fixo do mês: os planos pagos dos serviços e os outros fixos, em reais (o Serper é pré-pago: não entra). */
 export function fixosDoMes(
   p: PlanosConsumo,
   dolar: number,
@@ -184,12 +198,6 @@ export function fixosDoMes(
       valor: r2(p.livekit.mensalUsd * dolar),
       plano: true,
     });
-  if (p.serper.mensalUsd > 0)
-    lista.push({
-      nome: `Serper · ${p.serper.creditos.toLocaleString('pt-BR')} créditos`,
-      valor: r2(p.serper.mensalUsd * dolar),
-      plano: true,
-    });
   if (p.resend.mensalUsd > 0)
     lista.push({
       nome: `Resend · plano ${p.resend.plano}`,
@@ -200,6 +208,133 @@ export function fixosDoMes(
     lista.push({ nome: `${p.telefone.operadora} · franquia`, valor: r2(p.telefone.mensal), plano: true });
   for (const f of p.fixos) lista.push({ nome: f.nome, valor: r2(f.valor), plano: false });
   return lista;
+}
+
+/* ---------------- Serper: créditos pré-pagos ---------------- */
+
+/** US$ por crédito quando nenhum pacote pago foi informado (o pacote de 50 mil por US$ 50). */
+export const PRECO_CREDITO_SERPER_USD = 0.001;
+
+/** Quanto custa um crédito: o do pacote pago mais recente (o grátis do cadastro não conta). */
+export function precoCreditoSerper(s: PlanosConsumo['serper']): number {
+  const pagos = s.pacotes.filter((p) => p.usd > 0 && p.creditos > 0);
+  const ultimo = pagos.sort((a, b) => a.compradoEm.localeCompare(b.compradoEm)).at(-1);
+  return ultimo ? ultimo.usd / ultimo.creditos : PRECO_CREDITO_SERPER_USD;
+}
+
+/** A data (AAAA-MM-DD) somada de alguns meses (31/08 + 6 meses = 28/02). */
+export function somarMeses(data: string, meses: number): string {
+  const [a, m, d] = data.split('-').map(Number) as [number, number, number];
+  const alvo = new Date(Date.UTC(a, m - 1 + meses, 1));
+  const ultimoDia = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
+  alvo.setUTCDate(Math.min(d, ultimoDia));
+  return alvo.toISOString().slice(0, 10);
+}
+
+export interface PacoteSerper {
+  compradoEm: string;
+  /** Primeiro dia em que o pacote já não vale. */
+  venceEm: string;
+  creditos: number;
+  usd: number;
+  usados: number;
+  restante: number;
+  vencido: boolean;
+}
+
+export interface SaldoSerper {
+  /** Pacotes do mais antigo para o mais novo, com o que cada um já gastou. */
+  pacotes: PacoteSerper[];
+  /** Créditos que ainda valem (pacotes que não venceram). */
+  saldo: number;
+  /** Total dos pacotes que ainda valem (para a barra). */
+  totalValendo: number;
+  /** Buscas feitas quando não havia pacote informado com saldo. */
+  semPacote: number;
+  /** Créditos usados neste mês e quanto eles custaram (ao preço de cada pacote). */
+  usadosMes: number;
+  custoMesUsd: number;
+  /** Créditos que venceram sem uso neste mês e quanto tinham custado. */
+  perdidosMes: number;
+  perdidosMesUsd: number;
+  /** Créditos por dia no ritmo do mês (ou dos últimos 30 dias no começo do mês). */
+  ritmoDia: number;
+  precoCreditoUsd: number;
+}
+
+/**
+ * Saldo dos créditos do Serper a partir dos pacotes comprados e das buscas de cada dia. Cada dia
+ * gasta primeiro o pacote que vence antes. O Serper não informa o saldo pela API: é uma conta do
+ * sistema (confira de vez em quando no painel do Serper).
+ */
+export function saldoSerper(
+  s: PlanosConsumo['serper'],
+  uso: { dia: string; buscas: number }[],
+  hoje: string,
+  inicioMes: string,
+): SaldoSerper {
+  const pacotes: PacoteSerper[] = [...s.pacotes]
+    .sort((a, b) => a.compradoEm.localeCompare(b.compradoEm))
+    .map((p) => ({
+      compradoEm: p.compradoEm,
+      venceEm: somarMeses(p.compradoEm, s.validadeMeses),
+      creditos: p.creditos,
+      usd: p.usd,
+      usados: 0,
+      restante: p.creditos,
+      vencido: false,
+    }));
+  const preco = precoCreditoSerper(s);
+  let semPacote = 0;
+  let usadosMes = 0;
+  let custoMesUsd = 0;
+  for (const { dia, buscas } of [...uso].sort((a, b) => a.dia.localeCompare(b.dia))) {
+    if (dia > hoje) continue;
+    let falta = buscas;
+    const valendo = pacotes
+      .filter((p) => p.compradoEm <= dia && dia < p.venceEm && p.restante > 0)
+      .sort((a, b) => a.venceEm.localeCompare(b.venceEm));
+    for (const p of valendo) {
+      if (falta <= 0) break;
+      const gasto = Math.min(falta, p.restante);
+      p.restante -= gasto;
+      p.usados += gasto;
+      falta -= gasto;
+      if (dia >= inicioMes) custoMesUsd += gasto * (p.creditos ? p.usd / p.creditos : 0);
+    }
+    if (falta > 0) {
+      semPacote += falta;
+      if (dia >= inicioMes) custoMesUsd += falta * preco;
+    }
+    if (dia >= inicioMes) usadosMes += buscas;
+  }
+  let perdidosMes = 0;
+  let perdidosMesUsd = 0;
+  for (const p of pacotes) {
+    p.vencido = p.venceEm <= hoje;
+    if (p.vencido && p.venceEm >= inicioMes && p.restante > 0) {
+      perdidosMes += p.restante;
+      perdidosMesUsd += p.restante * (p.creditos ? p.usd / p.creditos : 0);
+    }
+  }
+  const valendo = pacotes.filter((p) => !p.vencido && p.compradoEm <= hoje);
+  // Ritmo: o mês até hoje; no comecinho do mês, os últimos 30 dias.
+  const diasMes = Math.max(1, Math.round((Date.parse(hoje) - Date.parse(inicioMes)) / 86_400_000) + 1);
+  const desde30 = new Date(Date.parse(hoje) - 29 * 86_400_000).toISOString().slice(0, 10);
+  const ultimos30 = uso.filter((u) => u.dia >= desde30 && u.dia <= hoje).reduce((t, u) => t + u.buscas, 0);
+  const ritmoDia = diasMes >= 7 ? usadosMes / diasMes : ultimos30 / 30;
+  return {
+    pacotes,
+    saldo: valendo.reduce((t, p) => t + p.restante, 0),
+    totalValendo: valendo.reduce((t, p) => t + p.creditos, 0),
+    semPacote,
+    usadosMes,
+    custoMesUsd,
+    perdidosMes,
+    perdidosMesUsd,
+    ritmoDia,
+    precoCreditoUsd: preco,
+  };
 }
 
 /* ---------------- Ligações ---------------- */
@@ -310,5 +445,7 @@ export interface SaudeMes {
     totalPrevisao: number;
   };
   planos: PlanosConsumo;
+  /** Saldo e vencimento dos pacotes do Serper (pré-pago). */
+  serper: SaldoSerper;
   dolar: number;
 }

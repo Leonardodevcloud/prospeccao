@@ -1644,7 +1644,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Se cada serviço externo está respondendo agora, quanto do plano de cada um já foi usado no mês e quanto a plataforma está gastando.',
     onde: { rotulo: 'Saúde e consumo', para: '/plataforma/saude' },
     termos:
-      'saúde saude consumo api apis custo custos fixo fixos excedente plano livekit nvoip operadora telefone serper resend z-api groq r2 places ia erro erros falhando tempo real ao vivo previsão limite créditos minutos margem infraestrutura railway',
+      'saúde saude consumo api apis custo custos fixo fixos excedente plano livekit nvoip operadora telefone serper pacote pré-pago pre-pago saldo vencimento resend z-api groq r2 places ia erro erros falhando tempo real ao vivo previsão limite créditos minutos margem infraestrutura railway',
     corpo: (
       <>
         <p>
@@ -1686,7 +1686,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
             6), separado em celular e fixo.
           </li>
           <li>
-            <b>Serper</b>: os créditos do pacote do mês (cerca de 3 buscas por lead enriquecido).
+            <b>Serper</b>: os créditos que ainda restam dos pacotes comprados, quanto foi usado no mês (cerca
+            de 3 buscas por lead enriquecido), quando acabam no ritmo de agora e se algum pacote vai vencer
+            com sobra.
           </li>
           <li>
             IA, Google Maps, e-mail, transcrição, gravações guardadas, números de WhatsApp e rotas (por dia).
@@ -1701,7 +1703,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
           <li>
             Na aba <b>Custos</b>, clique em <b>Planos dos serviços</b> e informe o que você contratou: o plano
             do LiveKit (quanto custa, o que inclui e o preço do minuto a mais), a operadora do telefone
-            (franquia e preço do minuto para celular e fixo), o pacote do Serper e o plano do Resend.
+            (franquia e preço do minuto para celular e fixo), os pacotes do Serper e o plano do Resend.
+          </li>
+          <li>
+            O <b>Serper</b> é pré-pago, sem mensalidade: cada pacote é pago uma vez e os créditos valem 6
+            meses (o que sobrar depois disso se perde). Em <b>Serper</b>, clique em <b>Adicionar pacote</b> a
+            cada compra e informe a data, os créditos e quanto pagou. Os 2.500 grátis do cadastro entram como
+            um pacote de US$ 0. Cada pacote salvo mostra quanto já usou, quanto resta e até quando vale.
           </li>
           <li>
             Em <b>Outros custos fixos</b>, coloque o que você paga todo mês, use ou não use: servidores
@@ -1710,13 +1718,19 @@ export const ARTIGOS: ArtigoAjuda[] = [
           <li>
             Salve. O <b>fixo do mês</b> é a soma dos planos e dos outros fixos; o <b>variável</b> é só o que
             passa do que os planos incluem, mais o que é cobrado por uso (minuto da operadora, IA, Google
-            Maps, números de WhatsApp). Os dois têm o valor até hoje e a previsão do mês.
+            Maps, números de WhatsApp, os créditos do Serper usados no mês e os que venceram sem uso). Os dois
+            têm o valor até hoje e a previsão do mês.
           </li>
         </Passos>
         <p>
           O fixo é dividido entre os clientes ativos no custo de cada um (Financeiro e Clientes); no lugar do
-          antigo “Infraestrutura por mês”. O dólar usado é o de Custos unitários.
+          antigo “Infraestrutura por mês”. Cada busca do Serper entra no custo do cliente que a fez, ao preço
+          do crédito do pacote pago mais recente. O dólar usado é o de Custos unitários.
         </p>
+        <Nota>
+          O Serper não informa o saldo pelo sistema: o saldo mostrado é a conta dos pacotes informados menos
+          as buscas registradas. Confira de vez em quando no painel do Serper.
+        </Nota>
       </>
     ),
   },

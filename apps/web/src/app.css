@@ -14391,7 +14391,37 @@ fieldset.assinar__formas {
   gap: var(--space-2);
   align-items: center;
 }
+.saude-pacote {
+  display: grid;
+  grid-template-columns: 170px 160px 130px auto;
+  justify-content: start;
+  gap: var(--space-2);
+  align-items: end;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+.saude-pacote__situacao {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+.saude-pacote__rodape {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: end;
+  justify-content: space-between;
+}
+.saude-pacote__validade {
+  width: 140px;
+}
 @media (max-width: 720px) {
+  .saude-pacote {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    justify-content: stretch;
+  }
+  .saude-pacote > .campo:first-child {
+    grid-column: 1 / -1;
+  }
   .saude-serie {
     width: 100%;
     max-width: 200px;

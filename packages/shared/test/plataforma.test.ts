@@ -4,9 +4,12 @@ import {
   fracaoDoMes,
   PLANOS_PADRAO,
   planosCompletos,
+  precoCreditoSerper,
   preverMes,
+  saldoSerper,
   segundosCobrados,
   servicoDoEndereco,
+  somarMeses,
 } from '../src/consumo.js';
 import { CUSTOS_PADRAO, custoEstimado, custosCompletos } from '../src/plataforma.js';
 
@@ -78,18 +81,55 @@ describe('saúde e consumo', () => {
   it('planos: bloco faltando ou inválido volta para o padrão', () => {
     const p = planosCompletos({
       livekit: { plano: 'Build', mensalUsd: 0 },
-      serper: { creditos: -5 },
+      serper: { validadeMeses: 0 },
       fixos: [{ nome: 'Railway', valor: 250 }],
     });
     expect(p.livekit).toEqual({ ...PLANOS_PADRAO.livekit, plano: 'Build', mensalUsd: 0 });
     expect(p.serper).toEqual(PLANOS_PADRAO.serper);
     expect(p.fixos).toEqual([{ nome: 'Railway', valor: 250 }]);
     expect(planosCompletos(null)).toEqual(PLANOS_PADRAO);
+    // O Serper é pré-pago: não entra nos fixos.
     expect(fixosDoMes(p, 5).map((f) => [f.nome, f.valor])).toEqual([
-      ['Serper · 50.000 créditos', 250],
       ['Resend · plano Pro', 100],
       ['Railway', 250],
     ]);
+  });
+  it('Serper: saldo dos pacotes, o que vence antes é gasto primeiro e o que venceu se perde', () => {
+    expect(somarMeses('2026-08-31', 6)).toBe('2027-02-28');
+    expect(somarMeses('2026-05-10', 6)).toBe('2026-11-10');
+    const planos = {
+      validadeMeses: 6,
+      pacotes: [
+        { compradoEm: '2026-10-20', creditos: 50_000, usd: 50 },
+        { compradoEm: '2026-05-10', creditos: 2_500, usd: 0 },
+      ],
+    };
+    const uso = [
+      // Antes de qualquer pacote: fica sem pacote.
+      { dia: '2026-04-01', buscas: 300 },
+      { dia: '2026-06-01', buscas: 1_000 },
+      { dia: '2026-10-05', buscas: 1_100 },
+      // Sobram 400 do grátis (vence em 10/11): gasta eles primeiro e depois o pago.
+      { dia: '2026-11-03', buscas: 900 },
+      // O grátis já venceu: tudo do pago.
+      { dia: '2026-11-12', buscas: 1_000 },
+    ];
+    const s = saldoSerper(planos, uso, '2026-11-15', '2026-11-01');
+    expect(s.pacotes.map((p) => [p.compradoEm, p.usados, p.restante, p.vencido])).toEqual([
+      ['2026-05-10', 2_500, 0, true],
+      ['2026-10-20', 1_500, 48_500, false],
+    ]);
+    expect(s.semPacote).toBe(300);
+    expect(s).toMatchObject({ saldo: 48_500, totalValendo: 50_000, usadosMes: 1_900, perdidosMes: 0 });
+    // 400 do grátis (US$ 0) + 500 do pago (US$ 0,001) em 03/11 e 1.000 do pago em 12/11.
+    expect(s.custoMesUsd).toBeCloseTo(1.5, 5);
+    expect(s.ritmoDia).toBeCloseTo(1_900 / 15, 5);
+    expect(s.precoCreditoUsd).toBe(0.001);
+
+    // Sem uso, o grátis vence em 10/11 com tudo: 2.500 perdidos no mês (custaram US$ 0).
+    const parado = saldoSerper(planos, [], '2026-11-15', '2026-11-01');
+    expect(parado).toMatchObject({ saldo: 50_000, perdidosMes: 2_500, perdidosMesUsd: 0 });
+    expect(precoCreditoSerper({ validadeMeses: 6, pacotes: [] })).toBe(0.001);
   });
   it('fração do mês e previsão', () => {
     const f = fracaoDoMes(new Date('2026-11-16T03:00:00Z'));

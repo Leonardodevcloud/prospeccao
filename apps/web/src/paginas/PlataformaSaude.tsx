@@ -1,4 +1,11 @@
-import type { CotaMes, PlanosConsumo, SaudeAgora, SaudeMes, ServicoAgora } from '@prospeccao/shared/consumo';
+import type {
+  CotaMes,
+  PlanosConsumo,
+  SaldoSerper,
+  SaudeAgora,
+  SaudeMes,
+  ServicoAgora,
+} from '@prospeccao/shared/consumo';
 import { Badge, Button, Panel, Stat, Tabs } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
@@ -94,7 +101,12 @@ export function PlataformaSaude() {
       {planos && mes.data && (
         <Drawer titulo="Planos dos serviços" barra="Saúde e consumo" aoFechar={() => setPlanos(false)} largo>
           <div className="drawer__corpo">
-            <FormPlanos inicial={mes.data.planos} dolar={mes.data.dolar} aoSalvar={() => setPlanos(false)} />
+            <FormPlanos
+              inicial={mes.data.planos}
+              serper={mes.data.serper}
+              dolar={mes.data.dolar}
+              aoSalvar={() => setPlanos(false)}
+            />
           </div>
         </Drawer>
       )}
@@ -459,103 +471,106 @@ function Custos(props: { d: SaudeMes | undefined; erro: unknown; abrirPlanos: ()
 
 type Campo = { k: string; rotulo: string; dica?: string; vazio?: boolean; texto?: boolean };
 
-const BLOCOS: { k: Exclude<keyof PlanosConsumo, 'fixos'>; titulo: string; texto: string; campos: Campo[] }[] =
-  [
-    {
-      k: 'livekit',
-      titulo: 'LiveKit (reuniões e ligações)',
-      texto: 'Build é o grátis (não cobra excedente: para); Ship custa US$ 50.',
-      campos: [
-        { k: 'plano', rotulo: 'Plano', texto: true },
-        { k: 'mensalUsd', rotulo: 'Por mês (US$)' },
-        { k: 'participanteMin', rotulo: 'Minutos de participante inclusos' },
-        {
-          k: 'participanteExtraUsd',
-          rotulo: 'Minuto a mais (US$)',
-          dica: 'Vazio: o plano não cobra, para.',
-          vazio: true,
-        },
-        { k: 'ligacaoMin', rotulo: 'Minutos de ligação inclusos' },
-        {
-          k: 'ligacaoExtraUsd',
-          rotulo: 'Minuto de ligação a mais (US$)',
-          dica: 'Vazio: o plano não cobra, para.',
-          vazio: true,
-        },
-      ],
-    },
-    {
-      k: 'telefone',
-      titulo: 'Operadora do telefone',
-      texto: 'Quem leva a ligação até o lead. Só as atendidas são cobradas.',
-      campos: [
-        { k: 'operadora', rotulo: 'Operadora', texto: true },
-        { k: 'mensal', rotulo: 'Franquia por mês (R$)', dica: '0 se não tem franquia.' },
-        { k: 'franquiaMin', rotulo: 'Minutos da franquia' },
-        { k: 'celularMin', rotulo: 'Minuto para celular (R$)' },
-        { k: 'fixoMin', rotulo: 'Minuto para fixo (R$)' },
-      ],
-    },
-    {
-      k: 'serper',
-      titulo: 'Serper (busca no Google)',
-      texto: 'O pacote que você compra por mês (cerca de 3 buscas por lead).',
-      campos: [
-        { k: 'mensalUsd', rotulo: 'Pacote (US$)' },
-        { k: 'creditos', rotulo: 'Créditos do pacote' },
-      ],
-    },
-    {
-      k: 'resend',
-      titulo: 'Resend (e-mail)',
-      texto: 'Plano, e-mails inclusos e o preço por mil acima disso.',
-      campos: [
-        { k: 'plano', rotulo: 'Plano', texto: true },
-        { k: 'mensalUsd', rotulo: 'Por mês (US$)' },
-        { k: 'emails', rotulo: 'E-mails inclusos' },
-        {
-          k: 'extraUsdMil',
-          rotulo: 'Mil e-mails a mais (US$)',
-          dica: 'Vazio: o plano não cobra, para.',
-          vazio: true,
-        },
-      ],
-    },
-    {
-      k: 'ia',
-      titulo: 'IA da plataforma',
-      texto: 'Só para avisar quando o mês for passar deste valor.',
-      campos: [
-        { k: 'limiteMes', rotulo: 'Limite de gasto por mês (R$)', dica: 'Vazio: sem aviso.', vazio: true },
-      ],
-    },
-    {
-      k: 'places',
-      titulo: 'Google Maps (Places)',
-      texto: 'Só para avisar quando o mês for passar deste valor.',
-      campos: [
-        { k: 'limiteUsd', rotulo: 'Limite de gasto por mês (US$)', dica: 'Vazio: sem aviso.', vazio: true },
-      ],
-    },
-    {
-      k: 'r2',
-      titulo: 'Gravações (R2)',
-      texto: 'GB guardados sem custo.',
-      campos: [{ k: 'gbGratis', rotulo: 'GB grátis' }],
-    },
-    {
-      k: 'ors',
-      titulo: 'Rotas (OpenRouteService)',
-      texto: 'Chamadas por dia do plano.',
-      campos: [{ k: 'porDia', rotulo: 'Por dia' }],
-    },
-  ];
+const BLOCOS: {
+  k: Exclude<keyof PlanosConsumo, 'fixos' | 'serper'>;
+  titulo: string;
+  texto: string;
+  campos: Campo[];
+}[] = [
+  {
+    k: 'livekit',
+    titulo: 'LiveKit (reuniões e ligações)',
+    texto: 'Build é o grátis (não cobra excedente: para); Ship custa US$ 50.',
+    campos: [
+      { k: 'plano', rotulo: 'Plano', texto: true },
+      { k: 'mensalUsd', rotulo: 'Por mês (US$)' },
+      { k: 'participanteMin', rotulo: 'Minutos de participante inclusos' },
+      {
+        k: 'participanteExtraUsd',
+        rotulo: 'Minuto a mais (US$)',
+        dica: 'Vazio: o plano não cobra, para.',
+        vazio: true,
+      },
+      { k: 'ligacaoMin', rotulo: 'Minutos de ligação inclusos' },
+      {
+        k: 'ligacaoExtraUsd',
+        rotulo: 'Minuto de ligação a mais (US$)',
+        dica: 'Vazio: o plano não cobra, para.',
+        vazio: true,
+      },
+    ],
+  },
+  {
+    k: 'telefone',
+    titulo: 'Operadora do telefone',
+    texto: 'Quem leva a ligação até o lead. Só as atendidas são cobradas.',
+    campos: [
+      { k: 'operadora', rotulo: 'Operadora', texto: true },
+      { k: 'mensal', rotulo: 'Franquia por mês (R$)', dica: '0 se não tem franquia.' },
+      { k: 'franquiaMin', rotulo: 'Minutos da franquia' },
+      { k: 'celularMin', rotulo: 'Minuto para celular (R$)' },
+      { k: 'fixoMin', rotulo: 'Minuto para fixo (R$)' },
+    ],
+  },
+  {
+    k: 'resend',
+    titulo: 'Resend (e-mail)',
+    texto: 'Plano, e-mails inclusos e o preço por mil acima disso.',
+    campos: [
+      { k: 'plano', rotulo: 'Plano', texto: true },
+      { k: 'mensalUsd', rotulo: 'Por mês (US$)' },
+      { k: 'emails', rotulo: 'E-mails inclusos' },
+      {
+        k: 'extraUsdMil',
+        rotulo: 'Mil e-mails a mais (US$)',
+        dica: 'Vazio: o plano não cobra, para.',
+        vazio: true,
+      },
+    ],
+  },
+  {
+    k: 'ia',
+    titulo: 'IA da plataforma',
+    texto: 'Só para avisar quando o mês for passar deste valor.',
+    campos: [
+      { k: 'limiteMes', rotulo: 'Limite de gasto por mês (R$)', dica: 'Vazio: sem aviso.', vazio: true },
+    ],
+  },
+  {
+    k: 'places',
+    titulo: 'Google Maps (Places)',
+    texto: 'Só para avisar quando o mês for passar deste valor.',
+    campos: [
+      { k: 'limiteUsd', rotulo: 'Limite de gasto por mês (US$)', dica: 'Vazio: sem aviso.', vazio: true },
+    ],
+  },
+  {
+    k: 'r2',
+    titulo: 'Gravações (R2)',
+    texto: 'GB guardados sem custo.',
+    campos: [{ k: 'gbGratis', rotulo: 'GB grátis' }],
+  },
+  {
+    k: 'ors',
+    titulo: 'Rotas (OpenRouteService)',
+    texto: 'Chamadas por dia do plano.',
+    campos: [{ k: 'porDia', rotulo: 'Por dia' }],
+  },
+];
 
 const paraTexto = (v: unknown) =>
   v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',') : String(v);
 const paraNumero = (v: string) => Number(v.replace(/\./g, '').replace(',', '.'));
 
-function FormPlanos(props: { inicial: PlanosConsumo; dolar: number; aoSalvar: () => void }) {
+const hojeIso = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const dataBr = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
+function FormPlanos(props: {
+  inicial: PlanosConsumo;
+  serper: SaldoSerper;
+  dolar: number;
+  aoSalvar: () => void;
+}) {
   const cliente = useQueryClient();
   const [f, setF] = useState<Record<string, Record<string, string>>>(() =>
     Object.fromEntries(
@@ -570,6 +585,20 @@ function FormPlanos(props: { inicial: PlanosConsumo; dolar: number; aoSalvar: ()
   const [fixos, setFixos] = useState(
     props.inicial.fixos.map((x) => ({ nome: x.nome, valor: paraTexto(x.valor) })),
   );
+  const [pacotes, setPacotes] = useState(
+    [...props.inicial.serper.pacotes]
+      .sort((a, b) => a.compradoEm.localeCompare(b.compradoEm))
+      .map((x) => ({ compradoEm: x.compradoEm, creditos: paraTexto(x.creditos), usd: paraTexto(x.usd) })),
+  );
+  const [validade, setValidade] = useState(String(props.inicial.serper.validadeMeses));
+  const mudarPacote = (i: number, campo: 'compradoEm' | 'creditos' | 'usd', v: string) =>
+    setPacotes(pacotes.map((y, j) => (j === i ? { ...y, [campo]: v } : y)));
+  /** O que o sistema já calculou de um pacote salvo (some quando a linha muda). */
+  const situacao = (x: { compradoEm: string; creditos: string; usd: string }) =>
+    props.serper.pacotes.find(
+      (p) =>
+        p.compradoEm === x.compradoEm && p.creditos === paraNumero(x.creditos) && p.usd === paraNumero(x.usd),
+    );
   const salvar = useMutation({
     mutationFn: () => {
       const corpo: Record<string, unknown> = {};
@@ -580,6 +609,16 @@ function FormPlanos(props: { inicial: PlanosConsumo; dolar: number; aoSalvar: ()
             return [c.k, c.texto ? v : c.vazio && v === '' ? null : paraNumero(v) || 0];
           }),
         );
+      corpo.serper = {
+        pacotes: pacotes
+          .filter((x) => x.compradoEm && paraNumero(x.creditos) > 0)
+          .map((x) => ({
+            compradoEm: x.compradoEm,
+            creditos: paraNumero(x.creditos) || 0,
+            usd: paraNumero(x.usd) || 0,
+          })),
+        validadeMeses: Math.round(paraNumero(validade)) || 6,
+      };
       corpo.fixos = fixos
         .filter((x) => x.nome.trim())
         .map((x) => ({ nome: x.nome.trim(), valor: paraNumero(x.valor) || 0 }));
@@ -600,7 +639,7 @@ function FormPlanos(props: { inicial: PlanosConsumo; dolar: number; aoSalvar: ()
     >
       <Mensagem tipo="aviso">
         Informe o que você contratou em cada serviço. O valor por mês entra nos custos fixos; o sistema só
-        soma como variável o que passar do que vem incluso.
+        soma como variável o que passar do que vem incluso. O Serper é pré-pago: informe cada pacote comprado.
       </Mensagem>
       {BLOCOS.map((b) => (
         <fieldset key={b.k} className="saude-bloco">
@@ -623,6 +662,94 @@ function FormPlanos(props: { inicial: PlanosConsumo; dolar: number; aoSalvar: ()
           </div>
         </fieldset>
       ))}
+      <fieldset className="saude-bloco">
+        <legend>Serper (busca no Google)</legend>
+        <p className="quieto saude-nota">
+          Pré-pago, sem mensalidade: você compra um pacote de créditos e paga uma vez. Cada lead enriquecido
+          gasta cerca de 3 créditos. O que não for usado até o vencimento se perde. Inclua os 2.500 grátis do
+          cadastro como um pacote de US$ 0.
+        </p>
+        {pacotes.map((x, i) => {
+          const sit = situacao(x);
+          return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: linhas editáveis sem id
+            <div className="saude-pacote" key={i}>
+              <div className="campo">
+                <label htmlFor={`serper-data-${i}`}>Comprado em</label>
+                <input
+                  id={`serper-data-${i}`}
+                  className="filtro"
+                  type="date"
+                  max={hojeIso()}
+                  value={x.compradoEm}
+                  onChange={(e) => mudarPacote(i, 'compradoEm', e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor={`serper-creditos-${i}`}>Créditos</label>
+                <input
+                  id={`serper-creditos-${i}`}
+                  className="filtro mono"
+                  inputMode="numeric"
+                  value={x.creditos}
+                  onChange={(e) => mudarPacote(i, 'creditos', e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor={`serper-usd-${i}`}>Pago (US$)</label>
+                <input
+                  id={`serper-usd-${i}`}
+                  className="filtro mono"
+                  inputMode="decimal"
+                  value={x.usd}
+                  onChange={(e) => mudarPacote(i, 'usd', e.target.value)}
+                />
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="trash-2"
+                aria-label={`Tirar o pacote de ${x.compradoEm ? dataBr(x.compradoEm) : 'nova data'}`}
+                onClick={() => setPacotes(pacotes.filter((_, j) => j !== i))}
+              />
+              {sit && (
+                <small className={`saude-pacote__situacao ${sit.vencido ? 'quieto' : ''}`}>
+                  {sit.vencido
+                    ? `Venceu em ${dataBr(sit.venceEm)}: usou ${fmtNumero(sit.usados)}${sit.restante ? `, ${fmtNumero(sit.restante)} se perderam` : ''}.`
+                    : `Usou ${fmtNumero(sit.usados)} · restam ${fmtNumero(sit.restante)} · vale até ${dataBr(sit.venceEm)}.`}
+                </small>
+              )}
+            </div>
+          );
+        })}
+        {!pacotes.length && <p className="quieto saude-nota">Nenhum pacote informado.</p>}
+        <div className="saude-pacote__rodape">
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="plus"
+            onClick={() => setPacotes([...pacotes, { compradoEm: hojeIso(), creditos: '50000', usd: '50' }])}
+          >
+            Adicionar pacote
+          </Button>
+          <div className="campo saude-pacote__validade">
+            <label htmlFor="serper-validade">Validade (meses)</label>
+            <input
+              id="serper-validade"
+              className="filtro mono"
+              inputMode="numeric"
+              value={validade}
+              onChange={(e) => setValidade(e.target.value)}
+            />
+          </div>
+        </div>
+        {props.serper.semPacote > 0 && (
+          <p className="quieto saude-nota">
+            {fmtNumero(props.serper.semPacote)} buscas foram feitas sem um pacote informado com saldo naquele
+            dia: confira as datas.
+          </p>
+        )}
+      </fieldset>
       <fieldset className="saude-bloco">
         <legend>Outros custos fixos (R$ por mês)</legend>
         <p className="quieto saude-nota">

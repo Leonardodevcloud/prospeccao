@@ -3742,14 +3742,19 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(linha.ate).toBeCloseTo(0.42, 2);
     const sip = mes.body.cotas.find((c: { id: string }) => c.id === 'livekit_ligacao');
     expect(sip.detalhe).toMatch(/^Feitas 2 · recebidas 2\./);
-    // Fixos: o antigo "Infraestrutura" (Railway) + LiveKit Ship, Serper e Resend do padrão (dólar a 5,50).
+    // Fixos: o antigo "Infraestrutura" (Railway) + LiveKit Ship e Resend do padrão (dólar a 5,50). O
+    // Serper é pré-pago: não entra.
     expect(mes.body.custos.fixos.map((f: { nome: string }) => f.nome)).toEqual([
       'LiveKit · plano Ship',
-      'Serper · 50.000 créditos',
       'Resend · plano Pro',
       'Servidores e banco (Railway)',
     ]);
-    expect(mes.body.custos.fixoTotal).toBe(910);
+    expect(mes.body.custos.fixoTotal).toBe(635);
+    // Sem pacote do Serper informado: o cartão pede para informar.
+    expect(mes.body.cotas.find((c: { id: string }) => c.id === 'serper')).toMatchObject({
+      estado: 'aviso',
+      de: 'usados no mês',
+    });
 
     // Planos: inválido não salva; o Build (grátis, sem excedente) zera o LiveKit dos fixos.
     expect(
@@ -3766,15 +3771,44 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
         ligacaoMin: 1000,
         ligacaoExtraUsd: null,
       },
+      serper: { validadeMeses: 6, pacotes: [{ compradoEm: '2026-01-01', creditos: 50_000, usd: 50 }] },
       fixos: [{ nome: 'Railway', valor: 200 }],
     };
+    expect(
+      (
+        await enviar('put', '/master/plataforma/saude/planos', {
+          ...novos,
+          serper: { validadeMeses: 6, pacotes: [{ compradoEm: '2026-02-30', creditos: 10, usd: 1 }] },
+        })
+      ).status,
+    ).toBe(422);
+    // O pacote vale a partir de hoje (data de São Paulo) e 1.200 buscas foram feitas hoje.
+    const { rows: hoje } = await pool.query<{ d: string }>(
+      `SELECT to_char((now() AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS d`,
+    );
+    novos.serper.pacotes[0]!.compradoEm = hoje[0]!.d;
+    await pool.query(
+      `INSERT INTO cadastro.consumo_buscas (conta_id, dia, servico, buscas)
+       VALUES (1, (now() AT TIME ZONE 'America/Sao_Paulo')::date, 'serper', 1200)
+       ON CONFLICT (conta_id, dia, servico) DO UPDATE SET buscas = 1200`,
+    );
     const salvo = await enviar('put', '/master/plataforma/saude/planos', novos);
     expect(salvo.status).toBe(200);
     expect(salvo.body.livekit).toMatchObject({ plano: 'Build', ligacaoExtraUsd: null });
     const depois = await ler('/master/plataforma/saude/mes');
-    expect(depois.body.custos.fixoTotal).toBe(585);
+    expect(depois.body.custos.fixoTotal).toBe(310);
+    expect(depois.body.serper).toMatchObject({ saldo: 48_800, usadosMes: 1200, semPacote: 0 });
+    expect(depois.body.cotas.find((c: { id: string }) => c.id === 'serper')).toMatchObject({
+      valor: '48.800',
+      de: 'restantes de 50.000',
+    });
+    // 1.200 créditos a US$ 0,001 (dólar a 5,50) = R$ 6,60.
+    const usados = depois.body.custos.variaveis.find(
+      (v: { nome: string }) => v.nome === 'Serper · créditos usados',
+    );
+    expect(usados.ate).toBeCloseTo(6.6, 2);
     const servicos = await ler('/master/plataforma/servicos');
-    expect(servicos.body.fixoMensal).toBe(585);
+    expect(servicos.body.fixoMensal).toBe(310);
     expect(servicos.body.servicos.find((s: { id: string }) => s.id === 'buscas').nome).toBe(
       'Busca no Google · Serper',
     );

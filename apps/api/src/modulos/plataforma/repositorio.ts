@@ -15,6 +15,7 @@ import {
   type PlanoEfetivo,
   type PlanosConsumo,
   planosCompletos,
+  precoCreditoSerper,
   type SinalSaude,
   type UsoPago,
 } from '@prospeccao/shared';
@@ -53,24 +54,18 @@ export function fixoTotal(p: PlanosConsumo, custos: CustosPlataforma): number {
 }
 
 /**
- * Serper, e-mail e salas do LiveKit já estão pagos no plano (custo fixo): o cliente só leva a parte
- * dele no que passou do incluso. Os preços por unidade viram "o excedente do mês dividido pelo uso
- * de todos" (zero enquanto ninguém passou do plano).
+ * E-mail e salas do LiveKit já estão pagos no plano (custo fixo): o cliente só leva a parte dele no
+ * que passou do incluso (o excedente do mês dividido pelo uso de todos; zero enquanto ninguém
+ * passou do plano). O Serper é pré-pago: cada busca custa o crédito do pacote mais recente.
  */
 function precosAlemDosPlanos(linhas: LinhaConta[], p: PlanosConsumo, c: CustosPlataforma): CustosPlataforma {
   const soma = (f: (l: LinhaConta) => number) => linhas.reduce((t, l) => t + f(l), 0);
   const porMil = (total: number, custoExcedente: number) => (total > 0 ? (custoExcedente / total) * 1000 : 0);
-  const buscas = soma((l) => l.serper);
   const emails = soma((l) => l.emails);
   const minutos = soma((l) => l.reuniaoSegundosPessoas) / 60;
   return {
     ...c,
-    serperMil: porMil(
-      buscas,
-      p.serper.creditos
-        ? Math.max(0, buscas - p.serper.creditos) * (p.serper.mensalUsd / p.serper.creditos) * c.dolar
-        : 0,
-    ),
+    serperMil: precoCreditoSerper(p.serper) * 1000 * c.dolar,
     emailMil: porMil(
       emails,
       (Math.max(0, emails - p.resend.emails) / 1000) * (p.resend.extraUsdMil ?? 0) * c.dolar,

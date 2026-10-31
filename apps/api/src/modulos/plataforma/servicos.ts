@@ -1,7 +1,7 @@
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDeRetorno } from '../instagram/rotas.js';
 import { lerPlanos } from './repositorio.js';
-import { usoDoMes } from './saude.js';
+import { lerSaldoSerper, usoDoMes } from './saude.js';
 
 /**
  * Configurações da plataforma (painel master): cada serviço que a plataforma usa para todos os
@@ -50,6 +50,9 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
     lerPlanos(pool),
   ]);
   const u = rows[0]!;
+  const serper = await lerSaldoSerper(pool, planos);
+  const semPacote = !planos.serper.pacotes.length;
+  const semCredito = !semPacote && serper.saldo <= 0;
   const lk = planos.livekit;
   const minutosSala = mes.reuniaoMin + mes.ligacaoSalaMin;
   const minutosLigacao = mes.sipFeitasMin + mes.sipRecebidasMin;
@@ -212,16 +215,20 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
     id: 'buscas',
     nome: 'Busca no Google · Serper',
     papel: 'Acha site, Instagram, LinkedIn e contatos dos leads (worker-enriquecimento).',
-    estado: u.buscas_7d > 0 ? (mes.serper >= planos.serper.creditos ? 'aviso' : 'ok') : 'aviso',
+    estado: u.buscas_7d > 0 ? (semCredito || semPacote ? 'aviso' : 'ok') : 'aviso',
     detalhe:
       u.buscas_7d > 0
-        ? `${n(mes.serper)} de ${n(planos.serper.creditos)} créditos no mês`
+        ? semPacote
+          ? `${n(serper.usadosMes)} buscas no mês · nenhum pacote informado`
+          : `${n(serper.saldo)} créditos restantes · ${n(serper.usadosMes)} usados no mês`
         : 'Nenhuma busca registrada nos últimos 7 dias.',
     comoFazer:
       u.buscas_7d > 0
-        ? mes.serper >= planos.serper.creditos
-          ? 'Os créditos do mês acabaram: compre mais no painel do Serper e atualize em Planos dos serviços.'
-          : null
+        ? semCredito
+          ? 'Os créditos acabaram: compre mais no painel do Serper e informe o pacote em Planos dos serviços.'
+          : semPacote
+            ? 'Informe os pacotes comprados em Planos dos serviços (Saúde e consumo) para acompanhar o saldo.'
+            : null
         : 'Se há campanhas rodando, confira SERPER_API_KEY no worker-enriquecimento.',
     testavel: false,
   });
