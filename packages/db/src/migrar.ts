@@ -12,6 +12,20 @@ export const PASTA_MIGRATIONS =
 // Chave fixa do advisory lock: duas instâncias subindo juntas não migram em paralelo.
 const CHAVE_LOCK = 7_301_442_019;
 
+/**
+ * Versões anteriores de uma migration que já podem estar aplicadas em algum banco e que uma
+ * migration seguinte completa (não é para editar migration aplicada; aqui foi um engano da v97,
+ * corrigido pela 078). Com uma delas registrada, a conferência passa e a 078 faz o resto.
+ */
+const VERSOES_ANTERIORES: Record<string, string[]> = {
+  '076_teste_e_assinatura.sql': [
+    'a0adb03f1457f1615ede079272000484fc2c7437cf898fd9f806904573c100f7',
+    'd43d8b7770a6e1734bae3a285b6eaa13d1b2ea6b011fa01923e135e6471f6e97',
+  ],
+};
+const confere = (nome: string, aplicada: string, atual: string) =>
+  aplicada === atual || (VERSOES_ANTERIORES[nome]?.includes(aplicada) ?? false);
+
 interface Migration {
   nome: string;
   sql: string;
@@ -53,7 +67,7 @@ export async function statusMigrations(pool: Pool, pasta = PASTA_MIGRATIONS): Pr
   return todas.map((m) => ({
     nome: m.nome,
     aplicada: aplicadas.has(m.nome),
-    alterada: aplicadas.has(m.nome) && aplicadas.get(m.nome) !== m.checksum,
+    alterada: aplicadas.has(m.nome) && !confere(m.nome, aplicadas.get(m.nome)!, m.checksum),
   }));
 }
 
@@ -76,7 +90,7 @@ export async function migrar(pool: Pool, log: Logger, pasta = PASTA_MIGRATIONS):
     for (const m of todas) {
       const anterior = aplicadas.get(m.nome);
       if (anterior) {
-        if (anterior !== m.checksum) {
+        if (!confere(m.nome, anterior, m.checksum)) {
           throw new Error(`A migration ${m.nome} foi alterada depois de aplicada. Crie uma nova migration.`);
         }
         continue;
