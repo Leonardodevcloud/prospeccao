@@ -10044,3 +10044,28 @@ button.tempo-reuniao:focus-visible {
   display: grid;
   gap: var(--space-4);
 }
+
+/* ---------- v87: de onde vem o valor do plano ---------- */
+.plano-composicao {
+  margin: 0;
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--ink-muted);
+}
+.plano-composicao b {
+  color: var(--ink);
+}
+.nc-personalizado {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.nc-recursos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px 12px;
+}

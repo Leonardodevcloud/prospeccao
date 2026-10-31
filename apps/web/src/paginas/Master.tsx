@@ -1,4 +1,14 @@
-import { LISTA_MODULOS, MODULOS, type Modulo, type Plano, TABELA_PADRAO } from '@prospeccao/shared/planos';
+import {
+  LISTA_MODULOS,
+  LISTA_RECURSOS,
+  MODULOS,
+  type Modulo,
+  type Plano,
+  planoEfetivo,
+  RECURSOS,
+  type Recurso,
+  TABELA_PADRAO,
+} from '@prospeccao/shared/planos';
 import { Badge, Button, EmptyState, Icon, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, Fragment, type ReactNode, useEffect, useState } from 'react';
@@ -22,6 +32,7 @@ import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { AcessoUsuario, SituacaoCliente } from '../componentes/GerenciarCliente';
 import {
+  Contador,
   FormPlano,
   ResumoPlano,
   ROTULO_PLANO,
@@ -1143,6 +1154,22 @@ export function NovaConta(props: {
   const [plano, setPlano] = useState<Plano>(ini?.plano ?? 'start');
   const tabela = useTabelaPrecos().data ?? TABELA_PADRAO;
   const [modulos, setModulos] = useState<Modulo[]>([]);
+  // Personalizado: os números e os recursos ficam à vista (e o preço sai na hora, item a item).
+  const [pers, setPers] = useState({ usuarios: 2, leads: 2000, recursos: [] as Recurso[] });
+  const previaPers = planoEfetivo(
+    {
+      plano: 'personalizado',
+      limiteUsuarios: pers.usuarios,
+      limiteLeadsMes: pers.leads,
+      modulos,
+      mensalidadeManual: null,
+      numerosExtras: 0,
+      recursosExtras: pers.recursos,
+      horasReuniao: null,
+      conversasIa: null,
+    },
+    tabela,
+  );
   const [varias, setVarias] = useState(false);
   const [unidade, setUnidade] = useState('');
   const criar = useMutation({
@@ -1154,10 +1181,16 @@ export function NovaConta(props: {
           observacoes: f.observacoes || undefined,
           primeiroAcesso: varias ? 'gestor' : 'admin',
           unidade: varias && unidade.trim() ? unidade.trim() : undefined,
-          // Personalizado: começa com os números do Start; ajuste na aba Plano e módulos.
+          // Personalizado: com os números e os recursos escolhidos aqui (o resto ajusta em Plano e módulos).
           plano:
             plano === 'personalizado'
-              ? { plano, limiteUsuarios: 3, limiteLeadsMes: 10000, modulos }
+              ? {
+                  plano,
+                  limiteUsuarios: pers.usuarios,
+                  limiteLeadsMes: pers.leads,
+                  modulos,
+                  recursosExtras: pers.recursos,
+                }
               : { plano, modulos },
         },
       }),
@@ -1233,7 +1266,7 @@ export function NovaConta(props: {
                     />
                     <b>{ROTULO_PLANO[id]}</b>
                     {id === 'personalizado' ? (
-                      <span className="quieto">Ajuste os números depois</span>
+                      <span className="quieto">Você monta: usuários, leads, módulos e recursos</span>
                     ) : (
                       <span className="quieto">
                         {fmtReais(tabela.planos[id].preco)} · {tabela.planos[id].usuarios} usuários ·{' '}
@@ -1262,6 +1295,62 @@ export function NovaConta(props: {
                   </label>
                 ))}
               </div>
+              {plano === 'personalizado' && (
+                <div className="nc-personalizado">
+                  <div className="form__duas">
+                    <Contador
+                      id="nc-usuarios"
+                      rotulo="Usuários"
+                      valor={pers.usuarios}
+                      passo={1}
+                      minimo={1}
+                      aoMudar={(v) => setPers({ ...pers, usuarios: v })}
+                    />
+                    <Contador
+                      id="nc-leads"
+                      rotulo="Leads enriquecidos por mês"
+                      valor={pers.leads}
+                      passo={1000}
+                      minimo={0}
+                      aoMudar={(v) => setPers({ ...pers, leads: v })}
+                    />
+                  </div>
+                  <fieldset className="campo">
+                    <legend>Recursos liberados</legend>
+                    <div className="nc-recursos">
+                      {LISTA_RECURSOS.map((r) => (
+                        <label key={r} className="opcao" title={RECURSOS[r].descricao}>
+                          <input
+                            type="checkbox"
+                            checked={pers.recursos.includes(r)}
+                            onChange={(e) =>
+                              setPers({
+                                ...pers,
+                                recursos: e.target.checked
+                                  ? [...pers.recursos, r]
+                                  : pers.recursos.filter((x) => x !== r),
+                              })
+                            }
+                          />
+                          {RECURSOS[r].nome}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <p className="plano-composicao">
+                    <b>{fmtReais(previaPers.mensalidadeCalculada ?? 0)}/mês</b> ={' '}
+                    {previaPers.itens.map((i, n) => (
+                      <span key={i.rotulo}>
+                        {n > 0 && ' + '}
+                        {i.rotulo} <span className="mono">{fmtReais(i.valor)}</span>
+                      </span>
+                    ))}
+                    . Usuário {fmtReais(tabela.usuario)} e cada 1.000 leads {fmtReais(tabela.milLeads)}{' '}
+                    (Tabela de preços); os recursos não mudam o valor. Dá para combinar outro valor depois, em
+                    Plano e módulos.
+                  </p>
+                </div>
+              )}
               <span className="campo__dica">Números, módulos e mensalidade podem ser ajustados depois.</span>
             </fieldset>
             <label className="opcao">

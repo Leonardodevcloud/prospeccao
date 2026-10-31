@@ -76,6 +76,22 @@ export function ResumoPlano(props: { p: PlanoConta; contato?: boolean; semPreco?
           </span>
         )}
       </div>
+      {/* De onde vem o valor (cada item da mensalidade). */}
+      {!props.semPreco && p.itens.length > 0 && (
+        <p className="plano-composicao">
+          {p.mensalidadeManual != null ? (
+            <>Valor combinado. Pela tabela seria {fmtReais(p.mensalidadeCalculada ?? 0)}: </>
+          ) : (
+            'Como chega no valor: '
+          )}
+          {p.itens.map((i, n) => (
+            <span key={i.rotulo}>
+              {n > 0 && (i.valor < 0 ? ' − ' : ' + ')}
+              {i.rotulo} <span className="mono">{fmtReais(Math.abs(i.valor))}</span>
+            </span>
+          ))}
+        </p>
+      )}
       <div className="plano-usos">
         <UsoComLimite rotulo="Usuários ativos" usado={p.uso.usuarios} limite={p.usuarios} />
         <UsoComLimite
@@ -139,7 +155,7 @@ export function useTabelaPrecos() {
 }
 
 /** Número com botões de menos e mais (o valor muda o preço na hora). */
-function Contador(props: {
+export function Contador(props: {
   id: string;
   rotulo: string;
   valor: number;
@@ -210,7 +226,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
   const numerosDoPlano = (plano: Plano | '', t: TabelaPrecos) =>
     plano && plano !== 'personalizado'
       ? { usuarios: t.planos[plano].usuarios, leads: t.planos[plano].leadsMes }
-      : { usuarios: 3, leads: 10000 };
+      : { usuarios: 2, leads: 2000 };
   const inclusosDo = (plano: Plano | ''): Modulo[] =>
     plano && plano !== 'personalizado' ? tabela.planos[plano].modulosInclusos : [];
   const inteiroOuNulo = (v: string) => (v.trim() ? Number(v.replace(/\D/g, '')) : null);
@@ -272,14 +288,23 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
     tabela,
   );
   const escolher = (plano: Plano | '') =>
-    setF((x) => ({
-      ...x,
-      plano,
-      ...(() => {
-        const n = numerosDoPlano(plano, tabela);
-        return { usuarios: n.usuarios, leads: n.leads };
-      })(),
-    }));
+    setF((x) => {
+      // Personalizado parte do que a conta já tem (números, módulos e recursos do plano anterior),
+      // para não sumir nada sem querer; os planos prontos voltam aos números deles.
+      if (plano === 'personalizado') {
+        const antes = x.plano && x.plano !== 'personalizado' ? tabela.planos[x.plano] : null;
+        return {
+          ...x,
+          plano,
+          usuarios: x.plano ? x.usuarios : 2,
+          leads: x.plano ? x.leads : 2000,
+          modulos: [...new Set([...x.modulos, ...(antes?.modulosInclusos ?? [])])],
+          recursosExtras: [...new Set([...x.recursosExtras, ...(antes?.recursos ?? [])])],
+        };
+      }
+      const n = numerosDoPlano(plano, tabela);
+      return { ...x, plano, usuarios: n.usuarios, leads: n.leads };
+    });
   const alternar = (m: Modulo, ligado: boolean) =>
     setF((x) => {
       let mods = ligado ? [...new Set([...x.modulos, m])] : x.modulos.filter((y) => y !== m);
