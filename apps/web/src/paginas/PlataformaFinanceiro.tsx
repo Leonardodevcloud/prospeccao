@@ -252,7 +252,8 @@ export function PlataformaFinanceiro() {
     { rotulo: 'Reuniões e gravações', valor: clientes.reduce((s, c) => s + c.custo.reunioes, 0) },
     { rotulo: 'Buscas e Maps', valor: clientes.reduce((s, c) => s + c.custo.buscas + c.custo.maps, 0) },
     { rotulo: 'E-mail', valor: clientes.reduce((s, c) => s + c.custo.email, 0) },
-    { rotulo: 'Infraestrutura', valor: clientes.reduce((s, c) => s + c.custo.infra, 0) },
+    { rotulo: 'Ligações', valor: clientes.reduce((s, c) => s + c.custo.ligacoes, 0) },
+    { rotulo: 'Custos fixos', valor: clientes.reduce((s, c) => s + c.custo.infra, 0) },
   ]
     .filter((i) => i.valor > 0)
     .sort((a, b) => b.valor - a.valor);
@@ -544,8 +545,9 @@ export function PlataformaFinanceiro() {
           <p className="nota-rodape">
             Configuração (bolinhas): WhatsApp conectado · e-mail com domínio verificado · IA de atendimento
             ligada · equipe usando · campanha rodando. Traço: o plano não tem. Custo conta só o que a
-            plataforma paga (serviço com a chave do próprio cliente fica fora) e a infraestrutura é dividida
-            entre os clientes ativos. Sua conta e o CRM de demonstração não entram.
+            plataforma paga (serviço com a chave do próprio cliente fica fora) e os custos fixos (planos dos
+            serviços e servidores, em Saúde e consumo) são divididos entre os clientes ativos. Sua conta e o
+            CRM de demonstração não entram.
           </p>
         </>
       )}
@@ -616,17 +618,15 @@ function DetalheFinanceiro(props: { c: ClientePainel; aoFechar: () => void }) {
         c.custo.whatsapp,
       ],
       [`Reuniões e gravações${reunioesTexto ? ` (${reunioesTexto})` : ''}`, c.custo.reunioes],
-      [
-        `Buscas e Maps (${plural(c.uso.serper + c.uso.apifyGoogle, 'busca', 'buscas')})`,
-        c.custo.buscas + c.custo.maps,
-      ],
+      [`Buscas e Maps (${plural(c.uso.serper, 'busca', 'buscas')})`, c.custo.buscas + c.custo.maps],
       [
         `E-mail${c.pagaPlataforma.email ? ` (${plural(c.uso.emails, 'enviado', 'enviados')})` : ' · conta do cliente'}`,
         c.custo.email,
       ],
-      ['Infraestrutura (rateio)', c.custo.infra],
+      [`Ligações (${plural(c.uso.ligacaoMinutos, 'minuto', 'minutos')})`, c.custo.ligacoes],
+      ['Custos fixos (rateio)', c.custo.infra],
     ] as [string, number][]
-  ).filter(([, v], i) => v > 0 || i === 5);
+  ).filter(([r, v]) => v > 0 || r.startsWith('Custos fixos'));
   const franquias: [string, Franquia, string][] = [
     ['Leads', c.franquias.leads, ''],
     ['Usuários', c.franquias.usuarios, ''],

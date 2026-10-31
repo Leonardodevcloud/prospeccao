@@ -1,6 +1,6 @@
 import { criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
-import type { ItemMaps } from '@prospeccao/integrations/apify';
+import type { ItemMaps } from '@prospeccao/integrations/maps';
 import type { NomeJob, PayloadJob } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -84,14 +84,13 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Google Plac
         return { itens: itensMaps, ignorados: 0, proximaPagina: null };
       },
     }),
-    maps: null,
     geoDa: async () => ({
       // Só a empresa C (sem Maps) chega aqui: fica a ~80 km da base.
       async geocodificar() {
         return { lat: -12.4, lng: -38.0, confianca: 0.9, rotulo: 'longe' };
       },
     }),
-    ajustes: { rebuscaDias: 30, esperaColetaSegundos: 60, maxVerificacoes: 5, confiancaMinimaGeo: 0.6 },
+    ajustes: { rebuscaDias: 30, confiancaMinimaGeo: 0.6 },
   });
 
   /** Executa os jobs publicados, como os workers fariam, até a fila esvaziar. */

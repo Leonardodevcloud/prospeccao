@@ -33,8 +33,6 @@ export interface ClientePainel {
   noFunil: number;
   uso: {
     serper: number;
-    apifyInstagram: number;
-    apifyGoogle: number;
     iaChamadas: number;
     iaTokensEntrada: number;
     iaTokensSaida: number;
@@ -48,6 +46,8 @@ export interface ClientePainel {
     horasReuniao: number;
     transcricaoHoras: number;
     armazenamentoGb: number;
+    /** Minutos de ligação atendidos no mês (feitas e recebidas). */
+    ligacaoMinutos: number;
     /** Leads diferentes com quem a IA de atendimento conversou. */
     conversasIa: number;
   };
@@ -356,37 +356,27 @@ export function PlataformaVisao() {
 /* ───────────────────────── Custos unitários ───────────────────────── */
 
 const CAMPOS_CUSTO: { k: keyof CustosPlataforma; rotulo: string; dica: string }[] = [
-  { k: 'serperMil', rotulo: 'Serper: 1.000 buscas (R$)', dica: 'Busca no Google do enriquecimento.' },
-  {
-    k: 'apifyInstagramMil',
-    rotulo: 'Apify: 1.000 perfis do Instagram (R$)',
-    dica: 'Só com a leitura do Instagram ligada.',
-  },
-  { k: 'apifyGoogleMil', rotulo: 'Apify: 1.000 buscas no Google (R$)', dica: 'Só quando não há Serper.' },
   {
     k: 'iaEntradaMilhao',
     rotulo: 'IA: 1 milhão de tokens enviados (R$)',
     dica: 'Chave de IA da plataforma.',
   },
   { k: 'iaSaidaMilhao', rotulo: 'IA: 1 milhão de tokens recebidos (R$)', dica: 'Chave de IA da plataforma.' },
-  { k: 'emailMil', rotulo: 'E-mail: 1.000 enviados (R$)', dica: 'Resend da plataforma.' },
   { k: 'whatsappNumeroMes', rotulo: 'WhatsApp: cada número por mês (R$)', dica: 'Z-API da plataforma.' },
   {
-    k: 'reuniaoMilMinutos',
-    rotulo: 'Reuniões: 1.000 minutos de participante (R$)',
-    dica: 'LiveKit: cada pessoa na sala conta seus minutos.',
+    k: 'transcricaoHora',
+    rotulo: 'Transcrição: cada hora de áudio (R$)',
+    dica: 'Groq (Whisper): reuniões e ligações, cada voz à parte.',
   },
-  { k: 'transcricaoHora', rotulo: 'Transcrição: cada hora de reunião (R$)', dica: 'Groq (Whisper).' },
   {
     k: 'armazenamentoGbMes',
     rotulo: 'Gravações: cada GB guardado por mês (R$)',
-    dica: 'Cloudflare R2 (os vídeos das reuniões).',
+    dica: 'Cloudflare R2 (gravações das reuniões e das ligações).',
   },
-  { k: 'dolar', rotulo: 'Dólar (R$)', dica: 'Converte o que o Google Maps cobra em dólar.' },
   {
-    k: 'infraMes',
-    rotulo: 'Infraestrutura por mês (R$)',
-    dica: 'Servidores e banco; dividido entre os clientes ativos.',
+    k: 'dolar',
+    rotulo: 'Dólar (R$)',
+    dica: 'Converte o que é cobrado em dólar (Google Maps, LiveKit, Serper).',
   },
 ];
 
@@ -420,6 +410,7 @@ export function FormCustos(props: { inicial: CustosPlataforma; aoSalvar: () => v
     >
       <Mensagem tipo="aviso">
         Valores de partida estimados. Ajuste para os das suas faturas para o custo e a margem ficarem certos.
+        Serper, e-mail, LiveKit e a operadora do telefone seguem os Planos dos serviços (Saúde e consumo).
       </Mensagem>
       {CAMPOS_CUSTO.map((c) => (
         <div className="campo" key={c.k}>

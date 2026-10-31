@@ -2,7 +2,7 @@ import { CUSTOS_PADRAO, type CustosPlataforma } from '@prospeccao/shared/platafo
 import { Button, Panel, Stat } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Navigate } from 'react-router';
+import { Link, Navigate } from 'react-router';
 import { api, type ServicoTestavel } from '../api';
 import { Administradores } from '../componentes/Administradores';
 import { LinkAjuda } from '../componentes/Ajuda';
@@ -36,6 +36,8 @@ interface DadosServicos {
   contato: { whatsapp: string | null; email: string | null };
   pedidosApresentacaoMes: number;
   demonstracao: { contaId: number; geradaEm: string | null } | null;
+  /** Custos fixos do mês: planos dos serviços e servidores (Saúde e consumo). */
+  fixoMensal: number;
 }
 
 interface Resultado {
@@ -155,9 +157,9 @@ export function PlataformaConfiguracoes() {
               tendencia="desce"
             />
             <Stat
-              rotulo="Infraestrutura por mês"
-              valor={fmtReais((custos.data ?? CUSTOS_PADRAO).infraMes)}
-              delta="servidores e banco (custos unitários)"
+              rotulo="Custos fixos por mês"
+              valor={fmtReais(d.fixoMensal)}
+              delta="planos dos serviços e servidores"
             />
           </div>
 
@@ -220,6 +222,14 @@ export function PlataformaConfiguracoes() {
                       <button type="button" className="link-botao" onClick={() => setGaveta('precos')}>
                         Editar
                       </button>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Planos dos serviços e custos fixos</dt>
+                    <dd>
+                      <Link className="link-botao" to="/plataforma/saude?aba=custos">
+                        Abrir
+                      </Link>
                     </dd>
                   </div>
                   <div>

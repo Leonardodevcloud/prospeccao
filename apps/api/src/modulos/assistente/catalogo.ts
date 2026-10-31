@@ -30,7 +30,7 @@ export const DESCRICAO_TABELA: Record<string, string> = {
   mercado:
     'base pública da Receita Federal: todas as empresas do Brasil importadas (CNAE, porte, capital social, cidade, data de abertura). Use para tamanho de mercado; é grande, sempre filtre por uf/cidade/cnae',
   plataforma_organizacoes: 'clientes da plataforma (organizações): plano, limites, módulos, mensalidade',
-  plataforma_consumo_buscas: 'buscas pagas por unidade e serviço (Google, Apify) por dia',
+  plataforma_consumo_buscas: 'buscas pagas no Google (Serper) por unidade e por dia',
   plataforma_pedidos_site: 'pedidos de demonstração que chegaram pelo site e a etapa da venda',
 };
 

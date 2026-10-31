@@ -133,6 +133,7 @@ export const MENU_PLATAFORMA: EntradaMenu[] = [
     icone: 'settings',
     itens: [
       { para: '/plataforma/configuracoes', rotulo: 'Configurações', icone: 'settings' },
+      { para: '/plataforma/saude', rotulo: 'Saúde e consumo', icone: 'bar-chart-3' },
       { para: '/plataforma/operacao', rotulo: 'Operação', icone: 'activity' },
       { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark' },
     ],

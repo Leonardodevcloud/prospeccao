@@ -1,4 +1,4 @@
-import { AppError, custosPlataformaEntrada } from '@prospeccao/shared';
+import { AppError, custosPlataformaEntrada, planosConsumoEntrada } from '@prospeccao/shared';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
@@ -8,6 +8,7 @@ import { abrirSessao } from '../auth/sessao.js';
 import * as demo from '../demonstracao/repositorio.js';
 import * as principal from './contaPrincipal.js';
 import * as repo from './repositorio.js';
+import * as saude from './saude.js';
 import { servicosDaPlataforma, testarServico } from './servicos.js';
 
 const GRAVIDADE = { parado: 0, pouco_uso: 1, no_limite: 2, novo: 3, ok: 4 } as const;
@@ -101,7 +102,7 @@ export function rotasPlataforma(deps: DepsApi): Router {
 
   /** Configurações da plataforma: cada serviço, o contato do site e o CRM de demonstração. */
   r.get('/servicos', async (_req, res) => {
-    const [servicos, principal, contato, demonstracao, pedidos] = await Promise.all([
+    const [servicos, principal, contato, demonstracao, pedidos, planos, custos] = await Promise.all([
       servicosDaPlataforma(deps),
       pool.query<{ id: number }>('SELECT id FROM cadastro.contas WHERE principal ORDER BY id LIMIT 1'),
       pool.query<{ whatsapp: string | null; email: string | null }>(
@@ -112,6 +113,8 @@ export function rotasPlataforma(deps: DepsApi): Router {
         `SELECT count(DISTINCT pedido_id)::int AS n FROM cadastro.pedidos_site_historico
           WHERE texto LIKE '%pela apresentação comercial%' AND criado_em >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'`,
       ),
+      repo.lerPlanos(pool),
+      repo.lerCustos(pool),
     ]);
     res.json({
       servicos,
@@ -119,6 +122,8 @@ export function rotasPlataforma(deps: DepsApi): Router {
       contato: contato.rows[0] ?? { whatsapp: null, email: null },
       pedidosApresentacaoMes: pedidos.rows[0]?.n ?? 0,
       demonstracao,
+      // Planos dos serviços e servidores (Saúde e consumo › Custos).
+      fixoMensal: Math.round(repo.fixoTotal(planos, custos) * 100) / 100,
     });
   });
   r.post('/servicos/:id/testar', async (req, res) => {
@@ -161,6 +166,29 @@ export function rotasPlataforma(deps: DepsApi): Router {
     abrirSessao(res, deps.auth, u.id, d.contaId, u.sessaoId);
     log.info({ master: u.id, conta: d.contaId }, 'demonstração: master entrou');
     res.json(d);
+  });
+
+  /** Saúde e consumo: agora (a tela pede a cada 15 s), o mês e os planos dos serviços. */
+  r.get('/saude/agora', async (_req, res) => {
+    res.json(await saude.agora(deps));
+  });
+  r.get('/saude/mes', async (_req, res) => {
+    res.json(await saude.mes(deps));
+  });
+  r.put('/saude/planos', async (req, res) => {
+    const p = corpo(req, planosConsumoEntrada);
+    await repo.salvarPlanos(pool, p, req.usuario!.id);
+    await auditoria.registrar(pool, {
+      contaId: req.usuario!.contaId,
+      usuarioId: req.usuario!.id,
+      usuarioNome: req.usuario!.nome,
+      comoMaster: true,
+      acao: 'planos_servicos',
+      descricao: `Atualizou os planos dos serviços (LiveKit ${p.livekit.plano}, ${p.telefone.operadora}, Serper ${p.serper.creditos} créditos) e ${p.fixos.length} custos fixos.`,
+      metodo: req.method,
+      caminho: req.baseUrl + req.path,
+    });
+    res.json(await repo.lerPlanos(pool));
   });
 
   r.get('/operacao', async (_req, res) => {

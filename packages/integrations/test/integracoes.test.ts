@@ -1,8 +1,8 @@
 import { Readable } from 'node:stream';
 import iconv from 'iconv-lite';
 import { describe, expect, it } from 'vitest';
-import { ufDoEstado } from '../src/apify/estados.js';
-import { converterItem, detectarEntrega } from '../src/apify/index.js';
+import { ufDoEstado } from '../src/maps/estados.js';
+import { converterItem, detectarEntrega } from '../src/maps/index.js';
 import { lerCsvReceita } from '../src/receita/index.js';
 import { lerEmpresa, lerEstabelecimento, lerSocio } from '../src/receita/layout.js';
 

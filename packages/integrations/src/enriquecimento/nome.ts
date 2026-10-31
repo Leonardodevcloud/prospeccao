@@ -1,4 +1,4 @@
-import { palavrasDoNome } from './apify.js';
+import { palavrasDoNome } from './google.js';
 
 /**
  * Como uma pessoa buscaria a empresa no Google. O nome do Maps costuma trazer a filial

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { criarPool, manterSinalDeVida } from '@prospeccao/db';
+import { criarPool, iniciarMedidor, manterSinalDeVida } from '@prospeccao/db';
 import { criarServicoCobranca } from '@prospeccao/integrations/cobranca';
 import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
@@ -121,6 +121,8 @@ const pararPlanos = iniciarPlanos({ pool, log, filas });
 // Importação de leads: põe no funil o que o worker terminou de gravar (quando o cliente pediu).
 const pararImportacao = iniciarImportacaoLeads(pool, log);
 const pararSinal = manterSinalDeVida(pool, 'api');
+// Medidor das chamadas para fora (Saúde e consumo, no painel da plataforma).
+const pararMedidor = iniciarMedidor(pool);
 // Instagram: números das publicações de cada conta conectada, de 6 em 6 horas.
 const pararConteudo = iniciarConteudo({ pool, log });
 // Devolver as vendas para a Meta: as etapas dos leads de anúncio, a cada minuto.
@@ -148,6 +150,7 @@ encerrarAoReceberSinal(log, async () => {
   pararEmail();
   pararAlertas();
   pararSinal();
+  await pararMedidor();
   pararConteudo();
   pararConversoes();
   pararLigacoes();

@@ -101,9 +101,8 @@ describe.skipIf(!URL_TESTE)(
         },
       },
       placesDa: async () => ({ buscar }),
-      maps: null,
       geoDa: async () => null,
-      ajustes: { rebuscaDias: 30, esperaColetaSegundos: 60, maxVerificacoes: 5, confiancaMinimaGeo: 0.6 },
+      ajustes: { rebuscaDias: 30, confiancaMinimaGeo: 0.6 },
     });
 
     async function drenar(d: Deps) {

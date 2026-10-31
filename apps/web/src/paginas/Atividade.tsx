@@ -145,7 +145,7 @@ function ImportacaoCnpj({ d }: { d: DadosAtividade }) {
   );
 }
 
-/** Uma busca no Apify costuma levar poucos minutos; passando disso, vale avisar. */
+/** Uma busca no Maps costuma levar poucos minutos; passando disso, vale avisar. */
 const BUSCA_DEMORADA_MS = 30 * 60_000;
 
 function quandoDaBusca(b: BuscaAtividade, agora: number) {

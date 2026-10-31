@@ -1,6 +1,7 @@
-import { INICIO_MES_SP, INICIO_MES_SP_TS } from '@prospeccao/db';
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDeRetorno } from '../instagram/rotas.js';
+import { lerPlanos } from './repositorio.js';
+import { usoDoMes } from './saude.js';
 
 /**
  * Configurações da plataforma (painel master): cada serviço que a plataforma usa para todos os
@@ -27,36 +28,34 @@ const n = (x: number) => x.toLocaleString('pt-BR');
 export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataforma[]> {
   const { pool, credenciais } = deps;
   const amb = credenciais.ambiente;
-  const { rows } = await pool.query<{
-    numeros: number;
-    contas_numeros: number;
-    dominios: number;
-    dominios_ok: number;
-    ia: number;
-    minutos: number;
-    transcritas: number;
-    gb: number;
-    places_usd: number;
-    buscas: number;
-    buscas_7d: number;
-    dominios_ativos: number;
-    dominios_pendentes: number;
-  }>(
-    `SELECT (SELECT count(*) FROM comercial.chips WHERE ativo AND token_cifrado IS NOT NULL AND estado LIKE 'ok%')::int AS numeros,
+  const [{ rows }, mes, planos] = await Promise.all([
+    pool.query<{
+      numeros: number;
+      contas_numeros: number;
+      dominios: number;
+      dominios_ok: number;
+      buscas_7d: number;
+      dominios_ativos: number;
+      dominios_pendentes: number;
+    }>(
+      `SELECT (SELECT count(*) FROM comercial.chips WHERE ativo AND token_cifrado IS NOT NULL AND estado LIKE 'ok%')::int AS numeros,
             (SELECT count(DISTINCT conta_id) FROM comercial.chips WHERE ativo AND token_cifrado IS NOT NULL AND estado LIKE 'ok%')::int AS contas_numeros,
             (SELECT count(*) FROM cadastro.dominios_email)::int AS dominios,
             (SELECT count(*) FROM cadastro.dominios_email WHERE situacao = 'verificado')::int AS dominios_ok,
-            coalesce((SELECT sum(chamadas) FROM cadastro.consumo_ia WHERE origem = 'plataforma' AND dia >= ${INICIO_MES_SP}), 0)::int AS ia,
-            coalesce((SELECT sum(segundos_na_sala) FROM comercial.sala_participantes WHERE entrou_em >= ${INICIO_MES_SP_TS}), 0)::float8 / 60 AS minutos,
-            coalesce((SELECT sum(duracao_segundos) FROM comercial.sala_sessoes WHERE transcricao = 'pronta' AND iniciada_em >= ${INICIO_MES_SP_TS}), 0)::float8 / 3600 AS transcritas,
-            coalesce((SELECT sum(video_bytes) FROM comercial.sala_sessoes), 0)::float8 / 1e9 AS gb,
-            coalesce((SELECT sum(gasto_usd) FROM descoberta.v_uso_places_mes WHERE mes = ${INICIO_MES_SP}), 0)::float8 AS places_usd,
-            coalesce((SELECT sum(buscas) FROM cadastro.consumo_buscas WHERE dia >= ${INICIO_MES_SP}), 0)::int AS buscas,
             coalesce((SELECT sum(buscas) FROM cadastro.consumo_buscas WHERE dia >= current_date - 7), 0)::int AS buscas_7d,
             (SELECT count(*) FROM cadastro.organizacoes WHERE dominio_situacao = 'ativo')::int AS dominios_ativos,
             (SELECT count(*) FROM cadastro.organizacoes WHERE dominio_situacao = 'pendente')::int AS dominios_pendentes`,
-  );
+    ),
+    usoDoMes(pool),
+    lerPlanos(pool),
+  ]);
   const u = rows[0]!;
+  const lk = planos.livekit;
+  const minutosSala = mes.reuniaoMin + mes.ligacaoSalaMin;
+  const minutosLigacao = mes.sipFeitasMin + mes.sipRecebidasMin;
+  const pertoDoLimite = minutosSala >= lk.participanteMin * 0.9 || minutosLigacao >= lk.ligacaoMin * 0.9;
+  const temLivekit = !!(deps.reunioes?.video || deps.telefonia?.servico);
+  const gb = (mes.bytesReunioes + mes.bytesLigacoes) / 1e9;
   const reun = deps.reunioes ?? null;
   const ass = deps.assistente ?? null;
   const lista: ServicoPlataforma[] = [];
@@ -108,24 +107,28 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
     papel: 'Nota dos leads, Agente de IA, resumo das reuniões, Argos e e-mails personalizados.',
     estado: amb.iaKey ? 'ok' : 'falta',
     detalhe: amb.iaKey
-      ? `${amb.iaModelo ?? 'modelo padrão'} · ${n(u.ia)} chamadas no mês`
+      ? `${amb.iaModelo ?? 'modelo padrão'} · ${n(mes.iaChamadas)} chamadas no mês`
       : 'Sem a chave: as funções de IA ficam desligadas (a não ser para quem tem chave própria).',
     comoFazer: amb.iaKey ? null : 'Coloque IA_PROVEDOR e IA_API_KEY na api e no worker-enriquecimento.',
     testavel: !!amb.iaKey,
   });
 
-  // Reuniões
+  // Reuniões e ligações (as duas passam pelo LiveKit; a gravação é feita pelo navegador).
   lista.push({
     id: 'livekit',
-    nome: 'Reuniões por vídeo · LiveKit',
-    papel: 'A sala de vídeo das reuniões com os leads.',
-    estado: reun?.video ? (u.minutos > 4500 ? 'aviso' : 'ok') : 'falta',
-    detalhe: reun?.video
-      ? `${n(Math.round(u.minutos))} minutos de participante no mês${u.minutos > 4500 ? ' · perto dos 5.000 do plano gratuito' : ' (o plano gratuito tem 5.000)'}`
+    nome: 'Reuniões e ligações · LiveKit',
+    papel: `As salas de vídeo das reuniões e a ponte das ligações com a operadora. ${
+      reun?.gravacaoNaNuvem
+        ? 'Grava as reuniões na nuvem (pago por minuto).'
+        : 'Não grava: quem grava é o navegador.'
+    }`,
+    estado: temLivekit ? (pertoDoLimite ? 'aviso' : 'ok') : 'falta',
+    detalhe: temLivekit
+      ? `Plano ${lk.plano}: ${n(Math.round(minutosSala))} de ${n(lk.participanteMin)} minutos de sala e ${n(Math.round(minutosLigacao))} de ${n(lk.ligacaoMin)} de ligação no mês`
       : 'Sem LiveKit: a tela Reuniões avisa que a sala não está configurada.',
-    comoFazer: reun?.video
-      ? u.minutos > 4500
-        ? 'Acompanhe em cloud.livekit.io › Settings › Usage e, se precisar, passe para o plano Ship.'
+    comoFazer: temLivekit
+      ? pertoDoLimite
+        ? 'Veja a previsão em Saúde e consumo. Se for passar, mude o plano em cloud.livekit.io e atualize em Planos dos serviços.'
         : null
       : 'Crie o projeto em cloud.livekit.io e coloque LIVEKIT_URL, LIVEKIT_API_KEY e LIVEKIT_API_SECRET na api.',
     testavel: !!reun?.video,
@@ -133,10 +136,10 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
   lista.push({
     id: 'gravacoes',
     nome: 'Gravações · bucket S3 (R2)',
-    papel: 'Guarda as gravações das reuniões e as fotos das visitas.',
+    papel: 'Guarda as gravações das reuniões e das ligações e as fotos das visitas.',
     estado: reun?.armazenamento ? 'ok' : 'falta',
     detalhe: reun?.armazenamento
-      ? `${reun.armazenamento.destino.bucket} · ${u.gb.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} GB de gravações guardadas`
+      ? `${reun.armazenamento.destino.bucket} · ${gb.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} GB de gravações guardadas (reuniões e ligações)`
       : 'Sem bucket: as reuniões acontecem, mas sem gravação, transcrição e resumo.',
     comoFazer: reun?.armazenamento
       ? null
@@ -147,10 +150,10 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
   lista.push({
     id: 'groq',
     nome: 'Transcrição · Groq',
-    papel: 'Transcreve as reuniões, a voz do Argos e a anotação falada das visitas.',
+    papel: 'Transcreve as reuniões, as ligações, a voz do Argos e a anotação falada das visitas.',
     estado: temGroq ? 'ok' : 'falta',
     detalhe: temGroq
-      ? `${u.transcritas.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} horas de reunião transcritas no mês`
+      ? `${(mes.transcricaoReuniaoH + mes.transcricaoLigacaoH).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} horas de áudio transcritas no mês (reuniões e ligações)`
       : 'Sem GROQ_CHAVE: reuniões sem transcrição e o Argos não ouve (só texto).',
     comoFazer: temGroq ? null : 'Crie a chave em console.groq.com e coloque em GROQ_CHAVE na api.',
     testavel: false,
@@ -198,7 +201,7 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
     papel: 'Busca as empresas no Google Maps nas campanhas.',
     estado: amb.placesKey ? 'ok' : 'aviso',
     detalhe: amb.placesKey
-      ? `US$ ${u.places_usd.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} usados no mês`
+      ? `US$ ${mes.placesUsd.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} usados no mês`
       : 'Sem chave na api (o botão Testar não funciona; o worker pode ter a dele).',
     comoFazer: amb.placesKey
       ? null
@@ -207,15 +210,19 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
   });
   lista.push({
     id: 'buscas',
-    nome: 'Busca no Google e Instagram · Serper e Apify',
-    papel: 'Acha site, Instagram e contatos dos leads (worker-enriquecimento).',
-    estado: u.buscas_7d > 0 ? 'ok' : 'aviso',
+    nome: 'Busca no Google · Serper',
+    papel: 'Acha site, Instagram, LinkedIn e contatos dos leads (worker-enriquecimento).',
+    estado: u.buscas_7d > 0 ? (mes.serper >= planos.serper.creditos ? 'aviso' : 'ok') : 'aviso',
     detalhe:
-      u.buscas_7d > 0 ? `${n(u.buscas)} buscas no mês` : 'Nenhuma busca registrada nos últimos 7 dias.',
+      u.buscas_7d > 0
+        ? `${n(mes.serper)} de ${n(planos.serper.creditos)} créditos no mês`
+        : 'Nenhuma busca registrada nos últimos 7 dias.',
     comoFazer:
       u.buscas_7d > 0
-        ? null
-        : 'Se há campanhas rodando, confira SERPER_API_KEY e APIFY_TOKEN no worker-enriquecimento.',
+        ? mes.serper >= planos.serper.creditos
+          ? 'Os créditos do mês acabaram: compre mais no painel do Serper e atualize em Planos dos serviços.'
+          : null
+        : 'Se há campanhas rodando, confira SERPER_API_KEY no worker-enriquecimento.',
     testavel: false,
   });
 

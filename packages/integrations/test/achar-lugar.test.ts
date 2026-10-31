@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { ItemMaps } from '../src/apify/index.js';
 import {
   contatosDosDiretorios,
   converterLugarSerper,
@@ -7,6 +6,7 @@ import {
   resultadosSerper,
 } from '../src/enriquecimento/serper.js';
 import { converterPerfilWhatsapp } from '../src/enriquecimento/servicos.js';
+import type { ItemMaps } from '../src/maps/index.js';
 import { mesmoLugar, textoParaAchar } from '../src/places/index.js';
 
 const lugar = (p: Partial<ItemMaps>): ItemMaps => ({

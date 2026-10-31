@@ -1,10 +1,11 @@
 import { DIA_SP, type Pool, usoIaDoMes } from '@prospeccao/db';
-import type { Logger } from '@prospeccao/shared';
+import { type Logger, NOME_SERVICO, type ServicoExterno } from '@prospeccao/shared';
 import { contaSql } from '../../contexto.js';
 import type { DepsApi, ServicosConta } from '../../dependencias.js';
 import { paraCadaConta } from '../../rotinas.js';
 import * as chips from '../agente/chips.js';
 import { limiteDoMes } from '../consumo/repositorio.js';
+import { alertasDoMes } from '../plataforma/saude.js';
 import { conferir, fecharOsOutros } from './repositorio.js';
 
 /**
@@ -12,7 +13,8 @@ import { conferir, fecharOsOutros } from './repositorio.js';
  *  - e-mail: não está saindo, Resend sem chave com fila parada, avisos do Resend não chegam, teto do mês;
  *  - WhatsApp: chip desconectado, mensagens falhando, fila sem WhatsApp configurado, teto do mês;
  *  - IA: teto do mês atingido, falhando muito;
- *  - plataforma (master): worker sem sinal de vida, enriquecimento parado com fila.
+ *  - plataforma (master): worker sem sinal de vida, enriquecimento parado com fila, serviço externo
+ *    falhando (Saúde e consumo) e plano de serviço perto de acabar.
  */
 
 const LOCK = 7_301_031;
@@ -273,6 +275,47 @@ async function conferirPlataforma(pool: Pool) {
   );
 }
 
+/** Serviços externos falhando (medidor) e planos dos serviços perto do limite: só o master. */
+async function conferirServicosExternos(pool: Pool, log: Logger) {
+  const { rows } = await pool.query<{ servico: ServicoExterno; ultimo_erro: string | null }>(
+    `SELECT servico, ultimo_erro FROM cadastro.servicos_estado
+      WHERE erros_seguidos >= 5 AND ultimo_erro_em > now() - interval '15 minutes'`,
+  );
+  for (const s of rows)
+    await conferir(pool, null, `externo:${s.servico}`, {
+      titulo: `${NOME_SERVICO[s.servico] ?? s.servico} está falhando`,
+      texto: `As últimas chamadas deram erro: ${curto(s.ultimo_erro)}`,
+      link: '/plataforma/saude',
+    });
+  await fecharOsOutros(
+    pool,
+    null,
+    'externo:',
+    rows.map((s) => `externo:${s.servico}`),
+  );
+  const consumo = await alertasDoMes(pool).catch((erro) => {
+    log.warn({ err: erro }, 'alertas: não deu para calcular o consumo do mês');
+    return null;
+  });
+  if (consumo) {
+    for (const a of consumo)
+      await conferir(pool, null, `consumo:${a.id}`, {
+        nivel: 'aviso',
+        titulo: a.titulo,
+        texto: a.texto,
+        link: '/plataforma/saude?aba=mes',
+      });
+    await fecharOsOutros(
+      pool,
+      null,
+      'consumo:',
+      consumo.map((a) => `consumo:${a.id}`),
+    );
+  }
+  // O medidor guarda 35 dias por minuto.
+  await pool.query(`DELETE FROM cadastro.servicos_uso WHERE minuto < now() - interval '35 days'`);
+}
+
 export async function verificarSaude(deps: Deps): Promise<void> {
   const cliente = await deps.pool.connect();
   try {
@@ -286,6 +329,7 @@ export async function verificarSaude(deps: Deps): Promise<void> {
         await conferirIa(deps.pool, contaId);
       });
       await conferirPlataforma(deps.pool);
+      await conferirServicosExternos(deps.pool, deps.log);
     } finally {
       await cliente.query('SELECT pg_advisory_unlock($1)', [LOCK]);
     }

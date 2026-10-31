@@ -166,7 +166,7 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
 
   /**
    * Refaz o enriquecimento de uma parte da campanha: "ab" (notas A e B), "sem_decisor" ou "todos".
-   * MEI e descartados ficam sempre de fora. Custa de novo no Apify e no Gemini; a tela confirma antes.
+   * MEI e descartados ficam sempre de fora. Custa de novo nas buscas (Serper e Google Maps) e na IA; a tela confirma antes.
    */
   r.post('/:id/reenriquecer', async (req, res) => {
     const id = idDaRota(req);

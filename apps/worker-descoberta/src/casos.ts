@@ -1,4 +1,4 @@
-import { converterItem, type ItemMaps, runTerminou } from '@prospeccao/integrations/apify';
+import { converterItem, type ItemMaps } from '@prospeccao/integrations/maps';
 import {
   converterLugar,
   ehLugarPlaces,
@@ -54,7 +54,7 @@ export async function buscarNaBaseCnpj(deps: Deps, campanhaId: number) {
   if ((await repo.buscasEmAberto(deps.pool, campanhaId)) === 0) await finalizarDescoberta(deps, campanhaId);
 }
 
-/** O item guardado em `dados` pode ter vindo do Places ou do Apify. */
+/** O item guardado em `dados` pode ter vindo do Places ou de uma busca antiga (formato do Apify). */
 function converterDados(dados: unknown): ItemMaps | null {
   const d = dados as { origem?: string; item?: ItemMaps } | null;
   if (d?.origem === 'planilha' && d.item) return d.item;
@@ -78,14 +78,12 @@ async function cruzarPendentes(deps: Deps, campanha: repo.CampanhaDescoberta, bu
 }
 
 /**
- * Roda a busca: no Google Places (padrão), na hora, página a página; no Apify (legado),
- * dispara o run e agenda a coleta.
+ * Roda a busca no Google Places, na hora, página a página.
  */
 export async function dispararBuscaMaps(deps: Deps, buscaId: number) {
   const busca = await repo.obterBusca(deps.pool, buscaId);
   if (!busca) throw new ErroDefinitivo(`Busca ${buscaId} não existe`);
-  // Busca só pelo Google Places (chave da conta ou da plataforma). O Apify não dispara buscas
-  // novas: só termina a coleta de runs antigos (coletarBuscaMaps).
+  // Busca só pelo Google Places (chave da conta ou da plataforma).
   const places = await deps.placesDa(busca.conta_id);
   if (places) return buscarNoPlaces(deps, busca, places);
 
@@ -213,58 +211,19 @@ async function buscarNoPlaces(
   await aoConcluirBusca(deps, campanha.id);
 }
 
-/** Confere o run do Apify; se terminou, grava e cruza os resultados. */
+/**
+ * Busca antiga que ficou esperando o run do Apify (de antes da troca para o Places): o Apify saiu do
+ * sistema, então ela é encerrada com o motivo e a campanha segue com o que já achou.
+ */
 export async function coletarBuscaMaps(deps: Deps, buscaId: number) {
   const busca = await repo.obterBusca(deps.pool, buscaId);
-  if (busca?.status !== 'rodando' || !busca.apify_run_id || !busca.dataset_id) return;
-  const campanha = await repo.obterCampanha(deps.pool, busca.campanha_id);
-  if (!campanha) throw new ErroDefinitivo(`Campanha ${busca.campanha_id} não existe`);
-  if (!deps.maps) {
-    await repo.concluirBusca(
-      deps.pool,
-      buscaId,
-      'Apify desligado (sem APIFY_TOKEN): run antigo não coletado.',
-      null,
-    );
-    await aoConcluirBusca(deps, busca.campanha_id);
-    return;
-  }
-
-  const run = await deps.maps.obter(busca.apify_run_id);
-  const estado = runTerminou(run.status);
-
-  if (estado === 'rodando') {
-    const verificacoes = await repo.contarVerificacao(deps.pool, buscaId);
-    if (verificacoes >= deps.ajustes.maxVerificacoes) {
-      await repo.concluirBusca(
-        deps.pool,
-        buscaId,
-        `Run ${run.id} não terminou após ${verificacoes} verificações`,
-        null,
-      );
-      await aoConcluirBusca(deps, busca.campanha_id);
-      return;
-    }
-    await deps.filas.publicar(
-      'maps.coletar',
-      { buscaId },
-      { atrasoSegundos: deps.ajustes.esperaColetaSegundos },
-    );
-    return;
-  }
-
-  if (estado === 'falha') {
-    await repo.concluirBusca(deps.pool, buscaId, `Run ${run.id} terminou com status ${run.status}`, null);
-    await aoConcluirBusca(deps, busca.campanha_id);
-    return;
-  }
-
-  const { itens, ignorados } = await deps.maps.itens(busca.dataset_id);
-  for (const item of itens) await repo.salvarResultado(deps.pool, buscaId, item);
-  const contagem = await cruzarPendentes(deps, campanha, busca);
-
-  await repo.concluirBusca(deps.pool, buscaId, null, itens.length);
-  deps.log.info({ buscaId, itens: itens.length, ignorados, cruzamento: contagem }, 'busca no Maps coletada');
+  if (busca?.status !== 'rodando' || !busca.apify_run_id) return;
+  await repo.concluirBusca(
+    deps.pool,
+    buscaId,
+    'Busca antiga encerrada: o sistema passou a buscar no Google Places. Use "Tentar de novo" para buscar de novo.',
+    null,
+  );
   await aoConcluirBusca(deps, busca.campanha_id);
 }
 
@@ -401,10 +360,6 @@ export function explicarFalhaBusca(erro: unknown): string {
       return 'O Google demorou demais para responder: a busca tenta de novo.';
     return msg.slice(0, 240);
   }
-  if (/HTTP 402|not enough usage|usage limit|credit|insufficient/i.test(msg))
-    return 'Sem crédito no Apify: recarregue ou troque de plano e use "Tentar de novo".';
-  if (/HTTP 401|HTTP 403|token/i.test(msg)) return 'APIFY_TOKEN recusado pelo Apify.';
-  if (/TIMED-OUT|timeout|tempo esgotado/i.test(msg)) return 'O Apify demorou demais para responder.';
   return msg.slice(0, 240);
 }
 

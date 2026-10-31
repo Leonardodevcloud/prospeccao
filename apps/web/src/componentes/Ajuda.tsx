@@ -1528,8 +1528,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
       <>
         <p>
           Quem administra a plataforma entra direto no painel: Visão geral, Vendas, Clientes, Financeiro,
-          Configurações, Operação e Base CNPJ. A sua própria conta e o CRM de demonstração não entram nos
-          números de clientes.
+          Configurações, Saúde e consumo, Operação e Base CNPJ. A sua própria conta e o CRM de demonstração
+          não entram nos números de clientes.
         </p>
         <h3>Financeiro</h3>
         <ul>
@@ -1539,7 +1539,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             <b>Receita por plano</b>, <b>módulos e extras</b> (WhatsApp + IA, números e usuários a mais) e{' '}
-            <b>custo por serviço</b> (IA, WhatsApp, reuniões e gravações, buscas, e-mail e infraestrutura).
+            <b>custo por serviço</b> (IA, WhatsApp, reuniões e gravações, buscas, e-mail, ligações e custos
+            fixos).
           </li>
           <li>
             <b>Tabela de clientes</b>: o que cada um contratou, quanto já usou das franquias (leads, horas de
@@ -1552,9 +1553,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
         </ul>
         <Nota>
-          Custo é estimativa: o uso real vezes os custos unitários (botão Custos unitários). Ajuste os valores
-          pelas suas faturas para a margem ficar certa. Com valor combinado, os itens da mensalidade aparecem
-          na proporção.
+          Custo é estimativa: o uso real vezes os custos unitários (botão Custos unitários) e os Planos dos
+          serviços (em Saúde e consumo): o que o plano já inclui está no custo fixo, dividido entre os
+          clientes ativos, e cada cliente só leva a parte dele no que passar do plano e o minuto da operadora
+          das ligações dele. Ajuste os valores pelas suas faturas para a margem ficar certa. Com valor
+          combinado, os itens da mensalidade aparecem na proporção.
         </Nota>
         <h3>Gestão do cliente</h3>
         <p>No detalhe do cliente (Financeiro) ou em Clientes › Dados da conta e Usuários:</p>
@@ -1581,8 +1584,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
           A lista dos serviços que a plataforma usa para todos os clientes (WhatsApp, e-mail, IA, reuniões,
           gravações, transcrição, voz do Argos, rotas, Google Maps e buscas), se estão funcionando e o que
           falta. <b>Testar</b> faz uma chamada mínima ao serviço; <b>Como fazer</b> diz qual variável colocar
-          e em qual serviço do Railway. Ao lado ficam a tabela de preços, os custos unitários e o contato do
-          site.
+          e em qual serviço do Railway. Ao lado ficam a tabela de preços, os custos unitários, os custos fixos
+          do mês (que vêm de <Link to="/ajuda/saude-consumo">Saúde e consumo</Link>) e o contato do site. Os
+          números do mês não contam o CRM de demonstração.
         </p>
         <h3>Administradores da plataforma</h3>
         <p>
@@ -1628,6 +1632,91 @@ export const ARTIGOS: ArtigoAjuda[] = [
           A demonstração é uma conta separada: não aparece em Clientes nem no Financeiro e as campanhas dela
           nunca buscam empresas de verdade. Nada que você fizer lá afeta um cliente.
         </Nota>
+      </>
+    ),
+  },
+  {
+    id: 'saude-consumo',
+    area: 'Painel da plataforma',
+    soMaster: true,
+    titulo: 'Saúde e consumo dos serviços',
+    resumo:
+      'Se cada serviço externo está respondendo agora, quanto do plano de cada um já foi usado no mês e quanto a plataforma está gastando.',
+    onde: { rotulo: 'Saúde e consumo', para: '/plataforma/saude' },
+    termos:
+      'saúde saude consumo api apis custo custos fixo fixos excedente plano livekit nvoip operadora telefone serper resend z-api groq r2 places ia erro erros falhando tempo real ao vivo previsão limite créditos minutos margem infraestrutura railway',
+    corpo: (
+      <>
+        <p>
+          Em <b>Sistema › Saúde e consumo</b> você vê os serviços externos que a plataforma paga (IA,
+          WhatsApp, LiveKit, transcrição, e-mail, buscas, Google Maps, rotas, cobrança, Instagram e
+          gravações). A conta de demonstração fica de fora de tudo.
+        </p>
+        <h3>Agora</h3>
+        <p>
+          Atualiza sozinha a cada 15 segundos. Cada serviço mostra as chamadas por minuto da última hora, os
+          erros, o tempo de resposta e o último problema (por exemplo, “sem créditos”). Em cima: quantos
+          serviços estão respondendo, os erros da última hora, as reuniões e ligações acontecendo agora e o
+          gasto do mês. Embaixo ficam o banco de dados e os workers.
+        </p>
+        <ul>
+          <li>
+            <b>Vermelho</b>: 5 erros seguidos ou mais de 20% de erro nos últimos 10 minutos. Você recebe um
+            aviso no sino, que fecha sozinho quando o serviço volta.
+          </li>
+          <li>
+            <b>Cinza</b>: o serviço não foi chamado na última hora (normal à noite ou sem campanha rodando).
+          </li>
+        </ul>
+        <h3>Consumo do mês</h3>
+        <p>
+          O que cada plano inclui e quanto já foi usado, com a <b>previsão</b> (onde o mês fecha se continuar
+          no ritmo de hoje; é a linha tracejada na barra). Quando um limite vai acabar antes do fim do mês,
+          aparece um aviso no topo com o dia aproximado e o que acontece depois (cobra o excedente ou para).
+        </p>
+        <ul>
+          <li>
+            <b>LiveKit</b>: minutos de participante (reuniões e quem liga pelo navegador) e minutos de ligação
+            (o lado do lead, feitas e recebidas). As gravações são feitas pelo navegador e não gastam o
+            LiveKit.
+          </li>
+          <li>
+            <b>Telefone</b>: o minuto da operadora (Nvoip ou a que você usar), só das ligações feitas e
+            atendidas, contado como ela cobra (até 3 segundos não cobra, depois 30 segundos e então de 6 em
+            6), separado em celular e fixo.
+          </li>
+          <li>
+            <b>Serper</b>: os créditos do pacote do mês (cerca de 3 buscas por lead enriquecido).
+          </li>
+          <li>
+            IA, Google Maps, e-mail, transcrição, gravações guardadas, números de WhatsApp e rotas (por dia).
+          </li>
+        </ul>
+        <Nota>
+          Os números são medidos pelo próprio sistema (cada chamada, cada minuto de sala e de ligação). Para
+          conferir com a fatura, use o painel de cada serviço (no LiveKit, Settings › Usage).
+        </Nota>
+        <h3>Custos e planos dos serviços</h3>
+        <Passos>
+          <li>
+            Na aba <b>Custos</b>, clique em <b>Planos dos serviços</b> e informe o que você contratou: o plano
+            do LiveKit (quanto custa, o que inclui e o preço do minuto a mais), a operadora do telefone
+            (franquia e preço do minuto para celular e fixo), o pacote do Serper e o plano do Resend.
+          </li>
+          <li>
+            Em <b>Outros custos fixos</b>, coloque o que você paga todo mês, use ou não use: servidores
+            (Railway), Vercel, domínios… Não precisa repetir os planos acima: eles já entram.
+          </li>
+          <li>
+            Salve. O <b>fixo do mês</b> é a soma dos planos e dos outros fixos; o <b>variável</b> é só o que
+            passa do que os planos incluem, mais o que é cobrado por uso (minuto da operadora, IA, Google
+            Maps, números de WhatsApp). Os dois têm o valor até hoje e a previsão do mês.
+          </li>
+        </Passos>
+        <p>
+          O fixo é dividido entre os clientes ativos no custo de cada um (Financeiro e Clientes); no lugar do
+          antigo “Infraestrutura por mês”. O dólar usado é o de Custos unitários.
+        </p>
       </>
     ),
   },

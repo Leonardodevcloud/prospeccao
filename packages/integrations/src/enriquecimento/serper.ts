@@ -1,8 +1,8 @@
 import { normalizarTelefone } from '@prospeccao/shared';
-import type { ItemMaps } from '../apify/index.js';
 import { requisitarJson } from '../http.js';
+import type { ItemMaps } from '../maps/index.js';
 import { type EmpresaParaAchar, type LugarAchado, mesmoLugar, textoParaAchar } from '../places/index.js';
-import type { ResultadoGoogle } from './apify.js';
+import type { ResultadoGoogle } from './google.js';
 import { extrairContatos } from './site.js';
 
 /**

@@ -10,7 +10,6 @@ import {
   interpretarLinkedin,
   nomeDeBusca,
   normalizarSite,
-  type PerfilInstagram,
   palavrasDaEmpresa,
   perfilDoSocio,
   pessoasDaEmpresa,
@@ -130,7 +129,7 @@ function mensagemDe(erro: unknown): string {
   return erro instanceof Error ? erro.message : String(erro);
 }
 
-/** A busca no Google pelo Apify às vezes estoura o tempo do ator: uma segunda tentativa resolve quase sempre. */
+/** A busca no Google às vezes estoura o tempo: uma segunda tentativa resolve quase sempre. */
 async function buscarComRetentativa(
   google: { buscar(consultas: string[]): Promise<Map<string, ResultadoGoogle[]>> },
   consultas: string[],
@@ -143,14 +142,14 @@ async function buscarComRetentativa(
   }
 }
 
-/** Erro da busca no Google (Serper ou Apify) em português curto, sem o JSON bruto. */
-function explicarFalhaBusca(erro: unknown, provedor = 'Apify'): string {
+/** Erro da busca no Google (Serper) em português curto, sem o JSON bruto. */
+function explicarFalhaBusca(erro: unknown, provedor = 'Serper'): string {
   const msg = mensagemDe(erro);
   if (/TIMED-OUT|timeout|tempo esgotado/i.test(msg))
     return `A busca no Google (${provedor}) demorou demais duas vezes. Use "Enriquecer de novo" mais tarde.`;
   if (/HTTP 402|usage|credit|limit/i.test(msg)) return `Sem crédito no ${provedor} para a busca no Google.`;
   if (/HTTP 401|HTTP 403|token|api key|unauthorized/i.test(msg))
-    return `Chave recusada pelo ${provedor} (${provedor === 'Serper' ? 'SERPER_API_KEY' : 'APIFY_TOKEN'}).`;
+    return `Chave recusada pelo ${provedor} (SERPER_API_KEY).`;
   return `Busca no Google falhou: ${msg.slice(0, 160)}`;
 }
 
@@ -604,7 +603,6 @@ export async function enriquecerEmpresa(
     if (!instagram) instagram = instagramBusca;
 
     // 4. Instagram: pelo site, pela busca da razão social; se não, procura no Google.
-    let perfil: PerfilInstagram | null = null;
     let falhaBuscaInstagram: string | null = null;
     const consultaInstagram = `"${nome.nucleo}" ${empresa.cidade.toLowerCase()} instagram`;
     let consultaInstagramLivre: string | null = null;
@@ -634,8 +632,8 @@ export async function enriquecerEmpresa(
       }
     }
     /**
-     * Perfil achado, mas sem leitura (leitor do Instagram fora ou sem crédito): o @ fica como contato
-     * não verificado e o que o Google já mostrou da bio (telefone, WhatsApp, CNPJ) é aproveitado.
+     * Perfil achado: o @ fica como contato não verificado e o que o Google já mostrou da bio
+     * (telefone, CNPJ) é aproveitado. O perfil em si não é aberto.
      */
     const usarTrechoDoGoogle = async (usuario: string, status: repo.StatusEtapa, motivo: string) => {
       const url = `https://www.instagram.com/${usuario}/`;
@@ -676,137 +674,12 @@ export async function enriquecerEmpresa(
       );
     };
 
-    if (instagram && fontes.instagram) {
-      let falhou = false;
-      try {
-        perfil = await fontes.instagram.ler(instagram);
-      } catch (erro) {
-        falhou = true;
-        log.warn({ err: erro, instagram }, 'leitura do Instagram falhou');
-        await usarTrechoDoGoogle(
-          instagram,
-          'erro',
-          /limit|usage|402|403/i.test(mensagemDe(erro))
-            ? 'a leitura do perfil está sem crédito no momento (limite do mês do serviço).'
-            : 'a leitura do perfil falhou agora.',
-        );
-      }
-      if (!perfil && !falhou) {
-        await etapa('instagram', 'sem_resultado', `@${instagram} não abriu (perfil privado ou removido).`);
-      }
-      if (perfil) {
-        const url = `https://www.instagram.com/${perfil.usuario}/`;
-        c.contato({
-          canal: 'instagram',
-          valor: url,
-          fonte: 'instagram',
-          confianca: 85,
-          rotulo: `@${perfil.usuario}`,
-          urlOrigem: url,
-          // O perfil abriu e foi lido.
-          status: 'verificado',
-        });
-        for (const w of perfil.whatsapps) {
-          c.contato({
-            canal: 'whatsapp',
-            valor: w,
-            fonte: 'instagram',
-            confianca: 80,
-            rotulo: 'Link da bio',
-            urlOrigem: url,
-          });
-        }
-        c.contato({
-          canal: 'telefone',
-          valor: perfil.telefone,
-          fonte: 'instagram',
-          confianca: 70,
-          rotulo: 'Contato do perfil comercial',
-          urlOrigem: url,
-        });
-        for (const t of perfil.telefonesNaBio) {
-          c.contato({
-            canal: 'telefone',
-            valor: t,
-            fonte: 'instagram',
-            confianca: 65,
-            rotulo: 'Na bio',
-            urlOrigem: url,
-          });
-        }
-        for (const e of [perfil.email, ...perfil.emailsNaBio]) {
-          c.contato({ canal: 'email', valor: e, fonte: 'instagram', confianca: 70, urlOrigem: url });
-        }
-        if (!empresa.cnpj) cnpjAchado ??= perfil.cnpjs[0] ?? null;
-
-        // Link da bio: abre a página (Linktree, Beacons, site…) e pega os botões de WhatsApp,
-        // telefones e e-mails, seja qual for o modelo da página. Pula se for o site já lido.
-        const daBio: string[] = [];
-        const hostDe = (u: string | null | undefined) => {
-          try {
-            return u ? new URL(u).hostname.replace(/^www\./, '') : null;
-          } catch {
-            return null;
-          }
-        };
-        const linkBio = perfil.link;
-        if (linkBio && fontes.site.lerLinks && hostDe(linkBio) !== hostDe(site?.urlFinal)) {
-          try {
-            const pagina = await fontes.site.lerLinks(linkBio);
-            if (pagina) {
-              const origem = pagina.urlFinal || linkBio;
-              for (const w of pagina.whatsapps) {
-                c.contato({
-                  canal: 'whatsapp',
-                  valor: w,
-                  fonte: 'instagram',
-                  confianca: 80,
-                  rotulo: 'Botão no link da bio',
-                  urlOrigem: origem,
-                });
-              }
-              for (const t of pagina.telefones.slice(0, 5)) {
-                c.contato({
-                  canal: 'telefone',
-                  valor: t,
-                  fonte: 'instagram',
-                  confianca: 60,
-                  rotulo: 'No link da bio',
-                  urlOrigem: origem,
-                });
-              }
-              for (const e of pagina.emails.slice(0, 5)) {
-                c.contato({
-                  canal: 'email',
-                  valor: e,
-                  fonte: 'instagram',
-                  confianca: 60,
-                  rotulo: 'No link da bio',
-                  urlOrigem: origem,
-                });
-              }
-              if (pagina.whatsapps.length) daBio.push(`${pagina.whatsapps.length} WhatsApp`);
-              if (pagina.telefones.length) daBio.push(`${pagina.telefones.length} telefone(s)`);
-              if (pagina.emails.length) daBio.push(`${pagina.emails.length} e-mail(s)`);
-            }
-          } catch (erro) {
-            log.warn({ err: erro, link: linkBio }, 'não consegui abrir o link da bio');
-          }
-        }
-        const bioTexto = linkBio
-          ? daBio.length
-            ? ` Link da bio (${hostDe(linkBio) ?? linkBio}): ${daBio.join(', ')}.`
-            : ` Link da bio (${hostDe(linkBio) ?? linkBio}) sem contatos legíveis.`
-          : '';
-        await etapa(
-          'instagram',
-          'encontrado',
-          `@${perfil.usuario}${perfil.seguidores != null ? `, ${perfil.seguidores} seguidores` : ''}${perfil.whatsapps.length ? ', WhatsApp na bio' : ''}.${bioTexto}`,
-          url,
-        );
-      }
-    } else if (instagram) {
-      await usarTrechoDoGoogle(instagram, 'pulada', 'a leitura do perfil está desligada.');
+    if (instagram) {
+      await usarTrechoDoGoogle(
+        instagram,
+        'encontrado',
+        'o perfil não é aberto: fica o @ e o que o Google mostrou dele.',
+      );
     } else if (falhaBuscaInstagram) {
       // Não é "não tem Instagram": a busca nem rodou.
       await etapa('instagram', 'erro', falhaBuscaInstagram, linkGoogle(consultaInstagram));
@@ -824,7 +697,7 @@ export async function enriquecerEmpresa(
         buscou ? 'sem_resultado' : 'pulada',
         buscou
           ? 'O site não indica e o Google não trouxe um perfil com o nome desta empresa.'
-          : 'Sem busca no Google configurada (SERPER_API_KEY ou APIFY_TOKEN).',
+          : 'Sem busca no Google configurada (SERPER_API_KEY).',
         buscou ? linkGoogle(consultaInstagram) : null,
       );
     }
@@ -921,8 +794,8 @@ export async function enriquecerEmpresa(
             notaMaps: empresa.maps_nota,
             avaliacoesMaps: empresa.maps_avaliacoes,
             temSite: !!site,
-            temInstagram: !!perfil,
-            seguidoresInstagram: perfil?.seguidores ?? null,
+            temInstagram: !!instagram,
+            seguidoresInstagram: null,
           },
           socios: socios.map((s) => ({ nome: s.nome, qualificacao: s.qualificacao })),
           cargosAlvo: campanha.cargos_alvo,
@@ -934,12 +807,12 @@ export async function enriquecerEmpresa(
               whatsapp: n('whatsapp'),
               telefones: n('telefone'),
               emails: n('email'),
-              instagram: !!perfil,
+              instagram: !!instagram,
               site: !!site,
             };
           })(),
           textoSite: site?.texto ?? null,
-          bioInstagram: perfil?.bio ?? null,
+          bioInstagram: null,
         });
       } catch (erro) {
         await etapa('ia', 'erro', `Gemini falhou (${mensagemDe(erro)}); nota por regras.`);
@@ -950,7 +823,7 @@ export async function enriquecerEmpresa(
       avaliacoes: empresa.maps_avaliacoes,
       nota: empresa.maps_nota,
       temWhatsapp,
-      temInstagram: !!perfil,
+      temInstagram: !!instagram,
       temSite: !!site,
       anos: anosDesde(empresa.data_abertura),
       porte: empresa.porte,
@@ -962,7 +835,7 @@ export async function enriquecerEmpresa(
       // Nome citado no site só entra com prova: cargo ao lado do nome e fora de depoimentos.
       const recusadas: string[] = [];
       for (const p of avaliacao.pessoas) {
-        const prova = provarPessoa(p, [site?.texto, perfil?.bio]);
+        const prova = provarPessoa(p, [site?.texto]);
         if (!prova.aceita) {
           recusadas.push(p.nome);
           log.debug({ nome: p.nome, motivo: prova.motivo }, 'pessoa citada descartada');

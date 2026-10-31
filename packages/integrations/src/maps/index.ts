@@ -1,82 +1,14 @@
 import { normalizarTelefone } from '@prospeccao/shared';
 import { z } from 'zod';
-import { requisitarJson } from '../http.js';
 import { ufDoEstado } from './estados.js';
 
-const API = 'https://api.apify.com/v2';
+/**
+ * Item do Google Maps como o sistema guarda (`ItemMaps`). O Google Places e o Serper convertem para
+ * ele. `converterItem` lê os itens antigos guardados no formato do Apify (buscas feitas antes da troca
+ * para o Places), que ainda podem estar nos resultados pendentes.
+ */
 
-export interface ConfigApify {
-  token: string;
-  /** Ator do Google Maps. Padrão: compass~crawler-google-places. */
-  atorMaps: string;
-  /** Campos extras de input do ator (JSON), para ligar opções sem mudar código. */
-  inputExtra?: Record<string, unknown>;
-}
-
-export type StatusRun =
-  | 'READY'
-  | 'RUNNING'
-  | 'SUCCEEDED'
-  | 'FAILED'
-  | 'TIMING-OUT'
-  | 'TIMED-OUT'
-  | 'ABORTING'
-  | 'ABORTED';
-
-export interface Run {
-  id: string;
-  status: StatusRun;
-  datasetId: string;
-}
-
-const respostaRun = z.object({
-  data: z.object({ id: z.string(), status: z.string(), defaultDatasetId: z.string() }),
-});
-
-function autenticacao(cfg: ConfigApify) {
-  return { authorization: `Bearer ${cfg.token}` };
-}
-
-/** Dispara a busca no Maps e devolve o run, sem esperar terminar. */
-export async function iniciarBuscaMaps(
-  cfg: ConfigApify,
-  busca: { termo: string; local: string; max: number },
-): Promise<Run> {
-  const input = {
-    searchStringsArray: [busca.termo],
-    locationQuery: busca.local,
-    maxCrawledPlacesPerSearch: busca.max,
-    language: 'pt-BR',
-    ...cfg.inputExtra,
-  };
-  const r = respostaRun.parse(
-    await requisitarJson(`${API}/acts/${encodeURIComponent(cfg.atorMaps)}/runs`, {
-      servico: 'Apify',
-      method: 'POST',
-      headers: autenticacao(cfg),
-      body: input,
-    }),
-  );
-  return { id: r.data.id, status: r.data.status as StatusRun, datasetId: r.data.defaultDatasetId };
-}
-
-export async function obterRun(cfg: ConfigApify, runId: string): Promise<Run> {
-  const r = respostaRun.parse(
-    await requisitarJson(`${API}/actor-runs/${encodeURIComponent(runId)}`, {
-      servico: 'Apify',
-      headers: autenticacao(cfg),
-    }),
-  );
-  return { id: r.data.id, status: r.data.status as StatusRun, datasetId: r.data.defaultDatasetId };
-}
-
-export function runTerminou(status: StatusRun): 'sucesso' | 'falha' | 'rodando' {
-  if (status === 'SUCCEEDED') return 'sucesso';
-  if (status === 'READY' || status === 'RUNNING') return 'rodando';
-  return 'falha';
-}
-
-/** Item bruto do ator: só validamos o que usamos, o resto fica em `dados`. */
+/** Item antigo (formato do Apify): só validamos o que usamos, o resto fica em `dados`. */
 const itemBruto = z
   .object({
     placeId: z.string().min(1),
@@ -166,27 +98,4 @@ export function converterItem(bruto: unknown): ItemMaps | null {
     entrega: detectarEntrega(i.additionalInfo),
     dados: bruto as Record<string, unknown>,
   };
-}
-
-/** Lê todos os itens do dataset do run, paginando. Itens fora do formato são ignorados. */
-export async function listarItensMaps(
-  cfg: ConfigApify,
-  datasetId: string,
-): Promise<{ itens: ItemMaps[]; ignorados: number }> {
-  const itens: ItemMaps[] = [];
-  let ignorados = 0;
-  const limite = 1000;
-  for (let offset = 0; ; offset += limite) {
-    const pagina = await requisitarJson<unknown[]>(
-      `${API}/datasets/${encodeURIComponent(datasetId)}/items?clean=true&format=json&offset=${offset}&limit=${limite}`,
-      { servico: 'Apify', headers: autenticacao(cfg), timeoutMs: 60_000 },
-    );
-    for (const bruto of pagina) {
-      const item = converterItem(bruto);
-      if (item) itens.push(item);
-      else ignorados++;
-    }
-    if (pagina.length < limite) break;
-  }
-  return { itens, ignorados };
 }

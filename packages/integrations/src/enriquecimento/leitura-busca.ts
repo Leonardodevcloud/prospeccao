@@ -1,6 +1,6 @@
 import { normalizarTelefone } from '@prospeccao/shared';
 import { type ConfigIa, type EsquemaIa, gerarJson } from '../ia/index.js';
-import type { ResultadoGoogle } from './apify.js';
+import type { ResultadoGoogle } from './google.js';
 import { provarPessoa } from './pessoas.js';
 import { normalizarSite, usuarioInstagram } from './site.js';
 

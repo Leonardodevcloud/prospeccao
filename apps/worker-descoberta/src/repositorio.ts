@@ -1,5 +1,5 @@
 import { comTransacao, type Executor, type Pool } from '@prospeccao/db';
-import type { ItemMaps } from '@prospeccao/integrations/apify';
+import type { ItemMaps } from '@prospeccao/integrations/maps';
 
 /** Leituras de outros domínios (só views) e escritas no schema descoberta. */
 
@@ -229,23 +229,6 @@ export interface Busca {
 export async function obterBusca(db: Executor, id: number): Promise<Busca | null> {
   const { rows } = await db.query<Busca>('SELECT * FROM descoberta.buscas_maps WHERE id = $1', [id]);
   return rows[0] ?? null;
-}
-
-export async function marcarBuscaRodando(db: Executor, id: number, runId: string, datasetId: string) {
-  await db.query(
-    `UPDATE descoberta.buscas_maps
-        SET status = 'rodando', apify_run_id = $2, dataset_id = $3, iniciado_em = now(), verificacoes = 0, erro = NULL
-      WHERE id = $1`,
-    [id, runId, datasetId],
-  );
-}
-
-export async function contarVerificacao(db: Executor, id: number): Promise<number> {
-  const { rows } = await db.query<{ verificacoes: number }>(
-    'UPDATE descoberta.buscas_maps SET verificacoes = verificacoes + 1 WHERE id = $1 RETURNING verificacoes',
-    [id],
-  );
-  return rows[0]?.verificacoes ?? 0;
 }
 
 export async function concluirBusca(db: Executor, id: number, erro: string | null, itens: number | null) {

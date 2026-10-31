@@ -1,7 +1,12 @@
 import { setTimeout as esperar } from 'node:timers/promises';
 import { carregarEnv, envBase, opcional } from '@prospeccao/config';
-import { cacheDeCredenciais, chaveDoAmbiente, criarPool, manterSinalDeVida } from '@prospeccao/db';
-import * as apify from '@prospeccao/integrations/apify';
+import {
+  cacheDeCredenciais,
+  chaveDoAmbiente,
+  criarPool,
+  iniciarMedidor,
+  manterSinalDeVida,
+} from '@prospeccao/db';
 import * as ors from '@prospeccao/integrations/ors';
 import * as places from '@prospeccao/integrations/places';
 import { conectarFilas, ErroDefinitivo, encerrarAoReceberSinal, POLITICA_FILAS } from '@prospeccao/queue';
@@ -19,29 +24,11 @@ const env = carregarEnv(
      */
     GOOGLE_PLACES_KEY: opcional(z.string().min(10)),
     CHAVE_CREDENCIAIS: opcional(z.string().min(32)),
-    /** "apify" força o Apify mesmo com a chave do Google (para voltar atrás sem mexer em código). */
-    /** Opcional (legado): Apify só termina a coleta de buscas antigas; buscas novas são no Places. */
-    APIFY_TOKEN: opcional(z.string().min(10)),
-    APIFY_MAPS_ATOR: z.string().default('compass~crawler-google-places'),
-    /** JSON com opções extras do ator, ex.: {"scrapePlaceDetailPage":true}. */
-    APIFY_MAPS_INPUT_EXTRA: z
-      .string()
-      .default('{}')
-      .transform((v, ctx) => {
-        try {
-          return JSON.parse(v) as Record<string, unknown>;
-        } catch {
-          ctx.addIssue({ code: 'custom', message: 'APIFY_MAPS_INPUT_EXTRA precisa ser JSON' });
-          return z.NEVER;
-        }
-      }),
     /** Opcional: só campanhas com raio usam, para localizar empresas que vieram só da Receita. */
     ORS_API_KEY: opcional(z.string().min(10)),
     /** Pausa entre geocodificações: o plano gratuito do ORS aceita 100/min e 1.000/dia. */
     ORS_INTERVALO_MS: z.coerce.number().int().min(0).default(700),
     MAPS_REBUSCA_DIAS: z.coerce.number().int().min(0).default(30),
-    MAPS_ESPERA_SEGUNDOS: z.coerce.number().int().min(10).default(60),
-    MAPS_MAX_VERIFICACOES: z.coerce.number().int().min(1).default(90),
     GEO_CONFIANCA_MINIMA: z.coerce.number().min(0).max(1).default(0.6),
   }),
 );
@@ -55,6 +42,8 @@ if (!chave)
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-descoberta', max: 6 });
 // Sinal de vida para o painel de alertas (worker parado aparece para o master).
 const pararSinal = manterSinalDeVida(pool, 'worker-descoberta');
+// Medidor das chamadas para fora (Saúde e consumo, no painel da plataforma).
+const pararMedidor = iniciarMedidor(pool);
 const filas = await conectarFilas({
   url: env.DATABASE_URL,
   aplicacao: 'worker-descoberta',
@@ -72,9 +61,6 @@ const filas = await conectarFilas({
   ],
 });
 
-const cfgApify: apify.ConfigApify | null = env.APIFY_TOKEN
-  ? { token: env.APIFY_TOKEN, atorMaps: env.APIFY_MAPS_ATOR, inputExtra: env.APIFY_MAPS_INPUT_EXTRA }
-  : null;
 // Credenciais de cada conta (painel master) e as do ambiente, que valem para a conta principal.
 const credenciais = cacheDeCredenciais(pool, chave, {
   placesKey: env.GOOGLE_PLACES_KEY ?? null,
@@ -90,13 +76,6 @@ const deps: Deps = {
     const cfg = c.places;
     return cfg ? { buscar: (busca) => places.buscarTexto(cfg, busca) } : null;
   },
-  maps: cfgApify
-    ? {
-        iniciar: (busca) => apify.iniciarBuscaMaps(cfgApify, busca),
-        obter: (runId) => apify.obterRun(cfgApify, runId),
-        itens: (datasetId) => apify.listarItensMaps(cfgApify, datasetId),
-      }
-    : null,
   async geoDa(contaId) {
     const cfg = (await credenciais.obter(contaId)).ors;
     return cfg
@@ -111,8 +90,6 @@ const deps: Deps = {
   },
   ajustes: {
     rebuscaDias: env.MAPS_REBUSCA_DIAS,
-    esperaColetaSegundos: env.MAPS_ESPERA_SEGUNDOS,
-    maxVerificacoes: env.MAPS_MAX_VERIFICACOES,
     confiancaMinimaGeo: env.GEO_CONFIANCA_MINIMA,
   },
 };
@@ -164,7 +141,6 @@ log.info(
     buscas: env.GOOGLE_PLACES_KEY
       ? 'Google Places (chave da conta ou da plataforma)'
       : 'Google Places (só contas com chave própria)',
-    apify: cfgApify ? 'ligado (reserva)' : 'desligado',
   },
   'worker-descoberta pronto',
 );
@@ -172,6 +148,7 @@ log.info(
 encerrarAoReceberSinal(log, async () => {
   clearInterval(destravar);
   pararSinal();
+  await pararMedidor();
   await filas.parar();
   await pool.end();
 });

@@ -1,5 +1,5 @@
 import { comTransacao, type Executor, type Pool } from '@prospeccao/db';
-import type { ItemMaps } from '@prospeccao/integrations/apify';
+import type { ItemMaps } from '@prospeccao/integrations/maps';
 import { normalizarCidade, normalizarNome } from '@prospeccao/shared';
 import type { CampanhaDescoberta } from './repositorio.js';
 

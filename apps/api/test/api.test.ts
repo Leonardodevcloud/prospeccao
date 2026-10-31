@@ -1,4 +1,4 @@
-import { criarPool, migrar, type Pool } from '@prospeccao/db';
+import { criarPool, gravarMedicoes, migrar, type Pool, registrarChamada } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
 import type { ContextoAgente } from '@prospeccao/integrations/agente';
 import type { NomeJob } from '@prospeccao/queue';
@@ -3702,13 +3702,82 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
 
     const custos = (await ler('/master/plataforma/custos')).body;
     expect(custos.serperMil).toBeGreaterThan(0);
-    const salvo = await enviar('put', '/master/plataforma/custos', { ...custos, infraMes: 0, serperMil: 10 });
-    expect(salvo.body).toMatchObject({ infraMes: 0, serperMil: 10 });
+    const salvo = await enviar('put', '/master/plataforma/custos', { ...custos, serperMil: 10 });
+    expect(salvo.body).toMatchObject({ serperMil: 10 });
+    expect(salvo.body).not.toHaveProperty('infraMes');
     expect((await enviar('put', '/master/plataforma/custos', { ...custos, dolar: -1 })).status).toBe(422);
 
     const op = await ler('/master/plataforma/operacao');
     expect(op.status).toBe(200);
     expect(op.body.enriquecimentoPorDia).toHaveLength(14);
+  });
+  it('saúde e consumo: chamadas medidas, ligações na cadência da operadora, planos e custos fixos', async () => {
+    // Medidor: 5 erros seguidos do Serper e uma IA que respondeu.
+    for (let i = 0; i < 5; i++) registrarChamada('serper', 300, 'HTTP 403 {"message":"Not enough credits"}');
+    registrarChamada('ia', 1800, null);
+    await gravarMedicoes(pool);
+    const agora = await ler('/master/plataforma/saude/agora');
+    expect(agora.status).toBe(200);
+    const serper = agora.body.servicos.find((s: { id: string }) => s.id === 'serper');
+    expect(serper).toMatchObject({ estado: 'erro', chamadas: 5, erros: 5 });
+    expect(serper.ultimoProblema.texto).toContain('Not enough credits');
+    expect(serper.serie).toHaveLength(60);
+    expect(agora.body.servicos.find((s: { id: string }) => s.id === 'ia')).toMatchObject({
+      chamadas: 1,
+      msMedio: 1800,
+    });
+    expect(agora.body.banco.conexoes).toBeGreaterThan(0);
+
+    // Ligações do mês: celular de 61 s (a operadora cobra 66 s), fixo de 20 s (cobra 30 s) e uma recebida.
+    await pool.query(
+      `INSERT INTO comercial.ligacoes (conta_id, direcao, telefone, sala, situacao, iniciada_em, atendida_em, encerrada_em, duracao_segundos)
+       VALUES (1, 'saida', '71998124410', 'lig-saude-1', 'encerrada', now() - interval '90 seconds', now() - interval '61 seconds', now(), 61),
+              (1, 'saida', '7132410098', 'lig-saude-2', 'encerrada', now() - interval '30 seconds', now() - interval '20 seconds', now(), 20),
+              (1, 'entrada', '71988887777', 'lig-saude-3', 'encerrada', now() - interval '120 seconds', now() - interval '100 seconds', now(), 100)`,
+    );
+    const mes = await ler('/master/plataforma/saude/mes');
+    expect(mes.status).toBe(200);
+    const linha = mes.body.custos.variaveis.find((v: { nome: string }) => v.nome === 'Ligações · Nvoip');
+    // 1,1 min × R$ 0,35 + 0,5 min × R$ 0,07.
+    expect(linha.ate).toBeCloseTo(0.42, 2);
+    const sip = mes.body.cotas.find((c: { id: string }) => c.id === 'livekit_ligacao');
+    expect(sip.detalhe).toMatch(/^Feitas 2 · recebidas 2\./);
+    // Fixos: o antigo "Infraestrutura" (Railway) + LiveKit Ship, Serper e Resend do padrão (dólar a 5,50).
+    expect(mes.body.custos.fixos.map((f: { nome: string }) => f.nome)).toEqual([
+      'LiveKit · plano Ship',
+      'Serper · 50.000 créditos',
+      'Resend · plano Pro',
+      'Servidores e banco (Railway)',
+    ]);
+    expect(mes.body.custos.fixoTotal).toBe(910);
+
+    // Planos: inválido não salva; o Build (grátis, sem excedente) zera o LiveKit dos fixos.
+    expect(
+      (await enviar('put', '/master/plataforma/saude/planos', { ...mes.body.planos, ors: { porDia: -1 } }))
+        .status,
+    ).toBe(422);
+    const novos = {
+      ...mes.body.planos,
+      livekit: {
+        plano: 'Build',
+        mensalUsd: 0,
+        participanteMin: 5000,
+        participanteExtraUsd: null,
+        ligacaoMin: 1000,
+        ligacaoExtraUsd: null,
+      },
+      fixos: [{ nome: 'Railway', valor: 200 }],
+    };
+    const salvo = await enviar('put', '/master/plataforma/saude/planos', novos);
+    expect(salvo.status).toBe(200);
+    expect(salvo.body.livekit).toMatchObject({ plano: 'Build', ligacaoExtraUsd: null });
+    const depois = await ler('/master/plataforma/saude/mes');
+    expect(depois.body.custos.fixoTotal).toBe(585);
+    const servicos = await ler('/master/plataforma/servicos');
+    expect(servicos.body.fixoMensal).toBe(585);
+    expect(servicos.body.servicos.find((s: { id: string }) => s.id === 'buscas').nome).toBe(
+      'Busca no Google · Serper',
+    );
   });
   it('organização: gestor com várias unidades, cota de leads, pessoas, leitura e uma empresa por unidade', async () => {
     const criada = await enviar('post', '/master/contas', {

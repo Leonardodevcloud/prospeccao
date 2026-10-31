@@ -1,8 +1,8 @@
 import { normalizarTelefone } from '@prospeccao/shared';
 import { z } from 'zod';
-import { ufDoEstado } from '../apify/estados.js';
-import type { ItemMaps } from '../apify/index.js';
 import { requisitarJson } from '../http.js';
+import { ufDoEstado } from '../maps/estados.js';
+import type { ItemMaps } from '../maps/index.js';
 
 /**
  * Google Places API (New) · Text Search. Substitui o ator do Apify nas buscas do Maps.

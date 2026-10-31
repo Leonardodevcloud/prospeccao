@@ -1,5 +1,5 @@
-export * from './apify.js';
 export * from './cnpj.js';
+export * from './google.js';
 export * from './leitura-busca.js';
 export * from './linkedin.js';
 export * from './nome.js';

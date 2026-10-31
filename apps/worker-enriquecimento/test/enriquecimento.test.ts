@@ -141,7 +141,11 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
         for (const q of qs) {
           if (q.includes('instagram'))
             m.set(q, [
-              resultado('Nova Era (@novaeramotopecas)', 'https://www.instagram.com/novaeramotopecas/'),
+              resultado(
+                'Nova Era (@novaeramotopecas)',
+                'https://www.instagram.com/novaeramotopecas/',
+                'Moto peças em Salvador · CNPJ 33.444.555/0001-81',
+              ),
             ]);
           else if (q.includes('"JOAO DA SILVA"'))
             m.set(q, [
@@ -177,24 +181,6 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
             ]);
         }
         return m;
-      },
-    },
-    instagram: {
-      async ler(usuario) {
-        return {
-          usuario,
-          nome: 'Loja',
-          bio: 'Peças com entrega rápida',
-          link: null,
-          categoria: null,
-          seguidores: 2300,
-          email: null,
-          telefone: null,
-          whatsapps: usuario === 'ladeirapecas' ? ['71998124410'] : ['71988887777'],
-          emailsNaBio: [],
-          telefonesNaBio: [],
-          cnpjs: usuario === 'novaeramotopecas' ? ['33444555000100'] : [],
-        };
       },
     },
     ia: {
@@ -333,7 +319,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       status: 'verificado',
       principal: true,
     });
-    expect([...contatos[0].fontes].sort()).toEqual(['instagram', 'maps', 'site']);
+    expect([...contatos[0].fontes].sort()).toEqual(['maps', 'site']);
     expect(contatos.find((c) => c.valor === 'fiscal@contabilidadeabc.com.br')).toMatchObject({
       status: 'atencao',
       rotulo: 'Pode ser do contador',
@@ -355,14 +341,14 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     ]);
   });
 
-  it('lead só do Maps: acha Instagram pelo Google, CNPJ na bio, e não gasta LinkedIn com nota C', async () => {
+  it('lead só do Maps: acha Instagram pelo Google, CNPJ no trecho da bio, e não gasta LinkedIn com nota C', async () => {
     consultas.length = 0;
     await enriquecerEmpresa(deps(fontesCompletas()), { empresaId: 2, campanhaId: 1 });
     expect(consultas).toEqual(['"Nova Era" salvador instagram']);
     const { rows } = await pool.query(
       `SELECT faixa, instagram, cnpj_achado FROM enriquecimento.leads WHERE empresa_id = 2`,
     );
-    expect(rows[0]).toEqual({ faixa: 'C', instagram: 'novaeramotopecas', cnpj_achado: '33444555000100' });
+    expect(rows[0]).toEqual({ faixa: 'C', instagram: 'novaeramotopecas', cnpj_achado: '33444555000181' });
     const { rows: etapas } = await pool.query(
       `SELECT etapa, status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 2 ORDER BY ordem`,
     );
@@ -501,7 +487,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     expect(emails.map((e) => e.valor)).toEqual(['contato@obotecodopatio.com.br']);
   });
 
-  it('Instagram sem leitura (Apify sem crédito): o @ e o telefone do trecho do Google ficam', async () => {
+  it('Instagram achado no Google: o @ e o telefone do trecho do Google ficam', async () => {
     const { rows: nova } = await pool.query<{ id: number }>(
       `INSERT INTO descoberta.empresas (nome, cidade, uf, place_id)
        VALUES ('Matheus & Rosaria Bar', 'SALVADOR', 'BA', 'p-matheus') RETURNING id`,
@@ -534,13 +520,6 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
           return m;
         },
       },
-      instagram: {
-        async ler() {
-          throw new Error(
-            'Apify: HTTP 403 { "error": { "type": "platform-feature-disabled", "message": "Monthly usage hard limit exceeded" } }',
-          );
-        },
-      },
     };
     await enriquecerEmpresa(deps(fontes), { empresaId: id, campanhaId: 1 });
     const { rows: contatos } = await pool.query(
@@ -556,9 +535,9 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       `SELECT status, detalhe FROM enriquecimento.etapas WHERE empresa_id = $1 AND etapa = 'instagram'`,
       [id],
     );
-    expect(etapa[0].status).toBe('erro');
+    expect(etapa[0].status).toBe('encontrado');
     expect(etapa[0].detalhe).toBe(
-      '@matheuserosaria achado no Google; a leitura do perfil está sem crédito no momento (limite do mês do serviço). Do trecho do Google: 1 telefone(s).',
+      '@matheuserosaria achado no Google; o perfil não é aberto: fica o @ e o que o Google mostrou dele. Do trecho do Google: 1 telefone(s).',
     );
   });
 
@@ -582,11 +561,11 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       `SELECT canal, valor FROM enriquecimento.contatos WHERE empresa_id = 1 ORDER BY canal, valor`,
     );
     expect(contatosAntes.length).toBeGreaterThan(0);
-    const semCredito = {
+    const semCredito: Fontes = {
       ...fontesCompletas(),
-      instagram: {
-        ler: async () => {
-          throw new Error('Apify: HTTP 403 Monthly usage hard limit exceeded');
+      whatsapp: {
+        verificar: async () => {
+          throw new Error('Z-API: HTTP 403 instância desconectada');
         },
       },
     };
@@ -597,7 +576,7 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       `SELECT status, score, instagram, pendencias FROM enriquecimento.leads WHERE empresa_id = 1`,
     );
     expect(depois[0]).toMatchObject({ status: 'concluido', instagram: antes[0].instagram });
-    expect(depois[0].pendencias).toEqual(['instagram']);
+    expect(depois[0].pendencias).toEqual(['whatsapp']);
     expect(depois[0].score).toBeGreaterThanOrEqual(antes[0].score);
     const { rows: contatosDepois } = await pool.query(
       `SELECT canal, valor FROM enriquecimento.contatos WHERE empresa_id = 1 ORDER BY canal, valor`,
@@ -613,21 +592,19 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
 
   it('sem nenhuma chave: só Receita, Maps e site, com nota por regras', async () => {
     const f = fontesCompletas();
-    await enriquecerEmpresa(
-      deps({ site: f.site, google: null, instagram: null, ia: null, places: null, whatsapp: null }),
-      {
-        empresaId: 1,
-        campanhaId: 1,
-        forcar: true,
-      },
-    );
+    await enriquecerEmpresa(deps({ site: f.site, google: null, ia: null, places: null, whatsapp: null }), {
+      empresaId: 1,
+      campanhaId: 1,
+      forcar: true,
+    });
     const { rows } = await pool.query(`SELECT faixa, motivo FROM enriquecimento.leads WHERE empresa_id = 1`);
     expect(rows[0].motivo).toMatch(/^Por regras: 380 avaliações no Google/);
     const { rows: etapas } = await pool.query(
       `SELECT etapa, status, detalhe FROM enriquecimento.etapas WHERE empresa_id = 1 ORDER BY ordem`,
     );
     // Sem as chaves desta vez: o que a rodada anterior achou fica (com o aviso), o resto é pulado.
-    for (const nome of ['instagram', 'ia', 'linkedin', 'places', 'whatsapp']) {
+    // O @ do Instagram vem do site (lido sem chave nenhuma).
+    for (const nome of ['ia', 'linkedin', 'places', 'whatsapp']) {
       const e = etapas.find((x) => x.etapa === nome);
       expect(
         e?.status === 'pulada' || /achado na busca anterior; desta vez foi pulada/.test(e?.detalhe ?? ''),
@@ -915,7 +892,6 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     const fontesBase = (comWhatsappNoMaps: boolean): Fontes => ({
       site: f.site,
       google: null,
-      instagram: null,
       places: null,
       lugar: comWhatsappNoMaps
         ? {
@@ -1037,7 +1013,6 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
       deps({
         site: f.site,
         google: null,
-        instagram: null,
         places: null,
         ia: {
           async avaliar() {

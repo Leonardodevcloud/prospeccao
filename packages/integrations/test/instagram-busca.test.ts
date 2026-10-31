@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { instagramNosResultados } from '../src/enriquecimento/apify.js';
+import { instagramNosResultados } from '../src/enriquecimento/google.js';
 import { nomeDeBusca } from '../src/enriquecimento/nome.js';
 
 const r = (titulo: string, url: string, descricao = '') => ({ titulo, url, descricao });

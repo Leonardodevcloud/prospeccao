@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./apify": "./src/apify/index.ts",
+    "./maps": "./src/maps/index.ts",
     "./ors": "./src/ors/index.ts",
     "./receita": "./src/receita/index.ts",
     "./enriquecimento": "./src/enriquecimento/index.ts",

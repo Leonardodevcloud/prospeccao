@@ -2,7 +2,6 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  converterPerfil,
   extrairContatos,
   instagramNosResultados,
   interpretarLinkedin,
@@ -139,24 +138,6 @@ describe('Google, LinkedIn e Instagram', () => {
         },
       ]),
     ).toBe('autopecasladeira');
-  });
-
-  it('converte perfil do Instagram com WhatsApp na bio', () => {
-    const p = converterPerfil({
-      username: 'AutoPecasLadeira',
-      fullName: 'Ladeira Auto Peças',
-      biography: 'Peças para todas as marcas 🚗 Entregamos em Salvador! Pedidos: (71) 99812-4410',
-      externalUrl: 'https://wa.me/5571998124410',
-      followersCount: 4210,
-      businessEmail: 'Contato@Ladeira.com.br',
-    });
-    expect(p).toMatchObject({
-      usuario: 'autopecasladeira',
-      seguidores: 4210,
-      email: 'contato@ladeira.com.br',
-      whatsapps: ['71998124410'],
-      telefonesNaBio: [],
-    });
   });
 });
 

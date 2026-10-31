@@ -31,6 +31,7 @@ export {
   salvarCredenciais,
 } from './credenciais.js';
 export { chaveTitular, gravarLead, listaDeLeadsManuais, type OrigemLead } from './leads.js';
+export { gravarMedicoes, iniciarMedidor, registrarChamada } from './medidor.js';
 export { migrar, PASTA_MIGRATIONS, type StatusMigration, statusMigrations } from './migrar.js';
 export {
   comTransacao,

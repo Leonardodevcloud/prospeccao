@@ -11,10 +11,6 @@ export interface CustosPlataforma {
   dolar: number;
   /** Serper: cada 1.000 buscas no Google (enriquecimento). */
   serperMil: number;
-  /** Apify: cada 1.000 perfis do Instagram lidos. */
-  apifyInstagramMil: number;
-  /** Apify: cada 1.000 buscas no Google (só quando não há Serper). */
-  apifyGoogleMil: number;
   /** IA da plataforma: cada 1 milhão de tokens enviados e recebidos. */
   iaEntradaMilhao: number;
   iaSaidaMilhao: number;
@@ -22,8 +18,6 @@ export interface CustosPlataforma {
   emailMil: number;
   /** WhatsApp (Z-API da plataforma): cada número conectado, por mês. */
   whatsappNumeroMes: number;
-  /** Infraestrutura (servidores, banco) rateada igualmente entre os clientes ativos, por mês. */
-  infraMes: number;
   /** Reuniões por vídeo (LiveKit): cada 1.000 minutos de participante. */
   reuniaoMilMinutos: number;
   /** Transcrição das reuniões (Groq): cada hora de áudio. */
@@ -35,13 +29,10 @@ export interface CustosPlataforma {
 export const CUSTOS_PADRAO: CustosPlataforma = {
   dolar: 5.5,
   serperMil: 5.5,
-  apifyInstagramMil: 12.65,
-  apifyGoogleMil: 19.25,
   iaEntradaMilhao: 1.6,
   iaSaidaMilhao: 6.1,
   emailMil: 2.2,
   whatsappNumeroMes: 99.99,
-  infraMes: 250,
   reuniaoMilMinutos: 2.75,
   transcricaoHora: 0.22,
   armazenamentoGbMes: 0.08,
@@ -51,13 +42,10 @@ const valor = z.number().min(0).max(1_000_000);
 export const custosPlataformaEntrada = z.object({
   dolar: valor,
   serperMil: valor,
-  apifyInstagramMil: valor,
-  apifyGoogleMil: valor,
   iaEntradaMilhao: valor,
   iaSaidaMilhao: valor,
   emailMil: valor,
   whatsappNumeroMes: valor,
-  infraMes: valor,
   reuniaoMilMinutos: valor,
   transcricaoHora: valor,
   armazenamentoGbMes: valor,
@@ -72,8 +60,6 @@ export function custosCompletos(c: unknown): CustosPlataforma {
 /** O que uma conta consumiu no mês e que a plataforma paga (chaves da plataforma). */
 export interface UsoPago {
   serper: number;
-  apifyInstagram: number;
-  apifyGoogle: number;
   iaTokensEntrada: number;
   iaTokensSaida: number;
   emails: number;
@@ -85,6 +71,9 @@ export interface UsoPago {
   transcricaoHoras?: number;
   /** GB guardados (gravações e fotos). */
   armazenamentoGb?: number;
+  /** Minutos de ligação cobrados pela operadora no mês (já na cadência dela), para celular e fixo. */
+  ligacaoCelularMin?: number;
+  ligacaoFixoMin?: number;
 }
 
 export interface CustoEstimado {
@@ -95,18 +84,22 @@ export interface CustoEstimado {
   whatsapp: number;
   /** Reuniões por vídeo: sala, transcrição e o que fica guardado. */
   reunioes: number;
+  /** Ligações: o minuto da operadora (celular e fixo). */
+  ligacoes: number;
+  /** Custos fixos do mês (planos dos serviços e servidores), divididos entre os clientes pagantes. */
   infra: number;
   total: number;
 }
 
 /** Custo estimado do mês de uma conta (reais, duas casas). */
-export function custoEstimado(u: UsoPago, c: CustosPlataforma, infraPorConta: number): CustoEstimado {
+export function custoEstimado(
+  u: UsoPago,
+  c: CustosPlataforma,
+  infraPorConta: number,
+  telefone: { celularMin: number; fixoMin: number } = { celularMin: 0, fixoMin: 0 },
+): CustoEstimado {
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  const buscas = r2(
-    (u.serper / 1000) * c.serperMil +
-      (u.apifyInstagram / 1000) * c.apifyInstagramMil +
-      (u.apifyGoogle / 1000) * c.apifyGoogleMil,
-  );
+  const buscas = r2((u.serper / 1000) * c.serperMil);
   const ia = r2((u.iaTokensEntrada / 1e6) * c.iaEntradaMilhao + (u.iaTokensSaida / 1e6) * c.iaSaidaMilhao);
   const maps = r2(u.placesUsd * c.dolar);
   const email = r2((u.emails / 1000) * c.emailMil);
@@ -116,6 +109,9 @@ export function custoEstimado(u: UsoPago, c: CustosPlataforma, infraPorConta: nu
       (u.transcricaoHoras ?? 0) * c.transcricaoHora +
       (u.armazenamentoGb ?? 0) * c.armazenamentoGbMes,
   );
+  const ligacoes = r2(
+    (u.ligacaoCelularMin ?? 0) * telefone.celularMin + (u.ligacaoFixoMin ?? 0) * telefone.fixoMin,
+  );
   const infra = r2(infraPorConta);
   return {
     buscas,
@@ -124,8 +120,9 @@ export function custoEstimado(u: UsoPago, c: CustosPlataforma, infraPorConta: nu
     email,
     whatsapp,
     reunioes,
+    ligacoes,
     infra,
-    total: r2(buscas + ia + maps + email + whatsapp + reunioes + infra),
+    total: r2(buscas + ia + maps + email + whatsapp + reunioes + ligacoes + infra),
   };
 }
 

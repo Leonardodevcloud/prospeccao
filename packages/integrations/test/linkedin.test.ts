@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ResultadoGoogle } from '../src/enriquecimento/apify.js';
-import { interpretarLinkedin } from '../src/enriquecimento/apify.js';
+import type { ResultadoGoogle } from '../src/enriquecimento/google.js';
+import { interpretarLinkedin } from '../src/enriquecimento/google.js';
 import {
   mesmoNome,
   palavrasDaEmpresa,

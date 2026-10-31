@@ -5,6 +5,7 @@ import {
   contaDaCampanha,
   contarBuscas,
   criarPool,
+  iniciarMedidor,
   lerChipWhatsapp,
   manterSinalDeVida,
   medidorDeIa,
@@ -20,11 +21,7 @@ import * as repo from './repositorio.js';
 
 const env = carregarEnv(
   envBase.extend({
-    /** Google (LinkedIn/Instagram) e perfis do Instagram. Sem ele, essas fontes são puladas. */
-    APIFY_TOKEN: opcional(z.string().min(10)),
-    APIFY_ATOR_GOOGLE: z.string().default('apify~google-search-scraper'),
-    APIFY_ATOR_INSTAGRAM: z.string().default('apify~instagram-profile-scraper'),
-    /** Busca no Google pelo Serper (LinkedIn e Instagram). Com ela, o Apify só lê perfis do Instagram. */
+    /** Busca no Google pelo Serper (site, LinkedIn, Instagram e diretórios). Sem ela, essas fontes são puladas. */
     SERPER_API_KEY: opcional(z.string().min(10)),
     /**
      * Nota de ICP e leitura do site: IA da plataforma (deepseek, gemini ou openai). Contas com IA
@@ -54,11 +51,6 @@ const env = carregarEnv(
     ENRIQ_BUSCAR_INSTAGRAM: booleano.default(true),
     /** Procura no Google (nome + endereço) quem veio da base de CNPJ e não apareceu nas buscas. */
     ENRIQ_ACHAR_NO_GOOGLE: booleano.default(true),
-    /**
-     * Abre o perfil do Instagram pelo Apify (bio completa, link da bio, seguidores). Desligado, o
-     * sistema usa só o @ e o trecho que o Google (Serper) já mostra, sem custo do Apify.
-     */
-    ENRIQ_LER_INSTAGRAM: booleano.default(true),
     /** Confirma o CNPJ de quem veio só do Maps na BrasilAPI (dados públicos da Receita, grátis). */
     ENRIQ_CNPJ_PUBLICO: booleano.default(true),
     /** Base paga Direct Data (telefones atualizados). Sem o token, a etapa não roda. */
@@ -79,6 +71,8 @@ const log = criarLogger('worker-enriquecimento', env.LOG_LEVEL);
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-enriquecimento', max: 4 });
 // Sinal de vida para o painel de alertas (worker parado aparece para o master).
 const pararSinal = manterSinalDeVida(pool, 'worker-enriquecimento');
+// Medidor das chamadas para fora (Saúde e consumo, no painel da plataforma).
+const pararMedidor = iniciarMedidor(pool);
 const filas = await conectarFilas({
   url: env.DATABASE_URL,
   aplicacao: 'worker-enriquecimento',
@@ -86,9 +80,6 @@ const filas = await conectarFilas({
   filas: ['enriquecimento.solicitar'],
 });
 
-const apify: enriq.ConfigApifyEnriq | null = env.APIFY_TOKEN
-  ? { token: env.APIFY_TOKEN, atorGoogle: env.APIFY_ATOR_GOOGLE, atorInstagram: env.APIFY_ATOR_INSTAGRAM }
-  : null;
 const espera = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 const serper = env.SERPER_API_KEY ? { apiKey: env.SERPER_API_KEY } : null;
 
@@ -104,31 +95,23 @@ const credenciais = cacheDeCredenciais(pool, chaveDoAmbiente(), {
   iaBaseUrl: env.IA_BASE_URL ?? null,
 });
 
-/** Fontes da plataforma: as mesmas para todas as contas (Serper, Apify, base paga, sites). */
-const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'instagram' | 'diretorios' | 'basePaga' | 'cnpj'> =
-  {
-    site: { ler: (url) => enriq.lerSite(url), lerLinks: (url) => enriq.lerPaginaDeLinks(url) },
-    // Serper é mais barato e rápido; o Apify fica de reserva quando não há a chave do Serper.
-    google: serper
-      ? { nome: 'Serper', buscar: (consultas) => enriq.buscarNoGoogleSerper(serper, consultas) }
-      : apify
-        ? { nome: 'Apify', buscar: (consultas) => enriq.buscarNoGoogle(apify, consultas) }
-        : null,
-    instagram:
-      apify && env.ENRIQ_LER_INSTAGRAM
-        ? { ler: (usuario) => enriq.lerPerfilInstagram(apify, usuario) }
-        : null,
-    diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
-    cnpj: env.ENRIQ_CNPJ_PUBLICO ? { consultar: (cnpj) => enriq.consultarCnpjPublico(cnpj) } : null,
-    basePaga: env.DIRECTD_TOKEN
-      ? {
-          nome: 'Direct Data',
-          precoBrl: env.DIRECTD_PRECO_BRL,
-          consultar: (cnpj) =>
-            enriq.consultarDirectData({ token: env.DIRECTD_TOKEN! }, cnpj, normalizarTelefone),
-        }
-      : null,
-  };
+/** Fontes da plataforma: as mesmas para todas as contas (Serper, base paga, sites). */
+const fontesDaPlataforma: Pick<Fontes, 'site' | 'google' | 'diretorios' | 'basePaga' | 'cnpj'> = {
+  site: { ler: (url) => enriq.lerSite(url) },
+  google: serper
+    ? { nome: 'Serper', buscar: (consultas) => enriq.buscarNoGoogleSerper(serper, consultas) }
+    : null,
+  diretorios: serper ? { buscar: (e) => enriq.buscarDiretorios(serper, e) } : null,
+  cnpj: env.ENRIQ_CNPJ_PUBLICO ? { consultar: (cnpj) => enriq.consultarCnpjPublico(cnpj) } : null,
+  basePaga: env.DIRECTD_TOKEN
+    ? {
+        nome: 'Direct Data',
+        precoBrl: env.DIRECTD_PRECO_BRL,
+        consultar: (cnpj) =>
+          enriq.consultarDirectData({ token: env.DIRECTD_TOKEN! }, cnpj, normalizarTelefone),
+      }
+    : null,
+};
 
 /** Fontes de uma conta: a IA, o Google Places e o chip do WhatsApp são os dela. */
 async function fontesDa(contaId: number): Promise<Fontes> {
@@ -143,33 +126,8 @@ async function fontesDa(contaId: number): Promise<Fontes> {
   const serperConta = serper
     ? { ...serper, aoBuscar: (n: number) => void contarBuscas(pool, contaId, n) }
     : null;
-  // Apify (Instagram e, sem Serper, o Google) também conta no consumo da conta (painel da plataforma).
-  const apifyConta = {
-    ...(fontesDaPlataforma.instagram
-      ? {
-          instagram: {
-            ler: (usuario: string) => {
-              void contarBuscas(pool, contaId, 1, 'apify_instagram');
-              return fontesDaPlataforma.instagram!.ler(usuario);
-            },
-          },
-        }
-      : {}),
-    ...(!serper && fontesDaPlataforma.google
-      ? {
-          google: {
-            nome: fontesDaPlataforma.google.nome,
-            buscar: (consultas: string[]) => {
-              void contarBuscas(pool, contaId, consultas.length, 'apify_google');
-              return fontesDaPlataforma.google!.buscar(consultas);
-            },
-          },
-        }
-      : {}),
-  };
   return {
     ...fontesDaPlataforma,
-    ...apifyConta,
     ...(serperConta
       ? {
           google: {
@@ -262,8 +220,7 @@ if (env.ENRIQ_PAUSADO) {
 const ligado = (v: unknown) => (v ? 'ligado' : 'desligado');
 log.info(
   {
-    busca_no_google: serper ? 'Serper' : apify ? 'Apify' : 'desligada',
-    perfis_instagram: ligado(apify && env.ENRIQ_LER_INSTAGRAM),
+    busca_no_google: serper ? 'Serper' : 'desligada',
     ia: 'a de cada conta (ou a da plataforma: IA_API_KEY)',
     places_whatsapp: 'os de cada conta (painel master)',
     diretorios: ligado(serper),
@@ -276,6 +233,7 @@ log.info(
 
 encerrarAoReceberSinal(log, async () => {
   pararSinal();
+  await pararMedidor();
   clearInterval(batimento);
   await filas.parar();
   await pool.end();

@@ -1,4 +1,4 @@
-import { interpretarLinkedin, type PessoaLinkedin, palavrasDoNome, type ResultadoGoogle } from './apify.js';
+import { interpretarLinkedin, type PessoaLinkedin, palavrasDoNome, type ResultadoGoogle } from './google.js';
 
 /**
  * Regras para ligar um perfil do LinkedIn a uma empresa (e a um sócio dela) sem cair em homônimo.

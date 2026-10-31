@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Encontra empresas das campanhas: base de CNPJ, Google Maps (Apify), cruzamento e localização (schema descoberta).",
+  "description": "Encontra empresas das campanhas: base de CNPJ, Google Maps (Places), cruzamento e localização (schema descoberta).",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "build": "tsup",

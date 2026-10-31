@@ -10,7 +10,6 @@ import type {
   EntradaLeituraBusca,
   LeituraBusca,
   LugarAchado,
-  PerfilInstagram,
   PerfilWhatsapp,
   ResultadoGoogle,
   ResultadoSite,
@@ -24,15 +23,12 @@ import type { Logger } from '@prospeccao/shared';
 export interface Fontes {
   site: {
     ler(url: string): Promise<ResultadoSite | null>;
-    /** Página do link da bio do Instagram (Linktree, Beacons…): botões de WhatsApp e contatos. */
-    lerLinks?(url: string): Promise<ResultadoSite | null>;
   };
   google: {
-    /** Quem faz a busca ("Serper" ou "Apify"), para as mensagens de erro. */
+    /** Quem faz a busca ("Serper"), para as mensagens de erro. */
     nome?: string;
     buscar(consultas: string[]): Promise<Map<string, ResultadoGoogle[]>>;
   } | null;
-  instagram: { ler(usuario: string): Promise<PerfilInstagram | null> } | null;
   ia: {
     avaliar(entrada: EntradaAvaliacao): Promise<AvaliacaoIa>;
     /** Lê a página de resultados do Google e tira Instagram, site, contatos e pessoas. */

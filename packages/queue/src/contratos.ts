@@ -43,7 +43,7 @@ export const JOBS = {
     buscaId: z.number().int().positive(),
   }),
 
-  /** worker-descoberta (interno): conferir se o run do Apify terminou e coletar. */
+  /** worker-descoberta (interno): encerra buscas antigas que esperavam o run do Apify (legado). */
   'maps.coletar': z.object({
     buscaId: z.number().int().positive(),
   }),

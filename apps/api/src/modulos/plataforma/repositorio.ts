@@ -10,8 +10,11 @@ import {
   type CustosPlataforma,
   custoEstimado,
   custosCompletos,
+  fixosDoMes,
   type Plano,
   type PlanoEfetivo,
+  type PlanosConsumo,
+  planosCompletos,
   type SinalSaude,
   type UsoPago,
 } from '@prospeccao/shared';
@@ -21,6 +24,63 @@ import { type PlanoComUso, planoDaOrganizacao, tabelaDePrecos } from '../plano/r
  * Painel da plataforma (só o master): receita, consumo e custo de cada cliente, saúde de uso e a
  * operação. As consultas atravessam as contas de propósito.
  */
+
+/** Segundos que a operadora cobra de uma ligação atendida (cadência 3/30/6, como `segundosCobrados`). */
+export const SEGUNDOS_COBRADOS = `CASE WHEN duracao_segundos <= 3 THEN 0 WHEN duracao_segundos <= 30 THEN 30
+  ELSE 30 + ceil((duracao_segundos - 30) / 6.0) * 6 END`;
+/** O número do lead é celular (DDD + 9 + 8 dígitos). */
+export const CELULAR = `(length(telefone) = 11 AND substr(telefone, 3, 1) = '9')`;
+
+/** Planos que a plataforma contratou em cada serviço e os outros custos fixos (Saúde e consumo). */
+export async function lerPlanos(db: Executor): Promise<PlanosConsumo> {
+  const { rows } = await db.query<{ dados: unknown }>(
+    'SELECT dados FROM cadastro.consumo_planos WHERE id = 1',
+  );
+  return planosCompletos(rows[0]?.dados);
+}
+
+export async function salvarPlanos(db: Executor, p: PlanosConsumo, usuarioId: number): Promise<void> {
+  await db.query(
+    `INSERT INTO cadastro.consumo_planos (id, dados, atualizado_em, atualizado_por) VALUES (1, $1, now(), $2)
+     ON CONFLICT (id) DO UPDATE SET dados = EXCLUDED.dados, atualizado_em = now(), atualizado_por = EXCLUDED.atualizado_por`,
+    [JSON.stringify(p), usuarioId],
+  );
+}
+
+/** Custo fixo do mês (planos dos serviços + outros fixos), em reais. */
+export function fixoTotal(p: PlanosConsumo, custos: CustosPlataforma): number {
+  return fixosDoMes(p, custos.dolar).reduce((t, f) => t + f.valor, 0);
+}
+
+/**
+ * Serper, e-mail e salas do LiveKit já estão pagos no plano (custo fixo): o cliente só leva a parte
+ * dele no que passou do incluso. Os preços por unidade viram "o excedente do mês dividido pelo uso
+ * de todos" (zero enquanto ninguém passou do plano).
+ */
+function precosAlemDosPlanos(linhas: LinhaConta[], p: PlanosConsumo, c: CustosPlataforma): CustosPlataforma {
+  const soma = (f: (l: LinhaConta) => number) => linhas.reduce((t, l) => t + f(l), 0);
+  const porMil = (total: number, custoExcedente: number) => (total > 0 ? (custoExcedente / total) * 1000 : 0);
+  const buscas = soma((l) => l.serper);
+  const emails = soma((l) => l.emails);
+  const minutos = soma((l) => l.reuniaoSegundosPessoas) / 60;
+  return {
+    ...c,
+    serperMil: porMil(
+      buscas,
+      p.serper.creditos
+        ? Math.max(0, buscas - p.serper.creditos) * (p.serper.mensalUsd / p.serper.creditos) * c.dolar
+        : 0,
+    ),
+    emailMil: porMil(
+      emails,
+      (Math.max(0, emails - p.resend.emails) / 1000) * (p.resend.extraUsdMil ?? 0) * c.dolar,
+    ),
+    reuniaoMilMinutos: porMil(
+      minutos,
+      Math.max(0, minutos - p.livekit.participanteMin) * (p.livekit.participanteExtraUsd ?? 0) * c.dolar,
+    ),
+  };
+}
 
 export async function lerCustos(db: Executor): Promise<CustosPlataforma> {
   const { rows } = await db.query<{ dados: unknown }>(
@@ -54,8 +114,6 @@ interface LinhaConta {
   leadsMesAnterior: number;
   noFunil: number;
   serper: number;
-  apifyInstagram: number;
-  apifyGoogle: number;
   iaChamadas: number;
   iaEntrada: number;
   iaSaida: number;
@@ -71,6 +129,11 @@ interface LinhaConta {
   transcricaoSegundos: number;
   /** Tudo o que está guardado (gravações), em bytes. */
   armazenamentoBytes: number;
+  /** Ligações feitas e atendidas no mês: segundos que a operadora cobra (cadência 3/30/6). */
+  ligacaoCelularSeg: number;
+  ligacaoFixoSeg: number;
+  /** Minutos de ligação no mês (feitas e recebidas, atendidas). */
+  ligacaoMinutos: number;
   conversasIa: number;
   /** Configuração da conta. */
   chipsConectados: number;
@@ -100,8 +163,7 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
               AS "leadsMesAnterior",
             (SELECT count(*) FROM comercial.oportunidades o
               WHERE o.conta_id = c.id AND o.etapa NOT IN ('ganho', 'perdido', 'descartado'))::int AS "noFunil",
-            coalesce(b.serper, 0)::int AS serper, coalesce(b.apify_instagram, 0)::int AS "apifyInstagram",
-            coalesce(b.apify_google, 0)::int AS "apifyGoogle",
+            coalesce(b.serper, 0)::int AS serper,
             coalesce(ia.chamadas, 0)::int AS "iaChamadas", coalesce(ia.entrada, 0)::float8 AS "iaEntrada",
             coalesce(ia.saida, 0)::float8 AS "iaSaida", coalesce(ia.chamadas_conta, 0)::int AS "iaChamadasConta",
             (SELECT count(*) FROM comercial.envios_email en
@@ -120,11 +182,19 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
             coalesce((SELECT sum(extract(epoch FROM (coalesce(ss.encerrada_em, now()) - ss.iniciada_em)))
                         FROM comercial.sala_sessoes ss
                        WHERE ss.conta_id = c.id AND ss.iniciada_em >= ${INICIO_MES_SP_TS}), 0)::float8 AS "reuniaoSegundos",
-            coalesce((SELECT sum(ss.duracao_segundos) FROM comercial.sala_sessoes ss
-                       WHERE ss.conta_id = c.id AND ss.transcricao = 'pronta'
-                         AND ss.iniciada_em >= ${INICIO_MES_SP_TS}), 0)::float8 AS "transcricaoSegundos",
+            -- Transcrição: cada voz é transcrita à parte (reuniões: o tempo de cada pessoa; ligações: os dois lados).
+            coalesce((SELECT sum(sp.segundos_na_sala) FROM comercial.sala_participantes sp
+                        JOIN comercial.sala_sessoes ss ON ss.sala_id = sp.sala_id AND ss.transcricao = 'pronta'
+                         AND sp.entrou_em >= ss.iniciada_em AND sp.entrou_em < coalesce(ss.encerrada_em, now())
+                       WHERE sp.conta_id = c.id AND ss.iniciada_em >= ${INICIO_MES_SP_TS}), 0)::float8
+              + coalesce((SELECT sum(2 * lt.duracao_segundos) FROM comercial.ligacoes lt
+                           WHERE lt.conta_id = c.id AND lt.transcricao = 'pronta'
+                             AND lt.iniciada_em >= ${INICIO_MES_SP_TS}), 0)::float8 AS "transcricaoSegundos",
             coalesce((SELECT sum(ss.video_bytes) FROM comercial.sala_sessoes ss WHERE ss.conta_id = c.id), 0)::float8
+              + coalesce((SELECT sum(la.bytes) FROM comercial.ligacao_audios la WHERE la.conta_id = c.id), 0)::float8
               AS "armazenamentoBytes",
+            coalesce(lg.celular, 0)::float8 AS "ligacaoCelularSeg", coalesce(lg.fixo, 0)::float8 AS "ligacaoFixoSeg",
+            coalesce(lg.minutos, 0)::float8 AS "ligacaoMinutos",
             (SELECT count(DISTINCT a.empresa_id) FROM comercial.atividades a
               WHERE a.conta_id = c.id AND a.autor = 'agente' AND a.direcao = 'enviada'
                 AND a.criado_em >= ${INICIO_MES_SP_TS})::int AS "conversasIa",
@@ -145,12 +215,17 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
        LEFT JOIN comercial.config_agente ag ON ag.conta_id = c.id
        JOIN cadastro.organizacoes og ON og.id = c.organizacao_id
        LEFT JOIN (
-         SELECT conta_id,
-                sum(buscas) FILTER (WHERE servico = 'serper') AS serper,
-                sum(buscas) FILTER (WHERE servico = 'apify_instagram') AS apify_instagram,
-                sum(buscas) FILTER (WHERE servico = 'apify_google') AS apify_google
+         SELECT conta_id, sum(buscas) FILTER (WHERE servico = 'serper') AS serper
            FROM cadastro.consumo_buscas WHERE dia >= ${INICIO_MES_SP} GROUP BY conta_id
        ) b ON b.conta_id = c.id
+       LEFT JOIN (
+         SELECT conta_id,
+                sum(${SEGUNDOS_COBRADOS}) FILTER (WHERE direcao = 'saida' AND ${CELULAR}) AS celular,
+                sum(${SEGUNDOS_COBRADOS}) FILTER (WHERE direcao = 'saida' AND NOT ${CELULAR}) AS fixo,
+                sum(duracao_segundos) / 60.0 AS minutos
+           FROM comercial.ligacoes
+          WHERE atendida_em IS NOT NULL AND iniciada_em >= ${INICIO_MES_SP_TS} GROUP BY conta_id
+       ) lg ON lg.conta_id = c.id
        LEFT JOIN (
          SELECT conta_id,
                 sum(chamadas) FILTER (WHERE origem = 'plataforma') AS chamadas,
@@ -182,8 +257,6 @@ export interface ClientePainel {
   noFunil: number;
   uso: {
     serper: number;
-    apifyInstagram: number;
-    apifyGoogle: number;
     iaChamadas: number;
     iaTokensEntrada: number;
     iaTokensSaida: number;
@@ -198,6 +271,8 @@ export interface ClientePainel {
     horasReuniao: number;
     transcricaoHoras: number;
     armazenamentoGb: number;
+    /** Minutos de ligação atendidos no mês (feitas e recebidas). */
+    ligacaoMinutos: number;
     conversasIa: number;
   };
   /** Quem paga cada serviço: a plataforma (custo seu) ou o cliente (chave dele). */
@@ -369,13 +444,19 @@ function avaliarSaude(l: LinhaConta, p: PlanoComUso, agora: Date): { saude: Sina
 export async function clientes(
   db: Executor,
   credenciais: { chave: string | null; ambiente: CredenciaisAmbiente },
-): Promise<{ clientes: ClientePainel[]; custos: CustosPlataforma }> {
-  const [todas, custos, tabela] = await Promise.all([linhasDasContas(db), lerCustos(db), tabelaDePrecos(db)]);
+): Promise<{ clientes: ClientePainel[]; custos: CustosPlataforma; planos: PlanosConsumo }> {
+  const [todas, custos, tabela, planos] = await Promise.all([
+    linhasDasContas(db),
+    lerCustos(db),
+    tabelaDePrecos(db),
+    lerPlanos(db),
+  ]);
   // O CRM de demonstração não é cliente: fica fora do financeiro.
   const linhas = todas.filter((l) => !l.demonstracao);
-  // Infraestrutura rateada por cliente (organização) ativo que não é a sua.
+  // Custos fixos do mês (planos dos serviços e servidores) divididos entre os clientes ativos.
   const orgsPagantes = new Set(linhas.filter((l) => l.orgAtiva && !l.principal).map((l) => l.organizacaoId));
-  const infraPorCliente = custos.infraMes / (orgsPagantes.size || 1);
+  const infraPorCliente = fixoTotal(planos, custos) / (orgsPagantes.size || 1);
+  const unitarios = precosAlemDosPlanos(linhas, planos, custos);
   const agora = new Date();
   const porOrg = new Map<number, LinhaConta[]>();
   for (const l of linhas) porOrg.set(l.organizacaoId, [...(porOrg.get(l.organizacaoId) ?? []), l]);
@@ -398,8 +479,6 @@ export async function clientes(
           };
           const usoPago: UsoPago = {
             serper: l.serper,
-            apifyInstagram: l.apifyInstagram,
-            apifyGoogle: l.apifyGoogle,
             iaTokensEntrada: l.iaEntrada,
             iaTokensSaida: l.iaSaida,
             emails: paga.email ? l.emails : 0,
@@ -408,12 +487,14 @@ export async function clientes(
             reuniaoMinutos: l.reuniaoSegundosPessoas / 60,
             transcricaoHoras: l.transcricaoSegundos / 3600,
             armazenamentoGb: l.armazenamentoBytes / 1e9,
+            ligacaoCelularMin: l.ligacaoCelularSeg / 60,
+            ligacaoFixoMin: l.ligacaoFixoSeg / 60,
           };
           return {
             l,
             paga,
             origemResend: cred?.origem.resend ?? null,
-            custo: custoEstimado(usoPago, custos, 0),
+            custo: custoEstimado(usoPago, unitarios, 0, planos.telefone),
           };
         }),
       );
@@ -428,6 +509,7 @@ export async function clientes(
         email: r2(somaCusto('email')),
         whatsapp: r2(somaCusto('whatsapp')),
         reunioes: r2(somaCusto('reunioes')),
+        ligacoes: r2(somaCusto('ligacoes')),
         infra: r2(infra),
         total: r2(somaCusto('total') + infra),
       };
@@ -498,8 +580,6 @@ export async function clientes(
         ),
         uso: {
           serper: soma((l) => l.serper),
-          apifyInstagram: soma((l) => l.apifyInstagram),
-          apifyGoogle: soma((l) => l.apifyGoogle),
           iaChamadas: soma((l) => l.iaChamadas),
           iaTokensEntrada: soma((l) => l.iaEntrada),
           iaTokensSaida: soma((l) => l.iaSaida),
@@ -512,6 +592,7 @@ export async function clientes(
           horasReuniao: Math.round((soma((l) => l.reuniaoSegundos) / 3600) * 10) / 10,
           transcricaoHoras: Math.round((soma((l) => l.transcricaoSegundos) / 3600) * 10) / 10,
           armazenamentoGb: Math.round((soma((l) => l.armazenamentoBytes) / 1e9) * 100) / 100,
+          ligacaoMinutos: Math.round(soma((l) => l.ligacaoMinutos)),
           conversasIa: soma((l) => l.conversasIa),
         },
         pagaPlataforma: {
@@ -540,7 +621,7 @@ export async function clientes(
       Number(b.ativa) - Number(a.ativa) ||
       a.nome.localeCompare(b.nome),
   );
-  return { clientes: lista, custos };
+  return { clientes: lista, custos, planos };
 }
 
 /** Pedidos de demonstração por etapa e o que entrou/fechou no mês. */
