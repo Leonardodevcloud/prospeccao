@@ -660,7 +660,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   {
     id: 'instagram',
     area: 'WhatsApp e IA',
-    titulo: 'Instagram: comente e receba, direct e formulários',
+    titulo: 'Instagram: conteúdo, comente e receba, direct e formulários',
     resumo:
       'Quem comenta a palavra recebe o seu direct; quem responde ou preenche o formulário do anúncio vira lead.',
     onde: { rotulo: 'Instagram', para: '/instagram' },
@@ -691,7 +691,34 @@ export const ARTIGOS: ArtigoAjuda[] = [
             ligue <b>“Permitir acesso às mensagens”</b>. Sem isso, o direct não sai.
           </li>
         </Passos>
-        <h3>2. Comente e receba</h3>
+        <h3>2. Conteúdo: o que cada post trouxe</h3>
+        <p>
+          A aba <b>Conteúdo</b> mostra as publicações do período com os números do Instagram (alcance,
+          curtidas, comentários, salvos e compartilhamentos) ao lado do que só o CRM sabe: quantos leads,
+          reuniões e vendas cada post trouxe. A coluna <b>leads por mil de alcance</b> diz qual conteúdo
+          converte, não só qual aparece.
+        </p>
+        <ul>
+          <li>
+            <b>Achados</b>: o formato que mais traz lead por alcance, o post do período e o que teve muito
+            alcance e nenhum lead.
+          </li>
+          <li>
+            Clique num post para ver o caminho do alcance até a venda e <b>todos os comentários</b>. Os que
+            perguntam preço, pedem informação ou contato ficam em “Com interesse”, para responder, mandar
+            direct ou criar o lead com um clique.
+          </li>
+          <li>
+            Os números vêm do Instagram de 6 em 6 horas (ou no botão Atualizar) e podem levar até 48 horas
+            para fechar num post novo. Stories ficam de fora: o Instagram só guarda os números deles por 24
+            horas.
+          </li>
+        </ul>
+        <Nota>
+          Quem conectou o Instagram antes desta tela precisa clicar em <b>Reconectar</b> (aba Conexão) uma vez
+          e aceitar a permissão das estatísticas.
+        </Nota>
+        <h3>3. Comente e receba</h3>
         <p>
           Clique em <b>Nova regra</b>, escolha a publicação (ou “a próxima que eu postar”, ou “qualquer
           publicação”) e as palavras, por exemplo PROSPECÇÃO. Quem comentar a palavra recebe a sua mensagem no
@@ -725,7 +752,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
           marcaram reunião. Clique na publicação para ver cada pessoa; quem não respondeu dá para virar lead à
           mão com <b>Criar lead</b>.
         </p>
-        <h3>3. Direct em Conversas</h3>
+        <h3>4. Direct em Conversas</h3>
         <p>
           O Instagram é mais um canal em <b>Conversas</b> (dá para filtrar só ele). Embaixo, escolha
           <b> Instagram</b> para responder pelo direct. O Instagram só deixa responder até{' '}
@@ -737,7 +764,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Direct de quem não comentou em nenhuma regra: na aba Conexão você escolhe se vira lead ou fica só no
           Instagram.
         </p>
-        <h3>4. Formulários dos anúncios</h3>
+        <h3>5. Formulários dos anúncios</h3>
         <p>
           Anúncio com o objetivo <b>Cadastros</b> (formulário instantâneo), no Instagram ou no Facebook: cada
           cadastro cai no funil em segundos, com nome, telefone, e-mail e o anúncio de onde veio. Na aba{' '}

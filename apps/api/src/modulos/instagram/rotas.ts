@@ -12,6 +12,7 @@ import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { adminParaAlterar } from '../../middlewares/seguranca.js';
 import { visivel } from '../../visibilidade.js';
+import * as conteudo from './conteudo.js';
 import * as servico from './servico.js';
 
 /**
@@ -119,6 +120,56 @@ export function rotasInstagram(deps: DepsApi): Router {
   r.post('/interacoes/:id/lead', async (req, res) => {
     const empresaId = await servico.criarLeadDaInteracao(deps, idDaRota(req));
     res.status(201).json({ empresaId });
+  });
+
+  /* ───── Conteúdo (análise das publicações) ───── */
+
+  r.get('/conteudo', async (req, res) => {
+    const { dias, tipo } = consulta(
+      req,
+      z.object({
+        dias: z.coerce.number().int().min(7).max(365).default(30),
+        tipo: z.string().max(20).optional(),
+      }),
+    );
+    // Abriu a tela: busca o que mudou se a última atualização tem mais de 6 h (sem travar a tela).
+    await conteudo
+      .atualizarConteudo(deps)
+      .catch((e) => deps.log.warn({ err: e }, 'instagram: conteúdo não atualizou'));
+    res.json(await conteudo.listarConteudo(pool, dias, tipo ?? null));
+  });
+
+  r.post('/conteudo/atualizar', async (_req, res) => {
+    await conteudo.atualizarConteudo(deps, { forcar: true });
+    res.json({ ok: true });
+  });
+
+  r.get('/conteudo/:midiaId', async (req, res) => {
+    const midiaId = String(req.params.midiaId);
+    if (!/^[\w-]{1,60}$/.test(midiaId)) throw AppError.naoEncontrado('Publicação');
+    res.json(await conteudo.abrirPost(deps, midiaId));
+  });
+
+  const comentarioDaRota = (req: Request) => {
+    const id = String(req.params.id);
+    if (!/^[\w-]{1,60}$/.test(id)) throw AppError.naoEncontrado('Comentário');
+    return id;
+  };
+
+  r.post('/comentarios/:id/responder', async (req, res) => {
+    const { texto } = corpo(req, z.object({ texto: z.string().trim().min(1).max(1000) }));
+    await conteudo.responderComentario(pool, comentarioDaRota(req), texto);
+    res.json({ ok: true });
+  });
+
+  r.post('/comentarios/:id/direct', async (req, res) => {
+    const { texto } = corpo(req, z.object({ texto: z.string().trim().min(1).max(1000) }));
+    await conteudo.directDoComentario(pool, comentarioDaRota(req), texto);
+    res.json({ ok: true });
+  });
+
+  r.post('/comentarios/:id/lead', async (req, res) => {
+    res.status(201).json({ empresaId: await conteudo.leadDoComentario(deps, comentarioDaRota(req)) });
   });
 
   /* ───── Formulários ───── */

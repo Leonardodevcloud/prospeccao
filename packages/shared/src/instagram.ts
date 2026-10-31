@@ -175,3 +175,147 @@ export const instagramConfigEntrada = z.object({
 });
 
 export const directEntrada = z.object({ texto: z.string().trim().min(1).max(1000) });
+
+/* ───────────────────────── Análise do conteúdo ───────────────────────── */
+
+export type InteresseComentario = 'preco' | 'informacao' | 'contato';
+
+export const ROTULO_INTERESSE: Record<InteresseComentario, string> = {
+  preco: 'perguntou preço',
+  informacao: 'pediu informação',
+  contato: 'pediu contato',
+};
+
+/**
+ * O comentário mostra interesse de compra? Pergunta de preço, pedido de informação ou de contato.
+ * Regras de palavras (na hora e sem custo); elogio e marcação de amigo não contam.
+ */
+export function interesseDoComentario(texto: string): InteresseComentario | null {
+  const t = ` ${semAcentoMinusculo(texto).replace(/[^\p{L}\p{N}?]+/gu, ' ')} `;
+  if (
+    /\b(quanto|valor(es)?|preco|precos|custa|custo|orcamento|mensalidade|plano(s)?|investimento|tabela)\b/.test(
+      t,
+    )
+  )
+    return 'preco';
+  if (
+    /\b(me chama|chama no|me manda|manda (no|um|o)|direct|dm|inbox|whats|whatsapp|zap|wpp|contato|liga(r)? pra mim|me liga|telefone)\b/.test(
+      t,
+    )
+  )
+    return 'contato';
+  if (
+    /\b(como funciona|como faco|como contratar|como (eu )?(faco|consigo|compro)|atende(m)?|funciona para|serve para|tem para|informac(ao|oes)|mais info|info|interesse|interessad[oa]|quero saber|gostaria)\b/.test(
+      t,
+    ) ||
+    (/\?/.test(texto) && /\b(voces|vcs|voce|vc|tem|faz(em)?|da pra|consigo|pode)\b/.test(t))
+  )
+    return 'informacao';
+  return null;
+}
+
+/** Uma publicação com os números do Instagram e os do CRM, para a análise. */
+export interface PublicacaoNumeros {
+  midiaId: string;
+  legenda: string | null;
+  tipo: string | null;
+  alcance: number | null;
+  leads: number;
+  reunioes: number;
+  vendas: number;
+  valorVendas: number;
+  interesse: number;
+}
+
+export interface Achado {
+  tipo: 'formato' | 'destaque' | 'atencao';
+  titulo: string;
+  texto: string;
+  midiaId?: string | null;
+}
+
+const NOME_FORMATO: Record<string, string> = {
+  REELS: 'Reels',
+  CAROUSEL_ALBUM: 'Carrossel',
+  IMAGE: 'Foto',
+  VIDEO: 'Vídeo',
+};
+export const nomeDoFormato = (tipo: string | null | undefined) =>
+  tipo ? (NOME_FORMATO[tipo] ?? tipo) : 'Post';
+
+const mil = (n: number) =>
+  n >= 1000 ? `${(n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : String(n);
+const reais = (n: number) =>
+  n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const tituloCurto = (p: PublicacaoNumeros) => {
+  const l = p.legenda?.split('\n')[0]?.trim() ?? '';
+  return l
+    ? `“${l.length > 48 ? `${l.slice(0, 46)}…` : l}”`
+    : `o ${nomeDoFormato(p.tipo).toLowerCase()} sem legenda`;
+};
+
+/**
+ * Até três achados do período, tirados dos números (sem inventar): o formato que mais traz lead por
+ * alcance, o post que mais vendeu (ou trouxe leads) e o que teve muito alcance e nenhum lead.
+ */
+export function achadosDoConteudo(posts: readonly PublicacaoNumeros[]): Achado[] {
+  const achados: Achado[] = [];
+  const comAlcance = posts.filter((p) => (p.alcance ?? 0) > 0);
+
+  // 1. Formato: leads a cada mil pessoas alcançadas, só com 2+ posts de cada formato.
+  const porFormato = new Map<string, { alcance: number; leads: number; n: number }>();
+  for (const p of comAlcance) {
+    const k = p.tipo ?? 'POST';
+    const f = porFormato.get(k) ?? { alcance: 0, leads: 0, n: 0 };
+    f.alcance += p.alcance ?? 0;
+    f.leads += p.leads;
+    f.n++;
+    porFormato.set(k, f);
+  }
+  const formatos = [...porFormato.entries()]
+    .filter(([, f]) => f.n >= 2 && f.alcance > 0)
+    .map(([tipo, f]) => ({ tipo, taxa: (f.leads / f.alcance) * 1000, media: f.alcance / f.n }))
+    .sort((a, b) => b.taxa - a.taxa);
+  const melhor = formatos[0];
+  const pior = formatos.at(-1);
+  if (melhor && pior && melhor !== pior && melhor.taxa > 0) {
+    const vezes = pior.taxa > 0 ? melhor.taxa / pior.taxa : null;
+    const fmt = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+    achados.push({
+      tipo: 'formato',
+      titulo:
+        vezes && vezes >= 1.2
+          ? `${nomeDoFormato(melhor.tipo)} traz ${vezes.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}× mais leads por alcance que ${nomeDoFormato(pior.tipo).toLowerCase()}`
+          : `${nomeDoFormato(melhor.tipo)} é o formato que mais traz leads por alcance`,
+      texto: `${fmt(melhor.taxa)} lead a cada mil pessoas alcançadas no ${nomeDoFormato(melhor.tipo).toLowerCase()}, contra ${fmt(pior.taxa)} no ${nomeDoFormato(pior.tipo).toLowerCase()} (alcance médio de ${mil(Math.round(melhor.media))} e ${mil(Math.round(pior.media))}).`,
+    });
+  }
+
+  // 2. Destaque: o que mais vendeu; sem venda, o que mais trouxe leads.
+  const destaque = [...posts]
+    .filter((p) => p.leads > 0)
+    .sort((a, b) => b.valorVendas - a.valorVendas || b.vendas - a.vendas || b.leads - a.leads)[0];
+  if (destaque)
+    achados.push({
+      tipo: 'destaque',
+      titulo: tituloCurto(destaque),
+      texto: `${destaque.alcance != null ? `Alcance de ${mil(destaque.alcance)}, ` : ''}${destaque.leads} ${destaque.leads === 1 ? 'lead' : 'leads'}, ${destaque.reunioes} ${destaque.reunioes === 1 ? 'reunião' : 'reuniões'}${destaque.vendas ? ` e ${destaque.vendas} ${destaque.vendas === 1 ? 'venda' : 'vendas'} (${reais(destaque.valorVendas)}/mês)` : ''}. Vale repetir o formato e o tema.`,
+      midiaId: destaque.midiaId,
+    });
+
+  // 3. Atenção: o maior alcance sem nenhum lead (acima da média de alcance).
+  const media = comAlcance.reduce((s, p) => s + (p.alcance ?? 0), 0) / (comAlcance.length || 1);
+  const semLead = comAlcance
+    .filter((p) => p.leads === 0 && (p.alcance ?? 0) >= media)
+    .sort((a, b) => (b.alcance ?? 0) - (a.alcance ?? 0))[0];
+  if (semLead)
+    achados.push({
+      tipo: 'atencao',
+      titulo: `${tituloCurto(semLead)} teve ${mil(semLead.alcance ?? 0)} de alcance e nenhum lead`,
+      texto: semLead.interesse
+        ? `${semLead.interesse} ${semLead.interesse === 1 ? 'pessoa demonstrou' : 'pessoas demonstraram'} interesse nos comentários e ninguém virou lead: estão na página do post.`
+        : 'Muita gente viu e ninguém chegou ao funil. Uma regra de comente e receba e uma chamada no texto ajudam.',
+      midiaId: semLead.midiaId,
+    });
+  return achados;
+}

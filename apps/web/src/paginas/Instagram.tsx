@@ -16,6 +16,7 @@ import { IconeInstagram } from '../componentes/IconeInstagram';
 import { usePipelines } from '../componentes/Pipelines';
 import { useEquipe, useSessao, useSoLeitura } from '../componentes/Sessao';
 import { fmtCompromisso, fmtNumero, fmtPct, fmtQuando, fmtReais, formatarTelefone } from '../formatar';
+import { AbaConteudo } from './InstagramConteudo';
 
 /**
  * Instagram no CRM: "comente e receba" (quem comenta a palavra recebe um direct e, ao responder,
@@ -146,8 +147,9 @@ interface Formulario {
 
 /* ───────────────────────── Página ───────────────────────── */
 
-type Aba = 'regras' | 'formularios' | 'conexao';
+type Aba = 'conteudo' | 'regras' | 'formularios' | 'conexao';
 const ABAS: { id: Aba; rotulo: string }[] = [
+  { id: 'conteudo', rotulo: 'Conteúdo' },
   { id: 'regras', rotulo: 'Comente e receba' },
   { id: 'formularios', rotulo: 'Formulários' },
   { id: 'conexao', rotulo: 'Conexão' },
@@ -164,7 +166,7 @@ export function Instagram() {
   const admin = sessao.data?.papel === 'admin';
   const conectado = !!q.data?.conexao;
   const pedida = params.get('aba') as Aba | null;
-  const aba: Aba = ABAS.some((a) => a.id === pedida) ? (pedida as Aba) : conectado ? 'regras' : 'conexao';
+  const aba: Aba = ABAS.some((a) => a.id === pedida) ? (pedida as Aba) : conectado ? 'conteudo' : 'conexao';
   const [novaRegra, setNovaRegra] = useState(false);
   // Volta do login na Meta: mostra o resultado uma vez e limpa o endereço.
   const [retorno] = useState(() => ({
@@ -240,6 +242,8 @@ export function Instagram() {
         </Mensagem>
       ) : aba === 'conexao' || !conectado ? (
         <AbaConexao s={q.data} admin={admin} />
+      ) : aba === 'conteudo' ? (
+        <AbaConteudo admin={admin} />
       ) : aba === 'formularios' ? (
         <AbaFormularios admin={admin} />
       ) : (
@@ -509,7 +513,13 @@ interface CamposRegra {
 const MENSAGEM_PADRAO =
   'Oi, {nome}! Aqui está o que você pediu 👇\nQuer que eu te mande mais detalhes? Me passa seu WhatsApp.';
 
-function FormRegra(props: { regra?: Regra; aoFechar: () => void; aoSalvar?: (r: Regra) => void }) {
+export function FormRegra(props: {
+  regra?: Regra;
+  /** Publicação já escolhida (o "Criar regra neste post" da análise de conteúdo). */
+  midiaInicial?: string;
+  aoFechar: () => void;
+  aoSalvar?: (r: Regra) => void;
+}) {
   const r = props.regra;
   const cliente = useQueryClient();
   const pipelines = usePipelines();
@@ -517,7 +527,7 @@ function FormRegra(props: { regra?: Regra; aoFechar: () => void; aoSalvar?: (r: 
   const sessao = useSessao();
   const [f, setF] = useState<CamposRegra>({
     alvo: r?.alvo ?? 'publicacao',
-    midiaId: r?.midiaId ?? null,
+    midiaId: r?.midiaId ?? props.midiaInicial ?? null,
     palavras: r?.palavras ?? [],
     respostas: (r?.respostas.length ? r.respostas : ['Te mandei no direct, {nome}! 📩']).map((texto, id) => ({
       id,

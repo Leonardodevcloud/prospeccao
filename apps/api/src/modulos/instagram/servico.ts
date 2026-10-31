@@ -5,6 +5,7 @@ import {
   comentarioBate,
   comNome,
   indicacoesNoTexto,
+  interesseDoComentario,
   type Logger,
   leadDoCadastro,
   type PerguntaFormulario,
@@ -298,7 +299,7 @@ export async function atualizarPerfil(deps: { pool: Pool; log: Logger }): Promis
 }
 
 /** Guarda o problema que a Meta respondeu (token vencido, mensagens bloqueadas) para a tela mostrar. */
-async function registrarErroDaMeta(db: Executor, e: unknown): Promise<void> {
+export async function registrarErroDaMeta(db: Executor, e: unknown): Promise<void> {
   if (!(e instanceof ErroMeta)) return;
   if (e.mensagensBloqueadas)
     await db.query(
@@ -335,7 +336,7 @@ export async function publicacoes(db: Executor): Promise<PublicacaoMeta[]> {
 
 /* ───────────────────────── Leads do Instagram ───────────────────────── */
 
-type DepsLead = Pick<DepsApi, 'pool' | 'filas' | 'log'>;
+export type DepsLead = Pick<DepsApi, 'pool' | 'filas' | 'log'>;
 
 interface Destino {
   etapaId: number | null;
@@ -345,7 +346,7 @@ interface Destino {
 }
 
 /** Cria o lead (sem enriquecimento) ou acha o que já tem o mesmo telefone. */
-async function criarLead(
+export async function criarLead(
   deps: DepsLead,
   d: {
     empresa: string;
@@ -596,6 +597,15 @@ async function receberComentario(deps: DepsLead, igId: string, v: Record<string,
   await comConta(c.contaId, async () => {
     // Plano sem o Instagram (mudou de plano depois de conectar): os avisos não fazem nada.
     if (!(await temRecurso(deps.pool, 'instagram'))) return;
+    // Todo comentário fica guardado para a análise do conteúdo (com a marca de interesse).
+    await guardarComentario(deps.pool, {
+      comentarioId,
+      midiaId,
+      pessoaId: de.id as string,
+      usuario: de.username ?? null,
+      texto,
+      em: quando,
+    });
     const { rows: regras } = await deps.pool.query<LinhaRegra>(
       `SELECT id::int, alvo, midia_id, palavras, respostas, mensagem, botao_texto, botao_link, criado_em
          FROM comercial.instagram_regras
@@ -690,6 +700,35 @@ async function receberComentario(deps: DepsLead, igId: string, v: Record<string,
   });
 }
 
+/** Guarda o comentário (o que já existe fica como está). */
+export async function guardarComentario(
+  db: Executor,
+  c: {
+    comentarioId: string;
+    midiaId: string;
+    pessoaId: string | null;
+    usuario: string | null;
+    texto: string;
+    em: Date;
+  },
+): Promise<void> {
+  await db.query(
+    `INSERT INTO comercial.instagram_comentarios (conta_id, comentario_id, midia_id, pessoa_id, usuario, texto, comentado_em, interesse, empresa_id)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7,
+             (SELECT empresa_id FROM comercial.oportunidades WHERE conta_id = ${contaSql()} AND instagram_id = $3))
+     ON CONFLICT (conta_id, comentario_id) DO NOTHING`,
+    [
+      c.comentarioId,
+      c.midiaId,
+      c.pessoaId,
+      c.usuario,
+      c.texto.slice(0, 2000),
+      c.em,
+      interesseDoComentario(c.texto),
+    ],
+  );
+}
+
 export async function guardarPublicacao(
   db: Executor,
   regraId: number,
@@ -777,7 +816,7 @@ async function receberDirect(deps: DepsLead, igId: string, msg: MensagemWebhook)
   });
 }
 
-async function leadDoInstagram(db: Executor, pessoa: string): Promise<number | null> {
+export async function leadDoInstagram(db: Executor, pessoa: string): Promise<number | null> {
   const { rows } = await db.query<{ empresa_id: number }>(
     `SELECT empresa_id::int FROM comercial.oportunidades WHERE conta_id = ${contaSql()} AND instagram_id = $1`,
     [pessoa],
@@ -819,7 +858,7 @@ async function receberDaPessoa(
        FROM comercial.instagram_interacoes x LEFT JOIN comercial.instagram_regras r ON r.id = x.regra_id
       WHERE i.id = x.id AND x.conta_id = ${contaSql()} AND x.pessoa_id = $1
       RETURNING x.id::int, x.regra_id::int, x.midia_id, x.comentario, x.comentado_em, x.nome, x.usuario, x.direct,
-                r.mensagem, r.ia_continua, r.avisar, r.etapa_id, r.responsavel_id, r.etiquetas,
+                coalesce(x.mensagem, r.mensagem) AS mensagem, r.ia_continua, r.avisar, r.etapa_id, r.responsavel_id, r.etiquetas,
                 r.midia_legenda, r.midia_link, r.midia_tipo`,
     [pessoa, quando],
   );
@@ -896,6 +935,11 @@ async function receberDaPessoa(
   }
   await pool.query(
     `UPDATE comercial.instagram_interacoes SET empresa_id = $2 WHERE conta_id = ${contaSql()} AND pessoa_id = $1`,
+    [pessoa, empresaId],
+  );
+  await pool.query(
+    `UPDATE comercial.instagram_comentarios SET empresa_id = $2
+      WHERE conta_id = ${contaSql()} AND pessoa_id = $1 AND empresa_id IS NULL`,
     [pessoa, empresaId],
   );
   const msgId = await agente.criarMensagem(pool, {
@@ -998,6 +1042,11 @@ export async function criarLeadDaInteracao(deps: DepsLead, interacaoId: number):
   );
   await deps.pool.query(
     `UPDATE comercial.instagram_interacoes SET empresa_id = $2 WHERE conta_id = ${contaSql()} AND pessoa_id = $1`,
+    [x.pessoa_id, empresaId],
+  );
+  await deps.pool.query(
+    `UPDATE comercial.instagram_comentarios SET empresa_id = $2
+      WHERE conta_id = ${contaSql()} AND pessoa_id = $1 AND empresa_id IS NULL`,
     [x.pessoa_id, empresaId],
   );
   await funil.registrarAtividade(

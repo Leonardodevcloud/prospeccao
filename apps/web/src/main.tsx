@@ -21,6 +21,7 @@ import { Email } from './paginas/Email';
 import { Equipe } from './paginas/Equipe';
 import { Funil } from './paginas/Funil';
 import { Instagram, InstagramRegra } from './paginas/Instagram';
+import { InstagramPost } from './paginas/InstagramConteudo';
 import { Leads } from './paginas/Leads';
 import { Login } from './paginas/Login';
 import { MarcaEDominio } from './paginas/MarcaEDominio';
@@ -85,6 +86,7 @@ const roteador = createBrowserRouter([
       { path: 'email', element: <Email /> },
       { path: 'instagram', element: <Instagram /> },
       { path: 'instagram/regra/:id', element: <InstagramRegra /> },
+      { path: 'instagram/post/:midiaId', element: <InstagramPost /> },
       { path: 'funil', element: <Funil /> },
       { path: 'relatorios', element: <Relatorios /> },
       { path: 'reunioes', element: <Reunioes /> },

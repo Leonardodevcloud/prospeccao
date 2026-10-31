@@ -61,9 +61,30 @@ describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e for
         tipo: 'REELS',
         link: 'https://ig/p/1',
         imagem: null,
-        em: '2026-10-25T10:00:00Z',
+        em: new Date(Date.now() - 6 * 86_400_000).toISOString(),
         comentarios: 3,
       },
+    ],
+    numeros: async () => ({
+      alcance: 12_100,
+      visualizacoes: 15_400,
+      curtidas: 842,
+      comentarios: 96,
+      salvos: 418,
+      compartilhamentos: 137,
+      visitasPerfil: null,
+      seguiram: null,
+      interacoes: 1_493,
+    }),
+    comentarios: async () => [
+      {
+        id: 'C70',
+        texto: 'quanto custa pra 3 vendedores?',
+        usuario: 'clinica.sorriso',
+        pessoaId: 'P70',
+        em: new Date().toISOString(),
+      },
+      { id: 'C71', texto: 'adorei o vídeo', usuario: 'fa', pessoaId: 'P71', em: new Date().toISOString() },
     ],
     publicacao: async (id) =>
       id === 'M2'
@@ -469,6 +490,56 @@ describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e for
     expect(n[0].n).toBe(1);
     const lista = await ler('/instagram/formularios');
     expect(lista.body[0]).toMatchObject({ cadastros: 1, leads: 1, ultimoNome: 'Clínica Sorriso Pleno' });
+  });
+
+  it('conteúdo: números do Instagram ao lado dos leads, comentários com interesse e as ações', async () => {
+    const c = await ler('/instagram/conteudo');
+    expect(c.status).toBe(200);
+    const m1 = c.body.posts.find((p: { midiaId: string }) => p.midiaId === 'M1');
+    expect(m1).toMatchObject({ alcance: 12_100, curtidas: 842, salvos: 418 });
+    expect(m1.leads).toBeGreaterThanOrEqual(1);
+    expect(c.body.total.leads).toBeGreaterThanOrEqual(2);
+    expect(c.body.atualizadoEm).not.toBeNull();
+
+    const post = await ler('/instagram/conteudo/M1');
+    expect(post.status).toBe(200);
+    expect(post.body.listaComentarios[0]).toMatchObject({ id: 'C70', interesse: 'preco', empresaId: null });
+    expect(post.body.funil.leads).toBeGreaterThanOrEqual(1);
+    // O comentário que veio pelo aviso (sem a palavra) também está lá.
+    expect(post.body.listaComentarios.map((x: { id: string }) => x.id)).toContain('C2');
+
+    expect(
+      (await enviar('post', '/instagram/comentarios/C70/responder', { texto: 'Te chamei no direct!' }))
+        .status,
+    ).toBe(200);
+    const d = await enviar('post', '/instagram/comentarios/C70/direct', {
+      texto: 'Oi! O plano para 3 vendedores sai por…',
+    });
+    expect(d.status).toBe(200);
+    expect(chamadas).toContainEqual({
+      tipo: 'privada',
+      dados: { comentarioId: 'C70', texto: 'Oi! O plano para 3 vendedores sai por…' },
+    });
+    expect((await enviar('post', '/instagram/comentarios/C70/direct', { texto: 'de novo' })).status).toBe(
+      422,
+    );
+    // Respondeu o direct: vira lead ligado ao post, com o direct na conversa.
+    await direct('P70', 'Show! me liga 71 99555-0101', 'mid-p70');
+    const { rows } = await pool.query(
+      `SELECT empresa_id::int, origem_instagram FROM comercial.oportunidades WHERE instagram_id = 'P70'`,
+    );
+    expect(rows[0].origem_instagram).toMatchObject({ tipo: 'comentario', midiaId: 'M1' });
+    const conv = await ler(`/conversas/${rows[0].empresa_id}`);
+    expect(conv.body.mensagens.map((x: { texto: string }) => x.texto)).toContain(
+      'Oi! O plano para 3 vendedores sai por…',
+    );
+    // "Criar lead" num comentário comum.
+    const l = await enviar('post', '/instagram/comentarios/C71/lead');
+    expect(l.status).toBe(201);
+    const depois = await ler('/instagram/conteudo/M1');
+    expect(depois.body.listaComentarios.find((x: { id: string }) => x.id === 'C71').empresaId).toBe(
+      l.body.empresaId,
+    );
   });
 
   it('é do plano Time em diante: no Start a tela mostra o cadeado e os avisos não fazem nada', async () => {

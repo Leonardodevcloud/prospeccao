@@ -86,6 +86,30 @@ export interface ClienteMeta {
   ): Promise<{ id: string; nome: string; status: string | null }[]>;
   perguntas(formId: string, token: string): Promise<{ nome: string; perguntas: PerguntaMeta[] }>;
   cadastro(leadgenId: string, token: string): Promise<CadastroMeta>;
+  /** Números de uma publicação (alcance, curtidas, salvos…). Sem a permissão das estatísticas, erro. */
+  numeros(midiaId: string, tipo: string | null, token: string): Promise<NumerosMeta>;
+  /** Comentários de uma publicação (os mais recentes primeiro, até o limite). */
+  comentarios(midiaId: string, token: string, limite?: number): Promise<ComentarioMeta[]>;
+}
+
+export interface NumerosMeta {
+  alcance: number | null;
+  visualizacoes: number | null;
+  curtidas: number | null;
+  comentarios: number | null;
+  salvos: number | null;
+  compartilhamentos: number | null;
+  visitasPerfil: number | null;
+  seguiram: number | null;
+  interacoes: number | null;
+}
+
+export interface ComentarioMeta {
+  id: string;
+  texto: string;
+  usuario: string | null;
+  pessoaId: string | null;
+  em: string | null;
 }
 
 /** Erro da Graph API, com o código da Meta (para reconhecer token vencido e mensagens bloqueadas). */
@@ -102,6 +126,14 @@ export class ErroMeta extends Error {
   get tokenInvalido(): boolean {
     return this.codigo === 190 || this.codigo === 102;
   }
+  /** O app não tem a permissão pedida (ex.: estatísticas, para quem conectou antes de ela existir). */
+  get semPermissao(): boolean {
+    return (
+      this.codigo === 10 ||
+      this.codigo === 200 ||
+      (this.codigo !== null && this.codigo >= 200 && this.codigo < 300)
+    );
+  }
   /** O Instagram não deixa o app mexer nas mensagens (o "Permitir acesso às mensagens" está desligado). */
   get mensagensBloqueadas(): boolean {
     return (
@@ -117,6 +149,7 @@ export const PERMISSOES_META = [
   'instagram_basic',
   'instagram_manage_comments',
   'instagram_manage_messages',
+  'instagram_manage_insights',
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_metadata',
@@ -309,11 +342,18 @@ export function clienteMeta(cfg: ConfigMeta): ClienteMeta {
     },
 
     async publicacoes(igId, token, limite = 24) {
-      const r = await chamar<{ data: Midia[] }>(`/${igId}/media`, {
+      // A Meta devolve de página em página (até 50 por vez).
+      const todas: Midia[] = [];
+      let r = await chamar<{ data: Midia[]; paging?: { next?: string } }>(`/${igId}/media`, {
         token,
-        params: { fields: CAMPOS_MIDIA, limit: String(limite) },
+        params: { fields: CAMPOS_MIDIA, limit: String(Math.min(limite, 50)) },
       });
-      return r.data.map(paraPublicacao);
+      todas.push(...r.data);
+      while (todas.length < limite && r.paging?.next) {
+        r = await chamar<{ data: Midia[]; paging?: { next?: string } }>(r.paging.next);
+        todas.push(...r.data);
+      }
+      return todas.slice(0, limite).map(paraPublicacao);
     },
 
     async publicacao(midiaId, token) {
@@ -404,6 +444,75 @@ export function clienteMeta(cfg: ConfigMeta): ClienteMeta {
           tipo: q.type ?? 'CUSTOM',
         })),
       };
+    },
+
+    async numeros(midiaId, tipo, token) {
+      // Reels não têm visitas ao perfil nem seguidores ganhos; post antigo pode não ter "views".
+      const comuns = ['reach', 'likes', 'comments', 'saved', 'shares', 'total_interactions'];
+      const tentativas =
+        tipo === 'REELS'
+          ? [[...comuns, 'views'], comuns]
+          : [
+              [...comuns, 'views', 'profile_visits', 'follows'],
+              [...comuns, 'profile_visits', 'follows'],
+              comuns,
+            ];
+      let ultimoErro: unknown = null;
+      for (const metricas of tentativas) {
+        try {
+          const r = await chamar<{
+            data: { name: string; values?: { value?: number }[]; total_value?: { value?: number } }[];
+          }>(`/${midiaId}/insights`, { token, params: { metric: metricas.join(',') } });
+          const v = (nome: string) => {
+            const m = r.data.find((x) => x.name === nome);
+            const n = m?.total_value?.value ?? m?.values?.[0]?.value;
+            return typeof n === 'number' ? n : null;
+          };
+          return {
+            alcance: v('reach'),
+            visualizacoes: v('views'),
+            curtidas: v('likes'),
+            comentarios: v('comments'),
+            salvos: v('saved'),
+            compartilhamentos: v('shares'),
+            visitasPerfil: v('profile_visits'),
+            seguiram: v('follows'),
+            interacoes: v('total_interactions'),
+          };
+        } catch (erro) {
+          // Permissão faltando ou token inválido: não adianta tentar com menos números.
+          if (!(erro instanceof ErroMeta) || erro.tokenInvalido || erro.semPermissao) throw erro;
+          ultimoErro = erro;
+        }
+      }
+      throw ultimoErro;
+    },
+
+    async comentarios(midiaId, token, limite = 200) {
+      type Linha = {
+        id: string;
+        text?: string;
+        username?: string;
+        timestamp?: string;
+        from?: { id?: string };
+      };
+      const todos: Linha[] = [];
+      let r = await chamar<{ data: Linha[]; paging?: { next?: string } }>(`/${midiaId}/comments`, {
+        token,
+        params: { fields: 'id,text,username,timestamp,from{id,username}', limit: '50' },
+      });
+      todos.push(...r.data);
+      while (todos.length < limite && r.paging?.next) {
+        r = await chamar<{ data: Linha[]; paging?: { next?: string } }>(r.paging.next);
+        todos.push(...r.data);
+      }
+      return todos.slice(0, limite).map((c) => ({
+        id: c.id,
+        texto: c.text ?? '',
+        usuario: c.username ?? null,
+        pessoaId: c.from?.id ?? null,
+        em: c.timestamp ?? null,
+      }));
     },
 
     async cadastro(leadgenId, token) {

@@ -60,3 +60,47 @@ describe('instagram', () => {
     });
   });
 });
+
+describe('análise do conteúdo', () => {
+  it('marca os comentários com interesse', async () => {
+    const { interesseDoComentario } = await import('../src/instagram.js');
+    expect(interesseDoComentario('quanto custa pra 3 vendedores?')).toBe('preco');
+    expect(interesseDoComentario('me chama no direct 🙏')).toBe('contato');
+    expect(interesseDoComentario('vocês atendem construtora?')).toBe('informacao');
+    expect(interesseDoComentario('o erro 3 é o que mais vejo')).toBeNull();
+    expect(interesseDoComentario('@fulano olha isso kkk')).toBeNull();
+  });
+
+  it('tira os achados dos números', async () => {
+    const { achadosDoConteudo } = await import('../src/instagram.js');
+    const p = (
+      midiaId: string,
+      tipo: string,
+      alcance: number,
+      leads: number,
+      valorVendas = 0,
+      interesse = 0,
+    ) => ({
+      midiaId,
+      legenda: `Post ${midiaId}`,
+      tipo,
+      alcance,
+      leads,
+      reunioes: Math.floor(leads / 3),
+      vendas: valorVendas ? 1 : 0,
+      valorVendas,
+      interesse,
+    });
+    const a = achadosDoConteudo([
+      p('1', 'CAROUSEL_ALBUM', 12_100, 19, 2780),
+      p('2', 'CAROUSEL_ALBUM', 9_000, 6),
+      p('3', 'REELS', 31_200, 16, 1390),
+      p('4', 'REELS', 41_000, 0, 0, 23),
+    ]);
+    expect(a.map((x) => x.tipo)).toEqual(['formato', 'destaque', 'atencao']);
+    expect(a[0]!.titulo).toMatch(/^Carrossel traz .*× mais leads por alcance que reels$/);
+    expect(a[1]!.midiaId).toBe('1');
+    expect(a[2]).toMatchObject({ midiaId: '4' });
+    expect(a[2]!.texto).toMatch(/^23 pessoas demonstraram interesse/);
+  });
+});
