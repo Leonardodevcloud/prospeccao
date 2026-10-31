@@ -14494,6 +14494,7 @@ fieldset.assinar__formas {
 .tour__foco {
   position: absolute;
   border: 2px solid #3cc4b3;
+  box-sizing: border-box;
   border-radius: 10px;
   box-shadow:
     0 0 0 200vmax rgba(4, 16, 14, 0.56),
@@ -14507,8 +14508,6 @@ fieldset.assinar__formas {
 }
 .tour__rotulo {
   position: absolute;
-  transform: translateY(-100%);
-  margin-top: -8px;
   white-space: nowrap;
   padding: 3px 10px;
   border-radius: 999px;
@@ -14516,13 +14515,14 @@ fieldset.assinar__formas {
   color: #04201c;
   font-weight: 600;
   font-size: clamp(10px, 1.3vw, 13px);
+  line-height: 1.6;
   transition:
     left 0.9s,
     top 0.9s;
 }
-.tour__rotulo--embaixo {
-  transform: none;
-  margin-top: 8px;
+.tour__legenda.tour__legenda--cima {
+  top: 12px;
+  bottom: auto;
 }
 .tour__capa {
   position: absolute;

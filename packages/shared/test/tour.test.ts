@@ -69,6 +69,10 @@ describe('tour do sistema', () => {
     const f = frasesDaFala('Primeira frase. Segunda frase? Terceira!');
     expect(f.map((x) => x.texto)).toEqual(['Primeira frase.', 'Segunda frase?', 'Terceira!']);
     expect(f[1]!.inicio).toBe(16);
+    expect(frasesDaFala('Marca uma reunião com o Dr. Renato amanhã. Pronto!').map((x) => x.texto)).toEqual([
+      'Marca uma reunião com o Dr. Renato amanhã.',
+      'Pronto!',
+    ]);
     expect(paraFalarNoNavegador('O WhatsApp do lead e a IA no CRM')).toBe(
       'O uótzap do lídi e a i á no cê erre ême',
     );

@@ -12,8 +12,6 @@ export interface FocoTour {
   /** Área em % da imagem: [x, y, largura, altura]. */
   r: [number, number, number, number];
   rotulo: string;
-  /** Rótulo embaixo da área (padrão: em cima, menos perto do topo). */
-  embaixo?: boolean;
 }
 
 export interface CenaTour {
@@ -72,7 +70,7 @@ const CENAS: CenaTour[] = [
     id: 'enriquecimento',
     capitulo: 'Enriquecimento',
     img: 'ficha',
-    fala: 'Depois vem o enriquecimento. Pra cada empresa, o sistema procura sozinho o site, o Instagram e o WhatsApp, e confirma se o número existe. Também traz os possíveis decisores do negócio, pelo quadro de sócios. E você vê de onde veio cada informação, pra saber em que confiar.',
+    fala: 'Depois vem o enriquecimento. Pra cada empresa, o sistema busca sozinho nos sites, no Instagram, no WhatsApp e também no LinkedIn, e confirma se o número existe. Também traz os possíveis decisores do negócio, pelo quadro de sócios. E você vê de onde veio cada informação, pra saber em que confiar.',
   },
   {
     id: 'conversas',
@@ -136,64 +134,65 @@ const CENAS: CenaTour[] = [
 /** Os destaques de cada tela (posições medidas nas imagens de apps/web/public/tour). */
 const FOCOS: Record<string, FocoTour[]> = {
   'meu-dia': [
-    { em: 'Meu dia', r: [0.5, 8.3, 12, 3.4], rotulo: 'Menu › Meu dia', embaixo: true },
-    { em: 'Aqui ficam', r: [14.5, 9.5, 64.5, 88], rotulo: 'O que fazer hoje' },
-    { em: 'próximos dias', r: [80, 11, 18.5, 20.5], rotulo: 'Próximos 7 dias', embaixo: true },
+    { em: 'Meu dia', r: [0.4, 7.4, 12.7, 4.8], rotulo: 'Menu › Meu dia' },
+    { em: 'Aqui ficam', r: [14.6, 9, 64, 91], rotulo: 'O que fazer hoje' },
+    { em: 'próximos dias', r: [79.4, 9, 19.5, 25], rotulo: 'Próximos 7 dias' },
   ],
   campanhas: [
-    { em: 'Campanhas', r: [1, 19, 11, 3.8], rotulo: 'Menu › Campanhas' },
-    { em: 'na tela de Leads', r: [12, 20.5, 87.5, 79], rotulo: 'Leads encontrados' },
-    { em: 'uma nota', r: [44.5, 21, 5, 78], rotulo: 'Nota A, B ou C' },
+    { em: 'Campanhas', r: [1.9, 18.3, 11.2, 4.4], rotulo: 'Menu › Campanhas' },
+    { em: 'na tela de Leads', r: [14.6, 19.9, 84.3, 80.1], rotulo: 'Leads encontrados' },
+    { em: 'uma nota', r: [44.7, 20, 4.7, 80], rotulo: 'Nota A, B ou C' },
   ],
   enriquecimento: [
-    { em: 'enriquecimento', r: [1.5, 2.5, 31.5, 22], rotulo: 'Ficha do lead', embaixo: true },
-    { em: 'o site', r: [34.5, 24.5, 30.5, 13.5], rotulo: 'Contatos encontrados', embaixo: true },
-    { em: 'possíveis decisores', r: [34.5, 2.5, 30.5, 21], rotulo: 'Possíveis decisores', embaixo: true },
-    { em: 'de onde veio', r: [67.5, 39.5, 29.5, 54.5], rotulo: 'Como encontramos' },
+    { em: 'enriquecimento', r: [1.4, 2.2, 32, 25.3], rotulo: 'Ficha do lead' },
+    { em: 'nos sites', r: [35.3, 23.6, 29.4, 19.5], rotulo: 'Contatos encontrados' },
+    { em: 'LinkedIn', r: [68.8, 72.7, 27.7, 5.9], rotulo: 'Busca no LinkedIn' },
+    { em: 'possíveis decisores', r: [35.3, 3.9, 29.4, 19.0], rotulo: 'Possíveis decisores' },
+    { em: 'de onde veio', r: [67.9, 39.4, 29.4, 51.3], rotulo: 'Como encontramos' },
   ],
   conversas: [
-    { em: 'Conversas', r: [1, 22.8, 11, 3.8], rotulo: 'Menu › Conversas' },
-    { em: 'num lugar só', r: [12, 14, 22.5, 85], rotulo: 'As conversas da equipe' },
-    { em: 'Agente de IA', r: [35, 12, 63, 3.8], rotulo: 'A IA conduzindo a conversa', embaixo: true },
-    { em: 'marca a reunião', r: [73.5, 5, 8.5, 3.6], rotulo: 'Marcar reunião', embaixo: true },
-    { em: 'histórico', r: [35, 16.5, 63, 75], rotulo: 'Histórico completo' },
+    { em: 'Conversas', r: [1.9, 22.1, 11.2, 4.4], rotulo: 'Menu › Conversas' },
+    { em: 'num lugar só', r: [14.7, 1.9, 22, 96.2], rotulo: 'As conversas da equipe' },
+    { em: 'Agente de IA', r: [35.9, 11.2, 62.9, 4.5], rotulo: 'A IA conduzindo a conversa' },
+    { em: 'marca a reunião', r: [74.5, 5.1, 8.7, 4], rotulo: 'Marcar reunião' },
+    { em: 'histórico', r: [36.2, 14, 62.7, 75.3], rotulo: 'Histórico completo' },
   ],
   ligacao: [
-    { em: 'Ligações', r: [36, 48, 26, 50], rotulo: 'Ligação em andamento' },
-    { em: 'gravada', r: [52, 51.5, 9.5, 3.5], rotulo: 'Gravando', embaixo: true },
-    { em: 'avisado', r: [37, 70, 24, 5.5], rotulo: 'Aviso de gravação' },
+    { em: 'Ligações', r: [36.1, 48.3, 25.8, 50.6], rotulo: 'Ligação em andamento' },
+    { em: 'gravada', r: [55.7, 49.8, 6.2, 5.0], rotulo: 'Gravando' },
+    { em: 'avisado', r: [37.2, 69.6, 23.6, 6.1], rotulo: 'Aviso de gravação' },
   ],
   'ligacao-resumo': [
-    { em: 'resume', r: [36.5, 36.5, 25.5, 19], rotulo: 'Resumo da IA' },
-    { em: 'próximo passo', r: [36.5, 58.5, 25.5, 19], rotulo: 'Próximo passo sugerido' },
-    { em: 'conferir e salvar', r: [55.5, 93, 6.5, 4.5], rotulo: 'Salvar' },
+    { em: 'resume', r: [37.1, 35.4, 23.8, 23.4], rotulo: 'Resumo da IA' },
+    { em: 'próximo passo', r: [37.1, 58.6, 23.8, 22.0], rotulo: 'Próximo passo sugerido' },
+    { em: 'conferir e salvar', r: [55.9, 92.9, 4.9, 4.7], rotulo: 'Salvar' },
   ],
   reunioes: [
-    { em: 'Reuniões', r: [0.5, 42, 12, 4], rotulo: 'Menu › Reuniões' },
-    { em: 'gravada', r: [15, 11, 61, 57], rotulo: 'Gravação da reunião', embaixo: true },
-    { em: 'resumo', r: [15, 76, 61, 24], rotulo: 'Resumo da reunião' },
-    { em: 'próximos passos', r: [77.5, 12, 21, 19.5], rotulo: 'Próximos passos', embaixo: true },
+    { em: 'Reuniões', r: [0.3, 41.6, 12.7, 5.1], rotulo: 'Menu › Reuniões' },
+    { em: 'gravada', r: [14.7, 11.5, 61.4, 55.8], rotulo: 'Gravação da reunião' },
+    { em: 'resumo', r: [14.7, 74.6, 61.4, 25.4], rotulo: 'Resumo da reunião' },
+    { em: 'próximos passos', r: [77.1, 11.5, 21.8, 22.1], rotulo: 'Próximos passos' },
   ],
   email: [
-    { em: 'E-mail', r: [3.5, 2.5, 94.5, 18.5], rotulo: '1º passo: e-mail', embaixo: true },
-    { em: 'WhatsApp e ligação', r: [3.5, 21.5, 94.5, 49], rotulo: 'Depois: WhatsApp e ligação' },
-    { em: 'Quando o lead responde', r: [3, 78.5, 94.5, 7.5], rotulo: 'Respondeu, a sequência para' },
+    { em: 'E-mail', r: [3.8, 3.1, 93.9, 17.8], rotulo: '1º passo: e-mail' },
+    { em: 'WhatsApp e ligação', r: [3.8, 19.7, 93.9, 52.9], rotulo: 'Depois: WhatsApp e ligação' },
+    { em: 'Quando o lead responde', r: [2.3, 76.0, 95.4, 10.9], rotulo: 'Respondeu, a sequência para' },
   ],
   instagram: [
-    { em: 'Instagram', r: [1, 32.8, 13, 4], rotulo: 'Menu › Instagram' },
-    { em: 'formulário', r: [17, 45.5, 26.5, 30], rotulo: 'Cadastros dos anúncios' },
-    { em: 'devolve', r: [16.5, 22.5, 82, 21.5], rotulo: 'Devolver as vendas para a Meta' },
+    { em: 'Instagram', r: [2.1, 32.5, 12.4, 4.7], rotulo: 'Menu › Instagram' },
+    { em: 'formulário', r: [16.4, 45.9, 27.1, 30.9], rotulo: 'Cadastros dos anúncios' },
+    { em: 'devolve', r: [16.4, 21.8, 82.2, 21.7], rotulo: 'Devolver as vendas para a Meta' },
   ],
   'instagram-conteudo': [
-    { em: 'análise', r: [16.5, 23, 82, 13.5], rotulo: 'Alcance, leads e vendas' },
-    { em: 'quais posts', r: [16.5, 56, 82, 41], rotulo: 'Post a post' },
-    { em: 'viram venda', r: [16.5, 37.5, 82, 16], rotulo: 'O que funciona' },
+    { em: 'análise', r: [16.4, 22.0, 82.2, 15.2], rotulo: 'Alcance, leads e vendas' },
+    { em: 'quais posts', r: [16.4, 54.4, 82.2, 45.2], rotulo: 'Post a post' },
+    { em: 'viram venda', r: [16.4, 36.0, 82.2, 19.6], rotulo: 'O que funciona' },
   ],
   argos: [
-    { em: 'menu Argos', r: [0.5, 61, 12.5, 3.6], rotulo: 'Menu › Argos' },
-    { em: 'tiro as suas dúvidas', r: [76, 10.5, 16.5, 5], rotulo: 'A sua pergunta', embaixo: true },
-    { em: 'seu funil', r: [38, 22, 55, 53], rotulo: 'A resposta com os seus números' },
-    { em: 'falando ou escrevendo', r: [41.5, 85, 47.5, 8], rotulo: 'Por voz ou por texto' },
+    { em: 'menu Argos', r: [0.3, 60.6, 12.6, 4.8], rotulo: 'Menu › Argos' },
+    { em: 'tiro as suas dúvidas', r: [76.2, 12.4, 16.4, 5.4], rotulo: 'A sua pergunta' },
+    { em: 'seu funil', r: [38.2, 23.2, 54.2, 52.4], rotulo: 'A resposta com os seus números' },
+    { em: 'falando ou escrevendo', r: [41.4, 86.2, 48.0, 7.0], rotulo: 'Por voz ou por texto' },
   ],
 };
 
@@ -233,7 +232,10 @@ export function frasesDaFala(texto: string): { inicio: number; texto: string }[]
   const saida: { inicio: number; texto: string }[] = [];
   let pos = 0;
   for (const f of texto.match(/[^.!?]+[.!?]*\s*/g) ?? [texto]) {
-    saida.push({ inicio: pos, texto: f.trim() });
+    const anterior = saida.at(-1);
+    // "Dr. Renato" não termina a frase.
+    if (anterior && /\b(Dr|Dra|Sr|Sra|Srta)\.$/.test(anterior.texto)) anterior.texto += ` ${f.trim()}`;
+    else saida.push({ inicio: pos, texto: f.trim() });
     pos += f.length;
   }
   return saida.filter((f) => f.texto);

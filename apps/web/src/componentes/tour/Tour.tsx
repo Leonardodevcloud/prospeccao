@@ -70,6 +70,40 @@ export function TourDoSistema(props: { convidar: boolean }) {
   );
 }
 
+/**
+ * Enquadra o destaque: aproxima mais nas áreas pequenas (até 1,3×) sem nunca cortar a área nem
+ * mostrar fora da imagem, e acha um lugar para o rótulo que caiba na parte visível.
+ */
+function enquadrar(r: [number, number, number, number], rotulo: string) {
+  const [x, y, w, h] = r;
+  const z = Math.min(1.3, Math.max(1, Math.min(100 / (w + 18), 100 / (h + 16))));
+  const W = 100 / z;
+  const H = 100 / z;
+  const prender = (v: number, max: number) => Math.min(Math.max(v, 0), max);
+  const x0 = prender(x + w / 2 - W / 2, 100 - W);
+  const y0 = prender(y + h / 2 - H / 2, 100 - H);
+  // Tamanho do rótulo na imagem (ele não aumenta com a aproximação).
+  const alto = 4 / z;
+  const largo = (rotulo.length * 0.62 + 2.2) / z;
+  const margem = 0.6 / z;
+  let topo: number;
+  if (y - alto - margem >= y0) topo = y - alto - margem / 2;
+  else if (y + h + alto + margem <= y0 + H) topo = y + h + margem / 2;
+  else topo = y + margem;
+  let esquerda = x;
+  if (esquerda + largo > x0 + W - margem) esquerda = Math.min(x + w, x0 + W - margem) - largo;
+  esquerda = Math.max(esquerda, x0 + margem);
+  // A legenda sobe quando o destaque está embaixo (senão ela cobre o que está sendo mostrado).
+  const fundoVisivel = ((y + h - y0) / H) * 100;
+  return {
+    z,
+    x0,
+    y0,
+    rotulo: { x: esquerda, y: topo },
+    legendaEmCima: fundoVisivel > 78 && (y - y0) / H > 0.25,
+  };
+}
+
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 function PlayerTour(props: {
@@ -227,6 +261,15 @@ function PlayerTour(props: {
 
   useEffect(() => () => parar(), [parar]);
 
+  // As telas já vão carregando (a troca de cena não mostra o palco vazio).
+  useEffect(() => {
+    for (const c of cenas)
+      if (c.img) {
+        const im = new Image();
+        im.src = `/tour/${c.img}.webp`;
+      }
+  }, [cenas]);
+
   const tocar = () => {
     if (acabou) {
       setAcabou(false);
@@ -295,8 +338,7 @@ function PlayerTour(props: {
     if (at >= 0 && letra >= at) k = j;
   });
   const foco = focos[k];
-  const grande = foco ? foco.r[2] * foco.r[3] > 1800 : true;
-  const zoom = foco ? (grande ? 1.04 : 1.12) : 1;
+  const quadro = foco ? enquadrar(foco.r, foco.rotulo) : null;
   const pos = acabou ? total : inicioDe(i) + Math.min(1, frac) * duracao(cena);
   const capitulos = cenas.filter((c, j) => cenas.findIndex((x) => x.capitulo === c.capitulo) === j);
 
@@ -317,16 +359,16 @@ function PlayerTour(props: {
               key={cena.id}
               className="tour__tela"
               style={
-                foco
+                quadro
                   ? {
-                      transformOrigin: `${foco.r[0] + foco.r[2] / 2}% ${foco.r[1] + foco.r[3] / 2}%`,
-                      transform: `scale(${zoom})`,
+                      transformOrigin: '0 0',
+                      transform: `scale(${quadro.z}) translate(${-quadro.x0}%, ${-quadro.y0}%)`,
                     }
                   : undefined
               }
             >
               <img src={`/tour/${cena.img}.webp`} alt={`Tela: ${cena.capitulo}`} />
-              {foco && (
+              {foco && quadro && (
                 <>
                   <div
                     className="tour__foco"
@@ -335,13 +377,15 @@ function PlayerTour(props: {
                       top: `${foco.r[1]}%`,
                       width: `${foco.r[2]}%`,
                       height: `${foco.r[3]}%`,
+                      borderWidth: `${2 / quadro.z}px`,
                     }}
                   />
                   <div
-                    className={`tour__rotulo${(foco.embaixo ?? foco.r[1] < 12) ? ' tour__rotulo--embaixo' : ''}`}
+                    className="tour__rotulo"
                     style={{
-                      left: `${Math.min(foco.r[0], 68)}%`,
-                      top: `${(foco.embaixo ?? foco.r[1] < 12) ? foco.r[1] + foco.r[3] : foco.r[1]}%`,
+                      left: `${quadro.rotulo.x}%`,
+                      top: `${quadro.rotulo.y}%`,
+                      fontSize: `calc(clamp(10px, 1.3vw, 13px) / ${quadro.z})`,
                     }}
                   >
                     {foco.rotulo}
@@ -360,7 +404,9 @@ function PlayerTour(props: {
               <Orbe estado={estado} nivel={nivel} tamanho={56} />
             </div>
           )}
-          {(tocando || frac > 0 || acabou) && <p className="tour__legenda">{legenda}</p>}
+          {(tocando || frac > 0 || acabou) && (
+            <p className={`tour__legenda${quadro?.legendaEmCima ? ' tour__legenda--cima' : ''}`}>{legenda}</p>
+          )}
           {props.convite !== null && (
             <div className="tour__convite" role="document" aria-labelledby="tour-convite-titulo">
               <div className="tour__convite-cabeca">
