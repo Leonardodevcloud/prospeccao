@@ -105,6 +105,7 @@ export const MENU_CRM: EntradaMenu[] = [
       { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up' },
       { para: '/equipe', rotulo: 'Equipe', icone: 'id-card' },
       { para: '/telefonia', rotulo: 'Telefonia', icone: 'phone', admin: true, modulos: ['ligacoes'] },
+      { para: '/integracoes', rotulo: 'Integrações', icone: 'plug', admin: true, recurso: 'api' },
       { para: '/marca', rotulo: 'Marca e domínio', icone: 'image', admin: true, recurso: 'marca' },
       { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', comPlano: true },
       { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', admin: true, recurso: 'seguranca' },

@@ -97,7 +97,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
             <b>Argos</b>: o assistente e o mapa do conhecimento.
           </li>
           <li>
-            <b>Gestão</b>: Relatórios, Equipe, Marca e domínio, Meu plano e Auditoria.
+            <b>Gestão</b>: Relatórios, Equipe, Integrações, Marca e domínio, Meu plano e Auditoria.
           </li>
         </ul>
         <p>
@@ -1183,6 +1183,91 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <Nota>
           A marca própria é para usar o sistema com a marca da sua empresa, com a sua equipe e os seus
           clientes. Não inclui revender o sistema para outras empresas.
+        </Nota>
+      </>
+    ),
+  },
+  {
+    id: 'integracoes',
+    area: 'Gestão',
+    titulo: 'Integrações: API, formulários do site e avisos',
+    resumo:
+      'Ligue o CRM ao site, ao ERP, à loja virtual e ao Make/Zapier: chaves da API, formulários direto no funil e avisos (webhooks).',
+    onde: { rotulo: 'Integrações', para: '/integracoes' },
+    termos:
+      'api integração integracao chave token webhook aviso formulário formulario site elementor wordpress contact form rd station typeform google forms make zapier erp bling loja virtual n8n openapi postman desenvolvedor',
+    corpo: (
+      <>
+        <p>
+          Em <b>Gestão › Integrações</b> (só o administrador, a partir do plano Time) você liga o CRM aos
+          outros sistemas da empresa, sem depender de ninguém. São três caminhos:
+        </p>
+        <h3>Formulários do site (sem programar)</h3>
+        <Passos>
+          <li>
+            Clique em <b>Novo formulário</b> e dê um nome (um para cada formulário do site, para saber de onde
+            veio cada lead).
+          </li>
+          <li>
+            Copie o endereço e cole no construtor do formulário: Elementor (Ações após o envio › Webhook),
+            Contact Form 7, RD Station, Typeform, Google Forms ou um formulário HTML comum. A tela mostra o
+            passo a passo de cada um.
+          </li>
+          <li>
+            Mande um envio de teste pelo próprio site. Os campos aparecem com a sugestão de para onde vai cada
+            um (nome, WhatsApp, e-mail, empresa, cidade, CNPJ, origem da campanha ou anotação). Confira e
+            salve.
+          </li>
+          <li>
+            Escolha a etapa, quem cuida (ou o rodízio), as etiquetas e, se quiser, a mensagem de boas-vindas
+            no WhatsApp.
+          </li>
+        </Passos>
+        <p>
+          Quem já é lead (mesmo telefone ou e-mail) não vira lead repetido: o envio entra como nota no lead
+          que já existe. Campo novo no formulário aparece marcado; até você escolher, vai para a anotação.
+          Robôs são barrados por um campo escondido e pelo limite de envios por minuto.
+        </p>
+        <h3>Chaves da API (para o ERP, a loja virtual, o BI)</h3>
+        <ul>
+          <li>
+            Crie uma chave para cada sistema, com só o que ele precisa: criar leads, ler leads, mudar etapa e
+            responsável, registrar atividades, ler funis e usuários, gerenciar avisos.
+          </li>
+          <li>
+            A chave aparece <b>uma vez só</b>: copie e cole no sistema. Perdeu? Revogue e crie outra. Dá para
+            pôr validade (30, 90 dias, 1 ano) e limitar a alguns endereços IP.
+          </li>
+          <li>
+            O que chega pela API não duplica: mesmo telefone, e-mail ou CNPJ junta no lead que já existe. Tudo
+            o que a API muda fica na Auditoria com o nome da chave.
+          </li>
+          <li>
+            Limites: 600 chamadas por minuto por chave e 20 mil por dia para a empresa. A documentação
+            completa, com exemplos, fica em prospectteam.com.br/api.
+          </li>
+        </ul>
+        <h3>Avisos (webhooks)</h3>
+        <p>
+          O CRM avisa o outro sistema na hora em que algo acontece: lead criado, etapa mudou, responsável
+          mudou, lead ganho ou perdido, mensagem recebida, reunião marcada e ligação encerrada (com o resumo).
+          Exemplo: lead ganho cria o cliente no ERP.
+        </p>
+        <ul>
+          <li>
+            Clique em <b>Novo aviso</b>, informe o endereço (https) e escolha os eventos. Guarde o segredo:
+            com ele o sistema confere que o aviso veio mesmo do CRM.
+          </li>
+          <li>
+            Use <b>Enviar teste</b> para conferir. Cada entrega aparece no histórico com a resposta; se o
+            outro sistema estiver fora do ar, o CRM tenta de novo 6 vezes (até 24 horas depois) e dá para{' '}
+            <b>Reenviar</b>.
+          </li>
+          <li>Falhando por 3 dias seguidos, o aviso é pausado e os administradores recebem um alerta.</li>
+        </ul>
+        <Nota>
+          Make e Zapier: use uma chave com a permissão “Gerenciar avisos”; eles se inscrevem sozinhos nos
+          eventos.
         </Nota>
       </>
     ),

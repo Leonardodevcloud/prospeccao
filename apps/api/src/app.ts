@@ -36,6 +36,8 @@ import { rotasInicio } from './modulos/inicio/rotas.js';
 import { metaDoAmbiente } from './modulos/instagram/meta.js';
 import { rotasInstagram, rotasMeta } from './modulos/instagram/rotas.js';
 import { definirMeta } from './modulos/instagram/servico.js';
+import { rotasIntegracoes } from './modulos/integracoes/rotas.js';
+import { rotasApiV1 } from './modulos/integracoes/v1.js';
 import { rotasLgpd } from './modulos/lgpd/rotas.js';
 import { rotasLigacoes, rotasMasterTelefonia } from './modulos/ligacoes/rotas.js';
 import { rotasFundosPessoais } from './modulos/marca/pessoais.js';
@@ -112,6 +114,8 @@ export function criarApp(deps: DepsApi): Express {
   );
 
   app.use('/saude', rotasSaudePublica(deps));
+  // API aberta (chave no cabeçalho, sem cookie) e os formulários do site (qualquer origem).
+  app.use('/v1', rotasApiV1(deps));
   // Agenda por link secreto, para o Google Agenda assinar (sem login).
   app.use('/calendario', rotasCalendario(deps));
   // Abertura, clique e "sair da lista" dos e-mails (o leitor do lead não tem login nem origem).
@@ -158,6 +162,12 @@ export function criarApp(deps: DepsApi): Express {
     rotasInstagram(deps),
   );
   protegidas.use('/agenda', rotasAgenda(deps));
+  // API e integrações: do plano Time em diante (o resumo vale sempre: a tela mostra o cadeado).
+  protegidas.use(
+    '/integracoes',
+    rotaComRecurso(deps.pool, 'api', (req) => req.method === 'GET' && req.path === '/'),
+    rotasIntegracoes(deps),
+  );
   // Ligações pelo CRM (módulo à parte): ver o histórico vale sempre; ligar precisa do módulo.
   protegidas.use('/ligacoes', rotasLigacoes(deps));
   // Reuniões: ver as que já aconteceram vale sempre; marcar e mexer é do plano (e das horas do mês).

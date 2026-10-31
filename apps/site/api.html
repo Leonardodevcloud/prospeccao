@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API · Prospect Team</title>
+<meta name="description" content="API do Prospect Team: crie leads, mude etapas, receba os formulários do site e os avisos (webhooks) do CRM no seu ERP, loja virtual, Make ou Zapier.">
+<meta name="theme-color" content="#0b6b63">
+<link rel="canonical" href="https://prospectteam.com.br/api">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/componentes.css">
+<link rel="stylesheet" href="/css/site.css">
+<link rel="stylesheet" href="/css/api.css">
+</head>
+<body class="doc-api">
+<header class="documento__topo doc-topo">
+  <div class="wrap doc-topo__linha">
+    <a class="marca" href="/"><svg class="logo" viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><g class="logo__fig"><rect x="7" y="35" width="13" height="22" rx="6.5"/><circle cx="13.5" cy="26" r="6"/></g><g class="logo__fig"><rect x="25.5" y="27" width="13" height="30" rx="6.5"/><circle cx="32" cy="18" r="6"/></g><g class="logo__fig logo__acento"><rect x="44" y="19" width="13" height="38" rx="6.5"/><circle cx="50.5" cy="10" r="6"/></g></svg><span class="marca__nome"><b>Prospect Team</b><span>API v1</span></span></a>
+    <nav class="doc-topo__links" aria-label="Atalhos">
+      <a href="#formularios">Formulários em 5 min</a>
+      <a href="#make-zapier">Make e Zapier</a>
+      <a href="https://app.prospectteam.com.br/api/v1/openapi.json">OpenAPI</a>
+      <a class="btn btn--pri" href="https://app.prospectteam.com.br/integracoes">Entrar no CRM</a>
+    </nav>
+  </div>
+</header>
+
+<div class="doc wrap">
+  <nav class="doc-lado" aria-label="Seções">
+    <p class="doc-lado__titulo">Começar</p>
+    <a href="#visao-geral">Visão geral</a>
+    <a href="#autenticacao">Autenticação</a>
+    <a href="#limites">Limites e erros</a>
+    <a href="#paginacao">Paginação</a>
+    <a href="#idempotencia">Idempotência</a>
+    <p class="doc-lado__titulo">Leads</p>
+    <a href="#criar-lead"><span class="met met--post">POST</span>Criar lead</a>
+    <a href="#listar-leads"><span class="met met--get">GET</span>Listar leads</a>
+    <a href="#ver-lead"><span class="met met--get">GET</span>Ver um lead</a>
+    <a href="#mudar-lead"><span class="met met--patch">PATCH</span>Mudar etapa</a>
+    <a href="#atividade"><span class="met met--post">POST</span>Registrar atividade</a>
+    <p class="doc-lado__titulo">Funil e equipe</p>
+    <a href="#funis"><span class="met met--get">GET</span>Funis e etapas</a>
+    <a href="#usuarios"><span class="met met--get">GET</span>Usuários</a>
+    <p class="doc-lado__titulo">Formulários e avisos</p>
+    <a href="#formularios"><span class="met met--post">POST</span>Entrada de formulário</a>
+    <a href="#avisos">Avisos (webhooks)</a>
+    <a href="#assinatura">Conferir a assinatura</a>
+    <a href="#avisos-api">Avisos pela API</a>
+    <a href="#make-zapier">Make e Zapier</a>
+  </nav>
+
+  <main class="doc-meio">
+    <section id="visao-geral">
+      <h1>API do Prospect Team</h1>
+      <p class="doc-lead">Ligue o CRM ao que não é CRM: o formulário do site, o ERP (pedido faturado vira <b>Ganho</b>), a loja virtual, o BI e o resto pelo Make ou Zapier.</p>
+      <p>É uma API REST com JSON. Todas as rotas começam com:</p>
+      <pre class="codigo"><code>https://app.prospectteam.com.br/api/v1</code></pre>
+      <p>Se a sua empresa usa um endereço próprio (crm.suaempresa.com.br), o mesmo caminho funciona nele. A descrição completa em <a href="https://app.prospectteam.com.br/api/v1/openapi.json">OpenAPI 3.1</a> importa direto no Postman, Insomnia, Make e Zapier.</p>
+      <p>Está disponível nos planos <b>Time</b> e <b>Escala</b>. Quem cria as chaves é o administrador, em <b>Gestão › Integrações</b>.</p>
+    </section>
+
+    <section id="autenticacao">
+      <h2>Autenticação</h2>
+      <p>Crie uma chave em <b>Gestão › Integrações › Nova chave</b> e mande no cabeçalho de cada pedido:</p>
+      <pre class="codigo"><code>Authorization: Bearer pt_live_…</code></pre>
+      <p>A chave aparece uma vez só (no banco fica só o “hash” dela). Crie uma chave para cada sistema, só com as permissões que ele precisa, e revogue quando não usar mais:</p>
+      <table class="doc-tabela">
+        <thead><tr><th>Permissão</th><th>O que deixa fazer</th></tr></thead>
+        <tbody>
+          <tr><td><code>leads:criar</code></td><td>Criar leads (com deduplicação)</td></tr>
+          <tr><td><code>leads:ler</code></td><td>Listar e ver leads, pessoas e histórico</td></tr>
+          <tr><td><code>leads:mover</code></td><td>Mudar etapa (inclusive ganho e perdido), responsável, valor e próximo passo</td></tr>
+          <tr><td><code>atividades</code></td><td>Registrar contato feito e nota</td></tr>
+          <tr><td><code>funil:ler</code></td><td>Ler funis, etapas e usuários</td></tr>
+          <tr><td><code>avisos</code></td><td>Criar e apagar avisos (webhooks)</td></tr>
+        </tbody>
+      </table>
+      <p>Cada chave enxerga só a unidade em que foi criada. Dá para pôr validade e limitar a alguns endereços IP. Tudo o que a API muda fica na Auditoria com o nome da chave.</p>
+    </section>
+
+    <section id="limites">
+      <h2>Limites e erros</h2>
+      <p><b>600 chamadas por minuto</b> por chave e <b>20.000 por dia</b> por empresa. Passou: resposta <code>429</code> (no minuto, <code>detalhes.tenteEm</code> diz em quantos segundos). Leads criados contam no limite de leads do plano.</p>
+      <p>Todo erro vem no mesmo formato, com a mensagem em português para mostrar a quem usa:</p>
+      <pre class="codigo"><code>{
+  "erro": {
+    "codigo": "dados_invalidos",
+    "mensagem": "Informe o nome da empresa (ou da pessoa).",
+    "detalhes": [{ "campo": "empresa", "mensagem": "Informe o nome da empresa (ou da pessoa)." }]
+  }
+}</code></pre>
+      <table class="doc-tabela">
+        <thead><tr><th>Status</th><th>Quando</th></tr></thead>
+        <tbody>
+          <tr><td><code>401</code></td><td>Sem chave, chave inválida, revogada ou vencida</td></tr>
+          <tr><td><code>403</code></td><td>A chave não tem a permissão, o IP não é permitido ou o plano não tem a API</td></tr>
+          <tr><td><code>404</code></td><td>O lead (ou o que for) não existe nesta conta</td></tr>
+          <tr><td><code>409</code></td><td>Conflito (a Idempotency-Key já foi usada em outro pedido)</td></tr>
+          <tr><td><code>422</code></td><td>Dados inválidos (veja <code>detalhes</code>)</td></tr>
+          <tr><td><code>429</code></td><td>Passou do limite</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="paginacao">
+      <h2>Paginação</h2>
+      <p>As listas vêm em <code>{ "dados": [...], "proximo": 48190 }</code>, do mais novo para o mais velho. Para a próxima página, mande <code>depois=48190</code>. Quando <code>proximo</code> vier <code>null</code>, acabou.</p>
+    </section>
+
+    <section id="idempotencia">
+      <h2>Idempotência</h2>
+      <p>Mande o cabeçalho <code>Idempotency-Key</code> (até 120 caracteres, ex.: o número do pedido) nos POST. Se a internet cair e o seu sistema repetir o pedido, a API devolve a mesma resposta da primeira vez (com <code>Idempotent-Replayed: true</code>) em vez de criar dois. Vale por 24 horas.</p>
+    </section>
+
+    <section id="criar-lead" class="doc-rota">
+      <h2>Criar lead</h2>
+      <p class="rota"><span class="met met--post">POST</span><code>/leads</code> <span class="perm">leads:criar</span></p>
+      <p>Cria o lead no funil. Se já existe um lead com o mesmo <b>telefone</b>, <b>e-mail</b> ou <b>CNPJ</b>, junta nele: registra o que chegou numa nota e responde <code>200</code> com <code>"duplicado": true</code>. Novo: <code>201</code>.</p>
+      <dl class="doc-params">
+        <dt><code>empresa</code> <span>texto · obrigatório</span></dt><dd>Nome da empresa (ou da pessoa, se for cliente final).</dd>
+        <dt><code>contato</code> <span>objeto</span></dt><dd><code>nome</code>, <code>cargo</code>, <code>telefone</code>, <code>email</code>. Telefone em qualquer formato; o CRM normaliza.</dd>
+        <dt><code>cnpj</code> <span>texto</span></dt><dd>Com ou sem pontuação.</dd>
+        <dt><code>cidade</code>, <code>uf</code>, <code>site</code> <span>texto</span></dt><dd>Sem UF, o CRM usa a do DDD do telefone.</dd>
+        <dt><code>etapaId</code> <span>número</span></dt><dd>Etapa do funil (veja <a href="#funis">Funis e etapas</a>). Sem ela, entra na primeira etapa do funil principal.</dd>
+        <dt><code>responsavelId</code> <span>número</span></dt><dd>Quem cuida (veja <a href="#usuarios">Usuários</a>). Sem ele, segue o rodízio da equipe.</dd>
+        <dt><code>etiquetas</code> <span>lista de textos</span></dt><dd>Até 6.</dd>
+        <dt><code>valorMensal</code> <span>número</span></dt><dd>Potencial em R$ por mês.</dd>
+        <dt><code>origem</code> <span>objeto</span></dt><dd>Ex.: <code>{ "canal": "site", "campanha": "black-friday", "utm_source": "google" }</code>. Aparece na ficha.</dd>
+        <dt><code>nota</code> <span>texto</span></dt><dd>Vai para o histórico do lead.</dd>
+        <dt><code>campos</code> <span>objeto</span></dt><dd>Qualquer outro dado (vira nota no lead).</dd>
+      </dl>
+      <div class="doc-codigo" data-abas>
+        <div class="doc-codigo__abas" role="tablist" aria-label="Linguagem">
+          <button type="button" role="tab" aria-selected="true" data-aba="curl">curl</button>
+          <button type="button" role="tab" aria-selected="false" data-aba="js">JavaScript</button>
+          <button type="button" role="tab" aria-selected="false" data-aba="py">Python</button>
+          <button type="button" role="tab" aria-selected="false" data-aba="php">PHP</button>
+        </div>
+<pre class="codigo" data-aba="curl"><code>curl -X POST https://app.prospectteam.com.br/api/v1/leads \
+  -H "Authorization: Bearer $PT_CHAVE" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: pedido-88213" \
+  -d '{
+    "empresa": "Clínica Sorriso Pleno",
+    "contato": { "nome": "Fernanda Rocha", "telefone": "(71) 99876-5432" },
+    "origem": { "canal": "site", "campanha": "black-friday" }
+  }'</code></pre>
+<pre class="codigo" data-aba="js" hidden><code>const r = await fetch('https://app.prospectteam.com.br/api/v1/leads', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${process.env.PT_CHAVE}`,
+    'Content-Type': 'application/json',
+    'Idempotency-Key': 'pedido-88213',
+  },
+  body: JSON.stringify({
+    empresa: 'Clínica Sorriso Pleno',
+    contato: { nome: 'Fernanda Rocha', telefone: '(71) 99876-5432' },
+    origem: { canal: 'site', campanha: 'black-friday' },
+  }),
+});
+const lead = await r.json(); // lead.id, lead.duplicado, lead.link</code></pre>
+<pre class="codigo" data-aba="py" hidden><code>import os, requests
+
+r = requests.post(
+    "https://app.prospectteam.com.br/api/v1/leads",
+    headers={"Authorization": f"Bearer {os.environ['PT_CHAVE']}", "Idempotency-Key": "pedido-88213"},
+    json={
+        "empresa": "Clínica Sorriso Pleno",
+        "contato": {"nome": "Fernanda Rocha", "telefone": "(71) 99876-5432"},
+        "origem": {"canal": "site", "campanha": "black-friday"},
+    },
+    timeout=15,
+)
+lead = r.json()</code></pre>
+<pre class="codigo" data-aba="php" hidden><code>$ch = curl_init('https://app.prospectteam.com.br/api/v1/leads');
+curl_setopt_array($ch, [
+  CURLOPT_POST => true,
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_HTTPHEADER => [
+    'Authorization: Bearer ' . getenv('PT_CHAVE'),
+    'Content-Type: application/json',
+    'Idempotency-Key: pedido-88213',
+  ],
+  CURLOPT_POSTFIELDS => json_encode([
+    'empresa' => 'Clínica Sorriso Pleno',
+    'contato' => ['nome' => 'Fernanda Rocha', 'telefone' => '(71) 99876-5432'],
+    'origem' => ['canal' => 'site', 'campanha' => 'black-friday'],
+  ]),
+]);
+$lead = json_decode(curl_exec($ch), true);</code></pre>
+      </div>
+      <p class="doc-rotulo">Resposta · 201</p>
+      <pre class="codigo"><code>{
+  "id": 48231,
+  "empresa": "Clínica Sorriso Pleno",
+  "duplicado": false,
+  "etapa": { "id": 3, "nome": "A abordar", "papel": "a_abordar" },
+  "funil": { "id": 1, "nome": "SDR" },
+  "responsavel": { "id": 7, "nome": "Diego Martins" },
+  "contato": { "nome": "Fernanda Rocha", "cargo": null, "telefone": "71998765432", "email": null },
+  "valorMensal": null,
+  "etiquetas": [],
+  "link": "https://app.prospectteam.com.br/funil?empresa=48231"
+}</code></pre>
+      <div class="doc-testar">
+        <p class="doc-rotulo">Testar sem chave</p>
+        <p>Confere o seu JSON com as mesmas regras da API, sem gravar nada.</p>
+        <label class="sr" for="testar-corpo">Corpo do pedido</label>
+        <textarea id="testar-corpo" rows="7" spellcheck="false">{
+  "empresa": "Clínica Sorriso Pleno",
+  "contato": { "nome": "Fernanda Rocha", "telefone": "(71) 99876-5432" }
+}</textarea>
+        <button type="button" class="btn btn--pri" id="testar">Testar o pedido</button>
+        <pre class="codigo" id="testar-resposta" hidden><code></code></pre>
+      </div>
+    </section>
+
+    <section id="listar-leads" class="doc-rota">
+      <h2>Listar leads</h2>
+      <p class="rota"><span class="met met--get">GET</span><code>/leads</code> <span class="perm">leads:ler</span></p>
+      <p>Filtros (todos opcionais): <code>etapaId</code>, <code>responsavelId</code>, <code>atualizadoDesde</code> (data ISO, para sincronizar só o que mudou), <code>busca</code> (parte do nome), <code>telefone</code>, <code>email</code>, <code>cnpj</code>, <code>limite</code> (1 a 100, padrão 50) e <code>depois</code> (<a href="#paginacao">paginação</a>).</p>
+      <pre class="codigo"><code>curl "https://app.prospectteam.com.br/api/v1/leads?atualizadoDesde=2026-11-01T00:00:00-03:00&amp;limite=100" \
+  -H "Authorization: Bearer $PT_CHAVE"</code></pre>
+    </section>
+
+    <section id="ver-lead" class="doc-rota">
+      <h2>Ver um lead</h2>
+      <p class="rota"><span class="met met--get">GET</span><code>/leads/{id}</code> <span class="perm">leads:ler</span></p>
+      <p>O lead, as pessoas da negociação (<code>pessoas</code>: nome, cargo, telefone, e-mail, se decide) e as últimas 20 atividades (<code>atividades</code>).</p>
+    </section>
+
+    <section id="mudar-lead" class="doc-rota">
+      <h2>Mudar etapa, responsável e dados</h2>
+      <p class="rota"><span class="met met--patch">PATCH</span><code>/leads/{id}</code> <span class="perm">leads:mover</span></p>
+      <p>Mande só o que muda: <code>etapaId</code>, <code>responsavelId</code> (<code>null</code> tira o dono), <code>valorMensal</code>, <code>proximaAcao</code>, <code>proximaAcaoEm</code>, <code>etiquetas</code> e <code>motivo</code> (obrigatório ao mover para uma etapa de perdido). Exemplo: o pedido foi faturado no ERP, então o lead vai para Ganho:</p>
+      <pre class="codigo"><code>curl -X PATCH https://app.prospectteam.com.br/api/v1/leads/48231 \
+  -H "Authorization: Bearer $PT_CHAVE" -H "Content-Type: application/json" \
+  -d '{ "etapaId": 10, "valorMensal": 1290 }'</code></pre>
+    </section>
+
+    <section id="atividade" class="doc-rota">
+      <h2>Registrar atividade ou nota</h2>
+      <p class="rota"><span class="met met--post">POST</span><code>/leads/{id}/atividades</code> <span class="perm">atividades</span></p>
+      <p><code>tipo</code>: <code>whatsapp</code>, <code>ligacao</code>, <code>email</code>, <code>visita</code>, <code>reuniao</code> ou <code>nota</code>; <code>direcao</code>: <code>enviada</code> ou <code>recebida</code>; <code>texto</code>; e, se quiser, <code>proximaAcao</code> e <code>proximaAcaoEm</code>. Contato feito faz a etapa andar sozinha quando faz sentido (ex.: o lead respondeu).</p>
+    </section>
+
+    <section id="funis" class="doc-rota">
+      <h2>Funis e etapas</h2>
+      <p class="rota"><span class="met met--get">GET</span><code>/funis</code> <span class="perm">funil:ler</span></p>
+      <p>Cada funil com as etapas na ordem: <code>id</code>, <code>nome</code> e <code>papel</code> (<code>a_abordar</code>, <code>abordado</code>, <code>respondeu</code>, <code>reuniao</code>, <code>proposta</code>, <code>ganho</code>, <code>perdido</code>). Use o <code>id</code> da etapa no <code>etapaId</code>.</p>
+    </section>
+
+    <section id="usuarios" class="doc-rota">
+      <h2>Usuários</h2>
+      <p class="rota"><span class="met met--get">GET</span><code>/usuarios</code> <span class="perm">funil:ler</span></p>
+      <p>As pessoas da conta (<code>id</code>, <code>nome</code>, <code>email</code>, <code>papel</code>, <code>ativo</code>), para usar no <code>responsavelId</code>.</p>
+    </section>
+
+    <section id="formularios" class="doc-rota">
+      <h2>Formulários do site em 5 minutos</h2>
+      <p class="rota"><span class="met met--post">POST</span><code>/entrada/{chave}</code> <span class="perm">sem chave da API</span></p>
+      <p>Sem programar: em <b>Gestão › Integrações › Formulários do site</b>, crie um formulário e copie o endereço dele. Ele aceita o envio como vier (JSON ou formulário HTML) de qualquer construtor. No primeiro envio, o CRM aprende os campos e sugere para onde vai cada um; você confere na tela.</p>
+      <ul>
+        <li><b>Elementor</b>: no formulário, Ações após o envio › Webhook › cole o endereço (marque “Dados avançados”).</li>
+        <li><b>WordPress (Contact Form 7)</b>: plugin “CF7 to Webhook” › aba Webhook › cole o endereço.</li>
+        <li><b>RD Station Marketing</b>: Integrações › Webhooks › gatilho “Conversão” › cole o endereço.</li>
+        <li><b>Typeform</b>: Connect › Webhooks › Add a webhook › cole o endereço.</li>
+        <li><b>Google Forms</b>: na planilha de respostas, Extensões › Apps Script, cole o script abaixo e crie o acionador “Ao enviar formulário”.</li>
+        <li><b>HTML puro</b>: use o endereço no <code>action</code>. Quem envia vê a sua página de obrigado (escolha na tela).</li>
+      </ul>
+      <pre class="codigo"><code>&lt;form action="https://app.prospectteam.com.br/api/v1/entrada/f_SUA_CHAVE" method="post"&gt;
+  &lt;input name="nome" placeholder="Seu nome" required&gt;
+  &lt;input name="whatsapp" placeholder="WhatsApp" required&gt;
+  &lt;input name="email" type="email" placeholder="E-mail"&gt;
+  &lt;!-- contra robôs: fica escondido e vazio --&gt;
+  &lt;input name="pt_confirmar" style="display:none" tabindex="-1" autocomplete="off"&gt;
+  &lt;button&gt;Quero conversar&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+      <p class="doc-rotulo">Google Forms (Apps Script)</p>
+      <pre class="codigo"><code>function aoEnviar(e) {
+  const dados = {};
+  e.response.getItemResponses().forEach((r) =&gt; (dados[r.getItem().getTitle()] = r.getResponse()));
+  UrlFetchApp.fetch('https://app.prospectteam.com.br/api/v1/entrada/f_SUA_CHAVE', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(dados),
+  });
+}</code></pre>
+      <p>Quem já é lead (mesmo telefone ou e-mail) não duplica: o envio vira nota no lead. Robôs são barrados pelo campo escondido <code>pt_confirmar</code> e pelo limite de envios por minuto. A resposta é <code>201 { "recebido": true }</code> (ou a página de obrigado, no formulário HTML).</p>
+    </section>
+
+    <section id="avisos" class="doc-rota">
+      <h2>Avisos (webhooks)</h2>
+      <p>O CRM manda um <code>POST</code> com JSON para o seu endereço (https) na hora em que algo acontece. Crie em <b>Gestão › Integrações › Avisos</b> (ou <a href="#avisos-api">pela API</a>) e escolha os eventos:</p>
+      <table class="doc-tabela">
+        <thead><tr><th>Evento</th><th>Quando</th></tr></thead>
+        <tbody>
+          <tr><td><code>lead.criado</code></td><td>Lead entrou no funil (por qualquer caminho)</td></tr>
+          <tr><td><code>lead.etapa</code></td><td>Mudou de etapa (vem com <code>de</code>, a etapa anterior)</td></tr>
+          <tr><td><code>lead.responsavel</code></td><td>Mudou quem cuida</td></tr>
+          <tr><td><code>lead.ganho</code></td><td>Foi para uma etapa de ganho</td></tr>
+          <tr><td><code>lead.perdido</code></td><td>Foi para uma etapa de perdido (o <code>motivo</code> vem no lead)</td></tr>
+          <tr><td><code>mensagem.recebida</code></td><td>O lead mandou mensagem (WhatsApp ou direct)</td></tr>
+          <tr><td><code>reuniao.marcada</code></td><td>Reunião marcada com o lead</td></tr>
+          <tr><td><code>ligacao.encerrada</code></td><td>Ligação pelo CRM com o resultado e o resumo da IA</td></tr>
+        </tbody>
+      </table>
+      <pre class="codigo"><code>POST https://seu-sistema.com.br/hook
+Content-Type: application/json
+X-Prospect-Evento: lead.ganho
+X-Prospect-Entrega: evt_90412
+X-Prospect-Assinatura: t=1793455924,v1=5f1c…
+
+{
+  "id": "evt_90412",
+  "evento": "lead.ganho",
+  "em": "2026-11-03T12:12:04.000Z",
+  "contaId": 12,
+  "lead": { "id": 48213, "empresa": "Mundo Pet Vilas", "etapa": { "id": 10, "nome": "Ganho", "papel": "ganho" }, … }
+}</code></pre>
+      <p>Responda <b>2xx em até 10 segundos</b>. Se não, o CRM tenta de novo 6 vezes: 1 min, 5 min, 30 min, 2 h, 6 h e 24 h depois. Cada entrega aparece no histórico da tela, com o corpo e a resposta, e dá para reenviar. Falhando por 3 dias seguidos, o aviso é pausado e os administradores recebem um alerta. Use o <code>id</code> (<code>evt_…</code>) para ignorar repetições.</p>
+    </section>
+
+    <section id="assinatura" class="doc-rota">
+      <h2>Conferir a assinatura</h2>
+      <p>O cabeçalho <code>X-Prospect-Assinatura</code> traz <code>t</code> (segundos) e <code>v1</code>: o HMAC-SHA256, em hexadecimal, de <code>&lt;t&gt;.&lt;corpo como chegou&gt;</code> com o segredo do aviso. Confira antes de confiar no que chegou, e recuse <code>t</code> com mais de 5 minutos.</p>
+      <div class="doc-codigo" data-abas>
+        <div class="doc-codigo__abas" role="tablist" aria-label="Linguagem">
+          <button type="button" role="tab" aria-selected="true" data-aba="js">Node.js</button>
+          <button type="button" role="tab" aria-selected="false" data-aba="py">Python</button>
+          <button type="button" role="tab" aria-selected="false" data-aba="php">PHP</button>
+        </div>
+<pre class="codigo" data-aba="js"><code>import { createHmac, timingSafeEqual } from 'node:crypto';
+
+function avisoValido(corpoCru, cabecalho, segredo) {
+  const { t, v1 } = Object.fromEntries(cabecalho.split(',').map((p) =&gt; p.split('=')));
+  if (Math.abs(Date.now() / 1000 - Number(t)) &gt; 300) return false;
+  const esperado = createHmac('sha256', segredo).update(`${t}.${corpoCru}`).digest('hex');
+  return timingSafeEqual(Buffer.from(esperado), Buffer.from(v1));
+}</code></pre>
+<pre class="codigo" data-aba="py" hidden><code>import hmac, hashlib, time
+
+def aviso_valido(corpo_cru: bytes, cabecalho: str, segredo: str) -&gt; bool:
+    partes = dict(p.split("=", 1) for p in cabecalho.split(","))
+    if abs(time.time() - int(partes["t"])) &gt; 300:
+        return False
+    esperado = hmac.new(segredo.encode(), f"{partes['t']}.".encode() + corpo_cru, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(esperado, partes["v1"])</code></pre>
+<pre class="codigo" data-aba="php" hidden><code>function aviso_valido(string $corpoCru, string $cabecalho, string $segredo): bool {
+  parse_str(str_replace(',', '&amp;', $cabecalho), $p);
+  if (abs(time() - (int) $p['t']) &gt; 300) return false;
+  $esperado = hash_hmac('sha256', $p['t'] . '.' . $corpoCru, $segredo);
+  return hash_equals($esperado, $p['v1']);
+}</code></pre>
+      </div>
+    </section>
+
+    <section id="avisos-api" class="doc-rota">
+      <h2>Avisos pela API</h2>
+      <p class="rota"><span class="met met--get">GET</span><code>/avisos</code> · <span class="met met--post">POST</span><code>/avisos</code> · <span class="met met--delete">DELETE</span><code>/avisos/{id}</code> <span class="perm">avisos</span></p>
+      <p>Para sistemas que se inscrevem sozinhos (Make, Zapier, n8n). <code>POST</code> com <code>url</code> (https), <code>eventos</code> e, se quiser, <code>nome</code>. A resposta traz o <code>segredo</code> da assinatura (só nela). O <code>DELETE</code> só apaga avisos criados pela mesma chave; os criados na tela continuam.</p>
+    </section>
+
+    <section id="make-zapier" class="doc-rota">
+      <h2>Make e Zapier</h2>
+      <ul>
+        <li><b>Receber do CRM</b> (lead ganho → planilha, Slack, ERP): no Make, módulo “Webhooks › Custom webhook”; no Zapier, “Webhooks by Zapier › Catch Hook”. Copie o endereço que eles dão e crie um aviso com ele em Gestão › Integrações.</li>
+        <li><b>Mandar para o CRM</b> (cadastro de outro sistema → lead): módulo “HTTP › Make a request” (Make) ou “Webhooks by Zapier › POST” (Zapier) para <code>/leads</code>, com o cabeçalho <code>Authorization</code>.</li>
+        <li>Importe a descrição <a href="https://app.prospectteam.com.br/api/v1/openapi.json">OpenAPI</a> para ver todos os campos.</li>
+      </ul>
+    </section>
+  </main>
+</div>
+<script src="/js/api.js" defer></script>
+</body>
+</html>

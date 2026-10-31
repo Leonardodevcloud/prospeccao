@@ -90,6 +90,11 @@ export const RECURSOS = {
     nome: 'Auditoria e segurança',
     descricao: 'Registro de tudo o que foi feito e verificação em duas etapas obrigatória.',
   },
+  api: {
+    nome: 'API e integrações',
+    descricao:
+      'Chaves da API, formulários do site direto no funil e avisos (webhooks) para o ERP, a loja virtual e o Make/Zapier.',
+  },
 } as const;
 export type Recurso = keyof typeof RECURSOS;
 export const LISTA_RECURSOS = Object.keys(RECURSOS) as Recurso[];
@@ -138,6 +143,7 @@ const RECURSOS_TIME: Recurso[] = [
   'rua',
   'instagram',
   'celular',
+  'api',
 ];
 
 export const TABELA_PADRAO: TabelaPrecos = {

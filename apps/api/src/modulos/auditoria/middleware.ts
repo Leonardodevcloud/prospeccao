@@ -31,6 +31,31 @@ const qtd = (v: unknown) => (Array.isArray(v) ? v.length : 0);
 
 /** null = não registra. */
 const REGRAS: Record<string, Regra | null> = {
+  'POST /integracoes/chaves': { acao: 'integrações', texto: (b) => `Criou a chave da API ${txt(b.nome)}` },
+  'DELETE /integracoes/chaves/:id': { acao: 'integrações', texto: 'Revogou uma chave da API' },
+  'POST /integracoes/formularios': {
+    acao: 'integrações',
+    texto: (b) => `Criou o formulário do site ${txt(b.nome)}`,
+  },
+  'PUT /integracoes/formularios/:id': {
+    acao: 'integrações',
+    texto: (b) => `Editou o formulário do site ${txt(b.nome)}`,
+  },
+  'DELETE /integracoes/formularios/:id': { acao: 'integrações', texto: 'Apagou um formulário do site' },
+  'POST /integracoes/avisos': { acao: 'integrações', texto: (b) => `Criou o aviso (webhook) ${txt(b.nome)}` },
+  'PUT /integracoes/avisos/:id': {
+    acao: 'integrações',
+    texto: (b) => `Editou o aviso (webhook) ${txt(b.nome)}`,
+  },
+  'POST /integracoes/avisos/:id/pausar': { acao: 'integrações', texto: 'Pausou um aviso (webhook)' },
+  'POST /integracoes/avisos/:id/ativar': { acao: 'integrações', texto: 'Ativou um aviso (webhook)' },
+  'DELETE /integracoes/avisos/:id': { acao: 'integrações', texto: 'Apagou um aviso (webhook)' },
+  'POST /integracoes/avisos/:id/segredo': {
+    acao: 'integrações',
+    texto: 'Trocou o segredo de um aviso (webhook)',
+  },
+  'POST /integracoes/avisos/:id/testar': null,
+  'POST /integracoes/entregas/:id/reenviar': null,
   'POST /funil/leads': {
     acao: 'funil',
     texto: (b) =>

@@ -95,6 +95,10 @@ const roteador = createBrowserRouter([
         path: 'telefonia',
         lazy: async () => ({ Component: (await import('./paginas/Telefonia')).Telefonia }),
       },
+      {
+        path: 'integracoes',
+        lazy: async () => ({ Component: (await import('./paginas/Integracoes')).Integracoes }),
+      },
       { path: 'reunioes/:id', element: <ReuniaoDetalhe /> },
       // Vendas na rua (o mapa só carrega aqui).
       { path: 'rua', lazy: async () => ({ Component: (await import('./paginas/NaRua')).NaRua }) },

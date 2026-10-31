@@ -14,6 +14,7 @@ import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
 import { iniciarConteudo } from './modulos/instagram/conteudo.js';
 import { iniciarConversoes } from './modulos/instagram/conversoes.js';
+import { iniciarAvisos } from './modulos/integracoes/avisos.js';
 import { prepararTelefonia } from './modulos/ligacoes/preparar.js';
 import { iniciarLigacoes } from './modulos/ligacoes/processar.js';
 import { iniciarDominios } from './modulos/marca/rotina.js';
@@ -111,6 +112,8 @@ const pararConteudo = iniciarConteudo({ pool, log });
 const pararConversoes = iniciarConversoes({ pool, log });
 // Ligações: transcrição e resumo depois de cada uma; fecha as esquecidas abertas.
 const pararLigacoes = iniciarLigacoes({ pool, log, servicos, telefonia });
+// API aberta: entrega os avisos (webhooks) aos sistemas dos clientes, com novas tentativas.
+const pararAvisos = iniciarAvisos({ pool, log, chave });
 // Marca própria: domínios ativos dos clientes (links e origens) e conferência dos que esperam o DNS.
 const pararListaDominios = manterDominios(pool, (erro) =>
   log.warn({ err: erro }, 'marca: lista de domínios falhou'),
@@ -118,6 +121,7 @@ const pararListaDominios = manterDominios(pool, (erro) =>
 const pararDominios = iniciarDominios({ pool, log, site: () => dominiosDoAmbiente(ambiente) });
 
 encerrarAoReceberSinal(log, async () => {
+  pararAvisos();
   pararAutomacao();
   pararAgente();
   pararPlanos();
