@@ -1,5 +1,6 @@
 import type { Pool } from '@prospeccao/db';
 import { SCHEMA_VITRINE } from './acesso.js';
+import { FORA_DO_ARGOS } from './sistema.js';
 
 /** O que cada view da vitrine tem, para a IA escolher onde procurar. */
 export const DESCRICAO_TABELA: Record<string, string> = {
@@ -17,7 +18,7 @@ export const DESCRICAO_TABELA: Record<string, string> = {
   mensagens_whatsapp: 'mensagens de WhatsApp enviadas e recebidas (direcao enviada/recebida), status e texto',
   tarefas: 'tarefas e reuniões agendadas (tipo reuniao/ligacao/tarefa), responsável e se foi concluída',
   reunioes:
-    'reuniões por vídeo que aconteceram (uma linha por reunião): duração, se foi gravada, resumo da IA, interesse do lead, destaques (dor, volume, objeções, quem decide) e próximos passos combinados',
+    'reuniões por vídeo que aconteceram (uma linha por reunião): duração, se foi gravada, resumo da IA, interesse do lead, destaques (dor, volume, objeções, possíveis decisores) e próximos passos combinados',
   campanhas_email: 'campanhas de e-mail de prospecção',
   emails_enviados: 'cada e-mail (ou passo) enviado: entregue, aberto, clicado, respondido',
   respostas_email: 'respostas de e-mail dos leads, com o interesse lido pela IA e um resumo',
@@ -26,20 +27,14 @@ export const DESCRICAO_TABELA: Record<string, string> = {
     'canais encontrados para falar com cada empresa (WhatsApp, telefone, e-mail, Instagram), sem o número',
   conhecimento:
     'base de conhecimento da unidade (respostas, objeções, informações da empresa usadas pelo agente)',
-  consumo_ia: 'uso diário da IA por unidade (chamadas e tokens)',
   mercado:
     'base pública da Receita Federal: todas as empresas do Brasil importadas (CNAE, porte, capital social, cidade, data de abertura). Use para tamanho de mercado; é grande, sempre filtre por uf/cidade/cnae',
   plataforma_organizacoes: 'clientes da plataforma (organizações): plano, limites, módulos, mensalidade',
-  plataforma_consumo_buscas: 'buscas pagas no Google (Serper) por unidade e por dia',
   plataforma_pedidos_site: 'pedidos de demonstração que chegaram pelo site e a etapa da venda',
 };
 
 /** Views que só o master da plataforma usa (para os outros, nem aparecem no catálogo). */
-export const SO_MASTER = new Set([
-  'plataforma_organizacoes',
-  'plataforma_consumo_buscas',
-  'plataforma_pedidos_site',
-]);
+export const SO_MASTER = new Set(['plataforma_organizacoes', 'plataforma_pedidos_site']);
 
 export interface TabelaCatalogo {
   nome: string;
@@ -61,6 +56,8 @@ export async function carregarCatalogo(pool: Pool, agora = Date.now()): Promise<
   );
   const mapa = new Map<string, TabelaCatalogo>();
   for (const c of rows) {
+    // Consumo e custos da plataforma ficam fora do Argos (ele não fala de custos de serviços).
+    if (FORA_DO_ARGOS.has(c.tabela)) continue;
     let t = mapa.get(c.tabela);
     if (!t) {
       t = { nome: c.tabela, descricao: DESCRICAO_TABELA[c.tabela] ?? null, colunas: [] };

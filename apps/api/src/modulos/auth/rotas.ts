@@ -385,8 +385,10 @@ export function rotasAuth(deps: DepsApi): Router {
       agendaToken: string;
       totpAtivo: boolean;
       termosVersao: string | null;
+      tourVisto: boolean;
     }>(
-      `SELECT telefone, agenda_token AS "agendaToken", totp_ativo AS "totpAtivo", termos_versao AS "termosVersao"
+      `SELECT telefone, agenda_token AS "agendaToken", totp_ativo AS "totpAtivo", termos_versao AS "termosVersao",
+              tour_visto_em IS NOT NULL AS "tourVisto"
          FROM cadastro.usuarios WHERE id = $1`,
       [u.id],
     );
@@ -448,6 +450,8 @@ export function rotasAuth(deps: DepsApi): Router {
       soPropriaBase: u.soPropriaBase,
       duasEtapas: { ativo: !!rows[0]?.totpAtivo, exigido: !!c[0]?.exigir_2fa },
       termos: { versao: TERMOS_VERSAO, aceitos: rows[0]?.termosVersao === TERMOS_VERSAO },
+      // Tour do sistema: o convite aparece até a pessoa assistir, pular ou fechar.
+      tour: { visto: !!rows[0]?.tourVisto },
       // Marca do cliente (white label): logos, ícones e cores no sistema e nos relatórios.
       marca: (() => {
         const o = c[0];

@@ -1,6 +1,7 @@
 import { Icon } from '@prospeccao/ui';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
+import { abrirTour } from './tour/abrir';
 
 /**
  * Central de ajuda: um artigo por assunto, escrito para quem usa (não para quem programa).
@@ -63,6 +64,31 @@ export const ARTIGOS: ArtigoAjuda[] = [
             <b>Convide a equipe</b>: cada pessoa com o seu papel.
           </li>
         </Passos>
+      </>
+    ),
+  },
+  {
+    id: 'tour',
+    area: 'Começo',
+    titulo: 'Tour do sistema',
+    resumo: 'Uma volta guiada pelo Argos pelas telas principais, em poucos minutos.',
+    termos: 'tour vídeo tutorial apresentação boas-vindas volta guiada como funciona começo',
+    corpo: (
+      <>
+        <p>
+          No primeiro acesso, o sistema convida para o <b>Tour do sistema</b>: o Argos mostra, nas telas de
+          verdade, o principal de cada parte e onde fica cada coisa. Só entra o que a sua conta contratou.
+        </p>
+        <p>
+          <button type="button" className="ajuda-tour" onClick={() => abrirTour()}>
+            Assistir o tour
+          </button>
+        </p>
+        <ul>
+          <li>Cada tela espera a fala terminar; a legenda mostra a frase da vez, para assistir sem som.</li>
+          <li>Os capítulos embaixo pulam para qualquer parte, e a barra mostra onde você está.</li>
+          <li>Pausar e continuar seguem de onde parou. Feche quando quiser e volte aqui para ver de novo.</li>
+        </ul>
       </>
     ),
   },
@@ -1286,9 +1312,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
     corpo: (
       <>
         <p>
-          Todos os planos têm a base: campanhas por nicho e cidade, enriquecimento com decisor e contatos,
-          nota A, B e C, funil, ficha do lead, tarefas, Meu dia e os relatórios do funil e das campanhas. O
-          que muda de um plano para o outro:
+          Todos os planos têm a base: campanhas por nicho e cidade, enriquecimento com possíveis decisores e
+          contatos, nota A, B e C, funil, ficha do lead, tarefas, Meu dia e os relatórios do funil e das
+          campanhas. O que muda de um plano para o outro:
         </p>
         <ul>
           <li>
@@ -1463,7 +1489,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <ul>
           <li>Funil dos leads do período e ritmo de contatos por dia.</li>
           <li>Por que perdemos ou descartamos.</li>
-          <li>Campanhas, decisores encontrados e quais fontes erram mais.</li>
+          <li>Campanhas, possíveis decisores encontrados e quais fontes erram mais.</li>
           <li>A nota acerta? (nota dos leads comparada com o que virou venda).</li>
           <li>Custos do mês.</li>
         </ul>
@@ -1474,15 +1500,37 @@ export const ARTIGOS: ArtigoAjuda[] = [
     id: 'argos',
     area: 'Argos',
     titulo: 'Argos e o Mapa do conhecimento',
-    resumo: 'O assistente que responde sobre o seu comercial, por voz ou texto.',
+    resumo: 'O seu assistente no sistema: tira dúvidas, mostra o comercial, anota tarefas e abre telas.',
     onde: { rotulo: 'Argos', para: '/argos' },
-    termos: 'assistente voz perguntar mapa galáxia memória lembrar esquecer inventar números conferência',
+    termos:
+      'assistente voz perguntar dúvida como faço tarefa agenda reunião abrir tela mapa galáxia memória lembrar esquecer inventar números conferência',
     corpo: (
       <>
         <p>
-          Pergunte ao <b>Argos</b> sobre o seu comercial, por voz ou por texto. O histórico das conversas é só
-          seu. Ele vê os mesmos dados que você: quem só vê a própria base recebe respostas só sobre ela.
+          O <b>Argos</b> é o seu assistente dentro do Prospect Team, por voz ou por texto. O histórico das
+          conversas é só seu. Ele vê os mesmos dados que você: quem só vê a própria base recebe respostas só
+          sobre ela.
         </p>
+        <h3>O que dá para pedir</h3>
+        <ul>
+          <li>
+            <b>Tirar dúvidas sobre o sistema</b>: “como eu conecto o WhatsApp?”, “onde fica a sequência de
+            e-mail?”. Ele explica pelo passo a passo desta Central de Ajuda e pode abrir o artigo.
+          </li>
+          <li>
+            <b>Ver como está o comercial</b>: “como está o meu funil?”, “quem da equipe mais avançou na
+            semana?”, “quais propostas estão paradas?”.
+          </li>
+          <li>
+            <b>Anotar na sua agenda</b>: “marca uma reunião com o Dr. Renato amanhã às 10”, “me lembra de
+            ligar para a Clínica Sorriso na sexta”. Ele cria a tarefa ou a reunião na sua agenda (não liga nem
+            manda mensagem por você).
+          </li>
+          <li>
+            <b>Abrir telas</b>: “abre o funil”, “abre a ficha da Clínica Sorriso”.
+          </li>
+        </ul>
+        <p>Ele só trata do sistema e do seu comercial. Outros assuntos, ele avisa que não pode ajudar.</p>
         <h3>De onde vêm as respostas</h3>
         <ul>
           <li>

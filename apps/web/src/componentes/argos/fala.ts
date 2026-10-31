@@ -4,6 +4,7 @@
  * 2º (sem a chave, ou se falhar): a síntese de fala do próprio navegador.
  */
 import { dividirFala } from '@prospeccao/shared/assistente';
+import { paraFalarNoNavegador } from '@prospeccao/shared/tour';
 import { apiAudio } from './api';
 
 interface ConfigVoz {
@@ -385,7 +386,8 @@ function falarNavegador(texto: string, eventos: Eventos, minha: number) {
   };
   const voz = escolherVozNavegador();
   const fila = dividir(texto, 180, 180).map((trecho, i, todos) => {
-    const u = new SpeechSynthesisUtterance(trecho);
+    // A voz do navegador embola palavras em inglês e siglas: vão escritas como se falam.
+    const u = new SpeechSynthesisUtterance(paraFalarNoNavegador(trecho));
     if (voz) u.voice = voz;
     u.lang = voz?.lang ?? 'pt-BR';
     u.rate = 1.12;

@@ -14430,3 +14430,305 @@ fieldset.assinar__formas {
     max-width: none;
   }
 }
+
+/* ───────── Tour do sistema (a volta guiada do Argos) ───────── */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+    max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
+}
+.tour__janela {
+  width: min(1120px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.tour__topo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.tour__espaco {
+  flex: 1;
+}
+.tour__palco {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #07110f;
+  color: #eef7f5;
+  isolation: isolate;
+}
+.tour__tela {
+  position: absolute;
+  inset: 0;
+  transition: transform 1.2s cubic-bezier(0.4, 0.1, 0.2, 1);
+  animation: tour-entra 0.6s ease;
+}
+.tour__tela img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+  display: block;
+}
+@keyframes tour-entra {
+  from {
+    opacity: 0;
+  }
+}
+.tour__foco {
+  position: absolute;
+  border: 2px solid #3cc4b3;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 200vmax rgba(4, 16, 14, 0.56),
+    0 0 24px rgba(60, 196, 179, 0.45);
+  transition:
+    left 0.9s cubic-bezier(0.4, 0.1, 0.2, 1),
+    top 0.9s cubic-bezier(0.4, 0.1, 0.2, 1),
+    width 0.9s cubic-bezier(0.4, 0.1, 0.2, 1),
+    height 0.9s cubic-bezier(0.4, 0.1, 0.2, 1);
+  pointer-events: none;
+}
+.tour__rotulo {
+  position: absolute;
+  transform: translateY(-100%);
+  margin-top: -8px;
+  white-space: nowrap;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #3cc4b3;
+  color: #04201c;
+  font-weight: 600;
+  font-size: clamp(10px, 1.3vw, 13px);
+  transition:
+    left 0.9s,
+    top 0.9s;
+}
+.tour__rotulo--embaixo {
+  transform: none;
+  margin-top: 8px;
+}
+.tour__capa {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 24px;
+  background: radial-gradient(120% 90% at 50% 40%, #0f2a26 0%, #07110f 70%);
+  animation: tour-entra 0.6s ease;
+}
+.tour__capa h3 {
+  margin: 0;
+  font-size: clamp(18px, 3vw, 30px);
+  letter-spacing: -0.02em;
+}
+.tour__narrador {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  z-index: 3;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(4, 16, 14, 0.92) 52%, rgba(4, 16, 14, 0) 71%);
+}
+.tour__legenda {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 3;
+  width: min(74%, 700px);
+  margin: 0;
+  padding: 0.5em 0.9em;
+  border-radius: 10px;
+  background: rgba(4, 14, 12, 0.84);
+  color: #eef7f5;
+  text-align: center;
+  font-size: clamp(12px, 1.8vw, 18px);
+  line-height: 1.4;
+  font-weight: 500;
+  text-wrap: balance;
+}
+.tour__comecar {
+  position: absolute;
+  left: 50%;
+  bottom: 22%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font: inherit;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+}
+.tour__convite {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  width: min(440px, calc(100% - 24px));
+  display: grid;
+  gap: 10px;
+  padding: clamp(14px, 3vw, 24px);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+}
+.tour__convite-cabeca {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tour__convite-cabeca canvas {
+  flex: none;
+  border-radius: 50%;
+  background: #07110f;
+}
+.tour__convite h2 {
+  margin: 0;
+  font-size: 19px;
+}
+.tour__convite p {
+  margin: 0;
+  font-size: 14px;
+}
+.tour__convite small {
+  font-size: 12px;
+}
+.tour__convite-acoes,
+.tour__fim {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tour__fim {
+  position: absolute;
+  left: 50%;
+  top: 70%;
+  transform: translateX(-50%);
+  z-index: 4;
+}
+.tour__controles {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tour__barra {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 3px;
+}
+.tour__seg {
+  position: relative;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+  cursor: pointer;
+}
+.tour__seg i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--brand);
+}
+.tour__tempo {
+  font-size: 12.5px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tour__capitulos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tour__chip {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tour__chip--ativo {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .tour__janela {
+    padding: 10px;
+  }
+  .tour__narrador {
+    display: none;
+  }
+  .tour__legenda {
+    width: 94%;
+    bottom: 6px;
+    font-size: 11.5px;
+  }
+  .tour__convite p,
+  .tour__convite small {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour__tela,
+  .tour__foco,
+  .tour__rotulo {
+    transition: none;
+  }
+}
+
+.passos-iniciais__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.ajuda-tour {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}

@@ -1178,7 +1178,7 @@ function LeadCard(props) {
           h('span', null, c.valor),
           h(ContactStatus, { status: c.status, compact: true }),
         )
-      : h('span', { className: 'pp-card__sub' }, 'Sem contato do decisor'),
+      : h('span', { className: 'pp-card__sub' }, 'Sem contato do possível decisor'),
     h(
       'span',
       { className: 'pp-card__rodape' },
@@ -1215,7 +1215,7 @@ function LeadTable(props) {
           h('th', null, 'Empresa'),
           h('th', null, 'Score'),
           h('th', null, 'Melhor contato'),
-          props.compacta ? null : h('th', null, 'Decisor'),
+          props.compacta ? null : h('th', null, 'Possível decisor'),
           h('th', null, 'Etapa'),
           props.compacta ? null : h('th', null, 'Atividade'),
         ),

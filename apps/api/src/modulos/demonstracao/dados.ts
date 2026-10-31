@@ -427,10 +427,10 @@ export async function gerarDados(tx: Executor, contaId: number): Promise<void> {
       const decisor = `${s.um(NOMES)} ${s.um(SOBRENOMES)}`;
       const motivo =
         faixa === 'A'
-          ? `Bem avaliada (${nota.toLocaleString('pt-BR')} com ${aval} avaliações), decisor encontrado e WhatsApp verificado.`
+          ? `Bem avaliada (${nota.toLocaleString('pt-BR')} com ${aval} avaliações), possível decisor encontrado e WhatsApp verificado.`
           : faixa === 'B'
-            ? `Avaliação boa, mas poucas informações de contato do decisor.`
-            : `Pouca presença online e sem decisor confirmado.`;
+            ? `Avaliação boa, mas poucas informações de contato do possível decisor.`
+            : `Pouca presença online e sem possível decisor identificado.`;
       await q(
         `INSERT INTO enriquecimento.leads (empresa_id, campanha_id, status, faixa, score, motivo, resumo, site_url, instagram,
            maps_nota, maps_avaliacoes, maps_categoria, maps_endereco, solicitado_em, iniciado_em, concluido_em)
@@ -479,6 +479,25 @@ export async function gerarDados(tx: Executor, contaId: number): Promise<void> {
             canal === 'whatsapp' ? true : null,
             principal,
           ],
+        );
+      // "Como encontramos" da ficha: cada etapa do enriquecimento, com o que achou.
+      const etapas: [string, string, string][] = [
+        ['receita', 'encontrado', `CNPJ ativo; ${decisor} no quadro de sócios.`],
+        ['maps', 'encontrado', 'Encontrado nas buscas da campanha.'],
+        ['site', 'encontrado', 'Página "Contato" com WhatsApp e e-mail; "Quem somos" cita o sócio.'],
+        ['google', 'encontrado', 'Telefone e e-mail citados em diretórios de empresas.'],
+        ['instagram', 'encontrado', `@${slug(nome)}: perfil comercial com WhatsApp na bio.`],
+        faixa === 'C'
+          ? ['linkedin', 'sem_resultado', 'Nenhum perfil confere com o quadro de sócios.']
+          : ['linkedin', 'encontrado', `Perfil de ${decisor} confere com o quadro de sócios.`],
+        ['whatsapp', 'encontrado', 'Número com WhatsApp ativo, conta comercial.'],
+        ['ia', 'encontrado', 'Resumo da empresa e nota com o motivo.'],
+      ];
+      for (const [ordem, [etapa, status, detalhe]] of etapas.entries())
+        await q(
+          `INSERT INTO enriquecimento.etapas (empresa_id, ordem, etapa, status, detalhe, criado_em)
+           VALUES ($1, $2, $3, $4, $5, now() - interval '20 days')`,
+          [empresaId, ordem + 1, etapa, status, detalhe],
         );
       decisores.set(empresaId, decisor);
     }

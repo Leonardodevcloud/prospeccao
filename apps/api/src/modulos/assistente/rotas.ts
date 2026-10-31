@@ -17,11 +17,13 @@ import { agenteArgos } from './agente.js';
 import * as conversas from './conversas.js';
 import { montarMapa } from './mapa.js';
 import * as memoria from './memoria.js';
+import { artigoDaAjuda } from './sistema.js';
 import {
-  type ConfigVoz,
+  esquecerConfigVoz,
   falaEmCurso,
   gerarFala,
   LIMITE_AUDIO_BYTES,
+  lerConfigVoz,
   type ProvedorFala,
   type ProvedorTranscricao,
   prepararFala,
@@ -40,9 +42,6 @@ export interface DepsAssistente {
   erro: string | null;
 }
 
-const VOZ_PADRAO: ConfigVoz = { voz: 'marin', velocidade: 1.12 };
-let vozGuardada: { em: number; cfg: ConfigVoz } | null = null;
-
 /** Telas que o Argos pode abrir. */
 const TELAS: Record<string, { destino: string; rotulo: string }> = {
   hoje: { destino: '/hoje', rotulo: 'Meu dia' },
@@ -58,6 +57,7 @@ const TELAS: Record<string, { destino: string; rotulo: string }> = {
   plataforma: { destino: '/plataforma', rotulo: 'Painel da plataforma' },
   mapa: { destino: '/argos/mapa', rotulo: 'Mapa do conhecimento' },
   argos: { destino: '/argos', rotulo: 'Argos' },
+  ajuda: { destino: '/ajuda', rotulo: 'Central de Ajuda' },
 };
 
 export function rotasAssistente(deps: DepsApi): Router {
@@ -65,24 +65,7 @@ export function rotasAssistente(deps: DepsApi): Router {
   const a = deps.assistente ?? null;
   const { pool, log } = deps;
 
-  async function configVoz(): Promise<ConfigVoz> {
-    if (vozGuardada && Date.now() - vozGuardada.em < 30_000) return vozGuardada.cfg;
-    const { rows } = await pool.query<{ valor: string }>(
-      `SELECT valor FROM cadastro.plataforma WHERE chave = 'argos_voz'`,
-    );
-    let cfg = VOZ_PADRAO;
-    try {
-      const v = rows[0] ? (JSON.parse(rows[0].valor) as Partial<ConfigVoz>) : {};
-      cfg = {
-        voz: (VOZES_FALA as readonly string[]).includes(String(v.voz)) ? String(v.voz) : VOZ_PADRAO.voz,
-        velocidade: typeof v.velocidade === 'number' ? v.velocidade : VOZ_PADRAO.velocidade,
-      };
-    } catch {
-      /* valor estragado: fica o padrão */
-    }
-    vozGuardada = { em: Date.now(), cfg };
-    return cfg;
-  }
+  const configVoz = () => lerConfigVoz(pool);
 
   const exigirFala = () => {
     if (!a?.fala)
@@ -124,6 +107,11 @@ export function rotasAssistente(deps: DepsApi): Router {
       if (tela) acao = { ...tela, automatica: true };
       else if (tipo === 'empresa' && /^\d+$/.test(alvo))
         acao = { destino: `/funil?empresa=${alvo}`, rotulo: 'Abrir a ficha', automatica: true };
+      else if (tipo === 'ajuda') {
+        const artigo = artigoDaAjuda(alvo, !!u.master);
+        if (artigo)
+          acao = { destino: `/ajuda/${artigo.id}`, rotulo: `Ajuda: ${artigo.titulo}`, automatica: false };
+      }
     }
     if (!acao && resposta.tarefa) acao = { destino: '/hoje', rotulo: 'Ver no Meu dia', automatica: false };
     const saida: RespostaAssistenteDTO = {
@@ -269,7 +257,7 @@ export function rotasAssistente(deps: DepsApi): Router {
        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor`,
       [JSON.stringify({ voz: d.voz, velocidade })],
     );
-    vozGuardada = null;
+    esquecerConfigVoz();
     res.json({ voz: d.voz, velocidade });
   });
 

@@ -1167,7 +1167,7 @@ function EditorModelo(props: {
           <div className="variaveis">
             {[
               ['{saudacao}', '“Olá, Marcos!”'],
-              ['{nome}', 'nome do decisor'],
+              ['{nome}', 'nome do possível decisor'],
               ['{empresa}', 'nome da loja'],
               ['{cidade}', 'cidade'],
               ['{remetente}', 'seu nome'],

@@ -126,8 +126,11 @@ export const VOZES_FALA = [
 
 const INSTRUCOES_FALA =
   'Fale em português do Brasil, com sotaque brasileiro natural. Tom de um colega de trabalho simpático e seguro: ' +
-  'caloroso, direto, conversado, nunca robótico nem de locutor. Ritmo ágil, frases fluidas, pausas curtas. ' +
-  'Diga números e valores como uma pessoa diria ("trinta e oito mil reais", "noventa e um por cento").';
+  'caloroso, direto, conversado, nunca robótico nem de locutor. Ritmo natural de conversa, sem pressa, frases fluidas e pausas curtas entre as ideias. ' +
+  'Diga números e valores como uma pessoa diria ("trinta e oito mil reais", "noventa e um por cento"). ' +
+  'Pronuncie as palavras em inglês como se fala no Brasil, sem soletrar e sem pressa: WhatsApp (uótsap), ' +
+  'Instagram (instagrã), LinkedIn (línkedin), Google Maps (gúgol méps), lead e leads (lid, lids), e-mail (imêiu), ' +
+  'site (sáiti), online (onláin), follow-up (folôu-ap). Siglas: IA (i-á), CRM (cê-erre-ême), CNPJ (cê-ene-pê-jota).';
 
 export class FalaCompativelOpenAI implements ProvedorFala {
   readonly nome: string;
@@ -288,3 +291,32 @@ export const falaEmCurso = (id: string): FalaEmCurso | null => falasEmCurso.get(
  * enquanto o primeiro toca. A interface usa a mesma regra (shared/assistente).
  */
 export { dividirFala } from '@prospeccao/shared/assistente';
+
+/* ───────────── Voz escolhida no painel da plataforma ───────────── */
+
+export const VOZ_PADRAO: ConfigVoz = { voz: 'marin', velocidade: 1.12 };
+let vozGuardada: { em: number; cfg: ConfigVoz } | null = null;
+
+/** A voz e a velocidade que o master escolheu (vale para o Argos e para o tour). */
+export async function lerConfigVoz(pool: import('@prospeccao/db').Executor): Promise<ConfigVoz> {
+  if (vozGuardada && Date.now() - vozGuardada.em < 30_000) return vozGuardada.cfg;
+  const { rows } = await pool.query<{ valor: string }>(
+    `SELECT valor FROM cadastro.plataforma WHERE chave = 'argos_voz'`,
+  );
+  let cfg = VOZ_PADRAO;
+  try {
+    const v = rows[0] ? (JSON.parse(rows[0].valor) as Partial<ConfigVoz>) : {};
+    cfg = {
+      voz: (VOZES_FALA as readonly string[]).includes(String(v.voz)) ? String(v.voz) : VOZ_PADRAO.voz,
+      velocidade: typeof v.velocidade === 'number' ? v.velocidade : VOZ_PADRAO.velocidade,
+    };
+  } catch {
+    /* valor estragado: fica o padrão */
+  }
+  vozGuardada = { em: Date.now(), cfg };
+  return cfg;
+}
+
+export function esquecerConfigVoz() {
+  vozGuardada = null;
+}

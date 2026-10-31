@@ -25,7 +25,8 @@
     "./ligacoes": "./src/ligacoes.ts",
     "./integracoes": "./src/integracoes.ts",
     "./assinatura": "./src/assinatura.ts",
-    "./consumo": "./src/consumo.ts"
+    "./consumo": "./src/consumo.ts",
+    "./tour": "./src/tour.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

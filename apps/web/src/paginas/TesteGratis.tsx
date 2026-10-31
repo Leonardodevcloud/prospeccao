@@ -71,14 +71,14 @@ function Chamada() {
         <em>Sem cartão.</em>
       </h2>
       <p>
-        Encontre empresas do seu nicho, veja quem decide e organize o funil do seu time. Tudo do plano Time,
-        para {USUARIOS_TESTE} pessoas.
+        Encontre empresas do seu nicho, veja os possíveis decisores e organize o funil do seu time. Tudo do
+        plano Time, para {USUARIOS_TESTE} pessoas.
       </p>
       <ul className="teste__lista">
         <li>
           <Icon name="check" size={14} />
           <span>
-            <b>{LEADS_TESTE} leads enriquecidos</b> com telefone, site, Instagram e quem decide
+            <b>{LEADS_TESTE} leads enriquecidos</b> com telefone, site, Instagram e possíveis decisores
           </span>
         </li>
         <li>

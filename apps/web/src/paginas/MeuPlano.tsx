@@ -174,8 +174,8 @@ export function MeuPlano() {
               <b>Prospecção e CRM</b>
               <span className="quieto">
                 {' '}
-                · Campanhas por nicho e cidade, enriquecimento com decisor e contatos, nota A-B-C, funil,
-                ficha do lead, tarefas, Meu dia e relatórios básicos.
+                · Campanhas por nicho e cidade, enriquecimento com possíveis decisores e contatos, nota A-B-C,
+                funil, ficha do lead, tarefas, Meu dia e relatórios básicos.
               </span>
             </span>
           </li>

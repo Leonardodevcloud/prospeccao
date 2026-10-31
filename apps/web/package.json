@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "saber": "tsx scripts/saber-argos.tsx"
   },
   "dependencies": {
     "@livekit/components-react": "2.9.24",

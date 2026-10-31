@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api } from '../api';
 import { useEhAdmin } from './Sessao';
+import { abrirTour } from './tour/abrir';
 
 /**
  * Primeiros passos do administrador: o caminho até a primeira conversa com lead. Cada passo é
@@ -36,9 +37,14 @@ export function PrimeirosPassos() {
             {d.feitos} de {d.total} feitos. Cada passo é conferido sozinho quando você faz.
           </p>
         </div>
-        <Button size="sm" variant="ghost" disabled={fechar.isPending} onClick={() => fechar.mutate()}>
-          Esconder
-        </Button>
+        <div className="passos-iniciais__acoes">
+          <Button size="sm" variant="secondary" icon="play" onClick={abrirTour}>
+            Tour do sistema
+          </Button>
+          <Button size="sm" variant="ghost" disabled={fechar.isPending} onClick={() => fechar.mutate()}>
+            Esconder
+          </Button>
+        </div>
       </header>
       <div
         className="passos-iniciais__barra"

@@ -612,12 +612,12 @@ function CardCampanha({ c }: { c: Campanha }) {
     {
       id: 'ab' as const,
       rotulo: 'Só notas A e B',
-      dica: 'Recomendado: refaz decisor e LinkedIn de quem vale abordar.',
+      dica: 'Recomendado: refaz possíveis decisores e LinkedIn de quem vale abordar.',
       n: previa.data?.ab,
     },
     {
       id: 'sem_decisor' as const,
-      rotulo: 'Só quem está sem decisor',
+      rotulo: 'Só quem está sem possível decisor',
       dica: 'Útil depois que a base de CNPJ trouxe os sócios.',
       n: previa.data?.semDecisor,
     },

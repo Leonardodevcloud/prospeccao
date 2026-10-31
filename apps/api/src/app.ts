@@ -56,6 +56,7 @@ import { rotasAvisoVideo, rotasReunioes, rotasSalaPublica } from './modulos/reun
 import { rotasRua } from './modulos/rua/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
 import { rotasSiteMaster, rotasSitePublico } from './modulos/site/rotas.js';
+import { rotasTour } from './modulos/tour/rotas.js';
 import { rotaComRecurso } from './recursos.js';
 
 /** Monta a aplicação a partir das dependências (os testes passam as suas). */
@@ -159,6 +160,8 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/meus-fundos', rotasFundosPessoais(deps));
   protegidas.use('/lgpd', rotasLgpd(deps));
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
+  // Tour do sistema (a volta guiada do Argos): para todo mundo que entra no CRM.
+  protegidas.use('/tour', rotasTour(deps));
   protegidas.use('/conversas', rotasConversas(deps));
   // Instagram é do plano Time em diante (ver a tela vale sempre: ela mostra o cadeado).
   protegidas.use(

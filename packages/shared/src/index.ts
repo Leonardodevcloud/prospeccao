@@ -25,3 +25,4 @@ export * from './reunioes.js';
 export * from './rua.js';
 export * from './seguranca.js';
 export * from './site.js';
+export * from './tour.js';

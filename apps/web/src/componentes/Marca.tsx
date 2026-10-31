@@ -91,7 +91,7 @@ export function Assinatura(props: { escuro?: boolean; tamanho?: number }) {
 const EVENTOS: { icone: string; titulo: string; texto: string; tom?: 'marca' | 'aviso' }[] = [
   {
     icone: 'user-round',
-    titulo: 'Decisor encontrado',
+    titulo: 'Possível decisor encontrado',
     texto: 'Sócio-administrador · quadro de sócios + Google Maps',
   },
   {
@@ -248,7 +248,7 @@ export function TelaAcesso(props: { children: ReactNode; chamada?: ReactNode; la
               <h2>
                 Seu comercial mais perto de <em>quem decide</em>.
               </h2>
-              <p>Empresas do seu nicho, o decisor certo e a conversa no canal certo. Tudo em um lugar.</p>
+              <p>Empresas do seu nicho, possíveis decisores e a conversa no canal certo. Tudo em um lugar.</p>
             </div>
             <Avisos />
           </>

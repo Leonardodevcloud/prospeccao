@@ -24,6 +24,16 @@ import * as memoria from './memoria.js';
 import { embrulharDados, lerJson, montarContextoAgente, type PassoAgente, SISTEMA_AGENTE } from './prompt.js';
 import { CONSULTAS_PRONTAS, consultaPronta, planoRapido } from './prontas.js';
 import { carregarSaber, type SaberArgos, textoDoSaber } from './saber.js';
+import {
+  artigoDaAjuda,
+  artigoParaIa,
+  buscarNaAjuda,
+  FALA_FORA_DO_ESCOPO,
+  FORA_DO_ARGOS,
+  falaProibida,
+  indiceDaAjuda,
+  PARECE_DUVIDA,
+} from './sistema.js';
 
 export interface DepsAgente {
   /** Dono do banco (só para criar tarefas, pelas regras normais do sistema). */
@@ -81,7 +91,7 @@ export async function escopoDe(pool: Pool, u: UsuarioSessao): Promise<Escopo & {
       tudo: true,
       contas: [],
       descricao:
-        'a plataforma inteira (é o dono do sistema): todas as organizações e unidades, mais as views plataforma_* (clientes, consumo, pedidos do site).',
+        'a plataforma inteira (é o dono do sistema): todas as organizações e unidades, mais as views plataforma_* (clientes e pedidos do site).',
     };
   if (u.papelOrganizacao) {
     const { rows } = await pool.query<{ id: number; nome: string; org: string }>(
@@ -131,7 +141,8 @@ export async function agenteArgos(
   const agora = (deps.agora ?? (() => new Date()))();
   const tempos: Record<string, number> = {};
   const comDados = !!(deps.leitura && deps.chave);
-  const plano = comDados ? planoRapido(pergunta) : null;
+  // Dúvida sobre o sistema não pede dados: nada de consulta prevista.
+  const plano = comDados && !PARECE_DUVIDA.test(pergunta) ? planoRapido(pergunta) : null;
 
   // O escopo assinado vale para esta pergunta (todas as etapas).
   const escopo = await escopoDe(deps.pool, u);
@@ -182,6 +193,7 @@ export async function agenteArgos(
       .map((c) => `- ${c.nome}: ${c.descricao} Parâmetros: ${JSON.stringify(c.parametros)}`)
       .join('\n'),
     catalogo: catalogo.length ? resumoDoCatalogo(catalogo) : avisoDados,
+    ajuda: indiceDaAjuda(u.master),
   })}`;
 
   // Uma máscara para a conversa inteira: o mesmo nome vira sempre o mesmo marcador.
@@ -205,30 +217,40 @@ export async function agenteArgos(
     minute: '2-digit',
     timeZone: 'America/Sao_Paulo',
   });
-  const blocoSaber = textoDoSaber(saber, u.contaNome);
+  // Dúvida sobre o sistema: os artigos da ajuda que combinam já vão junto (sem uma etapa a mais).
+  const ajudaJunto = PARECE_DUVIDA.test(pergunta) ? buscarNaAjuda(pergunta, u.master, 2) : [];
+  const blocoAjuda = ajudaJunto.length
+    ? `\n\nDa Central de Ajuda (artigos que combinam com a pergunta):\n${ajudaJunto.map((a) => artigoParaIa(a, 4500)).join('\n\n')}`
+    : '';
+  const blocoSaber = textoDoSaber(saber, u.contaNome) + blocoAjuda;
   mensagens.push({
     papel: 'user',
     conteudo: esconder(
       `${embrulharDados(blocoSaber)}\n\nAgora são ${hora}.${avisoDados ? ` ${avisoDados}` : ''}\nPergunta:\n${embrulharDados(pergunta)}`,
-      [...nomesBase, ...nomesNoTexto(blocoSaber)],
+      // Os nomes próprios só do que veio do banco (a ajuda é texto do sistema, não tem nome de pessoa).
+      [...nomesBase, ...nomesNoTexto(blocoSaber.slice(0, blocoSaber.length - blocoAjuda.length))],
     ),
   });
   // Fontes dos números que ele pode falar (além dos resultados das consultas).
-  const textoDasFontes = [
-    pergunta,
-    blocoSaber,
-    hora,
-    hojeLocal(agora),
-    ...historico.slice(-8).flatMap((t) => [t.pergunta, t.resposta]),
-  ].join('\n');
+  let ajudaLida = '';
+  const textoDasFontes = () =>
+    [
+      ajudaLida,
+      pergunta,
+      blocoSaber,
+      hora,
+      hojeLocal(agora),
+      ...historico.slice(-8).flatMap((t) => [t.pergunta, t.resposta]),
+    ].join('\n');
+  let fontesLidas = 0;
   let conhecidos: { n: number; valores: Set<number> } | null = null;
   const numerosDaConversa = () => {
-    if (!conhecidos || conhecidos.n !== resultados.length)
+    if (!conhecidos || conhecidos.n !== resultados.length + fontesLidas)
       conhecidos = {
-        n: resultados.length,
+        n: resultados.length + fontesLidas,
         valores: numerosConhecidos(
           [
-            { texto: textoDasFontes },
+            { texto: textoDasFontes() },
             // O SQL também é fonte ("últimos 30 dias", "os 5 maiores").
             ...resultados.map((r) => ({ linhas: r.linhas, totais: r.totais, texto: r.sql })),
           ],
@@ -304,6 +326,22 @@ export async function agenteArgos(
     deps.log.info({ passo, acao: p.acao, pensamento: p.pensamento?.slice(0, 200) }, 'argos: etapa');
 
     if (p.acao === 'responder' || ultimo) {
+      // Trava: custos de serviços, fornecedores com preço e os bastidores do Argos não saem.
+      if (falaProibida(`${p.fala ?? ''}\n${p.analise ?? ''}`)) {
+        deps.log.warn({ passo }, 'argos: resposta fora do escopo bloqueada');
+        tempos.total = Date.now() - inicio;
+        return {
+          fala: FALA_FORA_DO_ESCOPO,
+          analise: null,
+          dados: null,
+          abrir: null,
+          tarefa: tarefaCriada,
+          memoria: memoriaFeita,
+          passos: passo,
+          tempos,
+          confirmar: false,
+        };
+      }
       const confirmando = p.confirmar === true;
       // Conferência: todo número da resposta tem de ter saído desta conversa (consultas, pergunta,
       // histórico, memória, perfil). Confere no texto ainda mascarado (telefone e CNPJ não contam).
@@ -404,6 +442,8 @@ export async function agenteArgos(
           } else {
             // Marcadores ([CNPJ_1], [PESSOA_2]) voltam ao valor antes de consultar; depois, valida.
             const sql = validarSql(restaurar(p.sql ?? '', mapa));
+            if ([...FORA_DO_ARGOS].some((nome) => new RegExp(`\\b${nome}\\b`, 'i').test(sql)))
+              throw new Error('Essa tabela não está disponível. Use as tabelas do catálogo.');
             if (
               !catalogo.some((tb) => new RegExp(`\\b${tb.nome}\\b`, 'i').test(sql)) &&
               /\bfrom\b/i.test(sql)
@@ -491,6 +531,23 @@ export async function agenteArgos(
         break;
       }
 
+      case 'ajuda': {
+        const pedidos = (Array.isArray(p.artigos) ? p.artigos : [p.artigos])
+          .map((x) => String(x ?? '').trim())
+          .filter(Boolean)
+          .slice(0, 2);
+        const achados = pedidos.map((id) => artigoDaAjuda(id, u.master)).filter((a) => a !== null);
+        if (!achados.length) {
+          observar('Esses artigos não existem. Use os ids do índice da Central de Ajuda.');
+          break;
+        }
+        const texto = achados.map((a) => artigoParaIa(a)).join('\n\n');
+        ajudaLida += `\n${texto}`;
+        fontesLidas++;
+        observar(`Da Central de Ajuda:\n${embrulharDados(texto)}`);
+        break;
+      }
+
       case 'esquecer': {
         const id = Number(String(p.id ?? '').replace(/^m/i, ''));
         const alvo = saber.memorias.find((m) => m.id === id);
@@ -506,7 +563,7 @@ export async function agenteArgos(
 
       default:
         observar(
-          `Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, criar_tarefa, lembrar, esquecer ou responder.`,
+          `Ação "${String(p.acao)}" não existe. Use colunas, sql, pronta, criar_tarefa, lembrar, esquecer, ajuda ou responder.`,
         );
     }
   }

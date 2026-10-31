@@ -918,6 +918,8 @@ export interface Sessao {
   duasEtapas: { ativo: boolean; exigido: boolean };
   /** Termos de uso e política de privacidade: a versão em vigor e se a pessoa já aceitou. */
   termos: { versao: string; aceitos: boolean };
+  /** Tour do sistema: já assistiu, pulou ou fechou o convite. */
+  tour?: { visto: boolean };
   /** Marca do cliente (white label). `logo`: caminho na api. */
   marca: {
     nome: string | null;

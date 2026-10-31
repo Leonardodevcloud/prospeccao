@@ -6,7 +6,7 @@ Página estática (HTML, CSS e JS puros, sem build) que apresenta o CRM: funcion
 apps/site/
   index.html          página única
   css/site.css        estilos da página (tokens do design system "CRM de Prospecção")
-  css/componentes.css cópia dos estilos dos componentes do CRM usados na página (nota, fonte, decisor, trilha)
+  css/componentes.css cópia dos estilos dos componentes do CRM usados na página (nota, fonte, possível decisor, trilha)
   js/site.js          interações: menu, revelar ao rolar, tour das telas, simulador, contato
   img/                telas do sistema (.webp), og.png e ícone
   fonts/              Geist e Geist Mono (woff2)

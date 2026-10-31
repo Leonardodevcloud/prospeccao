@@ -311,7 +311,7 @@ function trilha(e: EmpresaDetalhe, master = false): Camada[] {
   const st = e.enriquecimento?.status;
   if (!e.etapas.length || st === 'rodando' || st === 'na_fila') {
     camadas.push({
-      nome: 'Contatos do decisor',
+      nome: 'Contatos dos possíveis decisores',
       status: st === 'rodando' ? 'em_andamento' : 'pulada',
       detalhe:
         st === 'rodando'

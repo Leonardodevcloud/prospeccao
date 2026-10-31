@@ -337,7 +337,7 @@ export function Relatorios() {
             </p>
           </Panel>
 
-          <Panel titulo="Decisores encontrados" semPadding>
+          <Panel titulo="Possíveis decisores encontrados" semPadding>
             <div className="pp-tablewrap">
               <table className="pp-table">
                 <thead>
@@ -347,7 +347,7 @@ export function Relatorios() {
                     <th className="num">Pela Receita</th>
                     <th className="num">Pelo LinkedIn</th>
                     <th className="num">Site / outras</th>
-                    <th className="num">Sem decisor</th>
+                    <th className="num">Sem possível decisor</th>
                     <th className="num">Com WhatsApp</th>
                   </tr>
                 </thead>
@@ -378,8 +378,8 @@ export function Relatorios() {
               </table>
             </div>
             <p className="quieto nota-rodape" style={{ padding: '0 16px 16px' }}>
-              "Sem decisor" nas notas A e B é o que uma fonte paga de sócios e contatos resolveria: use este
-              número para decidir se vale o custo.
+              "Sem possível decisor" nas notas A e B é o que uma fonte paga de sócios e contatos resolveria:
+              use este número para decidir se vale o custo.
             </p>
           </Panel>
 
