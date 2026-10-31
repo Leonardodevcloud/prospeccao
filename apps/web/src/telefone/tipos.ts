@@ -56,10 +56,11 @@ export interface LigacoesDoLeadResposta {
 export interface SituacaoTelefonia {
   modulo: boolean;
   disponivel: boolean;
-  motivo: 'fora_do_plano' | 'sem_telefonia' | 'sem_numero' | null;
+  motivo: 'fora_do_plano' | 'sem_telefonia' | 'sem_numero' | 'sem_minutos' | null;
   numeros: { id: number; numero: string; rotulo: string | null; principal: boolean }[];
   config: TelefoniaConfigEntrada;
-  minutos: { usados: number; franquia: number | null };
+  /** pacote: minutos comprados que sobram; compraPacote: assina pelo sistema (acabou, compra um pacote). */
+  minutos: { usados: number; franquia: number | null; pacote: number; compraPacote: boolean };
   gravacao: boolean;
   transcricao: boolean;
   avisoFalado: boolean;
@@ -89,4 +90,6 @@ export const MOTIVO_INDISPONIVEL: Record<NonNullable<SituacaoTelefonia['motivo']
   fora_do_plano: 'Ligações é um módulo à parte. Fale com a gente para liberar.',
   sem_telefonia: 'A telefonia ainda não foi ligada na plataforma.',
   sem_numero: 'A conta ainda não tem número para ligar. Peça ao suporte do Prospect Team.',
+  sem_minutos:
+    'Os minutos de ligação do mês acabaram. Quem administra a conta compra um pacote em Meu plano (com Pix, libera na hora).',
 };

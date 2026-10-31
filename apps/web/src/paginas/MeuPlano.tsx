@@ -68,7 +68,9 @@ export function MeuPlano() {
 
       {params.get('mudou') && (
         <Mensagem tipo="ok">
-          Assinatura mudada: o plano novo já vale. A próxima mensalidade vem com o valor novo.
+          {params.get('mudou') === 'proximo'
+            ? 'Mudança marcada: o plano novo vale a partir da próxima renovação, já com o valor novo.'
+            : 'Plano mudado: o plano novo já vale. A próxima mensalidade vem com o valor novo.'}
         </Mensagem>
       )}
       <AssinaturaNoPlano />

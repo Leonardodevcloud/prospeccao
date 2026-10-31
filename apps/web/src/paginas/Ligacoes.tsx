@@ -8,7 +8,7 @@ import { api, qs } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Modal } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { useEquipe, useSessao, useSoLeitura, useSoPropriaBase } from '../componentes/Sessao';
+import { useEhAdmin, useEquipe, useSessao, useSoLeitura, useSoPropriaBase } from '../componentes/Sessao';
 import { fmtNumero } from '../formatar';
 import { ItemLigacao } from '../telefone/LigacoesDoLead';
 import { ListaDeLigacao } from '../telefone/ListaDeLigacao';
@@ -21,6 +21,7 @@ import {
   useSituacaoTelefonia,
   useTelefone,
 } from '../telefone/tipos';
+import { ComprarMinutos } from './Assinar';
 
 /**
  * Vendas › Ligações: a lista de ligação (o CRM disca um lead depois do outro), tudo o que foi
@@ -54,6 +55,7 @@ export function Ligacoes() {
   const equipe = useEquipe();
   const soLeitura = useSoLeitura();
   const soPropria = useSoPropriaBase();
+  const admin = useEhAdmin();
   const modulo = useModuloLigacoes();
   const situacao = useSituacaoTelefonia(modulo);
   const e = useTelefone();
@@ -116,6 +118,7 @@ export function Ligacoes() {
           {s && !s.disponivel && s.motivo && s.motivo !== 'fora_do_plano' && (
             <Mensagem tipo="aviso">{MOTIVO_INDISPONIVEL[s.motivo]}</Mensagem>
           )}
+          {s?.motivo === 'sem_minutos' && admin && <ComprarMinutos />}
           <div className="pipelines lig-abas" role="tablist" aria-label="Seções de ligações">
             {ABAS.map((a) => (
               <button
@@ -247,7 +250,9 @@ export function Ligacoes() {
                     <div>
                       <small>Minutos do mês (empresa)</small>
                       <b>{fmtNumero(s.minutos.usados)}</b>
-                      <span>de {fmtNumero(s.minutos.franquia)}</span>
+                      <span>
+                        de {fmtNumero(s.minutos.franquia + (s.minutos.compraPacote ? s.minutos.pacote : 0))}
+                      </span>
                     </div>
                   )}
                 </div>

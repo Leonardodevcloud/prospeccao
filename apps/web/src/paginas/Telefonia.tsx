@@ -13,6 +13,7 @@ import {
   useModuloLigacoes,
   useSituacaoTelefonia,
 } from '../telefone/tipos';
+import { ComprarMinutos } from './Assinar';
 
 /**
  * Gestão › Telefonia: os números da empresa (cadastrados pelo Prospect Team), os minutos do mês e
@@ -70,7 +71,8 @@ function Conteudo(props: { s: SituacaoTelefonia }) {
     onSuccess: (r) => cliente.setQueryData(['telefonia'], r),
   });
   const usados = s.minutos.usados;
-  const franquia = s.minutos.franquia;
+  const franquia =
+    s.minutos.franquia == null ? null : s.minutos.franquia + (s.minutos.compraPacote ? s.minutos.pacote : 0);
   const pct = franquia ? Math.min(100, Math.round((usados / franquia) * 100)) : 0;
   const ro = !admin;
   const set = <K extends keyof TelefoniaConfigEntrada>(k: K, v: TelefoniaConfigEntrada[K]) =>
@@ -136,11 +138,21 @@ function Conteudo(props: { s: SituacaoTelefonia }) {
               <i style={{ width: `${pct}%` }} data-alerta={pct >= 80 || undefined} />
             </div>
           )}
-          {franquia != null && usados > franquia && (
-            <Mensagem tipo="aviso">
-              Passou {fmtNumero(usados - franquia)} minutos da franquia: o excedente entra na próxima fatura.
-            </Mensagem>
+          {s.minutos.compraPacote && s.minutos.pacote > 0 && (
+            <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+              Inclui {fmtNumero(s.minutos.pacote)} minutos de pacote (não vencem: o que sobrar fica para os
+              próximos meses).
+            </p>
           )}
+          {s.minutos.compraPacote
+            ? admin && pct >= 80 && <ComprarMinutos />
+            : franquia != null &&
+              usados > franquia && (
+                <Mensagem tipo="aviso">
+                  Passou {fmtNumero(usados - franquia)} minutos da franquia: o excedente entra na próxima
+                  fatura.
+                </Mensagem>
+              )}
         </section>
 
         <form

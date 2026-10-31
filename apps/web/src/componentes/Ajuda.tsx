@@ -350,7 +350,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
           usa). Com mais de um número, o CRM liga com o do mesmo DDD do lead. O módulo vem com uma franquia de
           minutos por mês para a empresa toda; cada ligação atendida conta arredondada para cima, as que não
           atendem não contam. Em Gestão › Telefonia você acompanha o uso; os administradores recebem um aviso
-          quando o mês passa de 80% e de 100% da franquia (as ligações continuam e o excedente vem na fatura).
+          quando o mês passa de 80% e de 100% da franquia. Quem assina pelo sistema compra um pacote de
+          minutos quando a franquia acaba (as ligações param até comprar; o que sobrar do pacote não vence;
+          veja <Link to="/ajuda/assinatura">Teste grátis, assinatura e pagamento</Link>). Contrato combinado
+          com a gente: as ligações continuam e o excedente vem na fatura.
         </p>
       </>
     ),
@@ -1335,12 +1338,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
   {
     id: 'assinatura',
     area: 'Gestão',
-    titulo: 'Teste grátis e assinatura',
+    titulo: 'Teste grátis, assinatura e pagamento',
     resumo:
-      'Os 7 dias de teste, como assinar pelo sistema, pagar com Pix, boleto ou cartão, mudar e cancelar.',
+      'Os 7 dias de teste, assinar pelo sistema, pagar cada mês com Pix, boleto ou cartão, mudar de plano, minutos de ligação e o que acontece quando vence.',
     onde: { rotulo: 'Meu plano', para: '/plano' },
     termos:
-      'teste grátis 7 dias assinar assinatura pagar pagamento pix boleto cartão cobrança nota fiscal cancelar atrasado só leitura arquivada asaas vencimento',
+      'teste grátis 7 dias assinar assinatura pagar pagamento pix boleto cartão cobrança mensalidade vencimento venceu atrasado renovar renovação cancelar só leitura exportar contatos arquivada asaas nota fiscal diferença proporcional pacote minutos ligação',
     corpo: (
       <>
         <p>
@@ -1353,53 +1356,69 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <p>
           Quem administra a conta abre <b>Meu plano › Assinar</b> (ou o botão <b>Assinar</b> da faixa),
           escolhe o plano, quantos usuários e os módulos, e vê o preço do mês na hora. Depois preenche o CNPJ
-          (ou CPF), a razão social e o e-mail do financeiro, que recebe as cobranças e a nota fiscal, e
-          escolhe a forma de pagamento:
+          (ou CPF), a razão social e o e-mail do financeiro, que recebe as cobranças e a nota fiscal.
+        </p>
+        <h3>Pagar: um mês por vez</h3>
+        <p>
+          Não há cobrança automática no cartão: cada mês é uma cobrança, e a forma é escolhida na hora de
+          pagar.
         </p>
         <ul>
           <li>
-            <b>Pix</b>: o QR Code aparece na tela. Pagou, a conta é liberada na hora, sozinha.
+            <b>Pix</b>: o QR Code aparece na tela. Pagou, libera na hora, sozinho.
           </li>
           <li>
-            <b>Boleto</b>: abre a página de pagamento com o boleto. Libera quando o banco confirma (até 2 dias
-            úteis).
-          </li>
-          <li>
-            <b>Cartão de crédito</b>: os dados do cartão vão na página segura de pagamento e a cobrança se
-            repete todo mês.
+            <b>Boleto ou cartão</b>: pelo botão que abre a página segura de pagamento. O boleto libera quando
+            o banco confirma (até 2 dias úteis).
           </li>
         </ul>
         <p>
-          Até o primeiro pagamento cair, o teste continua normal. Quando cai, o teste vira assinatura: os
-          usuários, os módulos e os limites do plano escolhido passam a valer, e tudo o que foi feito no teste
-          fica. Se já pagou e a tela não mudou, clique em <b>Já paguei</b> para conferir na hora.
+          Pagou, o plano vale por um mês. <b>7 dias antes de vencer</b>, a mensalidade seguinte aparece em Meu
+          plano e no e-mail do financeiro, e quem administra a conta vê no topo do sistema quantos dias
+          faltam. Pagando antes do vencimento, o mês novo começa onde o anterior termina (não perde nenhum
+          dia). Se já pagou e a tela não mudou, clique em <b>Já paguei</b>.
         </p>
-        <h3>Mudar ou cancelar</h3>
-        <p>
-          Em <b>Meu plano</b>, <b>Mudar plano ou pagamento</b> troca o plano, os usuários, os módulos ou a
-          forma de pagamento: vale na hora e a próxima mensalidade já vem com o valor novo. <b>Cancelar</b>
-          para as cobranças; o acesso continua até o fim do período pago. As cobranças (pagas, em aberto e
-          atrasadas) ficam listadas ali mesmo, com o link para pagar ou ver o recibo.
-        </p>
-        <h3>Quando o teste acaba ou o pagamento atrasa</h3>
+        <h3>Quando vence sem pagar</h3>
         <ul>
           <li>
-            <b>O teste acabou sem assinar</b>: a conta fica <b>só leitura</b> por 15 dias. Dá para ver tudo,
-            mas não dá para mexer (criar, mudar ou apagar). Assinando nesse tempo, tudo volta do jeito que
+            Nos <b>3 dias</b> seguintes, tudo continua funcionando, com o aviso no topo.
+          </li>
+          <li>
+            Depois, a conta fica <b>só leitura</b>: dá para ver tudo e <b>exportar os leads e os contatos</b>,
+            mas não dá para mexer (criar, mudar, mandar ou ligar). Pagando, volta na hora, do jeito que
             estava.
           </li>
           <li>
-            <b>Pagamento atrasado</b>: a conta continua normal por 7 dias depois do vencimento; depois fica só
-            leitura até o pagamento cair.
-          </li>
-          <li>
-            Depois dos 15 dias só leitura, a conta é <b>arquivada</b>: ninguém entra mais. Os dados ficam
-            guardados por 90 dias; para voltar, fale com a gente.
+            Quem já foi cliente nunca perde os dados: a conta fica só leitura até o pagamento. Só o teste que
+            vence sem nenhuma assinatura é arquivado depois de 15 dias (os dados ficam guardados por 90 dias).
           </li>
         </ul>
+        <h3>Mudar de plano</h3>
+        <ul>
+          <li>
+            <b>Para mais</b> (plano maior, mais usuários ou um módulo): paga só a diferença dos dias que
+            faltam no mês e o plano novo vale assim que pagar. Diferença pequena (menos de R$ 5) vale na hora,
+            sem custo.
+          </li>
+          <li>
+            <b>Para menos</b>: fica marcado e vale na próxima mensalidade, já com o valor novo. Até lá, o
+            plano de hoje continua.
+          </li>
+        </ul>
+        <p>
+          <b>Não renovar</b> desliga a próxima mensalidade: o plano vale até o fim do mês pago e depois a
+          conta fica só leitura. Dá para voltar a renovar a qualquer momento.
+        </p>
+        <h3>Minutos de ligação</h3>
+        <p>
+          O módulo Ligações vem com uma franquia de minutos por mês. Quando ela acaba, as ligações param até
+          comprar um <b>pacote de minutos</b> (em Meu plano, em Gestão › Telefonia ou na tela de Ligações):
+          com Pix, entra na hora. O que sobrar do pacote <b>não vence</b> e fica para os meses seguintes.
+          Avisamos quando o mês passa de 80%.
+        </p>
         <Nota>
-          Só quem administra a conta vê os valores e pode assinar, mudar ou cancelar. Um teste por empresa: o
-          mesmo e-mail, WhatsApp ou CNPJ não começa outro teste.
+          Só quem administra a conta vê os valores e pode assinar, pagar, mudar ou comprar minutos. Um teste
+          por empresa: o mesmo e-mail, WhatsApp ou CNPJ não começa outro teste.
         </Nota>
       </>
     ),

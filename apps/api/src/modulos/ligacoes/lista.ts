@@ -8,7 +8,7 @@ import {
   type ResultadoLigacao,
 } from '@prospeccao/shared';
 import { contaSql, naBase, usuarioAtual } from '../../contexto.js';
-import { exigirModulo, telefonesDosLeads } from './servico.js';
+import { exigirMinutos, exigirModulo, telefonesDosLeads } from './servico.js';
 
 /**
  * Lista de ligação: o comercial escolhe os leads e o CRM disca um depois do outro (ou até 3 ao
@@ -127,6 +127,7 @@ async function minhaLista(db: Executor, id: number) {
 /** Monta a lista (a anterior em andamento é encerrada). Leads sem número ou com "não ligar" ficam fora. */
 export async function criar(db: Executor, d: ListaLigacaoEntrada) {
   await exigirModulo(db);
+  await exigirMinutos(db);
   const usuarioId = eu();
   const visiveis = await db.query<{ empresa_id: number }>(
     `SELECT empresa_id::int FROM comercial.oportunidades o
@@ -177,6 +178,7 @@ export async function proximo(db: Executor, listaId: number) {
   if (l.situacao !== 'ativa') throw AppError.conflito('A lista está pausada.');
   if (!horarioDeLigar(relogio.agora()))
     throw AppError.conflito(`Fora do horário de ligar (${HORARIO_DE_LIGAR}). A lista continua depois.`);
+  await exigirMinutos(db);
   const { rows } = await db.query<{ id: number; empresaId: number; telefone: string; nome: string }>(
     `UPDATE comercial.lista_ligacao_itens i SET situacao = 'chamando', ligacao_id = NULL, atualizado_em = now()
       WHERE i.id = (SELECT id FROM comercial.lista_ligacao_itens

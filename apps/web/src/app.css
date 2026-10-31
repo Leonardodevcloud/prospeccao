@@ -14083,3 +14083,86 @@ fieldset.assinar__formas {
 .pagar__caixa {
   padding-block: var(--space-5);
 }
+.assinar__inteira {
+  grid-column: 1 / -1;
+}
+.assinar__como ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 19px;
+}
+.assinar__como li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.assinar__como li > svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--brand);
+}
+.assinar__mudanca {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+  font-size: 13px;
+  line-height: 19px;
+}
+.pagar__tipo {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.pagar__outras {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.pagar__outras li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.assinatura-plano__minutos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.pagar {
+  min-width: 0;
+}
+.pagar__caixa {
+  min-width: 0;
+}
+.pagar__caixa > * {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pagar__codigo {
+  box-sizing: border-box;
+  width: 100%;
+}
+.pagar__acoes .pp-btn {
+  white-space: normal;
+  height: auto;
+  min-height: 36px;
+  text-align: center;
+}

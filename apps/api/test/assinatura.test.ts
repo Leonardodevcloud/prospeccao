@@ -21,11 +21,7 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
 
   // E-mails do sistema e o Asaas de mentira.
   const emails: { para: string; assunto: string; html: string }[] = [];
-  const asaas = {
-    clientes: [] as unknown[],
-    assinaturas: new Map<string, { valor: number; forma: string; cancelada: boolean }>(),
-    cobrancas: [] as CobrancaAsaas[],
-  };
+  const asaas = { clientes: [] as unknown[], cobrancas: [] as CobrancaAsaas[], apagadas: [] as string[] };
   let seq = 0;
   const cobranca: ServicoCobranca = {
     sandbox: true,
@@ -34,34 +30,56 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
       return `cus_${++seq}`;
     },
     atualizarCliente: async () => undefined,
-    criarAssinatura: async (a) => {
-      const id = `sub_${++seq}`;
-      asaas.assinaturas.set(id, { valor: a.valor, forma: a.forma, cancelada: false });
-      asaas.cobrancas.push({
+    criarCobranca: async (c) => {
+      const b: CobrancaAsaas = {
         id: `pay_${++seq}`,
-        assinatura: id,
-        valor: a.valor,
-        vencimento: a.vencimento,
+        valor: c.valor,
+        vencimento: c.vencimento,
         situacao: 'pendente',
-        forma: a.forma,
+        forma: 'UNDEFINED',
         link: `https://sandbox.asaas.com/i/${seq}`,
         pagoEm: null,
-        descricao: a.descricao,
-        referencia: a.referencia,
-      });
-      return id;
+        descricao: c.descricao,
+        referencia: c.referencia,
+      };
+      asaas.cobrancas.push(b);
+      return { ...b };
     },
-    atualizarAssinatura: async (id, a) => {
-      const x = asaas.assinaturas.get(id)!;
-      if (a.valor != null) x.valor = a.valor;
+    cancelarCobranca: async (id) => {
+      asaas.apagadas.push(id);
     },
-    cancelarAssinatura: async (id) => {
-      asaas.assinaturas.get(id)!.cancelada = true;
-    },
-    cobrancasDaAssinatura: async (id) => asaas.cobrancas.filter((c) => c.assinatura === id),
-    cobranca: async (id) => asaas.cobrancas.find((c) => c.id === id)!,
+    cobranca: async (id) => ({ ...asaas.cobrancas.find((c) => c.id === id)! }),
     pix: async () => ({ imagem: 'iVBORw0KGgo=', copiaECola: '00020126580014br.gov.bcb.pix', expiraEm: null }),
     testar: async () => 'ok (sandbox)',
+  };
+  /** O Asaas avisa que a cobrança foi paga (com o token). */
+  let evento = 0;
+  const pagar = async (id: string, forma = 'PIX') => {
+    const b = asaas.cobrancas.find((c) => c.id === id)!;
+    b.situacao = 'paga';
+    b.forma = forma;
+    return request(app)
+      .post('/asaas/webhook')
+      .set('asaas-access-token', TOKEN_ASAAS)
+      .send({
+        id: `evt_${++evento}`,
+        event: 'PAYMENT_RECEIVED',
+        payment: {
+          id,
+          value: b.valor,
+          dueDate: b.vencimento,
+          status: 'RECEIVED',
+          billingType: forma,
+          paymentDate: b.vencimento,
+        },
+      });
+  };
+  const ultima = () => asaas.cobrancas[asaas.cobrancas.length - 1]!;
+  const rodada = () => rodadaAssinaturas({ pool, log, servicos, cobranca }, ORIGEM);
+  const dados = {
+    documento: '11.222.333/0001-81',
+    nome: 'Nexo Sistemas Ltda',
+    email: 'financeiro@nexo.com.br',
   };
 
   const servicos = async (contaId: number): Promise<ServicosConta> => ({
@@ -222,44 +240,28 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
     expect(terceiro.status).toBeGreaterThanOrEqual(400);
   });
 
-  it('assinar: preço pela tabela, cobrança no Asaas com Pix e o plano vale quando o pagamento cai', async () => {
+  it('assinar: mensalidade avulsa (Pix na tela) e o plano vale quando o pagamento cai', async () => {
     const resumo = (await diego.get('/assinatura')).body;
     expect(resumo).toMatchObject({ disponivel: true, sandbox: true, situacao: { situacao: 'teste' } });
     // Agente de IA sem WhatsApp: recusado.
-    expect(
-      (
-        await diego
-          .post('/assinatura/assinar')
-          .set('Origin', ORIGEM)
-          .send({
-            plano: 'time',
-            usuarios: 5,
-            modulos: ['agente_ia'],
-            forma: 'PIX',
-            documento: '11.222.333/0001-81',
-            nome: 'Nexo Sistemas Ltda',
-            email: 'financeiro@nexo.com.br',
-          })
-      ).status,
-    ).toBe(422);
+    const sem = await diego
+      .post('/assinatura/assinar')
+      .set('Origin', ORIGEM)
+      .send({ plano: 'time', usuarios: 5, modulos: ['agente_ia'], ...dados });
+    expect(sem.status).toBe(422);
     const r = await diego
       .post('/assinatura/assinar')
       .set('Origin', ORIGEM)
-      .send({
-        plano: 'time',
-        usuarios: 5,
-        modulos: ['whatsapp', 'agente_ia'],
-        forma: 'PIX',
-        documento: '11.222.333/0001-81',
-        nome: 'Nexo Sistemas Ltda',
-        email: 'financeiro@nexo.com.br',
-      });
+      .send({ plano: 'time', usuarios: 5, modulos: ['whatsapp', 'agente_ia'], ...dados });
     expect(r.status).toBe(201);
-    // Time 1.300 + 1 usuário (59) + WhatsApp e IA (999).
-    expect(r.body.valor).toBe(2358);
-    expect(r.body.cobranca).toMatchObject({ situacao: 'pendente', forma: 'PIX' });
-    const pagar = (await diego.get('/assinatura/pagar')).body.cobranca;
-    expect(pagar).toMatchObject({
+    // Time 1.300 + 1 usuário (59) + WhatsApp e IA (999), uma cobrança só (sem recorrência).
+    expect(r.body).toMatchObject({
+      valor: 2358,
+      tipo: 'mensalidade',
+      cobranca: { situacao: 'pendente', tipo: 'mensalidade' },
+    });
+    const pagarTela = (await diego.get('/assinatura/pagar')).body;
+    expect(pagarTela.cobranca).toMatchObject({
       valor: 2358,
       pix: { copiaECola: expect.stringContaining('br.gov.bcb.pix') },
     });
@@ -270,99 +272,196 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
     });
 
     // Aviso do Asaas: sem o token, recusado; com o token, pagamento confirmado.
-    const pago = { ...asaas.cobrancas[0]!, situacao: 'paga' as const };
-    const corpoAviso = {
-      id: 'evt_1',
-      event: 'PAYMENT_CONFIRMED',
-      payment: {
-        id: pago.id,
-        subscription: pago.assinatura,
-        value: pago.valor,
-        dueDate: pago.vencimento,
-        status: 'CONFIRMED',
-        billingType: 'PIX',
-        invoiceUrl: pago.link,
-        paymentDate: pago.vencimento,
-      },
-    };
-    expect((await request(app).post('/asaas/webhook').send(corpoAviso)).status).toBe(401);
-    const aviso = await request(app)
-      .post('/asaas/webhook')
-      .set('asaas-access-token', TOKEN_ASAAS)
-      .send(corpoAviso);
-    expect(aviso.status).toBe(200);
-    // O mesmo aviso de novo não faz nada.
     expect(
-      (await request(app).post('/asaas/webhook').set('asaas-access-token', TOKEN_ASAAS).send(corpoAviso))
-        .status,
-    ).toBe(200);
-    esquecerRecursos();
-    const eu = (await diego.get('/auth/eu')).body;
-    expect(eu.assinatura).toMatchObject({ situacao: 'ativa', esperandoPagamento: false });
-    expect(eu.conta.modulos).toEqual(expect.arrayContaining(['whatsapp', 'agente_ia']));
-    const plano = (await diego.get('/equipe/plano')).body;
-    expect(plano).toMatchObject({ plano: 'time', usuarios: 5 });
-    const { rows } = await pool.query(
-      `SELECT p.etapa FROM cadastro.pedidos_site p WHERE p.email = 'diego@nexosistemas.com.br'`,
-    );
-    expect(rows[0].etapa).toBe('cliente');
-    const cobrancas = (await diego.get('/assinatura')).body.cobrancas;
-    expect(cobrancas[0]).toMatchObject({ situacao: 'paga', valor: 2358 });
-  });
-
-  it('mudar com a assinatura ativa vale na hora; atrasou: tolerância e depois só leitura', async () => {
-    const r = await diego.post('/assinatura/assinar').set('Origin', ORIGEM).send({
-      plano: 'escala',
-      usuarios: 6,
-      modulos: [],
-      forma: 'BOLETO',
-      documento: '11.222.333/0001-81',
-      nome: 'Nexo Sistemas Ltda',
-      email: 'financeiro@nexo.com.br',
-    });
-    expect(r.body).toMatchObject({ valor: 2500, mudouNaHora: true });
-    esquecerRecursos();
-    expect((await diego.get('/equipe/plano')).body.plano).toBe('escala');
-
-    // A mensalidade seguinte venceu há 10 dias e não foi paga.
-    const sub = [...asaas.assinaturas.keys()][0]!;
-    const venc = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10);
-    asaas.cobrancas.push({
-      id: 'pay_atrasada',
-      assinatura: sub,
-      valor: 2500,
-      vencimento: venc,
-      situacao: 'atrasada',
-      forma: 'BOLETO',
-      link: null,
-      pagoEm: null,
-      descricao: null,
-      referencia: null,
-    });
-    await request(app)
+      (await request(app).post('/asaas/webhook').send({ id: 'x', event: 'PAYMENT_RECEIVED' })).status,
+    ).toBe(401);
+    expect((await pagar(ultima().id)).status).toBe(200);
+    // O mesmo aviso de novo não faz nada.
+    const repetido = await request(app)
       .post('/asaas/webhook')
       .set('asaas-access-token', TOKEN_ASAAS)
       .send({
-        id: 'evt_2',
-        event: 'PAYMENT_OVERDUE',
-        payment: { id: 'pay_atrasada', subscription: sub, value: 2500, dueDate: venc, status: 'OVERDUE' },
+        id: `evt_${evento}`,
+        event: 'PAYMENT_RECEIVED',
+        payment: { id: ultima().id, value: 2358, dueDate: '2026-01-01', status: 'RECEIVED' },
       });
+    expect(repetido.status).toBe(200);
+    esquecerRecursos();
+    const eu = (await diego.get('/auth/eu')).body;
+    expect(eu.assinatura).toMatchObject({
+      situacao: 'ativa',
+      esperandoPagamento: false,
+      jaPagou: true,
+      renovar: true,
+    });
+    expect(new Date(eu.assinatura.acessoAte).getTime() - Date.now()).toBeGreaterThan(27 * 86_400_000);
+    expect(eu.conta.modulos).toEqual(expect.arrayContaining(['whatsapp', 'agente_ia']));
+    expect((await diego.get('/equipe/plano')).body).toMatchObject({ plano: 'time', usuarios: 5 });
+    const { rows } = await pool.query(
+      `SELECT etapa, plano FROM cadastro.pedidos_site WHERE email = 'diego@nexosistemas.com.br'`,
+    );
+    expect(rows[0]).toEqual({ etapa: 'cliente', plano: 'Time' });
+    const cobrancas = (await diego.get('/assinatura')).body.cobrancas;
+    expect(cobrancas[0]).toMatchObject({ situacao: 'paga', valor: 2358, forma: 'PIX' });
+  });
+
+  it('mudar de plano: para mais paga a diferença proporcional; para menos vale na renovação', async () => {
+    // Escala + WhatsApp e IA = 3.499; faltam ~30 dias: paga a diferença inteira.
+    const sobe = await diego
+      .post('/assinatura/assinar')
+      .set('Origin', ORIGEM)
+      .send({ plano: 'escala', usuarios: 6, modulos: ['whatsapp', 'agente_ia'], ...dados });
+    expect(sobe.body).toMatchObject({
+      valor: 3499,
+      tipo: 'diferenca',
+      cobranca: { tipo: 'diferenca', valor: 1141 },
+    });
+    esquecerRecursos();
+    expect((await diego.get('/equipe/plano')).body.plano).toBe('time');
+    await pagar(ultima().id);
+    esquecerRecursos();
+    expect((await diego.get('/equipe/plano')).body.plano).toBe('escala');
+    expect((await diego.get('/assinatura')).body.valor).toBe(3499);
+
+    // Para menos: fica marcado para a próxima renovação; o plano de hoje continua.
+    const desce = await diego
+      .post('/assinatura/assinar')
+      .set('Origin', ORIGEM)
+      .send({ plano: 'time', usuarios: 5, modulos: ['whatsapp', 'agente_ia', 'ligacoes'], ...dados });
+    expect(desce.body).toMatchObject({ valor: 2857, tipo: 'proximo', cobranca: null });
+    const r = (await diego.get('/assinatura')).body;
+    expect(r.proximo).toMatchObject({ plano: 'time', valor: 2857 });
+    esquecerRecursos();
+    expect((await diego.get('/equipe/plano')).body.plano).toBe('escala');
+  });
+
+  it('renovação: a mensalidade aparece 7 dias antes; venceu, 3 dias normais e depois só leitura até pagar', async () => {
+    const org = (await pool.query(`SELECT id FROM cadastro.organizacoes WHERE nome = 'Nexo Sistemas'`))
+      .rows[0].id;
+    organizacaoId = org;
+    // Faltam 5 dias: a mensalidade seguinte é gerada (com a mudança marcada) e o aviso sai.
+    await pool.query(
+      `UPDATE cadastro.organizacoes SET acesso_ate = now() + interval '5 days' WHERE id = $1`,
+      [org],
+    );
+    await rodada();
+    await rodada();
+    const abertas = (await diego.get('/assinatura/pagar')).body.abertas;
+    expect(abertas).toHaveLength(1);
+    expect(abertas[0]).toMatchObject({ tipo: 'mensalidade', valor: 2857 });
+    expect(emails.some((e) => e.para === 'diego@nexosistemas.com.br' && /vence em/.test(e.assunto))).toBe(
+      true,
+    );
+    expect((await diego.get('/auth/eu')).body.assinatura).toMatchObject({
+      situacao: 'ativa',
+      esperandoPagamento: true,
+    });
+
+    // Venceu sem pagar: atrasada (tudo funciona), com e-mail.
+    const mover = (intervalo: string) =>
+      pool.query(
+        `UPDATE cadastro.organizacoes SET acesso_ate = now() + $2::interval WHERE id = $1;`.replace(';', ''),
+        [org, intervalo],
+      );
+    const acompanhar = () =>
+      pool.query(
+        `UPDATE cadastro.cobrancas b SET periodo_de = (o.acesso_ate AT TIME ZONE 'America/Sao_Paulo')::date
+           FROM cadastro.organizacoes o WHERE o.id = b.organizacao_id AND b.organizacao_id = $1 AND b.situacao = 'pendente'`,
+        [org],
+      );
+    await mover('-1 hour');
+    await acompanhar();
+    await rodada();
     expect((await diego.get('/auth/eu')).body.assinatura.situacao).toBe('atrasada');
-    await rodadaAssinaturas({ pool, log, servicos, cobranca }, ORIGEM);
-    expect((await diego.get('/auth/eu')).body.assinatura.situacao).toBe('so_leitura');
-    // Só leitura: vê, não mexe; assinar continua valendo.
+    expect(
+      emails.some(
+        (e) => e.para === 'diego@nexosistemas.com.br' && e.assunto === 'O plano do Prospect Team venceu',
+      ),
+    ).toBe(true);
+    // Não gerou outra mensalidade para o mesmo mês.
+    expect((await diego.get('/assinatura/pagar')).body.abertas).toHaveLength(1);
+
+    // Passou dos 3 dias: só leitura. Vê e exporta os contatos; não mexe; pagar continua valendo.
+    await mover('-4 days');
+    await acompanhar();
+    await rodada();
+    expect((await diego.get('/auth/eu')).body.assinatura).toMatchObject({
+      situacao: 'so_leitura',
+      soLeituraAte: null,
+    });
     expect((await diego.get('/funil')).status).toBe(200);
+    expect((await diego.get('/exportar/leads')).status).toBe(200);
     const mexer = await diego
       .post('/nichos')
       .set('Origin', ORIGEM)
       .send({ nome: 'Saúde', cnaes: ['8630-5/04'], termosMaps: ['clínica'] });
     expect(mexer.status).toBe(403);
     expect(mexer.body.erro.codigo).toBe('conta_so_leitura');
-    expect((await diego.get('/assinatura/pagar')).body.cobranca).toMatchObject({ asaas_id: 'pay_atrasada' });
-    // Pagou: volta a valer.
-    asaas.cobrancas.find((c) => c.id === 'pay_atrasada')!.situacao = 'paga';
+    // Quem já pagou não é arquivado.
+    await pool.query(
+      `UPDATE cadastro.organizacoes SET so_leitura_desde = now() - interval '40 days' WHERE id = $1`,
+      [org],
+    );
+    await rodada();
+    expect((await diego.get('/auth/eu')).body.assinatura.situacao).toBe('so_leitura');
+
+    // Pagou ("Já paguei"): volta na hora, com o plano marcado, e o mês conta de hoje.
+    const aberta = (await diego.get('/assinatura/pagar')).body.cobranca;
+    asaas.cobrancas.find((c) => c.id === aberta.asaasId)!.situacao = 'paga';
     await diego.post('/assinatura/conferir').set('Origin', ORIGEM);
-    expect((await diego.get('/auth/eu')).body.assinatura.situacao).toBe('ativa');
+    esquecerRecursos();
+    const eu = (await diego.get('/auth/eu')).body;
+    expect(eu.assinatura.situacao).toBe('ativa');
+    expect(new Date(eu.assinatura.acessoAte).getTime() - Date.now()).toBeGreaterThan(27 * 86_400_000);
+    expect((await diego.get('/equipe/plano')).body.plano).toBe('time');
+    expect(eu.conta.modulos).toContain('ligacoes');
+  });
+
+  it('minutos de ligação: pacote avulso, saldo que não vence e as ligações param quando acaba', async () => {
+    const r = await diego.post('/assinatura/minutos').set('Origin', ORIGEM).send({ pacotes: 1 });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ tipo: 'minutos', valor: 149, minutos: 500 });
+    await pagar(ultima().id);
+    let s = (await diego.get('/ligacoes/situacao')).body;
+    expect(s.minutos).toMatchObject({ franquia: 2000, pacote: 500, compraPacote: true });
+    // Usou 2.400 minutos neste mês: ainda dá (2.000 + 500).
+    const conta = (
+      await pool.query(`SELECT id FROM cadastro.contas WHERE organizacao_id = $1`, [organizacaoId])
+    ).rows[0].id;
+    await pool.query(
+      `INSERT INTO comercial.ligacoes (conta_id, telefone, sala, situacao, atendida_em, duracao_segundos)
+       VALUES ($1, '71999990000', 'lig-teste-1', 'encerrada', now(), $2)`,
+      [conta, 2400 * 60],
+    );
+    const ligar = () =>
+      diego.post('/ligacoes').set('Origin', ORIGEM).send({ empresaId: null, telefone: '71988887777' });
+    expect((await ligar()).body.erro?.codigo).not.toBe('sem_minutos');
+    // Mais 100: acabou. Para até comprar outro pacote.
+    await pool.query(
+      `INSERT INTO comercial.ligacoes (conta_id, telefone, sala, situacao, atendida_em, duracao_segundos)
+       VALUES ($1, '71999990000', 'lig-teste-2', 'encerrada', now(), $2)`,
+      [conta, 100 * 60],
+    );
+    const parou = await ligar();
+    expect(parou.status).toBe(403);
+    expect(parou.body.erro.codigo).toBe('sem_minutos');
+    // Virou o mês: o que passou da franquia (500) sai do saldo; sobra 0. Com 300 de excedente, sobrariam 200.
+    await pool.query(
+      `UPDATE comercial.ligacoes SET duracao_segundos = 1150 * 60 WHERE sala IN ('lig-teste-1', 'lig-teste-2')`,
+    );
+    await pool.query(
+      `UPDATE comercial.ligacoes SET iniciada_em = date_trunc('month', now()) - interval '10 days' WHERE sala IN ('lig-teste-1', 'lig-teste-2')`,
+    );
+    const mesPassado = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
+      .toISOString()
+      .slice(0, 7);
+    await pool.query(`UPDATE cadastro.organizacoes SET minutos_saldo_mes = $2 WHERE id = $1`, [
+      organizacaoId,
+      mesPassado,
+    ]);
+    await rodada();
+    s = (await diego.get('/ligacoes/situacao')).body;
+    expect(s.minutos).toMatchObject({ usados: 0, pacote: 200 });
   });
 
   it('teste que vence: avisos, só leitura e, 15 dias depois, arquivada', async () => {
@@ -433,8 +532,8 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
       .set('Origin', ORIGEM)
       .send({ email: 'dona@exemplo.com', senha: 'senha-forte-123' });
     const r = (await master.get('/master/site')).body;
-    expect(r.numeros).toMatchObject({ ativas: 1, testes30: 2, viraram30: 1 });
+    expect(r.numeros).toMatchObject({ ativas: 1, testes30: 2, viraram30: 1, mrr: 2857 });
     const nexo = r.pedidos.find((p: { email: string }) => p.email === 'diego@nexosistemas.com.br');
-    expect(nexo.assinatura).toMatchObject({ situacao: 'ativa', plano: 'escala' });
+    expect(nexo.assinatura).toMatchObject({ situacao: 'ativa', plano: 'time', forma: 'PIX' });
   });
 });

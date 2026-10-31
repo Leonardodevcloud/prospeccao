@@ -1,12 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
 import { cobrancaDoAsaas } from '@prospeccao/integrations/cobranca';
-import { AppError, assinarEntrada, cadastroTesteEntrada } from '@prospeccao/shared';
+import { AppError, assinarEntrada, cadastroTesteEntrada, comprarMinutosEntrada } from '@prospeccao/shared';
 import express, { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp } from '../../endereco.js';
-import { corpo } from '../../middlewares/http.js';
+import { consulta, corpo } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { iniciarSessao } from '../auth/sessao.js';
 import * as cadastro from './cadastro.js';
@@ -121,26 +121,31 @@ export function rotasAssinatura(deps: DepsApi): Router {
   });
 
   r.get('/pagar', async (req, res) => {
-    res.json({ cobranca: await servico.aPagar(d(), req.usuario!.contaId) });
+    const { cobranca } = consulta(req, z.object({ cobranca: z.coerce.number().int().positive().optional() }));
+    res.json(await servico.aPagar(d(), req.usuario!.contaId, cobranca));
   });
 
   /** "Já paguei": confere no Asaas agora (sem esperar o aviso). */
   r.post('/conferir', async (req, res) => {
-    const x = d();
-    const { rows } = await deps.pool.query<{ a: string | null; org: number }>(
-      `SELECT o.asaas_assinatura AS a, o.id AS org FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
-        WHERE c.id = $1`,
-      [req.usuario!.contaId],
-    );
-    if (x.cobranca && rows[0]?.a)
-      for (const c of await x.cobranca.cobrancasDaAssinatura(rows[0].a))
-        await servico.processarCobranca(x, c);
-    res.json(await servico.resumo(x, req.usuario!.contaId));
+    await servico.conferir(d(), req.usuario!.contaId);
+    res.json(await servico.resumo(d(), req.usuario!.contaId));
   });
 
+  /** Não renovar (o mês pago continua valendo até o fim). */
   r.post('/cancelar', exigirAdmin, async (req, res) => {
     await servico.cancelar(d(), req.usuario!.contaId);
     res.json(await servico.resumo(d(), req.usuario!.contaId));
+  });
+
+  r.post('/renovar', exigirAdmin, async (req, res) => {
+    await servico.voltarARenovar(d(), req.usuario!.contaId);
+    res.json(await servico.resumo(d(), req.usuario!.contaId));
+  });
+
+  /** Pacote de minutos de ligação (cobrança avulsa; entra no saldo quando pagar). */
+  r.post('/minutos', exigirAdmin, async (req, res) => {
+    const { pacotes } = corpo(req, comprarMinutosEntrada);
+    res.status(201).json(await servico.comprarMinutos(d(), req.usuario!.contaId, pacotes));
   });
 
   return r;

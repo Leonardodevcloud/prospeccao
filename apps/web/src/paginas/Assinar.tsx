@@ -2,9 +2,10 @@ import {
   type AssinarEntrada,
   type AssinaturaDaConta,
   contratoDoPedido,
-  FORMAS_PAGAMENTO,
-  type FormaPagamento,
+  DIFERENCA_MINIMA,
   ROTULO_ASSINATURA,
+  ROTULO_TIPO_COBRANCA,
+  type TipoCobranca,
 } from '@prospeccao/shared/assinatura';
 import {
   LISTA_MODULOS,
@@ -18,22 +19,24 @@ import {
 import { Badge, Button, EmptyState, Icon, TextField } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin, useSessao } from '../componentes/Sessao';
 import { WHATSAPP_PROSPECT } from '../componentes/TesteEAssinatura';
-import { fmtData, fmtNumero, fmtReais, fmtReaisCentavos } from '../formatar';
+import { fmtData, fmtNumero, fmtReais, fmtReaisCentavos, formatarCnpj } from '../formatar';
 
 /**
- * Meu plano › Assinar (o plano, os usuários, os módulos e a forma de pagamento, com o preço na hora)
- * e Meu plano › Pagar (o Pix na tela, a página do Asaas para boleto e cartão, e as cobranças).
+ * Meu plano › Assinar (o plano, os usuários e os módulos, com o preço na hora), Meu plano › Pagar
+ * (o Pix na tela, a página do Asaas para boleto e cartão, e as cobranças), o bloco da assinatura em
+ * Meu plano e a compra de minutos de ligação. Sem recorrência: cada mês é uma cobrança.
  */
 
 export interface CobrancaDaConta {
   id: number;
   asaasId: string;
+  tipo: TipoCobranca;
   descricao: string | null;
   valor: number;
   vencimento: string;
@@ -41,7 +44,10 @@ export interface CobrancaDaConta {
   forma: string | null;
   link: string | null;
   pagoEm: string | null;
+  minutos: number | null;
 }
+
+type Pedido = AssinarEntrada & { valor: number };
 
 export interface ResumoAssinatura {
   disponivel: boolean;
@@ -49,25 +55,28 @@ export interface ResumoAssinatura {
   situacao: AssinaturaDaConta | null;
   feito: { leads: number; funil: number; reunioes: number };
   tabela: TabelaPrecos;
-  pedido: AssinarEntrada | null;
+  contrato: Pedido | null;
+  proximo: Pedido | null;
+  pedido: Pedido | null;
   valor: number | null;
-  forma: FormaPagamento | null;
   dados: { documento: string | null; nome: string | null; email: string | null };
+  minutos: { saldo: number };
   cobrancas: CobrancaDaConta[];
 }
 
 interface APagar {
-  asaas_id: string;
-  valor: number;
-  vencimento: string;
-  forma: string | null;
-  link: string | null;
-  situacao: string;
-  pix: { imagem: string; copiaECola: string; expiraEm: string | null } | null;
+  cobranca:
+    | (CobrancaDaConta & { pix: { imagem: string; copiaECola: string; expiraEm: string | null } | null })
+    | null;
+  abertas: CobrancaDaConta[];
 }
 
-export function useResumoAssinatura() {
-  return useQuery({ queryKey: ['assinatura'], queryFn: () => api<ResumoAssinatura>('/assinatura') });
+export function useResumoAssinatura(ligado = true) {
+  return useQuery({
+    queryKey: ['assinatura'],
+    queryFn: () => api<ResumoAssinatura>('/assinatura'),
+    enabled: ligado,
+  });
 }
 
 const PLANOS: PlanoPronto[] = ['start', 'time', 'escala'];
@@ -82,16 +91,14 @@ const ROTULO_COBRANCA: Record<
 > = {
   pendente: { texto: 'esperando', tom: 'warning' },
   paga: { texto: 'paga', tom: 'brand' },
-  atrasada: { texto: 'atrasada', tom: 'danger' },
+  atrasada: { texto: 'vencida', tom: 'danger' },
   cancelada: { texto: 'cancelada', tom: 'outline' },
   estornada: { texto: 'estornada', tom: 'outline' },
 };
-const NOME_FORMA: Record<string, string> = {
-  PIX: 'Pix',
-  BOLETO: 'Boleto',
-  CREDIT_CARD: 'Cartão',
-  UNDEFINED: '—',
-};
+const NOME_FORMA: Record<string, string> = { PIX: 'Pix', BOLETO: 'Boleto', CREDIT_CARD: 'Cartão' };
+const DIA = 86_400_000;
+const descricao = (p: AssinarEntrada) =>
+  [NOME_PLANO[p.plano], `${p.usuarios} usuários`, ...p.modulos.map((m) => MODULOS[m].nome)].join(' · ');
 
 /** /plano/assinar */
 export function Assinar() {
@@ -103,22 +110,24 @@ export function Assinar() {
   const [plano, setPlano] = useState<PlanoPronto>('time');
   const [usuarios, setUsuarios] = useState(4);
   const [modulos, setModulos] = useState<Modulo[]>([]);
-  const [forma, setForma] = useState<FormaPagamento>('PIX');
   const [dados, setDados] = useState({ documento: '', nome: '', email: '' });
   const [carregado, setCarregado] = useState(false);
 
-  // Começa do que já foi pedido (ou do plano atual).
+  // Começa do que já foi pedido, do plano pago ou do plano atual.
   useEffect(() => {
     if (!q.data || carregado) return;
-    const p = q.data.pedido;
+    const p = q.data.pedido ?? q.data.proximo ?? q.data.contrato;
     const atual = sessao?.conta.plano;
     const inicial: PlanoPronto = p?.plano ?? (atual === 'start' || atual === 'escala' ? atual : 'time');
     setPlano(inicial);
     setUsuarios(p?.usuarios ?? q.data.tabela.planos[inicial].usuarios);
     setModulos(p?.modulos ?? []);
-    if (q.data.forma) setForma(q.data.forma);
     setDados({
-      documento: q.data.dados.documento ?? '',
+      documento: q.data.dados.documento
+        ? q.data.dados.documento.length === 14
+          ? formatarCnpj(q.data.dados.documento)
+          : q.data.dados.documento
+        : '',
       nome: q.data.dados.nome ?? '',
       email: q.data.dados.email ?? sessao?.email ?? '',
     });
@@ -134,17 +143,24 @@ export function Assinar() {
   );
   const assinar = useMutation({
     mutationFn: () =>
-      api<{ valor: number; mudouNaHora: boolean }>('/assinatura/assinar', {
+      api<{
+        valor: number;
+        tipo: 'mensalidade' | 'diferenca' | 'na_hora' | 'proximo';
+        cobranca: CobrancaDaConta | null;
+        valeEm: string | null;
+      }>('/assinatura/assinar', {
         metodo: 'POST',
-        corpo: { plano, usuarios, modulos, numerosExtras: 0, forma, ...dados },
+        corpo: { plano, usuarios, modulos, numerosExtras: 0, ...dados },
       }),
     onSuccess: async (r) => {
       await Promise.all([
         cliente.invalidateQueries({ queryKey: ['assinatura'] }),
+        cliente.invalidateQueries({ queryKey: ['assinatura-pagar'] }),
         cliente.invalidateQueries({ queryKey: ['sessao'] }),
         cliente.invalidateQueries({ queryKey: ['meu-plano'] }),
       ]);
-      navegar(r.mudouNaHora ? '/plano?mudou=1' : '/plano/pagar');
+      if (r.cobranca) navegar(`/plano/pagar?cobranca=${r.cobranca.id}`);
+      else navegar(r.tipo === 'proximo' ? '/plano?mudou=proximo' : '/plano?mudou=1');
     },
   });
 
@@ -180,13 +196,20 @@ export function Assinar() {
       if (xs.includes(m)) return xs.filter((x) => x !== m && !(m === 'whatsapp' && x === 'agente_ia'));
       return m === 'agente_ia' && !xs.includes('whatsapp') ? [...xs, 'whatsapp', m] : [...xs, m];
     });
-  const ativa = q.data.situacao.situacao === 'ativa' || q.data.situacao.situacao === 'atrasada';
+  const s = q.data.situacao;
+  // Mês pago valendo: é uma mudança de plano.
+  const valendo = !!s.acessoAte && new Date(s.acessoAte).getTime() > Date.now() && !!q.data.contrato;
+  const atual = q.data.valor ?? 0;
+  const novo = preco.mensalidade ?? 0;
+  const restam = valendo
+    ? Math.min(30, Math.max(1, Math.ceil((new Date(s.acessoAte!).getTime() - Date.now()) / DIA)))
+    : 0;
+  const diferenca = valendo && novo > atual ? Math.round((novo - atual) * (restam / 30) * 100) / 100 : 0;
   const pronto =
     dados.documento.replace(/\D/g, '').length >= 11 &&
     dados.nome.trim().length >= 2 &&
     dados.email.includes('@');
   const extrasUsuarios = usuarios - linha.usuarios;
-  const dia = new Date().getDate();
   const campo = (k: keyof typeof dados) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setDados((x) => ({ ...x, [k]: e.target.value }));
 
@@ -194,11 +217,13 @@ export function Assinar() {
     <>
       <div className="topo">
         <div>
-          <h1>{ativa ? 'Mudar a assinatura' : 'Assinar'}</h1>
+          <h1>{valendo ? 'Mudar o plano' : 'Assinar'}</h1>
           <p>
-            {ativa
-              ? 'A mudança vale na hora; a próxima mensalidade já vem com o valor novo.'
-              : 'Continue de onde parou: tudo o que você fez no teste fica.'}{' '}
+            {valendo
+              ? 'Para mais: paga só a diferença dos dias que faltam e vale na hora. Para menos: vale no próximo mês.'
+              : s.jaPagou
+                ? 'Pague o mês e a conta volta na hora, do jeito que estava.'
+                : 'Continue de onde parou: tudo o que você fez no teste fica.'}{' '}
             <LinkAjuda artigo="assinatura" />
           </p>
         </div>
@@ -282,7 +307,6 @@ export function Assinar() {
               <div className="assinar__modulos">
                 {LISTA_MODULOS.map((m) => {
                   const incluso = linha.modulosInclusos.includes(m);
-                  const ehCombo = m === 'whatsapp' || m === 'agente_ia';
                   return (
                     <label key={m} className="assinar__modulo">
                       <input
@@ -294,9 +318,13 @@ export function Assinar() {
                       <span>
                         {MODULOS[m].nome} <b>{incluso ? 'incluso' : fmtReais(tabela.modulos[m])}</b>
                         {m === 'ligacoes' && !incluso && (
-                          <span className="quieto"> ({fmtNumero(tabela.minutosLigacao)} min)</span>
+                          <span className="quieto">
+                            {' '}
+                            ({fmtNumero(tabela.minutosLigacao)} min; acabou, +
+                            {fmtNumero(tabela.pacoteMinutos)} por {fmtReais(tabela.pacotePreco)})
+                          </span>
                         )}
-                        {ehCombo && m === 'agente_ia' && (
+                        {m === 'agente_ia' && (
                           <span className="quieto">
                             {' '}
                             · com o WhatsApp sai {fmtReais(tabela.comboWhatsappIa)} os dois
@@ -321,38 +349,44 @@ export function Assinar() {
                 onChange={campo('documento')}
               />
               <TextField rotulo="Razão social (ou nome)" value={dados.nome} onChange={campo('nome')} />
-              <TextField
-                rotulo="E-mail do financeiro"
-                type="email"
-                dica="A cobrança e a nota fiscal chegam nele."
-                value={dados.email}
-                onChange={campo('email')}
-              />
-              <TextField
-                rotulo="Vencimento"
-                value={ativa ? 'O mesmo de hoje' : `Todo dia ${dia}`}
-                readOnly
-                dica={ativa ? undefined : 'O dia em que assinar.'}
-              />
+              <div className="assinar__inteira">
+                <TextField
+                  rotulo="E-mail do financeiro"
+                  type="email"
+                  dica="As cobranças e a nota fiscal chegam nele."
+                  value={dados.email}
+                  onChange={campo('email')}
+                />
+              </div>
             </div>
           </section>
 
-          <fieldset className="assinar__formas">
-            <legend className="assinar__legenda">Forma de pagamento</legend>
-            {(Object.keys(FORMAS_PAGAMENTO) as FormaPagamento[]).map((f) => (
-              <button
-                key={f}
-                type="button"
-                aria-pressed={forma === f}
-                className="assinar__forma"
-                data-ativo={forma === f || undefined}
-                onClick={() => setForma(f)}
-              >
-                <b>{FORMAS_PAGAMENTO[f].nome}</b>
-                <span className="quieto">{FORMAS_PAGAMENTO[f].descricao}</span>
-              </button>
-            ))}
-          </fieldset>
+          <section className="pp-panel assinar__bloco assinar__como">
+            <h2 className="assinar__titulo">Como funciona o pagamento</h2>
+            <ul>
+              <li>
+                <Icon name="check" size={14} />
+                <span>
+                  <b>Um mês por vez, sem cobrança automática no cartão.</b> 7 dias antes de vencer, a
+                  mensalidade seguinte aparece aqui e no e-mail do financeiro.
+                </span>
+              </li>
+              <li>
+                <Icon name="check" size={14} />
+                <span>
+                  <b>Pix na tela</b> (libera na hora), <b>boleto</b> (até 2 dias úteis) ou <b>cartão</b> na
+                  página segura do Asaas.
+                </span>
+              </li>
+              <li>
+                <Icon name="check" size={14} />
+                <span>
+                  Venceu sem pagar: tudo continua por 3 dias; depois, a conta fica só leitura (vocês veem e
+                  exportam os contatos) até o pagamento.
+                </span>
+              </li>
+            </ul>
+          </section>
         </div>
 
         <aside className="pp-panel assinar__resumo">
@@ -369,6 +403,30 @@ export function Assinar() {
             <span>Por mês</span>
             <b>{fmtReais(preco.mensalidade)}</b>
           </div>
+          {valendo && (
+            <p className="assinar__mudanca">
+              {novo > atual ? (
+                diferenca < DIFERENCA_MINIMA ? (
+                  <>
+                    Vale na hora, sem custo agora. A partir de {fmtData(s.acessoAte)}, {fmtReais(novo)} por
+                    mês.
+                  </>
+                ) : (
+                  <>
+                    Hoje: <b>{fmtReaisCentavos(diferenca)}</b> (a diferença dos {restam} dias até{' '}
+                    {fmtData(s.acessoAte)}). Vale assim que pagar. Depois, {fmtReais(novo)} por mês.
+                  </>
+                )
+              ) : novo < atual ? (
+                <>
+                  Hoje você paga {fmtReais(atual)} por mês. O plano novo vale a partir de{' '}
+                  {fmtData(s.acessoAte)}, já com {fmtReais(novo)}.
+                </>
+              ) : (
+                <>Mesmo valor de hoje. A mudança vale na próxima renovação ({fmtData(s.acessoAte)}).</>
+              )}
+            </p>
+          )}
           <ErroDaApi erro={assinar.error} />
           <Button
             variant="primary"
@@ -377,17 +435,15 @@ export function Assinar() {
           >
             {assinar.isPending
               ? 'Mandando…'
-              : ativa
-                ? 'Mudar a assinatura'
-                : forma === 'PIX'
-                  ? 'Assinar e pagar com Pix'
-                  : forma === 'BOLETO'
-                    ? 'Assinar e gerar o boleto'
-                    : 'Assinar com cartão'}
+              : !valendo
+                ? 'Assinar e pagar'
+                : novo > atual && diferenca >= DIFERENCA_MINIMA
+                  ? 'Mudar e pagar a diferença'
+                  : 'Mudar o plano'}
           </Button>
           <p className="quieto assinar__dica">
-            Cobrança recorrente pelo Asaas. Muda de plano ou cancela quando quiser em Meu plano; a nota fiscal
-            vai para o e-mail do financeiro.
+            Sem fidelidade: para parar, é só não pagar o mês seguinte (ou desligar a renovação em Meu plano).
+            A nota fiscal vai para o e-mail do financeiro.
           </p>
         </aside>
       </div>
@@ -410,7 +466,7 @@ export function ListaCobrancas(props: { cobrancas: CobrancaDaConta[] }) {
           <th>Vencimento</th>
           <th>O quê</th>
           <th>Valor</th>
-          <th>Forma</th>
+          <th>Pago com</th>
           <th>Situação</th>
           <th aria-label="Ações" />
         </tr>
@@ -418,21 +474,28 @@ export function ListaCobrancas(props: { cobrancas: CobrancaDaConta[] }) {
       <tbody>
         {props.cobrancas.map((c) => {
           const r = ROTULO_COBRANCA[c.situacao];
+          const aberta = c.situacao === 'pendente' || c.situacao === 'atrasada';
           return (
             <tr key={c.id}>
               <td>{fmtData(c.vencimento)}</td>
-              <td>{c.descricao ?? '—'}</td>
+              <td>
+                <span className="quieto">{ROTULO_TIPO_COBRANCA[c.tipo]}</span>
+                <br />
+                {c.descricao ?? '—'}
+              </td>
               <td className="mono">{fmtReaisCentavos(c.valor)}</td>
-              <td>{NOME_FORMA[c.forma ?? ''] ?? '—'}</td>
+              <td>{c.situacao === 'paga' ? (NOME_FORMA[c.forma ?? ''] ?? '—') : '—'}</td>
               <td>
                 <Badge tone={r.tom}>{r.texto}</Badge>
               </td>
               <td>
-                {c.link && (
+                {aberta ? (
+                  <Link to={`/plano/pagar?cobranca=${c.id}`}>Pagar</Link>
+                ) : c.link && c.situacao === 'paga' ? (
                   <a href={c.link} target="_blank" rel="noopener noreferrer">
-                    {c.situacao === 'pendente' || c.situacao === 'atrasada' ? 'Pagar' : 'Ver'}
+                    Recibo
                   </a>
-                )}
+                ) : null}
               </td>
             </tr>
           );
@@ -447,15 +510,16 @@ export function Pagar() {
   const admin = useEhAdmin();
   const navegar = useNavigate();
   const cliente = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const escolhida = Number(params.get('cobranca')) || null;
   const resumo = useResumoAssinatura();
   const pagar = useQuery({
-    queryKey: ['assinatura-pagar'],
-    queryFn: () => api<{ cobranca: APagar | null }>('/assinatura/pagar'),
+    queryKey: ['assinatura-pagar', escolhida],
+    queryFn: () => api<APagar>(`/assinatura/pagar${escolhida ? `?cobranca=${escolhida}` : ''}`),
   });
   const [copiado, setCopiado] = useState(false);
   const situacao = resumo.data?.situacao?.situacao;
   const esperando = !!pagar.data?.cobranca;
-  // Esperando o Pix: confere a cada 10 segundos (o aviso do Asaas libera a conta sozinho).
   const conferir = useMutation({
     mutationFn: () => api<ResumoAssinatura>('/assinatura/conferir', { metodo: 'POST' }),
     onSuccess: (r) => {
@@ -463,8 +527,10 @@ export function Pagar() {
       void cliente.invalidateQueries({ queryKey: ['assinatura-pagar'] });
       void cliente.invalidateQueries({ queryKey: ['sessao'] });
       void cliente.invalidateQueries({ queryKey: ['meu-plano'] });
+      void cliente.invalidateQueries({ queryKey: ['telefonia'] });
     },
   });
+  // Esperando o pagamento: confere a cada 10 segundos (o aviso do Asaas libera sozinho).
   useEffect(() => {
     if (!esperando) return;
     const t = window.setInterval(() => {
@@ -474,13 +540,14 @@ export function Pagar() {
     return () => window.clearInterval(t);
   }, [esperando, cliente]);
   const anterior = useRef<string | null>(null);
-  // Pagou (sumiu a cobrança em aberto): atualiza o menu e os limites.
+  // Pagou (a cobrança saiu das abertas): atualiza o menu, os limites e os minutos.
   useEffect(() => {
     if (!pagar.data) return;
-    const agora = pagar.data.cobranca?.asaas_id ?? null;
-    if (anterior.current && !agora) {
+    const agora = pagar.data.cobranca?.asaasId ?? null;
+    if (anterior.current && anterior.current !== agora) {
       void cliente.invalidateQueries({ queryKey: ['sessao'] });
       void cliente.invalidateQueries({ queryKey: ['meu-plano'] });
+      void cliente.invalidateQueries({ queryKey: ['telefonia'] });
     }
     anterior.current = agora;
   }, [pagar.data, cliente]);
@@ -488,24 +555,15 @@ export function Pagar() {
   if (resumo.isPending || pagar.isPending) return <div className="esqueleto" />;
   if (!resumo.data || !pagar.data) return <ErroDaApi erro={resumo.error ?? pagar.error} />;
   const c = pagar.data.cobranca;
-  const pedido = resumo.data.pedido;
+  const outras = pagar.data.abertas.filter((x) => x.id !== c?.id);
+  const p = resumo.data.pedido ?? resumo.data.contrato;
 
   return (
     <>
       <div className="topo">
         <div>
           <h1>Pagar</h1>
-          <p>
-            {pedido
-              ? [
-                  NOME_PLANO[pedido.plano],
-                  `${pedido.usuarios} usuários`,
-                  ...pedido.modulos.map((m) => MODULOS[m].nome),
-                ].join(' · ')
-              : situacao
-                ? ROTULO_ASSINATURA[situacao]
-                : ''}
-          </p>
+          <p>{p ? descricao(p) : situacao ? ROTULO_ASSINATURA[situacao] : ''}</p>
         </div>
         <Button onClick={() => navegar('/plano')}>Voltar para Meu plano</Button>
       </div>
@@ -514,22 +572,25 @@ export function Pagar() {
           {!c ? (
             <EmptyState
               icone="badge-check"
-              titulo={situacao === 'ativa' ? 'Pago. A assinatura está ativa.' : 'Nada para pagar agora'}
+              titulo={situacao === 'ativa' ? 'Tudo pago.' : 'Nada para pagar agora'}
               texto={
-                situacao === 'ativa'
-                  ? 'O plano novo já vale. A próxima mensalidade chega no e-mail do financeiro.'
+                situacao === 'ativa' && resumo.data.situacao?.acessoAte
+                  ? `O plano vale até ${fmtData(resumo.data.situacao.acessoAte)}. A mensalidade seguinte aparece aqui 7 dias antes.`
                   : 'Quando houver uma cobrança em aberto, ela aparece aqui.'
               }
             />
           ) : (
             <>
+              <span className="pagar__tipo">{ROTULO_TIPO_COBRANCA[c.tipo]}</span>
               <h2 className="pagar__titulo">
                 Pague {fmtReaisCentavos(c.valor)}
                 {c.pix ? ' com Pix' : ''}
               </h2>
               <p className="quieto" style={{ margin: 0 }}>
+                {c.descricao}
+                <br />
                 Vencimento {fmtData(c.vencimento)}
-                {c.situacao === 'atrasada' ? ' (atrasada)' : ''}
+                {c.situacao === 'atrasada' ? ' (vencida)' : ''}
               </p>
               {c.pix && (
                 <>
@@ -558,9 +619,7 @@ export function Pagar() {
               <div className="pagar__acoes">
                 {c.link && (
                   <Button href={c.link} target="_blank" rel="noopener noreferrer" iconRight="external-link">
-                    {c.pix
-                      ? 'Prefere boleto ou cartão? Abrir a página de pagamento'
-                      : 'Abrir a página de pagamento'}
+                    {c.pix ? 'Boleto ou cartão: abrir a página de pagamento' : 'Abrir a página de pagamento'}
                   </Button>
                 )}
                 <Button variant="ghost" disabled={conferir.isPending} onClick={() => conferir.mutate()}>
@@ -572,24 +631,43 @@ export function Pagar() {
           )}
         </section>
         <div className="pilha" style={{ gap: 16 }}>
-          {c && situacao === 'teste' && (
+          {c?.tipo === 'mensalidade' && situacao === 'teste' && (
             <Mensagem tipo="ok">
               <b>Pagou? Liberamos na hora.</b> O teste vira assinatura: os usuários, os módulos e os limites
               do plano valem assim que o pagamento cair. Até lá, o teste continua normal.
             </Mensagem>
           )}
-          {c && situacao === 'so_leitura' && (
+          {c && (situacao === 'so_leitura' || situacao === 'atrasada') && (
             <Mensagem tipo="ok">
               <b>Pagou? A conta volta na hora,</b> do jeito que estava.
             </Mensagem>
           )}
-          <section className="pp-panel pagar__cobrancas">
-            <h2 className="subtitulo">Cobranças</h2>
-            <ListaCobrancas cobrancas={resumo.data.cobrancas} />
-          </section>
+          {c?.tipo === 'minutos' && (
+            <Mensagem tipo="ok">
+              <b>Os minutos entram assim que o pagamento cair</b> e o saldo do pacote não vence: o que sobrar
+              fica para os meses seguintes.
+            </Mensagem>
+          )}
+          {outras.length > 0 && (
+            <section className="pp-panel pagar__cobrancas">
+              <h2 className="subtitulo">Também em aberto</h2>
+              <ul className="pagar__outras">
+                {outras.map((x) => (
+                  <li key={x.id}>
+                    <span>
+                      <b>{ROTULO_TIPO_COBRANCA[x.tipo]}</b> · {fmtReaisCentavos(x.valor)}
+                    </span>
+                    <Button size="sm" onClick={() => setParams({ cobranca: String(x.id) })}>
+                      Pagar esta
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-            Mudar de plano, de forma de pagamento ou cancelar: em{' '}
-            {admin ? <Link to="/plano">Meu plano</Link> : 'Meu plano'}, quando quiser.
+            As cobranças pagas (com o recibo), mudar de plano e desligar a renovação ficam em{' '}
+            {admin ? <Link to="/plano">Meu plano</Link> : 'Meu plano'}.
           </p>
         </div>
       </div>
@@ -597,24 +675,62 @@ export function Pagar() {
   );
 }
 
-/** O bloco da assinatura em Meu plano (situação, cobranças, mudar e cancelar). */
+/** Comprar um pacote de minutos de ligação (vai para o Pix). */
+export function ComprarMinutos(props: { tabela?: TabelaPrecos | null; variante?: 'primary' | 'secondary' }) {
+  const navegar = useNavigate();
+  const cliente = useQueryClient();
+  const comprar = useMutation({
+    mutationFn: () => api<CobrancaDaConta>('/assinatura/minutos', { metodo: 'POST', corpo: { pacotes: 1 } }),
+    onSuccess: (c) => {
+      void cliente.invalidateQueries({ queryKey: ['assinatura'] });
+      navegar(`/plano/pagar?cobranca=${c.id}`);
+    },
+  });
+  const t = props.tabela;
+  return (
+    <div className="pilha" style={{ gap: 6 }}>
+      <Button
+        variant={props.variante ?? 'primary'}
+        icon="phone"
+        disabled={comprar.isPending}
+        onClick={() => comprar.mutate()}
+      >
+        {comprar.isPending
+          ? 'Gerando o Pix…'
+          : t
+            ? `Comprar +${fmtNumero(t.pacoteMinutos)} minutos por ${fmtReais(t.pacotePreco)}`
+            : 'Comprar mais minutos'}
+      </Button>
+      <ErroDaApi erro={comprar.error} />
+    </div>
+  );
+}
+
+/** O bloco da assinatura em Meu plano (situação, próxima mensalidade, renovação, minutos e cobranças). */
 export function AssinaturaNoPlano() {
   const admin = useEhAdmin();
   const navegar = useNavigate();
   const cliente = useQueryClient();
-  const q = useResumoAssinatura();
+  const q = useResumoAssinatura(admin);
   const [confirmar, setConfirmar] = useState(false);
+  const atualizar = (r: ResumoAssinatura) => {
+    cliente.setQueryData(['assinatura'], r);
+    setConfirmar(false);
+    void cliente.invalidateQueries({ queryKey: ['sessao'] });
+  };
   const cancelar = useMutation({
     mutationFn: () => api<ResumoAssinatura>('/assinatura/cancelar', { metodo: 'POST' }),
-    onSuccess: (r) => {
-      cliente.setQueryData(['assinatura'], r);
-      setConfirmar(false);
-      void cliente.invalidateQueries({ queryKey: ['sessao'] });
-    },
+    onSuccess: atualizar,
+  });
+  const renovar = useMutation({
+    mutationFn: () => api<ResumoAssinatura>('/assinatura/renovar', { metodo: 'POST' }),
+    onSuccess: atualizar,
   });
   if (!admin || !q.data?.situacao) return null;
-  const s = q.data.situacao;
-  const temAssinatura = s.situacao === 'ativa' || s.situacao === 'atrasada' || s.esperandoPagamento;
+  const r = q.data;
+  const s = r.situacao!;
+  const pagante = s.situacao === 'ativa' || s.situacao === 'atrasada' || s.situacao === 'cancelada';
+  const temLigacoes = !!r.contrato?.modulos.includes('ligacoes');
   return (
     <section className="pp-panel meu-plano">
       <div className="assinatura-plano__topo">
@@ -625,27 +741,44 @@ export function AssinaturaNoPlano() {
           <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
             {ROTULO_ASSINATURA[s.situacao]}
             {s.situacao === 'teste' && s.testeAte ? ` até ${fmtData(s.testeAte)}` : ''}
-            {s.esperandoPagamento ? ' · esperando o pagamento' : ''}
-            {q.data.valor != null && temAssinatura
-              ? ` · ${fmtReais(q.data.valor)}/mês no ${NOME_FORMA[q.data.forma ?? ''] ?? '—'}`
+            {pagante && s.acessoAte
+              ? ` · ${s.situacao === 'atrasada' ? 'venceu em' : 'pago até'} ${fmtData(s.acessoAte)}`
               : ''}
+            {r.valor != null && pagante ? ` · ${fmtReais(r.valor)} por mês` : ''}
+            {s.esperandoPagamento ? ' · cobrança esperando o pagamento' : ''}
           </p>
+          {r.proximo && s.acessoAte && (
+            <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
+              A partir de {fmtData(s.acessoAte)}: {descricao(r.proximo)} ({fmtReais(r.proximo.valor)} por
+              mês).
+            </p>
+          )}
         </div>
         <div className="assinatura-plano__botoes">
-          {(s.esperandoPagamento || s.situacao === 'atrasada') && (
+          {s.esperandoPagamento && (
             <Button variant="primary" onClick={() => navegar('/plano/pagar')}>
               Pagar
             </Button>
           )}
           <Button
-            variant={s.esperandoPagamento || s.situacao === 'atrasada' ? 'secondary' : 'primary'}
+            variant={s.esperandoPagamento ? 'secondary' : 'primary'}
             onClick={() => navegar('/plano/assinar')}
           >
-            {s.situacao === 'ativa' || s.situacao === 'atrasada' ? 'Mudar plano ou pagamento' : 'Assinar'}
+            {pagante ? 'Mudar o plano' : 'Assinar'}
           </Button>
-          {temAssinatura && (
+          {pagante && s.renovar && s.situacao !== 'atrasada' && (
             <Button variant="ghost" onClick={() => setConfirmar(true)}>
-              Cancelar
+              Não renovar
+            </Button>
+          )}
+          {s.situacao === 'cancelada' && (
+            <Button variant="ghost" disabled={renovar.isPending} onClick={() => renovar.mutate()}>
+              Voltar a renovar
+            </Button>
+          )}
+          {!pagante && s.esperandoPagamento && (
+            <Button variant="ghost" onClick={() => setConfirmar(true)}>
+              Desistir
             </Button>
           )}
         </div>
@@ -653,8 +786,8 @@ export function AssinaturaNoPlano() {
       {confirmar && (
         <div className="assinatura-plano__cancelar">
           <p style={{ margin: 0 }}>
-            {s.situacao === 'ativa' || s.situacao === 'atrasada'
-              ? `Cancelar a assinatura? O acesso continua até o fim do período pago${s.acessoAte ? ` (${fmtData(s.acessoAte)})` : ''}; depois a conta fica só leitura.`
+            {pagante
+              ? `Desligar a renovação? A mensalidade seguinte não é gerada e o plano vale até ${fmtData(s.acessoAte)}; depois, a conta fica só leitura (vocês continuam vendo e exportando tudo).`
               : 'Desistir da assinatura pedida? A cobrança em aberto é cancelada.'}
           </p>
           <ErroDaApi erro={cancelar.error} />
@@ -663,14 +796,27 @@ export function AssinaturaNoPlano() {
               Manter
             </Button>
             <Button variant="danger" disabled={cancelar.isPending} onClick={() => cancelar.mutate()}>
-              {cancelar.isPending ? 'Cancelando…' : 'Cancelar a assinatura'}
+              {cancelar.isPending ? 'Mandando…' : pagante ? 'Desligar a renovação' : 'Desistir'}
             </Button>
           </div>
         </div>
       )}
-      {q.data.cobrancas.length > 0 && (
+      {temLigacoes && pagante && (
+        <div className="assinatura-plano__minutos">
+          <div>
+            <b>Minutos de ligação em pacote</b>
+            <p className="quieto" style={{ margin: '2px 0 0', fontSize: 13 }}>
+              {r.minutos.saldo
+                ? `Sobram ${fmtNumero(r.minutos.saldo)} minutos de pacote (não vencem). Entram quando a franquia do mês acaba.`
+                : `A franquia do mês acabou? Compre um pacote: entra na hora com Pix e o que sobrar não vence.`}
+            </p>
+          </div>
+          <ComprarMinutos tabela={r.tabela} variante="secondary" />
+        </div>
+      )}
+      {r.cobrancas.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <ListaCobrancas cobrancas={q.data.cobrancas} />
+          <ListaCobrancas cobrancas={r.cobrancas} />
         </div>
       )}
     </section>

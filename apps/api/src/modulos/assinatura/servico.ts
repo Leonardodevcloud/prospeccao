@@ -5,26 +5,32 @@ import {
   type AssinarEntrada,
   type AssinaturaDaConta,
   contratoDoPedido,
+  DIAS_AVISO_VENCIMENTO,
   DIAS_SO_LEITURA,
   DIAS_TOLERANCIA_ATRASO,
+  DIFERENCA_MINIMA,
   documentoDoTexto,
   type Logger,
   MODULOS,
   NOME_PLANO,
   planoEfetivo,
   type SituacaoAssinatura,
+  type TipoCobranca,
 } from '@prospeccao/shared';
 import { comConta, usuarioAtual } from '../../contexto.js';
-import { contratoDaConta } from '../../recursos.js';
+import { contratoDaConta, esquecerRecursos } from '../../recursos.js';
 import type { ResolverServicos } from '../../servicos.js';
-import { avisarAdmins } from '../instagram/servico.js';
+import { notificar } from '../notificacoes/repositorio.js';
 import { organizacaoDaConta, salvarPlano, tabelaDePrecos } from '../plano/repositorio.js';
 import { mandarEmailSistema } from './email.js';
 
 /**
- * A assinatura que a empresa contrata sozinha: escolhe plano, usuários e módulos, paga no Asaas
- * (Pix, boleto ou cartão) e o plano vale assim que o pagamento cai. Atrasou: 7 dias de tolerância
- * e só leitura; só leitura por 15 dias: arquiva.
+ * A assinatura que a empresa contrata sozinha. Sem recorrência: cada mês é uma cobrança avulsa no
+ * Asaas (Pix na tela, boleto ou cartão na página do Asaas), gerada 7 dias antes de vencer. Pagou,
+ * vale por mais um mês. Venceu sem pagar: 3 dias normais e depois só leitura até pagar (quem já
+ * pagou nunca perde os dados; o teste que vence sem assinar fica só leitura 15 dias e arquiva).
+ * Mudar para mais: paga a diferença proporcional e vale quando cair. Para menos: vale na renovação.
+ * Minutos de ligação: pacotes avulsos que entram num saldo que não vence.
  */
 
 export interface DepsAssinatura {
@@ -34,6 +40,9 @@ export interface DepsAssinatura {
   cobranca: ServicoCobranca | null;
 }
 
+/** O plano pedido (ou pago), com o documento limpo e o valor do mês. */
+export type Pedido = AssinarEntrada & { valor: number };
+
 interface LinhaOrg {
   id: number;
   nome: string;
@@ -41,21 +50,23 @@ interface LinhaOrg {
   teste_ate: string | null;
   acesso_ate: string | null;
   so_leitura_desde: string | null;
-  assinatura_pedido: (AssinarEntrada & { valor: number }) | null;
+  assinatura_contrato: Pedido | null;
+  assinatura_proximo: Pedido | null;
   assinatura_valor: string | null;
-  assinatura_forma: 'PIX' | 'BOLETO' | 'CREDIT_CARD' | null;
+  renovar: boolean;
   asaas_cliente: string | null;
-  asaas_assinatura: string | null;
   cobranca_documento: string | null;
   cobranca_nome: string | null;
   cobranca_email: string | null;
   plano: string | null;
+  minutos_saldo: number;
 }
 
 async function org(db: Executor, organizacaoId: number): Promise<LinhaOrg> {
   const { rows } = await db.query<LinhaOrg>(
-    `SELECT id, nome, assinatura, teste_ate, acesso_ate, so_leitura_desde, assinatura_pedido, assinatura_valor,
-            assinatura_forma, asaas_cliente, asaas_assinatura, cobranca_documento, cobranca_nome, cobranca_email, plano
+    `SELECT id, nome, assinatura, teste_ate, acesso_ate, so_leitura_desde, assinatura_contrato, assinatura_proximo,
+            assinatura_valor, renovar, asaas_cliente, cobranca_documento, cobranca_nome, cobranca_email, plano,
+            minutos_saldo
        FROM cadastro.organizacoes WHERE id = $1`,
     [organizacaoId],
   );
@@ -63,20 +74,45 @@ async function org(db: Executor, organizacaoId: number): Promise<LinhaOrg> {
   return rows[0];
 }
 
+const DIA = 86_400_000;
 const brData = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d);
-const somarDias = (iso: string | Date, dias: number) => new Date(new Date(iso).getTime() + dias * 86_400_000);
+const diaMes = (d: string | Date) =>
+  new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  }).format(new Date(d));
+const somarDias = (iso: string | Date, dias: number) => new Date(new Date(iso).getTime() + dias * DIA);
+const reais = (n: number) =>
+  `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const mesAtual = () => brData(new Date()).slice(0, 7);
 
-/** Situação para a tela (faixa do teste, só leitura). null = contrato combinado à mão. */
+function exigirCobranca(deps: DepsAssinatura): ServicoCobranca {
+  if (!deps.cobranca)
+    throw new AppError(
+      503,
+      'cobranca_desligada',
+      'A assinatura pelo sistema ainda não foi ligada. Fale com a gente.',
+    );
+  return deps.cobranca;
+}
+
+/** Situação para a tela (faixa do teste, vencimento, só leitura). null = contrato combinado à mão. */
 export async function situacaoDaConta(db: Executor, contaId: number): Promise<AssinaturaDaConta | null> {
   const { rows } = await db.query<{
     assinatura: SituacaoAssinatura | null;
     teste_ate: string | null;
     acesso_ate: string | null;
     so_leitura_desde: string | null;
+    renovar: boolean;
     esperando: boolean;
+    ja_pagou: boolean;
   }>(
-    `SELECT o.assinatura, o.teste_ate, o.acesso_ate, o.so_leitura_desde,
-            (o.assinatura_pedido IS NOT NULL) AS esperando
+    `SELECT o.assinatura, o.teste_ate, o.acesso_ate, o.so_leitura_desde, o.renovar,
+            EXISTS (SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id
+                       AND b.situacao IN ('pendente', 'atrasada') AND b.tipo IN ('mensalidade', 'diferenca')) AS esperando,
+            EXISTS (SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id
+                       AND b.situacao = 'paga' AND b.tipo = 'mensalidade') AS ja_pagou
        FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE c.id = $1`,
     [contaId],
   );
@@ -87,24 +123,30 @@ export async function situacaoDaConta(db: Executor, contaId: number): Promise<As
     situacao: o.assinatura,
     testeAte: o.teste_ate,
     acessoAte: o.acesso_ate,
-    soLeituraAte: o.so_leitura_desde ? somarDias(o.so_leitura_desde, DIAS_SO_LEITURA).toISOString() : null,
+    toleranciaAte: o.acesso_ate ? somarDias(o.acesso_ate, DIAS_TOLERANCIA_ATRASO).toISOString() : null,
+    soLeituraAte:
+      o.so_leitura_desde && !o.ja_pagou ? somarDias(o.so_leitura_desde, DIAS_SO_LEITURA).toISOString() : null,
     esperandoPagamento: o.esperando,
+    jaPagou: o.ja_pagou,
+    renovar: o.renovar,
     leadsUsados: contrato?.uso.leadsMes ?? 0,
     leadsLimite: contrato?.leadsMes ?? null,
   };
 }
 
-/** Meu plano › Assinar: a tabela de preços, o que já foi pedido, a situação e as cobranças. */
+const CAMPOS_COBRANCA = `id::int, asaas_id AS "asaasId", tipo, descricao, valor::float8 AS valor,
+  to_char(vencimento, 'YYYY-MM-DD') AS vencimento, situacao, forma, link, pago_em AS "pagoEm", minutos`;
+
+/** Meu plano › Assinar: a tabela de preços, o plano pago, o pedido em aberto, os minutos e as cobranças. */
 export async function resumo(deps: DepsAssinatura, contaId: number) {
   const { pool } = deps;
   const organizacaoId = await organizacaoDaConta(pool, contaId);
   const o = await org(pool, organizacaoId);
-  const [tabela, cobrancas, situacao, feito] = await Promise.all([
+  const [tabela, cobrancas, situacao, feito, aberto] = await Promise.all([
     tabelaDePrecos(pool),
     pool.query(
-      `SELECT id::int, asaas_id AS "asaasId", descricao, valor::float8 AS valor, to_char(vencimento, 'YYYY-MM-DD') AS vencimento,
-              situacao, forma, link, pago_em AS "pagoEm"
-         FROM cadastro.cobrancas WHERE organizacao_id = $1 ORDER BY vencimento DESC, id DESC LIMIT 24`,
+      `SELECT ${CAMPOS_COBRANCA} FROM cadastro.cobrancas WHERE organizacao_id = $1
+        ORDER BY criado_em DESC, id DESC LIMIT 24`,
       [organizacaoId],
     ),
     situacaoDaConta(pool, contaId),
@@ -116,84 +158,124 @@ export async function resumo(deps: DepsAssinatura, contaId: number) {
                 WHERE x.organizacao_id = $1 AND t.tipo = 'reuniao') AS reunioes`,
       [organizacaoId],
     ),
+    pool.query<{ pedido: Pedido }>(
+      `SELECT pedido FROM cadastro.cobrancas WHERE organizacao_id = $1 AND situacao IN ('pendente', 'atrasada')
+          AND tipo IN ('mensalidade', 'diferenca') AND pedido IS NOT NULL ORDER BY criado_em DESC LIMIT 1`,
+      [organizacaoId],
+    ),
   ]);
   return {
     disponivel: !!deps.cobranca,
+    sandbox: deps.cobranca?.sandbox ?? false,
+    situacao,
     feito: {
       leads: situacao?.leadsUsados ?? 0,
       funil: feito.rows[0]?.funil ?? 0,
       reunioes: feito.rows[0]?.reunioes ?? 0,
     },
-    sandbox: deps.cobranca?.sandbox ?? false,
-    situacao,
     tabela,
-    pedido: o.assinatura_pedido,
+    /** O plano pago que está valendo. */
+    contrato: o.assinatura_contrato,
+    /** Mudança para menos que vale na próxima renovação. */
+    proximo: o.assinatura_proximo,
+    /** O pedido esperando o pagamento (assinar ou subir de plano). */
+    pedido: aberto.rows[0]?.pedido ?? null,
     valor: o.assinatura_valor == null ? null : Number(o.assinatura_valor),
-    forma: o.assinatura_forma,
     dados: { documento: o.cobranca_documento, nome: o.cobranca_nome ?? o.nome, email: o.cobranca_email },
+    minutos: { saldo: o.minutos_saldo },
     cobrancas: cobrancas.rows,
   };
 }
 
 const descricaoDoPedido = (d: AssinarEntrada) =>
   [
-    `Prospect Team · Plano ${NOME_PLANO[d.plano]}`,
+    `Plano ${NOME_PLANO[d.plano]}`,
     `${d.usuarios} usuário${d.usuarios > 1 ? 's' : ''}`,
     ...d.modulos.map((m) => MODULOS[m].nome),
   ].join(' · ');
 
-/** Grava a cobrança do Asaas no histórico (e devolve se mudou de situação). */
-async function guardarCobranca(
-  db: Executor,
+/** Cria a cobrança no Asaas e guarda (com o que ela paga). */
+async function novaCobranca(
+  deps: DepsAssinatura,
   organizacaoId: number,
-  c: CobrancaAsaas,
-): Promise<string | null> {
-  const { rows } = await db.query<{ antes: string | null }>(
-    `WITH antes AS (SELECT situacao FROM cadastro.cobrancas WHERE asaas_id = $2)
-     INSERT INTO cadastro.cobrancas (organizacao_id, asaas_id, asaas_assinatura, descricao, valor, vencimento, situacao, forma, link, pago_em)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     ON CONFLICT (asaas_id) DO UPDATE SET valor = EXCLUDED.valor, vencimento = EXCLUDED.vencimento,
-            situacao = EXCLUDED.situacao, forma = EXCLUDED.forma, link = coalesce(EXCLUDED.link, cadastro.cobrancas.link),
-            pago_em = coalesce(EXCLUDED.pago_em, cadastro.cobrancas.pago_em), atualizado_em = now()
-     RETURNING (SELECT situacao FROM antes) AS antes`,
+  cliente: string,
+  c: {
+    tipo: TipoCobranca;
+    valor: number;
+    vencimento: string;
+    descricao: string;
+    pedido?: Pedido | null;
+    minutos?: number | null;
+    periodoDe?: string | null;
+  },
+) {
+  const asaas = exigirCobranca(deps);
+  const b = await asaas.criarCobranca({
+    cliente,
+    valor: c.valor,
+    vencimento: c.vencimento,
+    descricao: `Prospect Team · ${c.descricao}`,
+    referencia: `org:${organizacaoId}`,
+  });
+  const { rows } = await deps.pool.query(
+    `INSERT INTO cadastro.cobrancas (organizacao_id, asaas_id, tipo, pedido, minutos, periodo_de, descricao, valor,
+                                     vencimento, situacao, forma, link)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     RETURNING ${CAMPOS_COBRANCA}`,
     [
       organizacaoId,
-      c.id,
-      c.assinatura,
+      b.id,
+      c.tipo,
+      c.pedido ? JSON.stringify(c.pedido) : null,
+      c.minutos ?? null,
+      c.periodoDe ?? null,
       c.descricao,
       c.valor,
-      c.vencimento,
-      c.situacao,
-      c.forma,
-      c.link,
-      c.pagoEm,
+      b.vencimento || c.vencimento,
+      b.situacao,
+      b.forma,
+      b.link,
     ],
   );
-  return rows[0]?.antes ?? null;
+  return rows[0];
+}
+
+/** Apaga no Asaas as cobranças em aberto destes tipos (a que valer é gerada de novo). */
+async function cancelarAbertas(deps: DepsAssinatura, organizacaoId: number, tipos: TipoCobranca[]) {
+  const { rows } = await deps.pool.query<{ id: number; asaas_id: string }>(
+    `SELECT id, asaas_id FROM cadastro.cobrancas
+      WHERE organizacao_id = $1 AND situacao IN ('pendente', 'atrasada') AND tipo = ANY($2)`,
+    [organizacaoId, tipos],
+  );
+  for (const r of rows) {
+    if (deps.cobranca)
+      await deps.cobranca
+        .cancelarCobranca(r.asaas_id)
+        .catch((e) =>
+          deps.log.warn({ err: e, cobranca: r.asaas_id }, 'assinatura: não deu para apagar no Asaas'),
+        );
+    await deps.pool.query(
+      `UPDATE cadastro.cobrancas SET situacao = 'cancelada', atualizado_em = now() WHERE id = $1`,
+      [r.id],
+    );
+  }
 }
 
 /**
- * Assinar (ou mudar a assinatura): calcula o preço pela tabela, cria o cliente e a assinatura no
- * Asaas (a 1ª cobrança vence hoje) e devolve a cobrança para pagar. O plano novo vale quando o
- * pagamento cair; quem já tem a assinatura ativa muda na hora e paga a diferença no próximo mês.
+ * Assinar ou mudar o plano. Sem mês pago valendo: gera a mensalidade (vale quando pagar). Com mês
+ * pago: para mais, cobra a diferença proporcional aos dias que faltam (pequena: vale na hora); para
+ * menos, fica marcado e vale na próxima renovação.
  */
 export async function assinar(deps: DepsAssinatura, contaId: number, d: AssinarEntrada) {
-  const { pool, cobranca } = deps;
-  if (!cobranca)
-    throw new AppError(
-      503,
-      'cobranca_desligada',
-      'A assinatura pelo sistema ainda não foi ligada. Fale com a gente.',
-    );
+  const { pool } = deps;
+  const asaas = exigirCobranca(deps);
   const organizacaoId = await organizacaoDaConta(pool, contaId);
   const o = await org(pool, organizacaoId);
   if (o.assinatura === null && o.plano)
     throw AppError.conflito('O seu contrato foi combinado com a gente: para mudar, fale com o nosso time.');
   const tabela = await tabelaDePrecos(pool);
-  const pronto = tabela.planos[d.plano];
-  if (d.usuarios < 1) throw AppError.invalido('Escolha ao menos 1 usuário.');
   const efetivo = planoEfetivo(contratoDoPedido(d), tabela);
-  const valor = efetivo.mensalidade ?? pronto.preco;
+  const valor = efetivo.mensalidade ?? tabela.planos[d.plano].preco;
   const documento = documentoDoTexto(d.documento)!;
   const contrato = await contratoDaConta(pool, contaId).catch(() => null);
   if (contrato && contrato.uso.usuarios > d.usuarios)
@@ -211,120 +293,165 @@ export async function assinar(deps: DepsAssinatura, contaId: number, d: AssinarE
     : null;
   let cliente = o.asaas_cliente;
   if (!cliente)
-    cliente = await cobranca.criarCliente({
+    cliente = await asaas.criarCliente({
       nome: d.nome,
       documento,
       email: d.email,
       telefone,
       referencia: `org:${organizacaoId}`,
     });
-  else await cobranca.atualizarCliente(cliente, { nome: d.nome, documento, email: d.email });
+  else await asaas.atualizarCliente(cliente, { nome: d.nome, documento, email: d.email });
+  await pool.query(
+    `UPDATE cadastro.organizacoes SET asaas_cliente = $2, cobranca_documento = $3, cobranca_nome = $4, cobranca_email = $5
+      WHERE id = $1`,
+    [organizacaoId, cliente, documento, d.nome, d.email],
+  );
+  const pedido: Pedido = { ...d, documento, valor };
+  const hoje = brData(new Date());
 
-  const pedido = { ...d, documento, valor };
-  // Já pagando: muda o plano agora e o valor das próximas cobranças.
-  if ((o.assinatura === 'ativa' || o.assinatura === 'atrasada') && o.asaas_assinatura) {
-    await cobranca.atualizarAssinatura(o.asaas_assinatura, {
-      valor,
-      forma: d.forma,
-      descricao: descricaoDoPedido(d),
-    });
-    await aplicarPlano(pool, organizacaoId, pedido);
-    await pool.query(
-      `UPDATE cadastro.organizacoes SET assinatura_valor = $2, assinatura_forma = $3, asaas_cliente = $4,
-              cobranca_documento = $5, cobranca_nome = $6, cobranca_email = $7
-        WHERE id = $1`,
-      [organizacaoId, valor, d.forma, cliente, documento, d.nome, d.email],
-    );
-    return { valor, mudouNaHora: true, cobranca: null };
+  // Mês pago valendo: mudança de plano.
+  const pago = o.acesso_ate && new Date(o.acesso_ate).getTime() > Date.now() && o.assinatura_contrato;
+  if (pago) {
+    const atual = Number(o.assinatura_valor ?? 0);
+    await cancelarAbertas(deps, organizacaoId, ['diferenca']);
+    if (valor > atual) {
+      const restam = Math.min(
+        30,
+        Math.max(1, Math.ceil((new Date(o.acesso_ate!).getTime() - Date.now()) / DIA)),
+      );
+      const diferenca = Math.round((valor - atual) * (restam / 30) * 100) / 100;
+      await pool.query('UPDATE cadastro.organizacoes SET assinatura_proximo = NULL WHERE id = $1', [
+        organizacaoId,
+      ]);
+      if (diferenca < DIFERENCA_MINIMA) {
+        await valerAgora(deps, organizacaoId, pedido);
+        return { valor, tipo: 'na_hora' as const, cobranca: null, valeEm: null };
+      }
+      const cobranca = await novaCobranca(deps, organizacaoId, cliente, {
+        tipo: 'diferenca',
+        valor: diferenca,
+        vencimento: hoje,
+        descricao: `Mudança para ${descricaoDoPedido(d)} (proporcional até ${diaMes(o.acesso_ate!)})`,
+        pedido,
+      });
+      return { valor, tipo: 'diferenca' as const, cobranca, valeEm: null };
+    }
+    // Para menos (ou igual): vale na renovação. A mensalidade já gerada sai e volta com o valor novo.
+    const igual =
+      JSON.stringify(contratoDoPedido(pedido)) === JSON.stringify(contratoDoPedido(o.assinatura_contrato!));
+    await pool.query('UPDATE cadastro.organizacoes SET assinatura_proximo = $2 WHERE id = $1', [
+      organizacaoId,
+      igual ? null : JSON.stringify(pedido),
+    ]);
+    await cancelarAbertas(deps, organizacaoId, ['mensalidade']);
+    return { valor, tipo: 'proximo' as const, cobranca: null, valeEm: o.acesso_ate };
   }
 
-  // Nova assinatura (do teste, do só leitura ou de uma que foi cancelada): a anterior que ninguém pagou sai.
-  if (o.asaas_assinatura) await cobranca.cancelarAssinatura(o.asaas_assinatura).catch(() => undefined);
-  const asaasAssinatura = await cobranca.criarAssinatura({
-    cliente,
-    forma: d.forma,
-    valor,
-    vencimento: brData(new Date()),
-    descricao: descricaoDoPedido(d),
-    referencia: `org:${organizacaoId}`,
-  });
+  // Sem mês pago valendo (teste, venceu, só leitura): a mensalidade. Quem estava em dia continua
+  // contando do vencimento (dentro da tolerância); senão, o mês começa quando pagar.
+  await cancelarAbertas(deps, organizacaoId, ['mensalidade', 'diferenca']);
   await pool.query(
-    `UPDATE cadastro.organizacoes SET asaas_cliente = $2, asaas_assinatura = $3, assinatura_pedido = $4,
-            assinatura_valor = $5, assinatura_forma = $6, cobranca_documento = $7, cobranca_nome = $8, cobranca_email = $9
-      WHERE id = $1`,
-    [
-      organizacaoId,
-      cliente,
-      asaasAssinatura,
-      JSON.stringify(pedido),
-      valor,
-      d.forma,
-      documento,
-      d.nome,
-      d.email,
-    ],
-  );
-  await pool.query(
-    `UPDATE cadastro.cobrancas SET situacao = 'cancelada', atualizado_em = now()
-      WHERE organizacao_id = $1 AND situacao IN ('pendente', 'atrasada') AND asaas_assinatura IS DISTINCT FROM $2`,
-    [organizacaoId, asaasAssinatura],
-  );
-  const cobrancas = await cobranca.cobrancasDaAssinatura(asaasAssinatura);
-  for (const c of cobrancas) await guardarCobranca(pool, organizacaoId, c);
-  const primeira = cobrancas.sort((a, b) => a.vencimento.localeCompare(b.vencimento))[0] ?? null;
-  return { valor, mudouNaHora: false, cobranca: primeira };
-}
-
-/** A cobrança que falta pagar (com o Pix, se for Pix). */
-export async function aPagar(deps: DepsAssinatura, contaId: number) {
-  const { pool, cobranca } = deps;
-  const organizacaoId = await organizacaoDaConta(pool, contaId);
-  const { rows } = await pool.query<{
-    asaas_id: string;
-    valor: number;
-    vencimento: string;
-    forma: string | null;
-    link: string | null;
-    situacao: string;
-  }>(
-    `SELECT asaas_id, valor::float8 AS valor, to_char(vencimento, 'YYYY-MM-DD') AS vencimento, forma, link, situacao
-       FROM cadastro.cobrancas WHERE organizacao_id = $1 AND situacao IN ('pendente', 'atrasada')
-      ORDER BY vencimento LIMIT 1`,
+    'UPDATE cadastro.organizacoes SET renovar = true, assinatura_proximo = NULL WHERE id = $1',
     [organizacaoId],
   );
-  const c = rows[0];
-  if (!c) return null;
+  const cobranca = await novaCobranca(deps, organizacaoId, cliente, {
+    tipo: 'mensalidade',
+    valor,
+    vencimento: hoje,
+    descricao: `Mensalidade · ${descricaoDoPedido(d)}`,
+    pedido,
+    periodoDe: o.acesso_ate ? brData(new Date(o.acesso_ate)) : null,
+  });
+  return { valor, tipo: 'mensalidade' as const, cobranca, valeEm: null };
+}
+
+/** O plano pedido passa a valer agora (mudança paga ou pequena). */
+async function valerAgora(deps: DepsAssinatura, organizacaoId: number, p: Pedido) {
+  await aplicarPlano(deps.pool, organizacaoId, p);
+  await deps.pool.query(
+    `UPDATE cadastro.organizacoes SET assinatura_contrato = $2, assinatura_valor = $3, assinatura_proximo = NULL
+      WHERE id = $1`,
+    [organizacaoId, JSON.stringify(p), p.valor],
+  );
+  // A mensalidade seguinte (se já gerada) volta com o valor novo.
+  await cancelarAbertas(deps, organizacaoId, ['mensalidade']);
+}
+
+/** As cobranças em aberto e a escolhida (com o Pix na tela). */
+export async function aPagar(deps: DepsAssinatura, contaId: number, escolhida?: number | null) {
+  const { pool, cobranca } = deps;
+  const organizacaoId = await organizacaoDaConta(pool, contaId);
+  const { rows } = await pool.query<{ id: number; asaasId: string; forma: string | null }>(
+    `SELECT ${CAMPOS_COBRANCA} FROM cadastro.cobrancas
+      WHERE organizacao_id = $1 AND situacao IN ('pendente', 'atrasada')
+      ORDER BY (tipo = 'minutos'), vencimento, id`,
+    [organizacaoId],
+  );
+  const c = rows.find((x) => x.id === escolhida) ?? rows[0];
+  if (!c) return { cobranca: null, abertas: [] };
   let pix: { imagem: string; copiaECola: string; expiraEm: string | null } | null = null;
-  if (cobranca && (c.forma === 'PIX' || c.forma === 'UNDEFINED'))
-    pix = await cobranca.pix(c.asaas_id).catch((e) => {
+  if (cobranca && c.forma !== 'BOLETO' && c.forma !== 'CREDIT_CARD')
+    pix = await cobranca.pix(c.asaasId).catch((e) => {
       deps.log.warn({ err: e }, 'assinatura: não deu para buscar o Pix');
       return null;
     });
-  return { ...c, pix };
+  return { cobranca: { ...c, pix }, abertas: rows };
 }
 
-/** Cancelar: o acesso continua até o fim do período pago; depois fica só leitura. */
+/** Não renovar: a cobrança do mês seguinte não é gerada; o acesso vai até o fim do mês pago. */
 export async function cancelar(deps: DepsAssinatura, contaId: number): Promise<void> {
-  const { pool, cobranca } = deps;
+  const { pool } = deps;
   const organizacaoId = await organizacaoDaConta(pool, contaId);
   const o = await org(pool, organizacaoId);
-  if (!o.asaas_assinatura) throw AppError.invalido('Não há assinatura para cancelar.');
-  if (cobranca) await cobranca.cancelarAssinatura(o.asaas_assinatura);
-  const pendente = o.assinatura !== 'ativa' && o.assinatura !== 'atrasada';
+  await cancelarAbertas(deps, organizacaoId, ['mensalidade', 'diferenca']);
+  const valendo = o.acesso_ate && new Date(o.acesso_ate).getTime() > Date.now();
   await pool.query(
     `UPDATE cadastro.organizacoes
-        SET assinatura = CASE WHEN $2 THEN assinatura ELSE 'cancelada' END, asaas_assinatura = NULL, assinatura_pedido = NULL
+        SET renovar = false, assinatura_proximo = NULL,
+            assinatura = CASE WHEN assinatura IN ('ativa', 'cancelada') AND $2 THEN 'cancelada'
+                              WHEN assinatura = 'atrasada' THEN 'so_leitura' ELSE assinatura END,
+            so_leitura_desde = CASE WHEN assinatura = 'atrasada' THEN now() ELSE so_leitura_desde END
       WHERE id = $1`,
-    [organizacaoId, pendente],
+    [organizacaoId, !!valendo],
   );
-  await pool.query(
-    `UPDATE cadastro.cobrancas SET situacao = 'cancelada', atualizado_em = now()
-      WHERE organizacao_id = $1 AND situacao IN ('pendente', 'atrasada')`,
+}
+
+/** Voltar a renovar (desfaz o cancelar enquanto o mês pago vale). */
+export async function voltarARenovar(deps: DepsAssinatura, contaId: number): Promise<void> {
+  const organizacaoId = await organizacaoDaConta(deps.pool, contaId);
+  await deps.pool.query(
+    `UPDATE cadastro.organizacoes
+        SET renovar = true, assinatura = CASE WHEN assinatura = 'cancelada' THEN 'ativa' ELSE assinatura END
+      WHERE id = $1`,
     [organizacaoId],
   );
 }
 
-/** O plano pedido passa a valer (o pagamento caiu, ou já pagava e mudou). */
+/** Pacote de minutos de ligação: cobrança avulsa; os minutos entram no saldo quando pagar. */
+export async function comprarMinutos(deps: DepsAssinatura, contaId: number, pacotes: number) {
+  const { pool } = deps;
+  exigirCobranca(deps);
+  const organizacaoId = await organizacaoDaConta(pool, contaId);
+  const o = await org(pool, organizacaoId);
+  if (!o.assinatura || !['ativa', 'atrasada', 'cancelada'].includes(o.assinatura) || !o.asaas_cliente)
+    throw AppError.invalido('Os pacotes de minutos são para quem assina pelo sistema. Fale com a gente.');
+  const contrato = await contratoDaConta(pool, contaId);
+  if (!contrato.modulos.includes('ligacoes'))
+    throw AppError.invalido('O módulo Ligações não está no seu plano: inclua em Meu plano › Assinar.');
+  const tabela = await tabelaDePrecos(pool);
+  const minutos = pacotes * tabela.pacoteMinutos;
+  const valor = Math.round(pacotes * tabela.pacotePreco * 100) / 100;
+  await cancelarAbertas(deps, organizacaoId, ['minutos']);
+  return novaCobranca(deps, organizacaoId, o.asaas_cliente, {
+    tipo: 'minutos',
+    valor,
+    vencimento: brData(new Date()),
+    descricao: `+${minutos.toLocaleString('pt-BR')} minutos de ligação`,
+    minutos,
+  });
+}
+
+/** O plano pedido passa a valer (salva o contrato da organização). */
 async function aplicarPlano(db: Executor, organizacaoId: number, p: AssinarEntrada) {
   await salvarPlano(db, organizacaoId, {
     plano: p.plano,
@@ -341,74 +468,113 @@ async function aplicarPlano(db: Executor, organizacaoId: number, p: AssinarEntra
 }
 
 /**
- * Uma cobrança mudou (aviso do Asaas ou conferência da rotina). Paga: o plano pedido vale, a
- * assinatura fica ativa e o acesso vai até um mês depois do vencimento. Atrasada: assinatura
- * atrasada (a rotina passa para só leitura depois da tolerância).
+ * Uma cobrança mudou (aviso do Asaas ou conferência). Paga: mensalidade = mais um mês do plano
+ * pedido; mudança de plano = o plano novo vale; minutos = entram no saldo.
  */
 export async function processarCobranca(deps: DepsAssinatura, c: CobrancaAsaas): Promise<void> {
   const { pool } = deps;
-  const { rows } = await pool.query<{ id: number }>(
-    `SELECT id FROM cadastro.organizacoes WHERE asaas_assinatura = $1
-     UNION SELECT organizacao_id FROM cadastro.cobrancas WHERE asaas_id = $2 LIMIT 1`,
-    [c.assinatura ?? '', c.id],
+  const { rows } = await pool.query<{
+    id: number;
+    organizacao_id: number;
+    tipo: TipoCobranca;
+    situacao: string;
+    pedido: Pedido | null;
+    minutos: number | null;
+    periodo_de: string | null;
+  }>(
+    `SELECT id, organizacao_id, tipo, situacao, pedido, minutos, to_char(periodo_de, 'YYYY-MM-DD') AS periodo_de
+       FROM cadastro.cobrancas WHERE asaas_id = $1`,
+    [c.id],
   );
-  const organizacaoId =
-    rows[0]?.id ?? (c.referencia?.startsWith('org:') ? Number(c.referencia.slice(4)) : null);
-  if (!organizacaoId) return;
-  const antes = await guardarCobranca(pool, organizacaoId, c);
-  if (antes === c.situacao) return;
+  const b = rows[0];
+  if (!b) return;
+  await pool.query(
+    `UPDATE cadastro.cobrancas SET valor = $2, vencimento = $3, situacao = $4, forma = coalesce($5, forma),
+            link = coalesce($6, link), pago_em = coalesce($7::timestamptz, pago_em), atualizado_em = now()
+      WHERE id = $1`,
+    [b.id, c.valor, c.vencimento, c.situacao, c.forma, c.link, c.pagoEm],
+  );
+  if (b.situacao === c.situacao || c.situacao !== 'paga') return;
+  const organizacaoId = b.organizacao_id;
   const o = await org(pool, organizacaoId);
-  if (c.situacao === 'paga') {
-    if (o.assinatura_pedido) await aplicarPlano(pool, organizacaoId, o.assinatura_pedido);
-    const virouCliente = o.assinatura !== 'ativa';
+
+  if (b.tipo === 'minutos') {
     await pool.query(
       `UPDATE cadastro.organizacoes
-          SET assinatura = CASE WHEN assinatura = 'cancelada' THEN 'cancelada' ELSE 'ativa' END,
-              assinatura_pedido = NULL, so_leitura_desde = NULL, ativa = true, desativada_em = NULL,
-              acesso_ate = greatest(coalesce(acesso_ate, now()), ($2::date + interval '1 month' + interval '1 day'))
+          SET minutos_saldo = minutos_saldo + $2, minutos_saldo_mes = coalesce(minutos_saldo_mes, $3)
         WHERE id = $1`,
-      [organizacaoId, c.vencimento],
+      [organizacaoId, b.minutos ?? 0, mesAtual()],
     );
-    await pool.query(
-      `UPDATE cadastro.contas SET ativa = true, desativada_em = NULL WHERE organizacao_id = $1`,
-      [organizacaoId],
-    );
-    if (virouCliente) {
-      await pool.query(
-        `UPDATE cadastro.pedidos_site SET etapa = 'cliente', plano = coalesce($2, plano), atualizado_em = now()
-          WHERE conta_id IN (SELECT id FROM cadastro.contas WHERE organizacao_id = $1) AND etapa <> 'cliente'`,
-        [organizacaoId, o.assinatura_pedido ? NOME_PLANO[o.assinatura_pedido.plano] : null],
-      );
-      await avisarConta(
-        deps,
-        organizacaoId,
-        'Pagamento recebido: assinatura ativa',
-        'Obrigado! O plano já está valendo para toda a equipe.',
-      );
-    }
-  } else if (c.situacao === 'atrasada' && o.assinatura === 'ativa') {
-    await pool.query(`UPDATE cadastro.organizacoes SET assinatura = 'atrasada' WHERE id = $1`, [
-      organizacaoId,
-    ]);
     await avisarConta(
       deps,
       organizacaoId,
-      'Pagamento em atraso',
-      `A mensalidade venceu e ainda não foi paga. Pague em Meu plano para não perder o acesso (o sistema fica só leitura ${DIAS_TOLERANCIA_ATRASO} dias depois do vencimento).`,
+      'Minutos de ligação liberados',
+      `+${(b.minutos ?? 0).toLocaleString('pt-BR')} minutos já estão valendo. O saldo do pacote não vence.`,
     );
+    return;
   }
-}
+  if (!b.pedido) return;
+  if (b.tipo === 'diferenca') {
+    await valerAgora(deps, organizacaoId, b.pedido);
+    await avisarConta(
+      deps,
+      organizacaoId,
+      'Plano novo valendo',
+      `Pagamento recebido: ${descricaoDoPedido(b.pedido)}.`,
+    );
+    return;
+  }
 
-/** Notificação para os administradores da organização (na conta principal dela). */
-async function avisarConta(deps: DepsAssinatura, organizacaoId: number, titulo: string, texto: string) {
-  const { rows } = await deps.pool.query<{ id: number }>(
-    'SELECT id FROM cadastro.contas WHERE organizacao_id = $1 ORDER BY id LIMIT 1',
+  // Mensalidade: mais um mês. Pagou em dia (ou dentro dos 3 dias): conta do vencimento; senão, de hoje.
+  const ja = await pool.query(
+    `SELECT 1 FROM cadastro.cobrancas WHERE organizacao_id = $1 AND tipo = 'mensalidade' AND situacao = 'paga' AND id <> $2 LIMIT 1`,
+    [organizacaoId, b.id],
+  );
+  const emDia =
+    !!b.periodo_de &&
+    !!o.acesso_ate &&
+    Date.now() <= somarDias(o.acesso_ate, DIAS_TOLERANCIA_ATRASO).getTime();
+  await aplicarPlano(pool, organizacaoId, b.pedido);
+  await pool.query(
+    `UPDATE cadastro.organizacoes
+        SET assinatura = 'ativa', renovar = true, assinatura_contrato = $2, assinatura_valor = $3, assinatura_proximo = NULL,
+            so_leitura_desde = NULL, ativa = true, desativada_em = NULL,
+            acesso_ate = (CASE WHEN $4 THEN acesso_ate ELSE now() END) + interval '1 month'
+      WHERE id = $1`,
+    [organizacaoId, JSON.stringify(b.pedido), b.pedido.valor, emDia],
+  );
+  await pool.query(
+    'UPDATE cadastro.contas SET ativa = true, desativada_em = NULL WHERE organizacao_id = $1',
     [organizacaoId],
   );
-  if (rows[0])
-    await comConta(rows[0].id, () => avisarAdmins(deps.pool, titulo, texto)).catch((e) =>
-      deps.log.warn({ err: e }, 'assinatura: não deu para avisar'),
+  esquecerRecursos();
+  if (!ja.rows[0]) {
+    await pool.query(
+      `UPDATE cadastro.pedidos_site SET etapa = 'cliente', plano = $2, atualizado_em = now()
+        WHERE conta_id IN (SELECT id FROM cadastro.contas WHERE organizacao_id = $1) AND etapa <> 'cliente'`,
+      [organizacaoId, NOME_PLANO[b.pedido.plano]],
     );
+    await avisarConta(
+      deps,
+      organizacaoId,
+      'Pagamento recebido: assinatura ativa',
+      'Obrigado! O plano já está valendo para toda a equipe.',
+    );
+  } else if (o.assinatura !== 'ativa')
+    await avisarConta(deps, organizacaoId, 'Pagamento recebido', 'A conta voltou ao normal. Obrigado!');
+}
+
+/** Notificação para os administradores da organização (em todas as contas dela). */
+async function avisarConta(deps: DepsAssinatura, organizacaoId: number, titulo: string, texto: string) {
+  const { rows } = await deps.pool.query<{ id: number; conta_id: number }>(
+    `SELECT u.id, u.conta_id FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+      WHERE c.organizacao_id = $1 AND u.papel = 'admin' AND u.ativo AND NOT u.master`,
+    [organizacaoId],
+  );
+  for (const u of rows)
+    await comConta(u.conta_id, () =>
+      notificar(deps.pool, u.id, { tipo: 'sistema', titulo, texto, link: '/plano' }),
+    ).catch((e) => deps.log.warn({ err: e }, 'assinatura: não deu para avisar'));
 }
 
 /* ───────────────────────────── Rotina ───────────────────────────── */
@@ -416,9 +582,10 @@ async function avisarConta(deps: DepsAssinatura, organizacaoId: number, titulo: 
 interface Avisavel {
   id: number;
   nome: string;
-  email: string;
+  email: string | null;
   usuario: string;
-  teste_ate: string;
+  teste_ate: string | null;
+  acesso_ate: string | null;
   avisos: string[];
 }
 
@@ -433,6 +600,8 @@ async function avisoPorEmail(
     `UPDATE cadastro.organizacoes SET avisos_assinatura = array_append(avisos_assinatura, $2) WHERE id = $1`,
     [o.id, chave],
   );
+  o.avisos.push(chave);
+  if (!o.email) return;
   await mandarEmailSistema(deps, {
     para: o.email,
     nome: o.usuario,
@@ -443,13 +612,61 @@ async function avisoPorEmail(
   });
 }
 
-/** Uma rodada: avisos do teste, teste vencido, atraso, cancelada, arquivar e conferir as cobranças. */
+/** Minutos de ligação usados num mês (YYYY-MM) pela organização. */
+async function minutosDoMes(db: Executor, organizacaoId: number, mes: string): Promise<number> {
+  const { rows } = await db.query<{ m: number }>(
+    `SELECT coalesce(sum(ceil(l.duracao_segundos / 60.0)), 0)::int AS m
+       FROM comercial.ligacoes l JOIN cadastro.contas c ON c.id = l.conta_id
+      WHERE c.organizacao_id = $1 AND l.atendida_em IS NOT NULL
+        AND l.iniciada_em >= ($2::date)::timestamp AT TIME ZONE 'America/Sao_Paulo'
+        AND l.iniciada_em < ($2::date + interval '1 month')::timestamp AT TIME ZONE 'America/Sao_Paulo'`,
+    [organizacaoId, `${mes}-01`],
+  );
+  return rows[0]?.m ?? 0;
+}
+
+/**
+ * Fecha o saldo dos pacotes de minutos: o que cada mês passou da franquia sai do saldo (o resto
+ * fica para os meses seguintes).
+ */
+export async function fecharMinutos(deps: DepsAssinatura): Promise<void> {
+  const { pool } = deps;
+  const agora = mesAtual();
+  const { rows } = await pool.query<{ id: number; saldo: number; mes: string; conta: number }>(
+    `SELECT o.id, o.minutos_saldo AS saldo, o.minutos_saldo_mes AS mes,
+            (SELECT c.id FROM cadastro.contas c WHERE c.organizacao_id = o.id ORDER BY c.id LIMIT 1) AS conta
+       FROM cadastro.organizacoes o
+      WHERE o.minutos_saldo_mes IS NOT NULL AND o.minutos_saldo_mes < $1 LIMIT 200`,
+    [agora],
+  );
+  for (const o of rows) {
+    const franquia = (await contratoDaConta(pool, o.conta).catch(() => null))?.minutosLigacao ?? 0;
+    let saldo = o.saldo;
+    let mes = o.mes;
+    while (mes < agora && saldo > 0) {
+      saldo = Math.max(0, saldo - Math.max(0, (await minutosDoMes(pool, o.id, mes)) - franquia));
+      const [a, m] = mes.split('-').map(Number) as [number, number];
+      mes = m === 12 ? `${a + 1}-01` : `${a}-${String(m + 1).padStart(2, '0')}`;
+    }
+    await pool.query(
+      'UPDATE cadastro.organizacoes SET minutos_saldo = $2, minutos_saldo_mes = $3 WHERE id = $1',
+      [o.id, saldo, saldo > 0 ? agora : null],
+    );
+  }
+}
+
+/**
+ * Uma rodada: avisos e fim do teste; mensalidade do mês seguinte (7 dias antes) e os avisos do
+ * vencimento; venceu → 3 dias → só leitura; teste em só leitura 15 dias → arquiva; saldo dos
+ * minutos; confere no Asaas as cobranças em aberto.
+ */
 export async function rodadaAssinaturas(deps: DepsAssinatura, endereco: string): Promise<void> {
   const { pool } = deps;
-  const link = `${endereco}/plano/assinar`;
+  const assinar = `${endereco}/plano/assinar`;
+  const pagar = `${endereco}/plano/pagar`;
   const admins = (filtro: string) =>
     pool.query<Avisavel>(
-      `SELECT o.id, o.nome, o.teste_ate, o.avisos_assinatura AS avisos,
+      `SELECT o.id, o.nome, o.teste_ate, o.acesso_ate, o.avisos_assinatura AS avisos,
               (SELECT u.email FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
                 WHERE c.organizacao_id = o.id AND u.papel = 'admin' AND u.ativo AND NOT u.master ORDER BY u.id LIMIT 1) AS email,
               (SELECT u.nome FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
@@ -459,8 +676,7 @@ export async function rodadaAssinaturas(deps: DepsAssinatura, endereco: string):
 
   // Teste: faltam 2 dias, termina amanhã, acabou.
   for (const o of (await admins(`o.assinatura = 'teste'`)).rows) {
-    if (!o.email) continue;
-    const falta = new Date(o.teste_ate).getTime() - Date.now();
+    const falta = new Date(o.teste_ate ?? 0).getTime() - Date.now();
     if (falta <= 0) {
       await pool.query(
         `UPDATE cadastro.organizacoes SET assinatura = 'so_leitura', so_leitura_desde = now() WHERE id = $1 AND assinatura = 'teste'`,
@@ -472,39 +688,131 @@ export async function rodadaAssinaturas(deps: DepsAssinatura, endereco: string):
           o,
           'fim',
           'O seu teste do Prospect Team acabou',
-          `{saudacao}\n\nOs 7 dias de teste da ${o.nome} acabaram. Tudo o que vocês fizeram continua lá: o sistema fica só para leitura por ${DIAS_SO_LEITURA} dias.\n\n[[Assinar e continuar|${link}]]\n\nSe não assinar, a conta é arquivada depois desse prazo.`,
+          `{saudacao}\n\nOs 7 dias de teste da ${o.nome} acabaram. Tudo o que vocês fizeram continua lá: o sistema fica só para leitura por ${DIAS_SO_LEITURA} dias.\n\n[[Assinar e continuar|${assinar}]]\n\nSe não assinar, a conta é arquivada depois desse prazo.`,
         );
-    } else if (falta <= 86_400_000 && !o.avisos.includes('d6'))
+    } else if (falta <= DIA && !o.avisos.includes('d6'))
       await avisoPorEmail(
         deps,
         o,
         'd6',
         'O seu teste termina amanhã',
-        `{saudacao}\n\nO teste da ${o.nome} no Prospect Team termina amanhã. Assine para continuar sem parar: os leads, o funil e as conversas ficam onde estão.\n\n[[Assinar agora|${link}]]`,
+        `{saudacao}\n\nO teste da ${o.nome} no Prospect Team termina amanhã. Assine para continuar sem parar: os leads, o funil e as conversas ficam onde estão.\n\n[[Assinar agora|${assinar}]]`,
       );
-    else if (falta <= 2 * 86_400_000 && !o.avisos.includes('d5'))
+    else if (falta <= 2 * DIA && !o.avisos.includes('d5'))
       await avisoPorEmail(
         deps,
         o,
         'd5',
         'Faltam 2 dias do seu teste',
-        `{saudacao}\n\nFaltam 2 dias do teste da ${o.nome} no Prospect Team. Quer ajuda para tirar o máximo dele? Responda este e-mail que a gente marca 20 minutos com você.\n\n[[Ver os planos|${link}]]`,
+        `{saudacao}\n\nFaltam 2 dias do teste da ${o.nome} no Prospect Team. Quer ajuda para tirar o máximo dele? Responda este e-mail que a gente marca 20 minutos com você.\n\n[[Ver os planos|${assinar}]]`,
       );
   }
 
-  // Atrasada além da tolerância e cancelada sem acesso: só leitura.
-  await pool.query(
-    `UPDATE cadastro.organizacoes o SET assinatura = 'so_leitura', so_leitura_desde = now()
-      WHERE (o.assinatura = 'atrasada' AND EXISTS (
-               SELECT 1 FROM cadastro.cobrancas c WHERE c.organizacao_id = o.id AND c.situacao = 'atrasada'
-                 AND c.vencimento < (now() AT TIME ZONE 'America/Sao_Paulo')::date - ${DIAS_TOLERANCIA_ATRASO}))
-         OR (o.assinatura = 'cancelada' AND o.acesso_ate < now())`,
-  );
+  // Mensalidade do mês seguinte: gerada 7 dias antes de vencer (com a mudança marcada, se houver).
+  if (deps.cobranca) {
+    const { rows } = await pool.query<{
+      id: number;
+      acesso_ate: string;
+      contrato: Pedido;
+      proximo: Pedido | null;
+      cliente: string;
+    }>(
+      `SELECT o.id, o.acesso_ate, o.assinatura_contrato AS contrato, o.assinatura_proximo AS proximo, o.asaas_cliente AS cliente
+         FROM cadastro.organizacoes o
+        WHERE o.assinatura IN ('ativa', 'atrasada') AND o.renovar AND o.assinatura_contrato IS NOT NULL
+          AND o.asaas_cliente IS NOT NULL AND o.acesso_ate < now() + make_interval(days => ${DIAS_AVISO_VENCIMENTO})
+          AND NOT EXISTS (SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id AND b.tipo = 'mensalidade'
+                            AND b.situacao IN ('pendente', 'atrasada', 'paga')
+                            AND b.periodo_de = (o.acesso_ate AT TIME ZONE 'America/Sao_Paulo')::date)
+        LIMIT 50`,
+    );
+    for (const o of rows) {
+      const p = o.proximo ?? o.contrato;
+      const de = brData(new Date(o.acesso_ate));
+      const hoje = brData(new Date());
+      try {
+        await novaCobranca(deps, o.id, o.cliente, {
+          tipo: 'mensalidade',
+          valor: p.valor,
+          vencimento: de < hoje ? hoje : de,
+          descricao: `Mensalidade de ${diaMes(o.acesso_ate)} a ${diaMes(somarDias(o.acesso_ate, 30))} · ${descricaoDoPedido(p)}`,
+          pedido: p,
+          periodoDe: de,
+        });
+      } catch (e) {
+        deps.log.warn({ err: e, organizacao: o.id }, 'assinatura: não deu para gerar a mensalidade');
+      }
+    }
+  }
 
-  // Só leitura há mais de 15 dias: arquiva (desativa; os dados ficam guardados).
+  // Avisos do vencimento (7, 3 e 1 dia antes) para quem ainda não pagou o mês seguinte.
+  for (const o of (
+    await admins(`o.assinatura = 'ativa' AND o.renovar AND o.acesso_ate < now() + make_interval(days => ${DIAS_AVISO_VENCIMENTO})
+      AND EXISTS (SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id AND b.tipo = 'mensalidade'
+                    AND b.situacao IN ('pendente', 'atrasada'))`)
+  ).rows) {
+    const falta = new Date(o.acesso_ate!).getTime() - Date.now();
+    const venc = brData(new Date(o.acesso_ate!));
+    const marca = falta <= DIA ? 'v1' : falta <= 3 * DIA ? 'v3' : 'v7';
+    const chave = `${marca}:${venc}`;
+    if (falta <= 0 || o.avisos.includes(chave)) continue;
+    await avisoPorEmail(
+      deps,
+      o,
+      chave,
+      marca === 'v1'
+        ? 'O plano do Prospect Team vence amanhã'
+        : `O plano do Prospect Team vence em ${diaMes(o.acesso_ate!)}`,
+      `{saudacao}\n\nO mês pago da ${o.nome} no Prospect Team vai até ${diaMes(o.acesso_ate!)}. A mensalidade seguinte já está disponível: pague com Pix (libera na hora), boleto ou cartão.\n\n[[Pagar agora|${pagar}]]\n\nSe vencer, a conta continua normal por mais ${DIAS_TOLERANCIA_ATRASO} dias; depois fica só leitura até o pagamento.`,
+    );
+  }
+
+  // Venceu: renovando → atrasada (3 dias normais); sem renovar → só leitura.
+  for (const o of (await admins(`o.assinatura IN ('ativa', 'cancelada') AND o.acesso_ate < now()`)).rows) {
+    const { rows } = await pool.query<{ assinatura: string }>(
+      `UPDATE cadastro.organizacoes
+          SET assinatura = CASE WHEN renovar AND assinatura = 'ativa' THEN 'atrasada' ELSE 'so_leitura' END,
+              so_leitura_desde = CASE WHEN renovar AND assinatura = 'ativa' THEN NULL ELSE now() END
+        WHERE id = $1 RETURNING assinatura`,
+      [o.id],
+    );
+    const venc = brData(new Date(o.acesso_ate!));
+    if (rows[0]?.assinatura === 'atrasada' && !o.avisos.includes(`venceu:${venc}`))
+      await avisoPorEmail(
+        deps,
+        o,
+        `venceu:${venc}`,
+        'O plano do Prospect Team venceu',
+        `{saudacao}\n\nO mês pago da ${o.nome} venceu em ${diaMes(o.acesso_ate!)}. A conta continua normal até ${diaMes(somarDias(o.acesso_ate!, DIAS_TOLERANCIA_ATRASO))}; depois fica só leitura (dá para ver e exportar tudo, mas não mexer) até o pagamento.\n\n[[Pagar agora|${pagar}]]`,
+      );
+  }
+
+  // Passou da tolerância: só leitura até pagar.
   for (const o of (
     await admins(
-      `o.assinatura = 'so_leitura' AND o.so_leitura_desde < now() - make_interval(days => ${DIAS_SO_LEITURA})`,
+      `o.assinatura = 'atrasada' AND o.acesso_ate < now() - make_interval(days => ${DIAS_TOLERANCIA_ATRASO})`,
+    )
+  ).rows) {
+    await pool.query(
+      `UPDATE cadastro.organizacoes SET assinatura = 'so_leitura', so_leitura_desde = now() WHERE id = $1`,
+      [o.id],
+    );
+    const venc = brData(new Date(o.acesso_ate!));
+    if (!o.avisos.includes(`leitura:${venc}`))
+      await avisoPorEmail(
+        deps,
+        o,
+        `leitura:${venc}`,
+        'A conta do Prospect Team ficou só leitura',
+        `{saudacao}\n\nO pagamento da ${o.nome} não caiu, e a conta ficou só leitura: vocês continuam vendo e exportando os leads e os contatos, mas não dá para mexer. Pague para voltar na hora, do jeito que estava.\n\n[[Pagar agora|${pagar}]]`,
+      );
+  }
+
+  // Teste vencido sem assinar, só leitura há mais de 15 dias: arquiva (quem já pagou não arquiva).
+  for (const o of (
+    await admins(
+      `o.assinatura = 'so_leitura' AND o.so_leitura_desde < now() - make_interval(days => ${DIAS_SO_LEITURA})
+       AND NOT EXISTS (SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id AND b.tipo = 'mensalidade' AND b.situacao = 'paga')`,
     )
   ).rows) {
     await pool.query(
@@ -512,46 +820,56 @@ export async function rodadaAssinaturas(deps: DepsAssinatura, endereco: string):
       [o.id],
     );
     await pool.query(
-      `UPDATE cadastro.contas SET ativa = false, desativada_em = now() WHERE organizacao_id = $1`,
+      'UPDATE cadastro.contas SET ativa = false, desativada_em = now() WHERE organizacao_id = $1',
       [o.id],
     );
     await pool.query(
-      `UPDATE cadastro.pedidos_site SET etapa = 'perdido', motivo_perda = coalesce(motivo_perda, 'Teste ou assinatura venceu sem pagar'),
+      `UPDATE cadastro.pedidos_site SET etapa = 'perdido', motivo_perda = coalesce(motivo_perda, 'O teste venceu sem assinar'),
               atualizado_em = now()
         WHERE conta_id IN (SELECT id FROM cadastro.contas WHERE organizacao_id = $1) AND etapa NOT IN ('cliente', 'perdido')`,
       [o.id],
     );
-    if (o.email && !o.avisos.includes('arquivar'))
+    if (!o.avisos.includes('arquivar'))
       await avisoPorEmail(
         deps,
         o,
         'arquivar',
         'A conta do Prospect Team foi arquivada',
-        `{saudacao}\n\nA conta da ${o.nome} foi arquivada. Os dados ficam guardados por 90 dias: para voltar de onde parou, responda este e-mail que a gente reativa.`,
+        `{saudacao}\n\nA conta de teste da ${o.nome} foi arquivada. Os dados ficam guardados por 90 dias: para voltar de onde parou, responda este e-mail que a gente reativa.`,
       );
   }
 
+  await fecharMinutos(deps);
+
   // Cobranças em aberto: confere no Asaas (caso algum aviso não tenha chegado).
   if (deps.cobranca) {
-    const { rows } = await pool.query<{ asaas_assinatura: string }>(
-      `SELECT DISTINCT o.asaas_assinatura FROM cadastro.organizacoes o
-         JOIN cadastro.cobrancas c ON c.organizacao_id = o.id AND c.situacao IN ('pendente', 'atrasada')
-        WHERE o.asaas_assinatura IS NOT NULL AND c.atualizado_em < now() - interval '30 minutes'
-        LIMIT 20`,
+    const { rows } = await pool.query<{ asaas_id: string }>(
+      `SELECT asaas_id FROM cadastro.cobrancas
+        WHERE situacao IN ('pendente', 'atrasada') AND atualizado_em < now() - interval '30 minutes'
+        ORDER BY atualizado_em LIMIT 30`,
     );
     for (const r of rows) {
       try {
-        for (const c of await deps.cobranca.cobrancasDaAssinatura(r.asaas_assinatura))
-          await processarCobranca(deps, c);
-        await pool.query(
-          `UPDATE cadastro.cobrancas SET atualizado_em = now() WHERE asaas_assinatura = $1 AND situacao IN ('pendente', 'atrasada')`,
-          [r.asaas_assinatura],
-        );
+        await processarCobranca(deps, await deps.cobranca.cobranca(r.asaas_id));
+        await pool.query('UPDATE cadastro.cobrancas SET atualizado_em = now() WHERE asaas_id = $1', [
+          r.asaas_id,
+        ]);
       } catch (e) {
-        deps.log.warn({ err: e, assinatura: r.asaas_assinatura }, 'assinatura: conferência no Asaas falhou');
+        deps.log.warn({ err: e, cobranca: r.asaas_id }, 'assinatura: conferência no Asaas falhou');
       }
     }
   }
+}
+
+/** "Já paguei": confere agora no Asaas as cobranças em aberto da conta. */
+export async function conferir(deps: DepsAssinatura, contaId: number): Promise<void> {
+  if (!deps.cobranca) return;
+  const organizacaoId = await organizacaoDaConta(deps.pool, contaId);
+  const { rows } = await deps.pool.query<{ asaas_id: string }>(
+    `SELECT asaas_id FROM cadastro.cobrancas WHERE organizacao_id = $1 AND situacao IN ('pendente', 'atrasada')`,
+    [organizacaoId],
+  );
+  for (const r of rows) await processarCobranca(deps, await deps.cobranca.cobranca(r.asaas_id));
 }
 
 export function iniciarAssinaturas(deps: DepsAssinatura, endereco: string): () => void {
@@ -581,9 +899,13 @@ export async function numerosDaPlataforma(db: Executor) {
             count(*) FILTER (WHERE assinatura = 'atrasada')::int AS "atrasadas",
             count(*) FILTER (WHERE assinatura = 'so_leitura')::int AS "soLeitura",
             (SELECT count(*)::int FROM cadastro.cadastros_teste WHERE confirmado_em > now() - interval '30 days') AS "testes30",
-            (SELECT count(*)::int FROM cadastro.cadastros_teste t JOIN cadastro.organizacoes x ON x.id = t.organizacao_id
-              WHERE t.confirmado_em > now() - interval '30 days' AND x.assinatura IN ('ativa', 'atrasada', 'cancelada')) AS "viraram30",
-            (SELECT coalesce(sum(valor), 0)::float8 FROM cadastro.cobrancas WHERE situacao = 'atrasada') AS "emAberto"
+            (SELECT count(*)::int FROM cadastro.cadastros_teste t
+              WHERE t.confirmado_em > now() - interval '30 days' AND EXISTS (
+                SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = t.organizacao_id
+                   AND b.tipo = 'mensalidade' AND b.situacao = 'paga')) AS "viraram30",
+            (SELECT coalesce(sum(b.valor), 0)::float8 FROM cadastro.cobrancas b JOIN cadastro.organizacoes x ON x.id = b.organizacao_id
+              WHERE b.situacao IN ('pendente', 'atrasada') AND b.tipo = 'mensalidade'
+                AND x.assinatura IN ('atrasada', 'so_leitura') AND x.acesso_ate IS NOT NULL) AS "emAberto"
        FROM cadastro.organizacoes`,
   );
   return rows[0];

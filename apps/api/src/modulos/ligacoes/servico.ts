@@ -135,27 +135,30 @@ export async function minutosNoMes(db: Executor, contaId: number = conta()): Pro
 
 /** O que a tela precisa para saber se dá para ligar (e por que não). */
 export async function situacao(db: Executor, deps: DepsTelefonia) {
-  const [modulo, cfg, nums, usados, contrato] = await Promise.all([
-    temModulo(db),
-    config(db),
-    numeros(db),
-    minutosNoMes(db),
-    contratoDaConta(db).catch(() => null),
-  ]);
+  const [modulo, cfg, nums, uso] = await Promise.all([temModulo(db), config(db), numeros(db), usoDoMes(db)]);
   const motivo = !modulo
     ? 'fora_do_plano'
     : !deps.servico
       ? 'sem_telefonia'
       : !nums.length
         ? 'sem_numero'
-        : null;
+        : uso.acabou
+          ? 'sem_minutos'
+          : null;
   return {
     modulo,
     disponivel: !motivo,
     motivo,
     numeros: nums,
     config: cfg,
-    minutos: { usados, franquia: contrato ? contrato.minutosLigacao : null },
+    minutos: {
+      usados: uso.usados,
+      franquia: uso.franquia,
+      /** Minutos de pacote que sobram (não vencem). */
+      pacote: uso.saldo,
+      /** Assina pelo sistema: acabou, as ligações param até comprar um pacote. */
+      compraPacote: uso.compraPacote,
+    },
     gravacao: !!deps.armazenamento && cfg.gravar,
     transcricao: !!deps.armazenamento && !!deps.transcricao && cfg.gravar && cfg.transcrever,
     avisoFalado: !!deps.fala && cfg.avisoFalado,
@@ -327,6 +330,7 @@ const nomeSala = (contaId: number) => `lig-${contaId}-${randomBytes(6).toString(
  */
 export async function iniciar(db: Executor, deps: DepsTelefonia, d: IniciarLigacaoEntrada) {
   await exigirModulo(db);
+  await exigirMinutos(db);
   if (!deps.servico)
     throw AppError.invalido(
       'A telefonia ainda não foi ligada na plataforma. Fale com o suporte do Prospect Team.',
@@ -774,8 +778,8 @@ export async function relatorio(db: Executor, dias: number, soDe: number | null)
  */
 export async function avisarFranquia(db: Executor): Promise<void> {
   const uso = await usoDoMes(db);
-  if (uso.franquia == null || uso.franquia <= 0) return;
-  const pct = (uso.usados / uso.franquia) * 100;
+  if (uso.limite == null || uso.limite <= 0) return;
+  const pct = (uso.usados / uso.limite) * 100;
   const nivel = pct >= 100 ? 100 : pct >= 80 ? 80 : null;
   if (!nivel) return;
   const mes = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
@@ -798,11 +802,14 @@ export async function avisarFranquia(db: Executor): Promise<void> {
         nivel === 100
           ? 'Os minutos de ligação do mês acabaram'
           : 'Os minutos de ligação do mês passaram de 80%',
-      texto:
-        nivel === 100
+      texto: uso.compraPacote
+        ? nivel === 100
+          ? `Foram ${uso.usados} de ${uso.limite} minutos. As ligações param até comprar um pacote em Meu plano (com Pix, libera na hora).`
+          : `Já foram ${uso.usados} de ${uso.limite} minutos neste mês. Para não parar, compre um pacote em Meu plano.`
+        : nivel === 100
           ? `Foram ${uso.usados} de ${uso.franquia} minutos. As ligações continuam; o excedente entra na próxima fatura.`
           : `Já foram ${uso.usados} de ${uso.franquia} minutos neste mês.`,
-      link: '/telefonia',
+      link: uso.compraPacote ? '/plano' : '/telefonia',
     }).catch(() => undefined);
 }
 
@@ -837,11 +844,43 @@ export async function detalhe(db: Executor, deps: DepsTelefonia, id: number) {
   return { ...rows[0], falas: falas.rows, audio };
 }
 
-/** Minutos por usado com a franquia (para avisar perto do limite). */
+/**
+ * Minutos usados no mês, a franquia e o saldo dos pacotes. Quem assina pelo sistema compra pacotes
+ * quando acaba (as ligações param); contrato combinado com a gente segue ligando e paga o excedente.
+ */
 export async function usoDoMes(db: Executor) {
-  const [usados, contrato] = await Promise.all([minutosNoMes(db), contratoDaConta(db).catch(() => null)]);
+  const [usados, contrato, org] = await Promise.all([
+    minutosNoMes(db),
+    contratoDaConta(db).catch(() => null),
+    db.query<{ assinatura: string | null; saldo: number }>(
+      `SELECT o.assinatura, o.minutos_saldo AS saldo FROM cadastro.contas c
+         JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE c.id = ${contaSql()}`,
+    ),
+  ]);
   const franquia = contrato?.minutosLigacao ?? null;
-  return { usados, franquia, excedente: franquia == null ? 0 : Math.max(0, usados - franquia) };
+  const saldo = org.rows[0]?.saldo ?? 0;
+  const compraPacote = !!org.rows[0]?.assinatura && franquia != null;
+  const limite = franquia == null ? null : franquia + (compraPacote ? saldo : 0);
+  return {
+    usados,
+    franquia,
+    saldo,
+    limite,
+    compraPacote,
+    acabou: compraPacote && limite != null && usados >= limite,
+    excedente: limite == null ? 0 : Math.max(0, usados - limite),
+  };
+}
+
+/** Assina pelo sistema e os minutos acabaram: não liga até comprar um pacote. */
+export async function exigirMinutos(db: Executor): Promise<void> {
+  const uso = await usoDoMes(db);
+  if (uso.acabou)
+    throw new AppError(
+      403,
+      'sem_minutos',
+      'Os minutos de ligação do mês acabaram. Compre um pacote em Meu plano (com Pix, libera na hora).',
+    );
 }
 
 export { minutosCobrados };

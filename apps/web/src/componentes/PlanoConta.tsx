@@ -707,8 +707,21 @@ export function TabelaDePrecos() {
             (v) => setT({ ...t, minutosLigacao: Math.round(v) }),
             false,
           )}
-          {campo('tp-minuto-extra', 'Cada minuto de ligação além da franquia (R$)', t.minutoExtra, (v) =>
-            setT({ ...t, minutoExtra: v }),
+          {campo(
+            'tp-minuto-extra',
+            'Cada minuto de ligação além da franquia, contrato combinado (R$)',
+            t.minutoExtra,
+            (v) => setT({ ...t, minutoExtra: v }),
+          )}
+          {campo(
+            'tp-pacote-minutos',
+            'Pacote de minutos que quem assina pelo sistema compra (minutos)',
+            t.pacoteMinutos,
+            (v) => setT({ ...t, pacoteMinutos: Math.max(1, Math.round(v)) }),
+            false,
+          )}
+          {campo('tp-pacote-preco', 'Preço do pacote de minutos (R$)', t.pacotePreco, (v) =>
+            setT({ ...t, pacotePreco: v }),
           )}
           {campoLimite('tp-conversas', 'Conversas do Agente de IA por mês', t.conversasIaMes, (v) =>
             setT({ ...t, conversasIaMes: v }),

@@ -86,7 +86,7 @@ const CAMPOS =
   p.motivo_perda AS "motivoPerda", p.demonstracao_em AS "demonstracaoEm", p.conta_id AS "contaId",
   (SELECT c.nome FROM cadastro.contas c WHERE c.id = p.conta_id) AS "contaNome",
   (SELECT json_build_object('situacao', o.assinatura, 'testeAte', o.teste_ate, 'valor', o.assinatura_valor,
-          'forma', o.assinatura_forma, 'plano', o.plano,
+          'forma', (SELECT b.forma FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id AND b.situacao = 'paga' ORDER BY b.pago_em DESC NULLS LAST LIMIT 1), 'plano', o.plano, 'acessoAte', o.acesso_ate,
           'leads', ${sqlLeadsDoMesDaOrganizacao('o.id')}, 'usuarios', ${sqlUsuariosAtivos('o.id')},
           'ultimoAcesso', (SELECT max(u.ultimo_acesso) FROM cadastro.usuarios u JOIN cadastro.contas x ON x.id = u.conta_id
                             WHERE x.organizacao_id = o.id AND NOT u.master),

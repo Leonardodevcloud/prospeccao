@@ -1,8 +1,9 @@
 import { AppError } from '@prospeccao/shared';
 
 /**
- * Cobrança recorrente pelo Asaas (assinatura mensal com Pix, boleto ou cartão) e o captcha do
- * cadastro do teste (Cloudflare Turnstile). Sem as chaves, a tela explica que falta configurar.
+ * Cobranças avulsas pelo Asaas (cada mês, mudança de plano ou pacote de minutos é uma cobrança; o
+ * cliente escolhe Pix, boleto ou cartão na hora de pagar, sem recorrência) e o captcha do cadastro
+ * do teste (Cloudflare Turnstile). Sem as chaves, a tela explica que falta configurar.
  */
 
 export interface ConfigAsaas {
@@ -16,7 +17,6 @@ export type SituacaoCobranca = 'pendente' | 'paga' | 'atrasada' | 'cancelada' | 
 
 export interface CobrancaAsaas {
   id: string;
-  assinatura: string | null;
   valor: number;
   vencimento: string;
   situacao: SituacaoCobranca;
@@ -37,20 +37,16 @@ export interface ServicoCobranca {
     referencia: string;
   }): Promise<string>;
   atualizarCliente(id: string, c: { nome: string; documento: string; email: string }): Promise<void>;
-  criarAssinatura(a: {
+  /** Cobrança avulsa: o cliente escolhe Pix, boleto ou cartão na página do Asaas (ou paga o Pix na tela). */
+  criarCobranca(c: {
     cliente: string;
-    forma: 'PIX' | 'BOLETO' | 'CREDIT_CARD';
     valor: number;
     vencimento: string;
     descricao: string;
     referencia: string;
-  }): Promise<string>;
-  atualizarAssinatura(
-    id: string,
-    a: { valor?: number; forma?: 'PIX' | 'BOLETO' | 'CREDIT_CARD'; descricao?: string },
-  ): Promise<void>;
-  cancelarAssinatura(id: string): Promise<void>;
-  cobrancasDaAssinatura(id: string): Promise<CobrancaAsaas[]>;
+  }): Promise<CobrancaAsaas>;
+  /** Apaga uma cobrança que não foi paga. */
+  cancelarCobranca(id: string): Promise<void>;
   cobranca(id: string): Promise<CobrancaAsaas>;
   /** QR Code (imagem em base64) e o "copia e cola" do Pix da cobrança. */
   pix(cobrancaId: string): Promise<{ imagem: string; copiaECola: string; expiraEm: string | null }>;
@@ -68,7 +64,6 @@ export function situacaoDoAsaas(status: string): SituacaoCobranca {
 
 interface PagamentoAsaas {
   id: string;
-  subscription?: string | null;
   value: number;
   dueDate: string;
   status: string;
@@ -85,7 +80,6 @@ interface PagamentoAsaas {
 export function cobrancaDoAsaas(p: PagamentoAsaas): CobrancaAsaas {
   return {
     id: p.id,
-    assinatura: p.subscription ?? null,
     valor: Number(p.value),
     vencimento: p.dueDate,
     situacao: p.deleted ? 'cancelada' : situacaoDoAsaas(p.status),
@@ -150,35 +144,20 @@ export function criarServicoCobranca(c: ConfigAsaas): ServicoCobranca {
         email: x.email,
       });
     },
-    async criarAssinatura(a) {
-      const r = await pedir<{ id: string }>('POST', '/subscriptions', {
-        customer: a.cliente,
-        billingType: a.forma,
-        value: a.valor,
-        nextDueDate: a.vencimento,
-        cycle: 'MONTHLY',
-        description: a.descricao.slice(0, 500),
-        externalReference: a.referencia,
-      });
-      return r.id;
-    },
-    async atualizarAssinatura(id, a) {
-      await pedir('PUT', `/subscriptions/${encodeURIComponent(id)}`, {
-        ...(a.valor != null ? { value: a.valor } : {}),
-        ...(a.forma ? { billingType: a.forma } : {}),
-        ...(a.descricao ? { description: a.descricao.slice(0, 500) } : {}),
-        updatePendingPayments: true,
-      });
-    },
-    async cancelarAssinatura(id) {
-      await pedir('DELETE', `/subscriptions/${encodeURIComponent(id)}`);
-    },
-    async cobrancasDaAssinatura(id) {
-      const r = await pedir<{ data: PagamentoAsaas[] }>(
-        'GET',
-        `/subscriptions/${encodeURIComponent(id)}/payments?limit=50`,
+    async criarCobranca(x) {
+      return cobrancaDoAsaas(
+        await pedir<PagamentoAsaas>('POST', '/payments', {
+          customer: x.cliente,
+          billingType: 'UNDEFINED',
+          value: x.valor,
+          dueDate: x.vencimento,
+          description: x.descricao.slice(0, 500),
+          externalReference: x.referencia,
+        }),
       );
-      return (r.data ?? []).map(cobrancaDoAsaas);
+    },
+    async cancelarCobranca(id) {
+      await pedir('DELETE', `/payments/${encodeURIComponent(id)}`);
     },
     async cobranca(id) {
       return cobrancaDoAsaas(await pedir<PagamentoAsaas>('GET', `/payments/${encodeURIComponent(id)}`));

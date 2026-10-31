@@ -1,4 +1,4 @@
-import { DIAS_GUARDA_ARQUIVADA, DIAS_TESTE } from '@prospeccao/shared/assinatura';
+import { DIAS_AVISO_VENCIMENTO, DIAS_GUARDA_ARQUIVADA, DIAS_TESTE } from '@prospeccao/shared/assinatura';
 import { Button, Icon } from '@prospeccao/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -20,8 +20,8 @@ const diaSemana = (iso: string) =>
   new Date(iso).toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'America/Bahia' }).replace('.', '');
 
 /**
- * A faixa do topo: dias e leads do teste, pagamento atrasado, conta só leitura ou assinatura
- * cancelada. Com a assinatura em dia, nada aparece.
+ * A faixa do topo: dias e leads do teste; para o administrador, quantos dias faltam para o plano
+ * vencer (7 dias antes); venceu (3 dias normais); só leitura; renovação desligada. Em dia, nada.
  */
 export function FaixaAssinatura() {
   const s = useSessao().data;
@@ -29,8 +29,7 @@ export function FaixaAssinatura() {
   const navegar = useNavigate();
   const { pathname } = useLocation();
   const a = s?.assinatura;
-  if (!s || !a || s.master || s.foraDaPropria || a.situacao === 'ativa' || a.situacao === 'arquivada')
-    return null;
+  if (!s || !a || s.master || s.foraDaPropria || a.situacao === 'arquivada') return null;
   const naTela = pathname.startsWith('/plano/');
   const botao = (rotulo: string, para: string) =>
     admin && !naTela ? (
@@ -74,35 +73,71 @@ export function FaixaAssinatura() {
       </div>
     );
   }
-  if (a.situacao === 'atrasada')
+  if (a.situacao === 'ativa') {
+    // Só para o administrador, nos 7 dias antes de vencer.
+    if (!admin || !a.renovar || !a.acessoAte) return null;
+    const dias = diasAte(a.acessoAte);
+    if (dias > DIAS_AVISO_VENCIMENTO) return null;
     return (
-      <div className="faixa-assinatura" data-tom="aviso" role="status">
+      <div className="faixa-assinatura" data-tom={dias <= 1 ? 'urgente' : 'aviso'} role="status">
         <Icon name="clock" size={16} />
         <span className="faixa-assinatura__texto">
-          <b>Pagamento atrasado.</b> Pague em até 7 dias depois do vencimento para a conta não ficar só
-          leitura.
+          <b>
+            {dias === 0
+              ? 'O plano vence hoje'
+              : dias === 1
+                ? 'O plano vence amanhã'
+                : `O plano vence em ${dias} dias`}
+          </b>{' '}
+          ({diaSemana(a.acessoAte)}, {diaMes(a.acessoAte)}).{' '}
+          {a.esperandoPagamento
+            ? 'A mensalidade seguinte já está disponível: com Pix, libera na hora.'
+            : 'A mensalidade seguinte aparece em instantes em Meu plano.'}
         </span>
-        {botao('Pagar', '/plano/pagar')}
+        {botao('Pagar agora', '/plano/pagar')}
+      </div>
+    );
+  }
+  if (a.situacao === 'atrasada')
+    return (
+      <div className="faixa-assinatura" data-tom="urgente" role="status">
+        <Icon name="clock" size={16} />
+        <span className="faixa-assinatura__texto">
+          <b>O plano venceu{a.acessoAte ? ` em ${diaMes(a.acessoAte)}` : ''}.</b>{' '}
+          {a.toleranciaAte
+            ? `Tudo continua funcionando até ${diaMes(a.toleranciaAte)}; depois, a conta fica só leitura até o pagamento.`
+            : 'Pague para a conta não ficar só leitura.'}
+          {!admin ? ' Avise quem administra a conta.' : ''}
+        </span>
+        {botao('Pagar agora', '/plano/pagar')}
       </div>
     );
   if (a.situacao === 'cancelada')
-    return (
+    return admin ? (
       <div className="faixa-assinatura" data-tom="aviso" role="status">
         <span className="faixa-assinatura__texto">
-          <b>Assinatura cancelada.</b>
-          {a.acessoAte ? ` O acesso continua até ${diaMes(a.acessoAte)}.` : ''}
+          <b>Renovação desligada.</b>
+          {a.acessoAte ? ` O plano vale até ${diaMes(a.acessoAte)}; depois, a conta fica só leitura.` : ''}
         </span>
-        {botao('Assinar de novo', '/plano/assinar')}
+        {botao('Voltar a renovar', '/plano')}
       </div>
-    );
-  // Só leitura (o teste acabou ou o pagamento ficou parado).
+    ) : null;
+  // Só leitura: o teste acabou sem assinar, ou o mês pago venceu sem pagamento.
   return (
     <div className="faixa-assinatura" data-tom="leitura" role="status">
       <Icon name="lock" size={16} />
       <span className="faixa-assinatura__texto">
-        <b>{a.testeAte && !a.acessoAte ? 'O teste acabou.' : 'Conta parada.'}</b> Você vê tudo, mas não dá
-        para mexer.
-        {a.soLeituraAte ? ` Assine até ${diaMes(a.soLeituraAte)} para continuar de onde parou.` : ''}
+        {a.jaPagou ? (
+          <>
+            <b>Conta só leitura: o plano venceu{a.acessoAte ? ` em ${diaMes(a.acessoAte)}` : ''}.</b> Vocês
+            veem e exportam os leads e os contatos, mas não dá para mexer. Pagando, volta na hora.
+          </>
+        ) : (
+          <>
+            <b>O teste acabou.</b> Você vê tudo, mas não dá para mexer.
+            {a.soLeituraAte ? ` Assine até ${diaMes(a.soLeituraAte)} para continuar de onde parou.` : ''}
+          </>
+        )}
         {!admin ? ' Fale com quem administra a conta.' : ''}
       </span>
       {a.esperandoPagamento ? botao('Pagar', '/plano/pagar') : botao('Assinar', '/plano/assinar')}
@@ -132,7 +167,7 @@ export function FimDoTeste() {
     !!s &&
     !!a &&
     a.situacao === 'so_leitura' &&
-    !a.acessoAte &&
+    !a.jaPagou &&
     !s.master &&
     !s.foraDaPropria &&
     s.termos.aceitos &&

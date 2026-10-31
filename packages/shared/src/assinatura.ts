@@ -4,17 +4,22 @@ import { normalizarTelefone } from './normalizar.js';
 import { LISTA_MODULOS, type Modulo, type PlanoDaConta, type PlanoPronto } from './planos.js';
 
 /**
- * Teste grátis de 7 dias pelo site e a assinatura que a própria empresa contrata (cobrança
- * recorrente no Asaas: Pix, boleto ou cartão).
+ * Teste grátis de 7 dias pelo site e a assinatura que a própria empresa contrata: cada mês é uma
+ * cobrança avulsa no Asaas (sem recorrência no cartão), paga com Pix, boleto ou cartão na hora.
+ * Pagou, vale por um mês; venceu, mais 3 dias normais e depois só leitura até pagar.
  */
 
 export const DIAS_TESTE = 7;
 export const USUARIOS_TESTE = 2;
 export const LEADS_TESTE = 100;
-/** Teste vencido (ou assinatura atrasada demais): só leitura por estes dias, depois arquiva. */
+/** Teste vencido sem assinar: só leitura por estes dias, depois arquiva (quem já pagou não arquiva). */
 export const DIAS_SO_LEITURA = 15;
-/** Pagamento atrasado: continua normal por estes dias, depois fica só leitura. */
-export const DIAS_TOLERANCIA_ATRASO = 7;
+/** O mês pago venceu: continua normal por estes dias, depois fica só leitura até pagar. */
+export const DIAS_TOLERANCIA_ATRASO = 3;
+/** A cobrança do mês seguinte é gerada (e o aviso aparece) estes dias antes de vencer. */
+export const DIAS_AVISO_VENCIMENTO = 7;
+/** Diferença de um aumento de plano abaixo disso não vira cobrança (vale na hora, sem custo). */
+export const DIFERENCA_MINIMA = 5;
 /** Conta arquivada: os dados ficam guardados por estes dias. */
 export const DIAS_GUARDA_ARQUIVADA = 90;
 
@@ -24,16 +29,17 @@ export const ROTULO_ASSINATURA: Record<SituacaoAssinatura, string> = {
   teste: 'Teste grátis',
   ativa: 'Assinatura ativa',
   atrasada: 'Pagamento atrasado',
-  cancelada: 'Cancelada (acesso até o fim do período pago)',
+  cancelada: 'Renovação desligada (vale até o fim do mês pago)',
   so_leitura: 'Só leitura',
   arquivada: 'Arquivada',
 };
 
-export type FormaPagamento = 'PIX' | 'BOLETO' | 'CREDIT_CARD';
-export const FORMAS_PAGAMENTO: Record<FormaPagamento, { nome: string; descricao: string }> = {
-  PIX: { nome: 'Pix', descricao: 'Liberado na hora em que pagar' },
-  BOLETO: { nome: 'Boleto', descricao: 'Até 2 dias úteis para liberar' },
-  CREDIT_CARD: { nome: 'Cartão de crédito', descricao: 'Cobrado todo mês no cartão' },
+/** O que cada cobrança paga. */
+export type TipoCobranca = 'mensalidade' | 'diferenca' | 'minutos';
+export const ROTULO_TIPO_COBRANCA: Record<TipoCobranca, string> = {
+  mensalidade: 'Mensalidade',
+  diferenca: 'Mudança de plano',
+  minutos: 'Minutos de ligação',
 };
 
 /* ───────────────────────────── Documentos ───────────────────────────── */
@@ -136,7 +142,6 @@ export const assinarEntrada = z
       .max(LISTA_MODULOS.length)
       .default([]),
     numerosExtras: z.number().int().min(0).max(50).default(0),
-    forma: z.enum(['PIX', 'BOLETO', 'CREDIT_CARD']),
     documento: z
       .string()
       .trim()
@@ -165,15 +170,24 @@ export function contratoDoPedido(
   };
 }
 
-/** Situação da assinatura para a tela (faixa do teste, só leitura). */
+export const comprarMinutosEntrada = z.object({ pacotes: z.number().int().min(1).max(10).default(1) });
+
+/** Situação da assinatura para a tela (faixa do teste, vencimento, só leitura). */
 export interface AssinaturaDaConta {
   situacao: SituacaoAssinatura;
   testeAte: string | null;
+  /** Pago até (o mês que vale). */
   acessoAte: string | null;
-  /** Até quando fica só leitura (depois arquiva). */
+  /** Venceu: usa normal até aqui; depois, só leitura. */
+  toleranciaAte: string | null;
+  /** Teste vencido: só leitura até aqui, depois arquiva (quem já pagou fica só leitura sem prazo). */
   soLeituraAte: string | null;
-  /** Assinou e espera o 1º pagamento. */
+  /** Há mensalidade ou mudança de plano esperando o pagamento. */
   esperandoPagamento: boolean;
+  /** Já pagou alguma vez (não é mais teste). */
+  jaPagou: boolean;
+  /** Gera a cobrança do mês seguinte (desligado = não vai renovar). */
+  renovar: boolean;
   leadsUsados: number;
   leadsLimite: number | null;
 }

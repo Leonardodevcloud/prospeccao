@@ -130,8 +130,11 @@ export interface TabelaPrecos {
   milLeads: number;
   /** Minutos de ligação por mês que vêm com o módulo Ligações. */
   minutosLigacao: number;
-  /** Cada minuto de ligação além da franquia. */
+  /** Cada minuto de ligação além da franquia (contratos combinados com a gente). */
   minutoExtra: number;
+  /** Pacote de minutos que a empresa compra sozinha quando a franquia acaba (não vence). */
+  pacoteMinutos: number;
+  pacotePreco: number;
 }
 
 const RECURSOS_TIME: Recurso[] = [
@@ -166,7 +169,7 @@ export const TABELA_PADRAO: TabelaPrecos = {
       modulosInclusos: ['email'],
     },
   },
-  modulos: { whatsapp: 250, agente_ia: 297, email: 200, ligacoes: 890 },
+  modulos: { whatsapp: 250, agente_ia: 297, email: 200, ligacoes: 499 },
   comboWhatsappIa: 999,
   numerosInclusos: 3,
   numeroExtra: 110,
@@ -175,6 +178,8 @@ export const TABELA_PADRAO: TabelaPrecos = {
   milLeads: 20,
   minutosLigacao: 2000,
   minutoExtra: 0.35,
+  pacoteMinutos: 500,
+  pacotePreco: 149,
 };
 
 const numero = (min: number, max: number) => z.number().min(min).max(max);
@@ -203,6 +208,8 @@ export const tabelaPrecosEntrada = z.object({
   milLeads: numero(0, 100_000),
   minutosLigacao: inteiro(0, 1_000_000),
   minutoExtra: numero(0, 100),
+  pacoteMinutos: inteiro(1, 100_000),
+  pacotePreco: numero(1, 100_000),
 });
 
 /**
