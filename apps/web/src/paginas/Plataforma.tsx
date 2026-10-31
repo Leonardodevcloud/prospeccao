@@ -174,7 +174,6 @@ const NOME_FONTE: Record<string, string> = {
 const NOME_FILA: Record<string, string> = {
   'enriquecimento.solicitar': 'Enriquecimento',
   'maps.buscar': 'Busca no Maps',
-  'maps.coletar': 'Coleta do Maps',
   'leads.importar': 'Importação de leads',
   'campanha.iniciar': 'Início de campanha',
   'cnpj.importar': 'Importação da base CNPJ',

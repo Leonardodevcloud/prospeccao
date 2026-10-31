@@ -21,7 +21,7 @@ export function rotasAtividade({ pool, filas }: DepsApi): Router {
       jobsAbertos(pool, 'cnpj.importar', 1).catch(() => []),
       pool.query(
         `SELECT b.id, b.campanha_id AS "campanhaId", c.nome AS campanha, b.cidade, b.uf, b.termo,
-                b.status, b.itens, b.erro, b.verificacoes,
+                b.status, b.itens, b.erro,
                 b.criado_em AS "criadoEm", b.iniciado_em AS "iniciadoEm", b.concluido_em AS "concluidoEm"
            FROM descoberta.buscas_maps b
            LEFT JOIN cadastro.campanhas c ON c.id = b.campanha_id
@@ -44,7 +44,7 @@ export function rotasAtividade({ pool, filas }: DepsApi): Router {
     const comTarefa = await pool
       .query<{ id: string }>(
         `SELECT DISTINCT data ->> 'buscaId' AS id FROM fila.job
-          WHERE name IN ('maps.buscar', 'maps.coletar') AND state IN ('created', 'retry', 'active')`,
+          WHERE name = 'maps.buscar' AND state IN ('created', 'retry', 'active')`,
       )
       .then((r) => new Set(r.rows.map((x) => Number(x.id))))
       .catch(() => null);

@@ -186,7 +186,7 @@ async function comAndamento<T extends ComProgresso>(db: Executor, campanhas: T[]
         WHERE b.campanha_id = ANY($1::bigint[]) AND b.status IN ('pendente', 'rodando')
           AND b.criado_em < now() - interval '1 minute'
           AND NOT EXISTS (SELECT 1 FROM fila.job j
-                           WHERE j.name IN ('maps.buscar', 'maps.coletar') AND j.state IN ('created', 'retry', 'active')
+                           WHERE j.name = 'maps.buscar' AND j.state IN ('created', 'retry', 'active')
                              AND (j.data ->> 'buscaId')::bigint = b.id)
         GROUP BY 1`,
       [ids],

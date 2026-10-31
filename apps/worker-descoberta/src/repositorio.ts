@@ -66,7 +66,7 @@ export async function prepararBuscas(
     );
     if (existentes[0]) continue;
     await db.query(
-      `INSERT INTO descoberta.buscas_maps (campanha_id, cidade, uf, termo) VALUES ($1, $2, $3, $4)`,
+      `INSERT INTO descoberta.buscas_maps (campanha_id, cidade, uf, termo, fonte) VALUES ($1, $2, $3, $4, 'places')`,
       [campanha.id, p.cidade, p.uf, p.termo],
     );
   }
@@ -215,12 +215,9 @@ export interface Busca {
   uf: string;
   termo: string;
   status: string;
-  apify_run_id: string | null;
-  dataset_id: string | null;
-  verificacoes: number;
   /** null = cidade inteira. */
   bairro: string | null;
-  fonte: 'apify' | 'places' | 'planilha';
+  fonte: 'places' | 'planilha';
   conta_id: number;
   paginas: number;
   proxima_pagina: string | null;
@@ -240,7 +237,7 @@ export async function concluirBusca(db: Executor, id: number, erro: string | nul
 
 /**
  * Falha que ainda vai ser tentada de novo: guarda o motivo. Busca do Places volta para pendente
- * (a próxima tentativa retoma da página onde parou); run do Apify segue rodando.
+ * (a próxima tentativa retoma da página onde parou).
  */
 export async function anotarFalhaBusca(db: Executor, id: number, erro: string) {
   await db.query(
@@ -644,7 +641,7 @@ export async function buscasSemTarefa(db: Executor): Promise<number[]> {
   );
   const semTarefa = fila[0]?.tem
     ? `AND NOT EXISTS (SELECT 1 FROM fila.job j
-                        WHERE j.name IN ('maps.buscar', 'maps.coletar')
+                        WHERE j.name = 'maps.buscar'
                           AND j.state IN ('created', 'retry', 'active')
                           AND (j.data ->> 'buscaId')::bigint = b.id)`
     : '';

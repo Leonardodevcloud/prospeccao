@@ -65,7 +65,7 @@ describe('achar a empresa no Google pelo nome e endereço', () => {
 });
 
 describe('Serper', () => {
-  it('converte resultados orgânicos no formato da busca do Apify', () => {
+  it('converte resultados orgânicos em título, link e trecho', () => {
     expect(
       resultadosSerper({
         organic: [

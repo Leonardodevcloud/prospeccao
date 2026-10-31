@@ -49,7 +49,7 @@ describe('conversão do Places', () => {
       fechada: true,
       entrega: null,
     });
-    expect(converterLugar({ placeId: 'apify' })).toBeNull();
+    expect(converterLugar({ placeId: 'sem-nome' })).toBeNull();
   });
 
   it('monta o texto da busca com o bairro', () => {

@@ -46,25 +46,26 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Google Plac
   const publicados: { nome: NomeJob; payload: object }[] = [];
 
   const itensMaps: ItemMaps[] = [
-    item({ placeId: 'p1', nome: 'Autopeças Ladeira Nova', telefone: '7132410098', entrega: true }),
+    item({ placeId: 'p1', nome: 'Autopeças Ladeira Nova', telefone: '7132410098' }),
     item({ placeId: 'p2', nome: 'Auto Center Brotas Peças', cep: '40285000' }),
     item({ placeId: 'p3', nome: 'Moto Peças Nova Era', telefone: '71999990000' }),
     item({ placeId: 'p4', nome: 'Mecânica do Zé', categoria: 'Oficina mecânica' }),
   ];
-  // dados brutos = o próprio item no formato do Apify, para a reidratação
+  // dados brutos = o lugar no formato do Google Places, para a reidratação
   for (const i of itensMaps) {
     i.dados = {
-      placeId: i.placeId,
-      title: i.nome,
-      categoryName: i.categoria,
-      phoneUnformatted: i.telefone,
-      postalCode: i.cep,
-      city: i.cidade,
-      state: 'Bahia',
-      location: { lat: i.lat, lng: i.lng },
-      totalScore: i.nota,
-      reviewsCount: i.avaliacoes,
-      ...(i.entrega ? { additionalInfo: { Serviços: [{ Entrega: true }] } } : {}),
+      id: i.placeId,
+      displayName: { text: i.nome },
+      primaryTypeDisplayName: i.categoria ? { text: i.categoria } : null,
+      nationalPhoneNumber: i.telefone,
+      addressComponents: [
+        { longText: i.cidade, shortText: i.cidade, types: ['administrative_area_level_2'] },
+        { longText: 'Bahia', shortText: 'BA', types: ['administrative_area_level_1'] },
+        ...(i.cep ? [{ longText: i.cep, shortText: i.cep, types: ['postal_code'] }] : []),
+      ],
+      location: { latitude: i.lat, longitude: i.lng },
+      rating: i.nota,
+      userRatingCount: i.avaliacoes,
     };
   }
 
@@ -77,8 +78,7 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Google Plac
         return 'job';
       },
     },
-    // Google Places simulado: uma página com os 4 lugares (dados brutos no formato antigo, que a
-    // reidratação também lê).
+    // Google Places simulado: uma página com os 4 lugares.
     placesDa: async () => ({
       async buscar() {
         return { itens: itensMaps, ignorados: 0, proximaPagina: null };
@@ -101,7 +101,6 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Google Plac
       const p = job.payload as Record<string, number>;
       if (job.nome === 'campanha.buscar_cnpj') await casos.buscarNaBaseCnpj(d, p.campanhaId!);
       else if (job.nome === 'maps.buscar') await casos.dispararBuscaMaps(d, p.buscaId!);
-      else if (job.nome === 'maps.coletar') await casos.coletarBuscaMaps(d, p.buscaId!);
       else if (job.nome === 'empresa.localizar') await casos.localizarEmpresa(d, p.empresaId!);
       else if (job.nome === 'enriquecimento.solicitar')
         enriquecer.push(p as { empresaId: number; campanhaId: number });
@@ -168,13 +167,12 @@ describe.skipIf(!URL_TESTE)('descoberta ponta a ponta (com Postgres, Google Plac
     );
     const porNome = Object.fromEntries(rows.map((r) => [r.nome, r]));
 
-    // A: casou pelo telefone; nome do Maps prevalece; entrega detectada
+    // A: casou pelo telefone; nome do Maps prevalece
     expect(porNome['Autopeças Ladeira Nova']).toMatchObject({
       cnpj: '11222333000181',
       place_id: 'p1',
       origem: 'ambos',
       dentro_do_raio: true,
-      sinal_entrega: true,
     });
     // B: casou por nome no mesmo CEP
     expect(porNome['Auto Center Brotas Peças']).toMatchObject({

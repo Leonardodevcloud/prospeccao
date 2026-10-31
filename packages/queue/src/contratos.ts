@@ -43,11 +43,6 @@ export const JOBS = {
     buscaId: z.number().int().positive(),
   }),
 
-  /** worker-descoberta (interno): encerra buscas antigas que esperavam o run do Apify (legado). */
-  'maps.coletar': z.object({
-    buscaId: z.number().int().positive(),
-  }),
-
   /** api → worker-descoberta: linhas de uma planilha do Maps para cruzar com a base de CNPJ. */
   'maps.importar_planilha': z.object({
     campanhaId: z.number().int().positive(),
@@ -137,13 +132,6 @@ export const POLITICA_FILAS: Record<NomeJob, PoliticaFila> = {
     retryBackoff: true,
     expireInSeconds: 300,
     policy: 'standard',
-  },
-  'maps.coletar': {
-    retryLimit: 5,
-    retryDelay: 60,
-    retryBackoff: true,
-    expireInSeconds: 900,
-    policy: 'short',
   },
   'maps.importar_planilha': {
     retryLimit: 3,

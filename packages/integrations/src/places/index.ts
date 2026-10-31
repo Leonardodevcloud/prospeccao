@@ -5,7 +5,7 @@ import { ufDoEstado } from '../maps/estados.js';
 import type { ItemMaps } from '../maps/index.js';
 
 /**
- * Google Places API (New) · Text Search. Substitui o ator do Apify nas buscas do Maps.
+ * Google Places API (New) · Text Search: as buscas do Maps nas campanhas.
  *
  * Cada chamada traz até 20 lugares e conta como 1 pedido no SKU "Text Search Enterprise"
  * (o nível que devolve telefone e site): 1.000 grátis por mês, depois US$ 35 por mil.
@@ -107,7 +107,7 @@ const lugarBruto = z
   })
   .loose();
 
-/** true se o item guardado em `dados` veio do Places (e não do Apify). */
+/** true se o item guardado em `dados` veio do Google Places. */
 export function ehLugarPlaces(bruto: unknown): boolean {
   return !!bruto && typeof bruto === 'object' && 'displayName' in bruto && 'id' in bruto;
 }

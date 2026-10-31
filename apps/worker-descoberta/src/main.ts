@@ -54,7 +54,6 @@ const filas = await conectarFilas({
     'maps.buscar',
     'maps.importar_planilha',
     'leads.importar',
-    'maps.coletar',
     'empresa.localizar',
     'enriquecimento.solicitar',
     'cnpj.importacao_concluida',
@@ -98,7 +97,7 @@ await filas.consumir('campanha.iniciar', (p) => casos.iniciarCampanha(deps, p.ca
 await filas.consumir('campanha.buscar_cnpj', (p) => casos.buscarNaBaseCnpj(deps, p.campanhaId));
 /** Roda a etapa da busca; se falhar, deixa o motivo na busca (e fecha com erro na última tentativa). */
 const comFalhaNaBusca =
-  (fila: 'maps.buscar' | 'maps.coletar', etapa: (buscaId: number) => Promise<void>) =>
+  (fila: 'maps.buscar', etapa: (buscaId: number) => Promise<void>) =>
   async (p: { buscaId: number }, ctx: { tentativa: number }) => {
     try {
       await etapa(p.buscaId);
@@ -112,11 +111,6 @@ await filas.consumir(
   'maps.buscar',
   comFalhaNaBusca('maps.buscar', (id) => casos.dispararBuscaMaps(deps, id)),
   { concorrencia: 3 },
-);
-await filas.consumir(
-  'maps.coletar',
-  comFalhaNaBusca('maps.coletar', (id) => casos.coletarBuscaMaps(deps, id)),
-  { concorrencia: 2 },
 );
 // Concorrência 1: respeita o limite do ORS.
 await filas.consumir('empresa.localizar', (p) => casos.localizarEmpresa(deps, p.empresaId, p.campanhaId), {

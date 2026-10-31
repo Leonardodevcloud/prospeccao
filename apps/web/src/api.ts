@@ -663,7 +663,6 @@ export interface BuscaAtividade {
   status: 'pendente' | 'rodando' | 'concluida' | 'erro' | 'bloqueada';
   itens: number | null;
   erro: string | null;
-  verificacoes: number;
   /** Pendente/rodando sem tarefa na fila: não anda sozinha. */
   parada?: boolean;
   criadoEm: string;

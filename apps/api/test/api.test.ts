@@ -79,7 +79,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
           return payloads.length;
         },
         async tamanhos() {
-          return { 'maps.coletar': 1 };
+          return { 'maps.buscar': 1 };
         },
       },
       auth: {

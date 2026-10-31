@@ -880,7 +880,7 @@ export async function enriquecerEmpresa(
         'linkedin',
         'pulada',
         !fontes.google
-          ? 'Sem busca no Google configurada (SERPER_API_KEY ou APIFY_TOKEN).'
+          ? 'Sem busca no Google configurada (SERPER_API_KEY).'
           : `Nada do LinkedIn na busca principal; a busca própria é só para leads ${[...ajustes.faixasLinkedin].join(' e ')}.`,
       );
     } else {

@@ -116,7 +116,6 @@ export function rotasCampanhas({ pool, filas, log }: DepsApi): Router {
       filas.cancelarPendentes('campanha.iniciar', porCampanha),
       filas.cancelarPendentes('campanha.buscar_cnpj', porCampanha),
       filas.cancelarPendentes('maps.buscar', porBusca),
-      filas.cancelarPendentes('maps.coletar', porBusca),
     ]);
     return { enriquecimento: enriquecimento ?? 0, outros: outros.reduce((a, b) => a + b, 0) };
   }

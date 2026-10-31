@@ -244,7 +244,7 @@ function detalheLegivel(d: string | null, master: boolean): string | undefined {
     .replace(/\s*\([^)]*(=|worker-|[A-Z]{3,}_[A-Z])[^)]*\)/g, '')
     .replace(/\bHTTP \d{3}\b/g, '')
     .replace(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b(=\w+)?/g, '')
-    .replace(/\b(Apify|BrasilAPI|Serper|Railway|Evolution|Resend)\b:?/g, '')
+    .replace(/\b(BrasilAPI|Serper|Railway|Evolution|Resend)\b:?/g, '')
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+([.,;:])/g, '$1')
     .replace(/:\s*:/g, ':')

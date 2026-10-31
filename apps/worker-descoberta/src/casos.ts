@@ -1,4 +1,4 @@
-import { converterItem, type ItemMaps } from '@prospeccao/integrations/maps';
+import type { ItemMaps } from '@prospeccao/integrations/maps';
 import {
   converterLugar,
   ehLugarPlaces,
@@ -54,11 +54,11 @@ export async function buscarNaBaseCnpj(deps: Deps, campanhaId: number) {
   if ((await repo.buscasEmAberto(deps.pool, campanhaId)) === 0) await finalizarDescoberta(deps, campanhaId);
 }
 
-/** O item guardado em `dados` pode ter vindo do Places ou de uma busca antiga (formato do Apify). */
+/** O item guardado em `dados` veio do Places ou da planilha do Maps. */
 function converterDados(dados: unknown): ItemMaps | null {
   const d = dados as { origem?: string; item?: ItemMaps } | null;
   if (d?.origem === 'planilha' && d.item) return d.item;
-  return ehLugarPlaces(dados) ? converterLugar(dados) : converterItem(dados);
+  return ehLugarPlaces(dados) ? converterLugar(dados) : null;
 }
 
 /** Cruza tudo que ainda não foi cruzado na busca (inclusive de uma tentativa que caiu no meio). */
@@ -209,22 +209,6 @@ async function buscarNoPlaces(
     'busca no Google Places concluída',
   );
   await aoConcluirBusca(deps, campanha.id);
-}
-
-/**
- * Busca antiga que ficou esperando o run do Apify (de antes da troca para o Places): o Apify saiu do
- * sistema, então ela é encerrada com o motivo e a campanha segue com o que já achou.
- */
-export async function coletarBuscaMaps(deps: Deps, buscaId: number) {
-  const busca = await repo.obterBusca(deps.pool, buscaId);
-  if (busca?.status !== 'rodando' || !busca.apify_run_id) return;
-  await repo.concluirBusca(
-    deps.pool,
-    buscaId,
-    'Busca antiga encerrada: o sistema passou a buscar no Google Places. Use "Tentar de novo" para buscar de novo.',
-    null,
-  );
-  await aoConcluirBusca(deps, busca.campanha_id);
 }
 
 /** Uma busca terminou: se era a última, fecha a descoberta e libera o enriquecimento. */

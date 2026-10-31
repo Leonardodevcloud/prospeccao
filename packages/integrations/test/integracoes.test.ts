@@ -2,7 +2,6 @@ import { Readable } from 'node:stream';
 import iconv from 'iconv-lite';
 import { describe, expect, it } from 'vitest';
 import { ufDoEstado } from '../src/maps/estados.js';
-import { converterItem, detectarEntrega } from '../src/maps/index.js';
 import { lerCsvReceita } from '../src/receita/index.js';
 import { lerEmpresa, lerEstabelecimento, lerSocio } from '../src/receita/layout.js';
 
@@ -89,39 +88,7 @@ describe('layout da Receita', () => {
   });
 });
 
-describe('Apify Maps', () => {
-  it('converte item e detecta entrega', () => {
-    const item = converterItem({
-      placeId: 'ChIJ123',
-      title: 'Autopeças Ladeira Nova',
-      phone: '(71) 3241-0098',
-      postalCode: '40415-000',
-      city: 'Salvador',
-      state: 'State of Bahia',
-      location: { lat: -12.93, lng: -38.5 },
-      totalScore: 4.6,
-      reviewsCount: 412,
-      additionalInfo: { 'Opções de serviço': [{ Entrega: true }, { 'Retirada na loja': true }] },
-    });
-    expect(item).toMatchObject({
-      telefone: '7132410098',
-      cep: '40415000',
-      uf: 'BA',
-      entrega: true,
-      fechada: false,
-    });
-  });
-
-  it('entrega desmarcada é false; ausente é null', () => {
-    expect(detectarEntrega({ Serviços: [{ Delivery: false }] })).toBe(false);
-    expect(detectarEntrega({ Acessibilidade: [{ Rampa: true }] })).toBeNull();
-    expect(detectarEntrega(null)).toBeNull();
-  });
-
-  it('ignora item sem placeId', () => {
-    expect(converterItem({ title: 'Sem id' })).toBeNull();
-  });
-
+describe('Maps', () => {
   it('converte estados para UF', () => {
     expect(ufDoEstado('Bahia')).toBe('BA');
     expect(ufDoEstado('Estado de São Paulo')).toBe('SP');

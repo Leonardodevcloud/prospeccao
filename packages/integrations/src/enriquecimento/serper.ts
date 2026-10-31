@@ -6,9 +6,8 @@ import type { ResultadoGoogle } from './google.js';
 import { extrairContatos } from './site.js';
 
 /**
- * Busca no Google pelo Serper (serper.dev): alternativa ao ator do Apify para achar perfis do
- * LinkedIn e do Instagram. Cada consulta custa 1 crédito (2.500 grátis na conta nova, depois
- * a partir de ~US$ 1 por mil), mais barato e mais rápido que o Apify.
+ * Busca no Google pelo Serper (serper.dev): site, perfis do LinkedIn e do Instagram e diretórios.
+ * Cada consulta custa 1 crédito (2.500 grátis na conta nova, depois a partir de ~US$ 1 por mil).
  */
 
 export interface ConfigSerper {
@@ -22,14 +21,14 @@ interface RespostaSerper {
   organic?: { title?: string; link?: string; snippet?: string }[];
 }
 
-/** Converte a resposta do Serper no mesmo formato da busca do Apify. */
+/** Converte a resposta do Serper em resultados (título, link e trecho). */
 export function resultadosSerper(r: RespostaSerper): ResultadoGoogle[] {
   return (r.organic ?? [])
     .filter((o) => o.link)
     .map((o) => ({ titulo: o.title ?? '', url: o.link ?? '', descricao: o.snippet ?? '' }));
 }
 
-/** Várias consultas em paralelo; devolve consulta → resultados (como buscarNoGoogle do Apify). */
+/** Várias consultas em paralelo; devolve consulta → resultados. */
 export async function buscarNoGoogleSerper(
   cfg: ConfigSerper,
   consultas: string[],

@@ -21,7 +21,6 @@ const NOME_FILA: Record<string, string> = {
   'campanha.iniciar': 'Campanhas iniciando',
   'campanha.buscar_cnpj': 'Campanhas cruzando com a base de CNPJ',
   'maps.buscar': 'Buscas no Maps para disparar',
-  'maps.coletar': 'Buscas no Maps aguardando resultado',
   'empresa.localizar': 'Endereços para localizar',
   'enriquecimento.solicitar': 'Leads aguardando enriquecimento (Fase 2)',
   'cnpj.importar': 'Importação da base de CNPJ',
