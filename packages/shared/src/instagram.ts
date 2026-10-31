@@ -319,3 +319,45 @@ export function achadosDoConteudo(posts: readonly PublicacaoNumeros[]): Achado[]
     });
   return achados;
 }
+
+/* ───────────────────────── Devolver as vendas para a Meta ───────────────────────── */
+
+/** As etapas que a Meta recebe, em ordem (cada uma só depois das anteriores). */
+export const ETAPAS_META = [
+  { id: 'lead', evento: 'Lead', rotulo: 'Chegou o cadastro' },
+  { id: 'respondeu', evento: 'Respondeu', rotulo: 'Respondeu' },
+  { id: 'reuniao', evento: 'Reunião marcada', rotulo: 'Reunião marcada' },
+  { id: 'proposta', evento: 'Proposta enviada', rotulo: 'Proposta enviada' },
+  { id: 'ganho', evento: 'Cliente', rotulo: 'Virou cliente' },
+] as const;
+export type EtapaMeta = (typeof ETAPAS_META)[number]['id'];
+
+const ORDEM_META: Record<string, number> = {
+  a_abordar: 0,
+  abordado: 0,
+  respondeu: 1,
+  reuniao: 2,
+  proposta: 3,
+  ganho: 4,
+};
+
+/**
+ * As etapas da Meta que o lead já alcançou, pela etapa do funil. Perdido e descartado não avançam
+ * (o que já foi avisado antes fica).
+ */
+export function etapasMetaAlcancadas(etapaFunil: string): EtapaMeta[] {
+  const n = ORDEM_META[etapaFunil];
+  if (n === undefined) return [];
+  return ETAPAS_META.slice(0, n + 1).map((e) => e.id);
+}
+
+export const conversoesEntrada = z.object({
+  ligado: z.boolean(),
+  dataset: z
+    .string()
+    .trim()
+    .regex(/^\d{6,20}$/, 'O ID do conjunto de dados são só números.')
+    .nullish(),
+  /** Vazio: mantém o que já está salvo. */
+  token: z.string().trim().min(20, 'Token muito curto.').max(600).nullish().or(z.literal('')),
+});

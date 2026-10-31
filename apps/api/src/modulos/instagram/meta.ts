@@ -88,8 +88,25 @@ export interface ClienteMeta {
   cadastro(leadgenId: string, token: string): Promise<CadastroMeta>;
   /** Números de uma publicação (alcance, curtidas, salvos…). Sem a permissão das estatísticas, erro. */
   numeros(midiaId: string, tipo: string | null, token: string): Promise<NumerosMeta>;
+  /**
+   * API de Conversões (leads de CRM): manda as etapas para o conjunto de dados do cliente, com o token
+   * que ele gerou no Gerenciador de Eventos. Devolve quantos a Meta recebeu.
+   */
+  enviarEventos(
+    dataset: string,
+    token: string,
+    eventos: EventoCrm[],
+    codigoTeste?: string | null,
+  ): Promise<number>;
   /** Comentários de uma publicação (os mais recentes primeiro, até o limite). */
   comentarios(midiaId: string, token: string, limite?: number): Promise<ComentarioMeta[]>;
+}
+
+export interface EventoCrm {
+  nome: string;
+  /** Segundos desde 1970. */
+  em: number;
+  leadId: string;
 }
 
 export interface NumerosMeta {
@@ -486,6 +503,24 @@ export function clienteMeta(cfg: ConfigMeta): ClienteMeta {
         }
       }
       throw ultimoErro;
+    },
+
+    async enviarEventos(dataset, token, eventos, codigoTeste) {
+      const r = await chamar<{ events_received?: number }>(`/${dataset}/events`, {
+        token,
+        metodo: 'POST',
+        corpo: {
+          data: eventos.map((e) => ({
+            event_name: e.nome,
+            event_time: e.em,
+            action_source: 'system_generated',
+            user_data: { lead_id: Number(e.leadId) || e.leadId },
+            custom_data: { event_source: 'crm', lead_event_source: 'Prospect Team' },
+          })),
+          ...(codigoTeste ? { test_event_code: codigoTeste } : {}),
+        },
+      });
+      return r.events_received ?? 0;
     },
 
     async comentarios(midiaId, token, limite = 200) {

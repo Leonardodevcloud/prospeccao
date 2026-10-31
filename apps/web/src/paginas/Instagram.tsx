@@ -1185,6 +1185,7 @@ function AbaFormularios(props: { admin: boolean }) {
           </Button>
         )}
       </div>
+      <BlocoConversoes admin={props.admin} />
       <ErroDaApi erro={sincronizar.error} />
       {sincronizar.data && (
         <Mensagem tipo="ok">
@@ -1433,6 +1434,244 @@ function FormFormulario(props: { f: Formulario; admin: boolean; aoFechar: () => 
             <b>Avisar o responsável</b> a cada cadastro
           </span>
         </label>
+        <ErroDaApi erro={salvar.error} />
+        {props.admin && (
+          <div className="ig-form__rodape">
+            <Button type="button" variant="ghost" onClick={props.aoFechar}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary" disabled={salvar.isPending}>
+              {salvar.isPending ? 'Salvando…' : 'Salvar'}
+            </Button>
+          </div>
+        )}
+      </form>
+    </Drawer>
+  );
+}
+
+/* ───────────────────────── Devolver as vendas para a Meta ───────────────────────── */
+
+interface Conversoes {
+  ligado: boolean;
+  dataset: string | null;
+  temToken: boolean;
+  erro: string | null;
+  erroEm: string | null;
+  etapas: { id: string; evento: string; rotulo: string; enviados: number; pendentes: number }[];
+  ultimos: {
+    id: number;
+    empresaId: number;
+    nome: string | null;
+    etapa: string;
+    evento: string;
+    enviadoEm: string | null;
+    erro: string | null;
+    tentativas: number;
+  }[];
+}
+
+function BlocoConversoes(props: { admin: boolean }) {
+  const [aberto, setAberto] = useState(false);
+  const q = useQuery({
+    queryKey: ['instagram-conversoes'],
+    queryFn: () => api<Conversoes>('/instagram/conversoes'),
+    refetchInterval: 60_000,
+  });
+  if (q.isPending) return <div className="esqueleto" style={{ height: 120 }} />;
+  if (q.error || !q.data) return <ErroDaApi erro={q.error} />;
+  const c = q.data;
+  return (
+    <section className="ig-capi" aria-labelledby="ig-capi-titulo">
+      <div className="ig-capi__cab">
+        <span className="ig-capi__icone" aria-hidden="true">
+          <Icon name="trending-up" size={18} />
+        </span>
+        <div className="ig-capi__texto">
+          <h2 id="ig-capi-titulo">
+            Devolver as vendas para a Meta{' '}
+            <Badge tone={c.erro ? 'warning' : c.ligado ? 'brand' : 'neutral'}>
+              {c.erro ? 'com erro' : c.ligado ? 'ligado' : 'desligado'}
+            </Badge>
+          </h2>
+          <p className="quieto">
+            Quando um cadastro de anúncio anda no funil, o CRM avisa a Meta. Ela aprende quem vira cliente
+            (não só quem preenche) e passa a mostrar o anúncio para gente parecida.{' '}
+            <LinkAjuda artigo="instagram">Como funciona</LinkAjuda>
+          </p>
+        </div>
+        <Button variant={c.ligado ? 'secondary' : 'primary'} onClick={() => setAberto(true)}>
+          {!props.admin ? 'Ver' : c.ligado ? 'Configurar' : 'Ligar'}
+        </Button>
+      </div>
+      {c.erro && <Mensagem tipo="erro">{c.erro}</Mensagem>}
+      {c.ligado && (
+        <ol className="ig-capi__etapas" aria-label="Avisos à Meta nos últimos 30 dias">
+          {c.etapas.map((e) => (
+            <li key={e.id}>
+              <small>{e.rotulo}</small>
+              <b>{fmtNumero(e.enviados)}</b>
+              {e.pendentes > 0 && <span className="quieto">{e.pendentes} na fila</span>}
+            </li>
+          ))}
+        </ol>
+      )}
+      {aberto && <FormConversoes c={c} admin={props.admin} aoFechar={() => setAberto(false)} />}
+    </section>
+  );
+}
+
+function FormConversoes(props: { c: Conversoes; admin: boolean; aoFechar: () => void }) {
+  const cliente = useQueryClient();
+  const [f, setF] = useState({
+    ligado: props.c.ligado || !props.c.dataset,
+    dataset: props.c.dataset ?? '',
+    token: '',
+  });
+  const [codigo, setCodigo] = useState('');
+  const salvar = useMutation({
+    mutationFn: () =>
+      api<Conversoes>('/instagram/conversoes', {
+        metodo: 'PUT',
+        corpo: { ligado: f.ligado, dataset: f.dataset.trim() || null, token: f.token.trim() || null },
+      }),
+    onSuccess: (r) => {
+      cliente.setQueryData(['instagram-conversoes'], r);
+      props.aoFechar();
+    },
+  });
+  const testar = useMutation({
+    mutationFn: () =>
+      api<{ recebidos: number }>('/instagram/conversoes/testar', { metodo: 'POST', corpo: { codigo } }),
+  });
+  const ro = !props.admin;
+  return (
+    <Drawer titulo="Devolver as vendas para a Meta" barra="Formulários" largo aoFechar={props.aoFechar}>
+      <form
+        className="drawer__corpo"
+        onSubmit={(e) => {
+          e.preventDefault();
+          salvar.mutate();
+        }}
+      >
+        <div className="ig-form__cab">
+          <h2>Ligar ao seu conjunto de dados (pixel)</h2>
+          <label className="chave-liga chave-liga--texto">
+            <input
+              type="checkbox"
+              checked={f.ligado}
+              disabled={ro}
+              onChange={(e) => setF({ ...f, ligado: e.target.checked })}
+            />
+            <span>{f.ligado ? 'Avisando a Meta' : 'Desligado'}</span>
+          </label>
+        </div>
+        <ol className="ig-capi__passos">
+          <li>
+            <div className="campo">
+              <label htmlFor="capi-dataset">ID do conjunto de dados</label>
+              <input
+                id="capi-dataset"
+                className="filtro mono"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={20}
+                disabled={ro}
+                placeholder="Ex.: 1234567890123456"
+                value={f.dataset}
+                onChange={(e) => setF({ ...f, dataset: e.target.value.replace(/\D/g, '') })}
+              />
+              <span className="campo__dica">
+                No Gerenciador de Eventos da Meta, abra Fontes de dados, escolha o conjunto de dados (o mesmo
+                pixel da conta de anúncios) e copie o número que aparece embaixo do nome.
+              </span>
+            </div>
+          </li>
+          <li>
+            <div className="campo">
+              <label htmlFor="capi-token">Token de acesso</label>
+              <input
+                id="capi-token"
+                className="filtro mono"
+                type="password"
+                autoComplete="off"
+                disabled={ro}
+                placeholder={
+                  props.c.temToken ? 'Já guardado. Cole um novo só para trocar.' : 'Cole o token aqui'
+                }
+                value={f.token}
+                onChange={(e) => setF({ ...f, token: e.target.value })}
+              />
+              <span className="campo__dica">
+                No mesmo conjunto de dados, vá em Configurações, procure API de Conversões e clique em Gerar
+                token de acesso. Ele fica guardado cifrado e não aparece de novo aqui.
+              </span>
+            </div>
+          </li>
+        </ol>
+        <Mensagem tipo="aviso">
+          Vão para a Meta só os cadastros dos formulários de anúncio: cada etapa uma vez, na ordem (Chegou o
+          cadastro, Respondeu, Reunião marcada, Proposta enviada, Virou cliente). Leads de comentário e de
+          direct não vieram de anúncio e ficam de fora.
+        </Mensagem>
+        {props.c.temToken && props.c.dataset && (
+          <fieldset className="campo ig-capi__teste">
+            <legend>Testar agora</legend>
+            <span className="campo__dica">
+              No Gerenciador de Eventos, abra a aba Testar eventos do conjunto de dados, copie o código
+              (começa com TEST) e mande um aviso de teste. Ele aparece lá em segundos e não conta para os
+              anúncios.
+            </span>
+            <div className="ig-capi__teste-linha">
+              <label className="pp-sr" htmlFor="capi-codigo">
+                Código de teste
+              </label>
+              <input
+                id="capi-codigo"
+                className="filtro mono"
+                autoComplete="off"
+                placeholder="TEST12345"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value.trim())}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                icon={testar.isPending ? 'loader' : 'send'}
+                disabled={!codigo || testar.isPending}
+                onClick={() => testar.mutate()}
+              >
+                Mandar teste
+              </Button>
+            </div>
+            <ErroDaApi erro={testar.error} />
+            {testar.data && (
+              <Mensagem tipo="ok">A Meta recebeu o teste. Confira na aba Testar eventos.</Mensagem>
+            )}
+          </fieldset>
+        )}
+        {props.c.ultimos.length > 0 && (
+          <div className="campo">
+            <span className="campo__rotulo">Últimos avisos</span>
+            <ul className="ig-capi__ultimos">
+              {props.c.ultimos.map((u) => (
+                <li key={u.id}>
+                  <span>
+                    <b>{props.c.etapas.find((e) => e.id === u.etapa)?.rotulo ?? u.evento}</b> ·{' '}
+                    <Link to={`/funil?empresa=${u.empresaId}`}>{u.nome ?? 'Lead'}</Link>
+                  </span>
+                  {u.enviadoEm ? (
+                    <span className="quieto">{fmtQuando(u.enviadoEm)}</span>
+                  ) : (
+                    <Badge tone={u.erro ? 'warning' : 'neutral'}>
+                      {u.erro ? `tentando de novo (${u.tentativas})` : 'na fila'}
+                    </Badge>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <ErroDaApi erro={salvar.error} />
         {props.admin && (
           <div className="ig-form__rodape">

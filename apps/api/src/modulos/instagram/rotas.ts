@@ -1,5 +1,6 @@
 import {
   AppError,
+  conversoesEntrada,
   formularioInstagramEntrada,
   instagramConfigEntrada,
   regraInstagramEntrada,
@@ -13,6 +14,7 @@ import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { adminParaAlterar } from '../../middlewares/seguranca.js';
 import { visivel } from '../../visibilidade.js';
 import * as conteudo from './conteudo.js';
+import * as conversoes from './conversoes.js';
 import * as servico from './servico.js';
 
 /**
@@ -170,6 +172,30 @@ export function rotasInstagram(deps: DepsApi): Router {
 
   r.post('/comentarios/:id/lead', async (req, res) => {
     res.status(201).json({ empresaId: await conteudo.leadDoComentario(deps, comentarioDaRota(req)) });
+  });
+
+  /* ───── Devolver as vendas para a Meta ───── */
+
+  r.get('/conversoes', async (_req, res) => {
+    res.json(await conversoes.situacaoConversoes(pool));
+  });
+
+  r.put('/conversoes', async (req, res) => {
+    await conversoes.salvarConversoes(pool, corpo(req, conversoesEntrada));
+    res.json(await conversoes.situacaoConversoes(pool));
+  });
+
+  r.post('/conversoes/testar', async (req, res) => {
+    const { codigo } = corpo(
+      req,
+      z.object({
+        codigo: z
+          .string()
+          .trim()
+          .regex(/^TEST\w{2,20}$/i, 'O código de teste começa com TEST.'),
+      }),
+    );
+    res.json(await conversoes.testarConversoes(pool, codigo));
   });
 
   /* ───── Formulários ───── */

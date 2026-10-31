@@ -6,6 +6,8 @@ import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
+import { comConta } from '../src/contexto.js';
+import { enviarConversoes } from '../src/modulos/instagram/conversoes.js';
 import { type ClienteMeta, clienteMeta } from '../src/modulos/instagram/meta.js';
 import { esquecerRecursos } from '../src/recursos.js';
 import type { ServicosConta } from '../src/servicos.js';
@@ -128,6 +130,14 @@ describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e for
         { chave: 'vendedores', rotulo: 'Quantos vendedores?', tipo: 'CUSTOM' },
       ],
     }),
+    enviarEventos: async (dataset, token, eventos, codigoTeste) => {
+      if (token === 'token-vencido-0000000000') throw new Error('Invalid OAuth access token');
+      chamadas.push({
+        tipo: 'eventos',
+        dados: { dataset, eventos: eventos.map((e) => e.nome), codigoTeste },
+      });
+      return eventos.length;
+    },
     cadastro: async (id) => ({
       id,
       formId: 'F1',
@@ -490,6 +500,61 @@ describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e for
     expect(n[0].n).toBe(1);
     const lista = await ler('/instagram/formularios');
     expect(lista.body[0]).toMatchObject({ cadastros: 1, leads: 1, ultimoNome: 'Clínica Sorriso Pleno' });
+  });
+
+  it('devolve as etapas do lead do anúncio para a Meta (uma vez cada, na ordem)', async () => {
+    const enviados = () => chamadas.filter((c) => c.tipo === 'eventos').map((c) => c.dados);
+    const rodar = () => comConta(1, () => enviarConversoes(pool, log));
+    // Desligado: nada sai.
+    expect(await rodar()).toBe(0);
+    expect(
+      (await enviar('put', '/instagram/conversoes', { ligado: true, dataset: '123456789' })).status,
+    ).toBe(422);
+    const ok = await enviar('put', '/instagram/conversoes', {
+      ligado: true,
+      dataset: '123456789012',
+      token: 'EAAtoken-do-gerenciador-de-eventos',
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ ligado: true, dataset: '123456789012', temToken: true });
+    expect(JSON.stringify(ok.body)).not.toContain('EAAtoken');
+    const { rows: cif } = await pool.query('SELECT capi_token_cifrado FROM comercial.instagram_contas');
+    expect(cif[0].capi_token_cifrado).not.toContain('EAAtoken');
+
+    // O cadastro L1 chegou: vai o "Lead".
+    expect(await rodar()).toBe(1);
+    expect(enviados().at(-1)).toEqual({ dataset: '123456789012', eventos: ['Lead'], codigoTeste: undefined });
+    expect(await rodar()).toBe(0);
+
+    // Virou cliente direto: vão as etapas que faltavam, na ordem.
+    await pool.query(
+      `UPDATE comercial.oportunidades SET etapa = 'ganho'
+        WHERE empresa_id = (SELECT empresa_id FROM comercial.instagram_cadastros WHERE leadgen_id = 'L1')`,
+    );
+    expect(await rodar()).toBe(4);
+    expect(enviados().at(-1)).toMatchObject({
+      eventos: ['Respondeu', 'Reunião marcada', 'Proposta enviada', 'Cliente'],
+    });
+    expect(await rodar()).toBe(0);
+
+    const tela = await ler('/instagram/conversoes');
+    expect(tela.body.etapas.find((e: { id: string }) => e.id === 'ganho')).toMatchObject({ enviados: 1 });
+    expect(tela.body.ultimos[0]).toMatchObject({ nome: 'Clínica Sorriso Pleno', erro: null });
+
+    // Teste pelo código do Gerenciador de Eventos.
+    expect((await enviar('post', '/instagram/conversoes/testar', { codigo: 'abc' })).status).toBe(422);
+    const t = await enviar('post', '/instagram/conversoes/testar', { codigo: 'TEST12345' });
+    expect(t.status).toBe(200);
+    expect(enviados().at(-1)).toMatchObject({ eventos: ['Lead'], codigoTeste: 'TEST12345' });
+
+    // Token vencido: o erro aparece na tela e o evento fica para tentar de novo.
+    await enviar('put', '/instagram/conversoes', { ligado: true, token: 'token-vencido-0000000000' });
+    await pool.query(`DELETE FROM comercial.meta_eventos WHERE etapa = 'ganho'`);
+    expect(await rodar()).toBe(0);
+    const erro = await ler('/instagram/conversoes');
+    expect(erro.body.erro).toMatch(/Invalid OAuth|token/);
+    expect(erro.body.etapas.find((e: { id: string }) => e.id === 'ganho')).toMatchObject({ pendentes: 1 });
+    await enviar('put', '/instagram/conversoes', { ligado: false });
   });
 
   it('conteúdo: números do Instagram ao lado dos leads, comentários com interesse e as ações', async () => {

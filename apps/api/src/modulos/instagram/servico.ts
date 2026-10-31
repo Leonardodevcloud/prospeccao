@@ -44,6 +44,11 @@ export function meta(): ClienteMeta | null {
   return metaAtual;
 }
 
+/** A chave que cifra os tokens (CHAVE_CREDENCIAIS). */
+export function chaveDeCifra(): string | null {
+  return chaveAtual;
+}
+
 function exigirMeta(): ClienteMeta {
   if (!metaAtual)
     throw AppError.invalido(

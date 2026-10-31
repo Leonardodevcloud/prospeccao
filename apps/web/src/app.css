@@ -12220,3 +12220,124 @@ body:has(.drawer, .modal) [class*="lancador"] {
     flex-basis: 100%;
   }
 }
+
+/* Devolver as vendas para a Meta (Instagram › Formulários) */
+.ig-capi {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.ig-capi__cab {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.ig-capi__icone {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft, var(--surface-2));
+  color: var(--brand);
+}
+.ig-capi__texto {
+  flex: 1;
+  min-width: 0;
+}
+.ig-capi__texto h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+.ig-capi__texto p {
+  margin: 0;
+  font-size: 13px;
+  max-width: 72ch;
+}
+.ig-capi__etapas {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ig-capi__etapas li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.ig-capi__etapas small {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.ig-capi__etapas b {
+  font-size: 20px;
+  line-height: 26px;
+}
+.ig-capi__etapas .quieto {
+  font-size: 12px;
+}
+.ig-capi__passos {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding-left: 20px;
+}
+.ig-capi__passos li::marker {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.ig-capi__passos input,
+.ig-capi__teste input {
+  width: 100%;
+}
+.ig-capi__teste-linha {
+  display: flex;
+  gap: var(--space-2);
+}
+.ig-capi__teste-linha input {
+  flex: 1;
+  min-width: 0;
+}
+.ig-capi__ultimos {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.ig-capi__ultimos li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.ig-capi__ultimos li + li {
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 720px) {
+  .ig-capi__cab {
+    flex-wrap: wrap;
+  }
+  .ig-capi__cab > .pp-btn,
+  .ig-capi__cab > button {
+    width: 100%;
+  }
+  .ig-capi__etapas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

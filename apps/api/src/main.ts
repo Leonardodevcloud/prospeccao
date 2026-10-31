@@ -13,6 +13,7 @@ import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
 import { iniciarConteudo } from './modulos/instagram/conteudo.js';
+import { iniciarConversoes } from './modulos/instagram/conversoes.js';
 import { iniciarDominios } from './modulos/marca/rotina.js';
 import { dominiosDoAmbiente } from './modulos/marca/vercel.js';
 import { iniciarPlanos } from './modulos/plano/rotina.js';
@@ -100,6 +101,8 @@ const pararImportacao = iniciarImportacaoLeads(pool, log);
 const pararSinal = manterSinalDeVida(pool, 'api');
 // Instagram: números das publicações de cada conta conectada, de 6 em 6 horas.
 const pararConteudo = iniciarConteudo({ pool, log });
+// Devolver as vendas para a Meta: as etapas dos leads de anúncio, a cada minuto.
+const pararConversoes = iniciarConversoes({ pool, log });
 // Marca própria: domínios ativos dos clientes (links e origens) e conferência dos que esperam o DNS.
 const pararListaDominios = manterDominios(pool, (erro) =>
   log.warn({ err: erro }, 'marca: lista de domínios falhou'),
@@ -116,6 +119,7 @@ encerrarAoReceberSinal(log, async () => {
   pararAlertas();
   pararSinal();
   pararConteudo();
+  pararConversoes();
   pararListaDominios();
   pararDominios();
   processamento.parar();

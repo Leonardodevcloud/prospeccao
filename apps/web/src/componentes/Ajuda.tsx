@@ -660,12 +660,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
   {
     id: 'instagram',
     area: 'WhatsApp e IA',
-    titulo: 'Instagram: conteúdo, comente e receba, direct e formulários',
+    titulo: 'Instagram: conteúdo, comente e receba, direct, formulários e vendas para a Meta',
     resumo:
       'Quem comenta a palavra recebe o seu direct; quem responde ou preenche o formulário do anúncio vira lead.',
     onde: { rotulo: 'Instagram', para: '/instagram' },
     termos:
-      'instagram comente receba direct dm comentário palavra formulário anúncio meta facebook cadastro lead ads',
+      'instagram comente receba direct dm comentário palavra formulário anúncio meta facebook cadastro lead ads conversões pixel conjunto de dados gerenciador de eventos devolver vendas',
     corpo: (
       <>
         <p>
@@ -772,6 +772,49 @@ export const ARTIGOS: ArtigoAjuda[] = [
           que cada pergunta vira no lead (o sistema já sugere), onde ele entra, as etiquetas e, se quiser, um
           WhatsApp de boas-vindas que sai na hora.
         </p>
+        <h3>6. Devolver as vendas para a Meta</h3>
+        <p>
+          Sozinha, a Meta só sabe quem <b>preencheu</b> o formulário. Ligando esta opção, o CRM avisa a Meta
+          cada vez que um desses cadastros anda no funil: <b>respondeu</b>, <b>reunião marcada</b>,{' '}
+          <b>proposta enviada</b> e <b>virou cliente</b>. Com isso ela aprende quem compra de verdade e passa
+          a mostrar o anúncio para gente parecida, o que tende a baixar o custo por cliente.
+        </p>
+        <Passos>
+          <li>
+            No <b>Gerenciador de Eventos</b> da Meta, abra <b>Fontes de dados</b> e escolha o conjunto de
+            dados (o pixel da conta de anúncios). Copie o número que aparece embaixo do nome.
+          </li>
+          <li>
+            Ainda nele, em <b>Configurações › API de Conversões</b>, clique em <b>Gerar token de acesso</b> e
+            copie.
+          </li>
+          <li>
+            Na aba <b>Formulários</b> do CRM, no quadro <b>Devolver as vendas para a Meta</b>, clique em{' '}
+            <b>Ligar</b>, cole os dois e salve.
+          </li>
+          <li>
+            Para conferir: na aba <b>Testar eventos</b> do Gerenciador, copie o código que começa com TEST,
+            cole em <b>Testar agora</b> e clique em <b>Mandar teste</b>. O aviso aparece lá em segundos.
+          </li>
+        </Passos>
+        <ul>
+          <li>
+            Cada etapa vai <b>uma vez</b> por lead e na ordem. Se o lead pulou etapas (foi direto para
+            cliente), as que faltavam vão juntas.
+          </li>
+          <li>
+            O CRM confere a cada minuto. Se a Meta recusar (token vencido, por exemplo), o quadro mostra o
+            erro e os avisos ficam na fila até você salvar um token novo.
+          </li>
+          <li>
+            Na Meta, os avisos aparecem no conjunto de dados como eventos do CRM. Depois de algumas semanas
+            com vendas, dá para escolher no anúncio a otimização por <b>leads de conversão</b>.
+          </li>
+        </ul>
+        <Nota>
+          Vão só os cadastros dos <b>formulários de anúncio</b> (são eles que a Meta reconhece). Leads de
+          comentário e de direct não vieram de anúncio e ficam de fora. Perdido e descartado não são enviados.
+        </Nota>
       </>
     ),
   },
