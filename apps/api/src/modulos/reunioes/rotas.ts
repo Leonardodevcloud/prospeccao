@@ -23,6 +23,7 @@ import * as agenda from '../agenda/repositorio.js';
 import { chipParaEquipe, emUso as chipsEmUso } from '../agente/chips.js';
 import * as agente from '../agente/repositorio.js';
 import { dadosDoLead } from '../funil/cadencia.js';
+import { tratarAvisoLigacao } from '../ligacoes/rotas.js';
 import * as fundos from '../marca/fundos.js';
 import * as repo from './repositorio.js';
 import {
@@ -467,7 +468,9 @@ export function rotasAvisoVideo(deps: DepsApi): Router {
       deps.log.warn({ err: erro }, 'reuniões: aviso do LiveKit recusado (assinatura)');
       throw new AppError(401, 'assinatura_invalida', 'Aviso sem assinatura válida.');
     }
-    await tratarAviso(depsServico(deps), aviso);
+    // Sala de ligação (lig-…): é do módulo Ligações.
+    if ('sala' in aviso && aviso.sala.startsWith('lig-')) await tratarAvisoLigacao(deps, aviso);
+    else await tratarAviso(depsServico(deps), aviso);
     res.json({ ok: true });
   });
   return r;

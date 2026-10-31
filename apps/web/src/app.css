@@ -12341,3 +12341,582 @@ body:has(.drawer, .modal) [class*="lancador"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ───────── Ligações: o painel da ligação (por cima de qualquer tela) ───────── */
+.lig-painel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 28;
+  width: 400px;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+/* Com a ficha aberta, o painel fica ao lado dela (não cobre o lead). */
+body:has(.drawer) .lig-painel {
+  right: calc(min(var(--size-drawer), 100vw) + 16px);
+}
+.lig-topo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.lig-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 700;
+  font-size: 14px;
+}
+.lig-topo__quem {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.lig-topo__quem b {
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lig-topo__quem .quieto {
+  font-size: 12px;
+}
+.lig-topo__tempo {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+.lig-tempo {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.lig-fase {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.lig-fase--em_andamento {
+  color: var(--danger);
+}
+.lig-fase--em_andamento::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--danger);
+  vertical-align: 1px;
+}
+.lig-fase--chamando,
+.lig-fase--tocando {
+  color: var(--brand);
+}
+.lig-controles {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+.lig-botao {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 64px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lig-botao > svg {
+  box-sizing: content-box;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+}
+.lig-botao[aria-pressed="true"] > svg {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface);
+}
+.lig-botao--fim > svg {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-danger, #fff);
+}
+.lig-botao:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.lig-botao:focus-visible > svg {
+  box-shadow: var(--focus-ring);
+}
+.lig-teclado {
+  margin: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.lig-teclado button {
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  cursor: pointer;
+}
+.lig-corpo {
+  display: grid;
+  gap: var(--space-3);
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+.lig-aviso {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.lig-aviso > span {
+  flex: 1;
+}
+.lig-lead {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.kv-linha {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.kv-linha > span {
+  color: var(--ink-muted);
+}
+.lig-lead__ultimos {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  font-size: 12.5px;
+}
+.lig-resultados {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.lig-resultado {
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+.lig-resultado[data-ativo] {
+  border: 2px solid var(--brand);
+  background: var(--brand-soft);
+}
+.lig-resultado:has(input:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+.lig-ia {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lig-ia p {
+  margin: 0;
+}
+.lig-ia__titulo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+}
+.lig-sug {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 13px;
+  cursor: pointer;
+}
+.lig-sug > span {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+.lig-sug small {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.lig-sug input[type="checkbox"] {
+  margin-top: 2px;
+}
+.lig-rodape {
+  position: sticky;
+  bottom: -14px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin: 0 -16px -14px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.lig-rodape .quieto {
+  margin-right: auto;
+  font-size: 12px;
+}
+
+/* Na ficha: os números e as ligações feitas */
+.lig-numeros,
+.lig-historico {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lig-numero {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.lig-numero[data-primeiro] {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.lig-numero[data-errado] {
+  opacity: 0.6;
+}
+.lig-numero[data-errado] .mono {
+  text-decoration: line-through;
+}
+.lig-numero__ordem {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.lig-numero[data-primeiro] .lig-numero__ordem {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.lig-numero__texto {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.lig-numero__texto .mono {
+  font-size: 13.5px;
+}
+.lig-numero__texto small {
+  color: var(--ink-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lig-numero__fim {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lig-nao-ligar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+.lig-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.lig-item__linha {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.lig-item__linha:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+.lig-item__texto {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.lig-item__texto b {
+  font-size: 13.5px;
+}
+.lig-item__texto small {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.lig-item[data-aberta] .lig-item__linha > svg:last-child {
+  transform: rotate(180deg);
+}
+.lig-cartao {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 12px 12px;
+}
+.lig-audio {
+  width: 100%;
+  height: 36px;
+}
+.lig-destaques {
+  margin: 0;
+  padding-left: 18px;
+}
+.lig-nota {
+  margin: 0;
+  font-size: 13px;
+}
+.lig-falas {
+  display: grid;
+  gap: 4px;
+}
+.lig-fala {
+  display: grid;
+  grid-template-columns: 44px 80px 1fr;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.lig-fala .mono {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.lig-fala b {
+  font-size: 12px;
+  color: var(--ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lig-fala[data-quem="voce"] b {
+  color: var(--brand);
+}
+
+/* Página Ligações */
+.lig-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.lig-totais {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.lig-totais > div {
+  display: grid;
+  gap: 2px;
+  padding: 12px 16px;
+  border-right: 1px solid var(--line);
+}
+.lig-totais > div:last-child {
+  border-right: 0;
+}
+.lig-totais small,
+.lig-totais span {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.lig-totais b {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+.lig-historico--pagina {
+  max-width: 920px;
+}
+
+/* Gestão › Telefonia */
+.tel-grade {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.tel-card {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.tel-card--largo {
+  grid-column: 1 / -1;
+}
+.tel-card h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.tel-card > .quieto {
+  margin: 0;
+  font-size: 13px;
+}
+.tel-numeros {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tel-numeros li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.tel-numeros li .quieto {
+  flex: 1;
+  font-size: 12.5px;
+}
+.tel-franquia {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.tel-franquia b {
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+.tel-barra {
+  height: 8px;
+  border-radius: 99px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.tel-barra i {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+.tel-barra i[data-alerta] {
+  background: var(--warning);
+}
+
+@media (max-width: 720px) {
+  .lig-painel,
+  body:has(.drawer) .lig-painel {
+    inset: 0;
+    width: auto;
+    max-height: none;
+    border-radius: 0;
+    z-index: 40;
+  }
+  .lig-resultados {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tel-grade {
+    grid-template-columns: 1fr;
+  }
+  .lig-fala {
+    grid-template-columns: 40px 1fr;
+  }
+  .lig-fala b {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lig-painel {
+    animation: lig-entra 160ms ease-out;
+  }
+}
+@keyframes lig-entra {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+body:has(.lig-painel) [class*="lancador"] {
+  display: none;
+}
+.lig-saida {
+  color: var(--ink-muted);
+  font-size: 12px;
+}

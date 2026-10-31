@@ -14,6 +14,7 @@ import {
 } from '../api';
 import { diaDaqui, diaDoInput, fmtHora, fmtNome, fmtPrazo, fmtReais, formatarTelefone } from '../formatar';
 import { ReunioesDoLead } from '../paginas/Reunioes';
+import { LigacoesDoLead } from '../telefone/LigacoesDoLead';
 import { ProximaMensagem } from './Cadencia';
 import { CadeiaContatos } from './ContatosNegociacao';
 import { ErroDaApi, Mensagem } from './Formulario';
@@ -687,6 +688,8 @@ export function SecaoFunil(props: {
           </div>
           <ErroDaApi erro={atualizar.error} />
         </Panel>
+
+        <LigacoesDoLead empresaId={empresaId} nome={props.empresaNome ?? 'o lead'} />
 
         <Panel
           titulo="Agenda"

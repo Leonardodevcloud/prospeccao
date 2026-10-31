@@ -80,6 +80,11 @@ export const esquemaEnvApi = envBase.extend({
   LIVEKIT_API_KEY: opcional(z.string().min(3)),
   LIVEKIT_API_SECRET: opcional(z.string().min(10)),
   /**
+   * Ligações pelo CRM: o tronco SIP de saída criado no LiveKit (ST_…) com o login do provedor de
+   * telefonia (Nvoip, Twilio…). Sem ele, o módulo Ligações fica desligado e a tela explica.
+   */
+  TELEFONIA_TRONCO_SAIDA: opcional(z.string().regex(/^ST_\w+$/, 'TELEFONIA_TRONCO_SAIDA começa com ST_')),
+  /**
    * Onde as gravações das reuniões ficam (qualquer serviço compatível com S3; ex.: Cloudflare R2).
    * Sem isso, as reuniões funcionam sem gravar. A transcrição usa a GROQ_CHAVE do Argos.
    */

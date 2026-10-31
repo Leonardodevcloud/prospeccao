@@ -1,4 +1,4 @@
-import type { Recurso } from '@prospeccao/shared/planos';
+import type { Modulo, Recurso } from '@prospeccao/shared/planos';
 /**
  * Cliente da API. Tudo passa por /api (mesma origem): em produção o Vercel
  * repassa para o Railway; em desenvolvimento, o proxy do Vite.
@@ -906,7 +906,7 @@ export interface Sessao {
     nome: string;
     plano: string | null;
     /** Módulos que valem na conta (contratados e inclusos no plano; sem plano: todos). */
-    modulos: ('whatsapp' | 'agente_ia' | 'email')[];
+    modulos: Modulo[];
     /** Recursos que o plano libera (sem plano: todos). */
     recursos: Recurso[];
     /** CRM de demonstração (dados fictícios, só o master entra). */
@@ -1468,7 +1468,7 @@ export interface PlanoConta {
   plano: 'start' | 'time' | 'escala' | 'personalizado' | null;
   usuarios: number | null;
   leadsMes: number | null;
-  modulos: ('whatsapp' | 'agente_ia' | 'email')[];
+  modulos: Modulo[];
   itens: { rotulo: string; valor: number }[];
   mensalidadeCalculada: number | null;
   mensalidade: number | null;
@@ -1488,6 +1488,7 @@ export interface PlanoConta {
   conversasIa: number | null;
   limiteHorasReuniaoProprio: number | null;
   limiteConversasIaProprio: number | null;
+  limiteMinutosLigacaoProprio: number | null;
   /** Uso somado da organização (o contrato vale para todas as unidades). */
   uso: { usuarios: number; leadsMes: number; leadsEsperando: number };
   organizacao: { id: number; nome: string; unidades: number };

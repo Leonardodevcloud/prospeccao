@@ -33,6 +33,11 @@ export const MODULOS = {
     nome: 'E-mail automatizado',
     descricao: 'Campanhas e sequências de e-mail com a abertura escrita pela IA, e-mails ilimitados.',
   },
+  ligacoes: {
+    nome: 'Ligações',
+    descricao:
+      'Ligar pelo CRM com o número da empresa, gravação, transcrição e resumo da IA de cada ligação (com franquia de minutos).',
+  },
 } as const;
 export type Modulo = keyof typeof MODULOS;
 export const LISTA_MODULOS = Object.keys(MODULOS) as Modulo[];
@@ -118,6 +123,10 @@ export interface TabelaPrecos {
   usuario: number;
   /** Cada 1.000 leads/mês a mais (ou a menos) que o plano inclui. */
   milLeads: number;
+  /** Minutos de ligação por mês que vêm com o módulo Ligações. */
+  minutosLigacao: number;
+  /** Cada minuto de ligação além da franquia. */
+  minutoExtra: number;
 }
 
 const RECURSOS_TIME: Recurso[] = [
@@ -151,13 +160,15 @@ export const TABELA_PADRAO: TabelaPrecos = {
       modulosInclusos: ['email'],
     },
   },
-  modulos: { whatsapp: 250, agente_ia: 297, email: 200 },
+  modulos: { whatsapp: 250, agente_ia: 297, email: 200, ligacoes: 890 },
   comboWhatsappIa: 999,
   numerosInclusos: 3,
   numeroExtra: 110,
   conversasIaMes: null,
   usuario: 59,
   milLeads: 20,
+  minutosLigacao: 2000,
+  minutoExtra: 0.35,
 };
 
 const numero = (min: number, max: number) => z.number().min(min).max(max);
@@ -168,7 +179,7 @@ const linhaPlano = z.object({
   leadsMes: inteiro(0, 1_000_000),
   recursos: z.array(z.enum(LISTA_RECURSOS as [Recurso, ...Recurso[]])),
   horasReuniao: inteiro(0, 10_000).nullable(),
-  modulosInclusos: z.array(z.enum(['whatsapp', 'agente_ia', 'email'])),
+  modulosInclusos: z.array(z.enum(LISTA_MODULOS as [Modulo, ...Modulo[]])),
 });
 export const tabelaPrecosEntrada = z.object({
   planos: z.object({ start: linhaPlano, time: linhaPlano, escala: linhaPlano }),
@@ -176,6 +187,7 @@ export const tabelaPrecosEntrada = z.object({
     whatsapp: numero(0, 100_000),
     agente_ia: numero(0, 100_000),
     email: numero(0, 100_000),
+    ligacoes: numero(0, 100_000),
   }),
   comboWhatsappIa: numero(0, 100_000),
   numerosInclusos: inteiro(0, 100),
@@ -183,6 +195,8 @@ export const tabelaPrecosEntrada = z.object({
   conversasIaMes: inteiro(0, 1_000_000).nullable(),
   usuario: numero(0, 100_000),
   milLeads: numero(0, 100_000),
+  minutosLigacao: inteiro(0, 1_000_000),
+  minutoExtra: numero(0, 100),
 });
 
 /**
@@ -219,6 +233,7 @@ export interface PlanoDaConta {
   /** Franquias combinadas só para esta organização (null = a do plano). */
   horasReuniao?: number | null;
   conversasIa?: number | null;
+  minutosLigacao?: number | null;
 }
 
 export interface PlanoEfetivo {
@@ -237,6 +252,8 @@ export interface PlanoEfetivo {
   horasReuniao: number | null;
   /** Conversas do Agente de IA no mês (null: sem limite; 0: sem o módulo). */
   conversasIa: number | null;
+  /** Minutos de ligação no mês (null: sem limite; 0: sem o módulo). Passou: cobra o minuto extra. */
+  minutosLigacao: number | null;
   /** Quanto custa no mês, item a item (ajuste para menos entra negativo). */
   itens: { rotulo: string; valor: number }[];
   mensalidadeCalculada: number | null;
@@ -269,6 +286,7 @@ export function planoEfetivo(c: PlanoDaConta, tabela: TabelaPrecos = TABELA_PADR
       numerosExtras: 0,
       horasReuniao: null,
       conversasIa: null,
+      minutosLigacao: null,
       itens: [],
       mensalidadeCalculada: null,
       mensalidade: null,
@@ -354,6 +372,7 @@ export function planoEfetivo(c: PlanoDaConta, tabela: TabelaPrecos = TABELA_PADR
           ? pronto.horasReuniao
           : 0,
     conversasIa: modulos.includes('agente_ia') ? (c.conversasIa ?? tabela.conversasIaMes) : 0,
+    minutosLigacao: modulos.includes('ligacoes') ? (c.minutosLigacao ?? tabela.minutosLigacao) : 0,
     itens,
     mensalidadeCalculada,
     mensalidade: c.mensalidadeManual ?? mensalidadeCalculada,
@@ -367,8 +386,8 @@ export const planoContaEntrada = z
     limiteUsuarios: z.number().int().min(1).max(500).nullable().default(null),
     limiteLeadsMes: z.number().int().min(0).max(1_000_000).nullable().default(null),
     modulos: z
-      .array(z.enum(['whatsapp', 'agente_ia', 'email']))
-      .max(3)
+      .array(z.enum(LISTA_MODULOS as [Modulo, ...Modulo[]]))
+      .max(LISTA_MODULOS.length)
       .default([]),
     mensalidadeManual: z.number().min(0).max(1_000_000).nullable().default(null),
     /** Números de WhatsApp além dos inclusos no módulo. */
@@ -381,6 +400,7 @@ export const planoContaEntrada = z
     /** Franquias combinadas só para esta organização (null = a do plano). */
     horasReuniao: z.number().int().min(0).max(10_000).nullable().default(null),
     conversasIa: z.number().int().min(0).max(1_000_000).nullable().default(null),
+    minutosLigacao: z.number().int().min(0).max(1_000_000).nullable().default(null),
   })
   .refine((v) => v.plano !== 'personalizado' || (v.limiteUsuarios != null && v.limiteLeadsMes != null), {
     message: 'No plano personalizado, informe o número de usuários e de leads por mês.',

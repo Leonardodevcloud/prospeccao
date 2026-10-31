@@ -10,6 +10,7 @@ import { useFollowupsPendentes } from '../paginas/Funil';
 import { useMeuDiaResumo } from '../paginas/MeuDia';
 import { useEntrarNaUnidade, useOrganizacao } from '../paginas/Organizacao';
 import { useNovosPedidos } from '../paginas/Vendas';
+import { PainelLigacao } from '../telefone/PainelLigacao';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
 import { Argos } from './argos/Argos';
 import { conversa as conversaArgos } from './argos/conversa';
@@ -391,6 +392,8 @@ export function Shell() {
         local.pathname !== '/argos' &&
         recursos.includes('argos') && <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />}
       {avisosAbertos && <PainelAvisos aoFechar={() => setAvisosAbertos(false)} />}
+      {/* A ligação em curso fica por cima de qualquer tela (dá para navegar durante a ligação). */}
+      {!plataforma && <PainelLigacao />}
     </div>
   );
 }

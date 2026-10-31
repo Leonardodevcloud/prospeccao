@@ -4,6 +4,7 @@ import type { Logger } from '@prospeccao/shared';
 import type { DepsAssistente } from './modulos/assistente/rotas.js';
 import type { ServicoDominios } from './modulos/email/dominio.js';
 import type { ClienteMeta } from './modulos/instagram/meta.js';
+import type { DepsTelefonia } from './modulos/ligacoes/servico.js';
 import type { DominiosSite } from './modulos/marca/vercel.js';
 import type { AoEncerrar, DepsReunioes } from './modulos/reunioes/servico.js';
 import type { ResolverServicos } from './servicos.js';
@@ -50,4 +51,6 @@ export interface DepsApi {
   dominiosSite?: DominiosSite | null;
   /** App da Meta: Instagram e cadastros dos anúncios (padrão: pelas variáveis META_*; os testes simulam). */
   meta?: ClienteMeta | null;
+  /** Ligações: LiveKit com o tronco SIP, onde gravar, transcrição e a voz do aviso (o que faltar fica desligado). */
+  telefonia?: DepsTelefonia | null;
 }

@@ -21,7 +21,8 @@
     "./reunioes": "./src/reunioes.ts",
     "./rua": "./src/rua.ts",
     "./fundos": "./src/fundos.ts",
-    "./instagram": "./src/instagram.ts"
+    "./instagram": "./src/instagram.ts",
+    "./ligacoes": "./src/ligacoes.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

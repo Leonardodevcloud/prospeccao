@@ -37,6 +37,7 @@ import { metaDoAmbiente } from './modulos/instagram/meta.js';
 import { rotasInstagram, rotasMeta } from './modulos/instagram/rotas.js';
 import { definirMeta } from './modulos/instagram/servico.js';
 import { rotasLgpd } from './modulos/lgpd/rotas.js';
+import { rotasLigacoes, rotasMasterTelefonia } from './modulos/ligacoes/rotas.js';
 import { rotasFundosPessoais } from './modulos/marca/pessoais.js';
 import { rotasMarcaPublica } from './modulos/marca/publico.js';
 import { rotasMarca } from './modulos/marca/rotas.js';
@@ -157,6 +158,8 @@ export function criarApp(deps: DepsApi): Express {
     rotasInstagram(deps),
   );
   protegidas.use('/agenda', rotasAgenda(deps));
+  // Ligações pelo CRM (módulo à parte): ver o histórico vale sempre; ligar precisa do módulo.
+  protegidas.use('/ligacoes', rotasLigacoes(deps));
   // Reuniões: ver as que já aconteceram vale sempre; marcar e mexer é do plano (e das horas do mês).
   protegidas.use(
     '/reunioes',
@@ -187,6 +190,7 @@ export function criarApp(deps: DepsApi): Express {
   // Painel master: contas, credenciais e acesso a qualquer conta.
   protegidas.use('/master/site', exigirMaster, rotasSiteMaster(deps));
   protegidas.use('/master/plataforma', exigirMaster, rotasPlataforma(deps));
+  protegidas.use('/master/contas/:contaId/telefonia', exigirMaster, rotasMasterTelefonia(deps));
   protegidas.use('/master', exigirMaster, rotasMaster(deps));
   app.use(protegidas);
 

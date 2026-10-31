@@ -43,6 +43,7 @@ import { useSessao } from '../componentes/Sessao';
 import { fmtMes, fmtNumero, fmtQuando, fmtReais } from '../formatar';
 import { LinkConvite } from './Equipe';
 import { type ClientePainel, ROTULO_SAUDE, TOM_SAUDE } from './Plataforma';
+import { NumerosDaConta } from './Telefonia';
 
 /* ───────────────────────── Peças ───────────────────────── */
 
@@ -906,7 +907,7 @@ function HistoricoConta(props: { contaId: number }) {
 
 /* ───────────────────────── Conta (drawer) ───────────────────────── */
 
-type SecaoConta = 'plano' | 'credenciais' | 'consumo' | 'usuarios' | 'historico' | 'dados';
+type SecaoConta = 'plano' | 'telefonia' | 'credenciais' | 'consumo' | 'usuarios' | 'historico' | 'dados';
 
 function Conta(props: { id: number; aoFechar: () => void }) {
   const cliente = useQueryClient();
@@ -972,6 +973,7 @@ function Conta(props: { id: number; aoFechar: () => void }) {
               {(
                 [
                   ['plano', 'Plano e módulos'],
+                  ['telefonia', 'Telefonia'],
                   ['credenciais', 'Credenciais'],
                   ['consumo', 'Consumo e tetos'],
                   ['usuarios', `Usuários (${c.usuarios.filter((u) => u.ativo).length})`],
@@ -992,6 +994,7 @@ function Conta(props: { id: number; aoFechar: () => void }) {
               ))}
             </div>
             {secao === 'plano' && <PlanoDaConta contaId={c.id} />}
+            {secao === 'telefonia' && <NumerosDaConta contaId={c.id} />}
             {secao === 'credenciais' && <Credenciais conta={c} />}
             {secao === 'consumo' && <Consumo conta={c} />}
             {secao === 'usuarios' && <Usuarios conta={c} />}

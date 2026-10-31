@@ -212,6 +212,89 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'ligacoes',
+    area: 'Vendas',
+    titulo: 'Ligações pelo CRM',
+    resumo: 'Ligue para o lead pelo navegador com o número da empresa; a IA resume e sugere o próximo passo.',
+    onde: { rotulo: 'Ligações', para: '/ligacoes' },
+    termos:
+      'ligar ligação ligacao telefone telefonia chamada celular fixo número numero gravação gravar transcrição resumo clima sentimento caixa postal não atendeu número errado não ligar minutos franquia aviso LGPD discar',
+    corpo: (
+      <>
+        <p>
+          Com o módulo <b>Ligações</b>, o time liga para o lead pelo próprio CRM, no navegador (fone e
+          microfone, sem aparelho), com o número da empresa. Quem fala é sempre o comercial: a IA só ouve
+          depois, para transcrever e resumir.
+        </p>
+        <h3>Ligar</h3>
+        <Passos>
+          <li>
+            Abra o lead (no funil, em Leads ou em Conversas) e clique em <b>Ligar</b>. Na primeira vez, o
+            navegador pede o microfone: clique em Permitir.
+          </li>
+          <li>
+            O painel da ligação aparece no canto da tela: chamando, tocando e, quando atendem, o tempo da
+            ligação. Dá para continuar mexendo no CRM durante a ligação.
+          </li>
+          <li>
+            Use <b>Mudo</b>, o <b>Teclado</b> (para os menus de voz, “digite 1”) e <b>Desligar</b>. As
+            anotações que você fizer vão para a nota da ligação.
+          </li>
+        </Passos>
+        <h3>Vários números no lead</h3>
+        <p>
+          Na ficha, o quadro <b>Ligações</b> mostra todos os números do lead (do enriquecimento, do WhatsApp,
+          do Google, da Receita e das pessoas da negociação) na ordem em que o CRM tenta: o confirmado ou com
+          WhatsApp primeiro, celular antes de fixo. Quem não atendeu agora há pouco vai para o fim da fila, e
+          número errado sai da lista. Para ligar para um número específico, use o botão ao lado dele.
+        </p>
+        <h3>Depois de desligar: “Como foi?”</h3>
+        <ul>
+          <li>
+            Marque o resultado: conversou, não atendeu, caixa postal, ocupado, número errado ou não ligar
+            mais.
+          </li>
+          <li>
+            Em alguns segundos chega o <b>resumo da IA</b>: o que foi dito, o <b>clima</b> da conversa (bom,
+            neutro ou ruim), como o lead estava e o próximo passo.
+          </li>
+          <li>
+            A IA sugere o que fazer no lead: mover de etapa, <b>marcar a reunião</b> que foi combinada (com a
+            sala de vídeo e o convite) e cadastrar as pessoas citadas (quem decide, por exemplo). Confira,
+            desmarque o que não quiser e clique em <b>Salvar</b>.
+          </li>
+          <li>
+            Não atendeu? Escolha quando ligar de novo: vira tarefa na sua agenda, e na próxima o CRM tenta o
+            número seguinte.
+          </li>
+        </ul>
+        <p>
+          Tudo fica no histórico do lead: a gravação (com velocidade), o resumo e a transcrição com o tempo de
+          cada fala. A tela <b>Vendas › Ligações</b> mostra as ligações de todo mundo, com filtros por pessoa,
+          resultado e período.
+        </p>
+        <h3>Gravação e aviso (LGPD)</h3>
+        <p>
+          A ligação é gravada no navegador de quem liga e a pessoa do outro lado é avisada no começo: o
+          sistema toca o aviso com voz ou, se preferir, o comercial lê a frase que aparece na tela. O
+          administrador muda o texto, liga e desliga a gravação e escolhe por quanto tempo guardar em{' '}
+          <b>Gestão › Telefonia</b>.
+        </p>
+        <Nota>
+          Não feche a aba durante a ligação: a gravação sobe para o CRM quando a ligação termina (leva
+          segundos).
+        </Nota>
+        <h3>Números e minutos</h3>
+        <p>
+          Os números da empresa são cadastrados pelo Prospect Team (escolha o DDD ou traga o número que já
+          usa). Com mais de um número, o CRM liga com o do mesmo DDD do lead. O módulo vem com uma franquia de
+          minutos por mês para a empresa toda; cada ligação atendida conta arredondada para cima, as que não
+          atendem não contam. Em Gestão › Telefonia você acompanha o uso.
+        </p>
+      </>
+    ),
+  },
+  {
     id: 'reunioes',
     area: 'Vendas',
     titulo: 'Reuniões por vídeo',

@@ -30,6 +30,7 @@ import {
   formatarTelefone,
   ROTULO_CRUZAMENTO,
 } from '../formatar';
+import { BotaoLigar } from '../telefone/LigacoesDoLead';
 import { Drawer } from './Drawer';
 import { EmailsDoLead } from './EmailsDoLead';
 import { ErroDaApi, Mensagem } from './Formulario';
@@ -546,6 +547,7 @@ export function FichaEmpresa({
             cidade={`${fmtCidade(e.cidade)}, ${e.uf}`}
             acoes={
               <>
+                <BotaoLigar empresaId={e.id} nome={e.nome} />
                 {e.mapsUrl && (
                   <Button icon="map-pin" href={e.mapsUrl} target="_blank" rel="noreferrer">
                     Google Maps

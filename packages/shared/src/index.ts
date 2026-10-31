@@ -10,6 +10,7 @@ export * from './iaPerfil.js';
 export * from './importacao.js';
 export * from './indicacoes.js';
 export * from './instagram.js';
+export * from './ligacoes.js';
 export * from './logger.js';
 export * from './nichosProntos.js';
 export * from './normalizar.js';

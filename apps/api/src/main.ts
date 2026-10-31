@@ -14,6 +14,8 @@ import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
 import { iniciarConteudo } from './modulos/instagram/conteudo.js';
 import { iniciarConversoes } from './modulos/instagram/conversoes.js';
+import { prepararTelefonia } from './modulos/ligacoes/preparar.js';
+import { iniciarLigacoes } from './modulos/ligacoes/processar.js';
 import { iniciarDominios } from './modulos/marca/rotina.js';
 import { dominiosDoAmbiente } from './modulos/marca/vercel.js';
 import { iniciarPlanos } from './modulos/plano/rotina.js';
@@ -64,6 +66,9 @@ const processamento = iniciarProcessamento({
   jwtSegredo: env.JWT_SEGREDO,
 });
 
+// Ligações pelo CRM: o mesmo LiveKit, com o tronco SIP do provedor de telefonia.
+const telefonia = prepararTelefonia(env, reunioes, assistente, log);
+
 const app = criarApp({
   pool,
   filas,
@@ -80,6 +85,7 @@ const app = criarApp({
   credenciais: { chave, ambiente, invalidar },
   assistente,
   reunioes: { ...reunioes, aoEncerrar: processamento.aoEncerrar },
+  telefonia,
 });
 
 const servidor = createServer(app);
@@ -103,6 +109,8 @@ const pararSinal = manterSinalDeVida(pool, 'api');
 const pararConteudo = iniciarConteudo({ pool, log });
 // Devolver as vendas para a Meta: as etapas dos leads de anúncio, a cada minuto.
 const pararConversoes = iniciarConversoes({ pool, log });
+// Ligações: transcrição e resumo depois de cada uma; fecha as esquecidas abertas.
+const pararLigacoes = iniciarLigacoes({ pool, log, servicos, telefonia });
 // Marca própria: domínios ativos dos clientes (links e origens) e conferência dos que esperam o DNS.
 const pararListaDominios = manterDominios(pool, (erro) =>
   log.warn({ err: erro }, 'marca: lista de domínios falhou'),
@@ -120,6 +128,7 @@ encerrarAoReceberSinal(log, async () => {
   pararSinal();
   pararConteudo();
   pararConversoes();
+  pararLigacoes();
   pararListaDominios();
   pararDominios();
   processamento.parar();

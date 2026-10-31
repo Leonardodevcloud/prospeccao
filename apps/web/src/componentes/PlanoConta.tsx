@@ -245,6 +245,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
       recursosExtras: [...(props.p.recursosExtras ?? [])] as Recurso[],
       horas: props.p.limiteHorasReuniaoProprio != null ? String(props.p.limiteHorasReuniaoProprio) : '',
       conversas: props.p.limiteConversasIaProprio != null ? String(props.p.limiteConversasIaProprio) : '',
+      minutos: props.p.limiteMinutosLigacaoProprio != null ? String(props.p.limiteMinutosLigacaoProprio) : '',
     };
   };
   const [f, setF] = useState(inicial);
@@ -269,6 +270,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
           recursosExtras: f.recursosExtras.filter((r) => !recursosDoPlano.includes(r)),
           horasReuniao: inteiroOuNulo(f.horas),
           conversasIa: inteiroOuNulo(f.conversas),
+          minutosLigacao: inteiroOuNulo(f.minutos),
         },
       }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['master'] }),
@@ -284,6 +286,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
       recursosExtras: f.recursosExtras,
       horasReuniao: inteiroOuNulo(f.horas),
       conversasIa: inteiroOuNulo(f.conversas),
+      minutosLigacao: inteiroOuNulo(f.minutos),
     },
     tabela,
   );
@@ -460,6 +463,22 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
                 />
               </div>
             </div>
+            {f.modulos.includes('ligacoes') && (
+              <div className="campo">
+                <label htmlFor="pl-minutos">Minutos de ligação por mês</label>
+                <input
+                  id="pl-minutos"
+                  className="filtro mono"
+                  inputMode="numeric"
+                  placeholder={`Padrão: ${fmtNumero(tabela.minutosLigacao)}`}
+                  value={f.minutos}
+                  onChange={(e) => setF({ ...f, minutos: e.target.value.replace(/\D/g, '') })}
+                />
+                <span className="campo__dica">
+                  Passou da franquia: {fmtReais(tabela.minutoExtra)} por minuto, cobrado à parte.
+                </span>
+              </div>
+            )}
           </div>
 
           <aside className="plano-conta" aria-live="polite">
@@ -680,6 +699,16 @@ export function TabelaDePrecos() {
           )}
           {campo('tp-numero-extra', 'Cada número de WhatsApp extra (R$/mês)', t.numeroExtra, (v) =>
             setT({ ...t, numeroExtra: v }),
+          )}
+          {campo(
+            'tp-minutos',
+            'Minutos de ligação por mês (no módulo Ligações)',
+            t.minutosLigacao,
+            (v) => setT({ ...t, minutosLigacao: Math.round(v) }),
+            false,
+          )}
+          {campo('tp-minuto-extra', 'Cada minuto de ligação além da franquia (R$)', t.minutoExtra, (v) =>
+            setT({ ...t, minutoExtra: v }),
           )}
           {campoLimite('tp-conversas', 'Conversas do Agente de IA por mês', t.conversasIaMes, (v) =>
             setT({ ...t, conversasIaMes: v }),

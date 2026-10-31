@@ -1,4 +1,4 @@
-import type { Recurso } from '@prospeccao/shared/planos';
+import type { Modulo, Recurso } from '@prospeccao/shared/planos';
 import { Icon } from '@prospeccao/ui';
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
@@ -20,7 +20,7 @@ export interface ItemMenu {
   /** Só aparece em conta com plano (cliente). */
   comPlano?: boolean;
   /** Só aparece se a conta tem algum destes módulos no plano. */
-  modulos?: ('whatsapp' | 'agente_ia' | 'email')[];
+  modulos?: Modulo[];
   /** Só para o gestor e a leitura da organização. */
   organizacao?: boolean;
   /** Recurso do plano: sem ele, o item aparece com cadeado e a tela explica como liberar. */
@@ -73,6 +73,7 @@ export const MENU_CRM: EntradaMenu[] = [
     itens: [
       { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
       { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle' },
+      { para: '/ligacoes', rotulo: 'Ligações', icone: 'phone', modulos: ['ligacoes'] },
       { para: '/reunioes', rotulo: 'Reuniões', icone: 'video' },
       { para: '/rua', rotulo: 'Na rua', icone: 'route', recurso: 'rua' },
     ],
@@ -103,6 +104,7 @@ export const MENU_CRM: EntradaMenu[] = [
     itens: [
       { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up' },
       { para: '/equipe', rotulo: 'Equipe', icone: 'id-card' },
+      { para: '/telefonia', rotulo: 'Telefonia', icone: 'phone', admin: true, modulos: ['ligacoes'] },
       { para: '/marca', rotulo: 'Marca e domínio', icone: 'image', admin: true, recurso: 'marca' },
       { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', comPlano: true },
       { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', admin: true, recurso: 'seguranca' },
