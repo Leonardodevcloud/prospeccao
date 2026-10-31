@@ -1,7 +1,6 @@
-import type { Recurso } from '@prospeccao/shared/planos';
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Fragment, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { type Alerta, api, ErroApi, ROTULO_PAPEL_QUALQUER, ROTULO_PAPEL_USUARIO } from '../api';
 import { useAgentePendente } from '../paginas/Agente';
@@ -18,106 +17,17 @@ import { AceitarTermos, DuasEtapasObrigatoria, useAplicarMarca } from './ContaSe
 import { CartaoDemonstracao, FaixaDemonstracao } from './Demonstracao';
 import { ForaDoPlano, recursoDaTela } from './ForaDoPlano';
 import { Logo, TecnologiaProspectTeam } from './Marca';
+import {
+  BarraDeBaixo,
+  type ContextoMenu,
+  FolhaMais,
+  MENU_CRM,
+  MENU_PLATAFORMA,
+  MenuLateral,
+  type Selo,
+} from './Menu';
 import { MinhaConta } from './MinhaConta';
 import { Dono, TELAS_DA_LEITURA, useSessao } from './Sessao';
-
-/**
- * Itens do menu, na ordem do trabalho: o dia, achar os leads (prospecção), vender e acompanhar
- * (gestão). "admin" só aparece para o administrador e "master" só para quem administra a plataforma.
- */
-const ITENS: {
-  para: string;
-  rotulo: string;
-  icone: string;
-  /** Título do grupo (aparece antes do primeiro item visível do grupo). */
-  secao?: 'Prospecção' | 'Vendas' | 'Argos' | 'Gestão' | 'Plataforma';
-  fim?: boolean;
-  admin?: boolean;
-  master?: boolean;
-  /** Só aparece em conta com plano (cliente). */
-  comPlano?: boolean;
-  /** Só aparece se a conta tem algum destes módulos no plano. */
-  modulos?: ('whatsapp' | 'agente_ia' | 'email')[];
-  /** Só para o gestor e a leitura da organização. */
-  organizacao?: boolean;
-  /** Recurso do plano: sem ele, o item aparece com cadeado e a tela explica como liberar. */
-  recurso?: Recurso;
-}[] = [
-  { para: '/hoje', rotulo: 'Meu dia', icone: 'calendar' },
-  { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers', secao: 'Prospecção' },
-  { para: '/nichos', rotulo: 'Nichos', icone: 'store', secao: 'Prospecção', admin: true },
-  { para: '/', rotulo: 'Leads', icone: 'users', secao: 'Prospecção', fim: true },
-  {
-    para: '/atividade',
-    rotulo: 'Atividade',
-    icone: 'clock',
-    secao: 'Prospecção',
-    admin: true,
-    recurso: 'relatorios',
-  },
-  { para: '/funil', rotulo: 'Funil', icone: 'kanban', secao: 'Vendas' },
-  { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle', secao: 'Vendas' },
-  { para: '/reunioes', rotulo: 'Reuniões', icone: 'video', secao: 'Vendas' },
-  { para: '/rua', rotulo: 'Na rua', icone: 'route', secao: 'Vendas', recurso: 'rua' },
-  { para: '/email', rotulo: 'E-mail', icone: 'mail', secao: 'Vendas', modulos: ['email'] },
-  { para: '/agente', rotulo: 'Agente', icone: 'bot', secao: 'Vendas', modulos: ['whatsapp', 'agente_ia'] },
-  { para: '/argos', rotulo: 'Argos', icone: 'orbit', secao: 'Argos', fim: true, recurso: 'argos' },
-  { para: '/argos/mapa', rotulo: 'Mapa do conhecimento', icone: 'globe', secao: 'Argos', recurso: 'argos' },
-  {
-    para: '/organizacao',
-    rotulo: 'Painel da organização',
-    icone: 'layout-dashboard',
-    secao: 'Gestão',
-    organizacao: true,
-    fim: true,
-  },
-  {
-    para: '/organizacao/gestao',
-    rotulo: 'Unidades e pessoas',
-    icone: 'building-2',
-    secao: 'Gestão',
-    organizacao: true,
-  },
-  { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up', secao: 'Gestão' },
-  { para: '/equipe', rotulo: 'Equipe', icone: 'id-card', secao: 'Gestão' },
-  {
-    para: '/marca',
-    rotulo: 'Marca e domínio',
-    icone: 'image',
-    secao: 'Gestão',
-    admin: true,
-    recurso: 'marca',
-  },
-  { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', secao: 'Gestão', comPlano: true },
-  {
-    para: '/auditoria',
-    rotulo: 'Auditoria',
-    icone: 'list-filter',
-    secao: 'Gestão',
-    admin: true,
-    recurso: 'seguranca',
-  },
-  { para: '/ajuda', rotulo: 'Ajuda', icone: 'circle-help', secao: 'Gestão' },
-  {
-    para: '/plataforma',
-    rotulo: 'Painel da plataforma',
-    icone: 'layout-dashboard',
-    secao: 'Plataforma',
-    master: true,
-    fim: true,
-  },
-];
-
-/** Menu do painel da plataforma (só o master): o negócio, não a prospecção de uma conta. */
-const ITENS_PLATAFORMA: { para: string; rotulo: string; icone: string; secao?: string; fim?: boolean }[] = [
-  { para: '/plataforma', rotulo: 'Visão geral', icone: 'layout-dashboard', fim: true },
-  { para: '/plataforma/vendas', rotulo: 'Vendas', icone: 'kanban', secao: 'Comercial' },
-  { para: '/plataforma/clientes', rotulo: 'Clientes', icone: 'building-2', secao: 'Clientes' },
-  { para: '/plataforma/financeiro', rotulo: 'Financeiro', icone: 'trending-up', secao: 'Clientes' },
-  { para: '/plataforma/configuracoes', rotulo: 'Configurações', icone: 'settings', secao: 'Sistema' },
-  { para: '/plataforma/operacao', rotulo: 'Operação', icone: 'activity', secao: 'Sistema' },
-  { para: '/base-cnpj', rotulo: 'Base CNPJ', icone: 'landmark', secao: 'Sistema' },
-];
 
 /** Telas do painel da plataforma (menu próprio). */
 export const ehTelaDaPlataforma = (caminho: string) =>
@@ -205,6 +115,9 @@ export function Shell() {
   const sessao = useSessao();
   const [conta, setConta] = useState(false);
   const [avisosAbertos, setAvisosAbertos] = useState(false);
+  // "Mais" do celular (a folha com todas as telas).
+  const [mais, setMais] = useState(false);
+  const fecharMais = useCallback(() => setMais(false), []);
   const avisos = useAvisos();
   useAvisosNoNavegador(avisos.data?.itens, avisos.data?.naoLidas ?? 0);
   const naoLidas = useConversasNaoLidas().data?.naoLidas ?? 0;
@@ -267,127 +180,89 @@ export function Shell() {
   if (soLeitura && !TELAS_DA_LEITURA.includes(local.pathname) && !local.pathname.startsWith('/reunioes/'))
     return <Navigate to="/organizacao" replace />;
 
+  const papel = sessao.data
+    ? sessao.data.papelOrganizacao
+      ? ROTULO_PAPEL_QUALQUER[sessao.data.papelOrganizacao]
+      : ROTULO_PAPEL_USUARIO[sessao.data.papel]
+    : '';
+  const selos: Record<string, Selo> = {
+    '/hoje': { n: doDia, titulo: 'Tarefas e follow-ups atrasados ou para hoje' },
+    '/conversas': { n: naoLidas, marca: true, titulo: 'Conversas com mensagem não lida' },
+    '/email': { n: respostasEmail, marca: true, titulo: 'Respostas de e-mail não lidas' },
+    '/funil': { n: pendentes, titulo: 'Follow-ups vencidos ou para hoje' },
+    '/agente': { n: doAgente, titulo: 'Mensagens para revisar e leads que a IA passou para você' },
+    '/plataforma': { n: pedidosNovos, marca: true, titulo: 'Pedidos de demonstração novos' },
+    '/plataforma/vendas': { n: pedidosNovos, marca: true, titulo: 'Pedidos de demonstração novos' },
+    '/atividade': { vivo: ativo },
+  };
+  const ctxMenu: ContextoMenu = {
+    entradas: plataforma ? MENU_PLATAFORMA : MENU_CRM,
+    plataforma,
+    visivel: (i) =>
+      plataforma
+        ? true
+        : soLeitura
+          ? TELAS_DA_LEITURA.includes(i.para)
+          : i.master
+            ? !!sessao.data?.master
+            : i.organizacao
+              ? !!sessao.data?.papelOrganizacao
+              : (!i.admin || sessao.data?.papel === 'admin') &&
+                (!i.comPlano || !!sessao.data?.conta.plano) &&
+                (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
+    temRecurso: (r) => plataforma || recursos.includes(r),
+    selo: (para) => selos[para] ?? null,
+  };
+
+  /** Marca no topo do menu (e, compacta, na barra de cima do celular). */
+  const marcaDoMenu = (compacta = false) => {
+    const escura = menuEscuro && !compacta;
+    const logo = compacta ? (marca?.logo ?? null) : logoDoMenu;
+    if (logo)
+      return (
+        <div className={`nav__marca nav__marca--logo${compacta ? ' nav__marca--compacta' : ''}`}>
+          <span className={`nav__logo-larga${escura && logoNaPlaca ? ' nav__logo-larga--placa' : ''}`}>
+            <img src={`/api${logo}`} alt={marca?.nome ?? sessao.data?.organizacao?.nome ?? 'Logo'} />
+          </span>
+          {!compacta && sessao.data?.conta && (
+            <span className="nav__conta-nome">{sessao.data.conta.nome}</span>
+          )}
+        </div>
+      );
+    return (
+      <div className={`nav__marca${compacta ? ' nav__marca--compacta' : ''}`}>
+        {marca?.icone ? (
+          <img className="nav__logo-cliente" src={`/api${marca.icone}`} alt="" />
+        ) : (
+          <Logo tamanho={compacta ? 26 : 30} escuro={escura} />
+        )}
+        <span className="nav__marca-texto">
+          {marca?.nome || marca?.icone ? (marca.nome ?? sessao.data?.organizacao?.nome) : 'Prospect Team'}
+          <span className="nav__conta-nome">
+            {plataforma ? 'Painel da plataforma' : (sessao.data?.conta.nome ?? '')}
+          </span>
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div className="app">
+      <header className="barra-topo">
+        {marcaDoMenu(true)}
+        <span className="barra-topo__espaco" />
+        <BotaoAvisos naoLidas={avisos.data?.naoLidas ?? 0} aoAbrir={() => setAvisosAbertos(true)} />
+        <button type="button" className="barra-topo__eu" onClick={() => setConta(true)} title="Minha conta">
+          <Dono id={sessao.data?.id ?? null} nome={sessao.data?.nome ?? null} tamanho={30} rotulo="" />
+        </button>
+      </header>
       <nav className={`nav${menuEscuro ? ' nav--escura' : ''}`} aria-label="Navegação principal">
-        {logoDoMenu ? (
-          // A logo completa (com o nome) no topo do menu; embaixo, a unidade.
-          <div className="nav__marca nav__marca--logo">
-            <span className={`nav__logo-larga${logoNaPlaca ? ' nav__logo-larga--placa' : ''}`}>
-              <img src={`/api${logoDoMenu}`} alt={marca?.nome ?? sessao.data?.organizacao?.nome ?? 'Logo'} />
-            </span>
-            {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
-          </div>
-        ) : marca?.nome || marca?.icone ? (
-          <div className="nav__marca nav__marca--cliente">
-            {marca.icone ? (
-              <img className="nav__logo-cliente" src={`/api${marca.icone}`} alt="" />
-            ) : (
-              <Logo tamanho={30} escuro={menuEscuro} />
-            )}
-            <span className="nav__marca-texto">
-              {marca.nome ?? sessao.data?.organizacao?.nome}
-              {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
-            </span>
-          </div>
-        ) : (
-          <div className="nav__marca">
-            <Logo tamanho={30} />
-            <span className="nav__marca-texto">
-              Prospect Team
-              {plataforma ? (
-                <span className="nav__conta-nome">Painel da plataforma</span>
-              ) : (
-                sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>
-              )}
-            </span>
-          </div>
-        )}
-        {plataforma && (
-          <>
-            {ITENS_PLATAFORMA.map((i, n) => (
-              <Fragment key={i.para}>
-                {i.secao && i.secao !== ITENS_PLATAFORMA[n - 1]?.secao && (
-                  <span className="nav__secao">{i.secao}</span>
-                )}
-                <NavLink to={i.para} end={i.fim} className="nav__link">
-                  <Icon name={i.icone} size={16} />
-                  {i.rotulo}
-                  {i.para === '/plataforma/vendas' && pedidosNovos > 0 && (
-                    <span className="nav__conta nav__conta--marca" title="Pedidos de demonstração novos">
-                      {pedidosNovos}
-                    </span>
-                  )}
-                </NavLink>
-              </Fragment>
-            ))}
-            <CartaoDemonstracao />
-          </>
-        )}
+        {marcaDoMenu()}
         {!plataforma && sessao.data?.papelOrganizacao && (sessao.data.organizacao?.unidades ?? 0) > 1 && (
           <TrocarUnidade />
         )}
-        {!plataforma &&
-          ITENS.filter((i) =>
-            soLeitura
-              ? TELAS_DA_LEITURA.includes(i.para)
-              : i.master
-                ? !!sessao.data?.master
-                : i.organizacao
-                  ? !!sessao.data?.papelOrganizacao
-                  : (!i.admin || sessao.data?.papel === 'admin') &&
-                    (!i.comPlano || !!sessao.data?.conta.plano) &&
-                    (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
-          ).map((i, n, visiveis) => (
-            <Fragment key={i.para}>
-              {i.secao && i.secao !== visiveis[n - 1]?.secao && <span className="nav__secao">{i.secao}</span>}
-              <NavLink to={i.para} end={i.fim} className="nav__link">
-                <Icon name={i.icone} size={16} />
-                {i.rotulo}
-                {i.recurso && !recursos.includes(i.recurso) && (
-                  <span className="nav__cadeado" title="Fora do seu plano">
-                    <Icon name="lock" size={12} label="Fora do seu plano" />
-                  </span>
-                )}
-                {i.para === '/hoje' && doDia > 0 && (
-                  <span className="nav__conta" title="Tarefas e follow-ups atrasados ou para hoje">
-                    {doDia}
-                  </span>
-                )}
-                {i.para === '/conversas' && naoLidas > 0 && (
-                  <span className="nav__conta nav__conta--marca" title="Conversas com mensagem não lida">
-                    {naoLidas}
-                  </span>
-                )}
-                {i.para === '/email' && respostasEmail > 0 && (
-                  <span className="nav__conta nav__conta--marca" title="Respostas de e-mail não lidas">
-                    {respostasEmail}
-                  </span>
-                )}
-                {i.para === '/funil' && pendentes > 0 && (
-                  <span className="nav__conta" title="Follow-ups vencidos ou para hoje">
-                    {pendentes}
-                  </span>
-                )}
-                {i.para === '/agente' && doAgente > 0 && (
-                  <span
-                    className="nav__conta"
-                    title="Mensagens para revisar e leads que a IA passou para você"
-                  >
-                    {doAgente}
-                  </span>
-                )}
-                {i.para === '/plataforma' && pedidosNovos > 0 && (
-                  <span className="nav__conta nav__conta--marca" title="Pedidos de demonstração novos">
-                    {pedidosNovos}
-                  </span>
-                )}
-                {i.para === '/atividade' && ativo && (
-                  <span className="vivo nav__vivo" role="img" aria-label="trabalhando agora" />
-                )}
-              </NavLink>
-            </Fragment>
-          ))}
+        <MenuLateral ctx={ctxMenu} />
+        {plataforma && <CartaoDemonstracao />}
         <div className="nav__rodape">
           <div className="nav__eu">
             <button
@@ -399,24 +274,71 @@ export function Shell() {
               <Dono id={sessao.data?.id ?? null} nome={sessao.data?.nome ?? null} tamanho={28} rotulo="" />
               <span className="nav__eu-texto">
                 <b>{sessao.data?.nome}</b>
-                <span>
-                  {sessao.data
-                    ? sessao.data.papelOrganizacao
-                      ? ROTULO_PAPEL_QUALQUER[sessao.data.papelOrganizacao]
-                      : ROTULO_PAPEL_USUARIO[sessao.data.papel]
-                    : ''}
-                </span>
+                <span>{papel}</span>
               </span>
             </button>
-            <BotaoAvisos naoLidas={avisos.data?.naoLidas ?? 0} aoAbrir={() => setAvisosAbertos(true)} />
           </div>
-          <Button variant="ghost" size="sm" icon="log-out" onClick={() => sair.mutate()}>
-            Sair
-          </Button>
+          <div className="nav__icones">
+            <NavLink to="/ajuda" className="nav__icone" title="Ajuda" aria-label="Ajuda">
+              <Icon name="circle-help" size={18} />
+            </NavLink>
+            <BotaoAvisos naoLidas={avisos.data?.naoLidas ?? 0} aoAbrir={() => setAvisosAbertos(true)} />
+            <button
+              type="button"
+              className="nav__icone"
+              title="Sair"
+              aria-label="Sair"
+              onClick={() => sair.mutate()}
+            >
+              <Icon name="log-out" size={18} />
+            </button>
+          </div>
           {/* Com a marca do cliente, o Prospect Team fica só aqui, discreto. */}
           {!plataforma && marca && <TecnologiaProspectTeam className="nav__tecnologia" />}
         </div>
       </nav>
+      <BarraDeBaixo ctx={ctxMenu} maisAberto={mais} aoMais={() => setMais((x) => !x)} />
+      {mais && (
+        <FolhaMais
+          ctx={ctxMenu}
+          aoFechar={fecharMais}
+          topo={
+            plataforma ? (
+              <CartaoDemonstracao />
+            ) : sessao.data?.papelOrganizacao && (sessao.data.organizacao?.unidades ?? 0) > 1 ? (
+              <TrocarUnidade />
+            ) : null
+          }
+          rodape={
+            <>
+              <NavLink to="/ajuda" className="folha-mais__acao">
+                <Icon name="circle-help" size={18} />
+                Ajuda
+              </NavLink>
+              <button
+                type="button"
+                className="folha-mais__acao"
+                onClick={() => {
+                  fecharMais();
+                  setConta(true);
+                }}
+              >
+                <Icon name="user-round" size={18} />
+                Minha conta
+              </button>
+              <button
+                type="button"
+                className="folha-mais__acao folha-mais__acao--sair"
+                onClick={() => sair.mutate()}
+              >
+                <Icon name="log-out" size={18} />
+                Sair
+              </button>
+              {!plataforma && marca && <TecnologiaProspectTeam className="folha-mais__tecnologia" />}
+            </>
+          }
+        />
+      )}
       <main className="conteudo">
         <FaixaDemonstracao />
         {sessao.data?.foraDaPropria &&

@@ -283,6 +283,11 @@ export function Funil() {
   const [configurando, setConfigurando] = useState(false);
   const [editando, setEditando] = useState(false);
   const [novoLead, setNovoLead] = useState<InicialNovoLead | null>(null);
+  // No celular os filtros ficam guardados atrás do botão "Filtros".
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const filtrosAtivos = [ordem !== 'manual', dias, etiqueta, campanhaId, faixa, responsavel].filter(
+    Boolean,
+  ).length;
 
   const pipelines = usePipelines();
   const pedido = Number(params.get('pipeline')) || null;
@@ -517,7 +522,7 @@ export function Funil() {
         ))}
       </div>
 
-      <div className="barra">
+      <div className="barra barra--recolhivel" data-aberta={filtrosAbertos || undefined}>
         <TextField
           rotulo="Buscar no funil"
           rotuloOculto
@@ -533,6 +538,16 @@ export function Funil() {
           onClick={() => mudar({ pendentes: pendentes ? null : '1' })}
         >
           Follow-ups de hoje{quadro.data ? ` (${fmtNumero(quadro.data.pendentes)})` : ''}
+        </Button>
+        <Button
+          className="so-celular"
+          icon="list-filter"
+          variant="secondary"
+          aria-expanded={filtrosAbertos}
+          aria-controls="funil-ordem"
+          onClick={() => setFiltrosAbertos((v) => !v)}
+        >
+          Filtros{filtrosAtivos ? ` (${filtrosAtivos})` : ''}
         </Button>
         <label className="pp-sr" htmlFor="funil-ordem">
           Ordenar

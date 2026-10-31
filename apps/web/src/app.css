@@ -111,36 +111,348 @@ a:hover {
   gap: var(--space-4);
 }
 
+/* Celular e tablet em pé: barra fina em cima, atalhos embaixo e "Mais" (o menu lateral some). */
+.barra-topo,
+.barra-baixo {
+  display: none;
+}
 @media (max-width: 860px) {
+  .app {
+    --barra-topo: 56px;
+    --barra-baixo: calc(64px + env(safe-area-inset-bottom));
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
   .nav {
-    flex: 1 1 100%;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    position: static;
-    align-self: auto;
-    height: auto;
-    overflow: visible;
-    padding: var(--space-3);
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .nav__marca {
-    padding: 0 var(--space-3) 0 var(--space-2);
-  }
-  .nav__rodape {
-    position: static;
-    margin: 0 0 0 auto;
-    padding: 0;
-    border: 0;
-    display: flex;
-    align-items: center;
-  }
-  .nav__usuario {
     display: none;
   }
+  .barra-topo {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--barra-topo);
+    padding: 0 var(--space-3) 0 var(--space-4);
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .barra-topo__espaco {
+    flex: 1;
+  }
+  .barra-topo__eu {
+    all: unset;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .barra-topo__eu:focus-visible {
+    box-shadow: var(--focus-ring);
+  }
+  .barra-baixo {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    height: var(--barra-baixo);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+  }
   .conteudo {
-    padding: var(--space-4);
+    padding: var(--space-4) var(--space-4) calc(var(--barra-baixo) + var(--space-5));
+  }
+}
+.nav__marca--compacta {
+  min-width: 0;
+  padding: 0;
+  font-size: 14px;
+}
+.nav__marca--compacta .nav__logo-larga img {
+  max-width: 150px;
+  max-height: 30px;
+}
+.nav__marca--compacta .nav__marca-texto {
+  min-width: 0;
+}
+.barra-baixo__item {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.barra-baixo__item[aria-current="page"],
+.barra-baixo__item[data-ativo] {
+  color: var(--brand);
+  font-weight: 600;
+}
+.barra-baixo__item:focus-visible {
+  box-shadow: inset var(--focus-ring);
+}
+.barra-baixo__icone {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 28px;
+  border-radius: var(--radius-full);
+}
+.barra-baixo__item[aria-current="page"] .barra-baixo__icone {
+  background: var(--brand-soft);
+}
+.barra-baixo__conta {
+  position: absolute;
+  top: -4px;
+  left: 26px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+}
+.barra-baixo__conta--marca {
+  background: #b91c1c;
+  color: #fff;
+}
+
+/* Menu lateral em grupos */
+.nav__grupo {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+.nav__grupo:hover {
+  background: var(--surface-sunken);
+}
+.nav__grupo:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.nav__grupo[data-ativo] {
+  background: var(--surface-sunken);
+}
+.nav__seta {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--ink-muted);
+  transform: rotate(-90deg);
+  transition: transform 150ms ease;
+}
+.nav__grupo .nav__conta + .nav__seta {
+  margin-left: 6px;
+}
+.nav__grupo[aria-expanded="true"] .nav__seta {
+  transform: none;
+}
+.nav__sub {
+  display: grid;
+  gap: 1px;
+  margin: 0 0 var(--space-1) 15px;
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--line);
+}
+.nav__sub[hidden] {
+  display: none;
+}
+.nav__link--sub {
+  height: 32px;
+}
+.nav__icones {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav__icone {
+  all: unset;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.nav__icone:hover,
+.nav__icone[aria-current="page"] {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+.nav__icone:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav__seta {
+    transition: none;
+  }
+}
+
+/* "Mais" do celular */
+.folha-mais {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+}
+.folha-mais__fundo {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  animation: aparecer 160ms ease;
+}
+.folha-mais__painel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 86dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+  border-radius: 18px 18px 0 0;
+  background: var(--surface);
+  animation: folha-sobe 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  outline: none;
+}
+@keyframes folha-sobe {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+.folha-mais__puxador {
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 0 auto var(--space-3);
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+.folha-mais__grupo {
+  margin-top: var(--space-3);
+}
+.folha-mais__titulo {
+  margin: 0 0 var(--space-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.folha-mais__grade {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.folha-mais__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 2px 8px;
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 14px;
+  text-align: center;
+  text-decoration: none;
+}
+.folha-mais__item[aria-current="page"] {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+.folha-mais__item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.folha-mais__icone {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+.folha-mais__icone .barra-baixo__conta {
+  left: 12px;
+}
+.folha-mais__rotulo {
+  overflow-wrap: anywhere;
+}
+.folha-mais__cadeado {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  color: var(--ink-muted);
+}
+.folha-mais__rodape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+.folha-mais__acao {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.folha-mais__acao:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.folha-mais__acao--sair {
+  margin-left: auto;
+  color: var(--danger);
+}
+.folha-mais__tecnologia {
+  flex-basis: 100%;
+  text-align: center;
+}
+.folha-mais .nav__demo,
+.folha-mais .nav__unidade {
+  margin: 0 0 var(--space-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .folha-mais__painel,
+  .folha-mais__fundo {
+    animation: none;
   }
 }
 
@@ -2506,7 +2818,8 @@ a.botao-icone {
   .inbox {
     grid-template-columns: 1fr;
     flex: none;
-    height: calc(100dvh - 140px);
+    /* A altura que sobra entre as barras de cima e de baixo. */
+    height: calc(100dvh - var(--barra-topo, 0px) - var(--barra-baixo, 0px) - 2 * var(--space-4));
   }
   .inbox__lista {
     border-right: 0;
@@ -10713,5 +11026,169 @@ button.tempo-reuniao:focus-visible {
   }
   .marca-nome {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- v89: telas no celular ---------- */
+.so-celular {
+  display: none;
+}
+@media (max-width: 860px) {
+  .so-celular {
+    display: inline-flex;
+  }
+  /* Filtros guardados atrás do botão "Filtros" (ex.: funil). */
+  .barra--recolhivel:not([data-aberta]) > select.filtro {
+    display: none;
+  }
+  .barra--recolhivel > select.filtro {
+    flex: 1 1 calc(50% - var(--space-2));
+    min-width: 0;
+  }
+
+  /* Tabelas viram cartões: o título da coluna vem antes de cada valor; a 1ª coluna é o título do cartão. */
+  .conteudo .pp-tablewrap {
+    overflow: visible;
+    border: 0;
+    background: none;
+  }
+  .conteudo .pp-table,
+  .conteudo .pp-table tbody,
+  .conteudo .pp-table tfoot {
+    display: grid;
+    gap: var(--space-2);
+  }
+  .conteudo .pp-table thead {
+    display: none;
+  }
+  .conteudo .pp-table tr {
+    position: relative;
+    display: grid;
+    gap: 2px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  /* Nome da coluna à esquerda e o valor à direita (o que for mais largo, como barras, desce). */
+  .conteudo .pp-table td {
+    display: flow-root;
+    height: auto;
+    min-height: 26px;
+    padding: 3px 0;
+    border: 0;
+    text-align: right;
+  }
+  .conteudo .pp-table td::before {
+    content: attr(data-rotulo);
+    float: left;
+    max-width: 45%;
+    margin-right: var(--space-3);
+    color: var(--ink-muted);
+    font-family: var(--font-sans, inherit);
+    font-size: 12px;
+    line-height: 20px;
+    text-align: left;
+  }
+  .conteudo .pp-table td[data-rotulo=""]::before {
+    display: none;
+  }
+  /* A primeira coluna de conteúdo é o título do cartão (sem o nome da coluna, alinhada à esquerda). */
+  .conteudo .pp-table td:first-child:not(.col-marcar):not(.pp-col-check),
+  .conteudo .pp-table td.col-marcar + td,
+  .conteudo .pp-table td.pp-col-check + td {
+    display: block;
+    padding-right: 28px;
+    text-align: left;
+    font-size: 15px;
+  }
+  .conteudo .pp-table td:first-child:not(.col-marcar):not(.pp-col-check)::before,
+  .conteudo .pp-table td.col-marcar + td::before,
+  .conteudo .pp-table td.pp-col-check + td::before {
+    display: none;
+  }
+  /* A caixinha de marcar vai para o canto do cartão. */
+  .conteudo .pp-table td.col-marcar,
+  .conteudo .pp-table td.pp-col-check {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: auto;
+    min-height: 0;
+    padding: 0;
+  }
+  .conteudo .pp-table td.col-marcar::before,
+  .conteudo .pp-table td.pp-col-check::before {
+    display: none;
+  }
+  .conteudo .pp-cell-empresa {
+    min-width: 0;
+  }
+
+  /* Funil: uma etapa por vez, deslizando para o lado. */
+  .quadro {
+    scroll-snap-type: x mandatory;
+    gap: var(--space-2);
+    margin: 0 calc(-1 * var(--space-4));
+    padding: 0 var(--space-4) var(--space-2);
+    scroll-padding: 0 var(--space-4);
+  }
+  .coluna {
+    flex: 0 0 86%;
+    scroll-snap-align: start;
+    max-height: calc(100dvh - var(--barra-topo, 0px) - var(--barra-baixo, 0px) - 200px);
+  }
+  .quadro-vendas {
+    grid-template-columns: repeat(6, 82%);
+    scroll-snap-type: x mandatory;
+  }
+  .quadro-vendas__coluna {
+    scroll-snap-align: start;
+  }
+
+  /* Cabeçalho das telas e abas. */
+  .topo h1 {
+    font-size: 24px;
+    line-height: 30px;
+  }
+  .topo {
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+  .pipelines {
+    scrollbar-width: none;
+  }
+  .pipelines::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Faixas e avisos mais compactos. */
+  .faixa-conta,
+  .faixa-alerta {
+    padding: var(--space-2);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .faixa-conta > span {
+    flex-basis: 100%;
+  }
+  .faixa-conta--demo > svg {
+    display: none;
+  }
+  .faixa-conta--demo .pp-btn {
+    flex: 1 1 auto;
+  }
+
+  /* Gavetas (ficha do lead etc.): tela toda, com menos margem. */
+  .drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+  .drawer__barra {
+    padding-left: var(--space-4);
+  }
+  .drawer__corpo {
+    padding: var(--space-4);
+    gap: var(--space-5);
   }
 }

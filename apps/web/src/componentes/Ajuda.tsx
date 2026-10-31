@@ -67,6 +67,64 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'menu-e-celular',
+    area: 'Começo',
+    titulo: 'O menu e o uso no celular',
+    resumo: 'Onde fica cada tela, como abrir os grupos do menu e como usar o sistema pelo celular.',
+    onde: { rotulo: 'Meu dia', para: '/hoje' },
+    termos: 'menu celular mobile aplicativo grupos mais barra navegação',
+    corpo: (
+      <>
+        <p>
+          No computador, o menu do lado esquerdo junta as telas em grupos. Clique no nome do grupo para abrir
+          ou fechar. O grupo da tela em que você está abre sozinho, e o sistema lembra quais você deixou
+          abertos.
+        </p>
+        <ul>
+          <li>
+            <b>Meu dia</b>: o que fazer hoje.
+          </li>
+          <li>
+            <b>Prospecção</b>: Leads, Campanhas, Nichos e Atividade.
+          </li>
+          <li>
+            <b>Vendas</b>: Funil, Conversas, Reuniões e Na rua.
+          </li>
+          <li>
+            <b>Automação</b>: E-mail e Agente de IA.
+          </li>
+          <li>
+            <b>Argos</b>: o assistente e o mapa do conhecimento.
+          </li>
+          <li>
+            <b>Gestão</b>: Relatórios, Equipe, Marca e domínio, Meu plano e Auditoria.
+          </li>
+        </ul>
+        <p>
+          Com o grupo fechado, o número ao lado dele soma o que está esperando você lá dentro (por exemplo,
+          conversas não lidas). Ajuda, avisos e sair ficam nos ícones do rodapé do menu.
+        </p>
+        <p>
+          <b>No celular</b>, o menu vira uma barra embaixo da tela com <b>Meu dia</b>, <b>Leads</b>,{' '}
+          <b>Funil</b> e <b>Conversas</b>. O botão <b>Mais</b> abre todas as outras telas, a ajuda, a sua
+          conta e o sair. Em cima ficam os avisos e a sua foto (que abre a sua conta).
+        </p>
+        <Passos>
+          <li>As listas (leads, equipe, clientes…) aparecem como cartões, um embaixo do outro.</li>
+          <li>No funil, deslize para o lado para passar de uma etapa para a outra.</li>
+          <li>
+            Os filtros do funil ficam no botão <b>Filtros</b>; o número mostra quantos estão ligados.
+          </li>
+          <li>Em Conversas, toque numa conversa para abrir e use a seta para voltar à lista.</li>
+        </Passos>
+        <p>
+          Dica: no navegador do celular, use “Adicionar à tela de início” para abrir o sistema como um
+          aplicativo.
+        </p>
+      </>
+    ),
+  },
+  {
     id: 'nichos-campanhas',
     area: 'Prospecção',
     titulo: 'Nichos e campanhas',

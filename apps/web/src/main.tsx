@@ -37,6 +37,10 @@ import { ReuniaoDetalhe } from './paginas/ReuniaoDetalhe';
 import { Reunioes } from './paginas/Reunioes';
 import { EsqueciSenha, RedefinirSenha } from './paginas/Senha';
 import { PlataformaVendas } from './paginas/Vendas';
+import { rotularTabelasNoCelular } from './tabelasCelular';
+
+// Tabelas viram cartões no celular (o título da coluna vai em cada célula).
+rotularTabelasNoCelular();
 
 // Tema claro sempre (preferência da operação).
 document.documentElement.setAttribute('data-theme', 'light');
