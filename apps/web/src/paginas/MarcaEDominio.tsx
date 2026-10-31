@@ -2,12 +2,14 @@ import { contrasteComBranco } from '@prospeccao/shared/seguranca';
 import { Badge, Button, Icon, Panel } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Modal } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { SeloDaMarca } from '../componentes/Marca';
 import { fmtQuando } from '../formatar';
+import { FundosDasReunioes } from './FundosReuniao';
 
 /**
  * Marca e domínio (white label): o cliente coloca o nome, a cor, o logo, o ícone e a imagem de
@@ -116,8 +118,17 @@ function useDadosMarca() {
   });
 }
 
+type Aba = 'marca' | 'dominio' | 'fundos';
+const ABAS: { id: Aba; rotulo: string }[] = [
+  { id: 'marca', rotulo: 'Marca' },
+  { id: 'dominio', rotulo: 'Domínio próprio' },
+  { id: 'fundos', rotulo: 'Fundos das reuniões' },
+];
+
 export function MarcaEDominio() {
   const q = useDadosMarca();
+  const [params, setParams] = useSearchParams();
+  const aba: Aba = ABAS.some((a) => a.id === params.get('aba')) ? (params.get('aba') as Aba) : 'marca';
   return (
     <>
       <div className="topo">
@@ -127,18 +138,39 @@ export function MarcaEDominio() {
         </div>
         <LinkAjuda artigo="marca-dominio">Como funciona</LinkAjuda>
       </div>
+      <div className="pipelines" role="tablist" aria-label="Seções de Marca e domínio">
+        {ABAS.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            role="tab"
+            aria-selected={aba === a.id}
+            className="pipelines__aba"
+            onClick={() => setParams({ aba: a.id }, { replace: true })}
+          >
+            {a.rotulo}
+            {a.id === 'dominio' && q.data?.dominio && (
+              <span
+                className={`pipelines__conta${q.data.dominio.situacao === 'pendente' ? ' pipelines__conta--nova' : ''}`}
+              >
+                {q.data.dominio.situacao === 'ativo' ? 'ativo' : 'DNS'}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
       {q.isPending ? (
         <div className="esqueleto" style={{ height: 320 }} />
       ) : q.error || !q.data ? (
         <ErroDaApi erro={q.error} />
       ) : (
-        <Conteudo dados={q.data} />
+        <Conteudo dados={q.data} aba={aba} />
       )}
     </>
   );
 }
 
-function Conteudo(props: { dados: DadosMarca }) {
+function Conteudo(props: { dados: DadosMarca; aba: Aba }) {
   const d = props.dados;
   const [nome, setNome] = useState(d.nome ?? '');
   const [cor, setCor] = useState(d.cor ?? COR_PADRAO);
@@ -151,11 +183,17 @@ function Conteudo(props: { dados: DadosMarca }) {
     <>
       {!d.podeEditar && (
         <Mensagem tipo="aviso">
-          Só o gestor da organização muda a marca e o domínio (vale para todas as unidades). Você pode ver
-          como está.
+          Só o gestor da organização muda a marca, o domínio e os fundos (vale para todas as unidades). Você
+          pode ver como está.
         </Mensagem>
       )}
-      <div className="marca-grade">
+      {props.aba === 'dominio' && (
+        <div className="marca-dominio">
+          <PainelDominio dados={d} />
+        </div>
+      )}
+      {props.aba === 'fundos' && <FundosDasReunioes />}
+      <div className="marca-grade" hidden={props.aba !== 'marca'}>
         <div className="pilha" style={{ gap: 'var(--space-4)' }}>
           <PainelMarca
             dados={d}
@@ -167,7 +205,6 @@ function Conteudo(props: { dados: DadosMarca }) {
             setNovos={setNovos}
             previa={previa}
           />
-          <PainelDominio dados={d} />
         </div>
         <ComoFica
           nome={nomeMostrado}

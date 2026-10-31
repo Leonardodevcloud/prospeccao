@@ -8,12 +8,21 @@ import {
   type LocalVideoTrack,
   VideoPresets,
 } from 'livekit-client';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { ErroApi } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { apiSala, type InfoSala, type Liberado, type ResultadoEntrada } from './api';
+import {
+  aplicarFundo,
+  fundoInicial,
+  fundoSemEspelho,
+  lembrarFundo,
+  opcoesDeFundo,
+  suportaFundos,
+} from './fundos';
 import { pedirCapturaDaAba, podeGravarAba } from './gravador';
 import { AntesDeAbrir, quandoReuniao } from './PaginaReuniao';
+import { GradeDeFundos, marcaDaSala } from './SeletorFundo';
 import { destravarSons, ehCelular } from './sons';
 
 /** O que a pessoa escolheu antes de entrar (vale dentro da sala). */
@@ -27,6 +36,8 @@ export interface Escolhas {
   frente: 'user' | 'environment';
   /** Quem conduz no computador: a aba já liberada para a gravação (pedida no clique de entrar). */
   captura: MediaStream | null;
+  /** Fundo da câmera (nenhum, desfoque, cenário ou foto da empresa). */
+  fundo: string;
 }
 
 const NOME_GUARDADO = 'reuniao:nome';
@@ -207,6 +218,39 @@ export function Antessala(props: {
       if (/notfound|devicesnotfound|overconstrained/i.test(`${e.name} ${e.message}`)) setCamera(false);
     },
   );
+  // Fundo da câmera: já vem o que a pessoa usou da última vez (ou o padrão da empresa).
+  const marcaFundo = useMemo(() => marcaDaSala(info), [info]);
+  const opcoesFundo = useMemo(() => opcoesDeFundo(info.fundos, doTime), [info.fundos, doTime]);
+  const [comFundos] = useState(suportaFundos);
+  const [fundo, setFundo] = useState(() =>
+    comFundos ? fundoInicial(opcoesFundo, info.fundos, doTime) : 'nenhum',
+  );
+  const [aplicandoFundo, setAplicandoFundo] = useState(false);
+  const [erroFundo, setErroFundo] = useState<string | null>(null);
+  const [todosFundos, setTodosFundos] = useState(false);
+  useEffect(() => {
+    if (!video) return;
+    let vivo = true;
+    setAplicandoFundo(true);
+    aplicarFundo(video, fundo, marcaFundo)
+      .catch(() => {
+        if (!vivo) return;
+        setErroFundo('Não deu para usar o fundo neste aparelho. A câmera segue sem efeito.');
+        setFundo('nenhum');
+      })
+      .finally(() => vivo && setAplicandoFundo(false));
+    return () => {
+      vivo = false;
+    };
+  }, [video, fundo, marcaFundo]);
+  const travado = doTime && !!info.fundos?.config.travar && opcoesFundo.length === 1;
+  // Na faixa: os efeitos e os primeiros fundos (o escolhido sempre aparece); o resto em "Ver todos".
+  const curtas = useMemo(() => {
+    const lista = opcoesFundo.slice(0, 6);
+    const esc = opcoesFundo.find((o) => o.id === fundo);
+    if (esc && !lista.includes(esc)) lista[lista.length - 1] = esc;
+    return lista;
+  }, [opcoesFundo, fundo]);
   const elVideo = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = elVideo.current;
@@ -228,6 +272,7 @@ export function Antessala(props: {
     altoFalanteId: celular ? undefined : altoFalanteId,
     frente,
     captura: null,
+    fundo,
   };
   const precisaAceite = info.gravar && !doTime;
   // Quem é do time, no computador, grava a reunião pelo navegador (o Chrome pede a aba no clique).
@@ -285,6 +330,7 @@ export function Antessala(props: {
               playsInline
               autoPlay
               data-traseira={frente === 'environment' || undefined}
+              data-sem-espelho={fundoSemEspelho(fundo) || undefined}
             />
           ) : (
             <div className="as__sem-camera">
@@ -293,6 +339,12 @@ export function Antessala(props: {
             </div>
           )}
           {nome.trim() && <span className="as__nome">{nome.trim()}</span>}
+          {video && aplicandoFundo && fundo !== 'nenhum' && (
+            <span className="as__aplicando" role="status">
+              <Icon name="loader" spin size={14} />
+              Aplicando o fundo…
+            </span>
+          )}
           <div className="as__botoes">
             <button
               type="button"
@@ -336,6 +388,46 @@ export function Antessala(props: {
           </div>
         </div>
         <Medidor faixa={microfone ? audio : undefined} />
+        {comFundos && camera && (
+          <div className="as__fundos">
+            <div className="as__fundos-cab">
+              <b>Fundo</b>
+              <span className="quieto">
+                {travado
+                  ? `${info.empresa.nome} definiu o fundo das reuniões.`
+                  : 'Quem está na reunião vê o fundo escolhido, e a gravação também.'}
+              </span>
+            </div>
+            {!travado && (
+              <>
+                <GradeDeFundos
+                  opcoes={todosFundos ? opcoesFundo : curtas}
+                  escolhido={fundo}
+                  m={marcaFundo}
+                  padrao={doTime ? (info.fundos?.config.padrao ?? null) : null}
+                  empresa={info.empresa.nome}
+                  agrupar={todosFundos}
+                  colunas={todosFundos ? 4 : 6}
+                  aoEscolher={(id) => {
+                    setErroFundo(null);
+                    setFundo(id);
+                    lembrarFundo(id, doTime);
+                  }}
+                />
+                {opcoesFundo.length > curtas.length && (
+                  <button
+                    type="button"
+                    className="link-botao as__todos"
+                    onClick={() => setTodosFundos((x) => !x)}
+                  >
+                    {todosFundos ? 'Ver menos' : `Ver todos os fundos (${opcoesFundo.length})`}
+                  </button>
+                )}
+              </>
+            )}
+            {erroFundo && <Mensagem tipo="aviso">{erroFundo}</Mensagem>}
+          </div>
+        )}
         {erroCamera && <Mensagem tipo="aviso">{erroCamera}</Mensagem>}
         {erroMicrofone && <Mensagem tipo="aviso">{erroMicrofone}</Mensagem>}
         {!celular && (

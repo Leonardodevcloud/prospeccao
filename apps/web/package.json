@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@livekit/components-react": "2.9.24",
+    "@livekit/track-processors": "0.8.2",
     "@prospeccao/shared": "workspace:*",
     "@prospeccao/ui": "workspace:*",
     "@tanstack/react-query": "5.104.1",

@@ -23,6 +23,7 @@ import * as agenda from '../agenda/repositorio.js';
 import { chipParaEquipe, emUso as chipsEmUso } from '../agente/chips.js';
 import * as agente from '../agente/repositorio.js';
 import { dadosDoLead } from '../funil/cadencia.js';
+import * as fundos from '../marca/fundos.js';
 import * as repo from './repositorio.js';
 import {
   assinarArquivo,
@@ -113,6 +114,16 @@ export function rotasSalaPublica(deps: DepsApi): Router {
   const r = Router();
   const { pool, log } = deps;
   const d = () => depsServico(deps);
+  /** Fundos da empresa para a sala (ids, nomes e endereços das fotos e da logo). */
+  const fundosDaSala = async (codigo: string, contaId: number) => {
+    const f = await fundos.fundosDaConta(pool, contaId);
+    return {
+      comLogo: f.comLogo,
+      logo: f.comLogo ? `/api/salas/${codigo}/logo` : null,
+      config: f.config,
+      fotos: f.fotos.map((x) => ({ id: x.id, nome: x.nome, url: `/api/salas/${codigo}/fundos/${x.id}` })),
+    };
+  };
 
   const limitarEntrada = rateLimit({
     windowMs: 60_000,
@@ -183,9 +194,22 @@ export function rotasSalaPublica(deps: DepsApi): Router {
       anfitriao: sala.anfitriaoNome,
       presentes,
       voce: time ? { nome: usuario.nome, doTime: true } : null,
+      // Fundos da empresa (padrão, travar, fotos e a logo nos cenários): só para quem é do time.
+      fundos: time ? await fundosDaSala(sala.codigo, sala.contaId) : null,
       videoConfigurado: !!reunioes.video,
       agora: new Date(),
     });
+  });
+
+  /** Foto de fundo da empresa (só quem é do time usa). */
+  r.get('/:codigo/fundos/:id', async (req, res) => {
+    const sala = await carregarSala(deps, String(req.params.codigo));
+    const usuario = await usuarioOpcional(deps, req);
+    if (!ehDoTime(usuario, sala)) throw AppError.naoEncontrado('Foto');
+    const { organizacaoId } = await fundos.fundosDaConta(pool, sala.contaId);
+    const f = await fundos.imagemDaFoto(pool, organizacaoId, Number(req.params.id) || 0);
+    if (!f) throw AppError.naoEncontrado('Foto');
+    res.set('Cache-Control', 'private, max-age=86400').type(f.tipo).send(f.imagem);
   });
 
   r.get('/:codigo/logo', async (req, res) => {

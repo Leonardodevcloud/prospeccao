@@ -220,4 +220,57 @@ describe.skipIf(!URL_TESTE)('marca própria e domínio do cliente', () => {
     expect(linkDaSala('abcd-efgh', contaId)).not.toContain(DOMINIO);
     expect((await entrar('rui@horizonte.com.br', 'senha-forte-1', `https://${DOMINIO}`)).status).toBe(403);
   });
+
+  it('fundos das reuniões: padrão, travar, lugar da logo e fotos da empresa', async () => {
+    const antes = (await ler('/marca/fundos')).body;
+    expect(antes).toMatchObject({
+      comMarca: true,
+      podeEditar: true,
+      fotos: [],
+      config: { travar: false, simples: true, padrao: null },
+    });
+    expect(antes.config.liberados).toContain('logo:sala');
+    expect(antes.logo).toMatch(/^\/marca\/arquivo\/logo\?v=/);
+    // Fundo que não existe: recusa.
+    const ruim = await mandar('put', '/marca/fundos', { ...antes.config, padrao: 'qualquer:coisa' });
+    expect(ruim.status).toBe(422);
+
+    const foto = await mandar('post', '/marca/fundos/fotos', { nome: 'Recepção', imagem: PNG });
+    expect(foto.status).toBe(201);
+    const id = foto.body.fotos[0].id as number;
+    expect(foto.body.config.liberados).toContain(`foto:${id}`);
+    expect((await ler(`/marca/fundos/fotos/${id}`)).headers['content-type']).toBe('image/png');
+
+    const r = await mandar('put', '/marca/fundos', {
+      liberados: ['logo:sala', `foto:${id}`, 'foto:999999'],
+      padrao: 'logo:sala',
+      travar: true,
+      simples: false,
+      lugares: { 'logo:sala': { lugar: 'tv', estilo: 'placa' } },
+    });
+    expect(r.status).toBe(200);
+    // Foto que não é da empresa sai sozinha.
+    expect(r.body.config).toMatchObject({
+      liberados: ['logo:sala', `foto:${id}`],
+      padrao: 'logo:sala',
+      travar: true,
+      simples: false,
+      lugares: { 'logo:sala': { lugar: 'tv', estilo: 'placa' } },
+    });
+
+    // Tirou a foto: some da lista e do padrão.
+    await mandar('put', '/marca/fundos', { ...r.body.config, padrao: `foto:${id}` });
+    const tirou = await mandar('delete', `/marca/fundos/fotos/${id}`);
+    expect(tirou.body.fotos).toEqual([]);
+    expect(tirou.body.config.padrao).toBeNull();
+    expect(tirou.body.config.liberados).toEqual(['logo:sala']);
+
+    // Outro cliente não vê a foto de ninguém nem muda nada sem a marca própria.
+    const start = (await entrar('leo@petstart.com.br', 'senha-forte-1')).headers[
+      'set-cookie'
+    ] as unknown as string[];
+    const cs = start[0]!.split(';')[0]!;
+    expect((await ler('/marca/fundos', cs)).body).toMatchObject({ comMarca: false, fotos: [] });
+    expect((await mandar('put', '/marca/fundos', r.body.config, cs)).status).not.toBe(200);
+  });
 });

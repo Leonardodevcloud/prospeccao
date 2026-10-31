@@ -129,6 +129,9 @@ importers:
       '@livekit/components-react':
         specifier: 2.9.24
         version: 2.9.24(livekit-client@2.22.4(@types/dom-mediacapture-record@1.0.22))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(tslib@2.8.1)
+      '@livekit/track-processors':
+        specifier: 0.8.2
+        version: 0.8.2(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.4(@types/dom-mediacapture-record@1.0.22))
       '@prospeccao/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -796,9 +799,18 @@ packages:
   '@livekit/protocol@1.52.1':
     resolution: {integrity: sha512-X8DxKlNbzk6Lh+v630+mjdFHSotdAFwIyzxSRSUql2DbTxCnlpa7JsvFGc6Na3mXiex2OFh0iiQtWwOBP0rIYA==}
 
+  '@livekit/track-processors@0.8.2':
+    resolution: {integrity: sha512-e7mBsNMR7Ond4IyJ4afZ2azAdbd9SwQTUQgJvJBySp9M9UlObXjp/H9oKyV5UttBUjTS1h0O7SksN4PJIjYScg==}
+    peerDependencies:
+      '@types/dom-mediacapture-transform': ^0.1.9
+      livekit-client: ^1.12.0 || ^2.1.0
+
   '@mapbox/node-pre-gyp@1.0.11':
     resolution: {integrity: sha512-Yhlar6v9WQgUp/He7BdgzOz8lqMQ8sU+jkCq7Wx8Myc5YFJLbEe7lgui/V7G1qB1DJykHSGwreceSaD60Y0PUQ==}
     hasBin: true
+
+  '@mediapipe/tasks-vision@0.10.14':
+    resolution: {integrity: sha512-vOifgZhkndgybdvoRITzRkIueWWSiCKuEUXXK6Q4FaJsFvRJuwgg++vqFUMlL0Uox62U5aEXFhHxlhV7Ja5e3Q==}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -1107,6 +1119,12 @@ packages:
 
   '@types/dom-mediacapture-record@1.0.22':
     resolution: {integrity: sha512-mUMZLK3NvwRLcAAT9qmcK+9p7tpU2FHdDsntR3YI4+GY88XrgG4XiE7u1Q2LAN2/FZOz/tdMDC3GQCR4T8nFuw==}
+
+  '@types/dom-mediacapture-transform@0.1.12':
+    resolution: {integrity: sha512-d7/QsLRwF864A5mgIM/YrfiglHoYn7zgCcAoJgW404r+2DwnNr7EBbLnCWpmOMgH8y0te73L1AV6H1bmauaWFw==}
+
+  '@types/dom-webcodecs@0.1.19':
+    resolution: {integrity: sha512-+yFUIDUaASFz0vQpWBErPxun/Lb+F0TdrlTsj50gm7K797YzEx2TmV6fEiwciHyFNghlZYPgQXH5qRcwMHcJFQ==}
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
@@ -3035,6 +3053,12 @@ snapshots:
     dependencies:
       '@bufbuild/protobuf': 1.10.1
 
+  '@livekit/track-processors@0.8.2(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.4(@types/dom-mediacapture-record@1.0.22))':
+    dependencies:
+      '@mediapipe/tasks-vision': 0.10.14
+      '@types/dom-mediacapture-transform': 0.1.12
+      livekit-client: 2.22.4(@types/dom-mediacapture-record@1.0.22)
+
   '@mapbox/node-pre-gyp@1.0.11':
     dependencies:
       detect-libc: 2.1.2
@@ -3050,6 +3074,8 @@ snapshots:
       - encoding
       - supports-color
     optional: true
+
+  '@mediapipe/tasks-vision@0.10.14': {}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
@@ -3242,6 +3268,12 @@ snapshots:
   '@types/deep-eql@4.0.2': {}
 
   '@types/dom-mediacapture-record@1.0.22': {}
+
+  '@types/dom-mediacapture-transform@0.1.12':
+    dependencies:
+      '@types/dom-webcodecs': 0.1.19
+
+  '@types/dom-webcodecs@0.1.19': {}
 
   '@types/estree@1.0.9': {}
 

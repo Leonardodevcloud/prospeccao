@@ -1,10 +1,12 @@
 import { AppError, dominioEntrada, marcaEntrada } from '@prospeccao/shared';
+import { configFundosEntrada, fotoFundoEntrada } from '@prospeccao/shared/fundos';
 import { type Request, Router } from 'express';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo } from '../../middlewares/http.js';
-import { exigirRecurso } from '../../recursos.js';
+import { exigirRecurso, temRecurso } from '../../recursos.js';
 import * as auditoria from '../auditoria/repositorio.js';
 import { salvarMarca } from '../organizacao/repositorio.js';
+import * as fundos from './fundos.js';
 import * as repo from './repositorio.js';
 import { type DominiosSite, dominiosDoAmbiente } from './vercel.js';
 
@@ -102,6 +104,56 @@ export function rotasMarca(deps: DepsApi & { dominiosSite?: DominiosSite | null 
     await repo.removerDominio(pool, site(), org(req));
     if (antes) await registrar(req, `Tirou o domínio próprio ${antes}.`);
     res.json(await tela(req));
+  });
+
+  /* ---------- Fundos das reuniões ---------- */
+
+  const telaFundos = async (req: Request) => {
+    const d = await repo.dados(pool, org(req));
+    return {
+      config: await fundos.config(pool, org(req)),
+      fotos: await fundos.fotos(pool, org(req)),
+      limiteFotos: fundos.LIMITE_FOTOS,
+      podeEditar: await repo.podeEditar(pool, req.usuario!),
+      // Fundos com a logo são da marca própria (o desfoque e os cenários sem logo valem para todos).
+      comMarca: await temRecurso(pool, 'marca'),
+      logo: d.logo ? `/marca/arquivo/logo?v=${d.versao}` : null,
+      cor: d.cor,
+    };
+  };
+
+  r.get('/fundos', async (req, res) => {
+    res.json(await telaFundos(req));
+  });
+
+  r.put('/fundos', async (req, res) => {
+    await exigirDono(req);
+    await fundos.salvarConfig(pool, org(req), corpo(req, configFundosEntrada));
+    await registrar(req, 'Mudou os fundos das reuniões.');
+    res.json(await telaFundos(req));
+  });
+
+  r.post('/fundos/fotos', async (req, res) => {
+    await exigirDono(req);
+    const f = await fundos.adicionarFoto(pool, org(req), corpo(req, fotoFundoEntrada));
+    await registrar(req, `Enviou a foto de fundo "${f.nome}".`);
+    res.status(201).json(await telaFundos(req));
+  });
+
+  r.delete('/fundos/fotos/:id', async (req, res) => {
+    await exigirDono(req);
+    await fundos.removerFoto(pool, org(req), Number(req.params.id) || 0);
+    await registrar(req, 'Tirou uma foto de fundo.');
+    res.json(await telaFundos(req));
+  });
+
+  r.get('/fundos/fotos/:id', async (req, res) => {
+    const f = await fundos.imagemDaFoto(pool, org(req), Number(req.params.id) || 0);
+    if (!f) throw AppError.naoEncontrado('Foto');
+    res.setHeader('Content-Type', f.tipo);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(f.imagem);
   });
 
   return r;

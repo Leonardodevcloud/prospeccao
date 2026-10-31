@@ -1,5 +1,6 @@
 import type { EntradaSala, PapelNaSala, ResumoReuniao, SituacaoSala } from '@prospeccao/shared/reunioes';
 import { ErroApi } from '../api';
+import type { FundosDaEmpresa } from './fundos';
 
 /**
  * API da sala de reunião (página pública do link). Quem já entrou manda a credencial que a api deu
@@ -50,6 +51,8 @@ export interface InfoSala {
   /** Quem grava: o navegador de alguém do time (padrão), o servidor (na nuvem) ou ninguém. */
   gravacao: 'navegador' | 'nuvem' | null;
   empresa: { nome: string; cor: string | null; logo: string | null };
+  /** Fundos da empresa (só para quem é do time). */
+  fundos: FundosDaEmpresa | null;
   anfitriao: string | null;
   presentes: string[];
   voce: { nome: string; doTime: true } | null;

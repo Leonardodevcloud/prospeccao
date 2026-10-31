@@ -345,6 +345,14 @@ describe.skipIf(!URL_TESTE)('reuniões por vídeo (com Postgres)', () => {
 
   it('quem é do time entra a qualquer hora, como anfitrião', async () => {
     expect((await ler(`/salas/${codigo}`, { Cookie: cookie })).body.voce).toMatchObject({ doTime: true });
+    // Fundos da empresa só para quem é do time (o convidado usa só o desfoque e os cenários sem logo).
+    expect((await ler(`/salas/${codigo}`, { Cookie: cookie })).body.fundos).toMatchObject({
+      comLogo: false,
+      logo: null,
+      config: { simples: true, travar: false, padrao: null },
+      fotos: [],
+    });
+    expect((await ler(`/salas/${codigo}`)).body.fundos).toBeNull();
     const r = await comCookie('post', `/salas/${codigo}/entrar`, { nome: 'ignorado' });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({

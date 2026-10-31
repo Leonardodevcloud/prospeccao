@@ -19,6 +19,7 @@ import {
   DisconnectReason,
   type LocalVideoTrack,
   type Participant,
+  ParticipantEvent,
   type RemoteParticipant,
   type RemoteVideoTrack,
   Room,
@@ -31,10 +32,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { linkDaSala } from '../endereco';
 import type { Escolhas } from './Antessala';
 import { apiSala, type InfoSala, type Liberado, type MensagemChat } from './api';
+import {
+  aplicarFundo,
+  criarProcessador,
+  esquecerFundo,
+  lembrarFundo,
+  opcoesDeFundo,
+  suportaFundos,
+} from './fundos';
 import { type EstadoGravador, gravador, pedirCapturaDaAba, podeGravarAba } from './gravador';
 import { GradeEncaixada, Ladrilho, nomeDe } from './Ladrilho';
 import { PainelChat } from './PainelChat';
 import { maosLevantadas, PainelPessoas } from './PainelPessoas';
+import { GradeDeFundos, marcaDaSala } from './SeletorFundo';
 import { avisarNaAba, destravarSons, ehCelular, guardarSons, type Som, sonsLigados, tocar } from './sons';
 
 /**
@@ -123,6 +133,8 @@ export function Sala(props: {
   const { acesso, escolhas, aoSair } = props;
   const [room] = useState(() => criarSala(escolhas));
   const [conectado, setConectado] = useState(false);
+  const infoRef = useRef(props.info);
+  infoRef.current = props.info;
   const saida = useRef(aoSair);
   saida.current = aoSair;
 
@@ -145,9 +157,14 @@ export function Sala(props: {
         setConectado(true);
         if (escolhas.altoFalanteId)
           await room.switchActiveDevice('audiooutput', escolhas.altoFalanteId).catch(() => undefined);
+        // A câmera já nasce com o fundo escolhido na antessala (ninguém vê o fundo real).
+        const processor =
+          escolhas.camera && escolhas.fundo && escolhas.fundo !== 'nenhum' && suportaFundos()
+            ? await criarProcessador(escolhas.fundo, marcaDaSala(infoRef.current)).catch(() => undefined)
+            : undefined;
         await Promise.allSettled([
           room.localParticipant.setMicrophoneEnabled(escolhas.microfone),
-          room.localParticipant.setCameraEnabled(escolhas.camera),
+          room.localParticipant.setCameraEnabled(escolhas.camera, processor ? { processor } : undefined),
         ]);
       })
       .catch((erro: Error) => {
@@ -227,7 +244,34 @@ function ConteudoSala(props: {
   });
   const telas = useTracks([Track.Source.ScreenShare], { onlySubscribed: false });
   const [inicio] = useState(() => Date.now());
-  const [painel, setPainel] = useState<'chat' | 'pessoas' | null>(null);
+  const [painel, setPainel] = useState<'chat' | 'pessoas' | 'fundo' | null>(null);
+  // Fundo da câmera (o escolhido na antessala; dá para trocar no botão Fundo).
+  const [comFundos] = useState(suportaFundos);
+  const [fundo, setFundo] = useState(props.escolhas.fundo || 'nenhum');
+  const [erroFundo, setErroFundo] = useState<string | null>(null);
+  const marcaFundo = useMemo(() => marcaDaSala(info), [info]);
+  const opcoesFundo = useMemo(() => opcoesDeFundo(info.fundos, !!info.fundos), [info.fundos]);
+  const fundoTravado = !!info.fundos?.config.travar && opcoesFundo.length === 1;
+  useEffect(() => {
+    if (!comFundos) return;
+    const lp = room.localParticipant;
+    const aplicar = () => {
+      const faixa = lp.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
+      if (!faixa) return;
+      aplicarFundo(faixa, fundo, marcaFundo).catch(() => {
+        setErroFundo('Não deu para usar o fundo neste aparelho. A câmera segue sem efeito.');
+        setFundo('nenhum');
+      });
+    };
+    aplicar();
+    lp.on(ParticipantEvent.LocalTrackPublished, aplicar);
+    lp.on(ParticipantEvent.TrackUnmuted, aplicar);
+    return () => {
+      lp.off(ParticipantEvent.LocalTrackPublished, aplicar);
+      lp.off(ParticipantEvent.TrackUnmuted, aplicar);
+    };
+  }, [room, fundo, marcaFundo, comFundos]);
+  useEffect(() => () => esquecerFundo(), []);
   const [menu, setMenu] = useState<'opcoes' | 'sair' | null>(null);
   const [modo, setModo] = useState<'grade' | 'destaque'>('grade');
   const [fixado, setFixado] = useState<string | null>(null);
@@ -639,50 +683,101 @@ function ConteudoSala(props: {
           {props.conectado ? palco : <p className="quieto">Conectando…</p>}
         </main>
         {painel && (
-          <aside className="painel-sala" aria-label={painel === 'chat' ? 'Chat' : 'Pessoas'}>
-            <div className="painel-sala__topo" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                className="aba-sala"
-                aria-selected={painel === 'chat'}
-                onClick={() => setPainel('chat')}
-              >
-                Chat
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className="aba-sala"
-                aria-selected={painel === 'pessoas'}
-                onClick={() => setPainel('pessoas')}
-              >
-                Pessoas ({pessoas.length})
-              </button>
-              <span className="sala__espaco" />
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="x"
-                aria-label="Fechar painel"
-                onClick={() => setPainel(null)}
-              />
-            </div>
-            {painel === 'chat' ? (
-              <PainelChat
-                codigo={info.codigo}
-                credencial={acesso.credencial}
-                participanteId={acesso.participanteId}
-                mensagens={mensagens}
-                aoEnviar={juntar}
-              />
+          <aside
+            className="painel-sala"
+            aria-label={painel === 'chat' ? 'Chat' : painel === 'fundo' ? 'Fundo' : 'Pessoas'}
+          >
+            {painel === 'fundo' ? (
+              <>
+                <div className="painel-sala__topo">
+                  <b className="painel-sala__titulo">Fundo</b>
+                  <span className="sala__espaco" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="x"
+                    aria-label="Fechar painel"
+                    onClick={() => setPainel(null)}
+                  />
+                </div>
+                <div className="painel-fundo">
+                  {fundoTravado ? (
+                    <p className="quieto painel-fundo__nota">
+                      {info.empresa.nome} definiu o fundo das reuniões para o time.
+                    </p>
+                  ) : (
+                    <GradeDeFundos
+                      opcoes={opcoesFundo}
+                      escolhido={fundo}
+                      m={marcaFundo}
+                      padrao={info.fundos?.config.padrao ?? null}
+                      empresa={info.empresa.nome}
+                      agrupar
+                      desligado={!local.isCameraEnabled}
+                      aoEscolher={(id) => {
+                        setErroFundo(null);
+                        setFundo(id);
+                        lembrarFundo(id, !!info.fundos);
+                      }}
+                    />
+                  )}
+                  {!local.isCameraEnabled && (
+                    <p className="quieto painel-fundo__nota">Ligue a câmera para trocar o fundo.</p>
+                  )}
+                  {erroFundo && <p className="painel-fundo__nota painel-fundo__erro">{erroFundo}</p>}
+                  <p className="quieto painel-fundo__nota">
+                    Quem está na reunião vê o fundo escolhido, e a gravação também. Com a logo no fundo, você
+                    vê a sua imagem sem o espelho, do jeito que os outros veem.
+                  </p>
+                </div>
+              </>
             ) : (
-              <PainelPessoas
-                codigo={info.codigo}
-                credencial={acesso.credencial}
-                doTime={doTime}
-                versaoEspera={versaoEspera}
-              />
+              <>
+                <div className="painel-sala__topo" role="tablist">
+                  <button
+                    type="button"
+                    role="tab"
+                    className="aba-sala"
+                    aria-selected={painel === 'chat'}
+                    onClick={() => setPainel('chat')}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    className="aba-sala"
+                    aria-selected={painel === 'pessoas'}
+                    onClick={() => setPainel('pessoas')}
+                  >
+                    Pessoas ({pessoas.length})
+                  </button>
+                  <span className="sala__espaco" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="x"
+                    aria-label="Fechar painel"
+                    onClick={() => setPainel(null)}
+                  />
+                </div>
+                {painel === 'chat' ? (
+                  <PainelChat
+                    codigo={info.codigo}
+                    credencial={acesso.credencial}
+                    participanteId={acesso.participanteId}
+                    mensagens={mensagens}
+                    aoEnviar={juntar}
+                  />
+                ) : (
+                  <PainelPessoas
+                    codigo={info.codigo}
+                    credencial={acesso.credencial}
+                    doTime={doTime}
+                    versaoEspera={versaoEspera}
+                  />
+                )}
+              </>
             )}
           </aside>
         )}
@@ -721,6 +816,19 @@ function ConteudoSala(props: {
           >
             <Icon name={local.isCameraEnabled ? 'video' : 'video-off'} size={22} />
           </button>
+          {comFundos && local.isCameraEnabled && (
+            <button
+              type="button"
+              className="ctl"
+              data-ligado={painel === 'fundo' || undefined}
+              aria-pressed={painel === 'fundo'}
+              aria-label="Fundo da câmera"
+              title="Fundo da câmera (desfoque, cenários)"
+              onClick={() => setPainel(painel === 'fundo' ? null : 'fundo')}
+            >
+              <Icon name="sparkles" size={22} />
+            </button>
+          )}
           {celular && local.isCameraEnabled && (
             <button
               type="button"

@@ -283,7 +283,11 @@ export async function novoConvite(pool: Pool, organizacaoId: number, id: number)
 /* ───────────── Marca e segurança da organização ───────────── */
 
 /** Confere uma imagem em data URL (PNG ou JPEG de verdade, no tamanho) e devolve os bytes. */
-function imagemDaMarca(dataUrl: string, limiteKb: number, oQue: string): { buf: Buffer; tipo: string } {
+export function imagemDaMarca(
+  dataUrl: string,
+  limiteKb: number,
+  oQue: string,
+): { buf: Buffer; tipo: string } {
   const [cabeca, dados] = dataUrl.split(',');
   const tipo = cabeca!.includes('png') ? 'image/png' : 'image/jpeg';
   const buf = Buffer.from(dados ?? '', 'base64');

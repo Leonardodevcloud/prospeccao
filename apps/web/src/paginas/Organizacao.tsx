@@ -674,10 +674,6 @@ function SegurancaEMarca(props: { dados: DadosOrganizacao }) {
   const seguro = useRecurso('seguranca');
   const comMarca = useRecurso('marca');
   const o = props.dados.organizacao;
-  const [nome, setNome] = useState(o.marca.nome ?? '');
-  const [cor, setCor] = useState(o.marca.cor ?? '#0b6b63');
-  const [logo, setLogo] = useState<string | null | undefined>(undefined);
-  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
   const seguranca = useMutation({
     mutationFn: (exigir: boolean) =>
       api('/organizacao/seguranca', { metodo: 'PUT', corpo: { exigirDuasEtapas: exigir } }),
@@ -686,15 +682,6 @@ function SegurancaEMarca(props: { dados: DadosOrganizacao }) {
       cliente.invalidateQueries({ queryKey: ['sessao'] });
     },
   });
-  const salvar = useMutation({
-    mutationFn: (corpo: Record<string, unknown>) => api('/organizacao/marca', { metodo: 'PUT', corpo }),
-    onSuccess: () => {
-      setLogo(undefined);
-      cliente.invalidateQueries({ queryKey: ['organizacao'] });
-      cliente.invalidateQueries({ queryKey: ['sessao'] });
-    },
-  });
-  const logoAtual = useSessao().data?.marca?.logo;
   const comDuas = props.dados.pessoas.filter((p) => p.ativo && p.duasEtapas).length;
   const ativas = props.dados.pessoas.filter((p) => p.ativo).length;
   return (

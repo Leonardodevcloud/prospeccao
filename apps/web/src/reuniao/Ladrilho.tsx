@@ -12,6 +12,7 @@ import { Icon } from '@prospeccao/ui';
 import { ConnectionQuality, type Participant, Track } from 'livekit-client';
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { iniciais } from '../formatar';
+import { fundoSemEspelho, useFundoAtual } from './fundos';
 
 /** Nome de quem está na sala (o do time vem com "(você)" quando é a própria pessoa). */
 export function nomeDe(p: Participant): string {
@@ -148,6 +149,8 @@ export function Ladrilho(props: {
   const tela = trackRef.source === Track.Source.ScreenShare;
   // A câmera de trás do celular não fica espelhada (o texto de um papel, por exemplo, sai legível).
   const traseira = pub?.track?.mediaStreamTrack?.getSettings?.().facingMode === 'environment';
+  // Fundo com a logo: sem espelho (a logo aparece certa, como os outros veem).
+  const semEspelho = fundoSemEspelho(useFundoAtual());
   const caixa = useRef<HTMLDivElement>(null);
   const encaixe = useEncaixe(caixa, comVideo, tela, pub?.trackSid ?? '');
   return (
@@ -156,7 +159,9 @@ export function Ladrilho(props: {
       className={['ladrilho', props.className].filter(Boolean).join(' ')}
       data-falando={(falando && !tela) || undefined}
       data-video={comVideo || undefined}
-      data-espelho={(p.isLocal && trackRef.source === Track.Source.Camera && !traseira) || undefined}
+      data-espelho={
+        (p.isLocal && trackRef.source === Track.Source.Camera && !traseira && !semEspelho) || undefined
+      }
     >
       {comVideo && isTrackReference(trackRef) ? (
         <VideoTrack trackRef={trackRef} style={{ objectFit: props.preencher ? 'cover' : encaixe }} />

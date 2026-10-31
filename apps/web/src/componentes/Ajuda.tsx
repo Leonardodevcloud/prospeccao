@@ -160,7 +160,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
     resumo: 'Sala de vídeo com link para o lead, gravação, transcrição e resumo da IA.',
     onde: { rotulo: 'Reuniões', para: '/reunioes' },
     termos:
-      'videochamada video chamada meet sala link gravar gravação transcrição resumo ata convite celular compartilhar tela levantar mão chat arquivo sala de espera',
+      'videochamada video chamada meet sala link gravar gravação transcrição resumo ata convite celular compartilhar tela levantar mão chat arquivo sala de espera fundo desfoque desfocar cenário fundo virtual logo',
     corpo: (
       <>
         <p>
@@ -233,6 +233,26 @@ export const ARTIGOS: ArtigoAjuda[] = [
           celular em pé, por exemplo), aparecem faixas escuras nas laterais em vez de cortar a imagem. A
           gravação fica igual ao que se vê na tela.
         </p>
+        <h3>Fundo da câmera</h3>
+        <p>
+          Na tela antes de entrar e no botão <b>Fundo</b> (o das estrelinhas) dentro da sala, cada pessoa
+          escolhe como aparece: <b>sem efeito</b>, <b>desfoque leve ou forte</b> (esconde a casa ou o
+          escritório) ou um <b>cenário</b> (sala de reunião, escritório, estante, recepção…). Quem está na
+          reunião vê o fundo escolhido, e a gravação também. O sistema lembra a escolha para a próxima
+          reunião.
+        </p>
+        <ul>
+          <li>
+            Quem é do time vê também os fundos <b>da empresa</b>: os cenários com a logo já colocada e as
+            fotos que o gestor enviou. O gestor escolhe quais valem, qual já vem marcado e pode travar um
+            fundo para todo mundo (Marca e domínio › Fundos das reuniões).
+          </li>
+          <li>Com a logo no fundo, você vê a sua imagem sem o espelho, do jeito que os outros veem.</li>
+          <li>
+            Separar a pessoa do fundo pesa um pouco no computador. Em aparelho mais fraco ou navegador antigo,
+            o sistema avisa e a reunião segue sem efeito.
+          </li>
+        </ul>
         <h3>Gravação e consentimento</h3>
         <p>Em reunião gravada, quem entra vê o aviso e precisa concordar com a gravação antes de entrar.</p>
         <p>
@@ -680,7 +700,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'O sistema com o nome, a cor, o logo e o endereço da sua empresa (crm.suaempresa.com.br). Você mesmo configura.',
     onde: { rotulo: 'Marca e domínio', para: '/marca' },
     termos:
-      'marca white label logo logotipo cor ícone icone favicon imagem divulgação domínio dominio próprio endereço subdomínio crm dns cname registro.br cloudflare hostinger godaddy whatsapp prévia link personalizar',
+      'marca white label logo logotipo cor ícone icone favicon imagem divulgação fundo fundos reunião desfoque cenário foto domínio dominio próprio endereço subdomínio crm dns cname registro.br cloudflare hostinger godaddy whatsapp prévia link personalizar',
     corpo: (
       <>
         <p>
@@ -748,6 +768,33 @@ export const ARTIGOS: ArtigoAjuda[] = [
             Se aparecer também um registro <b>TXT</b>, o endereço já foi usado em outro site: crie os dois.
           </li>
           <li>Passou um dia e continua aguardando: fale com o suporte do Prospect Team.</li>
+        </ul>
+        <h3>Fundos das reuniões</h3>
+        <p>
+          Na aba <b>Fundos das reuniões</b>, os cenários já aparecem com a sua logo. Para cada um:
+        </p>
+        <ul>
+          <li>
+            <b>Liberar ou não</b> para a equipe (a caixinha no cartão) e <b>Usar como padrão ao entrar</b>:
+            todo mundo do time já entra com ele.
+          </li>
+          <li>
+            <b>Onde a logo fica</b> (na parede de vidro, na TV, no quadro, num canto de cima…) e o{' '}
+            <b>estilo</b>: placa branca, adesivo na cor da marca (para logo com fundo transparente) ou a logo
+            como está. Os lugares ficam fora de onde a pessoa aparece.
+          </li>
+          <li>
+            <b>Enviar foto da empresa</b> (recepção, fachada, showroom, até 8): o sistema ajusta para
+            1920×1080 e a logo entra num canto, se você quiser.
+          </li>
+          <li>
+            <b>Travar o fundo padrão</b>: o time fica sempre com ele. <b>Desfoque e cenários sem logo</b>{' '}
+            deixa cada pessoa usar também o desfoque e os cenários simples.
+          </li>
+          <li>
+            <b>Ver na minha câmera</b> mostra como você aparece com o fundo antes de liberar. Mudou a logo em
+            Marca, os fundos mudam juntos.
+          </li>
         </ul>
         <Nota>
           A marca própria é para usar o sistema com a marca da sua empresa, com a sua equipe e os seus
