@@ -69,6 +69,12 @@ export interface CredenciaisAmbiente {
   vercelToken?: string | null;
   vercelProjeto?: string | null;
   vercelTime?: string | null;
+  /** App da Meta (Instagram e cadastros dos anúncios). */
+  metaAppId?: string | null;
+  metaAppSecret?: string | null;
+  metaTokenVerificacao?: string | null;
+  metaConfigId?: string | null;
+  metaVersao?: string | null;
 }
 
 export type Origem = 'conta' | 'plataforma' | null;

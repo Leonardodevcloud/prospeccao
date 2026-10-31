@@ -1,13 +1,15 @@
 import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import {
   api,
   type ContatoLead,
   type ConversaAberta,
   type ConversaResumo,
   type MensagemConversa,
+  type OrigemInstagram,
+  qs,
   type RespostaRapida,
   type TipoMidia,
 } from '../api';
@@ -15,10 +17,11 @@ import { EnviarPara, FaixaIndicacoes, PainelContatos } from '../componentes/Cont
 import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { IconeInstagram } from '../componentes/IconeInstagram';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
 import { Dono, useSoLeitura, useSoPropriaBase } from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
-import { fmtCidade, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
+import { fmtCidade, fmtCompromisso, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
 import { ListaNaoIdentificados, PainelNaoIdentificado, useNaoIdentificados } from './NaoIdentificados';
 
 const LIMITE = 10 * 1024 * 1024;
@@ -95,6 +98,7 @@ function ItemLista(props: { c: ConversaResumo; ativo: boolean; aoAbrir: () => vo
         <span className="conversa-item__linha">
           <span className="conversa-item__previa">
             {c.ultimoCanal === 'email' && <Icon name="mail" size={12} />}
+            {c.ultimoCanal === 'instagram' && <IconeInstagram tamanho={12} titulo="Instagram" />}
             {prefixo(c)}
             {c.ultimaMidia && <Icon name={ICONE_MIDIA[c.ultimaMidia]} size={12} />} {c.ultima ?? ''}
           </span>
@@ -244,6 +248,11 @@ function Bolhas(props: { mensagens: MensagemConversa[]; variasPessoas: boolean }
                   {m.assunto ? ` · ${m.assunto}` : ''}
                 </span>
               )}
+              {m.canal === 'instagram' && (
+                <span className="bolha__canal bolha__canal--ig">
+                  <IconeInstagram tamanho={12} /> Instagram
+                </span>
+              )}
               <Midia m={m} />
               {!soRotulo && !(m.canal === 'email' && m.origem === 'sequencia') && (
                 <p className="bolha__texto">
@@ -281,8 +290,18 @@ function Compositor(props: {
   const { conversa } = props;
   // Canal: WhatsApp, ou e-mail (o lead respondeu por e-mail ou não tem WhatsApp).
   const ultimaDoLead = [...conversa.mensagens].reverse().find((m) => m.direcao === 'recebida');
-  const [canal, setCanal] = useState<'whatsapp' | 'email'>(
-    !conversa.telefone || ultimaDoLead?.canal === 'email' ? 'email' : 'whatsapp',
+  // Direct do Instagram: só até 24 h depois da última mensagem dele lá.
+  const janelaIg = conversa.instagramAte ? new Date(conversa.instagramAte).getTime() > Date.now() : false;
+  const [canal, setCanal] = useState<'whatsapp' | 'email' | 'instagram'>(
+    ultimaDoLead?.canal === 'instagram' && janelaIg
+      ? 'instagram'
+      : !conversa.telefone || ultimaDoLead?.canal === 'email'
+        ? conversa.email
+          ? 'email'
+          : conversa.temInstagram
+            ? 'instagram'
+            : 'email'
+        : 'whatsapp',
   );
   const [assunto, setAssunto] = useState('');
   const [texto, setTexto] = useState('');
@@ -321,6 +340,17 @@ function Compositor(props: {
       props.aoEnviado(c);
     },
   });
+  const enviarDirect = useMutation({
+    mutationFn: (t: string) =>
+      api<ConversaAberta>(`/conversas/${conversa.empresaId}/instagram`, {
+        metodo: 'POST',
+        corpo: { texto: t },
+      }),
+    onSuccess: (c) => {
+      setTexto('');
+      props.aoEnviado(c);
+    },
+  });
   const enviarMidia = useMutation({
     mutationFn: (m: { tipo: TipoMidia; mime: string; nome?: string; base64: string; legenda?: string }) =>
       api<ConversaAberta>(`/conversas/${conversa.empresaId}/midia`, { metodo: 'POST', corpo: m }),
@@ -352,8 +382,9 @@ function Compositor(props: {
   const enviar = (e?: FormEvent) => {
     e?.preventDefault();
     const t = texto.trim();
-    if (!t || enviarTexto.isPending || enviarEmail.isPending) return;
+    if (!t || enviarTexto.isPending || enviarEmail.isPending || enviarDirect.isPending) return;
     if (canal === 'email') enviarEmail.mutate(t);
+    else if (canal === 'instagram') enviarDirect.mutate(t);
     else enviarTexto.mutate(t);
   };
 
@@ -428,21 +459,27 @@ function Compositor(props: {
     }
   };
 
-  const ocupado = enviarTexto.isPending || enviarMidia.isPending || enviarEmail.isPending;
-  if (!conversa.telefone && !conversa.email)
+  const ocupado =
+    enviarTexto.isPending || enviarMidia.isPending || enviarEmail.isPending || enviarDirect.isPending;
+  if (!conversa.telefone && !conversa.email && !conversa.temInstagram)
     return <Mensagem tipo="aviso">Este lead não tem WhatsApp nem e-mail.</Mensagem>;
   const porEmail = canal === 'email';
+  const porDirect = canal === 'instagram';
+  const canais = (
+    [
+      ['whatsapp', 'message-circle', 'WhatsApp'],
+      ['instagram', null, 'Instagram'],
+      ['email', 'mail', 'E-mail'],
+    ] as const
+  ).filter(([id]) =>
+    id === 'whatsapp' ? !!conversa.telefone : id === 'email' ? !!conversa.email : !!conversa.temInstagram,
+  );
 
   return (
     <form className="compositor" onSubmit={enviar} data-canal={canal}>
-      {conversa.telefone && conversa.email && (
+      {canais.length > 1 && (
         <fieldset className="segmentos segmentos--mini compositor__canal" aria-label="Responder por">
-          {(
-            [
-              ['whatsapp', 'message-circle', 'WhatsApp'],
-              ['email', 'mail', 'E-mail'],
-            ] as const
-          ).map(([id, icone, rotulo]) => (
+          {canais.map(([id, icone, rotulo]) => (
             <button
               key={id}
               type="button"
@@ -451,10 +488,17 @@ function Compositor(props: {
               data-ativo={canal === id || undefined}
               onClick={() => setCanal(id)}
             >
-              <Icon name={icone} size={12} /> {rotulo}
+              {icone ? <Icon name={icone} size={12} /> : <IconeInstagram tamanho={12} />} {rotulo}
             </button>
           ))}
         </fieldset>
+      )}
+      {porDirect && (
+        <p className="compositor__aviso quieto">
+          {janelaIg
+            ? `Pelo direct${conversa.instagramUsuario ? ` de @${conversa.instagramUsuario}` : ''}: dá para responder até ${fmtCompromisso(conversa.instagramAte)} (24 h depois da última mensagem dele).`
+            : 'Passou das 24 h desde a última mensagem dele no Instagram: o Instagram não deixa mais responder no direct. Siga pelo WhatsApp.'}
+        </p>
       )}
       {porEmail && (
         <div className="compositor__email">
@@ -499,7 +543,7 @@ function Compositor(props: {
           </button>
         </div>
       )}
-      <ErroDaApi erro={enviarTexto.error ?? enviarMidia.error ?? enviarEmail.error} />
+      <ErroDaApi erro={enviarTexto.error ?? enviarMidia.error ?? enviarEmail.error ?? enviarDirect.error} />
       {erroLocal && <Mensagem tipo="erro">{erroLocal}</Mensagem>}
       <div className="compositor__linha">
         <input
@@ -515,13 +559,9 @@ function Compositor(props: {
         <button
           type="button"
           className="botao-icone"
-          title={
-            porEmail
-              ? 'Anexo só pelo WhatsApp (no e-mail, use os modelos)'
-              : 'Anexar foto ou arquivo (até 10 MB)'
-          }
+          title={porEmail || porDirect ? 'Anexo só pelo WhatsApp' : 'Anexar foto ou arquivo (até 10 MB)'}
           aria-label="Anexar arquivo"
-          disabled={ocupado || !!gravando || porEmail}
+          disabled={ocupado || !!gravando || porEmail || porDirect}
           onClick={() => arquivo.current?.click()}
         >
           <Icon name="paperclip" size={18} />
@@ -556,13 +596,13 @@ function Compositor(props: {
             />
           </>
         )}
-        {(texto.trim() || porEmail) && !gravando ? (
+        {(texto.trim() || porEmail || porDirect) && !gravando ? (
           <button
             type="submit"
             className="botao-enviar"
             aria-label="Enviar"
             title={porEmail ? 'Enviar e-mail (Ctrl+Enter)' : 'Enviar (Enter)'}
-            disabled={ocupado || !texto.trim()}
+            disabled={ocupado || !texto.trim() || (porDirect && !janelaIg)}
           >
             <Icon name={ocupado ? 'loader' : 'send'} size={18} spin={ocupado} />
           </button>
@@ -696,6 +736,48 @@ function RespostasRapidas(props: { aoFechar: () => void }) {
   );
 }
 
+/** De onde o lead veio (Instagram ou formulário do anúncio). */
+export function OrigemDoLead(props: { o: OrigemInstagram }) {
+  const o = props.o;
+  return (
+    <div className="chat__origem">
+      <IconeInstagram tamanho={14} />
+      {o.tipo === 'comentario' ? (
+        <span>
+          Veio do Instagram: comentou <b>“{o.comentario ?? ''}”</b>
+          {o.legenda ? (
+            <>
+              {' '}
+              em{' '}
+              {o.link ? (
+                <a href={o.link} target="_blank" rel="noreferrer">
+                  {o.legenda.slice(0, 60)}
+                </a>
+              ) : (
+                o.legenda.slice(0, 60)
+              )}
+            </>
+          ) : null}
+          {o.regraId ? (
+            <>
+              {' · '}
+              <Link to={`/instagram/regra/${o.regraId}`}>ver a publicação</Link>
+            </>
+          ) : null}
+        </span>
+      ) : o.tipo === 'formulario' ? (
+        <span>
+          Veio do formulário <b>{o.formulario}</b>
+          {o.anuncio ? ` · anúncio “${o.anuncio}”` : ''}
+          {o.plataforma === 'fb' ? ' (Facebook)' : o.plataforma === 'ig' ? ' (Instagram)' : ''}
+        </span>
+      ) : (
+        <span>Veio do direct do Instagram.</span>
+      )}
+    </div>
+  );
+}
+
 function Conversa(props: {
   empresaId: number;
   abrirPessoas?: boolean;
@@ -776,6 +858,12 @@ function Conversa(props: {
             {c.etapaNome ?? c.etapa}
             {c.cidade && ` · ${fmtCidade(c.cidade)}`}
             {c.telefone && <span className="mono"> · {formatarTelefone(c.telefone)}</span>}
+            {c.instagramUsuario && (
+              <span className="mono">
+                {' · '}
+                <IconeInstagram tamanho={11} /> @{c.instagramUsuario}
+              </span>
+            )}
           </span>
           {!soLeitura && (
             <EnviarPara
@@ -808,6 +896,7 @@ function Conversa(props: {
           )}
         </div>
       </header>
+      {c.origemInstagram && <OrigemDoLead o={c.origemInstagram} />}
       {c.agente && (
         <div className="chat__ia">
           <Icon name="bot" size={14} />
@@ -897,6 +986,7 @@ export function Conversas() {
   const filtro =
     (params.get('filtro') as 'todas' | 'nao_lidas' | 'minhas' | 'nao_identificados' | null) ?? 'todas';
   const soltos = filtro === 'nao_identificados';
+  const canal = (params.get('canal') as 'whatsapp' | 'instagram' | 'email' | null) ?? null;
   const lead = Number(params.get('lead')) || null;
   const numero = params.get('numero');
   const naoIdentificados = useNaoIdentificados();
@@ -916,11 +1006,8 @@ export function Conversas() {
   };
 
   const lista = useQuery({
-    queryKey: ['conversas', filtro, buscaFeita],
-    queryFn: () =>
-      api<ConversaResumo[]>(
-        `/conversas?filtro=${filtro}${buscaFeita ? `&busca=${encodeURIComponent(buscaFeita)}` : ''}`,
-      ),
+    queryKey: ['conversas', filtro, buscaFeita, canal],
+    queryFn: () => api<ConversaResumo[]>(`/conversas${qs({ filtro, busca: buscaFeita || null, canal })}`),
     enabled: !soltos,
     refetchInterval: 10_000,
     placeholderData: keepPreviousData,
@@ -967,13 +1054,29 @@ export function Conversas() {
                 <label className="pp-sr" htmlFor="conversas-busca">
                   Buscar conversa
                 </label>
-                <input
-                  id="conversas-busca"
-                  className="filtro"
-                  placeholder="Buscar por empresa, pessoa ou telefone"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                />
+                <div className="inbox__busca">
+                  <input
+                    id="conversas-busca"
+                    className="filtro"
+                    placeholder="Buscar por empresa, pessoa ou telefone"
+                    value={busca}
+                    onChange={(e) => setBusca(e.target.value)}
+                  />
+                  <label className="pp-sr" htmlFor="conversas-canal">
+                    Canal
+                  </label>
+                  <select
+                    id="conversas-canal"
+                    className="filtro"
+                    value={canal ?? ''}
+                    onChange={(e) => mudar({ canal: e.target.value || null, lead: null })}
+                  >
+                    <option value="">Todos os canais</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="instagram">Instagram</option>
+                    <option value="email">E-mail</option>
+                  </select>
+                </div>
               </>
             )}
           </div>

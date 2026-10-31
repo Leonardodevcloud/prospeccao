@@ -4,6 +4,7 @@ import {
   contatoLeadEntrada,
   conversaNovaEntrada,
   destinoEntrada,
+  directEntrada,
   filtrosConversas,
   mensagemEntrada,
   midiaEntrada,
@@ -21,6 +22,7 @@ import * as contatos from '../contatos/repositorio.js';
 import * as motorEmail from '../email/motor.js';
 import { dadosDoLead } from '../funil/cadencia.js';
 import { trazerConversa } from '../funil/novoLead.js';
+import { enviarDirectDoTime } from '../instagram/servico.js';
 import * as repo from './repositorio.js';
 
 /** Telefone na rota: só dígitos (10 a 13). */
@@ -188,6 +190,14 @@ export function rotasConversas(deps: DepsApi): Router {
       }),
     );
     await motorEmail.enviarDaConversa(await motorEmail.depsDaConta(deps), id, d);
+    await repo.marcarLidas(pool, id);
+    res.status(201).json(await repo.abrir(pool, id));
+  });
+
+  /** Direct do Instagram pela conversa (até 24 h depois da última mensagem dele lá). */
+  r.post('/:empresaId/instagram', async (req, res) => {
+    const id = idDaRota(req, 'empresaId');
+    await enviarDirectDoTime(deps, id, corpo(req, directEntrada).texto);
     await repo.marcarLidas(pool, id);
     res.status(201).json(await repo.abrir(pool, id));
   });

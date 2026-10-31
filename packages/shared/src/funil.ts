@@ -39,7 +39,15 @@ export const ROTULO_ETAPA: Record<EtapaFunil, string> = {
   descartado: 'Descartado',
 };
 
-export const TIPOS_ATIVIDADE = ['whatsapp', 'ligacao', 'email', 'visita', 'reuniao', 'nota'] as const;
+export const TIPOS_ATIVIDADE = [
+  'whatsapp',
+  'ligacao',
+  'email',
+  'visita',
+  'reuniao',
+  'nota',
+  'instagram',
+] as const;
 export type TipoAtividade = (typeof TIPOS_ATIVIDADE)[number];
 
 const texto = (max: number) =>

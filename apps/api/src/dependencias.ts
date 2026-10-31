@@ -3,6 +3,7 @@ import type { Filas } from '@prospeccao/queue';
 import type { Logger } from '@prospeccao/shared';
 import type { DepsAssistente } from './modulos/assistente/rotas.js';
 import type { ServicoDominios } from './modulos/email/dominio.js';
+import type { ClienteMeta } from './modulos/instagram/meta.js';
 import type { DominiosSite } from './modulos/marca/vercel.js';
 import type { AoEncerrar, DepsReunioes } from './modulos/reunioes/servico.js';
 import type { ResolverServicos } from './servicos.js';
@@ -47,4 +48,6 @@ export interface DepsApi {
   reunioes?: (DepsReunioes & { aoEncerrar?: AoEncerrar }) | null;
   /** Domínio próprio dos clientes no Vercel (padrão: pelas variáveis VERCEL_*; os testes simulam). */
   dominiosSite?: DominiosSite | null;
+  /** App da Meta: Instagram e cadastros dos anúncios (padrão: pelas variáveis META_*; os testes simulam). */
+  meta?: ClienteMeta | null;
 }

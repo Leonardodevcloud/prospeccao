@@ -24,6 +24,7 @@ import { criarReuniaoDoLead } from '../agenda/repositorio.js';
 import { fatosDoLead } from '../email/repositorio.js';
 import { obterConfig as configCadencia, mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
+import { destinoDaResposta } from '../instagram/canal.js';
 import { notificar, notificarDono } from '../notificacoes/repositorio.js';
 import * as base from './conhecimento.js';
 import { dentroDoHorario, proximaAbertura } from './horario.js';
@@ -158,8 +159,11 @@ export async function passarParaTime(
       [empresaId, NOTA_AVISO],
     );
     const { telefone } = await mensagemDoLead(pool, empresaId);
-    if (!ja.length && telefone)
+    const destino = await destinoDaResposta(pool, empresaId);
+    if (!ja.length && (telefone || destino.canal === 'instagram'))
       await repo.criarMensagem(pool, {
+        canal: destino.canal,
+        instagramId: destino.instagramId,
         empresaId,
         direcao: 'enviada',
         // A frase que o gestor escreveu no perfil vale dentro do horário; fora dele, a que diz quando o time volta.
@@ -537,15 +541,19 @@ export async function responderLead(
       trechos.map((t) => t.conhecimentoId),
     );
 
+  // Escreveu pelo direct (e a janela de 24 h está aberta): a resposta sai pelo Instagram.
+  const destino = await destinoDaResposta(pool, empresaId);
   const nova = (texto: string) =>
     repo.criarMensagem(pool, {
       empresaId,
       direcao: 'enviada',
       texto,
-      telefone: m.telefone,
+      telefone: destino.canal === 'instagram' ? null : m.telefone,
       status: cfg.revisarAntes ? 'rascunho' : 'aprovada',
       origem: 'agente',
       nota: decisao.motivo,
+      canal: destino.canal,
+      instagramId: destino.instagramId,
     });
 
   // A conversa voltou a andar: o retorno que estava combinado deixa de valer.

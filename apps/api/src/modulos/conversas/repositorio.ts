@@ -8,6 +8,7 @@ import * as agente from '../agente/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
 import { dadosDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
+import { janelaDoDirect } from '../instagram/canal.js';
 import { lerAvisosDoLead } from '../notificacoes/repositorio.js';
 
 /**
@@ -20,7 +21,7 @@ import { lerAvisosDoLead } from '../notificacoes/repositorio.js';
  * mão, sem repetir) e e-mail (os da sequência, as respostas dele e o que a equipe respondeu).
  */
 const conversa = () => `
-  SELECT m.empresa_id, 'm' || m.id AS id, 'whatsapp' AS canal, NULL::text AS assunto, m.direcao, m.texto, m.status,
+  SELECT m.empresa_id, 'm' || m.id AS id, m.canal, NULL::text AS assunto, m.direcao, m.texto, m.status,
          m.origem, m.erro, m.nota, m.midia_tipo, m.midia_id, coalesce(m.enviado_em, m.criado_em) AS em, m.usuario_id,
          m.telefone, m.contato_id
     FROM comercial.mensagens m
@@ -63,7 +64,7 @@ const naoLidasSql = (C: string, empresa: string) => `
 
 export async function listar(
   db: Executor,
-  f: { filtro: 'todas' | 'nao_lidas' | 'minhas'; busca?: string },
+  f: { filtro: 'todas' | 'nao_lidas' | 'minhas'; busca?: string; canal?: 'whatsapp' | 'instagram' | 'email' },
   usuarioId: number,
 ) {
   const C = contaSql();
@@ -75,6 +76,11 @@ export async function listar(
   };
   if (f.filtro === 'nao_lidas') where.push('nl.n > 0');
   if (f.filtro === 'minhas') where.push(`o.responsavel_id = ${p(usuarioId)}`);
+  // Só as conversas que passaram por um canal (WhatsApp, Instagram ou e-mail).
+  if (f.canal)
+    where.push(
+      `EXISTS (SELECT 1 FROM c c2 WHERE c2.empresa_id = ult.empresa_id AND c2.canal = ${p(f.canal)})`,
+    );
   if (f.busca)
     where.push(
       `(e.nome ILIKE ${p(`%${f.busca}%`)} OR e.maps_telefone LIKE ${p(`%${f.busca.replace(/\D/g, '') || '§'}%`)}
@@ -90,7 +96,7 @@ export async function listar(
             et.cor AS "etapaCor", o.responsavel_id AS "responsavelId", u.nome AS "responsavelNome",
             o.agente, o.agente_pausa AS "agentePausa", ult.texto AS "ultima", ult.direcao AS "ultimaDirecao",
             ult.em AS "ultimaEm", ult.midia_tipo AS "ultimaMidia", ult.origem AS "ultimaOrigem",
-            ult.canal AS "ultimoCanal",
+            ult.canal AS "ultimoCanal", o.instagram_usuario AS "instagramUsuario",
             coalesce(nl.n, 0) AS "naoLidas",
             (SELECT cl.nome FROM comercial.contatos_lead cl
               WHERE cl.conta_id = o.conta_id AND cl.empresa_id = o.empresa_id AND cl.status = 'confirmado'
@@ -124,6 +130,7 @@ export async function abrir(db: Executor, empresaId: number) {
               CASE WHEN c.origem = 'agente' THEN 'IA'
                    WHEN c.origem = 'cadencia' THEN coalesce(u.nome, 'Cadência')
                    WHEN c.origem = 'sequencia' THEN 'Sequência'
+                   WHEN c.origem = 'automatico' THEN 'Automático'
                    WHEN c.direcao = 'recebida' THEN NULL
                    ELSE coalesce(u.nome, 'Você') END AS autor
          FROM c LEFT JOIN cadastro.usuarios u ON u.id = c.usuario_id
@@ -139,7 +146,8 @@ export async function abrir(db: Executor, empresaId: number) {
             o.responsavel_id AS "responsavelId", u.nome AS "responsavelNome",
             o.agente, o.agente_pausa AS "agentePausa", o.whatsapp_destino AS "destinoEscolhido",
             CASE WHEN o.agente_pausa IS NOT NULL THEN o.agente_resumo END AS "agenteResumo",
-            o.agente_memoria AS "agenteMemoria"
+            o.agente_memoria AS "agenteMemoria", o.instagram_id IS NOT NULL AS "temInstagram",
+            o.instagram_usuario AS "instagramUsuario", o.origem_instagram AS "origemInstagram"
        FROM comercial.oportunidades o
        JOIN descoberta.empresas e ON e.id = o.empresa_id
        LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
@@ -163,6 +171,8 @@ export async function abrir(db: Executor, empresaId: number) {
   return {
     empresaId,
     ...dados,
+    /** Até quando dá para responder pelo direct (24 h depois da última mensagem dele no Instagram). */
+    instagramAte: dados.temInstagram ? await janelaDoDirect(db, empresaId) : null,
     /** Contatos da negociação (com a cadeia de quem indicou quem) e as sugestões a confirmar. */
     contatos: contatosLead,
     /** Números para o "enviar para"; telefone (abaixo) é o escolhido. */

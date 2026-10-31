@@ -124,6 +124,8 @@ export const respostaRapidaEntrada = z.object({
 export const filtrosConversas = z.object({
   filtro: z.enum(['todas', 'nao_lidas', 'minhas']).default('todas'),
   busca: z.string().trim().max(120).optional(),
+  /** Só as conversas de um canal. */
+  canal: z.enum(['whatsapp', 'instagram', 'email']).optional(),
 });
 
 /* ───────────────────────────── Agenda ───────────────────────────── */

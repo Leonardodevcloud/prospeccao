@@ -1,5 +1,6 @@
 import { INICIO_MES_SP, INICIO_MES_SP_TS } from '@prospeccao/db';
 import type { DepsApi } from '../../dependencias.js';
+import { enderecoDeRetorno } from '../instagram/rotas.js';
 
 /**
  * Configurações da plataforma (painel master): cada serviço que a plataforma usa para todos os
@@ -232,6 +233,33 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
     comoFazer: temVercel
       ? null
       : 'No Vercel: Account Settings › Tokens › Create (escopo do time do projeto). Coloque em VERCEL_TOKEN, o nome do projeto do painel em VERCEL_PROJETO e, se o projeto é de um time, o ID do time em VERCEL_TIME, na api do Railway.',
+    testavel: false,
+  });
+
+  // Instagram e cadastros dos anúncios (app da Meta)
+  const temMeta = !!(amb.metaAppId && amb.metaAppSecret);
+  const { rows: ig } = await pool.query<{ contas: number; cadastros: number; directs: number }>(
+    `SELECT (SELECT count(*)::int FROM comercial.instagram_contas WHERE ig_id IS NOT NULL) AS contas,
+            (SELECT count(*)::int FROM comercial.instagram_cadastros WHERE criado_em > now() - interval '30 days') AS cadastros,
+            (SELECT count(*)::int FROM comercial.instagram_interacoes
+              WHERE direct = 'enviado' AND comentado_em > now() - interval '30 days') AS directs`,
+  );
+  const retorno = enderecoDeRetorno(deps.origens);
+  const webhook = `${deps.origens[0]}/api/meta/webhook`;
+  lista.push({
+    id: 'meta',
+    nome: 'Instagram e anúncios · Meta',
+    papel:
+      'Conecta o Instagram dos clientes: "comente e receba", direct na conversa e os cadastros dos formulários dos anúncios.',
+    estado: !temMeta ? 'falta' : amb.metaTokenVerificacao ? 'ok' : 'aviso',
+    detalhe: temMeta
+      ? `${n(ig[0]?.contas ?? 0)} ${ig[0]?.contas === 1 ? 'conta conectada' : 'contas conectadas'} · ${n(ig[0]?.directs ?? 0)} directs e ${n(ig[0]?.cadastros ?? 0)} cadastros em 30 dias`
+      : 'Sem o app da Meta: a tela do Instagram explica que a integração ainda não foi liberada.',
+    comoFazer: !temMeta
+      ? `No developers.facebook.com: crie um app do tipo Empresa, adicione "Login do Facebook para Empresas", "Instagram" e "Webhooks". Coloque META_APP_ID e META_APP_SECRET na api do Railway e META_TOKEN_WEBHOOK (uma senha que você inventa). Em Login › URIs de redirecionamento: ${retorno}. Em Webhooks (objetos Instagram: comments e messages; Page: leadgen): ${webhook} com a mesma senha. Para os clientes usarem, o app precisa passar pela Análise do app da Meta.`
+      : amb.metaTokenVerificacao
+        ? null
+        : `Falta META_TOKEN_WEBHOOK: sem ela não dá para cadastrar o webhook (${webhook}) na Meta.`,
     testavel: false,
   });
   return lista;

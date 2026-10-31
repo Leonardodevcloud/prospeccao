@@ -91,7 +91,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
             <b>Vendas</b>: Funil, Conversas, Reuniões e Na rua.
           </li>
           <li>
-            <b>Automação</b>: E-mail e Agente de IA.
+            <b>Automação</b>: E-mail, Agente de IA e Instagram.
           </li>
           <li>
             <b>Argos</b>: o assistente e o mapa do conhecimento.
@@ -654,6 +654,93 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Em <b>O que falta ensinar</b> aparecem as perguntas que ela não soube responder: responda para ela
           aprender.
         </Nota>
+      </>
+    ),
+  },
+  {
+    id: 'instagram',
+    area: 'WhatsApp e IA',
+    titulo: 'Instagram: comente e receba, direct e formulários',
+    resumo:
+      'Quem comenta a palavra recebe o seu direct; quem responde ou preenche o formulário do anúncio vira lead.',
+    onde: { rotulo: 'Instagram', para: '/instagram' },
+    termos:
+      'instagram comente receba direct dm comentário palavra formulário anúncio meta facebook cadastro lead ads',
+    corpo: (
+      <>
+        <p>
+          Em <b>Automação › Instagram</b> o CRM recebe os leads que chegam pelo Instagram da empresa. Lead do
+          Instagram não passa pelo enriquecimento: entra direto no funil, com a etiqueta “instagram”.
+        </p>
+        <h3>1. Conectar (uma vez, pelo administrador)</h3>
+        <Passos>
+          <li>
+            O Instagram precisa ser <b>conta profissional</b> (comercial ou criador) e estar ligado à{' '}
+            <b>página do Facebook</b> da empresa.
+          </li>
+          <li>
+            Na aba <b>Conexão</b>, clique em <b>Conectar Instagram</b>, entre com o Facebook de quem
+            administra a página e escolha a conta.
+          </li>
+          <li>
+            No app do Instagram: Configurações › Mensagens e respostas a stories › Ferramentas conectadas ›
+            ligue <b>“Permitir acesso às mensagens”</b>. Sem isso, o direct não sai.
+          </li>
+        </Passos>
+        <h3>2. Comente e receba</h3>
+        <p>
+          Clique em <b>Nova regra</b>, escolha a publicação (ou “a próxima que eu postar”, ou “qualquer
+          publicação”) e as palavras, por exemplo PROSPECÇÃO. Quem comentar a palavra recebe a sua mensagem no
+          direct na hora. A palavra vale sem acento e sem diferença de maiúscula.
+        </p>
+        <ul>
+          <li>
+            <b>Resposta no comentário</b> (opcional): aparece para todos, como “Te mandei no direct!”. Com
+            mais de uma variação, o sistema sorteia.
+          </li>
+          <li>
+            <b>Botão com link</b> (opcional): o material que você prometeu no post.
+          </li>
+          <li>
+            <b>{'{nome}'}</b> na mensagem vira o primeiro nome de quem comentou, quando o Instagram mostra.
+          </li>
+        </ul>
+        <Nota>
+          Regras da Meta: só <b>uma</b> mensagem para cada comentário e até 7 dias depois dele (na live, só
+          enquanto ela está no ar). A conversa continua quando a pessoa responde. Para testar, comente a
+          palavra com outra conta sua.
+        </Nota>
+        <p>
+          <b>Quando a pessoa responde, ela vira lead</b> no funil, na etapa e com o responsável que você
+          escolheu na regra. Se ela mandar o telefone, o WhatsApp já fica salvo no lead. Com “O Agente de IA
+          continua a conversa” marcado, a IA responde pelo direct (seguindo o que você ensinou em Agente de
+          IA).
+        </p>
+        <p>
+          Na lista, cada publicação mostra quantos comentaram, receberam o direct, responderam, viraram lead e
+          marcaram reunião. Clique na publicação para ver cada pessoa; quem não respondeu dá para virar lead à
+          mão com <b>Criar lead</b>.
+        </p>
+        <h3>3. Direct em Conversas</h3>
+        <p>
+          O Instagram é mais um canal em <b>Conversas</b> (dá para filtrar só ele). Embaixo, escolha
+          <b> Instagram</b> para responder pelo direct. O Instagram só deixa responder até{' '}
+          <b>24 horas depois da última mensagem da pessoa</b>; depois disso, siga pelo WhatsApp. Se alguém da
+          equipe responder pelo app do Instagram, a mensagem também aparece aqui e a IA para de responder esse
+          lead.
+        </p>
+        <p>
+          Direct de quem não comentou em nenhuma regra: na aba Conexão você escolhe se vira lead ou fica só no
+          Instagram.
+        </p>
+        <h3>4. Formulários dos anúncios</h3>
+        <p>
+          Anúncio com o objetivo <b>Cadastros</b> (formulário instantâneo), no Instagram ou no Facebook: cada
+          cadastro cai no funil em segundos, com nome, telefone, e-mail e o anúncio de onde veio. Na aba{' '}
+          <b>Formulários</b>, clique em <b>Buscar formulários na Meta</b> e, em <b>Configurar</b>, escolha o
+          que cada pergunta vira no lead (o sistema já sugere), onde ele entra, as etiquetas e, se quiser, um
+          WhatsApp de boas-vindas que sai na hora.
+        </p>
       </>
     ),
   },

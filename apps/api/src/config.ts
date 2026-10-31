@@ -54,6 +54,19 @@ export const esquemaEnvApi = envBase.extend({
   VERCEL_TOKEN: opcional(z.string().min(10)),
   VERCEL_PROJETO: opcional(z.string().min(2)),
   VERCEL_TIME: opcional(z.string().min(2)),
+  /**
+   * Instagram e cadastros dos anúncios (Meta): o app da Prospect Team no developers.facebook.com.
+   * META_TOKEN_WEBHOOK é a senha que você inventa e coloca no cadastro do webhook na Meta.
+   * META_CONFIG_ID (opcional): a configuração do Facebook Login for Business.
+   */
+  META_APP_ID: opcional(z.string().regex(/^\d{5,}$/, 'META_APP_ID são só números')),
+  META_APP_SECRET: opcional(z.string().min(16)),
+  META_TOKEN_WEBHOOK: opcional(z.string().min(8)),
+  META_CONFIG_ID: opcional(z.string().regex(/^\d{5,}$/, 'META_CONFIG_ID são só números')),
+  META_VERSAO: z
+    .string()
+    .regex(/^v\d+\.\d+$/)
+    .default('v23.0'),
   VOZ_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
   VOZ_MODELO: z.string().default('whisper-large-v3-turbo'),
   OPENAI_CHAVE: opcional(z.string().min(10)),
@@ -128,6 +141,11 @@ export function credenciaisDoAmbiente(env: EnvApi) {
     vercelToken: env.VERCEL_TOKEN ?? null,
     vercelProjeto: env.VERCEL_PROJETO ?? null,
     vercelTime: env.VERCEL_TIME ?? null,
+    metaAppId: env.META_APP_ID ?? null,
+    metaAppSecret: env.META_APP_SECRET ?? null,
+    metaTokenVerificacao: env.META_TOKEN_WEBHOOK ?? null,
+    metaConfigId: env.META_CONFIG_ID ?? null,
+    metaVersao: env.META_VERSAO,
   };
 }
 

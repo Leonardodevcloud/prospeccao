@@ -129,7 +129,7 @@ export async function criarMensagem(
     texto: string;
     telefone: string | null;
     status: 'rascunho' | 'aprovada' | 'enviada' | 'recebida';
-    origem: 'agente' | 'cadencia' | 'humano' | 'lead' | 'sequencia';
+    origem: 'agente' | 'cadencia' | 'humano' | 'lead' | 'sequencia' | 'automatico';
     idExterno?: string | null;
     nota?: string | null;
     usuarioId?: number | null;
@@ -139,14 +139,17 @@ export async function criarMensagem(
     lida?: boolean;
     /** Chip (instância) por onde saiu ou chegou. */
     chipId?: number | null;
+    /** WhatsApp (padrão) ou direct do Instagram (com o id da pessoa lá). */
+    canal?: 'whatsapp' | 'instagram';
+    instagramId?: string | null;
   },
 ): Promise<number | null> {
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO comercial.mensagens
        (conta_id, empresa_id, direcao, texto, telefone, status, origem, id_externo, nota, enviado_em,
-        usuario_id, midia_tipo, midia_id, lida_em, chip_id, contato_id)
+        usuario_id, midia_tipo, midia_id, lida_em, chip_id, canal, instagram_id, contato_id)
      VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'enviada' THEN now() END,
-             $9, $10, $11, CASE WHEN $2 = 'enviada' OR $12 THEN now() END, $13,
+             $9, $10, $11, CASE WHEN $2 = 'enviada' OR $12 THEN now() END, $13, $14, $15,
              -- com quem foi: o contato da negociação dono deste número (null = número da empresa)
              (SELECT cl.id FROM comercial.contatos_lead cl
                WHERE cl.conta_id = ${contaSql()} AND cl.empresa_id = $1 AND cl.status = 'confirmado'
@@ -169,6 +172,8 @@ export async function criarMensagem(
       m.midiaId ?? null,
       m.lida ?? false,
       m.chipId ?? null,
+      m.canal ?? 'whatsapp',
+      m.instagramId ?? null,
     ],
   );
   return rows[0]?.id ?? null;

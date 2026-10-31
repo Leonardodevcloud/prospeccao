@@ -27,6 +27,7 @@ const TIPOS: { id: Exclude<TipoAtividade, 'etapa'>; rotulo: string }[] = [
   { id: 'email', rotulo: 'E-mail' },
   { id: 'visita', rotulo: 'Visita' },
   { id: 'reuniao', rotulo: 'Reunião' },
+  { id: 'instagram', rotulo: 'Instagram' },
   { id: 'nota', rotulo: 'Nota' },
 ];
 
@@ -38,6 +39,7 @@ const NOME_TIPO: Record<TipoAtividade, string> = {
   reuniao: 'Reunião',
   nota: 'Nota',
   etapa: 'Etapa',
+  instagram: 'Instagram',
 };
 
 /** Atalhos de prazo para o próximo passo. */

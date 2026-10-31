@@ -221,7 +221,15 @@ export const ROTULO_ETAPA: Record<EtapaFunil, string> = {
   descartado: 'Descartado',
 };
 
-export type TipoAtividade = 'whatsapp' | 'ligacao' | 'email' | 'visita' | 'reuniao' | 'nota' | 'etapa';
+export type TipoAtividade =
+  | 'whatsapp'
+  | 'ligacao'
+  | 'email'
+  | 'visita'
+  | 'reuniao'
+  | 'nota'
+  | 'etapa'
+  | 'instagram';
 
 export interface AtividadeFunil {
   id: number;
@@ -1015,7 +1023,8 @@ export interface ConversaResumo {
   ultimaMidia: TipoMidia | null;
   ultimaOrigem: string | null;
   /** Canal da última mensagem (WhatsApp ou e-mail). */
-  ultimoCanal: 'whatsapp' | 'email' | null;
+  ultimoCanal: 'whatsapp' | 'email' | 'instagram' | null;
+  instagramUsuario?: string | null;
   naoLidas: number;
   /** Conversa seguindo com uma pessoa indicada (nome dela). */
   falandoCom: string | null;
@@ -1025,13 +1034,13 @@ export interface ConversaResumo {
 
 export interface MensagemConversa {
   id: string;
-  canal: 'whatsapp' | 'email';
+  canal: 'whatsapp' | 'email' | 'instagram';
   /** Assunto, quando é e-mail. */
   assunto: string | null;
   direcao: 'enviada' | 'recebida';
   texto: string;
   status: 'rascunho' | 'aprovada' | 'enviada' | 'erro' | 'recebida' | 'registrada';
-  origem: 'agente' | 'cadencia' | 'humano' | 'lead' | 'registro' | 'sequencia';
+  origem: 'agente' | 'cadencia' | 'humano' | 'lead' | 'registro' | 'sequencia' | 'automatico';
   erro: string | null;
   nota: string | null;
   midiaTipo: TipoMidia | null;
@@ -1072,7 +1081,34 @@ export interface ConversaAberta {
   contatos: ContatoLead[];
   /** Números para o "enviar para" (telefone é o escolhido). */
   opcoesEnvio: OpcaoEnvio[];
+  /** O lead conversou pelo direct do Instagram. */
+  temInstagram?: boolean;
+  instagramUsuario?: string | null;
+  /** Até quando dá para responder pelo direct (24 h depois da última mensagem dele lá). */
+  instagramAte?: string | null;
+  /** De onde veio: comentário numa publicação, direct ou formulário de anúncio. */
+  origemInstagram?: OrigemInstagram | null;
 }
+
+export type OrigemInstagram =
+  | {
+      tipo: 'comentario';
+      regraId: number | null;
+      midiaId: string | null;
+      legenda: string | null;
+      link: string | null;
+      midiaTipo: string | null;
+      comentario: string | null;
+    }
+  | { tipo: 'direct' }
+  | {
+      tipo: 'formulario';
+      formId: string;
+      formulario: string;
+      anuncio: string | null;
+      campanha: string | null;
+      plataforma: string | null;
+    };
 
 export interface ContatoLead {
   id: number;

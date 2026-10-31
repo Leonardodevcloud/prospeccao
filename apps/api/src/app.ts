@@ -33,6 +33,9 @@ import { rotasFunil } from './modulos/funil/rotas.js';
 import { rotasImportacaoLeads } from './modulos/importacao-leads/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasInicio } from './modulos/inicio/rotas.js';
+import { metaDoAmbiente } from './modulos/instagram/meta.js';
+import { rotasInstagram, rotasMeta } from './modulos/instagram/rotas.js';
+import { definirMeta } from './modulos/instagram/servico.js';
 import { rotasLgpd } from './modulos/lgpd/rotas.js';
 import { rotasFundosPessoais } from './modulos/marca/pessoais.js';
 import { rotasMarcaPublica } from './modulos/marca/publico.js';
@@ -60,6 +63,13 @@ export function criarApp(deps: DepsApi): Express {
   app.use(helmet());
   // Link das salas de reunião: <endereço do sistema>/r/<código>.
   definirEnderecoDasSalas(deps.origens[0]);
+  // Instagram e cadastros dos anúncios (app da Meta pelas variáveis META_*; os testes simulam).
+  definirMeta(
+    deps.meta !== undefined ? deps.meta : metaDoAmbiente(deps.credenciais.ambiente),
+    deps.credenciais.chave,
+  );
+  // O que a Meta chama sem login: o webhook (corpo cru, assinado) e a volta do login.
+  app.use('/meta', rotasMeta(deps));
   // Webhook do WhatsApp: vem da Evolution (sem origem do navegador, sem sessão); protegido por token.
   // Antes do limite de 200 kb: mensagem com mídia chega grande.
   app.use('/webhooks', express.json({ limit: '10mb' }), rotasWebhook(deps));
@@ -140,6 +150,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/lgpd', rotasLgpd(deps));
   protegidas.use('/notificacoes', rotasNotificacoes(deps));
   protegidas.use('/conversas', rotasConversas(deps));
+  protegidas.use('/instagram', rotasInstagram(deps));
   protegidas.use('/agenda', rotasAgenda(deps));
   // Reuniões: ver as que já aconteceram vale sempre; marcar e mexer é do plano (e das horas do mês).
   protegidas.use(

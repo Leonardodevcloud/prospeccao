@@ -8,6 +8,7 @@ import { limiteDoMes } from '../consumo/repositorio.js';
 import { emSequenciaSql } from '../email/sequencia.js';
 import { mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
+import { enviarDirectsPendentes } from '../instagram/servico.js';
 import { aprenderComEquipe, type DepsAtendimento, responderLead, retomarCombinados } from './atendimento.js';
 import * as chips from './chips.js';
 import { dentroDoHorario } from './horario.js';
@@ -83,8 +84,8 @@ export async function gerarRespostas(deps: DepsMotor, cfg: repo.ConfigAgente, li
               SELECT a.direcao, a.tipo, a.criado_em FROM comercial.atividades a
                WHERE a.conta_id = o.conta_id AND a.empresa_id = o.empresa_id AND a.direcao IS NOT NULL
                ORDER BY a.criado_em DESC, a.id DESC LIMIT 1) ult
-             -- só responde no WhatsApp quem escreveu no WhatsApp (resposta de e-mail é com a equipe)
-             WHERE ult.direcao = 'recebida' AND ult.tipo = 'whatsapp'
+             -- só responde quem escreveu no WhatsApp ou no direct (resposta de e-mail é com a equipe)
+             WHERE ult.direcao = 'recebida' AND ult.tipo IN ('whatsapp', 'instagram')
                AND ult.criado_em < now() - interval '40 seconds')
       ORDER BY o.atualizado_em
       LIMIT $1`,
@@ -120,7 +121,8 @@ export async function enviarProxima(
 
   const { rows: fila } = await deps.pool.query<{ id: number; empresa_id: number; origem: string }>(
     `SELECT id::int, empresa_id::int, origem FROM comercial.mensagens
-      WHERE conta_id = ${C} AND status = 'aprovada' ${opcoes.soSequencia ? `AND origem = 'sequencia'` : ''}
+      WHERE conta_id = ${C} AND status = 'aprovada' AND canal = 'whatsapp'
+        ${opcoes.soSequencia ? `AND origem IN ('sequencia', 'automatico')` : ''}
       ORDER BY (origem = 'agente') DESC, criado_em, id LIMIT 30`,
   );
   for (const candidata of fila) {
@@ -217,6 +219,11 @@ export async function rodarAgenteDaConta(
   await gerarRespostas(deps, cfg);
   await retomarCombinados(deps, cfg);
   if (dentroDoHorario(cfg)) await gerarAbordagens(deps, cfg);
+  // Respostas pelo direct do Instagram (dentro do horário; a janela de 24 h é conferida lá).
+  if (dentroDoHorario(cfg))
+    await enviarDirectsPendentes(deps.pool, deps.log).catch((erro) =>
+      deps.log.warn({ err: erro }, 'agente: falha no envio pelo Instagram'),
+    );
   await enviarProxima(deps, cfg);
 }
 
