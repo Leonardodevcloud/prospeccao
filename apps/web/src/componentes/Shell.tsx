@@ -10,6 +10,7 @@ import { useFollowupsPendentes } from '../paginas/Funil';
 import { useMeuDiaResumo } from '../paginas/MeuDia';
 import { useEntrarNaUnidade, useOrganizacao } from '../paginas/Organizacao';
 import { useNovosPedidos } from '../paginas/Vendas';
+import { ChamadaEntrando } from '../telefone/ChamadaEntrando';
 import { PainelLigacao } from '../telefone/PainelLigacao';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
 import { Argos } from './argos/Argos';
@@ -394,6 +395,7 @@ export function Shell() {
       {avisosAbertos && <PainelAvisos aoFechar={() => setAvisosAbertos(false)} />}
       {/* A ligação em curso fica por cima de qualquer tela (dá para navegar durante a ligação). */}
       {!plataforma && <PainelLigacao />}
+      {!plataforma && <ChamadaEntrando />}
     </div>
   );
 }

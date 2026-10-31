@@ -166,6 +166,8 @@ const telefone = z
 export const iniciarLigacaoEntrada = z.object({
   empresaId: z.number().int().positive().nullable().default(null),
   telefone,
+  /** Ligação da lista de ligação (o item reservado em "próximo"). */
+  listaItemId: z.number().int().positive().nullish(),
 });
 export type IniciarLigacaoEntrada = z.infer<typeof iniciarLigacaoEntrada>;
 
@@ -226,6 +228,14 @@ export const telefoniaConfigEntrada = z.object({
   /** Ligar com o número do mesmo DDD do lead, quando houver. */
   mesmoDdd: z.boolean(),
   guardarMeses: z.number().int().min(1).max(60),
+  /** Receber ligações nos números da empresa pelo CRM. */
+  receber: z.boolean(),
+  /** Segundos tocando só para o dono do lead antes de tocar para o time. */
+  toqueDono: z.number().int().min(0).max(60),
+  /** Segundos tocando no CRM antes de ir para o celular (siga-me) ou virar perdida. */
+  toqueEntrada: z.number().int().min(15).max(120),
+  /** Ninguém atendeu no CRM: toca no celular do dono do lead (o cadastrado na Equipe). */
+  sigaMe: z.boolean(),
 });
 export type TelefoniaConfigEntrada = z.infer<typeof telefoniaConfigEntrada>;
 
@@ -237,7 +247,48 @@ export const TELEFONIA_PADRAO: TelefoniaConfigEntrada = {
   toqueSegundos: 25,
   mesmoDdd: true,
   guardarMeses: 12,
+  receber: true,
+  toqueDono: 20,
+  toqueEntrada: 40,
+  sigaMe: true,
 };
+
+/* ───────────────────────────── Lista de ligação ───────────────────────────── */
+
+export const listaLigacaoEntrada = z.object({
+  nome: z.string().trim().max(120).nullish(),
+  empresaIds: z.array(z.number().int().positive()).min(1, 'Escolha ao menos um lead.').max(200),
+  /** 1: um de cada vez; 2 ou 3: em paralelo (o primeiro que atende vem para você). */
+  linhas: z.number().int().min(1).max(3).default(1),
+  /** Não atendeu: põe o lead de novo no fim da lista com o próximo número dele. */
+  tentarProximo: z.boolean().default(true),
+  /** Pausa entre uma ligação e a próxima (para anotar). */
+  pausaSegundos: z.number().int().min(0).max(120).default(10),
+});
+export type ListaLigacaoEntrada = z.infer<typeof listaLigacaoEntrada>;
+
+/** Máximo de vezes que o mesmo lead entra na lista (um número diferente a cada vez). */
+export const MAX_TENTATIVAS_LISTA = 3;
+
+/**
+ * Horário de ligar para lead (a lista não disca fora dele): segunda a sexta das 8h às 20h e sábado
+ * das 8h às 14h, no horário de Brasília. Ligação avulsa pela ficha não tem trava (o comercial decide).
+ */
+export function horarioDeLigar(agora: Date = new Date()): boolean {
+  const p = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    weekday: 'short',
+    hour: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(agora);
+  const dia = p.find((x) => x.type === 'weekday')?.value ?? '';
+  const hora = Number(p.find((x) => x.type === 'hour')?.value ?? 0);
+  if (dia === 'Sun') return false;
+  if (dia === 'Sat') return hora >= 8 && hora < 14;
+  return hora >= 8 && hora < 20;
+}
+
+export const HORARIO_DE_LIGAR = 'segunda a sexta, das 8h às 20h, e sábado, das 8h às 14h';
 
 /** Painel master: número da empresa (comprado no provedor e ligado ao LiveKit). */
 export const numeroEmpresaEntrada = z.object({

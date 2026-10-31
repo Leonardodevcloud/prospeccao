@@ -22,6 +22,7 @@ import * as agenda from '../agenda/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
 import { registrarFeedback } from '../empresas/repositorio.js';
 import * as funil from '../funil/repositorio.js';
+import { notificar } from '../notificacoes/repositorio.js';
 
 /**
  * Ligações pelo CRM. O comercial liga pelo navegador: a api abre a sala no LiveKit, dá o acesso e,
@@ -48,7 +49,7 @@ export const SEM_TELEFONIA: DepsTelefonia = {
   fala: null,
 };
 
-const ABERTAS = `('preparando', 'chamando', 'tocando', 'em_andamento')`;
+const ABERTAS = `('preparando', 'chamando', 'tocando', 'em_andamento', 'siga_me')`;
 
 /* ───────────────────────────── Plano e configuração ───────────────────────────── */
 
@@ -68,11 +69,13 @@ export async function exigirModulo(db: Executor): Promise<void> {
     );
 }
 
-export async function config(db: Executor): Promise<TelefoniaConfigEntrada> {
+export async function config(db: Executor, contaId: number = conta()): Promise<TelefoniaConfigEntrada> {
   const { rows } = await db.query<TelefoniaConfigEntrada>(
     `SELECT gravar, aviso_gravacao AS "avisoGravacao", aviso_falado AS "avisoFalado", transcrever,
-            toque_segundos AS "toqueSegundos", mesmo_ddd AS "mesmoDdd", guardar_meses AS "guardarMeses"
-       FROM comercial.telefonia_contas WHERE conta_id = ${contaSql()}`,
+            toque_segundos AS "toqueSegundos", mesmo_ddd AS "mesmoDdd", guardar_meses AS "guardarMeses",
+            receber, toque_dono AS "toqueDono", toque_entrada AS "toqueEntrada", siga_me AS "sigaMe"
+       FROM comercial.telefonia_contas WHERE conta_id = $1`,
+    [contaId],
   );
   return rows[0] ?? TELEFONIA_PADRAO;
 }
@@ -80,11 +83,25 @@ export async function config(db: Executor): Promise<TelefoniaConfigEntrada> {
 export async function salvarConfig(db: Executor, c: TelefoniaConfigEntrada): Promise<void> {
   await db.query(
     `INSERT INTO comercial.telefonia_contas
-       (conta_id, gravar, aviso_gravacao, aviso_falado, transcrever, toque_segundos, mesmo_ddd, guardar_meses)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7)
+       (conta_id, gravar, aviso_gravacao, aviso_falado, transcrever, toque_segundos, mesmo_ddd, guardar_meses,
+        receber, toque_dono, toque_entrada, siga_me)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (conta_id) DO UPDATE SET gravar = $1, aviso_gravacao = $2, aviso_falado = $3, transcrever = $4,
-       toque_segundos = $5, mesmo_ddd = $6, guardar_meses = $7, atualizado_em = now()`,
-    [c.gravar, c.avisoGravacao, c.avisoFalado, c.transcrever, c.toqueSegundos, c.mesmoDdd, c.guardarMeses],
+       toque_segundos = $5, mesmo_ddd = $6, guardar_meses = $7, receber = $8, toque_dono = $9,
+       toque_entrada = $10, siga_me = $11, atualizado_em = now()`,
+    [
+      c.gravar,
+      c.avisoGravacao,
+      c.avisoFalado,
+      c.transcrever,
+      c.toqueSegundos,
+      c.mesmoDdd,
+      c.guardarMeses,
+      c.receber,
+      c.toqueDono,
+      c.toqueEntrada,
+      c.sigaMe,
+    ],
   );
 }
 
@@ -149,51 +166,71 @@ export async function situacao(db: Executor, deps: DepsTelefonia) {
 
 /** Todos os números do lead, de todas as fontes, na ordem em que o CRM tenta. */
 export async function telefonesDoLead(db: Executor, empresaId: number) {
+  return (await telefonesDosLeads(db, [empresaId])).get(empresaId) ?? [];
+}
+
+/** Os números de vários leads de uma vez (a lista de ligação monta com isto). */
+export async function telefonesDosLeads(
+  db: Executor,
+  empresaIds: number[],
+): Promise<Map<number, ReturnType<typeof ordenarTelefones>>> {
   const C = contaSql();
+  const ids = [...new Set(empresaIds)];
   const [enriq, pessoas, empresa, confirmados, tentativas, errados] = await Promise.all([
     db.query<{
+      empresa_id: number;
       valor: string;
       canal: string;
       rotulo: string | null;
       principal: boolean;
       whatsapp: boolean | null;
     }>(
-      `SELECT c.valor, c.canal, coalesce(p.nome || coalesce(' · ' || p.cargo, ''), c.rotulo) AS rotulo,
+      `SELECT c.empresa_id::int, c.valor, c.canal, coalesce(p.nome || coalesce(' · ' || p.cargo, ''), c.rotulo) AS rotulo,
               c.principal, (c.canal = 'whatsapp' OR c.whatsapp IS TRUE) AS whatsapp
          FROM enriquecimento.contatos c LEFT JOIN enriquecimento.pessoas p ON p.id = c.pessoa_id
-        WHERE c.empresa_id = $1 AND c.canal IN ('whatsapp', 'telefone') AND ${visivel('c')}`,
-      [empresaId],
+        WHERE c.empresa_id = ANY($1::bigint[]) AND c.canal IN ('whatsapp', 'telefone') AND ${visivel('c')}`,
+      [ids],
     ),
-    db.query<{ telefone: string; nome: string; cargo: string | null }>(
-      `SELECT telefone, nome, cargo FROM comercial.contatos_lead
-        WHERE conta_id = ${C} AND empresa_id = $1 AND status = 'confirmado' AND telefone IS NOT NULL`,
-      [empresaId],
+    db.query<{ empresa_id: number; telefone: string; nome: string; cargo: string | null }>(
+      `SELECT empresa_id::int, telefone, nome, cargo FROM comercial.contatos_lead
+        WHERE conta_id = ${C} AND empresa_id = ANY($1::bigint[]) AND status = 'confirmado' AND telefone IS NOT NULL`,
+      [ids],
     ),
-    db.query<{ maps: string | null; receita: string[] | null }>(
-      `SELECT maps_telefone AS maps, telefones_receita AS receita FROM descoberta.empresas WHERE id = $1`,
-      [empresaId],
+    db.query<{ id: number; maps: string | null; receita: string[] | null }>(
+      `SELECT id::int, maps_telefone AS maps, telefones_receita AS receita FROM descoberta.empresas
+        WHERE id = ANY($1::bigint[])`,
+      [ids],
     ),
-    db.query<{ telefone: string }>(
-      `SELECT telefone FROM comercial.telefones_confirmados WHERE conta_id = ${C} AND empresa_id = $1`,
-      [empresaId],
+    db.query<{ empresa_id: number; telefone: string }>(
+      `SELECT empresa_id::int, telefone FROM comercial.telefones_confirmados
+        WHERE conta_id = ${C} AND empresa_id = ANY($1::bigint[])`,
+      [ids],
     ),
-    db.query<{ telefone: string; n: number; em: string; resultado: TelefoneBruto['ultimoResultado'] }>(
-      `SELECT DISTINCT ON (telefone) telefone, count(*) OVER (PARTITION BY telefone)::int AS n,
-              iniciada_em AS em, resultado
-         FROM comercial.ligacoes WHERE conta_id = ${C} AND empresa_id = $1 AND direcao = 'saida'
-        ORDER BY telefone, iniciada_em DESC`,
-      [empresaId],
+    db.query<{
+      empresa_id: number;
+      telefone: string;
+      n: number;
+      em: string;
+      resultado: TelefoneBruto['ultimoResultado'];
+    }>(
+      `SELECT DISTINCT ON (empresa_id, telefone) empresa_id::int, telefone,
+              count(*) OVER (PARTITION BY empresa_id, telefone)::int AS n, iniciada_em AS em, resultado
+         FROM comercial.ligacoes WHERE conta_id = ${C} AND empresa_id = ANY($1::bigint[]) AND direcao = 'saida'
+        ORDER BY empresa_id, telefone, iniciada_em DESC`,
+      [ids],
     ),
-    db.query<{ valor: string }>(
-      `SELECT valor FROM comercial.feedback WHERE empresa_id = $1 AND tipo = 'numero_errado'`,
-      [empresaId],
+    db.query<{ empresa_id: number; valor: string }>(
+      `SELECT empresa_id::int, valor FROM comercial.feedback
+        WHERE empresa_id = ANY($1::bigint[]) AND tipo = 'numero_errado'`,
+      [ids],
     ),
   ]);
-  const errado = new Set(errados.rows.map((r) => r.valor.replace(/\D/g, '').slice(-8)));
-  const conf = new Set(confirmados.rows.map((r) => r.telefone.slice(-8)));
-  const tent = new Map(tentativas.rows.map((r) => [r.telefone.slice(-8), r]));
-  const extras = (numero: string): Partial<TelefoneBruto> => {
-    const k = numero.replace(/\D/g, '').slice(-8);
+  const chave = (e: number, n: string) => `${e}:${n.replace(/\D/g, '').slice(-8)}`;
+  const errado = new Set(errados.rows.map((r) => chave(r.empresa_id, r.valor)));
+  const conf = new Set(confirmados.rows.map((r) => chave(r.empresa_id, r.telefone)));
+  const tent = new Map(tentativas.rows.map((r) => [chave(r.empresa_id, r.telefone), r]));
+  const extras = (e: number, numero: string): Partial<TelefoneBruto> => {
+    const k = chave(e, numero);
     const t = tent.get(k);
     return {
       errado: errado.has(k),
@@ -203,39 +240,34 @@ export async function telefonesDoLead(db: Executor, empresaId: number) {
       tentativas: t?.n ?? 0,
     };
   };
-  const brutos: TelefoneBruto[] = [
-    ...pessoas.rows.map((p) => ({
+  const brutos = new Map<number, TelefoneBruto[]>(ids.map((id) => [id, []]));
+  for (const p of pessoas.rows)
+    brutos.get(p.empresa_id)?.push({
       numero: p.telefone,
-      origem: 'contato' as const,
+      origem: 'contato',
       rotulo: [p.nome, p.cargo].filter(Boolean).join(' · '),
-      ...extras(p.telefone),
-    })),
-    ...enriq.rows.map((c) => ({
+      ...extras(p.empresa_id, p.telefone),
+    });
+  for (const c of enriq.rows)
+    brutos.get(c.empresa_id)?.push({
       numero: c.valor,
-      origem: c.canal === 'whatsapp' ? ('whatsapp' as const) : ('enriquecimento' as const),
+      origem: c.canal === 'whatsapp' ? 'whatsapp' : 'enriquecimento',
       rotulo: c.rotulo,
       principal: c.principal,
       whatsapp: c.whatsapp,
-      ...extras(c.valor),
-    })),
-    ...(empresa.rows[0]?.maps
-      ? [
-          {
-            numero: empresa.rows[0].maps,
-            origem: 'google' as const,
-            rotulo: 'Perfil no Google',
-            ...extras(empresa.rows[0].maps),
-          },
-        ]
-      : []),
-    ...(empresa.rows[0]?.receita ?? []).map((n) => ({
-      numero: n,
-      origem: 'receita' as const,
-      rotulo: 'Cadastro da Receita',
-      ...extras(n),
-    })),
-  ];
-  return ordenarTelefones(brutos);
+      ...extras(c.empresa_id, c.valor),
+    });
+  for (const e of empresa.rows) {
+    if (e.maps)
+      brutos
+        .get(e.id)
+        ?.push({ numero: e.maps, origem: 'google', rotulo: 'Perfil no Google', ...extras(e.id, e.maps) });
+    for (const n of e.receita ?? [])
+      brutos
+        .get(e.id)
+        ?.push({ numero: n, origem: 'receita', rotulo: 'Cadastro da Receita', ...extras(e.id, n) });
+  }
+  return new Map([...brutos].map(([id, b]) => [id, ordenarTelefones(b)]));
 }
 
 /* ───────────────────────────── A ligação ───────────────────────────── */
@@ -322,22 +354,43 @@ export async function iniciar(db: Executor, deps: DepsTelefonia, d: IniciarLigac
       throw AppError.conflito('Este lead pediu para não receber ligações. Use outro canal.');
     lead = rows[0].nome;
   }
-  // Uma ligação por vez para cada pessoa (outra aba esquecida aberta é encerrada).
+  // Da lista de ligação: o item tem que estar reservado para esta pessoa.
+  let listaId: number | null = null;
+  if (d.listaItemId) {
+    const { rows: it } = await db.query<{ lista_id: number }>(
+      `SELECT i.lista_id::int FROM comercial.lista_ligacao_itens i
+         JOIN comercial.listas_ligacao l ON l.id = i.lista_id
+        WHERE i.id = $1 AND i.conta_id = ${contaSql()} AND l.usuario_id = $2 AND l.situacao = 'ativa'
+          AND i.situacao = 'chamando' AND i.ligacao_id IS NULL`,
+      [d.listaItemId, u.id],
+    );
+    if (!it[0]) throw AppError.conflito('Este item da lista já foi ligado ou a lista foi pausada.');
+    listaId = it[0].lista_id;
+  }
+  // Uma ligação por vez para cada pessoa (outra aba esquecida aberta é encerrada); na lista em
+  // paralelo, as outras linhas da mesma lista continuam.
   const { rows: abertas } = await db.query<{ id: number; sala: string }>(
-    `SELECT id::int, sala FROM comercial.ligacoes
-      WHERE conta_id = ${contaSql()} AND usuario_id = $1 AND situacao IN ${ABERTAS}`,
-    [u.id],
+    `SELECT l.id::int, l.sala FROM comercial.ligacoes l
+       LEFT JOIN comercial.lista_ligacao_itens i ON i.id = l.lista_item_id
+      WHERE l.conta_id = ${contaSql()} AND l.usuario_id = $1 AND l.situacao IN ${ABERTAS}
+        AND ($2::bigint IS NULL OR i.lista_id IS DISTINCT FROM $2::bigint)`,
+    [u.id, listaId],
   );
   for (const a of abertas) await encerrar(db, deps, a.id, 'nova ligação');
 
   const sala = nomeSala(conta());
   const gravar = !!deps.armazenamento && cfg.gravar;
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO comercial.ligacoes (conta_id, empresa_id, usuario_id, telefone, numero_empresa, sala, gravar)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6) RETURNING id::int`,
-    [d.empresaId, u.id, d.telefone, saida.numero, sala, gravar],
+    `INSERT INTO comercial.ligacoes (conta_id, empresa_id, usuario_id, telefone, numero_empresa, sala, gravar, lista_item_id)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7) RETURNING id::int`,
+    [d.empresaId, u.id, d.telefone, saida.numero, sala, gravar, d.listaItemId ?? null],
   );
   const id = rows[0]!.id;
+  if (d.listaItemId)
+    await db.query(
+      `UPDATE comercial.lista_ligacao_itens SET ligacao_id = $2, atualizado_em = now() WHERE id = $1`,
+      [d.listaItemId, id],
+    );
   try {
     await deps.servico.abrirSala(sala);
   } catch (e) {
@@ -357,6 +410,7 @@ export async function iniciar(db: Executor, deps: DepsTelefonia, d: IniciarLigac
     empresaId: d.empresaId,
     gravar,
     aviso: gravar ? { texto: cfg.avisoGravacao, falado: !!deps.fala && cfg.avisoFalado } : null,
+    listaItemId: d.listaItemId ?? null,
   };
 }
 
@@ -594,7 +648,7 @@ const CAMPOS_LISTA = `l.id::int, l.empresa_id::int AS "empresaId", coalesce(e.ma
   l.usuario_id AS "usuarioId", u.nome AS "usuarioNome", l.direcao, l.telefone, l.numero_empresa AS "numeroEmpresa",
   l.situacao, l.iniciada_em AS "iniciadaEm", l.atendida_em AS "atendidaEm", l.duracao_segundos AS "duracaoSegundos",
   l.resultado, l.processamento, l.resumo->>'resumo' AS resumo, l.resumo->>'clima' AS clima,
-  l.resumo->>'sentimento' AS sentimento, l.nota,
+  l.resumo->>'sentimento' AS sentimento, l.nota, l.perdida, l.siga_me AS "sigaMe",
   EXISTS (SELECT 1 FROM comercial.ligacao_audios a WHERE a.ligacao_id = l.id) AS gravada`;
 
 export async function doLead(db: Executor, empresaId: number) {
@@ -626,21 +680,24 @@ export async function lista(
     dias: number;
     limite: number;
     empresaId?: number | null;
+    ver?: 'todas' | 'feitas' | 'recebidas' | 'perdidas';
   },
 ) {
   const valores: unknown[] = [f.dias];
-  if (f.empresaId) valores.push(f.empresaId);
   const where = [`l.conta_id = ${contaSql()}`, `l.iniciada_em >= now() - make_interval(days => $1::int)`];
-  if (f.empresaId) where.push('l.empresa_id = $2');
-  if (f.usuarioId) {
-    valores.push(f.usuarioId);
-    where.push(`l.usuario_id = $${valores.length}`);
-  }
-  if (f.resultado === 'sem_resultado') where.push(`l.resultado IS NULL AND l.situacao = 'encerrada'`);
-  else if (f.resultado) {
-    valores.push(f.resultado);
-    where.push(`l.resultado = $${valores.length}`);
-  }
+  const add = (sql: (n: string) => string, v: unknown) => {
+    valores.push(v);
+    where.push(sql(`$${valores.length}`));
+  };
+  if (f.empresaId) add((n) => `l.empresa_id = ${n}`, f.empresaId);
+  // Recebidas e perdidas de quem não é dono aparecem para todos (a ligação era da empresa).
+  if (f.usuarioId) add((n) => `(l.usuario_id = ${n} OR l.dono_id = ${n})`, f.usuarioId);
+  if (f.ver === 'feitas') where.push(`l.direcao = 'saida'`);
+  if (f.ver === 'recebidas') where.push(`l.direcao = 'entrada' AND NOT l.perdida`);
+  if (f.ver === 'perdidas') where.push('l.perdida');
+  if (f.resultado === 'sem_resultado')
+    where.push(`l.resultado IS NULL AND l.situacao = 'encerrada' AND NOT l.perdida`);
+  else if (f.resultado) add((n) => `l.resultado = ${n}`, f.resultado);
   const [lig, tot] = await Promise.all([
     db.query(
       `SELECT ${CAMPOS_LISTA}
@@ -651,16 +708,102 @@ export async function lista(
         ORDER BY l.iniciada_em DESC LIMIT $${valores.length + 1}`,
       [...valores, f.limite],
     ),
-    db.query<{ feitas: number; atendidas: number; conversas: number; segundos: number }>(
+    db.query<{ feitas: number; atendidas: number; conversas: number; segundos: number; perdidas: number }>(
       `SELECT count(*)::int AS feitas, count(*) FILTER (WHERE atendida_em IS NOT NULL)::int AS atendidas,
               count(*) FILTER (WHERE resultado = 'conversou')::int AS conversas,
-              coalesce(sum(duracao_segundos), 0)::int AS segundos
+              coalesce(sum(duracao_segundos), 0)::int AS segundos,
+              count(*) FILTER (WHERE perdida)::int AS perdidas
          FROM comercial.ligacoes l
         WHERE ${where.join(' AND ')}`,
       valores,
     ),
   ]);
   return { ligacoes: lig.rows, totais: tot.rows[0] };
+}
+
+/**
+ * Relatórios › Ligações: quanto o time liga, atende, conversa e marca reunião (por pessoa) e em
+ * que dia e hora os leads mais atendem (só as feitas).
+ */
+export async function relatorio(db: Executor, dias: number, soDe: number | null) {
+  const filtro = `l.conta_id = ${contaSql()} AND l.iniciada_em >= now() - make_interval(days => $1::int)
+    ${soDe ? `AND l.usuario_id = ${Math.trunc(soDe)}` : ''}`;
+  // Reunião marcada pela ligação: tarefa de reunião do lead criada até 15 min depois do resultado.
+  const reuniao = `EXISTS (SELECT 1 FROM comercial.tarefas t WHERE t.conta_id = l.conta_id AND t.empresa_id = l.empresa_id
+      AND t.tipo = 'reuniao' AND t.criado_em BETWEEN l.encerrada_em AND coalesce(l.resultado_em, l.encerrada_em) + interval '15 minutes')`;
+  const [tot, porPessoa, mapa] = await Promise.all([
+    db.query(
+      `SELECT count(*) FILTER (WHERE direcao = 'saida')::int AS feitas,
+              count(*) FILTER (WHERE direcao = 'saida' AND atendida_em IS NOT NULL)::int AS atendidas,
+              count(*) FILTER (WHERE resultado = 'conversou' AND duracao_segundos >= 120)::int AS "conversas2min",
+              count(*) FILTER (WHERE resultado = 'conversou')::int AS conversas,
+              count(*) FILTER (WHERE ${reuniao})::int AS reunioes,
+              count(*) FILTER (WHERE direcao = 'entrada' AND NOT perdida)::int AS recebidas,
+              count(*) FILTER (WHERE perdida)::int AS perdidas,
+              coalesce(sum(ceil(duracao_segundos / 60.0)) FILTER (WHERE atendida_em IS NOT NULL), 0)::int AS minutos
+         FROM comercial.ligacoes l WHERE ${filtro}`,
+      [dias],
+    ),
+    db.query(
+      `SELECT l.usuario_id AS "usuarioId", u.nome,
+              count(*) FILTER (WHERE direcao = 'saida')::int AS feitas,
+              count(*) FILTER (WHERE direcao = 'saida' AND atendida_em IS NOT NULL)::int AS atendidas,
+              count(*) FILTER (WHERE resultado = 'conversou')::int AS conversas,
+              count(*) FILTER (WHERE ${reuniao})::int AS reunioes,
+              coalesce(sum(duracao_segundos), 0)::int AS segundos
+         FROM comercial.ligacoes l JOIN cadastro.usuarios u ON u.id = l.usuario_id
+        WHERE ${filtro}
+        GROUP BY l.usuario_id, u.nome ORDER BY feitas DESC`,
+      [dias],
+    ),
+    db.query<{ dia: number; hora: number; feitas: number; atendidas: number }>(
+      `SELECT extract(isodow FROM l.iniciada_em AT TIME ZONE 'America/Sao_Paulo')::int AS dia,
+              extract(hour FROM l.iniciada_em AT TIME ZONE 'America/Sao_Paulo')::int AS hora,
+              count(*)::int AS feitas, count(*) FILTER (WHERE l.atendida_em IS NOT NULL)::int AS atendidas
+         FROM comercial.ligacoes l WHERE ${filtro} AND l.direcao = 'saida'
+        GROUP BY 1, 2`,
+      [dias],
+    ),
+  ]);
+  return { totais: tot.rows[0], porPessoa: porPessoa.rows, mapa: mapa.rows, ...(await usoDoMes(db)) };
+}
+
+/**
+ * Franquia de minutos: avisa os administradores quando o mês passa de 80% e de 100% (uma vez
+ * cada, por mês).
+ */
+export async function avisarFranquia(db: Executor): Promise<void> {
+  const uso = await usoDoMes(db);
+  if (uso.franquia == null || uso.franquia <= 0) return;
+  const pct = (uso.usados / uso.franquia) * 100;
+  const nivel = pct >= 100 ? 100 : pct >= 80 ? 80 : null;
+  if (!nivel) return;
+  const mes = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
+  const coluna = nivel === 100 ? 'aviso_100_mes' : 'aviso_80_mes';
+  const { rows } = await db.query(
+    `INSERT INTO comercial.telefonia_contas (conta_id, ${coluna}) VALUES (${contaSql()}, $1)
+     ON CONFLICT (conta_id) DO UPDATE SET ${coluna} = $1
+       WHERE telefonia_contas.${coluna} IS DISTINCT FROM $1
+     RETURNING 1`,
+    [mes],
+  );
+  if (!rows.length) return;
+  const { rows: admins } = await db.query<{ id: number }>(
+    `SELECT id FROM cadastro.usuarios WHERE conta_id = ${contaSql()} AND ativo AND papel = 'admin'`,
+  );
+  for (const a of admins)
+    await notificar(db, a.id, {
+      tipo: 'sistema',
+      titulo:
+        nivel === 100
+          ? 'Os minutos de ligação do mês acabaram'
+          : 'Os minutos de ligação do mês passaram de 80%',
+      texto:
+        nivel === 100
+          ? `Foram ${uso.usados} de ${uso.franquia} minutos. As ligações continuam; o excedente entra na próxima fatura.`
+          : `Já foram ${uso.usados} de ${uso.franquia} minutos neste mês.`,
+      link: '/telefonia',
+    }).catch(() => undefined);
 }
 
 export async function detalhe(db: Executor, deps: DepsTelefonia, id: number) {

@@ -11,7 +11,9 @@ import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEquipe, useSessao, useSoLeitura, useSoPropriaBase } from '../componentes/Sessao';
 import { fmtNumero } from '../formatar';
 import { ItemLigacao } from '../telefone/LigacoesDoLead';
+import { ListaDeLigacao } from '../telefone/ListaDeLigacao';
 import { telefone } from '../telefone/ligacao';
+import { RelatorioLigacoes } from '../telefone/RelatorioLigacoes';
 import {
   type LigacaoResumida,
   MOTIVO_INDISPONIVEL,
@@ -21,14 +23,30 @@ import {
 } from '../telefone/tipos';
 
 /**
- * Vendas › Ligações: tudo o que foi ligado (por você ou pelo time), com o resultado, a gravação e o
- * resumo de cada uma, e o atalho para ligar para um número avulso.
+ * Vendas › Ligações: a lista de ligação (o CRM disca um lead depois do outro), tudo o que foi
+ * ligado e recebido (com o resultado, a gravação e o resumo de cada uma), as perdidas, o relatório
+ * e o atalho para ligar para um número avulso.
  */
 
 interface Lista {
   ligacoes: LigacaoResumida[];
-  totais: { feitas: number; atendidas: number; conversas: number; segundos: number };
+  totais: { feitas: number; atendidas: number; conversas: number; segundos: number; perdidas?: number };
 }
+
+const ABAS = [
+  { id: 'lista', rotulo: 'Lista de ligação' },
+  { id: 'historico', rotulo: 'Histórico' },
+  { id: 'recebidas', rotulo: 'Recebidas' },
+  { id: 'perdidas', rotulo: 'Perdidas' },
+  { id: 'relatorio', rotulo: 'Relatório' },
+] as const;
+type Aba = (typeof ABAS)[number]['id'];
+
+const VER: Partial<Record<Aba, string>> = {
+  historico: 'todas',
+  recebidas: 'recebidas',
+  perdidas: 'perdidas',
+};
 
 export function Ligacoes() {
   const [busca, setBusca] = useSearchParams();
@@ -43,6 +61,9 @@ export function Ligacoes() {
   const resultado = busca.get('resultado') ?? '';
   const dias = busca.get('dias') ?? '30';
   const lead = busca.get('lead');
+  const abaUrl = busca.get('aba') as Aba | null;
+  const aba: Aba = lead ? 'historico' : ABAS.some((a) => a.id === abaUrl) ? abaUrl! : 'lista';
+  const ver = VER[aba];
   const [aberta, setAberta] = useState<number | null>(null);
   const [avulso, setAvulso] = useState(false);
   const mudar = (x: Record<string, string | null>) => {
@@ -51,9 +72,10 @@ export function Ligacoes() {
     setBusca(p, { replace: true });
   };
   const q = useQuery({
-    queryKey: ['ligacoes', de, resultado, dias, lead],
-    queryFn: () => api<Lista>(`/ligacoes${qs({ usuario: de, resultado, dias, lead })}`),
+    queryKey: ['ligacoes', de, resultado, dias, lead, ver],
+    queryFn: () => api<Lista>(`/ligacoes${qs({ usuario: de, resultado, dias, lead, ver })}`),
     refetchInterval: 20_000,
+    enabled: !!ver,
   });
   const ativos = equipe.data?.usuarios.filter((u) => u.ativo) ?? [];
   const t = q.data?.totais;
@@ -65,8 +87,8 @@ export function Ligacoes() {
         <div>
           <h1>Ligações</h1>
           <p>
-            Ligue pelo CRM com o número da empresa: a ligação é gravada e a IA resume no histórico do lead.{' '}
-            <LinkAjuda artigo="ligacoes" />
+            Ligue e receba ligações pelo CRM com o número da empresa: a ligação é gravada e a IA resume no
+            histórico do lead. <LinkAjuda artigo="ligacoes" />
           </p>
         </div>
         {modulo && !soLeitura && (
@@ -94,7 +116,42 @@ export function Ligacoes() {
           {s && !s.disponivel && s.motivo && s.motivo !== 'fora_do_plano' && (
             <Mensagem tipo="aviso">{MOTIVO_INDISPONIVEL[s.motivo]}</Mensagem>
           )}
-          {lead && (
+          <div className="pipelines lig-abas" role="tablist" aria-label="Seções de ligações">
+            {ABAS.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                role="tab"
+                aria-selected={aba === a.id}
+                className="pipelines__aba"
+                onClick={() => mudar({ aba: a.id, lead: null, resultado: null })}
+              >
+                {a.rotulo}
+              </button>
+            ))}
+          </div>
+          {aba === 'lista' && <ListaDeLigacao />}
+          {aba === 'relatorio' && (
+            <>
+              <div className="lig-filtros">
+                <label className="pp-sr" htmlFor="lig-dias-rel">
+                  Período
+                </label>
+                <select
+                  id="lig-dias-rel"
+                  className="filtro"
+                  value={dias}
+                  onChange={(ev) => mudar({ dias: ev.target.value })}
+                >
+                  <option value="7">7 dias</option>
+                  <option value="30">30 dias</option>
+                  <option value="90">90 dias</option>
+                </select>
+              </div>
+              <RelatorioLigacoes dias={dias === '1' ? '7' : dias} />
+            </>
+          )}
+          {ver && lead && (
             <Mensagem tipo="ok">
               Mostrando as ligações de um lead.{' '}
               <button type="button" className="link-botao" onClick={() => mudar({ lead: null })}>
@@ -102,119 +159,137 @@ export function Ligacoes() {
               </button>
             </Mensagem>
           )}
-          <div className="lig-filtros">
-            {!soPropria && ativos.length > 1 && !lead && (
-              <>
-                <label className="pp-sr" htmlFor="lig-de">
-                  De quem
+          {ver && (
+            <>
+              <div className="lig-filtros">
+                {!soPropria && ativos.length > 1 && !lead && (
+                  <>
+                    <label className="pp-sr" htmlFor="lig-de">
+                      De quem
+                    </label>
+                    <select
+                      id="lig-de"
+                      className="filtro"
+                      value={de}
+                      onChange={(ev) => mudar({ de: ev.target.value })}
+                    >
+                      <option value="eu">Minhas</option>
+                      <option value="todos">Toda a equipe</option>
+                      {ativos
+                        .filter((u) => u.id !== sessao.data?.id)
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.nome}
+                          </option>
+                        ))}
+                    </select>
+                  </>
+                )}
+                <label className="pp-sr" htmlFor="lig-resultado">
+                  Resultado
                 </label>
-                <select
-                  id="lig-de"
-                  className="filtro"
-                  value={de}
-                  onChange={(ev) => mudar({ de: ev.target.value })}
-                >
-                  <option value="eu">Minhas</option>
-                  <option value="todos">Toda a equipe</option>
-                  {ativos
-                    .filter((u) => u.id !== sessao.data?.id)
-                    .map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nome}
+                {aba !== 'perdidas' && (
+                  <select
+                    id="lig-resultado"
+                    className="filtro"
+                    value={resultado}
+                    onChange={(ev) => mudar({ resultado: ev.target.value })}
+                  >
+                    <option value="">Todos os resultados</option>
+                    {RESULTADOS_LIGACAO.map((r) => (
+                      <option key={r} value={r}>
+                        {ROTULO_RESULTADO_LIGACAO[r]}
                       </option>
                     ))}
-                </select>
-              </>
-            )}
-            <label className="pp-sr" htmlFor="lig-resultado">
-              Resultado
-            </label>
-            <select
-              id="lig-resultado"
-              className="filtro"
-              value={resultado}
-              onChange={(ev) => mudar({ resultado: ev.target.value })}
-            >
-              <option value="">Todos os resultados</option>
-              {RESULTADOS_LIGACAO.map((r) => (
-                <option key={r} value={r}>
-                  {ROTULO_RESULTADO_LIGACAO[r]}
-                </option>
-              ))}
-              <option value="sem_resultado">Sem "Como foi?"</option>
-            </select>
-            {!lead && (
-              <>
-                <label className="pp-sr" htmlFor="lig-dias">
-                  Período
-                </label>
-                <select
-                  id="lig-dias"
-                  className="filtro"
-                  value={dias}
-                  onChange={(ev) => mudar({ dias: ev.target.value })}
-                >
-                  <option value="1">Hoje</option>
-                  <option value="7">7 dias</option>
-                  <option value="30">30 dias</option>
-                  <option value="90">90 dias</option>
-                </select>
-              </>
-            )}
-          </div>
+                    <option value="sem_resultado">Sem "Como foi?"</option>
+                  </select>
+                )}
+                {!lead && (
+                  <>
+                    <label className="pp-sr" htmlFor="lig-dias">
+                      Período
+                    </label>
+                    <select
+                      id="lig-dias"
+                      className="filtro"
+                      value={dias}
+                      onChange={(ev) => mudar({ dias: ev.target.value })}
+                    >
+                      <option value="1">Hoje</option>
+                      <option value="7">7 dias</option>
+                      <option value="30">30 dias</option>
+                      <option value="90">90 dias</option>
+                    </select>
+                  </>
+                )}
+              </div>
 
-          {t && (
-            <div className="lig-totais">
-              <div>
-                <small>Ligações</small>
-                <b>{fmtNumero(t.feitas)}</b>
-              </div>
-              <div>
-                <small>Atendidas</small>
-                <b>{fmtNumero(t.atendidas)}</b>
-                <span>{t.feitas ? `${Math.round((t.atendidas / t.feitas) * 100)}%` : '—'}</span>
-              </div>
-              <div>
-                <small>Conversas</small>
-                <b>{fmtNumero(t.conversas)}</b>
-              </div>
-              <div>
-                <small>Tempo falando</small>
-                <b>{fmtDuracaoLigacao(t.segundos)}</b>
-              </div>
-              {s?.minutos.franquia != null && (
-                <div>
-                  <small>Minutos do mês (empresa)</small>
-                  <b>{fmtNumero(s.minutos.usados)}</b>
-                  <span>de {fmtNumero(s.minutos.franquia)}</span>
+              {t && aba === 'historico' && (
+                <div className="lig-totais">
+                  <div>
+                    <small>Ligações</small>
+                    <b>{fmtNumero(t.feitas)}</b>
+                  </div>
+                  <div>
+                    <small>Atendidas</small>
+                    <b>{fmtNumero(t.atendidas)}</b>
+                    <span>{t.feitas ? `${Math.round((t.atendidas / t.feitas) * 100)}%` : '—'}</span>
+                  </div>
+                  <div>
+                    <small>Conversas</small>
+                    <b>{fmtNumero(t.conversas)}</b>
+                  </div>
+                  <div>
+                    <small>Tempo falando</small>
+                    <b>{fmtDuracaoLigacao(t.segundos)}</b>
+                  </div>
+                  {s?.minutos.franquia != null && (
+                    <div>
+                      <small>Minutos do mês (empresa)</small>
+                      <b>{fmtNumero(s.minutos.usados)}</b>
+                      <span>de {fmtNumero(s.minutos.franquia)}</span>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {q.isPending ? (
-            <div className="esqueleto" style={{ height: 240 }} />
-          ) : !q.data ? (
-            <ErroDaApi erro={q.error} />
-          ) : !q.data.ligacoes.length ? (
-            <EmptyState
-              icone="phone"
-              titulo="Nenhuma ligação no período"
-              texto="Abra um lead no funil e clique em Ligar: a ligação sai pelo navegador com o número da empresa."
-            />
-          ) : (
-            <ul className="lig-historico lig-historico--pagina">
-              {q.data.ligacoes.map((l) => (
-                <li key={l.id}>
-                  <ItemLigacao
-                    l={l}
-                    comLead
-                    aberta={aberta === l.id}
-                    aoAlternar={() => setAberta(aberta === l.id ? null : l.id)}
-                  />
-                </li>
-              ))}
-            </ul>
+              {q.isPending ? (
+                <div className="esqueleto" style={{ height: 240 }} />
+              ) : !q.data ? (
+                <ErroDaApi erro={q.error} />
+              ) : !q.data.ligacoes.length ? (
+                <EmptyState
+                  icone="phone"
+                  titulo={
+                    aba === 'perdidas'
+                      ? 'Nenhuma ligação perdida no período'
+                      : aba === 'recebidas'
+                        ? 'Nenhuma ligação recebida no período'
+                        : 'Nenhuma ligação no período'
+                  }
+                  texto={
+                    aba === 'perdidas'
+                      ? 'Quando ninguém atende uma ligação que chega, ela aparece aqui e vira uma tarefa de retorno para o dono do lead.'
+                      : aba === 'recebidas'
+                        ? 'Quando alguém liga para o número da empresa, o CRM avisa o dono do lead e depois o time.'
+                        : 'Monte uma lista de ligação ou abra um lead no funil e clique em Ligar.'
+                  }
+                />
+              ) : (
+                <ul className="lig-historico lig-historico--pagina">
+                  {q.data.ligacoes.map((l) => (
+                    <li key={l.id}>
+                      <ItemLigacao
+                        l={l}
+                        comLead
+                        aberta={aberta === l.id}
+                        aoAlternar={() => setAberta(aberta === l.id ? null : l.id)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </>
       )}

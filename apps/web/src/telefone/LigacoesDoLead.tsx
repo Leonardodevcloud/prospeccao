@@ -212,13 +212,18 @@ export function ItemLigacao(props: {
   comLead?: boolean;
 }) {
   const { l } = props;
+  const recebida = l.direcao === 'entrada';
   const resultado = l.resultado
     ? ROTULO_RESULTADO_LIGACAO[l.resultado]
-    : l.situacao === 'falhou'
-      ? 'Não completou'
-      : l.atendidaEm
-        ? 'Atendida'
-        : 'Sem resposta';
+    : l.perdida
+      ? 'Perdida (ninguém atendeu)'
+      : recebida && l.sigaMe
+        ? 'Atendida no celular'
+        : l.situacao === 'falhou'
+          ? 'Não completou'
+          : l.atendidaEm
+            ? 'Atendida'
+            : 'Sem resposta';
   return (
     <div className="lig-item" data-aberta={props.aberta || undefined}>
       <button
@@ -227,7 +232,7 @@ export function ItemLigacao(props: {
         aria-expanded={props.aberta}
         onClick={props.aoAlternar}
       >
-        <Icon name="phone" size={14} />
+        <Icon name={recebida ? 'phone-incoming' : 'phone'} size={14} />
         <span className="lig-item__texto">
           <b>
             {props.comLead && l.leadNome ? `${l.leadNome} · ` : ''}
@@ -235,7 +240,8 @@ export function ItemLigacao(props: {
             {l.duracaoSegundos ? ` · ${fmtDuracaoLigacao(l.duracaoSegundos)}` : ''}
           </b>
           <small>
-            {fmtQuando(l.iniciadaEm)} · {l.usuarioNome ?? 'Alguém do time'} ·{' '}
+            {fmtQuando(l.iniciadaEm)} · {recebida ? 'recebida · ' : ''}
+            {l.usuarioNome ?? (recebida ? 'ninguém atendeu' : 'Alguém do time')} ·{' '}
             <span className="mono">{formatarTelefone(l.telefone)}</span>
           </small>
         </span>

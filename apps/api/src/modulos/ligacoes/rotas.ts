@@ -1,10 +1,11 @@
 import type { Executor } from '@prospeccao/db';
 import type { AvisoVideo } from '@prospeccao/integrations/reuniao';
-import { IDENTIDADE_LEAD } from '@prospeccao/integrations/telefonia';
+import { ehDoOutroLado, IDENTIDADE_SIGA_ME, PREFIXO_ENTRADA } from '@prospeccao/integrations/telefonia';
 import {
   AppError,
   estadoLigacaoEntrada,
   iniciarLigacaoEntrada,
+  listaLigacaoEntrada,
   numeroEmpresaEntrada,
   RESULTADOS_LIGACAO,
   resultadoLigacaoEntrada,
@@ -17,6 +18,8 @@ import { comConta, donoDaBase } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
+import * as entrada from './entrada.js';
+import * as lista from './lista.js';
 import * as servico from './servico.js';
 
 /**
@@ -35,6 +38,7 @@ const filtroLista = z.object({
   resultado: z.enum([...RESULTADOS_LIGACAO, 'sem_resultado']).optional(),
   dias: z.coerce.number().int().min(1).max(366).default(30),
   lead: z.coerce.number().int().positive().optional(),
+  ver: z.enum(['todas', 'feitas', 'recebidas', 'perdidas']).default('todas'),
 });
 
 /** Escrita só com o módulo no plano (ver o histórico vale sempre). */
@@ -68,21 +72,96 @@ export function rotasLigacoes(deps: DepsApi): Router {
     res.json(await servico.situacao(pool, tel()));
   });
 
-  /** O aviso de gravação em voz (mp3), para tocar no começo da ligação. */
-  r.get('/aviso', async (_req, res) => {
+  /**
+   * Áudios falados (mp3) que o navegador toca na ligação: o aviso de gravação e o recado para quem
+   * atendeu junto com outra linha da lista ("te retorno em instantes").
+   */
+  r.get('/aviso', async (req, res) => {
     const fala = tel().fala;
     if (!fala) throw AppError.naoEncontrado('Aviso falado');
-    const { avisoGravacao } = await servico.config(pool);
-    let audio = avisosFalados.get(avisoGravacao);
+    let texto = (await servico.config(pool)).avisoGravacao;
+    if (req.query.tipo === 'retorno') {
+      const { rows } = await pool.query<{ empresa: string }>(
+        `SELECT coalesce(org.marca_nome, c.nome) AS empresa FROM cadastro.contas c
+           JOIN cadastro.organizacoes org ON org.id = c.organizacao_id WHERE c.id = $1`,
+        [req.usuario!.contaId],
+      );
+      const primeiro = (req.usuario!.nome ?? '').split(' ')[0] || 'o comercial';
+      texto = `Oi! Aqui é ${primeiro}, da ${rows[0]?.empresa ?? 'empresa'}. Estou terminando outra ligação e te retorno em instantes, tá bom? Obrigado!`;
+    }
+    let audio = avisosFalados.get(texto);
     if (!audio) {
-      audio = await fala.falar(avisoGravacao, { voz: 'marin', velocidade: 1.05 });
+      audio = await fala.falar(texto, { voz: 'marin', velocidade: 1.05 });
       if (avisosFalados.size > 200) avisosFalados.clear();
-      avisosFalados.set(avisoGravacao, audio);
+      avisosFalados.set(texto, audio);
     }
     res
       .set('Content-Type', 'audio/mpeg')
       .set('Cache-Control', 'private, max-age=3600')
       .send(Buffer.from(audio));
+  });
+
+  /* ───── Lista de ligação ───── */
+
+  r.get('/listas/candidatos', async (req, res) => {
+    const f = consulta(
+      req,
+      z.object({
+        etapaId: z.coerce.number().int().positive().optional(),
+        responsavel: z
+          .string()
+          .regex(/^(eu|todos|\d+)$/)
+          .default('eu'),
+      }),
+    );
+    const responsavel =
+      donoDaBase() ??
+      (f.responsavel === 'todos' ? null : f.responsavel === 'eu' ? req.usuario!.id : Number(f.responsavel));
+    res.json(await lista.candidatos(pool, { etapaId: f.etapaId ?? null, responsavel }));
+  });
+
+  r.get('/listas/atual', async (_req, res) => {
+    res.json(await lista.atual(pool));
+  });
+
+  r.post('/listas', async (req, res) => {
+    const r2 = await lista.criar(pool, corpo(req, listaLigacaoEntrada));
+    res.status(201).json({ ...r2, lista: await lista.atual(pool) });
+  });
+
+  r.post('/listas/:id/proximo', async (req, res) => {
+    res.json({ item: await lista.proximo(pool, idDaRota(req)) });
+  });
+
+  for (const [acao, situacao] of [
+    ['pausar', 'pausada'],
+    ['continuar', 'ativa'],
+    ['encerrar', 'encerrada'],
+  ] as const)
+    r.post(`/listas/:id/${acao}`, async (req, res) => {
+      await lista.mudarSituacao(pool, idDaRota(req), situacao);
+      res.json(await lista.atual(pool));
+    });
+
+  r.post('/listas/itens/:id/devolver', async (req, res) => {
+    await lista.devolver(pool, idDaRota(req));
+    res.json({ ok: true });
+  });
+
+  r.post('/listas/itens/:id/pular', async (req, res) => {
+    await lista.pular(pool, idDaRota(req));
+    res.json(await lista.atual(pool));
+  });
+
+  /* ───── Recebidas ───── */
+
+  r.get('/entrando', async (_req, res) => {
+    res.json(await entrada.entrando(pool));
+  });
+
+  r.get('/relatorio', async (req, res) => {
+    const { dias } = consulta(req, z.object({ dias: z.coerce.number().int().min(1).max(366).default(30) }));
+    res.json(await servico.relatorio(pool, dias, donoDaBase()));
   });
 
   r.get('/lead/:empresaId', async (req, res) => {
@@ -102,6 +181,7 @@ export function rotasLigacoes(deps: DepsApi): Router {
         dias: f.lead ? 366 : f.dias,
         limite: 200,
         empresaId: f.lead ?? null,
+        ver: f.ver,
       }),
     );
   });
@@ -156,7 +236,39 @@ export function rotasLigacoes(deps: DepsApi): Router {
 
   r.post('/:id/resultado', async (req, res) => {
     const id = idDaRota(req);
-    await servico.salvarResultado(pool, id, corpo(req, resultadoLigacaoEntrada));
+    const d = corpo(req, resultadoLigacaoEntrada);
+    await servico.salvarResultado(pool, id, d);
+    await lista.aposResultado(pool, id, d.resultado);
+    res.json(await servico.detalhe(pool, tel(), id));
+  });
+
+  /** Atendeu junto com outra linha da lista e ouviu o recado: fica para retornar. */
+  r.post('/:id/retorno', async (req, res) => {
+    const id = idDaRota(req);
+    await servico.minha(pool, id);
+    await servico.encerrar(pool, tel(), id, 'recado de retorno');
+    await lista.paraRetornar(pool, id);
+    res.json({ ok: true });
+  });
+
+  r.post('/:id/atender', async (req, res) => {
+    res.json(await entrada.atender(pool, tel(), idDaRota(req)));
+  });
+
+  r.post('/:id/passar', async (req, res) => {
+    await entrada.passarParaTime(pool, idDaRota(req));
+    res.json({ ok: true });
+  });
+
+  /** Ligação de número desconhecido que virou lead: liga ao lead novo. */
+  r.post('/:id/lead', async (req, res) => {
+    const id = idDaRota(req);
+    const { empresaId } = corpo(req, z.object({ empresaId: z.number().int().positive() }));
+    await exigirVisivel(pool, empresaId);
+    await pool.query(
+      `UPDATE comercial.ligacoes SET empresa_id = $2 WHERE id = $1 AND conta_id = $3 AND empresa_id IS NULL`,
+      [id, empresaId, req.usuario!.contaId],
+    );
     res.json(await servico.detalhe(pool, tel(), id));
   });
 
@@ -238,21 +350,38 @@ export function rotasMasterTelefonia(deps: DepsApi): Router {
 /** Sala de ligação (lig-…) fechou ou o lead desligou: encerra a ligação. */
 export async function tratarAvisoLigacao(deps: DepsApi, aviso: AvisoVideo): Promise<void> {
   if (!('sala' in aviso) || !aviso.sala.startsWith('lig-')) return;
-  const fim =
-    aviso.tipo === 'sala_encerrada' || (aviso.tipo === 'saiu' && aviso.identidade === IDENTIDADE_LEAD);
-  if (!fim) return;
-  const { rows } = await deps.pool.query<{ id: number; conta_id: number }>(
-    `SELECT id::int, conta_id FROM comercial.ligacoes
-      WHERE sala = $1 AND situacao IN ('preparando', 'chamando', 'tocando', 'em_andamento')`,
+  const tel = telefoniaDe(deps);
+  // Alguém ligou para um número da empresa.
+  if (
+    aviso.tipo === 'entrou' &&
+    aviso.sala.startsWith(PREFIXO_ENTRADA) &&
+    aviso.identidade.startsWith('sip_')
+  ) {
+    await entrada.receber(deps.pool, tel, deps.log, aviso.sala, aviso.identidade);
+    return;
+  }
+  const outroLado =
+    aviso.tipo === 'saiu' && (ehDoOutroLado(aviso.identidade) || aviso.identidade === IDENTIDADE_SIGA_ME);
+  if (aviso.tipo !== 'sala_encerrada' && !outroLado) return;
+  const { rows } = await deps.pool.query<{
+    id: number;
+    conta_id: number;
+    direcao: string;
+    atendida: boolean;
+  }>(
+    `SELECT id::int, conta_id, direcao, atendida_em IS NOT NULL AS atendida FROM comercial.ligacoes
+      WHERE sala = $1 AND situacao IN ('preparando', 'chamando', 'tocando', 'em_andamento', 'siga_me')`,
     [aviso.sala],
   );
   for (const l of rows)
     await comConta(l.conta_id, () =>
-      servico.encerrar(
-        deps.pool,
-        telefoniaDe(deps),
-        l.id,
-        aviso.tipo === 'saiu' ? 'lead desligou' : 'sala fechou',
-      ),
+      l.direcao === 'entrada' && !l.atendida
+        ? entrada.perdida(deps.pool, tel, l.id, 'desligou antes de atenderem')
+        : servico.encerrar(
+            deps.pool,
+            tel,
+            l.id,
+            aviso.tipo === 'saiu' ? 'o outro lado desligou' : 'sala fechou',
+          ),
     );
 }

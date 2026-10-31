@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   e164,
   fmtDuracaoLigacao,
+  horarioDeLigar,
   minutosCobrados,
   numeroDeSaida,
   ordenarTelefones,
@@ -94,5 +95,18 @@ describe('ligação', () => {
       mensalidadeManual: null,
     });
     expect(sem.minutosLigacao).toBe(0);
+  });
+});
+
+describe('horário de ligar (Brasília)', () => {
+  it('dias úteis 8h–20h, sábado 8h–14h, domingo não', () => {
+    // 31/10/2026 é sábado.
+    expect(horarioDeLigar(new Date('2026-10-31T12:00:00-03:00'))).toBe(true);
+    expect(horarioDeLigar(new Date('2026-10-31T15:00:00-03:00'))).toBe(false);
+    expect(horarioDeLigar(new Date('2026-11-01T10:00:00-03:00'))).toBe(false);
+    expect(horarioDeLigar(new Date('2026-11-02T07:59:00-03:00'))).toBe(false);
+    expect(horarioDeLigar(new Date('2026-11-02T08:00:00-03:00'))).toBe(true);
+    expect(horarioDeLigar(new Date('2026-11-02T19:59:00-03:00'))).toBe(true);
+    expect(horarioDeLigar(new Date('2026-11-02T20:00:00-03:00'))).toBe(false);
   });
 });

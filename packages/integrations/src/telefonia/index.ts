@@ -38,15 +38,27 @@ export interface ServicoTelefonia {
     toqueSegundos: number;
     /** Limite da ligação (segundos). */
     maxSegundos?: number;
+    /** Quem é na sala (padrão: "lead"; o siga-me usa "siga-me"). */
+    identidade?: string;
   }): Promise<void>;
   /** Encerra a ligação (derruba a sala; o lado do lead desliga). */
   encerrar(sala: string): Promise<void>;
-  /** Estado do lado do lead (null: a sala já não existe). */
-  estado(sala: string): Promise<EstadoChamada | null>;
+  /** Estado de quem está do outro lado (padrão: o lead; null: a sala já não existe). */
+  estado(sala: string, identidade?: string): Promise<EstadoChamada | null>;
+  /** Ligação recebida: o número de quem ligou e o número da empresa que foi chamado. */
+  chamador(sala: string, identidade: string): Promise<{ de: string | null; para: string | null } | null>;
   testar(): Promise<string>;
 }
 
 export const IDENTIDADE_LEAD = 'lead';
+/** O celular do comercial no siga-me (ligação recebida que ninguém atendeu no CRM). */
+export const IDENTIDADE_SIGA_ME = 'siga-me';
+/** Salas das ligações recebidas (a regra de despacho do LiveKit cria com este prefixo). */
+export const PREFIXO_ENTRADA = 'lig-in-';
+
+/** Quem está do lado de lá numa sala de ligação: o lead (saída) ou quem ligou (entrada: sip_…). */
+export const ehDoOutroLado = (identidade: string) =>
+  identidade === IDENTIDADE_LEAD || identidade.startsWith('sip_');
 
 const ESTADOS: Record<string, EstadoChamada> = {
   dialing: 'discando',
@@ -90,7 +102,7 @@ export function criarServicoTelefonia(cfg: ConfigTelefonia): ServicoTelefonia {
 
     async discar(p) {
       await sip.createSipParticipant(cfg.troncoSaida, e164(p.numero), p.sala, {
-        participantIdentity: IDENTIDADE_LEAD,
+        participantIdentity: p.identidade ?? IDENTIDADE_LEAD,
         participantName: p.nome,
         ...(p.de ? { fromNumber: e164(p.de) } : {}),
         ringingTimeout: p.toqueSegundos,
@@ -107,15 +119,31 @@ export function criarServicoTelefonia(cfg: ConfigTelefonia): ServicoTelefonia {
       });
     },
 
-    async estado(sala) {
+    async estado(sala, identidade) {
       try {
-        const p = await salas.getParticipant(sala, IDENTIDADE_LEAD);
-        return lerEstado(p.attributes);
+        // Sem dizer quem: o lado de lá (o lead na saída, quem ligou na entrada).
+        const p = identidade
+          ? await salas.getParticipant(sala, identidade)
+          : (await salas.listParticipants(sala)).find((x) => ehDoOutroLado(x.identity));
+        if (p) return lerEstado(p.attributes);
+        const existe = await salas.listRooms([sala]).then((r) => r.length > 0);
+        return existe ? 'encerrada' : null;
       } catch (e) {
         if (naoAchou(e as Error)) {
           const existe = await salas.listRooms([sala]).then((r) => r.length > 0);
           return existe ? 'encerrada' : null;
         }
+        throw e;
+      }
+    },
+
+    async chamador(sala, identidade) {
+      try {
+        const p = await salas.getParticipant(sala, identidade);
+        const a = p.attributes ?? {};
+        return { de: a['sip.phoneNumber'] ?? null, para: a['sip.trunkPhoneNumber'] ?? null };
+      } catch (e) {
+        if (naoAchou(e as Error)) return null;
         throw e;
       }
     },

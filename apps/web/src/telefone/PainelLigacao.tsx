@@ -10,8 +10,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api, type DetalheFunil, ROTULO_ETAPA } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { NovoLead } from '../componentes/NovoLead';
 import { usePipelines } from '../componentes/Pipelines';
 import { fmtNome, formatarTelefone } from '../formatar';
+import { discador, useDiscador } from './discador';
 import { type EstadoLigacao, telefone } from './ligacao';
 import type { LigacaoDetalhe } from './tipos';
 import { useTelefone } from './tipos';
@@ -73,11 +75,14 @@ export function PainelLigacao() {
     <aside className="lig-painel" aria-label="Ligação">
       <header className="lig-topo">
         <span className="lig-avatar" aria-hidden="true">
-          {iniciais(nome)}
+          {l?.lead ? iniciais(nome) : <Icon name="phone" size={16} />}
         </span>
         <div className="lig-topo__quem">
           <b>{nome}</b>
-          <span className="quieto mono">{l ? formatarTelefone(l.telefone) : null}</span>
+          <span className={l?.lead ? 'quieto mono' : 'quieto'}>
+            {l?.lead ? formatarTelefone(l.telefone) : l ? 'Número que não é lead' : null}
+            {l?.direcao === 'entrada' && <span className="lig-recebida"> · recebida</span>}
+          </span>
         </div>
         <div className="lig-topo__tempo">
           {e.fase === 'em_andamento' ? (
@@ -135,7 +140,8 @@ export function PainelLigacao() {
           <div className="lig-corpo">
             {l?.numeroEmpresa && (
               <span className="lig-saida">
-                Saindo pelo número da empresa {formatarTelefone(l.numeroEmpresa)}
+                {l.direcao === 'entrada' ? 'Ligou para o número da empresa' : 'Saindo pelo número da empresa'}{' '}
+                {formatarTelefone(l.numeroEmpresa)}
               </span>
             )}
             {e.aviso === 'tocando' && (
@@ -337,6 +343,17 @@ function ComoFoi(props: { estado: EstadoLigacao; notas: string }) {
 
   const proc = detalhe.data?.processamento;
   const marcar = (k: string, v: boolean) => setMarcados({ ...marcados, [k]: v });
+  const d = useDiscador();
+  const naLista = !!l.listaItemId && d.rodando;
+  const [novoLead, setNovoLead] = useState(false);
+  const vincular = useMutation({
+    mutationFn: (empresaId: number) =>
+      api<LigacaoDetalhe>(`/ligacoes/${l.id}/lead`, { metodo: 'POST', corpo: { empresaId } }),
+    onSuccess: (r) => {
+      telefone.vincularLead(r.empresaId!, r.leadNome ?? 'Lead novo');
+      cliente.invalidateQueries({ queryKey: ['ligacao', l.id] });
+    },
+  });
 
   return (
     <form
@@ -363,6 +380,29 @@ function ComoFoi(props: { estado: EstadoLigacao; notas: string }) {
           ))}
         </div>
       </fieldset>
+
+      {!l.empresaId && e.atendeu && (
+        <div className="lig-aviso">
+          <span>
+            <b>Número que não é de nenhum lead.</b> Se for um cliente novo, crie o lead: a ligação e o resumo
+            vão para a ficha dele.
+          </span>
+          <Button size="sm" variant="secondary" icon="plus" onClick={() => setNovoLead(true)}>
+            Criar lead
+          </Button>
+        </div>
+      )}
+      <ErroDaApi erro={vincular.error} />
+      {novoLead && (
+        <NovoLead
+          inicial={{ telefone: l.telefone.replace(/^55/, '') }}
+          aoFechar={() => setNovoLead(false)}
+          aoCriar={(id) => {
+            setNovoLead(false);
+            vincular.mutate(id);
+          }}
+        />
+      )}
 
       {e.atendeu && (
         <div className="lig-ia" aria-live="polite">
@@ -503,8 +543,21 @@ function ComoFoi(props: { estado: EstadoLigacao; notas: string }) {
       <ErroDaApi erro={salvar.error} />
       <div className="lig-rodape">
         {e.atendeu && <span className="quieto">{fmtDuracaoLigacao(e.duracao)}</span>}
+        {naLista && (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={salvar.isPending}
+            onClick={() => {
+              void discador.pausar();
+              salvar.mutate();
+            }}
+          >
+            Salvar e pausar a lista
+          </Button>
+        )}
         <Button type="submit" variant="primary" disabled={salvar.isPending}>
-          {salvar.isPending ? 'Salvando…' : 'Salvar'}
+          {salvar.isPending ? 'Salvando…' : naLista ? 'Salvar e seguir' : 'Salvar'}
         </Button>
       </div>
     </form>

@@ -4,7 +4,9 @@ import type { Logger, ResumoLigacao } from '@prospeccao/shared';
 import { comConta } from '../../contexto.js';
 import type { ResolverServicos } from '../../servicos.js';
 import { notificar } from '../notificacoes/repositorio.js';
-import { config, type DepsTelefonia, encerrar } from './servico.js';
+import { rodadaEntrada } from './entrada.js';
+import { destravarItens } from './lista.js';
+import { avisarFranquia, config, type DepsTelefonia, encerrar } from './servico.js';
 
 /**
  * Depois da ligação (em segundo plano): espera os arquivos que o navegador manda ao desligar,
@@ -200,6 +202,7 @@ async function fecharEsquecidas(d: DepsProcessarLigacoes): Promise<void> {
   const { rows } = await d.pool.query<{ id: number; conta_id: number; sala: string; situacao: string }>(
     `SELECT id::int, conta_id, sala, situacao FROM comercial.ligacoes
       WHERE situacao IN ('preparando', 'chamando', 'tocando', 'em_andamento')
+        AND (direcao = 'saida' OR situacao = 'em_andamento')
         AND iniciada_em < now() - CASE WHEN situacao = 'em_andamento' THEN interval '15 seconds' ELSE interval '3 minutes' END
       ORDER BY iniciada_em LIMIT 50`,
   );
@@ -248,6 +251,16 @@ export async function rodarLigacoes(d: DepsProcessarLigacoes): Promise<void> {
     if (!rows[0]?.ok) return;
     try {
       await fecharEsquecidas(d);
+      await destravarItens(d.pool).catch((e) => d.log.warn({ err: e }, 'ligações: destravar a lista falhou'));
+      // Franquia: confere as contas que tiveram ligação encerrada agora há pouco.
+      const { rows: contas } = await d.pool.query<{ conta_id: number }>(
+        `SELECT DISTINCT conta_id FROM comercial.ligacoes
+          WHERE encerrada_em > now() - interval '2 minutes' AND atendida_em IS NOT NULL`,
+      );
+      for (const c of contas)
+        await comConta(c.conta_id, () => avisarFranquia(d.pool)).catch((e) =>
+          d.log.warn({ err: e, conta: c.conta_id }, 'ligações: aviso da franquia falhou'),
+        );
       for (let i = 0; i < 5; i++) {
         const l = await pegarProxima(d.pool);
         if (!l) break;
@@ -275,16 +288,26 @@ export async function rodarLigacoes(d: DepsProcessarLigacoes): Promise<void> {
   }
 }
 
-/** A cada 15 s (e logo depois que chega a gravação, pela própria rodada). */
+/** Recebidas a cada 5 s (o tempo de tocar conta); o resto a cada 15 s. */
 export function iniciarLigacoes(d: DepsProcessarLigacoes): () => void {
   let rodando = false;
+  let entrada = false;
+  let voltas = 0;
   const t = setInterval(() => {
-    if (rodando) return;
+    if (!entrada) {
+      entrada = true;
+      void rodadaEntrada(d.pool, d.telefonia, d.log)
+        .catch((e) => d.log.warn({ err: e }, 'ligações: rodada das recebidas falhou'))
+        .finally(() => {
+          entrada = false;
+        });
+    }
+    if (voltas++ % 3 !== 0 || rodando) return;
     rodando = true;
     void rodarLigacoes(d).finally(() => {
       rodando = false;
     });
-  }, 15_000);
+  }, 5_000);
   t.unref();
   return () => clearInterval(t);
 }

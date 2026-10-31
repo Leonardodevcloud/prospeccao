@@ -8,11 +8,15 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { criarApp } from '../src/app.js';
 import { comConta } from '../src/contexto.js';
+import { rodadaEntrada } from '../src/modulos/ligacoes/entrada.js';
+import { relogio } from '../src/modulos/ligacoes/lista.js';
 import {
   type DepsProcessarLigacoes,
   processarLigacao,
   rodarLigacoes,
 } from '../src/modulos/ligacoes/processar.js';
+import { tratarAvisoLigacao } from '../src/modulos/ligacoes/rotas.js';
+import { avisarFranquia } from '../src/modulos/ligacoes/servico.js';
 import { esquecerRecursos } from '../src/recursos.js';
 import type { ServicosConta } from '../src/servicos.js';
 
@@ -30,6 +34,8 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
   const chamadas: { tipo: string; dados: unknown }[] = [];
   const arquivos = new Map<string, Uint8Array>();
   let estadoLead: 'discando' | 'tocando' | 'atendida' | 'encerrada' | null = 'atendida';
+  // Ligações recebidas: quem ligou e para qual número, por sala.
+  const chamadores = new Map<string, { de: string; para: string }>();
   const telefonia: ServicoTelefonia = {
     urlCliente: 'wss://teste.livekit.cloud',
     acesso: async (p) => `token-${p.identidade}-${p.sala}`,
@@ -43,6 +49,7 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
       chamadas.push({ tipo: 'encerrar', dados: sala });
     },
     estado: async () => estadoLead,
+    chamador: async (sala) => chamadores.get(sala) ?? null,
     testar: async () => 'ok (tronco teste)',
   };
   const armazenamento = {
@@ -77,6 +84,8 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
     },
   });
 
+  const appDeps = () =>
+    ({ pool, log, telefonia: deps.telefonia }) as unknown as Parameters<typeof tratarAvisoLigacao>[0];
   const ler = (rota: string) => request(app).get(rota).set('Cookie', cookie);
   const enviar = (metodo: 'post' | 'put' | 'patch' | 'delete', rota: string, corpo?: object) =>
     request(app)[metodo](rota).set('Origin', ORIGEM).set('Cookie', cookie).send(corpo);
@@ -362,6 +371,10 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
       toqueSegundos: 30,
       mesmoDdd: true,
       guardarMeses: 6,
+      receber: true,
+      toqueDono: 20,
+      toqueEntrada: 40,
+      sigaMe: true,
     });
     expect(cfg.status).toBe(200);
     expect(cfg.body.config.toqueSegundos).toBe(30);
@@ -403,6 +416,237 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
       processamento: 'pronto',
       transcricao: 'sem_audio',
     });
+  });
+
+  it('lista de ligação: monta, reserva o próximo, paralelo sem derrubar as outras linhas e tenta o próximo número', async () => {
+    // Segunda-feira, 10h (a lista só disca no horário de ligar).
+    relogio.agora = () => new Date('2026-11-02T10:00:00-03:00');
+    try {
+      const outro = await enviar('post', '/funil/leads', {
+        empresa: 'Odonto Vida Center',
+        telefone: '(71) 99123-0011',
+        cidade: 'Salvador',
+        uf: 'BA',
+      });
+      const outroId = outro.body.empresaId as number;
+      const cand = await ler('/ligacoes/listas/candidatos?responsavel=todos');
+      expect(cand.body.map((c: { empresaId: number }) => c.empresaId)).toEqual(
+        expect.arrayContaining([empresaId, outroId]),
+      );
+      const criada = await enviar('post', '/ligacoes/listas', {
+        empresaIds: [empresaId, outroId, 999999],
+        linhas: 2,
+        tentarProximo: true,
+        pausaSegundos: 5,
+      });
+      expect(criada.status).toBe(201);
+      expect(criada.body).toMatchObject({ entraram: 2, ficaramFora: 1 });
+      const listaId = criada.body.listaId as number;
+      expect(criada.body.lista.itens.map((i: { telefone: string }) => i.telefone)).toEqual([
+        '71998765432',
+        '71991230011',
+      ]);
+
+      // Duas linhas ao mesmo tempo: as duas ligações ficam abertas.
+      const a = (await enviar('post', `/ligacoes/listas/${listaId}/proximo`)).body.item;
+      const b = (await enviar('post', `/ligacoes/listas/${listaId}/proximo`)).body.item;
+      expect([a.empresaId, b.empresaId]).toEqual([empresaId, outroId]);
+      const la = await enviar('post', '/ligacoes', { empresaId, telefone: a.telefone, listaItemId: a.id });
+      const lb = await enviar('post', '/ligacoes', {
+        empresaId: outroId,
+        telefone: b.telefone,
+        listaItemId: b.id,
+      });
+      expect(la.status).toBe(201);
+      expect(lb.status).toBe(201);
+      expect((await ler(`/ligacoes/${la.body.id}`)).body.situacao).toBe('preparando');
+      // O mesmo item não liga duas vezes.
+      expect(
+        (await enviar('post', '/ligacoes', { empresaId, telefone: a.telefone, listaItemId: a.id })).status,
+      ).toBe(409);
+
+      // A primeira atendeu: a outra linha é desligada e o item volta para o fim da fila.
+      await enviar('post', `/ligacoes/${la.body.id}/estado`, { evento: 'atendeu' });
+      await enviar('post', `/ligacoes/${lb.body.id}/desligar`);
+      await enviar('post', `/ligacoes/listas/itens/${b.id}/devolver`);
+      await enviar('post', `/ligacoes/${la.body.id}/estado`, { evento: 'encerrou' });
+      await enviar('post', `/ligacoes/${la.body.id}/resultado`, { resultado: 'conversou' });
+
+      // O lead da linha desligada volta; não atendeu: entra de novo com o próximo número.
+      const c = (await enviar('post', `/ligacoes/listas/${listaId}/proximo`)).body.item;
+      expect(c.empresaId).toBe(outroId);
+      const lc = await enviar('post', '/ligacoes', {
+        empresaId: outroId,
+        telefone: c.telefone,
+        listaItemId: c.id,
+      });
+      await enviar('post', `/ligacoes/${lc.body.id}/estado`, { evento: 'encerrou' });
+      await enviar('post', `/ligacoes/${lc.body.id}/resultado`, { resultado: 'nao_atendeu' });
+      const atual = await ler('/ligacoes/listas/atual');
+      const naFila = atual.body.itens.filter((i: { situacao: string }) => i.situacao === 'na_fila');
+      // O Odonto só tem um número: não volta. A lista acabou.
+      expect(naFila).toHaveLength(0);
+      expect((await enviar('post', `/ligacoes/listas/${listaId}/proximo`)).body.item).toBeNull();
+
+      // Atendeu junto com outra linha e ouviu o recado: volta primeiro.
+      const nova = await enviar('post', '/ligacoes/listas', { empresaIds: [outroId, empresaId], linhas: 3 });
+      const l2 = nova.body.listaId as number;
+      const x = (await enviar('post', `/ligacoes/listas/${l2}/proximo`)).body.item;
+      const lx = await enviar('post', '/ligacoes', {
+        empresaId: x.empresaId,
+        telefone: x.telefone,
+        listaItemId: x.id,
+      });
+      await enviar('post', `/ligacoes/${lx.body.id}/estado`, { evento: 'atendeu' });
+      expect((await enviar('post', `/ligacoes/${lx.body.id}/retorno`)).status).toBe(200);
+      const y = (await enviar('post', `/ligacoes/listas/${l2}/proximo`)).body.item;
+      expect(y.empresaId).toBe(x.empresaId);
+      // Fora do horário (domingo), a lista não anda.
+      relogio.agora = () => new Date('2026-11-08T10:00:00-03:00');
+      const fora = await enviar('post', `/ligacoes/listas/${l2}/proximo`);
+      expect(fora.status).toBe(409);
+      expect(fora.body.erro.mensagem).toMatch(/Fora do horário/);
+      expect((await enviar('post', `/ligacoes/listas/${l2}/encerrar`)).body).toBeNull();
+      await pool.query(`UPDATE comercial.ligacoes SET situacao = 'encerrada' WHERE situacao <> 'encerrada'`);
+    } finally {
+      relogio.agora = () => new Date();
+    }
+  });
+
+  it('recebida: reconhece o lead, toca para o dono, depois para o time; o primeiro que atende leva', async () => {
+    const { rows: u } = await pool.query<{ id: number }>(
+      `SELECT id FROM cadastro.usuarios WHERE email = 'dona@exemplo.com'`,
+    );
+    const eu = u[0]!.id;
+    await pool.query('UPDATE comercial.oportunidades SET responsavel_id = $1 WHERE empresa_id = $2', [
+      eu,
+      empresaId,
+    ]);
+    chamadores.set('lig-in-a', { de: '+5571998765432', para: '+557133330400' });
+    await tratarAvisoLigacao(appDeps(), {
+      tipo: 'entrou',
+      id: 'x1',
+      sala: 'lig-in-a',
+      identidade: 'sip_+5571998765432',
+      nome: 'Fernanda',
+      em: new Date(),
+    });
+    const entrando = await ler('/ligacoes/entrando');
+    expect(entrando.body[0]).toMatchObject({ empresaId, lead: 'Clínica Sorriso Pleno', meu: true });
+    const id = entrando.body[0].id as number;
+    const at = await enviar('post', `/ligacoes/${id}/atender`);
+    expect(at.status).toBe(200);
+    expect(at.body).toMatchObject({ sala: 'lig-in-a', direcao: 'entrada', empresaId });
+    expect((await enviar('post', `/ligacoes/${id}/atender`)).status).toBe(409);
+    expect((await ler('/ligacoes/entrando')).body).toHaveLength(0);
+    await enviar('post', `/ligacoes/${id}/estado`, { evento: 'encerrou' });
+    expect((await ler('/ligacoes?ver=recebidas&usuario=todos')).body.ligacoes[0]).toMatchObject({
+      direcao: 'entrada',
+    });
+
+    // Número que não é lead: toca para o time na hora.
+    chamadores.set('lig-in-b', { de: '+5571988401212', para: '+557133330400' });
+    await tratarAvisoLigacao(appDeps(), {
+      tipo: 'entrou',
+      id: 'x2',
+      sala: 'lig-in-b',
+      identidade: 'sip_+5571988401212',
+      nome: '',
+      em: new Date(),
+    });
+    const desconhecido = (await ler('/ligacoes/entrando')).body[0];
+    expect(desconhecido).toMatchObject({ empresaId: null, telefone: '71988401212', meu: false });
+    // Ninguém atendeu em 40 s e o dono não tem celular: perdida (aviso + sem tarefa, não é lead).
+    await pool.query(
+      `UPDATE comercial.ligacoes SET iniciada_em = now() - interval '45 seconds' WHERE sala = 'lig-in-b'`,
+    );
+    await rodadaEntrada(pool, appDeps().telefonia!, log);
+    const perdida = (await ler('/ligacoes?ver=perdidas&usuario=todos')).body.ligacoes;
+    expect(perdida[0]).toMatchObject({ telefone: '71988401212' });
+    // Quem ligou desligou antes: perdida também, com tarefa de retorno para o dono.
+    chamadores.set('lig-in-c', { de: '+5571998765432', para: '+557133330400' });
+    await tratarAvisoLigacao(appDeps(), {
+      tipo: 'entrou',
+      id: 'x3',
+      sala: 'lig-in-c',
+      identidade: 'sip_+5571998765432',
+      nome: '',
+      em: new Date(),
+    });
+    await tratarAvisoLigacao(appDeps(), {
+      tipo: 'saiu',
+      id: 'x4',
+      sala: 'lig-in-c',
+      identidade: 'sip_+5571998765432',
+      em: new Date(),
+    });
+    const { rows: t } = await pool.query(
+      `SELECT titulo FROM comercial.tarefas WHERE empresa_id = $1 AND tipo = 'ligacao' AND titulo LIKE 'Retornar%'`,
+      [empresaId],
+    );
+    expect(t[0].titulo).toBe('Retornar a ligação de Clínica Sorriso Pleno');
+    const { rows: n } = await pool.query(
+      `SELECT titulo FROM comercial.notificacoes WHERE titulo LIKE 'Ligação perdida%'`,
+    );
+    expect(n.length).toBeGreaterThanOrEqual(2);
+
+    // Siga-me: o dono tem celular na Equipe; ninguém atendeu no CRM, toca no celular dele.
+    await pool.query(`UPDATE cadastro.usuarios SET telefone = '71999990000' WHERE id = $1`, [eu]);
+    chamadores.set('lig-in-d', { de: '+5571998765432', para: '+557133330400' });
+    await tratarAvisoLigacao(appDeps(), {
+      tipo: 'entrou',
+      id: 'x5',
+      sala: 'lig-in-d',
+      identidade: 'sip_+5571998765432',
+      nome: '',
+      em: new Date(),
+    });
+    await pool.query(
+      `UPDATE comercial.ligacoes SET iniciada_em = now() - interval '45 seconds' WHERE sala = 'lig-in-d'`,
+    );
+    await rodadaEntrada(pool, appDeps().telefonia!, log);
+    expect(chamadas.filter((c) => c.tipo === 'discar').at(-1)?.dados).toMatchObject({
+      sala: 'lig-in-d',
+      numero: '71999990000',
+      identidade: 'siga-me',
+    });
+    estadoLead = 'atendida';
+    await rodadaEntrada(pool, appDeps().telefonia!, log);
+    estadoLead = null;
+    await rodadaEntrada(pool, appDeps().telefonia!, log);
+    const { rows: sm } = await pool.query(
+      `SELECT situacao, siga_me, atendida_em IS NOT NULL AS atendida, perdida FROM comercial.ligacoes WHERE sala = 'lig-in-d'`,
+    );
+    expect(sm[0]).toMatchObject({
+      situacao: 'encerrada',
+      siga_me: '71999990000',
+      atendida: true,
+      perdida: false,
+    });
+    estadoLead = 'atendida';
+  });
+
+  it('relatório de ligações e o aviso de 80% da franquia', async () => {
+    const r = await ler('/ligacoes/relatorio?dias=30');
+    expect(r.status).toBe(200);
+    expect(r.body.totais.feitas).toBeGreaterThanOrEqual(4);
+    expect(r.body.totais.recebidas).toBeGreaterThanOrEqual(1);
+    expect(r.body.porPessoa[0]).toMatchObject({ nome: expect.any(String) });
+    expect(r.body.mapa.length).toBeGreaterThan(0);
+    await pool.query(
+      `UPDATE cadastro.organizacoes SET plano = 'time', modulos = '{ligacoes}', limite_minutos_ligacao = 3`,
+    );
+    esquecerRecursos();
+    await comConta(1, () => avisarFranquia(pool));
+    await comConta(1, () => avisarFranquia(pool));
+    const { rows } = await pool.query(
+      `SELECT titulo FROM comercial.notificacoes WHERE titulo LIKE 'Os minutos de ligação%'`,
+    );
+    expect(rows).toHaveLength(1);
+    await pool.query(
+      `UPDATE cadastro.organizacoes SET plano = NULL, modulos = '{}', limite_minutos_ligacao = NULL`,
+    );
+    esquecerRecursos();
   });
 
   it('é um módulo à parte: sem ele, não liga (o histórico continua visível)', async () => {

@@ -215,10 +215,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
     id: 'ligacoes',
     area: 'Vendas',
     titulo: 'Ligações pelo CRM',
-    resumo: 'Ligue para o lead pelo navegador com o número da empresa; a IA resume e sugere o próximo passo.',
+    resumo:
+      'Ligue e receba ligações pelo navegador com o número da empresa, monte listas de ligação e veja o relatório; a IA resume e sugere o próximo passo.',
     onde: { rotulo: 'Ligações', para: '/ligacoes' },
     termos:
-      'ligar ligação ligacao telefone telefonia chamada celular fixo número numero gravação gravar transcrição resumo clima sentimento caixa postal não atendeu número errado não ligar minutos franquia aviso LGPD discar',
+      'ligar ligação ligacao telefone telefonia chamada celular fixo número numero gravação gravar transcrição resumo clima sentimento caixa postal não atendeu número errado não ligar minutos franquia aviso LGPD discar lista de ligação discador paralelo power dialer receber recebida perdida siga-me celular retornar relatório melhor horário',
     corpo: (
       <>
         <p>
@@ -273,6 +274,65 @@ export const ARTIGOS: ArtigoAjuda[] = [
           cada fala. A tela <b>Vendas › Ligações</b> mostra as ligações de todo mundo, com filtros por pessoa,
           resultado e período.
         </p>
+        <h3>Lista de ligação</h3>
+        <p>
+          Em <b>Vendas › Ligações › Lista de ligação</b>, escolha os leads (por etapa e responsável; desmarque
+          os que não quiser) e clique em <b>Começar a ligar</b>. O CRM liga para um, você conversa, salva o
+          “Como foi?” e, depois da pausa que você escolheu, ele liga para o próximo sozinho.
+        </p>
+        <ul>
+          <li>
+            <b>Um de cada vez</b>: uma ligação por vez.
+          </li>
+          <li>
+            <b>Paralelo (2 ou 3)</b>: o CRM chama 2 ou 3 leads ao mesmo tempo e o primeiro que atende vai para
+            você. Se outro atender enquanto você fala, ele ouve “estou terminando outra ligação e te retorno
+            em instantes” e volta para o começo da lista, para você ligar logo em seguida.
+          </li>
+          <li>
+            Quem não atende volta no fim da lista com o outro número do lead (se marcar essa opção, até 3
+            tentativas). Os que não atenderam já ficam marcados como “não atendeu”, sem precisar do “Como
+            foi?”.
+          </li>
+          <li>
+            Use <b>Pausar</b> para parar (as ligações que estão tocando são desligadas e voltam para a fila),{' '}
+            <b>Pular</b> para tirar um lead e <b>Encerrar lista</b> quando terminar. A lista só liga de
+            segunda a sexta das 8h às 20h e sábado das 8h às 14h, e pula quem pediu para não receber ligação.
+          </li>
+        </ul>
+        <Nota>Deixe a aba do CRM aberta enquanto a lista anda: é o navegador que faz as ligações.</Nota>
+        <h3>Receber ligações</h3>
+        <p>
+          Quando alguém liga para o número da empresa, aparece um aviso na tela de quem está no CRM, com o
+          nome do lead, a etapa e a próxima reunião, se tiver. Clique em <b>Atender</b> e fale pelo navegador,
+          como numa ligação feita.
+        </p>
+        <ul>
+          <li>
+            Se o número é de um lead, toca primeiro só para o dono dele. Depois do tempo combinado (ou se ele
+            clicar em <b>Passar para o time</b>), toca para todo mundo; quem atender primeiro leva.
+          </li>
+          <li>
+            Número que não é de nenhum lead toca para o time. Depois da ligação, use <b>Criar lead</b> no
+            “Como foi?”: a ligação e o resumo vão para a ficha nova.
+          </li>
+          <li>
+            Ninguém atendeu no CRM: com o <b>siga-me</b> ligado, toca no celular do dono do lead (o cadastrado
+            em Equipe; atendida no celular, a ligação não é gravada). Se ninguém atender, vira{' '}
+            <b>ligação perdida</b>: o dono recebe um aviso e uma tarefa de retorno na agenda.
+          </li>
+        </ul>
+        <p>
+          As abas <b>Recebidas</b> e <b>Perdidas</b> mostram essas ligações. O administrador liga e desliga o
+          receber pelo CRM, o tempo de cada etapa e o siga-me em <b>Gestão › Telefonia</b>.
+        </p>
+        <h3>Relatório</h3>
+        <p>
+          A aba <b>Relatório</b> mostra quantas ligações foram feitas e atendidas, quantas viraram conversa (e
+          quantas passaram de 2 minutos), as reuniões marcadas depois de uma ligação, o resumo por pessoa e um
+          mapa de <b>quando o lead mais atende</b>, por dia da semana e hora, para montar as listas na hora
+          certa.
+        </p>
         <h3>Gravação e aviso (LGPD)</h3>
         <p>
           A ligação é gravada no navegador de quem liga e a pessoa do outro lado é avisada no começo: o
@@ -289,7 +349,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Os números da empresa são cadastrados pelo Prospect Team (escolha o DDD ou traga o número que já
           usa). Com mais de um número, o CRM liga com o do mesmo DDD do lead. O módulo vem com uma franquia de
           minutos por mês para a empresa toda; cada ligação atendida conta arredondada para cima, as que não
-          atendem não contam. Em Gestão › Telefonia você acompanha o uso.
+          atendem não contam. Em Gestão › Telefonia você acompanha o uso; os administradores recebem um aviso
+          quando o mês passa de 80% e de 100% da franquia (as ligações continuam e o excedente vem na fatura).
         </p>
       </>
     ),

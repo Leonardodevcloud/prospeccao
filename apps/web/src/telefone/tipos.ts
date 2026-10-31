@@ -18,6 +18,10 @@ export interface LigacaoResumida {
   usuarioId: number | null;
   usuarioNome: string | null;
   direcao: 'saida' | 'entrada';
+  /** Recebida que ninguém atendeu. */
+  perdida?: boolean;
+  /** Recebida atendida no celular (siga-me). */
+  sigaMe?: string | null;
   telefone: string;
   numeroEmpresa: string | null;
   situacao: string;

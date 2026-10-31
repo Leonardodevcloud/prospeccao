@@ -241,6 +241,79 @@ function Conteudo(props: { s: SituacaoTelefonia }) {
               A gravação ainda não está ligada na plataforma; as ligações saem sem gravar.
             </span>
           )}
+
+          <h2 className="tel-card__sub">Ligações que chegam</h2>
+          <label className="opcao">
+            <input
+              type="checkbox"
+              checked={f.receber}
+              disabled={ro}
+              onChange={(e) => set('receber', e.target.checked)}
+            />
+            <span>
+              <b>Atender pelo CRM</b> as ligações para os números da empresa (aparece um aviso na tela de quem
+              estiver no sistema)
+            </span>
+          </label>
+          {f.receber && (
+            <>
+              <div className="form__duas">
+                <div className="campo">
+                  <label htmlFor="tel-dono">Tocar só para o dono do lead por</label>
+                  <select
+                    id="tel-dono"
+                    disabled={ro}
+                    value={f.toqueDono}
+                    onChange={(e) => set('toqueDono', Number(e.target.value))}
+                  >
+                    <option value={0}>Tocar para o time já</option>
+                    {[10, 15, 20, 30, 45, 60].map((n) => (
+                      <option key={n} value={n}>
+                        {n} segundos
+                      </option>
+                    ))}
+                  </select>
+                  <span className="campo__dica">
+                    Depois, toca para todo o time; quem atender primeiro leva.
+                  </span>
+                </div>
+                <div className="campo">
+                  <label htmlFor="tel-entrada">Tocar no CRM por até</label>
+                  <select
+                    id="tel-entrada"
+                    disabled={ro}
+                    value={f.toqueEntrada}
+                    onChange={(e) => set('toqueEntrada', Number(e.target.value))}
+                  >
+                    {[20, 30, 40, 60, 90, 120].map((n) => (
+                      <option key={n} value={n}>
+                        {n} segundos
+                      </option>
+                    ))}
+                  </select>
+                  <span className="campo__dica">
+                    Ninguém atendeu: vai para o celular ou vira ligação perdida.
+                  </span>
+                </div>
+              </div>
+              <label className="opcao">
+                <input
+                  type="checkbox"
+                  checked={f.sigaMe}
+                  disabled={ro}
+                  onChange={(e) => set('sigaMe', e.target.checked)}
+                />
+                <span>
+                  <b>Siga-me:</b> se ninguém atender no CRM, tocar no celular do dono do lead (o cadastrado em
+                  Equipe). Atendida no celular, a ligação não é gravada.
+                </span>
+              </label>
+              <span className="campo__dica">
+                Ligação perdida avisa o dono do lead (ou o time, se o número não é de nenhum lead) e vira uma
+                tarefa de retorno na agenda.
+              </span>
+            </>
+          )}
           <ErroDaApi erro={salvar.error} />
           {salvar.isSuccess && <Mensagem tipo="ok">Salvo. Vale a partir da próxima ligação.</Mensagem>}
           {admin && (
