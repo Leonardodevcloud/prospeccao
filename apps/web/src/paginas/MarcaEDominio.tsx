@@ -1,4 +1,3 @@
-import { contrasteComBranco } from '@prospeccao/shared/seguranca';
 import { Badge, Button, Icon, Panel } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useState } from 'react';
@@ -7,9 +6,9 @@ import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Modal } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { SeloDaMarca } from '../componentes/Marca';
 import { fmtQuando } from '../formatar';
 import { FundosDasReunioes } from './FundosReuniao';
+import { MarcaCompleta, type MarcaDados } from './MarcaPainel';
 
 /**
  * Marca e domínio (white label): o cliente coloca o nome, a cor, o logo, o ícone e a imagem de
@@ -24,14 +23,7 @@ interface RegistroDns {
   valor: string;
 }
 
-interface DadosMarca {
-  organizacaoNome: string;
-  nome: string | null;
-  cor: string | null;
-  logo: boolean;
-  icone: boolean;
-  imagem: boolean;
-  versao: string;
+interface DadosMarca extends MarcaDados {
   dominio: {
     endereco: string;
     situacao: 'pendente' | 'ativo';
@@ -41,72 +33,7 @@ interface DadosMarca {
     ativoEm: string | null;
     conferidoEm: string | null;
   } | null;
-  podeEditar: boolean;
   dominioDisponivel: boolean;
-}
-
-const COR_PADRAO = '#0b6b63';
-const CORES = ['#c2410c', '#0b6b63', '#1d4ed8', '#6d28d9', '#be123c', '#334155'];
-
-type Arquivo = 'logo' | 'icone' | 'imagem';
-
-/** Como cada imagem é preparada no navegador antes de subir (ninguém precisa redimensionar nada). */
-const FORMATO: Record<
-  Arquivo,
-  { largura: number; altura: number; modo: 'cobrir' | 'caber'; tipo: 'image/png' | 'image/jpeg' }
-> = {
-  logo: { largura: 720, altura: 240, modo: 'caber', tipo: 'image/png' },
-  icone: { largura: 512, altura: 512, modo: 'cobrir', tipo: 'image/png' },
-  imagem: { largura: 1200, altura: 630, modo: 'cobrir', tipo: 'image/jpeg' },
-};
-
-/** Lê a imagem e devolve um data URL no tamanho certo (o ícone sai quadrado; a imagem, 1200×630). */
-async function prepararImagem(arquivo: File, qual: Arquivo): Promise<string> {
-  if (!/^image\/(png|jpeg|webp|gif)$/.test(arquivo.type)) throw new Error('Use uma imagem PNG ou JPG.');
-  const f = FORMATO[qual];
-  const url = URL.createObjectURL(arquivo);
-  try {
-    const img = await new Promise<HTMLImageElement>((ok, falhou) => {
-      const i = new Image();
-      i.onload = () => ok(i);
-      i.onerror = () => falhou(new Error('Não deu para abrir esta imagem. Tente outra.'));
-      i.src = url;
-    });
-    const { naturalWidth: w, naturalHeight: h } = img;
-    let largura = f.largura;
-    let altura = f.altura;
-    let sx = 0;
-    let sy = 0;
-    let sw = w;
-    let sh = h;
-    if (f.modo === 'cobrir') {
-      // Corta o que sobra, mantendo o centro.
-      const escala = Math.max(f.largura / w, f.altura / h);
-      sw = f.largura / escala;
-      sh = f.altura / escala;
-      sx = (w - sw) / 2;
-      sy = (h - sh) / 2;
-    } else {
-      // Cabe inteiro, sem aumentar logo pequeno.
-      const escala = Math.min(1, f.largura / w, f.altura / h);
-      largura = Math.max(1, Math.round(w * escala));
-      altura = Math.max(1, Math.round(h * escala));
-    }
-    const tela = document.createElement('canvas');
-    tela.width = largura;
-    tela.height = altura;
-    const ctx = tela.getContext('2d');
-    if (!ctx) throw new Error('Seu navegador não conseguiu preparar a imagem.');
-    if (f.tipo === 'image/jpeg') {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, largura, altura);
-    }
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, largura, altura);
-    return tela.toDataURL(f.tipo, 0.86);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 function useDadosMarca() {
@@ -172,13 +99,6 @@ export function MarcaEDominio() {
 
 function Conteudo(props: { dados: DadosMarca; aba: Aba }) {
   const d = props.dados;
-  const [nome, setNome] = useState(d.nome ?? '');
-  const [cor, setCor] = useState(d.cor ?? COR_PADRAO);
-  const [novos, setNovos] = useState<Partial<Record<Arquivo, string | null>>>({});
-  const previa = (a: Arquivo): string | null =>
-    novos[a] !== undefined ? novos[a]! : d[a] ? `/api/marca/arquivo/${a}?v=${d.versao}` : null;
-  const nomeMostrado = nome.trim() || d.organizacaoNome;
-  const corValida = /^#[0-9a-fA-F]{6}$/.test(cor);
   return (
     <>
       {!d.podeEditar && (
@@ -193,336 +113,14 @@ function Conteudo(props: { dados: DadosMarca; aba: Aba }) {
         </div>
       )}
       {props.aba === 'fundos' && <FundosDasReunioes />}
-      <div className="marca-grade" hidden={props.aba !== 'marca'}>
-        <div className="pilha" style={{ gap: 'var(--space-4)' }}>
-          <PainelMarca
-            dados={d}
-            nome={nome}
-            setNome={setNome}
-            cor={cor}
-            setCor={setCor}
-            novos={novos}
-            setNovos={setNovos}
-            previa={previa}
-          />
-        </div>
-        <ComoFica
-          nome={nomeMostrado}
-          cor={corValida ? cor : COR_PADRAO}
-          logo={previa('logo')}
-          icone={previa('icone')}
-          imagem={previa('imagem')}
+      {/* A marca fica montada (escondida nas outras abas) para não perder o que ainda não foi salvo. */}
+      <div hidden={props.aba !== 'marca'}>
+        <MarcaCompleta
+          dados={d}
           endereco={d.dominio?.situacao === 'ativo' ? d.dominio.endereco : location.host}
         />
       </div>
     </>
-  );
-}
-
-/* ---------- Marca ---------- */
-
-function PainelMarca(props: {
-  dados: DadosMarca;
-  nome: string;
-  setNome: (v: string) => void;
-  cor: string;
-  setCor: (v: string) => void;
-  novos: Partial<Record<Arquivo, string | null>>;
-  setNovos: (v: Partial<Record<Arquivo, string | null>>) => void;
-  previa: (a: Arquivo) => string | null;
-}) {
-  const d = props.dados;
-  const cliente = useQueryClient();
-  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
-  const salvar = useMutation({
-    mutationFn: (corpo: Record<string, unknown>) => api<DadosMarca>('/marca', { metodo: 'PUT', corpo }),
-    onSuccess: () => {
-      props.setNovos({});
-      cliente.invalidateQueries({ queryKey: ['marca'] });
-      cliente.invalidateQueries({ queryKey: ['sessao'] });
-      cliente.invalidateQueries({ queryKey: ['organizacao'] });
-    },
-  });
-  const corValida = /^#[0-9a-fA-F]{6}$/.test(props.cor);
-  const corClara = corValida && contrasteComBranco(props.cor) < 4.5;
-  const temAlgo = !!(d.nome || d.cor || d.logo || d.icone || d.imagem);
-  const escolher = async (a: Arquivo, f: File | undefined) => {
-    setErroArquivo(null);
-    if (!f) return;
-    try {
-      props.setNovos({ ...props.novos, [a]: await prepararImagem(f, a) });
-    } catch (e) {
-      setErroArquivo(e instanceof Error ? e.message : 'Não deu para usar esta imagem.');
-    }
-  };
-  const editar = d.podeEditar;
-  return (
-    <Panel titulo="Marca">
-      <form
-        className="form"
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault();
-          salvar.mutate({ nome: props.nome.trim() || null, cor: props.cor, ...props.novos });
-        }}
-      >
-        <div className="form__duas">
-          <div className="campo">
-            <label htmlFor="mk-nome">Nome que aparece no sistema</label>
-            <input
-              id="mk-nome"
-              className="filtro"
-              maxLength={60}
-              placeholder={d.organizacaoNome}
-              value={props.nome}
-              disabled={!editar}
-              onChange={(e) => props.setNome(e.target.value)}
-            />
-          </div>
-          <fieldset className="campo marca-campo-cor">
-            <legend className="campo__rotulo">Cor principal</legend>
-            <div className="marca-cores">
-              {CORES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className="marca-cor"
-                  style={{ background: c }}
-                  aria-label={`Cor ${c}`}
-                  aria-pressed={props.cor.toLowerCase() === c}
-                  disabled={!editar}
-                  onClick={() => props.setCor(c)}
-                />
-              ))}
-              <label className="marca-cor marca-cor--outra" title="Outra cor">
-                <input
-                  type="color"
-                  aria-label="Escolher outra cor"
-                  value={corValida ? props.cor : COR_PADRAO}
-                  disabled={!editar}
-                  onChange={(e) => props.setCor(e.target.value)}
-                />
-                <Icon name="plus" size={14} />
-              </label>
-              <input
-                className="filtro mono marca-hex"
-                aria-label="Cor em hexadecimal"
-                value={props.cor}
-                maxLength={7}
-                disabled={!editar}
-                onChange={(e) => props.setCor(e.target.value.trim())}
-              />
-            </div>
-            {corClara && (
-              <span className="campo__erro">
-                Cor clara demais: o texto branco dos botões fica ilegível. Escolha um tom mais escuro.
-              </span>
-            )}
-          </fieldset>
-        </div>
-
-        <div className="form__duas">
-          <CartaoArquivo
-            id="mk-logo"
-            titulo="Logo"
-            texto="PNG com fundo transparente fica melhor. Vai no menu, no login, na sala de reunião e nos relatórios."
-            previa={props.previa('logo')}
-            largo
-            editar={editar}
-            aoEscolher={(f) => escolher('logo', f)}
-            aoTirar={() => props.setNovos({ ...props.novos, logo: null })}
-          />
-          <CartaoArquivo
-            id="mk-icone"
-            titulo="Ícone (aba e celular)"
-            texto="Quadrado (ajustamos para 512×512). Vira o ícone da aba do navegador e do app no celular."
-            previa={props.previa('icone')}
-            editar={editar}
-            aoEscolher={(f) => escolher('icone', f)}
-            aoTirar={() => props.setNovos({ ...props.novos, icone: null })}
-          />
-        </div>
-        <CartaoArquivo
-          id="mk-imagem"
-          titulo="Imagem de divulgação"
-          texto="1200×630 (ajustamos sozinhos). Aparece ao lado do login e na prévia quando alguém manda um link do sistema no WhatsApp (convite, reunião). Sem ela, usamos a cor com o logo."
-          previa={props.previa('imagem')}
-          banner
-          editar={editar}
-          aoEscolher={(f) => escolher('imagem', f)}
-          aoTirar={() => props.setNovos({ ...props.novos, imagem: null })}
-        />
-
-        {erroArquivo && <Mensagem tipo="erro">{erroArquivo}</Mensagem>}
-        <ErroDaApi erro={salvar.error} />
-        {salvar.isSuccess && <Mensagem tipo="ok">Marca salva. Já vale para todo mundo.</Mensagem>}
-        {editar && (
-          <div className="acoes">
-            <Button variant="primary" type="submit" disabled={salvar.isPending || !corValida || corClara}>
-              {salvar.isPending ? 'Salvando…' : 'Salvar marca'}
-            </Button>
-            {temAlgo && (
-              <Button
-                variant="ghost"
-                disabled={salvar.isPending}
-                onClick={() => {
-                  props.setNome('');
-                  props.setCor(COR_PADRAO);
-                  salvar.mutate({ nome: null, cor: null, logo: null, icone: null, imagem: null });
-                }}
-              >
-                Voltar ao padrão
-              </Button>
-            )}
-          </div>
-        )}
-      </form>
-    </Panel>
-  );
-}
-
-function CartaoArquivo(props: {
-  id: string;
-  titulo: string;
-  texto: string;
-  previa: string | null;
-  largo?: boolean;
-  banner?: boolean;
-  editar: boolean;
-  aoEscolher: (f: File | undefined) => void;
-  aoTirar: () => void;
-}) {
-  return (
-    <div className={`marca-arquivo${props.banner ? ' marca-arquivo--banner' : ''}`}>
-      <span
-        className={`marca-arquivo__previa${props.largo ? ' marca-arquivo__previa--larga' : ''}${
-          props.banner ? ' marca-arquivo__previa--banner' : ''
-        }`}
-      >
-        {props.previa ? (
-          <img src={props.previa} alt={`${props.titulo} atual`} />
-        ) : (
-          <Icon name="image" size={20} label="Sem imagem" />
-        )}
-      </span>
-      <span className="marca-arquivo__texto">
-        <b>{props.titulo}</b>
-        <span>{props.texto}</span>
-        {props.editar && (
-          <span className="marca-arquivo__acoes">
-            <label className="pp-btn pp-btn--sm botao-arquivo" htmlFor={props.id}>
-              {props.previa ? 'Trocar' : 'Escolher'}
-            </label>
-            <input
-              id={props.id}
-              className="pp-sr"
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(e) => {
-                props.aoEscolher(e.target.files?.[0]);
-                e.target.value = '';
-              }}
-            />
-            {props.previa && (
-              <Button size="sm" variant="ghost" onClick={props.aoTirar}>
-                Tirar
-              </Button>
-            )}
-          </span>
-        )}
-      </span>
-    </div>
-  );
-}
-
-/* ---------- Prévia ---------- */
-
-function ComoFica(props: {
-  nome: string;
-  cor: string;
-  logo: string | null;
-  icone: string | null;
-  imagem: string | null;
-  endereco: string;
-}) {
-  const selo = { nome: props.nome, cor: props.cor, icone: null };
-  const Icone = () =>
-    props.icone ? (
-      <img className="previa-nav__icone" src={props.icone} alt="" />
-    ) : (
-      <SeloDaMarca marca={selo} tamanho={16} />
-    );
-  return (
-    <Panel titulo="Como fica">
-      <div className="previa-navegador" aria-hidden="true">
-        <div className="previa-navegador__aba">
-          <Icone />
-          <span>{props.nome} · Meu dia</span>
-        </div>
-        <div className="previa-navegador__barra">
-          <Icon name="badge-check" size={12} />
-          <span className="mono">{props.endereco}/hoje</span>
-        </div>
-        <div className="previa-navegador__corpo">
-          <div className="previa-nav">
-            <div className="previa-nav__marca">
-              {props.logo ? (
-                <img src={props.logo} alt="" />
-              ) : (
-                <>
-                  <SeloDaMarca marca={selo} tamanho={20} />
-                  <b>{props.nome}</b>
-                </>
-              )}
-            </div>
-            <span className="previa-nav__item" style={{ background: `${props.cor}1f` }} />
-            <span className="previa-nav__linha" />
-            <span className="previa-nav__linha" style={{ width: '50%' }} />
-            <span className="previa-nav__linha" style={{ width: '70%' }} />
-            <span className="previa-nav__rodape">Tecnologia Prospect Team</span>
-          </div>
-          <div className="previa-conteudo">
-            <b>Bom dia!</b>
-            <span className="previa-conteudo__botao" style={{ background: props.cor }} />
-            <span className="previa-conteudo__cartao" />
-          </div>
-        </div>
-      </div>
-
-      <p className="quieto marca-previa-titulo">Link no WhatsApp</p>
-      <div className="previa-whats" aria-hidden="true">
-        <div
-          className="previa-whats__imagem"
-          style={
-            props.imagem
-              ? { backgroundImage: `url("${props.imagem}")` }
-              : {
-                  background: `linear-gradient(135deg, color-mix(in srgb, ${props.cor} 55%, black), ${props.cor} 55%, color-mix(in srgb, ${props.cor} 65%, white))`,
-                }
-          }
-        >
-          {!props.imagem &&
-            (props.logo ? (
-              <span className="previa-whats__logo">
-                <img src={props.logo} alt="" />
-              </span>
-            ) : (
-              <span className="previa-whats__nome">
-                <SeloDaMarca marca={selo} tamanho={36} claro />
-                {props.nome}
-              </span>
-            ))}
-        </div>
-        <div className="previa-whats__texto">
-          <b>Reunião com {props.nome}</b>
-          <span>Entre pelo navegador, sem instalar nada</span>
-          <span>{props.endereco}</span>
-        </div>
-      </div>
-      <p className="quieto marca-previa-nota">
-        No celular, o app instalado fica com o seu ícone e o seu nome. O Prospect Team aparece só num discreto
-        “Tecnologia Prospect Team” no rodapé do login, do menu e da sala de reunião.
-      </p>
-    </Panel>
   );
 }
 

@@ -181,20 +181,24 @@ export function TecnologiaProspectTeam(props: { className?: string }) {
 /** Painel da esquerda com a marca do cliente: a imagem de divulgação ou a cor dele com o logo. */
 function PainelDoCliente(props: { marca: MarcaPublica }) {
   const m = props.marca;
+  // O painel fica na cor secundária (ou na primária); a logo para fundo escuro vai direto nele.
+  const fundo = m.corSecundaria ?? m.cor ?? '#0b6b63';
   return (
     <section
       className="acesso__marca acesso__marca--cliente"
       aria-label={m.nome}
-      style={{ '--marca-cor': m.cor ?? '#0b6b63' } as React.CSSProperties}
+      style={{ '--marca-cor': fundo } as React.CSSProperties}
     >
       <div className="acesso__cliente">
-        {m.logo ? (
+        {m.logoEscuro ? (
+          <img className="acesso__cliente-logo-escuro" src={`/api${m.logoEscuro}`} alt={m.nome} />
+        ) : m.logo ? (
           <span className="acesso__cliente-logo">
             <img src={`/api${m.logo}`} alt={m.nome} />
           </span>
         ) : (
           <>
-            <SeloDaMarca marca={m} tamanho={44} claro />
+            <SeloDaMarca marca={{ ...m, cor: m.cor }} tamanho={44} claro />
             <b>{m.nome}</b>
           </>
         )}

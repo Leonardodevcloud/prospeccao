@@ -189,7 +189,12 @@ export function rotasSalaPublica(deps: DepsApi): Router {
       empresa: {
         nome: sala.marcaNome || sala.contaNome,
         cor: sala.marcaCor,
-        logo: sala.temLogo ? `/api/salas/${sala.codigo}/logo` : null,
+        // No topo da sala vai o ícone da marca (quadrado); sem ele, a logo.
+        logo: sala.temIcone
+          ? `/api/salas/${sala.codigo}/icone`
+          : sala.temLogo
+            ? `/api/salas/${sala.codigo}/logo`
+            : null,
       },
       anfitriao: sala.anfitriaoNome,
       presentes,
@@ -210,6 +215,13 @@ export function rotasSalaPublica(deps: DepsApi): Router {
     const f = await fundos.imagemDaFoto(pool, organizacaoId, Number(req.params.id) || 0);
     if (!f) throw AppError.naoEncontrado('Foto');
     res.set('Cache-Control', 'private, max-age=86400').type(f.tipo).send(f.imagem);
+  });
+
+  r.get('/:codigo/icone', async (req, res) => {
+    const sala = await carregarSala(deps, String(req.params.codigo));
+    const icone = await repo.logoDaConta(pool, sala.contaId, 'icone');
+    if (!icone) throw AppError.naoEncontrado('Ícone');
+    res.set('Cache-Control', 'public, max-age=3600').type(icone.tipo).send(icone.dados);
   });
 
   r.get('/:codigo/logo', async (req, res) => {

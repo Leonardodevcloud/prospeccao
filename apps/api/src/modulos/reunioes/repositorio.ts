@@ -68,12 +68,13 @@ export async function salaPorCodigo(db: Executor, codigo: string) {
       marcaNome: string | null;
       marcaCor: string | null;
       temLogo: boolean;
+      temIcone: boolean;
       anfitriaoNome: string | null;
       empresaNome: string | null;
     }
   >(
     `SELECT ${CAMPOS_SALA}, c.nome AS "contaNome", o.marca_nome AS "marcaNome", o.marca_cor AS "marcaCor",
-            (o.marca_logo IS NOT NULL) AS "temLogo", u.nome AS "anfitriaoNome",
+            (o.marca_logo IS NOT NULL) AS "temLogo", (o.marca_icone IS NOT NULL) AS "temIcone", u.nome AS "anfitriaoNome",
             coalesce(e.maps_nome, e.nome) AS "empresaNome"
        FROM comercial.salas s
        JOIN cadastro.contas c ON c.id = s.conta_id
@@ -86,9 +87,10 @@ export async function salaPorCodigo(db: Executor, codigo: string) {
   return rows[0] ?? null;
 }
 
-export async function logoDaConta(db: Executor, contaId: number) {
+export async function logoDaConta(db: Executor, contaId: number, qual: 'logo' | 'icone' = 'logo') {
+  const col = qual === 'icone' ? 'marca_icone' : 'marca_logo';
   const { rows } = await db.query<{ logo: Buffer | null; tipo: string | null }>(
-    `SELECT o.marca_logo AS logo, o.marca_logo_tipo AS tipo
+    `SELECT o.${col} AS logo, o.${col}_tipo AS tipo
        FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE c.id = $1`,
     [contaId],
   );

@@ -218,6 +218,11 @@ export function Shell() {
   const pedidosNovos = useNovosPedidos(!!sessao.data?.master).data?.novos ?? 0;
   useAplicarMarca();
   const marca = sessao.data?.marca;
+  // Menu na cor secundária (a empresa liga em Marca): usa a logo para fundo escuro; sem ela, a
+  // logo para fundo claro vai numa plaquinha branca.
+  const menuEscuro = !!marca?.menuEscuro && !!marca.corSecundaria;
+  const logoDoMenu = menuEscuro ? (marca?.logoEscuro ?? marca?.logo ?? null) : (marca?.logo ?? null);
+  const logoNaPlaca = menuEscuro && !marca?.logoEscuro && !!marca?.logo;
   const voltar = useMutation({
     mutationFn: () => api('/master/sair', { metodo: 'POST' }),
     onSuccess: () => {
@@ -264,13 +269,21 @@ export function Shell() {
 
   return (
     <div className="app">
-      <nav className="nav" aria-label="Navegação principal">
-        {marca?.logo || marca?.nome ? (
+      <nav className={`nav${menuEscuro ? ' nav--escura' : ''}`} aria-label="Navegação principal">
+        {logoDoMenu ? (
+          // A logo completa (com o nome) no topo do menu; embaixo, a unidade.
+          <div className="nav__marca nav__marca--logo">
+            <span className={`nav__logo-larga${logoNaPlaca ? ' nav__logo-larga--placa' : ''}`}>
+              <img src={`/api${logoDoMenu}`} alt={marca?.nome ?? sessao.data?.organizacao?.nome ?? 'Logo'} />
+            </span>
+            {sessao.data?.conta && <span className="nav__conta-nome">{sessao.data.conta.nome}</span>}
+          </div>
+        ) : marca?.nome || marca?.icone ? (
           <div className="nav__marca nav__marca--cliente">
-            {marca.logo ? (
-              <img className="nav__logo-cliente" src={`/api${marca.logo}`} alt={marca.nome ?? 'Logo'} />
+            {marca.icone ? (
+              <img className="nav__logo-cliente" src={`/api${marca.icone}`} alt="" />
             ) : (
-              <Logo tamanho={30} />
+              <Logo tamanho={30} escuro={menuEscuro} />
             )}
             <span className="nav__marca-texto">
               {marca.nome ?? sessao.data?.organizacao?.nome}

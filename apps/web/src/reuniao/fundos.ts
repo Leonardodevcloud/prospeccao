@@ -29,7 +29,7 @@ export interface FundosDaEmpresa {
 export interface OpcaoFundo {
   id: string;
   nome: string;
-  grupo: 'efeitos' | 'empresa' | 'simples';
+  grupo: 'efeitos' | 'pessoais' | 'empresa' | 'simples';
 }
 
 export const suportaFundos = (): boolean => {
@@ -41,21 +41,27 @@ export const suportaFundos = (): boolean => {
 };
 
 /** Os fundos que a pessoa pode escolher (o time segue a configuração da empresa). */
-export function opcoesDeFundo(f: FundosDaEmpresa | null, doTime: boolean): OpcaoFundo[] {
+export function opcoesDeFundo(
+  f: FundosDaEmpresa | null,
+  doTime: boolean,
+  pessoais: { id: string; nome: string }[] = [],
+): OpcaoFundo[] {
+  const meus: OpcaoFundo[] = pessoais.map((p) => ({ id: p.id, nome: p.nome, grupo: 'pessoais' }));
   const efeitos: OpcaoFundo[] = EFEITOS_FUNDO.map((e) => ({ id: e.id, nome: e.nome, grupo: 'efeitos' }));
   const simples: OpcaoFundo[] = CENAS_FUNDO.filter((c) => c.arquivo).map((c) => ({
     id: `cena:${c.id}`,
     nome: c.nome,
     grupo: 'simples',
   }));
-  if (!doTime || !f) return [...efeitos, ...simples];
+  if (!doTime || !f) return [...efeitos, ...meus, ...simples];
   const c = f.config;
   const empresa: OpcaoFundo[] = f.comLogo
     ? [...CENAS_FUNDO.map((x) => `logo:${x.id}`), ...f.fotos.map((x) => `foto:${x.id}`)]
         .filter((id) => c.liberados.includes(id))
         .map((id) => ({ id, nome: nomeDoFundo(id, f.fotos), grupo: 'empresa' as const }))
     : [];
-  const todas = [...(c.simples ? efeitos : [efeitos[0]!]), ...empresa, ...(c.simples ? simples : [])];
+  // "Desfoque e cenários sem logo" desligado pelo gestor: também sem os fundos próprios.
+  const todas = c.simples ? [...efeitos, ...meus, ...empresa, ...simples] : [efeitos[0]!, ...empresa];
   // Travado: só o padrão (se ele ainda existir).
   if (c.travar && c.padrao) {
     const p = todas.find((o) => o.id === c.padrao);
@@ -91,8 +97,8 @@ export function lembrarFundo(id: string, doTime: boolean): void {
 
 /* ---------- Aplicar na câmera ---------- */
 
-/** Fundo com a logo: a pessoa se vê sem espelho (a logo aparece do jeito que os outros veem). */
-export const fundoSemEspelho = (id: string) => id.startsWith('logo:') || id.startsWith('foto:');
+/** Fundo com logo ou foto: a pessoa se vê sem espelho (o que tem escrito aparece como os outros veem). */
+export const fundoSemEspelho = (id: string) => /^(logo|foto|meu|local):/.test(id);
 
 let atual = 'nenhum';
 const ouvintes = new Set<() => void>();

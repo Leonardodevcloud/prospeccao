@@ -17,6 +17,36 @@ export interface MarcaDoFundo {
   logo: string | null;
   config: ConfigFundos;
   fotos: { id: number; url: string }[];
+  /** Fundos da própria pessoa (`meu:<n>` na conta, `local:<n>` no navegador). */
+  pessoais?: { id: string; url: string }[];
+}
+
+/** A foto vira JPG do tamanho certo no navegador (corta o que sobra, mantendo o centro). */
+export async function prepararFotoDeFundo(arquivo: File, largura = 1920): Promise<string> {
+  if (!/^image\/(png|jpeg|webp)$/.test(arquivo.type)) throw new Error('Use uma imagem JPG ou PNG.');
+  const url = URL.createObjectURL(arquivo);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, falhou) => {
+      const i = new Image();
+      i.onload = () => ok(i);
+      i.onerror = () => falhou(new Error('Não deu para abrir esta imagem. Tente outra.'));
+      i.src = url;
+    });
+    const W = largura;
+    const H = Math.round((largura * 9) / 16);
+    const e = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+    const sw = W / e;
+    const sh = H / e;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d')!;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, W, H);
+    return c.toDataURL('image/jpeg', 0.85);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /* ---------- Montar a imagem do fundo (cenário + logo) ---------- */
@@ -201,7 +231,11 @@ async function montar(id: string, m: MarcaDoFundo | null, largura: number): Prom
   const cor = m?.cor ?? '#0b6b63';
   let lugar: LugarLogo | null = null;
   let estilo: EstiloLogo = 'placa';
-  if (tipo === 'foto') {
+  if (tipo === 'meu' || tipo === 'local') {
+    const p = m?.pessoais?.find((x) => x.id === id);
+    if (!p) throw new Error('pessoal');
+    cobrir(ctx, await carregar(p.url), w, h);
+  } else if (tipo === 'foto') {
     const foto = m?.fotos.find((f) => String(f.id) === resto);
     if (!foto) throw new Error('foto');
     cobrir(ctx, await carregar(foto.url), w, h);

@@ -10069,3 +10069,649 @@ button.tempo-reuniao:focus-visible {
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 6px 12px;
 }
+
+/* ---------- v88: marca completa (menu na cor secundária, logo larga) ---------- */
+/* O menu escuro troca as cores dele mesmo: tudo dentro herda (links, rodapé, avatar, contadores). */
+.nav--escura {
+  --surface: var(--marca-secundaria, #1f2a44);
+  --surface-sunken: rgb(255 255 255 / 0.1);
+  --ink: #ffffff;
+  --ink-muted: rgb(255 255 255 / 0.72);
+  --line: rgb(255 255 255 / 0.14);
+  --line-strong: rgb(255 255 255 / 0.28);
+  color: var(--ink);
+  border-right-color: transparent;
+}
+.nav--escura .nav__link[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+.nav__marca--logo {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.nav__logo-larga {
+  display: inline-flex;
+  align-items: center;
+}
+.nav__logo-larga img {
+  display: block;
+  max-width: 168px;
+  max-height: 36px;
+  object-fit: contain;
+}
+.nav__logo-larga--placa {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+.nav__logo-larga--placa img {
+  max-height: 28px;
+}
+.acesso__cliente-logo-escuro {
+  display: block;
+  max-width: 260px;
+  max-height: 52px;
+  object-fit: contain;
+}
+/* Aba Marca (v88) */
+.marca-coluna {
+  gap: var(--space-4);
+  min-width: 0;
+}
+.marca-nome {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: 13px;
+}
+.marca-nome label {
+  font-weight: 600;
+}
+.marca-nome .quieto {
+  font-size: 12px;
+}
+.marca-dica {
+  font-size: 12px;
+  font-weight: 400;
+}
+.marca-cartoes {
+  display: grid;
+  gap: 12px;
+}
+.marca-cartoes--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.marca-cartoes--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.marca-cartao {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.marca-cartao__area {
+  display: grid;
+  place-items: center;
+  height: 64px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.marca-cartao__area--xadrez {
+  border: 1px dashed var(--line-strong);
+  background: repeating-conic-gradient(#f1f1ee 0% 25%, #ffffff 0% 50%) 50% / 14px 14px;
+}
+.marca-cartao__area--larga {
+  height: 72px;
+}
+.marca-cartao__area img {
+  max-width: 80%;
+  max-height: 44px;
+  object-fit: contain;
+}
+.marca-cartao__area--larga img {
+  max-height: 52px;
+}
+.marca-cartao__area--banner {
+  height: auto;
+  aspect-ratio: 1200 / 630;
+  max-width: 360px;
+}
+.marca-cartao__area--banner img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+}
+.marca-cartao__app {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 50%;
+}
+.marca-cartao__app img {
+  max-width: 72%;
+  max-height: 72%;
+}
+.marca-cartao__vazio {
+  color: var(--ink-muted);
+}
+.marca-cartao__texto {
+  font-size: 12px;
+  line-height: 17px;
+}
+.marca-cartao__acoes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.marca-cor-linha {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.marca-cor-linha[data-errada] {
+  border-color: var(--danger);
+}
+.marca-cor-linha__amostra {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 26px;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15);
+  cursor: pointer;
+}
+.marca-cor-linha__amostra input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.marca-cor-linha__amostra:focus-within {
+  box-shadow: var(--focus-ring);
+}
+.marca-cor-linha__texto {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+.marca-cor-linha__texto .quieto {
+  font-size: 11.5px;
+}
+.marca-cor-linha__hex {
+  flex: none;
+  width: 92px;
+  font-size: 12px;
+}
+.marca-legivel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: #e7f4ec;
+  color: #166534;
+  font-size: 12px;
+}
+.marca-barra {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 -8px 24px -18px rgb(0 0 0 / 0.4);
+}
+.marca-barra .quieto {
+  margin-right: auto;
+  font-size: 12px;
+}
+.marca-previa {
+  position: sticky;
+  top: var(--space-4);
+}
+.pv-abas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface-sunken);
+}
+.pv-abas__aba {
+  flex: 1 0 auto;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.pv-abas__aba:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.pv-tela {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f7f7f5;
+  height: 300px;
+  font-size: 11px;
+  color: #18181b;
+}
+.pv-legenda {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+.pv-logo {
+  display: block;
+  max-width: 100%;
+  object-fit: contain;
+}
+.pv-placa {
+  display: inline-flex;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: #fff;
+}
+.pv-nome {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+.pv-selo {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  border-radius: 5px;
+  color: #fff;
+  font-weight: 700;
+  object-fit: cover;
+}
+.pv-painel {
+  display: flex;
+  height: 100%;
+}
+.pv-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 128px;
+  padding: 10px 8px;
+  border-right: 1px solid rgb(0 0 0 / 0.06);
+}
+.pv-menu__logo {
+  display: flex;
+  min-height: 24px;
+  margin-bottom: 8px;
+}
+.pv-menu__item {
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  opacity: 0.78;
+}
+.pv-menu__item[data-on] {
+  background: rgb(127 127 127 / 0.16);
+  opacity: 1;
+  font-weight: 600;
+}
+.pv-conteudo {
+  display: grid;
+  align-content: start;
+  flex: 1;
+  gap: 7px;
+  padding: 10px;
+}
+.pv-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pv-botao {
+  padding: 3px 8px;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.pv-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.pv-kpis span {
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #5b5b56;
+  font-size: 8.5px;
+}
+.pv-kpis b {
+  display: block;
+  color: #18181b;
+  font-size: 12px;
+}
+.pv-lead {
+  display: grid;
+  gap: 4px;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 9.5px;
+}
+.pv-lead__l1 {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+}
+.pv-chip {
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-size: 8.5px;
+  font-weight: 600;
+}
+.pv-trilho {
+  height: 4px;
+  border-radius: 2px;
+  background: #eee;
+}
+.pv-trilho i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+}
+.pv-link {
+  justify-self: end;
+  font-size: 8.5px;
+  font-weight: 600;
+}
+.pv-login {
+  display: flex;
+  height: 100%;
+}
+.pv-login__marca {
+  display: flex;
+  flex: 1.1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+  color: #fff;
+}
+.pv-login__marca b {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.pv-login__imagem {
+  width: 100%;
+  aspect-ratio: 1200 / 630;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: 0 12px 24px -16px #000;
+}
+.pv-login__form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  padding: 14px;
+  background: #fff;
+}
+.pv-login__form b {
+  font-size: 12px;
+}
+.pv-login__form i {
+  display: block;
+  height: 20px;
+  border: 1px solid #c9c9c3;
+  border-radius: 5px;
+}
+.pv-login__form em {
+  display: block;
+  height: 22px;
+  border-radius: 5px;
+}
+.pv-login__form small,
+.pv-reuniao__texto small {
+  margin-top: 4px;
+  color: #8a8a83;
+  font-size: 8px;
+  text-align: center;
+}
+.pv-celular {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  height: 100%;
+  padding: 14px;
+}
+.pv-fone {
+  display: flex;
+  width: 132px;
+  overflow: hidden;
+  border: 5px solid #18181b;
+  border-radius: 20px;
+}
+.pv-casa {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-content: start;
+  flex: 1;
+  gap: 10px 6px;
+  padding: 14px 8px;
+  background: linear-gradient(160deg, #5b7aa6, #2a3a5a);
+}
+.pv-casa > span {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  overflow: hidden;
+  color: #fff;
+  font-size: 7px;
+  white-space: nowrap;
+}
+.pv-casa i {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.25);
+}
+.pv-app {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 7px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+.pv-app img {
+  max-width: 76%;
+  max-height: 76%;
+}
+.pv-abertura {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  padding: 10px;
+}
+.pv-navegador {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #ecece8;
+}
+.pv-navegador__aba {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 64%;
+  margin: 8px 0 0 10px;
+  padding: 7px 10px;
+  border-radius: 8px 8px 0 0;
+  background: #fff;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.pv-navegador__barra {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  font-size: 10.5px;
+}
+.pv-navegador__corpo {
+  flex: 1;
+  background: #fff;
+}
+.pv-reuniao {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 12px;
+  background: #1b1b1a;
+}
+.pv-reuniao__video {
+  flex: 1.3;
+  height: 160px;
+  border-radius: 8px;
+  background:
+    url(/fundos/sala.svg) center / cover,
+    #3a3a37;
+}
+.pv-reuniao__texto {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  color: #fff;
+}
+.pv-reuniao__texto b {
+  font-size: 13px;
+}
+.pv-reuniao__texto em {
+  display: block;
+  height: 22px;
+  border-radius: 5px;
+}
+.pv-whats {
+  height: 100%;
+  padding: 14px;
+  background: #efe7dd;
+}
+.pv-bolha {
+  max-width: 260px;
+  margin-left: auto;
+  padding: 4px;
+  border-radius: 8px;
+  background: #d9fdd3;
+}
+.pv-bolha__img {
+  display: grid;
+  place-items: center;
+  height: 120px;
+  border-radius: 6px 6px 0 0;
+  background-position: center;
+  background-size: cover;
+}
+.pv-bolha__tx {
+  display: grid;
+  padding: 6px 8px;
+  border-radius: 0 0 6px 6px;
+  background: #f4f6f3;
+  color: #54656f;
+  font-size: 9.5px;
+}
+.pv-bolha__tx b {
+  color: #111b21;
+  font-size: 10.5px;
+}
+.pv-bolha p {
+  margin: 0;
+  padding: 5px 4px 2px;
+  font-size: 10px;
+}
+.pv-email {
+  height: 100%;
+  padding: 14px;
+  background: #f4f4f1;
+}
+.pv-email__corpo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #fff;
+}
+.pv-email__corpo i {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: #eee;
+}
+.pv-email__corpo em {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+}
+@media (max-width: 1080px) {
+  .marca-previa {
+    position: static;
+  }
+}
+@media (max-width: 640px) {
+  .marca-cartoes--2,
+  .marca-cartoes--3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .marca-nome {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

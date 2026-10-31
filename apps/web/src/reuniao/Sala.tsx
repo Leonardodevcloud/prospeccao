@@ -40,6 +40,7 @@ import {
   opcoesDeFundo,
   suportaFundos,
 } from './fundos';
+import { useFundosPessoais } from './fundosPessoais';
 import { type EstadoGravador, gravador, pedirCapturaDaAba, podeGravarAba } from './gravador';
 import { GradeEncaixada, Ladrilho, nomeDe } from './Ladrilho';
 import { PainelChat } from './PainelChat';
@@ -249,8 +250,15 @@ function ConteudoSala(props: {
   const [comFundos] = useState(suportaFundos);
   const [fundo, setFundo] = useState(props.escolhas.fundo || 'nenhum');
   const [erroFundo, setErroFundo] = useState<string | null>(null);
-  const marcaFundo = useMemo(() => marcaDaSala(info), [info]);
-  const opcoesFundo = useMemo(() => opcoesDeFundo(info.fundos, !!info.fundos), [info.fundos]);
+  const pessoais = useFundosPessoais(!!info.voce);
+  const marcaFundo = useMemo(
+    () => ({ ...marcaDaSala(info), pessoais: pessoais.lista.map((p) => ({ id: p.id, url: p.url })) }),
+    [info, pessoais.lista],
+  );
+  const opcoesFundo = useMemo(
+    () => opcoesDeFundo(info.fundos, !!info.fundos, pessoais.lista),
+    [info.fundos, pessoais.lista],
+  );
   const fundoTravado = !!info.fundos?.config.travar && opcoesFundo.length === 1;
   useEffect(() => {
     if (!comFundos) return;
@@ -717,8 +725,28 @@ function ConteudoSala(props: {
                       aoEscolher={(id) => {
                         setErroFundo(null);
                         setFundo(id);
-                        lembrarFundo(id, !!info.fundos);
+                        lembrarFundo(id, !!info.voce);
                       }}
+                      pessoais={
+                        opcoesFundo.some((o) => o.id === 'desfoque-leve')
+                          ? {
+                              podeEnviar: pessoais.podeEnviar,
+                              enviando: pessoais.enviando,
+                              erro: pessoais.erro,
+                              aoEnviar: async (f) => {
+                                const id = await pessoais.enviar(f);
+                                if (id) {
+                                  setFundo(id);
+                                  lembrarFundo(id, !!info.voce);
+                                }
+                              },
+                              aoTirar: (id) => {
+                                if (fundo === id) setFundo('nenhum');
+                                pessoais.tirar(id);
+                              },
+                            }
+                          : undefined
+                      }
                     />
                   )}
                   {!local.isCameraEnabled && (

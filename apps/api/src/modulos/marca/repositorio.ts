@@ -10,8 +10,16 @@ import { type DominiosSite, explicarErroVercel, type RegistroDns } from './verce
  * funcionando mesmo se o plano mudar (ninguém fica sem acesso), só sem a marca.
  */
 
-export type ArquivoMarca = 'logo' | 'icone' | 'imagem';
-export const ARQUIVOS_MARCA: ArquivoMarca[] = ['logo', 'icone', 'imagem'];
+export type ArquivoMarca = 'logo' | 'logoEscuro' | 'icone' | 'favicon' | 'app' | 'imagem';
+export const ARQUIVOS_MARCA: ArquivoMarca[] = ['logo', 'logoEscuro', 'icone', 'favicon', 'app', 'imagem'];
+const COLUNA: Record<ArquivoMarca, string> = {
+  logo: 'marca_logo',
+  logoEscuro: 'marca_logo_escuro',
+  icone: 'marca_icone',
+  favicon: 'marca_favicon',
+  app: 'marca_app',
+  imagem: 'marca_imagem',
+};
 
 export interface DominioDaMarca {
   endereco: string;
@@ -27,9 +35,18 @@ export interface DadosMarca {
   organizacaoId: number;
   organizacaoNome: string;
   nome: string | null;
+  /** Primária (botões). */
   cor: string | null;
+  corSecundaria: string | null;
+  corDestaque: string | null;
+  corClara: string | null;
+  /** Menu lateral na cor secundária. */
+  menuEscuro: boolean;
   logo: boolean;
+  logoEscuro: boolean;
   icone: boolean;
+  favicon: boolean;
+  app: boolean;
   imagem: boolean;
   /** Muda a cada salvamento (para o navegador buscar a imagem nova). */
   versao: string;
@@ -41,7 +58,11 @@ export async function dados(db: Executor, organizacaoId: number): Promise<DadosM
     DadosMarca & { dominioNome: string | null; situacao: 'pendente' | 'ativo' | null }
   >(
     `SELECT id AS "organizacaoId", nome AS "organizacaoNome", marca_nome AS nome, marca_cor AS cor,
-            marca_logo IS NOT NULL AS logo, marca_icone IS NOT NULL AS icone, marca_imagem IS NOT NULL AS imagem,
+            marca_cor_secundaria AS "corSecundaria", marca_cor_destaque AS "corDestaque",
+            marca_cor_clara AS "corClara", marca_menu_escuro AS "menuEscuro",
+            marca_logo IS NOT NULL AS logo, marca_logo_escuro IS NOT NULL AS "logoEscuro",
+            marca_icone IS NOT NULL AS icone, marca_favicon IS NOT NULL AS favicon,
+            marca_app IS NOT NULL AS app, marca_imagem IS NOT NULL AS imagem,
             coalesce(extract(epoch FROM marca_atualizada_em)::bigint, 0)::text AS versao,
             dominio AS "dominioNome", dominio_situacao AS situacao, dominio_registros AS registros,
             dominio_erro AS erro, dominio_desde AS desde, dominio_ativo_em AS "ativoEm",
@@ -66,8 +87,15 @@ export async function dados(db: Executor, organizacaoId: number): Promise<DadosM
     organizacaoNome: r.organizacaoNome,
     nome: r.nome,
     cor: r.cor,
+    corSecundaria: r.corSecundaria,
+    corDestaque: r.corDestaque,
+    corClara: r.corClara,
+    menuEscuro: r.menuEscuro,
     logo: r.logo,
+    logoEscuro: r.logoEscuro,
     icone: r.icone,
+    favicon: r.favicon,
+    app: r.app,
     imagem: r.imagem,
     versao: r.versao,
     dominio:
@@ -86,7 +114,7 @@ export async function dados(db: Executor, organizacaoId: number): Promise<DadosM
 }
 
 export async function arquivo(db: Executor, organizacaoId: number, tipo: ArquivoMarca) {
-  const col = tipo === 'logo' ? 'marca_logo' : tipo === 'icone' ? 'marca_icone' : 'marca_imagem';
+  const col = COLUNA[tipo];
   const { rows } = await db.query<{ dados: Buffer | null; tipo: string | null }>(
     `SELECT ${col} AS dados, ${col}_tipo AS tipo FROM cadastro.organizacoes WHERE id = $1`,
     [organizacaoId],

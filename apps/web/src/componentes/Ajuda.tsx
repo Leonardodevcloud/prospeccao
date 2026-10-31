@@ -247,7 +247,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
             fotos que o gestor enviou. O gestor escolhe quais valem, qual já vem marcado e pode travar um
             fundo para todo mundo (Marca e domínio › Fundos das reuniões).
           </li>
-          <li>Com a logo no fundo, você vê a sua imagem sem o espelho, do jeito que os outros veem.</li>
+          <li>
+            <b>Seus fundos</b>: em <b>Ver todos os fundos</b> (antes de entrar) ou no painel Fundo, clique em{' '}
+            <b>Enviar imagem</b> e escolha uma foto sua (até 5; o sistema ajusta o tamanho). Quem é do time
+            encontra os fundos dele em qualquer computador; o convidado, só no navegador em que enviou. Para
+            tirar, passe o mouse e clique no ×.
+          </li>
+          <li>Com logo ou foto no fundo, você vê a sua imagem sem o espelho, do jeito que os outros veem.</li>
           <li>
             Separar a pessoa do fundo pesa um pouco no computador. Em aparelho mais fraco ou navegador antigo,
             o sistema avisa e a reunião segue sem efeito.
@@ -711,25 +717,40 @@ export const ARTIGOS: ArtigoAjuda[] = [
           unidades.
         </p>
         <h3>Marca</h3>
+        <p>
+          Tudo fica na aba <b>Marca</b>, com a prévia ao lado mostrando cada lugar antes de salvar.
+        </p>
         <ul>
           <li>
-            <b>Nome</b> e <b>cor principal</b>: a cor vira a cor dos botões e destaques. Cores muito claras
-            não são aceitas, porque o texto branco dos botões ficaria ilegível.
+            <b>Nome da marca</b>: vai no menu, na aba do navegador, nos e-mails e nas reuniões.
           </li>
           <li>
-            <b>Logo</b>: PNG com fundo transparente fica melhor. Vai no menu, no login e na sala de reunião.
+            <b>Duas logos</b>: a <b>para fundo escuro</b> (a versão branca, usada no menu na cor secundária,
+            no login e na abertura do app) e a <b>para fundo claro</b> (menu claro, e-mails, relatório em
+            PDF). PNG com fundo transparente fica melhor.
           </li>
           <li>
-            <b>Ícone</b>: uma imagem quadrada (o sistema ajusta o tamanho). É o ícone da aba do navegador e do
-            app instalado no celular.
+            <b>Três ícones</b> (quadrados, o sistema ajusta o tamanho): o da <b>aba do navegador</b>, o{' '}
+            <b>ícone da marca</b> (sala de reunião e selos pequenos) e o do <b>app instalado</b> no celular,
+            que aparece num círculo na cor secundária. Sem o da aba ou o do app, usamos o ícone da marca.
+          </li>
+          <li>
+            <b>Quatro cores</b>, cada uma dizendo onde aparece: <b>primária</b> (botões), <b>secundária</b>{' '}
+            (menu, login e abertura do app), <b>destaque</b> (links, gráficos e a rota no mapa) e <b>clara</b>{' '}
+            (etiquetas e fundos de chips). A tela confere a leitura: cor que deixa o texto ilegível não é
+            aceita. Em branco, fica a cor do sistema.
+          </li>
+          <li>
+            <b>Menu lateral na cor secundária</b>: liga o menu escuro, com a logo para fundo escuro.
           </li>
           <li>
             <b>Imagem de divulgação</b>: aparece ao lado do login e na prévia quando alguém manda um link do
-            sistema no WhatsApp (convite, reunião). Sem ela, usamos a cor com o logo.
+            sistema no WhatsApp (convite, reunião). Sem ela, usamos a cor secundária com a logo.
           </li>
         </ul>
         <p>
-          O quadro <b>Como fica</b> mostra o resultado antes de salvar. <b>Voltar ao padrão</b> tira tudo.
+          A prévia tem as abas Painel, Login, Celular, Aba, Reunião, WhatsApp e E-mail.{' '}
+          <b>Voltar ao padrão</b> tira tudo.
         </p>
         <h3>Domínio próprio, passo a passo</h3>
         <Passos>

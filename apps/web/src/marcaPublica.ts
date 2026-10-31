@@ -10,12 +10,27 @@ import { api } from './api';
 
 export interface MarcaPublica {
   nome: string;
+  /** Primária (botões). */
   cor: string | null;
-  /** Caminhos na api (sem o /api na frente). */
+  corSecundaria?: string | null;
+  corDestaque?: string | null;
+  corClara?: string | null;
+  /** Caminhos na api (sem o /api na frente). Logo para fundo claro. */
   logo: string | null;
+  logoEscuro?: string | null;
   icone: string | null;
+  favicon?: string | null;
+  app?: string | null;
   imagem: string | null;
   versao: string;
+}
+
+/** As quatro cores da marca (as que faltam ficam com as do sistema). */
+export interface CoresDaMarca {
+  cor: string | null;
+  corSecundaria?: string | null;
+  corDestaque?: string | null;
+  corClara?: string | null;
 }
 
 /** Site institucional (o "Tecnologia Prospect Team" discreto no rodapé leva para ele). */
@@ -60,24 +75,35 @@ export function useMarcaDoEndereco(): { marca: MarcaPublica | null; carregando: 
   return { marca: ativo ? (q.data?.marca ?? null) : null, carregando: ativo && q.isPending };
 }
 
-const VARS = ['--brand', '--brand-hover', '--brand-soft', '--focus-ring'];
+const VARS = ['--brand', '--brand-hover', '--brand-soft', '--focus-ring', '--link', '--marca-secundaria'];
 
-/** A cor da marca vira a cor do sistema (botões, links, destaques). null volta à cor padrão. */
-export function aplicarCor(cor: string | null): () => void {
+/**
+ * As cores da marca viram as do sistema: primária nos botões, destaque nos links e gráficos, clara
+ * nas etiquetas e a secundária no menu (quando a empresa liga) e nas telas de entrada.
+ * Sem cor, volta ao padrão. Devolve a função que desfaz.
+ */
+export function aplicarCores(c: CoresDaMarca | null): () => void {
   const raiz = document.documentElement.style;
   const limpar = () => {
     for (const v of VARS) raiz.removeProperty(v);
   };
-  if (!cor) {
-    limpar();
-    return limpar;
+  limpar();
+  if (!c) return limpar;
+  const { cor } = c;
+  if (cor) {
+    raiz.setProperty('--brand', cor);
+    raiz.setProperty('--brand-hover', `color-mix(in srgb, ${cor} 85%, black)`);
+    raiz.setProperty('--brand-soft', `color-mix(in srgb, ${cor} 12%, white)`);
+    raiz.setProperty('--focus-ring', `0 0 0 2px #f7f7f5, 0 0 0 4px ${cor}`);
   }
-  raiz.setProperty('--brand', cor);
-  raiz.setProperty('--brand-hover', `color-mix(in srgb, ${cor} 85%, black)`);
-  raiz.setProperty('--brand-soft', `color-mix(in srgb, ${cor} 12%, white)`);
-  raiz.setProperty('--focus-ring', `0 0 0 2px #f7f7f5, 0 0 0 4px ${cor}`);
+  if (c.corClara) raiz.setProperty('--brand-soft', c.corClara);
+  if (c.corDestaque) raiz.setProperty('--link', c.corDestaque);
+  if (c.corSecundaria) raiz.setProperty('--marca-secundaria', c.corSecundaria);
   return limpar;
 }
+
+/** Só a cor primária (compatível com o que já existia). */
+export const aplicarCor = (cor: string | null) => aplicarCores(cor ? { cor } : null);
 
 /** Nome que vai no título da aba ("Horizonte" ou "Prospect Team"). */
 let nomeNaAba = 'Prospect Team';
@@ -104,12 +130,21 @@ function trocarMeta(nome: string, valor: string) {
  * Ícone da aba, nome, cor do celular e manifesto (o app instalado) com a marca do cliente.
  * Sem marca, tudo volta ao do Prospect Team.
  */
-export function aplicarNoNavegador(m: { nome: string; cor: string | null; icone: string | null } | null) {
+export function aplicarNoNavegador(
+  m: {
+    nome: string;
+    cor: string | null;
+    corSecundaria?: string | null;
+    icone: string | null;
+    app?: string | null;
+  } | null,
+) {
   const host = hostAberto();
   nomeNaAba = m?.nome || 'Prospect Team';
   if (m?.icone) {
+    // `icone` aqui é o da aba (o da marca quando a empresa não mandou um próprio).
     trocarLink('icon', `/api${m.icone}`, 'image/png');
-    trocarLink('apple-touch-icon', `/api${m.icone}`);
+    trocarLink('apple-touch-icon', `/api${m.app ?? m.icone}`);
   } else {
     trocarLink('icon', '/icone.svg', 'image/svg+xml');
     trocarLink('apple-touch-icon', '/icone-180.png');
@@ -120,7 +155,7 @@ export function aplicarNoNavegador(m: { nome: string; cor: string | null; icone:
       ? `/api/publico/marca/manifest?host=${encodeURIComponent(host)}`
       : '/manifest.webmanifest',
   );
-  trocarMeta('theme-color', m?.cor ?? '#0b6b63');
+  trocarMeta('theme-color', m?.corSecundaria ?? m?.cor ?? '#0b6b63');
   trocarMeta('apple-mobile-web-app-title', nomeNaAba);
   // Título simples das telas sem título próprio.
   if (/Prospect Team/.test(document.title) || !document.title) document.title = nomeNaAba;
@@ -130,15 +165,19 @@ export function aplicarNoNavegador(m: { nome: string; cor: string | null; icone:
 export function useMarcaNoNavegador(m: MarcaPublica | null) {
   const nome = m?.nome ?? null;
   const cor = m?.cor ?? null;
-  const icone = m?.icone ?? null;
+  const sec = m?.corSecundaria ?? null;
+  const dest = m?.corDestaque ?? null;
+  const clara = m?.corClara ?? null;
+  const icone = m?.favicon ?? m?.icone ?? null;
+  const app = m?.app ?? null;
   useEffect(() => {
     if (!nome) return;
-    aplicarNoNavegador({ nome, cor, icone });
-    const limpar = aplicarCor(cor);
+    aplicarNoNavegador({ nome, cor, corSecundaria: sec, icone, app });
+    const limpar = aplicarCores({ cor, corSecundaria: sec, corDestaque: dest, corClara: clara });
     return () => {
       limpar();
     };
-  }, [nome, cor, icone]);
+  }, [nome, cor, sec, dest, clara, icone, app]);
 }
 
 /** Iniciais do nome ("Construtora Horizonte" → "CH"), para quando não há ícone. */

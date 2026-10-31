@@ -273,4 +273,55 @@ describe.skipIf(!URL_TESTE)('marca própria e domínio do cliente', () => {
     expect((await ler('/marca/fundos', cs)).body).toMatchObject({ comMarca: false, fotos: [] });
     expect((await mandar('put', '/marca/fundos', r.body.config, cs)).status).not.toBe(200);
   });
+
+  it('marca completa: duas logos, três ícones, quatro cores e o menu na secundária', async () => {
+    expect((await mandar('put', '/marca', { corSecundaria: '#f3f4f6' })).status).toBe(422);
+    expect((await mandar('put', '/marca', { corClara: '#1f2a44' })).status).toBe(422);
+    expect((await mandar('put', '/marca', { corDestaque: '#7dd3fc' })).status).toBe(422);
+    const r = await mandar('put', '/marca', {
+      corSecundaria: '#1f2a44',
+      corDestaque: '#2563eb',
+      corClara: '#fde8dc',
+      menuEscuro: true,
+      logoEscuro: PNG,
+      favicon: PNG,
+      app: PNG,
+    });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({
+      cor: '#c2410c',
+      corSecundaria: '#1f2a44',
+      corDestaque: '#2563eb',
+      corClara: '#fde8dc',
+      menuEscuro: true,
+      logoEscuro: true,
+      favicon: true,
+      app: true,
+    });
+    expect((await ler('/marca/arquivo/logoEscuro')).status).toBe(200);
+    const eu = (await ler('/auth/eu')).body.marca;
+    expect(eu).toMatchObject({ corSecundaria: '#1f2a44', corClara: '#fde8dc', menuEscuro: true });
+    expect(eu.logoEscuro).toMatch(/^\/marca\/arquivo\/logoEscuro\?v=/);
+    expect(eu.favicon).toMatch(/^\/marca\/arquivo\/favicon\?v=/);
+  });
+
+  it('fundos da própria pessoa: até 5, só ela vê', async () => {
+    expect((await ler('/meus-fundos')).body).toEqual({ fundos: [], limite: 5 });
+    const r = await mandar('post', '/meus-fundos', { nome: 'Minha sala', imagem: PNG });
+    expect(r.status).toBe(201);
+    const id = r.body.fundos[0].id as number;
+    expect((await ler(`/meus-fundos/${id}`)).headers['content-type']).toBe('image/png');
+    // Outra pessoa (outro cliente) não vê nem apaga.
+    const outra = (await entrar('ana@outra.com.br', 'senha-forte-1')).headers[
+      'set-cookie'
+    ] as unknown as string[];
+    const co = outra[0]!.split(';')[0]!;
+    expect((await ler('/meus-fundos', co)).body.fundos).toEqual([]);
+    expect((await ler(`/meus-fundos/${id}`, co)).status).toBe(404);
+    expect((await mandar('delete', `/meus-fundos/${id}`, undefined, co)).status).toBe(404);
+    for (let i = 0; i < 4; i++) await mandar('post', '/meus-fundos', { nome: `Fundo ${i}`, imagem: PNG });
+    expect((await mandar('post', '/meus-fundos', { nome: 'Sexto', imagem: PNG })).status).toBe(422);
+    const tirou = await mandar('delete', `/meus-fundos/${id}`);
+    expect(tirou.body.fundos).toHaveLength(4);
+  });
 });

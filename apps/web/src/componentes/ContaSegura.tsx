@@ -4,7 +4,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api';
 import { fmtQuando } from '../formatar';
-import { aplicarCor, aplicarNoNavegador } from '../marcaPublica';
+import { aplicarCores, aplicarNoNavegador } from '../marcaPublica';
 import { Modal } from './Drawer';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { useSessao } from './Sessao';
@@ -400,11 +400,14 @@ export function useAplicarMarca() {
   const sessao = useSessao().data;
   const marca = sessao?.marca;
   const cor = marca?.cor ?? null;
+  const sec = marca?.corSecundaria ?? null;
+  const dest = marca?.corDestaque ?? null;
+  const clara = marca?.corClara ?? null;
   const nome = marca?.nome ?? sessao?.organizacao?.nome ?? null;
-  const icone = marca?.icone ?? null;
+  const icone = marca?.favicon ?? marca?.icone ?? null;
   const comMarca = !!marca;
   useEffect(() => {
-    aplicarNoNavegador(comMarca ? { nome: nome || 'Prospect Team', cor, icone } : null);
-    return aplicarCor(cor);
-  }, [comMarca, nome, cor, icone]);
+    aplicarNoNavegador(comMarca ? { nome: nome || 'Prospect Team', cor, corSecundaria: sec, icone } : null);
+    return aplicarCores(comMarca ? { cor, corSecundaria: sec, corDestaque: dest, corClara: clara } : null);
+  }, [comMarca, nome, cor, sec, dest, clara, icone]);
 }

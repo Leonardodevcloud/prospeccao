@@ -400,12 +400,22 @@ export function rotasAuth(deps: DepsApi): Router {
       marca_cor: string | null;
       tem_logo: boolean;
       tem_icone: boolean;
+      marca_cor_secundaria: string | null;
+      marca_cor_destaque: string | null;
+      marca_cor_clara: string | null;
+      marca_menu_escuro: boolean;
+      tem_logo_escuro: boolean;
+      tem_favicon: boolean;
+      tem_app: boolean;
       marca_versao: string | null;
       demonstracao: boolean;
     }>(
       `SELECT o.plano, o.modulos, o.id AS organizacao_id, o.nome AS organizacao, o.exigir_2fa, o.demonstracao,
               o.marca_nome, o.marca_cor, (o.marca_logo IS NOT NULL) AS tem_logo,
               (o.marca_icone IS NOT NULL) AS tem_icone,
+              o.marca_cor_secundaria, o.marca_cor_destaque, o.marca_cor_clara, o.marca_menu_escuro,
+              (o.marca_logo_escuro IS NOT NULL) AS tem_logo_escuro, (o.marca_favicon IS NOT NULL) AS tem_favicon,
+              (o.marca_app IS NOT NULL) AS tem_app,
               extract(epoch FROM o.marca_atualizada_em)::bigint::text AS marca_versao,
               (SELECT count(*)::int FROM cadastro.contas x WHERE x.organizacao_id = o.id AND x.ativa) AS unidades
          FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE c.id = $1`,
@@ -437,18 +447,35 @@ export function rotasAuth(deps: DepsApi): Router {
       soPropriaBase: u.soPropriaBase,
       duasEtapas: { ativo: !!rows[0]?.totpAtivo, exigido: !!c[0]?.exigir_2fa },
       termos: { versao: TERMOS_VERSAO, aceitos: rows[0]?.termosVersao === TERMOS_VERSAO },
-      // Marca do cliente (white label): nome, cor e logo no sistema e nos relatórios.
-      marca:
-        c[0] &&
-        (c[0].marca_nome || c[0].marca_cor || c[0].tem_logo || c[0].tem_icone) &&
-        (contrato?.recursos.includes('marca') ?? true)
-          ? {
-              nome: c[0].marca_nome,
-              cor: c[0].marca_cor,
-              logo: c[0].tem_logo ? `/organizacao/marca/logo?v=${c[0].marca_versao ?? '0'}` : null,
-              icone: c[0].tem_icone ? `/marca/arquivo/icone?v=${c[0].marca_versao ?? '0'}` : null,
-            }
-          : null,
+      // Marca do cliente (white label): logos, ícones e cores no sistema e nos relatórios.
+      marca: (() => {
+        const o = c[0];
+        if (!o || !(contrato?.recursos.includes('marca') ?? true)) return null;
+        const tem =
+          o.marca_nome ||
+          o.marca_cor ||
+          o.marca_cor_secundaria ||
+          o.tem_logo ||
+          o.tem_logo_escuro ||
+          o.tem_icone ||
+          o.tem_favicon;
+        if (!tem) return null;
+        const v = o.marca_versao ?? '0';
+        const arq = (tipo: string) => `/marca/arquivo/${tipo}?v=${v}`;
+        return {
+          nome: o.marca_nome,
+          cor: o.marca_cor,
+          corSecundaria: o.marca_cor_secundaria,
+          corDestaque: o.marca_cor_destaque,
+          corClara: o.marca_cor_clara,
+          menuEscuro: o.marca_menu_escuro,
+          logo: o.tem_logo ? `/organizacao/marca/logo?v=${v}` : null,
+          logoEscuro: o.tem_logo_escuro ? arq('logoEscuro') : null,
+          icone: o.tem_icone ? arq('icone') : null,
+          // A aba usa o ícone da marca quando não tem o próprio.
+          favicon: o.tem_favicon ? arq('favicon') : o.tem_icone ? arq('icone') : null,
+        };
+      })(),
       // O master dentro de outra conta (a tela mostra a faixa "você está na conta X").
       foraDaPropria: u.contaId !== u.contaPropria,
       // Endereço oficial do sistema: os links que a tela copia (reunião, agenda) saem com ele.

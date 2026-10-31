@@ -28,7 +28,9 @@ export function useMiniatura(id: string, m: MarcaDoFundo | null, largura = 320):
     m?.cor,
     m?.logo,
     m?.config.lugares[base] ?? null,
-    base.startsWith('foto:') ? m?.fotos.find((f) => `foto:${f.id}` === base)?.url : null,
+    base.startsWith('foto:')
+      ? m?.fotos.find((f) => `foto:${f.id}` === base)?.url
+      : (m?.pessoais?.find((p) => p.id === base)?.url ?? null),
   ]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a chave resume a marca usada na imagem
   useEffect(() => {
@@ -50,11 +52,13 @@ function Miniatura(props: {
   padrao: boolean;
   desligado?: boolean;
   aoEscolher: (id: string) => void;
+  /** Fundo da própria pessoa: dá para tirar. */
+  aoTirar?: (id: string) => void;
 }) {
   const { opcao } = props;
   const url = useMiniatura(opcao.id, props.m);
   const desfoque = opcao.id === 'desfoque-leve' ? 3 : opcao.id === 'desfoque-forte' ? 7 : 0;
-  return (
+  const botao = (
     <button
       type="button"
       className="fundo-op"
@@ -83,9 +87,48 @@ function Miniatura(props: {
       <span className="fundo-op__nome">{opcao.nome}</span>
     </button>
   );
+  if (!props.aoTirar) return botao;
+  return (
+    <span className="fundo-op__caixa">
+      {botao}
+      <button
+        type="button"
+        className="fundo-op__tirar"
+        aria-label={`Tirar o fundo ${opcao.nome}`}
+        title="Tirar este fundo"
+        onClick={() => props.aoTirar?.(opcao.id)}
+      >
+        <Icon name="x" size={12} />
+      </button>
+    </span>
+  );
+}
+
+/** "Enviar imagem": o quadradinho com o + no fim dos fundos da pessoa. */
+function EnviarFundo(props: { enviando: boolean; aoEnviar: (f: File) => void }) {
+  return (
+    <label className="fundo-op fundo-op--enviar">
+      <input
+        className="pp-sr"
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        disabled={props.enviando}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) props.aoEnviar(f);
+        }}
+      />
+      <span className="fundo-op__img fundo-op__img--enviar">
+        <Icon name={props.enviando ? 'loader' : 'plus'} spin={props.enviando} size={20} />
+      </span>
+      <span className="fundo-op__nome">{props.enviando ? 'Enviando…' : 'Enviar imagem'}</span>
+    </label>
+  );
 }
 
 const GRUPOS: { id: OpcaoFundo['grupo']; nome: (empresa: string) => string }[] = [
+  { id: 'pessoais', nome: () => 'Seus fundos' },
   { id: 'efeitos', nome: () => 'Efeitos' },
   { id: 'empresa', nome: (e) => `Da ${e}` },
   { id: 'simples', nome: () => 'Cenários' },
@@ -102,8 +145,16 @@ export function GradeDeFundos(props: {
   colunas?: number;
   desligado?: boolean;
   aoEscolher: (id: string) => void;
+  /** Fundos da própria pessoa: enviar e tirar (sem isso, o grupo "Seus fundos" não aparece). */
+  pessoais?: {
+    podeEnviar: boolean;
+    enviando: boolean;
+    erro: string | null;
+    aoEnviar: (f: File) => void;
+    aoTirar: (id: string) => void;
+  };
 }) {
-  const grade = (lista: OpcaoFundo[]) => (
+  const grade = (lista: OpcaoFundo[], comEnviar = false) => (
     <div className="fundos-grade" data-colunas={props.colunas ?? 3}>
       {lista.map((o) => (
         <Miniatura
@@ -114,8 +165,12 @@ export function GradeDeFundos(props: {
           padrao={o.id === props.padrao}
           desligado={props.desligado}
           aoEscolher={props.aoEscolher}
+          aoTirar={o.grupo === 'pessoais' ? props.pessoais?.aoTirar : undefined}
         />
       ))}
+      {comEnviar && props.pessoais?.podeEnviar && (
+        <EnviarFundo enviando={props.pessoais.enviando} aoEnviar={props.pessoais.aoEnviar} />
+      )}
     </div>
   );
   if (!props.agrupar) return grade(props.opcoes);
@@ -123,11 +178,16 @@ export function GradeDeFundos(props: {
     <div className="fundos-grupos">
       {GRUPOS.map((g) => {
         const lista = props.opcoes.filter((o) => o.grupo === g.id);
-        if (!lista.length) return null;
+        const meus = g.id === 'pessoais' && !!props.pessoais;
+        if (!lista.length && !meus) return null;
         return (
           <section key={g.id} className="fundos-grupo" aria-label={g.nome(props.empresa)}>
             <h3 className="fundos-grupo__titulo">{g.nome(props.empresa)}</h3>
-            {grade(lista)}
+            {grade(lista, meus)}
+            {meus && props.pessoais?.erro && <p className="fundos-grupo__erro">{props.pessoais.erro}</p>}
+            {meus && !lista.length && (
+              <p className="fundos-grupo__nota">Envie uma foto sua (JPG ou PNG): a gente ajusta o tamanho.</p>
+            )}
           </section>
         );
       })}

@@ -33,8 +33,15 @@ export function rotasMarcaPublica({ pool }: DepsApi): Router {
       marca: {
         nome: d.nome || d.organizacaoNome,
         cor: d.cor,
+        corSecundaria: d.corSecundaria,
+        corDestaque: d.corDestaque,
+        corClara: d.corClara,
         logo: url('logo', d.logo),
+        logoEscuro: url('logoEscuro', d.logoEscuro),
         icone: url('icone', d.icone),
+        // A aba e o app usam o ícone da marca quando não têm o próprio.
+        favicon: d.favicon ? url('favicon', true) : url('icone', d.icone),
+        app: d.app ? url('app', true) : url('icone', d.icone),
         imagem: url('imagem', d.imagem),
         versao: d.versao,
       },
@@ -75,16 +82,18 @@ export function rotasMarcaPublica({ pool }: DepsApi): Router {
     }
     const d = m.dados;
     const nome = d.nome || d.organizacaoNome;
-    const icone = d.icone
-      ? `/api/publico/marca/arquivo/icone?host=${encodeURIComponent(m.host)}&v=${d.versao}`
+    const tipoIcone = d.app ? 'app' : d.icone ? 'icone' : null;
+    const icone = tipoIcone
+      ? `/api/publico/marca/arquivo/${tipoIcone}?host=${encodeURIComponent(m.host)}&v=${d.versao}`
       : '/icone-512.png';
     res.json({
       name: nome,
       short_name: nome.slice(0, 24),
       start_url: '/',
       display: 'standalone',
-      background_color: '#f7f7f5',
-      theme_color: cor(d.cor),
+      // A abertura do app fica na cor secundária (ou na primária).
+      background_color: d.corSecundaria ?? '#f7f7f5',
+      theme_color: d.corSecundaria ?? cor(d.cor),
       icons: [
         { src: icone, sizes: '192x192', type: 'image/png' },
         { src: icone, sizes: '512x512', type: 'image/png' },

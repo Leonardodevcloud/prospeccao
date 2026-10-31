@@ -312,13 +312,20 @@ export async function salvarMarca(db: Executor, organizacaoId: number, d: MarcaE
   };
   if (d.nome !== undefined) set('marca_nome', d.nome || null);
   if (d.cor !== undefined) set('marca_cor', d.cor || null);
+  if (d.corSecundaria !== undefined) set('marca_cor_secundaria', d.corSecundaria || null);
+  if (d.corDestaque !== undefined) set('marca_cor_destaque', d.corDestaque || null);
+  if (d.corClara !== undefined) set('marca_cor_clara', d.corClara || null);
+  if (d.menuEscuro !== undefined) set('marca_menu_escuro', d.menuEscuro);
   const arquivos: [keyof MarcaEntrada, string, number, string][] = [
     ['logo', 'marca_logo', 300, 'Logo'],
+    ['logoEscuro', 'marca_logo_escuro', 300, 'Logo para fundo escuro'],
     ['icone', 'marca_icone', 200, 'Ícone'],
+    ['favicon', 'marca_favicon', 200, 'Ícone da aba'],
+    ['app', 'marca_app', 200, 'Ícone do app'],
     ['imagem', 'marca_imagem', 1024, 'Imagem de divulgação'],
   ];
   for (const [campo, coluna, limiteKb, oQue] of arquivos) {
-    const v = d[campo];
+    const v = d[campo] as string | null | undefined;
     if (v === undefined) continue;
     if (v === null) {
       set(coluna, null);

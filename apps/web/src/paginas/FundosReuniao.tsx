@@ -15,7 +15,7 @@ import { api } from '../api';
 import { Modal } from '../componentes/Drawer';
 import { ForaDoPlano } from '../componentes/ForaDoPlano';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import type { MarcaDoFundo } from '../reuniao/fundosImagem';
+import { type MarcaDoFundo, prepararFotoDeFundo } from '../reuniao/fundosImagem';
 import { useMiniatura } from '../reuniao/SeletorFundo';
 
 /**
@@ -37,34 +37,6 @@ interface TelaFundos {
   comMarca: boolean;
   logo: string | null;
   cor: string | null;
-}
-
-/** A foto vira 1920×1080 em JPG no navegador (corta o que sobra, mantendo o centro). */
-async function prepararFoto(arquivo: File): Promise<string> {
-  if (!/^image\/(png|jpeg|webp)$/.test(arquivo.type)) throw new Error('Use uma foto JPG ou PNG.');
-  const url = URL.createObjectURL(arquivo);
-  try {
-    const img = await new Promise<HTMLImageElement>((ok, falhou) => {
-      const i = new Image();
-      i.onload = () => ok(i);
-      i.onerror = () => falhou(new Error('Não deu para abrir esta foto. Tente outra.'));
-      i.src = url;
-    });
-    const W = 1920;
-    const H = 1080;
-    const e = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-    const sw = W / e;
-    const sh = H / e;
-    const c = document.createElement('canvas');
-    c.width = W;
-    c.height = H;
-    const ctx = c.getContext('2d')!;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, W, H);
-    return c.toDataURL('image/jpeg', 0.85);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 export function FundosDasReunioes() {
@@ -161,9 +133,10 @@ function Configurar(props: { tela: TelaFundos }) {
                 onChange={(e) => setCfg((c) => ({ ...c, simples: e.target.checked }))}
               />
               <span>
-                <b>Desfoque e cenários sem logo</b>
+                <b>Desfoque, cenários sem logo e fundos próprios</b>
                 <span className="campo__dica" style={{ display: 'block' }}>
-                  Cada pessoa do time também pode usar o desfoque e os cenários sem a logo.
+                  Cada pessoa do time também pode usar o desfoque, os cenários sem a logo e enviar os fundos
+                  dela.
                 </span>
               </span>
             </label>
@@ -333,7 +306,7 @@ function EnviarFoto(props: { aoEnviar: (r: TelaFundos) => void }) {
           e.target.value = '';
           if (!f) return;
           try {
-            setImagem(await prepararFoto(f));
+            setImagem(await prepararFotoDeFundo(f));
             setNome(
               f.name
                 .replace(/\.[^.]+$/, '')

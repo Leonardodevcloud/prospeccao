@@ -20,6 +20,7 @@ import {
   opcoesDeFundo,
   suportaFundos,
 } from './fundos';
+import { useFundosPessoais } from './fundosPessoais';
 import { pedirCapturaDaAba, podeGravarAba } from './gravador';
 import { AntesDeAbrir, quandoReuniao } from './PaginaReuniao';
 import { GradeDeFundos, marcaDaSala } from './SeletorFundo';
@@ -219,12 +220,26 @@ export function Antessala(props: {
     },
   );
   // Fundo da câmera: já vem o que a pessoa usou da última vez (ou o padrão da empresa).
-  const marcaFundo = useMemo(() => marcaDaSala(info), [info]);
-  const opcoesFundo = useMemo(() => opcoesDeFundo(info.fundos, doTime), [info.fundos, doTime]);
+  const pessoais = useFundosPessoais(doTime);
+  const marcaFundo = useMemo(
+    () => ({ ...marcaDaSala(info), pessoais: pessoais.lista.map((p) => ({ id: p.id, url: p.url })) }),
+    [info, pessoais.lista],
+  );
+  const opcoesFundo = useMemo(
+    () => opcoesDeFundo(info.fundos, doTime, pessoais.lista),
+    [info.fundos, doTime, pessoais.lista],
+  );
   const [comFundos] = useState(suportaFundos);
   const [fundo, setFundo] = useState(() =>
     comFundos ? fundoInicial(opcoesFundo, info.fundos, doTime) : 'nenhum',
   );
+  // Os fundos da pessoa chegam depois (da conta): se o último usado era um deles, volta para ele.
+  const [jaEscolheu, setJaEscolheu] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: só quando os fundos da pessoa terminam de chegar
+  useEffect(() => {
+    if (comFundos && pessoais.carregado && !jaEscolheu)
+      setFundo(fundoInicial(opcoesFundo, info.fundos, doTime));
+  }, [pessoais.carregado]);
   const [aplicandoFundo, setAplicandoFundo] = useState(false);
   const [erroFundo, setErroFundo] = useState<string | null>(null);
   const [todosFundos, setTodosFundos] = useState(false);
@@ -410,11 +425,33 @@ export function Antessala(props: {
                   colunas={todosFundos ? 4 : 6}
                   aoEscolher={(id) => {
                     setErroFundo(null);
+                    setJaEscolheu(true);
                     setFundo(id);
                     lembrarFundo(id, doTime);
                   }}
+                  pessoais={
+                    opcoesFundo.some((o) => o.id === 'desfoque-leve')
+                      ? {
+                          podeEnviar: pessoais.podeEnviar,
+                          enviando: pessoais.enviando,
+                          erro: pessoais.erro,
+                          aoEnviar: async (f) => {
+                            const id = await pessoais.enviar(f);
+                            if (id) {
+                              setJaEscolheu(true);
+                              setFundo(id);
+                              lembrarFundo(id, doTime);
+                            }
+                          },
+                          aoTirar: (id) => {
+                            if (fundo === id) setFundo('nenhum');
+                            pessoais.tirar(id);
+                          },
+                        }
+                      : undefined
+                  }
                 />
-                {opcoesFundo.length > curtas.length && (
+                {(opcoesFundo.length > curtas.length || pessoais.podeEnviar) && (
                   <button
                     type="button"
                     className="link-botao as__todos"
