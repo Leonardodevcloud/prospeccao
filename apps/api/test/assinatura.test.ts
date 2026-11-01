@@ -744,4 +744,82 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
     expect(parou.status).toBe(200);
     expect(parou.body).toMatchObject({ modo: 'combinado', situacao: null });
   });
+
+  it('visitas do site: sem cookie, robô não conta, e o master vê origem, cliques, seções e conversão', async () => {
+    const chrome = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36';
+    const iphone =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148';
+    const visita = (ua: string, ip: string, corpo: Record<string, unknown>) =>
+      request(app)
+        .post('/site/visita')
+        .set('User-Agent', ua)
+        .set('X-Forwarded-For', `${ip}, 10.0.0.1`)
+        .set('x-vercel-ip-city', 'Salvador')
+        .set('x-vercel-ip-country-region', 'BA')
+        .send({ pagina: '/', ...corpo });
+    const a = await visita(chrome, '200.1.1.1', { evento: 'visita', referencia: 'www.google.com.br' });
+    expect(a.status).toBe(204);
+    expect(a.headers['set-cookie']).toBeUndefined();
+    await visita(chrome, '200.1.1.1', { evento: 'visita', referencia: 'www.google.com.br' });
+    await visita(iphone, '200.2.2.2', { evento: 'visita', utmOrigem: 'instagram', utmCampanha: 'bio' });
+    await visita(iphone, '200.2.2.2', { evento: 'clique', alvo: 'assinar:start' });
+    await visita(chrome, '200.1.1.1', { evento: 'clique', alvo: 'teste' });
+    await visita(chrome, '200.1.1.1', {
+      evento: 'saida',
+      profundidade: 100,
+      segundos: 95,
+      secoes: ['inicio', 'nichos', 'como', 'planos', 'contato'],
+    });
+    await visita(iphone, '200.2.2.2', {
+      evento: 'saida',
+      profundidade: 30,
+      segundos: 20,
+      secoes: ['inicio', 'nichos'],
+    });
+    // Robô e lixo não contam (e o site nunca recebe erro).
+    expect(
+      (await visita('Googlebot/2.1 (+http://www.google.com/bot.html)', '66.249.1.1', { evento: 'visita' }))
+        .status,
+    ).toBe(204);
+    expect((await visita(chrome, '200.3.3.3', { evento: 'invadir' })).status).toBe(204);
+    const { rows } = await pool.query(
+      `SELECT count(*)::int AS n, count(DISTINCT visitante)::int AS v FROM cadastro.visitas_site`,
+    );
+    expect(rows[0]).toEqual({ n: 7, v: 2 });
+    const { rows: ip } = await pool.query(
+      `SELECT 1 FROM cadastro.visitas_site WHERE visitante LIKE '%200.1%'`,
+    );
+    expect(ip).toHaveLength(0);
+
+    const master = novoAgente();
+    await master
+      .post('/auth/login')
+      .set('Origin', ORIGEM)
+      .send({ email: 'dona@exemplo.com', senha: 'senha-forte-123' });
+    expect((await request(app).get('/master/site/visitas')).status).toBe(401);
+    const r = (await master.get('/master/site/visitas?dias=7')).body;
+    expect(r.totais).toMatchObject({
+      visitas: 3,
+      visitantes: 2,
+      celular: 50,
+      leituras: 2,
+      chegaramAoFim: 50,
+    });
+    expect(r.origens).toEqual(
+      expect.arrayContaining([
+        { origem: 'Google', visitantes: 1 },
+        { origem: 'Instagram', visitantes: 1 },
+      ]),
+    );
+    expect(r.campanhas[0]).toEqual({ campanha: 'instagram · bio', visitantes: 1 });
+    expect(r.cliques.map((c: { rotulo: string }) => c.rotulo)).toEqual(
+      expect.arrayContaining(['Assinar o Start', 'Testar grátis']),
+    );
+    expect(r.conversao.clicaramTesteOuAssinar).toBe(2);
+    expect(r.secoes.find((x: { id: string }) => x.id === 'nichos')).toMatchObject({ viram: 2, pct: 100 });
+    expect(r.secoes.find((x: { id: string }) => x.id === 'planos')).toMatchObject({ viram: 1, pct: 50 });
+    expect(r.cidades[0]).toEqual({ cidade: 'Salvador · BA', visitantes: 2 });
+    expect(r.porDia).toHaveLength(7);
+    expect(r.conversao.cadastros).toBeGreaterThan(0);
+  });
 });

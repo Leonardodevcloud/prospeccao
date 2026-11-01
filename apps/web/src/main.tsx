@@ -36,6 +36,7 @@ import { PlataformaOperacao, PlataformaVisao } from './paginas/Plataforma';
 import { PlataformaConfiguracoes } from './paginas/PlataformaConfiguracoes';
 import { PlataformaFinanceiro } from './paginas/PlataformaFinanceiro';
 import { PlataformaSaude } from './paginas/PlataformaSaude';
+import { PlataformaSite } from './paginas/PlataformaSite';
 import { Relatorios } from './paginas/Relatorios';
 import { ReuniaoDetalhe } from './paginas/ReuniaoDetalhe';
 import { Reunioes } from './paginas/Reunioes';
@@ -124,6 +125,7 @@ const roteador = createBrowserRouter([
       { path: 'plataforma/consumo', element: <Navigate to="/plataforma/financeiro" replace /> },
       { path: 'plataforma/configuracoes', element: <PlataformaConfiguracoes /> },
       { path: 'plataforma/saude', element: <PlataformaSaude /> },
+      { path: 'plataforma/site', element: <PlataformaSite /> },
       { path: 'plataforma/operacao', element: <PlataformaOperacao /> },
       { path: 'auditoria', element: <Auditoria /> },
       { path: 'ajuda', element: <Ajuda /> },

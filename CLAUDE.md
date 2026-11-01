@@ -9,3 +9,7 @@
 - **Tour do sistema**: as falas e os destaques ficam em `packages/shared/src/tour.ts`; as telas em
   `apps/web/public/tour/*.webp` (1600×1000, da conta de demonstração). Mudou uma tela que aparece no tour:
   troque a imagem e confira as posições dos destaques (`FOCOS`).
+- **Site (SEO)**: o `index.html` do site tem os dados para o Google e as IAs num JSON-LD (`@graph` com
+  Organization, WebSite, SoftwareApplication com os planos e FAQPage) e o resumo em `apps/site/llms.txt`.
+  Mudou uma dúvida, um preço ou um plano no site: atualize os dois com o mesmo texto. Seção nova na página
+  inicial com `id`: inclua em `SECOES_DO_SITE` (`packages/shared/src/site.ts`) para aparecer em Visitas do site.

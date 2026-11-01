@@ -118,6 +118,7 @@ export const MENU_CRM: EntradaMenu[] = [
 export const MENU_PLATAFORMA: EntradaMenu[] = [
   { para: '/plataforma', rotulo: 'Visão geral', icone: 'layout-dashboard', fim: true },
   { para: '/plataforma/vendas', rotulo: 'Vendas', icone: 'kanban' },
+  { para: '/plataforma/site', rotulo: 'Visitas do site', icone: 'globe' },
   {
     grupo: 'clientes',
     rotulo: 'Clientes',

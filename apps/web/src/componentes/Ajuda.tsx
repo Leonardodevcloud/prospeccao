@@ -1403,8 +1403,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <p>
           O cadastro do teste (e do Assinar) pede nome, WhatsApp, e-mail, CNPJ ou CPF e senha. A empresa é
           opcional: quem trabalha por conta própria deixa em branco, usa o CPF e a conta fica no próprio nome.
-          O documento já preenche os dados da cobrança. A senha precisa de 6 caracteres ou mais, uma letra maiúscula e um caractere especial (a tela
-          marca cada regra enquanto você digita, e o olho mostra o que foi digitado).
+          O documento já preenche os dados da cobrança. A senha precisa de 6 caracteres ou mais, uma letra
+          maiúscula e um caractere especial (a tela marca cada regra enquanto você digita, e o olho mostra o
+          que foi digitado).
         </p>
         <h3>Contrato combinado com o nosso time</h3>
         <p>
@@ -1600,7 +1601,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Receita e custo de cada cliente, desativar ou excluir, e-mail e senha, os serviços da plataforma e o CRM com dados fictícios.',
     onde: { rotulo: 'Financeiro', para: '/plataforma/financeiro' },
     termos:
-      'master painel plataforma cobrar pelo sistema cobrança mensalidade asaas como o cliente paga contrato combinado domínio dominio vercel white label marca administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
+      'master painel plataforma visitas do site acessos visitantes google origem utm cliques até onde rolam cobrar pelo sistema cobrança mensalidade asaas como o cliente paga contrato combinado domínio dominio vercel white label marca administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
     corpo: (
       <>
         <p>
@@ -1654,6 +1655,29 @@ export const ARTIGOS: ArtigoAjuda[] = [
             <b>Excluir cliente</b>: só aparece com o cliente desativado e pede o nome dele digitado. Apaga as
             unidades, os usuários e tudo o que é deles (funil, conversas, campanhas, reuniões, visitas). Não
             tem volta. As empresas pesquisadas continuam na base da plataforma.
+          </li>
+        </ul>
+        <h3>Visitas do site</h3>
+        <p>
+          Em <b>Visitas do site</b> você vê quantas pessoas abriram o prospectteam.com.br por dia, de onde
+          vieram (Google, Instagram, LinkedIn, direto…), os botões mais clicados, até onde rolam a página
+          inicial (quantos passam por cada seção), se usam celular ou computador, as cidades e quantos viraram
+          cadastro e pagamento. Escolha 7, 30 ou 90 dias; o número ao lado compara com o período anterior.
+        </p>
+        <ul>
+          <li>
+            A contagem é feita sem cookie e sem guardar o IP: cada visitante vira um código que muda todo dia
+            (por isso "visitantes" soma os visitantes de cada dia). Robôs e pré-visualizações não contam.
+          </li>
+          <li>
+            Link aberto pelo WhatsApp ou pelo app do Instagram costuma aparecer como "Direto". Para separar,
+            use o link com a origem, por exemplo{' '}
+            <b>prospectteam.com.br/?utm_source=instagram&amp;utm_campaign=bio</b>: aparece em "De onde vêm" e
+            em "Campanhas".
+          </li>
+          <li>
+            "Até onde chegam" mostra onde a página perde gente: se poucos chegam em Planos, o que vem antes
+            está longo demais.
           </li>
         </ul>
         <h3>Cobrar pelo sistema</h3>

@@ -9,6 +9,7 @@ import {
   pedidoSiteEntrada,
   pedidoVendaNovo,
   ROTULO_ETAPA_VENDA,
+  visitaSiteEntrada,
   whatsappComDdi,
 } from '@prospeccao/shared';
 import { Router } from 'express';
@@ -20,6 +21,7 @@ import { corpo, idDaRota } from '../../middlewares/http.js';
 import { numerosDaPlataforma } from '../assinatura/servico.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as repo from './repositorio.js';
+import { apagarVisitasAntigas, quemVisita, registrarVisita, resumoVisitas } from './visitas.js';
 
 const pedidoNotaEntrada = z.object({ texto: z.string().trim().min(1, 'Escreva a anotação.').max(1000) });
 
@@ -54,6 +56,30 @@ export function rotasSitePublico(deps: DepsApi): Router {
           'Recebemos vários pedidos seus. Tente de novo em alguns minutos.',
         ),
       ),
+  });
+
+  // Visitas: uma página tem uns 3 a 5 eventos (abrir, cliques, sair); o limite só segura abuso.
+  const limitarVisitas = rateLimit({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(204).end();
+    },
+  });
+
+  /** Visita, clique ou saída do site (sem cookie). Responde sempre 204: o site não espera nada. */
+  r.post('/visita', limitarVisitas, async (req, res) => {
+    const v = visitaSiteEntrada.safeParse(req.body);
+    if (v.success)
+      await registrarVisita(
+        pool,
+        deps.auth.jwtSegredo,
+        quemVisita((n) => req.get(n), req.ip ?? ''),
+        v.data,
+      ).catch((e) => log.warn({ err: e }, 'site: não deu para registrar a visita'));
+    res.status(204).end();
   });
 
   r.get('/contato', async (_req, res) => {
@@ -151,6 +177,12 @@ export function rotasSiteMaster({ pool }: DepsApi): Router {
       numerosDaPlataforma(pool),
     ]);
     res.json({ config, pedidos, numeros });
+  });
+  /** Visitas do site: os últimos N dias (7, 30, 90…), comparando com os N dias antes. */
+  r.get('/visitas', async (req, res) => {
+    const { dias } = z.object({ dias: z.coerce.number().int().min(1).max(365).default(30) }).parse(req.query);
+    await apagarVisitasAntigas(pool);
+    res.json(await resumoVisitas(pool, dias));
   });
   r.get('/novos', async (_req, res) => {
     res.json({ novos: await repo.contarNovos(pool) });
