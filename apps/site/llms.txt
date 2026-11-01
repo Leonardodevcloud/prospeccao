@@ -22,9 +22,10 @@
 - Pagamento mês a mês por Pix, boleto ou cartão.
 
 ## Links
-- Site: https://prospectteam.com.br/
-- Teste grátis: https://app.prospectteam.com.br/teste
-- Apresentação: https://prospectteam.com.br/apresentacao
-- Documentação da API: https://prospectteam.com.br/api
-- Privacidade (LGPD): https://prospectteam.com.br/privacidade
+- [Site](https://prospectteam.com.br/): o que é, como funciona, planos e dúvidas.
+- [Teste grátis de 7 dias](https://app.prospectteam.com.br/teste): cria a conta e testa o plano Time.
+- [Apresentação comercial](https://prospectteam.com.br/apresentacao): o sistema tela por tela.
+- [Documentação da API](https://prospectteam.com.br/api): leads, etapas e avisos (webhooks) para ERP, Make e Zapier.
+- [Privacidade (LGPD)](https://prospectteam.com.br/privacidade): como os dados são tratados.
+- [Termos de uso](https://prospectteam.com.br/termos)
 - Contato: prospectteam@gmail.com · WhatsApp (71) 99363-5290

@@ -29,7 +29,7 @@
 <link rel="manifest" href="/site.webmanifest">
 <link rel="apple-touch-icon" href="/img/icone-180.png">
 <link rel="preload" href="/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/img/funil.webp" as="image" type="image/webp">
+<link rel="preload" href="/img/funil.webp" as="image" type="image/webp" imagesrcset="/img/funil-800.webp 800w, /img/funil-1200.webp 1200w, /img/funil.webp 1600w" imagesizes="(max-width: 640px) calc(100vw - 32px), (max-width: 1240px) 92vw, 1150px">
 <link rel="stylesheet" href="/css/componentes.css">
 <link rel="stylesheet" href="/css/site.css">
 <script>document.documentElement.classList.add('js');</script>
@@ -134,7 +134,7 @@
     <div class="hero__tela" data-paralaxe>
       <div class="tela">
         <div class="tela__barra" aria-hidden="true"><i></i><i></i><i></i><span class="tela__url">app.prospectteam.com.br/funil</span></div>
-        <img src="/img/funil.webp" width="1600" height="1000" alt="Funil do Prospect Team em colunas (A abordar, Abordado, Respondeu, Perdido), com cards de lead, nota, contato e próximo passo" fetchpriority="high">
+        <img src="/img/funil.webp" srcset="/img/funil-800.webp 800w, /img/funil-1200.webp 1200w, /img/funil.webp 1600w" sizes="(max-width: 640px) calc(100vw - 32px), (max-width: 1240px) 92vw, 1150px" width="1600" height="1000" alt="Funil do Prospect Team em colunas (A abordar, Abordado, Respondeu, Perdido), com cards de lead, nota, contato e próximo passo" fetchpriority="high">
       </div>
     </div>
     <div class="flutua flutua--1 sobe a6" aria-hidden="true">
@@ -405,7 +405,7 @@
         <div class="tela">
           <div class="tela__barra" aria-hidden="true"><i></i><i></i><i></i><span class="tela__url" data-tour-url>app.prospectteam.com.br/leads</span></div>
           <div class="palco">
-            <img class="ativa" data-img="leads" src="/img/leads.webp" width="1600" height="1000" alt="Lista de leads com nota, possíveis decisores e melhor contato">
+            <img class="ativa" data-img="leads" src="/img/leads.webp" srcset="/img/leads-800.webp 800w, /img/leads-1200.webp 1200w, /img/leads.webp 1600w" sizes="(max-width: 960px) calc(100vw - 32px), 860px" width="1600" height="1000" alt="Lista de leads com nota, possíveis decisores e melhor contato">
 <img class="" data-img="ficha" src="/img/ficha.webp" width="1600" height="1000" alt="Ficha do lead: nota e motivo, funil, possíveis decisores, contatos e como foi encontrada" loading="lazy">
 <img class="" data-img="funil" src="/img/funil.webp" width="1600" height="1000" alt="Funil em colunas" loading="lazy">
 <iframe class="" data-img="reuniao" data-src="/apresentacao/e/reuniao?vitrine" title="Animação de uma reunião por vídeo no Prospect Team: tela compartilhada com a proposta, quem está falando com legenda, mão levantada e chat com arquivo" tabindex="-1" loading="lazy"></iframe>

@@ -2381,6 +2381,13 @@ p {
     transform 500ms var(--ease),
     background-color 400ms ease;
 }
+/* O que ainda não aconteceu aparece como espaço vazio (sem texto apagado, que fica sem contraste). */
+.lead-vivo__bloco:not(.feito) {
+  opacity: 0.6;
+}
+.lead-vivo__bloco:not(.feito) > * {
+  visibility: hidden;
+}
 .lead-vivo__bloco.feito {
   opacity: 1;
   filter: none;
