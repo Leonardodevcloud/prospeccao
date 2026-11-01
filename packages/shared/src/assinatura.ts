@@ -108,34 +108,55 @@ export function emailDescartavel(email: string): boolean {
 /** Os planos que a empresa assina sozinha (o personalizado é combinado com o nosso time). */
 export const planoParaAssinar = z.enum(['start', 'time', 'escala']);
 
-export const cadastroTesteEntrada = z.object({
-  nome: z.string().trim().min(2, 'Informe o seu nome.').max(120),
-  empresa: z.string().trim().min(2, 'Informe o nome da empresa.').max(160),
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .email('E-mail inválido.')
-    .max(200)
-    .refine((e) => !emailDescartavel(e), 'Use o e-mail da empresa (e-mail temporário não vale).'),
-  whatsapp: z
-    .string()
-    .trim()
-    .max(40)
-    .refine((v) => !!normalizarTelefone(v), 'WhatsApp inválido: use DDD + número.'),
-  cnpj: z
-    .string()
-    .trim()
-    .max(30)
-    .nullish()
-    .refine((v) => !v || !!cnpjDoTexto(v), 'CNPJ inválido: confira os números.'),
-  senha: z.string().min(10, 'A senha precisa de 10 caracteres ou mais.').max(200),
-  aceite: z.literal(true, { message: 'Aceite os termos de uso para continuar.' }),
-  /** Token do captcha (Cloudflare Turnstile). */
-  captcha: z.string().max(4000).nullish(),
-  /** Veio do "Assinar agora" do site: depois de confirmar o e-mail, abre a assinatura neste plano. */
-  assinar: planoParaAssinar.nullish(),
-});
+/** Senha do cadastro (teste e assinar): a tela mostra cada regra marcando conforme a pessoa digita. */
+export const REGRAS_SENHA_CADASTRO: { id: string; texto: string; ok: (s: string) => boolean }[] = [
+  { id: 'tamanho', texto: '6 caracteres ou mais', ok: (s) => s.length >= 6 },
+  { id: 'maiuscula', texto: 'Uma letra maiúscula', ok: (s) => /\p{Lu}/u.test(s) },
+  {
+    id: 'especial',
+    texto: 'Um caractere especial (! @ # $ % & * …)',
+    ok: (s) => /[^\p{L}\p{N}\s]/u.test(s),
+  },
+];
+
+export const senhaDoCadastro = z
+  .string()
+  .max(200)
+  .refine((s) => s.length >= 6, 'A senha precisa de 6 caracteres ou mais.')
+  .refine((s) => /\p{Lu}/u.test(s), 'Use ao menos uma letra maiúscula na senha.')
+  .refine((s) => /[^\p{L}\p{N}\s]/u.test(s), 'Use ao menos um caractere especial na senha (! @ # $ % & *).');
+
+export const cadastroTesteEntrada = z
+  .object({
+    nome: z.string().trim().min(2, 'Informe o seu nome.').max(120),
+    /** Opcional: autônomo deixa em branco e a conta fica no nome da pessoa. */
+    empresa: z.string().trim().max(160).nullish(),
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email('E-mail inválido.')
+      .max(200)
+      .refine((e) => !emailDescartavel(e), 'Use um e-mail que você acessa (e-mail temporário não vale).'),
+    whatsapp: z
+      .string()
+      .trim()
+      .max(40)
+      .refine((v) => !!normalizarTelefone(v), 'WhatsApp inválido: use DDD + número.'),
+    /** CNPJ ou CPF (autônomo usa o CPF). */
+    cnpj: z
+      .string({ message: 'Informe o CNPJ ou o CPF.' })
+      .trim()
+      .max(30)
+      .refine((v) => !!documentoDoTexto(v), 'CNPJ ou CPF inválido: confira os números.'),
+    senha: senhaDoCadastro,
+    aceite: z.literal(true, { message: 'Aceite os termos de uso para continuar.' }),
+    /** Token do captcha (Cloudflare Turnstile). */
+    captcha: z.string().max(4000).nullish(),
+    /** Veio do "Assinar agora" do site: depois de confirmar o e-mail, abre a assinatura neste plano. */
+    assinar: planoParaAssinar.nullish(),
+  })
+  .transform((v) => ({ ...v, empresa: v.empresa && v.empresa.length >= 2 ? v.empresa : v.nome }));
 export type CadastroTesteEntrada = z.infer<typeof cadastroTesteEntrada>;
 
 export const assinarEntrada = z

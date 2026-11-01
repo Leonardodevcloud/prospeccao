@@ -1,4 +1,9 @@
-import { DIAS_TESTE, LEADS_TESTE, USUARIOS_TESTE } from '@prospeccao/shared/assinatura';
+import {
+  DIAS_TESTE,
+  LEADS_TESTE,
+  REGRAS_SENHA_CADASTRO,
+  USUARIOS_TESTE,
+} from '@prospeccao/shared/assinatura';
 import { NOME_PLANO, type PlanoPronto } from '@prospeccao/shared/planos';
 import { Button, Icon, TextField } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -172,6 +177,7 @@ export function TesteGratis() {
   });
   const [d, setD] = useState({ nome: '', empresa: '', email: '', whatsapp: '', cnpj: '', senha: '' });
   const [aceite, setAceite] = useState(false);
+  const [verSenha, setVerSenha] = useState(false);
   const [captcha, setCaptcha] = useState<string | null>(null);
   const [versaoCaptcha, setVersaoCaptcha] = useState(0);
   const [enviado, setEnviado] = useState<{ email: string; emailEnviado: boolean } | null>(null);
@@ -179,7 +185,14 @@ export function TesteGratis() {
     mutationFn: () =>
       api<{ email: string; emailEnviado: boolean }>('/teste', {
         metodo: 'POST',
-        corpo: { ...d, cnpj: d.cnpj.trim() || null, aceite, captcha, assinar },
+        corpo: {
+          ...d,
+          empresa: d.empresa.trim() || null,
+          cnpj: d.cnpj.trim(),
+          aceite,
+          captcha,
+          assinar,
+        },
       }),
     onSuccess: setEnviado,
     onError: () => {
@@ -196,10 +209,10 @@ export function TesteGratis() {
   const site = config.data?.captcha ?? null;
   const pronto =
     d.nome.trim().length >= 2 &&
-    d.empresa.trim().length >= 2 &&
     d.email.includes('@') &&
+    [11, 14].includes(d.cnpj.replace(/\D/g, '').length) &&
     d.whatsapp.replace(/\D/g, '').length >= 10 &&
-    d.senha.length >= 10 &&
+    REGRAS_SENHA_CADASTRO.every((r) => r.ok(d.senha)) &&
     aceite &&
     (!site || !!captcha);
 
@@ -295,35 +308,68 @@ export function TesteGratis() {
           />
           <div className="teste__inteira">
             <TextField
-              rotulo="Empresa"
+              rotulo="Empresa (opcional)"
               autoComplete="organization"
+              dica="Trabalha por conta própria? Deixe em branco: a conta fica no seu nome."
               value={d.empresa}
               onChange={campo('empresa')}
             />
           </div>
           <TextField
-            rotulo="E-mail de trabalho"
+            rotulo="E-mail"
             type="email"
             autoComplete="email"
             value={d.email}
             onChange={campo('email')}
           />
           <TextField
-            rotulo="CNPJ (opcional)"
+            rotulo="CNPJ ou CPF"
+            dica="Autônomo? Use o CPF."
             inputMode="numeric"
-            placeholder="00.000.000/0000-00"
             value={d.cnpj}
             onChange={campo('cnpj')}
           />
           <div className="teste__inteira">
-            <TextField
-              rotulo="Crie uma senha"
-              type="password"
-              autoComplete="new-password"
-              dica="10 caracteres ou mais."
-              value={d.senha}
-              onChange={campo('senha')}
-            />
+            <div className="pp-tf teste__senha">
+              <label htmlFor="teste-senha" className="pp-tf__label">
+                Crie uma senha
+              </label>
+              <div className="pp-tf__wrap">
+                <input
+                  id="teste-senha"
+                  className="pp-input"
+                  type={verSenha ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  aria-describedby="teste-senha-regras"
+                  value={d.senha}
+                  onChange={campo('senha')}
+                />
+                <button
+                  type="button"
+                  className="teste__olho"
+                  aria-label={verSenha ? 'Esconder a senha' : 'Mostrar a senha'}
+                  aria-pressed={verSenha}
+                  title={verSenha ? 'Esconder a senha' : 'Mostrar a senha'}
+                  onClick={() => setVerSenha((v) => !v)}
+                >
+                  <Icon name={verSenha ? 'eye-off' : 'eye'} size={18} />
+                </button>
+              </div>
+              <ul id="teste-senha-regras" className="teste__regras" aria-live="polite">
+                {REGRAS_SENHA_CADASTRO.map((r) => {
+                  const ok = r.ok(d.senha);
+                  return (
+                    <li key={r.id} data-ok={ok || undefined}>
+                      <Icon name={ok ? 'check' : 'circle-dashed'} size={14} />
+                      <span>
+                        {r.texto}
+                        <span className="pp-sr">{ok ? ' (feito)' : ' (falta)'}</span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
         </div>
         {site && <Captcha site={site} aoConfirmar={setCaptcha} versao={versaoCaptcha} />}
@@ -353,7 +399,7 @@ export function TesteGratis() {
         <p className="login__nota">
           {assinar
             ? 'Mandamos um link para confirmar o e-mail; depois, é só escolher e pagar.'
-            : 'Um teste por empresa (e-mail, WhatsApp e CNPJ). Mandamos um link para confirmar o e-mail.'}
+            : 'Um teste por empresa (e-mail, WhatsApp e CNPJ ou CPF). Mandamos um link para confirmar o e-mail.'}
         </p>
       </form>
     </TelaAcesso>

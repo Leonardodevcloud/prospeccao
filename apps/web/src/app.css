@@ -13650,8 +13650,69 @@ tr[data-situacao="pulado"] td {
 .teste__inteira {
   grid-column: 1 / -1;
 }
+/* Meu plano › Assinar: o convite para o plano personalizado */
+.assinar__sob-medida {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ink-muted);
+}
+.assinar__sob-medida svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--brand);
+}
 .teste__captcha {
   min-height: 65px;
+}
+/* Senha do cadastro: olho para mostrar e as regras marcando conforme digita */
+.teste__senha .pp-input {
+  padding-right: 44px;
+}
+.teste__olho {
+  position: absolute;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.teste__olho:hover {
+  color: var(--ink);
+}
+.teste__olho:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.teste__regras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+.teste__regras li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.teste__regras li[data-ok] {
+  color: var(--brand);
 }
 .teste__aceite {
   display: flex;

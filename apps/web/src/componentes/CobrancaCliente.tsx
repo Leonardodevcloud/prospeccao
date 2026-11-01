@@ -16,7 +16,7 @@ import { ErroDaApi, Mensagem } from './Formulario';
 interface CobrancaDoCliente {
   disponivel: boolean;
   sandbox: boolean;
-  modo: 'combinado' | 'sistema' | 'sozinho';
+  modo: 'combinado' | 'teste' | 'sistema' | 'sozinho';
   situacao: SituacaoAssinatura | null;
   acessoAte: string | null;
   jaPagou: boolean;
@@ -81,11 +81,13 @@ export function CobrancaCliente(props: { contaId: number }) {
             Como o cliente paga
           </h3>
           <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-            {c.modo === 'combinado'
-              ? 'Contrato combinado à mão: o pagamento é por fora do sistema (nada é cobrado aqui).'
-              : c.modo === 'sistema'
-                ? 'Cobrado pelo sistema: todo mês sai uma cobrança (Pix, boleto ou cartão) com o valor do plano acima.'
-                : 'Assina sozinho (pelo site ou depois do teste): o plano e as cobranças ficam com ele, em Meu plano.'}
+            {c.modo === 'teste'
+              ? 'Veio pelo site e ainda não pagou. Para um plano combinado (ex.: personalizado), ajuste o plano e o valor acima, salve e use Cobrar pelo sistema: a primeira cobrança sai para ele pagar.'
+              : c.modo === 'combinado'
+                ? 'Contrato combinado à mão: o pagamento é por fora do sistema (nada é cobrado aqui).'
+                : c.modo === 'sistema'
+                  ? 'Cobrado pelo sistema: todo mês sai uma cobrança (Pix, boleto ou cartão) com o valor do plano acima.'
+                  : 'Assina sozinho (pelo site ou depois do teste): o plano e as cobranças ficam com ele, em Meu plano.'}
           </p>
           {c.situacao && (
             <p style={{ margin: '6px 0 0', fontSize: 13 }}>
@@ -117,7 +119,7 @@ export function CobrancaCliente(props: { contaId: number }) {
           )}
         </div>
         <div className="assinatura-plano__botoes">
-          {c.modo === 'combinado' && !aberto && (
+          {(c.modo === 'combinado' || c.modo === 'teste') && !aberto && (
             <Button
               variant="secondary"
               disabled={!c.disponivel || !c.mensalidade}
@@ -149,7 +151,7 @@ export function CobrancaCliente(props: { contaId: number }) {
           Modo de teste do Asaas: as cobranças são de mentira (nada é cobrado).
         </Mensagem>
       )}
-      {c.modo === 'combinado' && c.disponivel && !c.mensalidade && (
+      {(c.modo === 'combinado' || c.modo === 'teste') && c.disponivel && !c.mensalidade && (
         <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
           Para cobrar pelo sistema, escolha um plano com mensalidade acima e salve.
         </p>
@@ -199,7 +201,7 @@ export function CobrancaCliente(props: { contaId: number }) {
                 O Asaas manda a cobrança e o recibo para este e-mail.
               </span>
             </div>
-            {c.modo === 'combinado' && (
+            {(c.modo === 'combinado' || c.modo === 'teste') && (
               <div className="campo">
                 <label htmlFor={`cb-venc-${props.contaId}`}>Primeira mensalidade vence em</label>
                 <input
@@ -216,7 +218,7 @@ export function CobrancaCliente(props: { contaId: number }) {
               </div>
             )}
           </div>
-          {c.modo === 'combinado' && c.mensalidade != null && (
+          {(c.modo === 'combinado' || c.modo === 'teste') && c.mensalidade != null && (
             <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
               Todo mês sai uma cobrança de {fmtReais(c.mensalidade)} (o valor do plano acima; mudou o plano, a
               próxima cobrança acompanha). Pagou, vale um mês. Venceu sem pagar: mais 3 dias normais e depois
@@ -231,7 +233,7 @@ export function CobrancaCliente(props: { contaId: number }) {
             <Button type="submit" variant="primary" disabled={!completo || salvar.isPending}>
               {salvar.isPending
                 ? 'Salvando…'
-                : c.modo === 'combinado'
+                : c.modo === 'combinado' || c.modo === 'teste'
                   ? 'Começar a cobrar'
                   : 'Salvar os dados'}
             </Button>

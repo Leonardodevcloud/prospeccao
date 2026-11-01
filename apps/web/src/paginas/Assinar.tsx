@@ -294,6 +294,20 @@ export function Assinar() {
               );
             })}
           </fieldset>
+          <p className="assinar__sob-medida">
+            <Icon name="badge-check" size={16} />
+            <span>
+              Não vai usar tudo de um plano? O <b>plano personalizado</b> sai a partir de{' '}
+              {fmtReais(tabela.planos.start.preco)} por mês, só com as funções que vocês vão usar.{' '}
+              <a
+                href={`${WHATSAPP_PROSPECT}?text=${encodeURIComponent('Olá! Quero montar um plano personalizado do Prospect Team.')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Montar com a gente pelo WhatsApp
+              </a>
+            </span>
+          </p>
 
           <section className="pp-panel assinar__bloco assinar__colunas">
             <div>

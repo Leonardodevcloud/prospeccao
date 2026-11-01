@@ -666,14 +666,24 @@ export async function cobrancaDoCliente(deps: DepsAssinatura, contaId: number) {
     ),
   ]);
   const pelo = !!o.assinatura_contrato?.manter;
+  const sozinho = !!o.assinatura_contrato && !pelo;
   const jaPagou = (cobrancas.rows as { tipo: string; situacao: string }[]).some(
     (b) => b.tipo === 'mensalidade' && b.situacao === 'paga',
   );
   return {
     disponivel: !!deps.cobranca,
     sandbox: deps.cobranca?.sandbox ?? false,
-    /** combinado: paga por fora; sistema: o sistema cobra todo mês; sozinho: assinou pelo site/teste. */
-    modo: pelo ? ('sistema' as const) : o.assinatura ? ('sozinho' as const) : ('combinado' as const),
+    /**
+     * combinado: paga por fora; sistema: o sistema cobra todo mês o plano daqui; sozinho: assinou e
+     * pagou pelo Meu plano; teste: veio do site e ainda não pagou (dá para combinar e cobrar daqui).
+     */
+    modo: pelo
+      ? ('sistema' as const)
+      : sozinho
+        ? ('sozinho' as const)
+        : o.assinatura
+          ? ('teste' as const)
+          : ('combinado' as const),
     situacao: o.assinatura,
     acessoAte: o.acesso_ate,
     /** Já pagou alguma mensalidade (antes disso, acessoAte é o primeiro vencimento). */
@@ -706,10 +716,13 @@ export async function cobrarPeloSistema(
   const organizacaoId = await organizacaoDaConta(pool, contaId);
   const o = await org(pool, organizacaoId);
   const ja = !!o.assinatura_contrato?.manter;
-  if (o.assinatura && !ja)
+  // Quem já paga sozinho (Meu plano › Assinar) não passa para cá; o teste do site, sim (plano combinado).
+  if (o.assinatura_contrato && !ja)
     throw AppError.conflito(
       'Este cliente assina sozinho (Meu plano › Assinar): as cobranças dele já saem pelo sistema.',
     );
+  if (o.assinatura === 'arquivada')
+    throw AppError.conflito('Esta conta está arquivada: reative o cliente antes de cobrar.');
   const hoje = brData(new Date());
   if (!ja && (d.vencimento < hoje || d.vencimento > brData(somarDias(new Date(), 60))))
     throw AppError.invalido('A primeira mensalidade vence de hoje até 60 dias.');
@@ -747,6 +760,20 @@ export async function cobrarPeloSistema(
     );
   esquecerRecursos();
   await gerarMensalidades(deps, organizacaoId);
+  if (!ja) {
+    const { rows: saiu } = await pool.query(
+      `SELECT 1 FROM cadastro.cobrancas WHERE organizacao_id = $1 AND tipo = 'mensalidade' AND situacao = 'pendente' LIMIT 1`,
+      [organizacaoId],
+    );
+    await avisarConta(
+      deps,
+      organizacaoId,
+      'Plano combinado com o nosso time',
+      saiu[0]
+        ? `A primeira mensalidade (${reais(pedido.valor)}) já está em Meu plano › Pagar: Pix, boleto ou cartão.`
+        : `A primeira mensalidade (${reais(pedido.valor)}) aparece em Meu plano › Pagar 7 dias antes de ${diaMes(`${d.vencimento}T12:00:00-03:00`)}.`,
+    );
+  }
   return cobrancaDoCliente(deps, contaId);
 }
 

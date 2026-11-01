@@ -6,7 +6,7 @@ import { normalizarTelefone } from './normalizar.js';
  * (configurado no painel master).
  */
 
-export const PLANOS_DO_SITE = ['Ainda não sei', 'Start', 'Time', 'Escala'] as const;
+export const PLANOS_DO_SITE = ['Ainda não sei', 'Start', 'Time', 'Escala', 'Personalizado'] as const;
 
 export const pedidoSiteEntrada = z.object({
   nome: z.string().trim().min(2, 'Informe o seu nome.').max(120),

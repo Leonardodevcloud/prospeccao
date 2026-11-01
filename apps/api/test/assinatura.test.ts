@@ -115,7 +115,8 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
     empresa: 'Nexo Sistemas',
     email: 'diego@nexosistemas.com.br',
     whatsapp: '(71) 99876-5432',
-    senha: 'senha-bem-forte-1',
+    cnpj: '11.222.333/0001-81',
+    senha: 'Senha#forte1',
     aceite: true,
     ...extra,
   });
@@ -476,6 +477,7 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
           email: 'paula@bemestar.com.br',
           empresa: 'Instituto Bem Estar',
           whatsapp: '71 99222-0033',
+          cnpj: '11.444.777/0001-61',
           nome: 'Paula',
         }),
       );
@@ -551,8 +553,10 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
       .set('Origin', ORIGEM)
       .send(
         cadastro({
+          // Autônoma: sem empresa (a conta fica no nome dela) e com CPF.
           nome: 'Lara Souza',
-          empresa: 'Vitta Odonto',
+          empresa: '',
+          cnpj: '529.982.247-25',
           email: 'lara@vitta.com.br',
           whatsapp: '(11) 97777-6666',
           assinar: 'start',
@@ -575,6 +579,13 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
     expect(
       (await lara.post(`/teste/confirmar/${linkDoEmail('lara@vitta.com.br')}`).set('Origin', ORIGEM)).status,
     ).toBe(200);
+    // Autônoma: a conta fica no nome dela e o CPF já preenche os dados da cobrança.
+    const { rows: oLara } = await pool.query(
+      `SELECT o.nome, o.cobranca_documento FROM cadastro.organizacoes o
+         JOIN cadastro.contas c ON c.organizacao_id = o.id JOIN cadastro.usuarios u ON u.conta_id = c.id
+        WHERE u.email = 'lara@vitta.com.br'`,
+    );
+    expect(oLara[0]).toEqual({ nome: 'Lara Souza', cobranca_documento: '52998224725' });
     const a = await lara
       .post('/assinatura/assinar')
       .set('Origin', ORIGEM)
@@ -701,6 +712,34 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
       .set('Origin', ORIGEM)
       .send({ ...corpoCobrar, vencimento: dia(3) });
     expect(sozinho.status).toBe(409);
+    // A Lara (autônoma, veio do site e ainda não pagou) combina um plano: o master ajusta e cobra daqui.
+    const { rows: lara } = await pool.query(
+      `SELECT c.id FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE o.nome = 'Lara Souza'`,
+    );
+    const urlLara = `/master/contas/${lara[0].id}/cobranca`;
+    const antesLara = (await master.get(urlLara)).body;
+    expect(antesLara).toMatchObject({ modo: 'teste', situacao: 'teste' });
+    await master.put(`/master/contas/${lara[0].id}/plano`).set('Origin', ORIGEM).send({
+      plano: 'personalizado',
+      limiteUsuarios: 1,
+      limiteLeadsMes: 500,
+      modulos: [],
+      mensalidadeManual: 397,
+    });
+    const laraCobrada = await master
+      .post(urlLara)
+      .set('Origin', ORIGEM)
+      .send({
+        documento: '529.982.247-25',
+        nome: 'Lara Souza',
+        email: 'lara@vitta.com.br',
+        vencimento: dia(0),
+      });
+    expect(laraCobrada.status).toBe(200);
+    expect(laraCobrada.body).toMatchObject({ modo: 'sistema', situacao: 'ativa', valor: 397 });
+    const abertas = laraCobrada.body.cobrancas.filter((x: { situacao: string }) => x.situacao === 'pendente');
+    expect(abertas).toHaveLength(1);
+    expect(abertas[0].valor).toBe(397);
     const parou = await master.delete(url).set('Origin', ORIGEM);
     expect(parou.status).toBe(200);
     expect(parou.body).toMatchObject({ modo: 'combinado', situacao: null });

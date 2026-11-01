@@ -1369,7 +1369,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Os 7 dias de teste, assinar pelo sistema, pagar cada mês com Pix, boleto ou cartão, mudar de plano, minutos de ligação e o que acontece quando vence.',
     onde: { rotulo: 'Meu plano', para: '/plano' },
     termos:
-      'teste grátis 7 dias assinar direto sem teste site contrato combinado assinar assinatura pagar pagamento pix boleto cartão cobrança mensalidade vencimento venceu atrasado renovar renovação cancelar só leitura exportar contatos arquivada asaas nota fiscal diferença proporcional pacote minutos ligação',
+      'teste grátis 7 dias assinar direto sem teste site contrato combinado plano personalizado sob medida autônomo cpf senha assinar assinatura pagar pagamento pix boleto cartão cobrança mensalidade vencimento venceu atrasado renovar renovação cancelar só leitura exportar contatos arquivada asaas nota fiscal diferença proporcional pacote minutos ligação',
     corpo: (
       <>
         <p>
@@ -1390,6 +1390,21 @@ export const ARTIGOS: ArtigoAjuda[] = [
           empresa, e-mail, WhatsApp e senha). Depois de confirmar o e-mail, o sistema já abre{' '}
           <b>Meu plano › Assinar</b> com o plano escolhido: é só ajustar usuários e módulos e pagar. Até o
           pagamento cair, a conta funciona como teste; pagou, o plano vale na hora.
+        </p>
+        <h3>Plano personalizado</h3>
+        <p>
+          Não vai usar tudo de um plano? O plano personalizado sai a partir do preço do Start, só com as
+          funções que vocês vão usar, quantas pessoas e quantos leads por mês. Ele é montado com o nosso time
+          (pelo WhatsApp ou pelo formulário do site): a gente configura o plano e o valor e lança a primeira
+          cobrança, que aparece em <b>Meu plano › Pagar</b> (Pix, boleto ou cartão). Os meses seguintes chegam
+          do mesmo jeito.
+        </p>
+        <h3>Cadastro</h3>
+        <p>
+          O cadastro do teste (e do Assinar) pede nome, WhatsApp, e-mail, CNPJ ou CPF e senha. A empresa é
+          opcional: quem trabalha por conta própria deixa em branco, usa o CPF e a conta fica no próprio nome.
+          O documento já preenche os dados da cobrança. A senha precisa de 6 caracteres ou mais, uma letra maiúscula e um caractere especial (a tela
+          marca cada regra enquanto você digita, e o olho mostra o que foi digitado).
         </p>
         <h3>Contrato combinado com o nosso time</h3>
         <p>
@@ -1663,7 +1678,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
             <b>Parar de cobrar</b>: as cobranças em aberto são canceladas e o cliente volta a ser combinado à
             mão (sem vencimento nem só leitura).
           </li>
-          <li>Quem assina sozinho cuida do plano e das cobranças em Meu plano; o painel só mostra.</li>
+          <li>
+            <b>Plano personalizado para quem veio do site</b> (em teste, ainda sem pagar): ajuste o plano e o
+            valor acima, salve e use Cobrar pelo sistema com o vencimento de hoje. A primeira cobrança sai na
+            hora, o cliente recebe o aviso no sistema e paga em Meu plano › Pagar; a cobrança que ele tinha
+            pedido sozinho (se houver) é cancelada.
+          </li>
+          <li>Quem já paga sozinho cuida do plano e das cobranças em Meu plano; o painel só mostra.</li>
         </ul>
         <h3>Configurações da plataforma</h3>
         <p>

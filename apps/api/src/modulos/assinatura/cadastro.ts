@@ -4,8 +4,8 @@ import { conferirCaptcha } from '@prospeccao/integrations/cobranca';
 import {
   AppError,
   type CadastroTesteEntrada,
-  cnpjDoTexto,
   DIAS_TESTE,
+  documentoDoTexto,
   LEADS_TESTE,
   NOME_PLANO,
   normalizarTelefone,
@@ -48,7 +48,8 @@ export async function iniciar(
       throw AppError.invalido('Confirme que você não é um robô (a caixinha do formulário) e tente de novo.');
   }
   const whatsapp = normalizarTelefone(d.whatsapp)!;
-  const cnpj = d.cnpj ? cnpjDoTexto(d.cnpj) : null;
+  // CNPJ ou CPF (autônomo), só os dígitos.
+  const cnpj = documentoDoTexto(d.cnpj);
   const ipHash = hashIp(ip);
   const { rows: ips } = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM cadastro.cadastros_teste WHERE ip_hash = $1 AND criado_em > now() - interval '1 day'`,
@@ -177,10 +178,11 @@ export async function confirmar(
     for (let i = 1; i <= 20 && !organizacaoId; i++) {
       const nome = i === 1 ? c.empresa : `${c.empresa} (${i})`;
       const { rows: o } = await tx.query<{ id: number }>(
-        `INSERT INTO cadastro.organizacoes (nome, observacoes, assinatura, teste_ate)
-         VALUES ($1, $2, 'teste', now() + make_interval(days => ${DIAS_TESTE}))
+        `INSERT INTO cadastro.organizacoes (nome, observacoes, assinatura, teste_ate, cobranca_documento, cobranca_nome)
+         VALUES ($1, $2, 'teste', now() + make_interval(days => ${DIAS_TESTE}), $3, $4)
          ON CONFLICT ((lower(nome))) DO NOTHING RETURNING id`,
-        [nome, `Teste grátis pelo site (${c.nome}, ${c.email})`],
+        // O documento do cadastro já preenche os dados da cobrança (Assinar e o painel master).
+        [nome, `Teste grátis pelo site (${c.nome}, ${c.email})`, c.cnpj, c.empresa],
       );
       organizacaoId = o[0]?.id ?? null;
     }
@@ -216,7 +218,14 @@ export async function confirmar(
     const { rows: p } = await tx.query<{ id: string }>(
       `INSERT INTO cadastro.pedidos_site (nome, empresa, whatsapp, email, plano, canal, etapa, conta_id, nota)
        VALUES ($1, $2, $3, $4, 'Teste grátis', 'teste', 'teste', $5, $6) RETURNING id`,
-      [c.nome, c.empresa, c.whatsapp, c.email, contaId, c.cnpj ? `CNPJ ${c.cnpj}` : null],
+      [
+        c.nome,
+        c.empresa,
+        c.whatsapp,
+        c.email,
+        contaId,
+        c.cnpj ? `${c.cnpj.length === 11 ? 'CPF' : 'CNPJ'} ${c.cnpj}` : null,
+      ],
     );
     await tx.query(
       `INSERT INTO cadastro.pedidos_site_historico (pedido_id, texto, autor) VALUES ($1, $2, 'Site')`,

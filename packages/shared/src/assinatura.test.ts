@@ -6,6 +6,7 @@ import {
   cpfValido,
   documentoDoTexto,
   emailDescartavel,
+  REGRAS_SENHA_CADASTRO,
 } from './assinatura.js';
 import { planoEfetivo } from './planos.js';
 
@@ -32,6 +33,29 @@ describe('teste grátis e assinatura', () => {
       aceite: true,
     });
     expect(r.success).toBe(false);
+  });
+
+  it('cadastro: senha com 6+, maiúscula e caractere especial; CNPJ ou CPF obrigatório; autônomo sem empresa', () => {
+    const base = {
+      nome: 'Lara Souza',
+      email: 'lara@vitta.com.br',
+      whatsapp: '11 97777-6666',
+      cnpj: '529.982.247-25',
+      senha: 'Abc12#',
+      aceite: true as const,
+    };
+    const ok = cadastroTesteEntrada.safeParse(base);
+    expect(ok.success).toBe(true);
+    expect(ok.data?.empresa).toBe('Lara Souza');
+    expect(cadastroTesteEntrada.safeParse({ ...base, senha: 'abc12#' }).success).toBe(false);
+    expect(cadastroTesteEntrada.safeParse({ ...base, senha: 'Abc123' }).success).toBe(false);
+    expect(cadastroTesteEntrada.safeParse({ ...base, senha: 'Ab1#' }).success).toBe(false);
+    expect(cadastroTesteEntrada.safeParse({ ...base, cnpj: undefined }).success).toBe(false);
+    expect(cadastroTesteEntrada.safeParse({ ...base, cnpj: '123.456.789-00' }).success).toBe(false);
+    expect(cadastroTesteEntrada.safeParse({ ...base, empresa: 'Vitta Odonto' }).data?.empresa).toBe(
+      'Vitta Odonto',
+    );
+    expect(REGRAS_SENHA_CADASTRO.map((r) => r.ok('Abc12#'))).toEqual([true, true, true]);
   });
 
   it('o Agente de IA pede o WhatsApp e o preço sai da tabela', () => {
