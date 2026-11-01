@@ -1685,10 +1685,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Logo depois da abertura, o site pergunta "Quantas empresas do seu nicho existem na sua cidade?": a
           pessoa escolhe um dos nichos prontos, o estado e a cidade e vê só o número de empresas ativas na
           base da Receita, com o botão para testar. O número vem da importação da Base CNPJ, que conta os
-          nichos prontos no Brasil todo (não só nos estados das campanhas). Enquanto nenhuma importação rodou
-          depois da atualização, o contador não aparece e fica a chamada para a demonstração; para ligar, rode
-          uma importação em <b>Base CNPJ</b>. Quem usa o contador aparece em Visitas do site › Botões mais
-          clicados.
+          nichos prontos no Brasil todo (não só nos estados das campanhas). Antes da primeira importação
+          terminar, o contador já aparece, e quem clica em Contar recebe o aviso de que a contagem está sendo
+          atualizada e o convite para o teste; para ligar o número, rode uma importação em <b>Base CNPJ</b>.
+          Se a api não responder, o site mostra a chamada para a demonstração no lugar. Quem usa o contador
+          aparece em Visitas do site › Botões mais clicados.
         </p>
         <h3>Cobrar pelo sistema</h3>
         <p>

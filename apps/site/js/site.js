@@ -470,7 +470,9 @@ function iniciarContador() {
   fetch(`${API}/empresas/config`, { headers: { Accept: 'application/json' } })
     .then((r) => (r.ok ? r.json() : null))
     .then((c) => {
-      if (!c?.disponivel || !c.nichos?.length) return; // sem contagem ainda: fica a chamada antiga
+      // A api respondeu: o contador aparece. Sem contagem ainda (a primeira importação da base de CNPJ
+      // não terminou), quem clicar em Contar recebe o aviso e o convite para o teste.
+      if (!c?.nichos?.length) return;
       mes = c.mes;
       selNicho.innerHTML = c.nichos.map((x) => `<option value="${x.id}">${x.nome}</option>`).join('');
       const daAba = NICHO_DA_ABA[$('.nicho[aria-selected="true"]')?.dataset.nicho ?? ''];
@@ -534,7 +536,12 @@ function iniciarContador() {
           `Não achamos “${cidade}” em ${ufNome}. Confira o nome ou deixe a cidade em branco para contar o estado todo.`,
           false,
         );
-      else if (!d.achou) mostrar(null, 'A contagem está sendo atualizada. Tente de novo mais tarde.', false);
+      else if (!d.achou)
+        mostrar(
+          null,
+          `Estamos atualizando a contagem com a base deste mês da Receita. Enquanto isso, no teste grátis você já vê as empresas de ${nomeNicho} em ${cidade || ufNome}.`,
+          true,
+        );
       else if (d.ativas === 0)
         mostrar(
           null,
