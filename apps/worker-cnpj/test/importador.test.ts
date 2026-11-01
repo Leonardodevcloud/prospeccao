@@ -286,4 +286,23 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     );
     expect(rows[0]).toEqual({ s: 2, status: 'concluida', arquivos: 34 });
   });
+
+  it('sem campanha com cidades: não guarda empresas, mas conta os nichos para o site', async () => {
+    await pool.query('TRUNCATE base_cnpj.contagem_nichos');
+    await pool.query("UPDATE cadastro.campanhas SET status = 'encerrada'");
+    const id = await criarImportacao(pool, 'manual', null);
+    const r = await importarBaseCnpj({
+      pool,
+      log,
+      fonte: new FontePasta(pasta, '2026-09'),
+      importacaoId: id,
+      ufsExtras: [],
+    });
+    expect(r).toMatchObject({ estabelecimentos: 0, empresas: 0, socios: 0 });
+    const { rows } = await pool.query('SELECT sum(ativas)::int AS n FROM base_cnpj.contagem_nichos');
+    expect(rows[0].n).toBe(3);
+    // Os sócios que já estavam na base continuam lá.
+    const { rows: s } = await pool.query('SELECT count(*)::int AS n FROM base_cnpj.socios');
+    expect(s[0].n).toBe(2);
+  });
 });

@@ -127,8 +127,9 @@ export function BaseCnpj() {
         <div>
           <h1>Base CNPJ</h1>
           <p>
-            Cópia dos dados abertos da Receita com as empresas dos seus nichos. Atualiza sozinha todo mês;
-            importe agora depois de criar um nicho ou uma campanha num estado novo.
+            Cópia dos dados abertos da Receita com as empresas dos seus nichos, e a contagem dos nichos no
+            Brasil todo que alimenta o contador do site. Atualiza sozinha todo dia 20; importe agora depois de
+            criar um nicho ou uma campanha num estado novo.
           </p>
         </div>
       </div>
@@ -258,8 +259,9 @@ export function BaseCnpj() {
           </div>
         ) : (
           <p style={{ margin: 0, padding: 16, fontSize: 14 }}>
-            Nenhuma importação ainda. Antes de importar, cadastre um <Link to="/nichos">nicho</Link> com os
-            CNAEs e uma <Link to="/campanhas">campanha</Link> com as cidades.
+            Nenhuma importação ainda. Clique em Importar agora: ela conta os nichos no Brasil todo (o contador
+            do site) e guarda as empresas dos estados das campanhas. Sem <Link to="/nichos">nicho</Link> com
+            CNAEs ou sem <Link to="/campanhas">campanha</Link> com cidades, faz só a contagem.
           </p>
         )}
       </Panel>

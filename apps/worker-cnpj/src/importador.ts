@@ -182,10 +182,10 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   const alvos = await repo.lerAlvos(pool);
   const ufs = [...new Set([...alvos.ufs, ...ctx.ufsExtras])].sort();
   const cnaes = new Set(alvos.cnaes);
-  if (!cnaes.size) throw new Error('Nenhum nicho ativo com CNAE: cadastre um nicho antes de importar.');
-  if (!ufs.length)
-    throw new Error('Nenhuma UF alvo: crie uma campanha com cidades ou defina CNPJ_UFS_EXTRAS.');
-  const ufsAlvo = new Set(ufs);
+  // Sem nicho com CNAE ou sem campanha com cidades: não guarda empresas, só faz a contagem dos nichos
+  // prontos no Brasil todo (o contador do site) e as tabelas de apoio. Pula empresas, sócios e Simples.
+  const soContagem = !cnaes.size || !ufs.length;
+  const ufsAlvo = new Set(soContagem ? [] : ufs);
 
   // Nova tentativa do mesmo job: continua a mesma publicação, pulando os arquivos já processados.
   const retomando = importacao.arquivosConcluidos.length > 0 && importacao.mes !== 'auto';
@@ -215,8 +215,12 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     log_.info({ ufs, cnaes: cnaes.size, arquivosJaFeitos: feitos.size }, 'importação retomada');
     await progresso(`Retomando: ${feitos.size} de ${TOTAL_ARQUIVOS} arquivos já processados`);
   } else {
-    log_.info({ ufs, cnaes: cnaes.size }, 'importação iniciada');
+    log_.info({ ufs, cnaes: cnaes.size, soContagem }, 'importação iniciada');
   }
+  if (soContagem)
+    log_.warn(
+      'sem nicho com CNAE ou sem campanha com cidades: só a contagem do site (as empresas entram quando houver campanha)',
+    );
 
   // 1. Tabelas de domínio (pequenas).
   const dominios = [
@@ -267,6 +271,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
       placar.linhasLidas++;
       if (placar.linhasLidas % 50_000 === 0) await andamento.talvezAgora();
       contagem.linha(linha);
+      if (soContagem) continue;
       // Filtro barato antes do parse completo: UF fica na coluna 19.
       if (!ufsAlvo.has(linha[19] ?? '')) continue;
       const e = receita.lerEstabelecimento(linha);
@@ -291,6 +296,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     (itens) => repo.salvarEmpresas(pool, importacaoId, itens),
   );
   for (const [i, nome] of receita.ARQUIVOS.empresas.entries()) {
+    if (soContagem) break;
     if (feitos.has(nome)) continue;
     const total = receita.ARQUIVOS.empresas.length;
     const etapa = `Etapa 3 de 5 · Empresas (razão social e porte) · arquivo ${i + 1} de ${total}`;
@@ -316,7 +322,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
 
   // 4. Sócios: quadro substituído por inteiro. Sem chave única, uma etapa interrompida é refeita
   // desde o primeiro arquivo (senão duplicaria os sócios do arquivo que estava no meio).
-  const sociosFeitos = receita.ARQUIVOS.socios.every((n) => feitos.has(n));
+  const sociosFeitos = soContagem || receita.ARQUIVOS.socios.every((n) => feitos.has(n));
   if (!sociosFeitos) {
     await repo.limparSocios(pool, [...basicos]);
     placar.socios = 0;
@@ -352,7 +358,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   }
 
   // 5. Simples Nacional: marca quem é MEI (não usa o serviço).
-  if (!feitos.has(receita.ARQUIVOS.simples[0])) {
+  if (!soContagem && !feitos.has(receita.ARQUIVOS.simples[0])) {
     const mei = await lerSimples(
       ctx,
       basicos,
