@@ -7,7 +7,9 @@ import {
   cnpjDoTexto,
   DIAS_TESTE,
   LEADS_TESTE,
+  NOME_PLANO,
   normalizarTelefone,
+  type PlanoPronto,
   TERMOS_VERSAO,
   USUARIOS_TESTE,
 } from '@prospeccao/shared';
@@ -84,27 +86,44 @@ export async function iniciar(
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + make_interval(hours => ${HORAS_LINK}))`,
     [d.nome, d.empresa, d.email, whatsapp, cnpj, senhaHash, hashToken(token), ipHash],
   );
-  const emailEnviado = await mandarConfirmacao(deps, { ...d, token, endereco });
+  const emailEnviado = await mandarConfirmacao(deps, { ...d, token, endereco, assinar: d.assinar ?? null });
   return { email: d.email, emailEnviado };
 }
 
 async function mandarConfirmacao(
   deps: DepsEmailSistema,
-  d: { nome: string; empresa: string; email: string; token: string; endereco: string },
+  d: {
+    nome: string;
+    empresa: string;
+    email: string;
+    token: string;
+    endereco: string;
+    /** Veio do "Assinar agora" do site: depois de confirmar, abre a assinatura com este plano. */
+    assinar?: PlanoPronto | null;
+  },
 ): Promise<boolean> {
-  const link = `${d.endereco}/teste/confirmar/${d.token}`;
+  const link = `${d.endereco}/teste/confirmar/${d.token}${d.assinar ? `?assinar=${d.assinar}` : ''}`;
   return mandarEmailSistema(deps, {
     para: d.email,
     nome: d.nome,
     empresa: d.empresa,
-    assunto: 'Confirme o seu e-mail para começar o teste',
-    corpo: `{saudacao}\n\nFalta só confirmar o seu e-mail para a conta de teste da ${d.empresa} no Prospect Team.\n\n[[Confirmar e entrar|${link}]]\n\nO link vale ${HORAS_LINK} horas. O teste dura ${DIAS_TESTE} dias a partir da confirmação, sem cartão. Se não foi você, ignore este e-mail.`,
+    assunto: d.assinar
+      ? 'Confirme o seu e-mail para assinar o Prospect Team'
+      : 'Confirme o seu e-mail para começar o teste',
+    corpo: d.assinar
+      ? `{saudacao}\n\nFalta só confirmar o seu e-mail para criar a conta da ${d.empresa} e assinar o plano ${NOME_PLANO[d.assinar]} do Prospect Team.\n\n[[Confirmar e assinar|${link}]]\n\nO link vale ${HORAS_LINK} horas. Depois de confirmar, você escolhe usuários e módulos e paga com Pix, boleto ou cartão; até o pagamento cair, a conta já funciona como teste. Se não foi você, ignore este e-mail.`
+      : `{saudacao}\n\nFalta só confirmar o seu e-mail para a conta de teste da ${d.empresa} no Prospect Team.\n\n[[Confirmar e entrar|${link}]]\n\nO link vale ${HORAS_LINK} horas. O teste dura ${DIAS_TESTE} dias a partir da confirmação, sem cartão. Se não foi você, ignore este e-mail.`,
     chave: `teste-${hashToken(d.token).slice(0, 16)}`,
   });
 }
 
 /** Manda o link de novo (troca o link: o anterior deixa de valer). */
-export async function reenviar(deps: DepsCadastro, email: string, endereco: string): Promise<void> {
+export async function reenviar(
+  deps: DepsCadastro,
+  email: string,
+  endereco: string,
+  assinar: PlanoPronto | null = null,
+): Promise<void> {
   const token = randomBytes(32).toString('base64url');
   const { rows } = await deps.pool.query<{ nome: string; empresa: string; email: string }>(
     `UPDATE cadastro.cadastros_teste
@@ -114,7 +133,7 @@ export async function reenviar(deps: DepsCadastro, email: string, endereco: stri
     [email.trim().toLowerCase(), hashToken(token)],
   );
   // Sempre a mesma resposta (não revela quem se cadastrou).
-  if (rows[0]) await mandarConfirmacao(deps, { ...rows[0], token, endereco });
+  if (rows[0]) await mandarConfirmacao(deps, { ...rows[0], token, endereco, assinar });
 }
 
 /**

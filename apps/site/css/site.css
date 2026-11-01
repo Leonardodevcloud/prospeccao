@@ -3070,6 +3070,10 @@ p {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+/* "Assinar agora" logo abaixo do "Testar grátis" (plano Time) */
+.plano__assinar {
+  margin-top: 10px;
+}
 .plano__outro {
   margin-top: 10px;
   text-align: center;

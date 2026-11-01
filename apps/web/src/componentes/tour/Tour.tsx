@@ -30,7 +30,8 @@ const PAUSA_MS = 650;
 const LETRAS_SEG = 15;
 
 /** Controla o convite do primeiro acesso e o player (montado uma vez, no Shell). */
-export function TourDoSistema(props: { convidar: boolean }) {
+/** pausar: não mostra o convite agora (ex.: assinando e pagando); volta a aparecer nas outras telas. */
+export function TourDoSistema(props: { convidar: boolean; pausar?: boolean }) {
   const sessao = useSessao();
   const cliente = useQueryClient();
   const [aberto, setAberto] = useState(false);
@@ -50,7 +51,7 @@ export function TourDoSistema(props: { convidar: boolean }) {
   }, []);
 
   const conta = sessao.data?.conta;
-  if (!conta || (!convite && !aberto)) return null;
+  if (!conta || ((!convite || props.pausar) && !aberto)) return null;
   const ctx = { modulos: conta.modulos, recursos: conta.recursos };
   return (
     <PlayerTour

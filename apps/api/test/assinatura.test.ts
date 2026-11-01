@@ -450,11 +450,14 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
       `UPDATE comercial.ligacoes SET duracao_segundos = 1150 * 60 WHERE sala IN ('lig-teste-1', 'lig-teste-2')`,
     );
     await pool.query(
-      `UPDATE comercial.ligacoes SET iniciada_em = date_trunc('month', now()) - interval '10 days' WHERE sala IN ('lig-teste-1', 'lig-teste-2')`,
+      `UPDATE comercial.ligacoes SET iniciada_em = (date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo') - interval '10 days') AT TIME ZONE 'America/Sao_Paulo' WHERE sala IN ('lig-teste-1', 'lig-teste-2')`,
     );
-    const mesPassado = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
-      .toISOString()
-      .slice(0, 7);
+    // O mês de Brasília (perto da meia-noite UTC do dia 1, o mês do servidor já virou).
+    const [ano, mes] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' })
+      .format(new Date())
+      .split('-')
+      .map(Number) as [number, number];
+    const mesPassado = mes === 1 ? `${ano - 1}-12` : `${ano}-${String(mes - 1).padStart(2, '0')}`;
     await pool.query(`UPDATE cadastro.organizacoes SET minutos_saldo_mes = $2 WHERE id = $1`, [
       organizacaoId,
       mesPassado,
@@ -535,5 +538,171 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
     expect(r.numeros).toMatchObject({ ativas: 1, testes30: 2, viraram30: 1, mrr: 2857 });
     const nexo = r.pedidos.find((p: { email: string }) => p.email === 'diego@nexosistemas.com.br');
     expect(nexo.assinatura).toMatchObject({ situacao: 'ativa', plano: 'time', forma: 'PIX' });
+  });
+
+  it('"Assinar agora" do site: o mesmo cadastro, e o link de confirmação leva o plano', async () => {
+    const errado = await request(app)
+      .post('/teste')
+      .set('Origin', ORIGEM)
+      .send(cadastro({ email: 'lara@vitta.com.br', whatsapp: '(11) 97777-6666', assinar: 'personalizado' }));
+    expect(errado.status).toBe(422);
+    const r = await request(app)
+      .post('/teste')
+      .set('Origin', ORIGEM)
+      .send(
+        cadastro({
+          nome: 'Lara Souza',
+          empresa: 'Vitta Odonto',
+          email: 'lara@vitta.com.br',
+          whatsapp: '(11) 97777-6666',
+          assinar: 'start',
+        }),
+      );
+    expect(r.status).toBe(201);
+    const e = [...emails].reverse().find((x) => x.para === 'lara@vitta.com.br')!;
+    expect(e.assunto).toMatch(/assinar/);
+    expect(e.html).toContain('?assinar=start');
+    expect(e.html).toMatch(/plano Start/);
+    await request(app)
+      .post('/teste/reenviar')
+      .set('Origin', ORIGEM)
+      .send({ email: 'lara@vitta.com.br', assinar: 'start' });
+    expect([...emails].reverse().find((x) => x.para === 'lara@vitta.com.br')!.html).toContain(
+      '?assinar=start',
+    );
+    // Confirmou: a conta nasce em teste (funciona até pagar) e assina pelo sistema.
+    const lara = novoAgente();
+    expect(
+      (await lara.post(`/teste/confirmar/${linkDoEmail('lara@vitta.com.br')}`).set('Origin', ORIGEM)).status,
+    ).toBe(200);
+    const a = await lara
+      .post('/assinatura/assinar')
+      .set('Origin', ORIGEM)
+      .send({
+        plano: 'start',
+        usuarios: 2,
+        modulos: [],
+        numerosExtras: 0,
+        ...dados,
+        nome: 'Vitta Odonto Ltda',
+      });
+    expect(a.status).toBe(201);
+    expect(a.body.tipo).toBe('mensalidade');
+  });
+
+  it('master: cobrar pelo sistema um cliente de contrato combinado (o plano é o do painel)', async () => {
+    const master = novoAgente();
+    await master
+      .post('/auth/login')
+      .set('Origin', ORIGEM)
+      .send({ email: 'dona@exemplo.com', senha: 'senha-forte-123' });
+    const nova = await master
+      .post('/master/contas')
+      .set('Origin', ORIGEM)
+      .send({
+        nome: 'Rede Vale',
+        admin: { nome: 'Caio', email: 'caio@redevale.com.br' },
+        plano: {
+          plano: 'personalizado',
+          limiteUsuarios: 5,
+          limiteLeadsMes: 3000,
+          modulos: [],
+          mensalidadeManual: 1500,
+        },
+      });
+    expect(nova.status).toBe(201);
+    const id = nova.body.id as number;
+    const url = `/master/contas/${id}/cobranca`;
+    const antes = (await master.get(url)).body;
+    expect(antes).toMatchObject({ modo: 'combinado', situacao: null, mensalidade: 1500 });
+    expect(antes.dados.email).toBe('caio@redevale.com.br');
+
+    const dia = (n: number) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(
+        new Date(Date.now() + n * 86_400_000),
+      );
+    const corpoCobrar = {
+      documento: '11.222.333/0001-81',
+      nome: 'Rede Vale Ltda',
+      email: 'fin@redevale.com.br',
+    };
+    expect(
+      (
+        await master
+          .post(url)
+          .set('Origin', ORIGEM)
+          .send({ ...corpoCobrar, vencimento: dia(-1) })
+      ).status,
+    ).toBe(422);
+    const r = await master
+      .post(url)
+      .set('Origin', ORIGEM)
+      .send({ ...corpoCobrar, vencimento: dia(10) });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ modo: 'sistema', situacao: 'ativa', valor: 1500, cobrancas: [] });
+
+    // 7 dias antes do vencimento: a mensalidade sai com o valor do plano daqui.
+    const { rows: o } = await pool.query<{ organizacao_id: number }>(
+      'SELECT organizacao_id FROM cadastro.contas WHERE id = $1',
+      [id],
+    );
+    const org = o[0]!.organizacao_id;
+    await pool.query(
+      `UPDATE cadastro.organizacoes SET acesso_ate = now() + interval '2 days' WHERE id = $1`,
+      [org],
+    );
+    await rodada();
+    let c = (await master.get(url)).body;
+    expect(c.cobrancas).toHaveLength(1);
+    expect(c.cobrancas[0]).toMatchObject({ tipo: 'mensalidade', valor: 1500, situacao: 'pendente' });
+    expect(c.cobrancas[0].descricao).toMatch(/Personalizado/);
+
+    // O master mudou o valor: a mensalidade em aberto volta com o valor novo.
+    const plano = await master.put(`/master/contas/${id}/plano`).set('Origin', ORIGEM).send({
+      plano: 'personalizado',
+      limiteUsuarios: 5,
+      limiteLeadsMes: 3000,
+      modulos: [],
+      mensalidadeManual: 1800,
+    });
+    expect(plano.status).toBe(200);
+    c = (await master.get(url)).body;
+    const aberta = c.cobrancas.find((x: { situacao: string }) => x.situacao === 'pendente');
+    expect(aberta.valor).toBe(1800);
+    expect(c.cobrancas.some((x: { situacao: string }) => x.situacao === 'cancelada')).toBe(true);
+
+    // Pagou: mais um mês, e o plano combinado continua o mesmo (não vira um plano pronto).
+    const { rows: antesPagar } = await pool.query(
+      'SELECT acesso_ate FROM cadastro.organizacoes WHERE id = $1',
+      [org],
+    );
+    expect((await pagar(aberta.asaasId)).status).toBe(200);
+    const { rows: depois } = await pool.query(
+      `SELECT plano, limite_usuarios, mensalidade_manual::float8 AS manual, assinatura, acesso_ate
+         FROM cadastro.organizacoes WHERE id = $1`,
+      [org],
+    );
+    expect(depois[0]).toMatchObject({
+      plano: 'personalizado',
+      limite_usuarios: 5,
+      manual: 1800,
+      assinatura: 'ativa',
+    });
+    expect(
+      new Date(depois[0].acesso_ate).getTime() - new Date(antesPagar[0].acesso_ate).getTime(),
+    ).toBeGreaterThan(27 * 86_400_000);
+
+    // Quem assina sozinho não passa para cá; parar volta a ser combinado à mão.
+    const { rows: nexo } = await pool.query(
+      `SELECT c.id FROM cadastro.contas c JOIN cadastro.organizacoes o ON o.id = c.organizacao_id WHERE o.nome = 'Nexo Sistemas'`,
+    );
+    const sozinho = await master
+      .post(`/master/contas/${nexo[0].id}/cobranca`)
+      .set('Origin', ORIGEM)
+      .send({ ...corpoCobrar, vencimento: dia(3) });
+    expect(sozinho.status).toBe(409);
+    const parou = await master.delete(url).set('Origin', ORIGEM);
+    expect(parou.status).toBe(200);
+    expect(parou.body).toMatchObject({ modo: 'combinado', situacao: null });
   });
 });

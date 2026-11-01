@@ -1369,7 +1369,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Os 7 dias de teste, assinar pelo sistema, pagar cada mês com Pix, boleto ou cartão, mudar de plano, minutos de ligação e o que acontece quando vence.',
     onde: { rotulo: 'Meu plano', para: '/plano' },
     termos:
-      'teste grátis 7 dias assinar assinatura pagar pagamento pix boleto cartão cobrança mensalidade vencimento venceu atrasado renovar renovação cancelar só leitura exportar contatos arquivada asaas nota fiscal diferença proporcional pacote minutos ligação',
+      'teste grátis 7 dias assinar direto sem teste site contrato combinado assinar assinatura pagar pagamento pix boleto cartão cobrança mensalidade vencimento venceu atrasado renovar renovação cancelar só leitura exportar contatos arquivada asaas nota fiscal diferença proporcional pacote minutos ligação',
     corpo: (
       <>
         <p>
@@ -1383,6 +1383,20 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Quem administra a conta abre <b>Meu plano › Assinar</b> (ou o botão <b>Assinar</b> da faixa),
           escolhe o plano, quantos usuários e os módulos, e vê o preço do mês na hora. Depois preenche o CNPJ
           (ou CPF), a razão social e o e-mail do financeiro, que recebe as cobranças e a nota fiscal.
+        </p>
+        <h3>Assinar direto, sem o teste</h3>
+        <p>
+          No site, em Planos, o botão <b>Assinar</b> de cada plano faz o mesmo cadastro do teste (nome,
+          empresa, e-mail, WhatsApp e senha). Depois de confirmar o e-mail, o sistema já abre{' '}
+          <b>Meu plano › Assinar</b> com o plano escolhido: é só ajustar usuários e módulos e pagar. Até o
+          pagamento cair, a conta funciona como teste; pagou, o plano vale na hora.
+        </p>
+        <h3>Contrato combinado com o nosso time</h3>
+        <p>
+          Quem fechou o contrato com o nosso time não escolhe o plano pelo sistema: para mudar plano, usuários
+          ou módulos, fale com a gente. Se combinamos de cobrar pelo sistema, as mensalidades chegam do mesmo
+          jeito (em <b>Meu plano › Pagar</b> e no e-mail do financeiro), com as mesmas regras de vencimento
+          abaixo.
         </p>
         <h3>Pagar: um mês por vez</h3>
         <p>
@@ -1571,7 +1585,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Receita e custo de cada cliente, desativar ou excluir, e-mail e senha, os serviços da plataforma e o CRM com dados fictícios.',
     onde: { rotulo: 'Financeiro', para: '/plataforma/financeiro' },
     termos:
-      'master painel plataforma domínio dominio vercel white label marca administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
+      'master painel plataforma cobrar pelo sistema cobrança mensalidade asaas como o cliente paga contrato combinado domínio dominio vercel white label marca administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
     corpo: (
       <>
         <p>
@@ -1626,6 +1640,30 @@ export const ARTIGOS: ArtigoAjuda[] = [
             unidades, os usuários e tudo o que é deles (funil, conversas, campanhas, reuniões, visitas). Não
             tem volta. As empresas pesquisadas continuam na base da plataforma.
           </li>
+        </ul>
+        <h3>Cobrar pelo sistema</h3>
+        <p>
+          Em Clientes › <b>Plano e módulos</b>, o bloco <b>Como o cliente paga</b> mostra se o cliente paga
+          por fora (contrato combinado à mão), se é cobrado pelo sistema ou se assina sozinho (pelo site ou
+          depois do teste).
+        </p>
+        <ul>
+          <li>
+            <b>Cobrar pelo sistema</b>: com o plano e a mensalidade salvos acima, preencha o CNPJ (ou CPF), a
+            razão social, o e-mail do financeiro e o dia do primeiro vencimento. A cobrança sai 7 dias antes
+            de cada vencimento, com o valor do plano daqui (mudou o plano ou a mensalidade combinada, a
+            cobrança em aberto volta com o valor novo). O cliente paga com Pix, boleto ou cartão e pagar não
+            troca o plano combinado.
+          </li>
+          <li>
+            Valem as mesmas regras de quem assina sozinho: venceu sem pagar, mais 3 dias normais e depois só
+            leitura até o pagamento cair. O cliente cobrado pelo sistema nunca é arquivado.
+          </li>
+          <li>
+            <b>Parar de cobrar</b>: as cobranças em aberto são canceladas e o cliente volta a ser combinado à
+            mão (sem vencimento nem só leitura).
+          </li>
+          <li>Quem assina sozinho cuida do plano e das cobranças em Meu plano; o painel só mostra.</li>
         </ul>
         <h3>Configurações da plataforma</h3>
         <p>

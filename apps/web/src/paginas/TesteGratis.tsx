@@ -1,8 +1,9 @@
 import { DIAS_TESTE, LEADS_TESTE, USUARIOS_TESTE } from '@prospeccao/shared/assinatura';
+import { NOME_PLANO, type PlanoPronto } from '@prospeccao/shared/planos';
 import { Button, Icon, TextField } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { LINK_PRIVACIDADE, LINK_TERMOS } from '../componentes/ContaSegura';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
@@ -10,8 +11,55 @@ import { TelaAcesso } from '../componentes/Marca';
 
 /**
  * Teste grátis (sem login): o cadastro, o "confira o seu e-mail" e o link de confirmação, que cria a
- * conta e já entra.
+ * conta e já entra. Com ?assinar=start|time|escala (o "Assinar" do site): o mesmo cadastro, e depois
+ * de confirmar abre Meu plano › Assinar com o plano escolhido (até pagar, a conta funciona como teste).
  */
+
+const PLANOS_ASSINAR: PlanoPronto[] = ['start', 'time', 'escala'];
+/** O plano do "Assinar" do site (ou null: é o teste grátis). */
+export function planoDoLink(v: string | null): PlanoPronto | null {
+  return PLANOS_ASSINAR.includes(v as PlanoPronto) ? (v as PlanoPronto) : null;
+}
+
+function ChamadaAssinar(props: { plano: PlanoPronto }) {
+  return (
+    <div className="teste__chamada">
+      <h2>
+        Assinar o plano {NOME_PLANO[props.plano]}.
+        <br />
+        <em>Sem fidelidade.</em>
+      </h2>
+      <p>Crie a conta, escolha quantas pessoas e quais módulos e pague na hora. Leva uns 3 minutos.</p>
+      <ul className="teste__lista">
+        <li>
+          <Icon name="check" size={14} />
+          <span>
+            <b>Preço na tela</b> conforme você escolhe usuários e módulos
+          </span>
+        </li>
+        <li>
+          <Icon name="check" size={14} />
+          <span>
+            <b>Pix, boleto ou cartão</b>: com Pix, o plano libera na hora
+          </span>
+        </li>
+        <li>
+          <Icon name="check" size={14} />
+          <span>
+            <b>Cada mês é um pagamento</b>: sem cobrança automática no cartão
+          </span>
+        </li>
+        <li>
+          <Icon name="check" size={14} />
+          <span>Até o pagamento cair, a conta já funciona como teste</span>
+        </li>
+      </ul>
+      <p className="teste__nota">
+        Prefere testar antes? <Link to="/teste">Teste {DIAS_TESTE} dias grátis</Link>, sem cartão.
+      </p>
+    </div>
+  );
+}
 
 declare global {
   interface Window {
@@ -114,6 +162,9 @@ function Chamada() {
 
 /** /teste: o cadastro do teste grátis. */
 export function TesteGratis() {
+  const [params] = useSearchParams();
+  const assinar = planoDoLink(params.get('assinar'));
+  const chamada = assinar ? <ChamadaAssinar plano={assinar} /> : <Chamada />;
   const config = useQuery({
     queryKey: ['teste-config'],
     queryFn: () => api<{ captcha: string | null }>('/teste/config'),
@@ -128,7 +179,7 @@ export function TesteGratis() {
     mutationFn: () =>
       api<{ email: string; emailEnviado: boolean }>('/teste', {
         metodo: 'POST',
-        corpo: { ...d, cnpj: d.cnpj.trim() || null, aceite, captcha },
+        corpo: { ...d, cnpj: d.cnpj.trim() || null, aceite, captcha, assinar },
       }),
     onSuccess: setEnviado,
     onError: () => {
@@ -138,7 +189,7 @@ export function TesteGratis() {
     },
   });
   const reenviar = useMutation({
-    mutationFn: () => api('/teste/reenviar', { metodo: 'POST', corpo: { email: enviado?.email } }),
+    mutationFn: () => api('/teste/reenviar', { metodo: 'POST', corpo: { email: enviado?.email, assinar } }),
   });
   const campo = (k: keyof typeof d) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setD((x) => ({ ...x, [k]: e.target.value }));
@@ -159,7 +210,7 @@ export function TesteGratis() {
 
   if (enviado)
     return (
-      <TelaAcesso chamada={<Chamada />}>
+      <TelaAcesso chamada={chamada}>
         <div className="login__caixa">
           <div className="teste__icone-email">
             <Icon name="mail" size={28} />
@@ -167,8 +218,18 @@ export function TesteGratis() {
           <div className="login__cabeca">
             <h1>Confira o seu e-mail</h1>
             <p>
-              Mandamos um link para <b>{enviado.email}</b>. Abra e clique em <b>Confirmar e entrar</b>: a
-              conta é criada e o teste de {DIAS_TESTE} dias começa na hora.
+              Mandamos um link para <b>{enviado.email}</b>.{' '}
+              {assinar ? (
+                <>
+                  Abra e clique em <b>Confirmar e assinar</b>: a conta é criada e a assinatura do plano{' '}
+                  {NOME_PLANO[assinar]} abre na hora.
+                </>
+              ) : (
+                <>
+                  Abra e clique em <b>Confirmar e entrar</b>: a conta é criada e o teste de {DIAS_TESTE} dias
+                  começa na hora.
+                </>
+              )}
             </p>
           </div>
           {!enviado.emailEnviado && (
@@ -207,10 +268,10 @@ export function TesteGratis() {
     );
 
   return (
-    <TelaAcesso chamada={<Chamada />} largo>
+    <TelaAcesso chamada={chamada} largo>
       <form className="login__caixa teste__form" onSubmit={enviar} noValidate>
         <div className="login__cabeca">
-          <h1>Criar a conta de teste</h1>
+          <h1>{assinar ? 'Criar a conta e assinar' : 'Criar a conta de teste'}</h1>
           <p>
             Já tem conta? <Link to="/login">Entrar</Link>
           </p>
@@ -287,10 +348,12 @@ export function TesteGratis() {
           type="submit"
           disabled={criar.isPending || !pronto}
         >
-          {criar.isPending ? 'Criando…' : 'Criar conta e começar o teste'}
+          {criar.isPending ? 'Criando…' : assinar ? 'Criar conta e assinar' : 'Criar conta e começar o teste'}
         </Button>
         <p className="login__nota">
-          Um teste por empresa (e-mail, WhatsApp e CNPJ). Mandamos um link para confirmar o e-mail.
+          {assinar
+            ? 'Mandamos um link para confirmar o e-mail; depois, é só escolher e pagar.'
+            : 'Um teste por empresa (e-mail, WhatsApp e CNPJ). Mandamos um link para confirmar o e-mail.'}
         </p>
       </form>
     </TelaAcesso>
@@ -300,13 +363,15 @@ export function TesteGratis() {
 /** /teste/confirmar/:token: o link do e-mail. Cria a conta e entra. */
 export function ConfirmarTeste() {
   const { token = '' } = useParams();
+  const [params] = useSearchParams();
+  const assinar = planoDoLink(params.get('assinar'));
   const navegar = useNavigate();
   const cliente = useQueryClient();
   const confirmar = useMutation({
     mutationFn: () => api(`/teste/confirmar/${encodeURIComponent(token)}`, { metodo: 'POST' }),
     onSuccess: () => {
       cliente.clear();
-      navegar('/hoje?bemvindo=1', { replace: true });
+      navegar(assinar ? `/plano/assinar?plano=${assinar}` : '/hoje?bemvindo=1', { replace: true });
     },
   });
   const foi = useRef(false);
@@ -318,7 +383,7 @@ export function ConfirmarTeste() {
   }, []);
 
   return (
-    <TelaAcesso chamada={<Chamada />}>
+    <TelaAcesso chamada={assinar ? <ChamadaAssinar plano={assinar} /> : <Chamada />}>
       <div className="login__caixa">
         {confirmar.error ? (
           <>
@@ -330,7 +395,9 @@ export function ConfirmarTeste() {
               <Button variant="primary" onClick={() => navegar('/login')}>
                 Ir para o login
               </Button>
-              <Button onClick={() => navegar('/teste')}>Fazer o cadastro de novo</Button>
+              <Button onClick={() => navegar(assinar ? `/teste?assinar=${assinar}` : '/teste')}>
+                Fazer o cadastro de novo
+              </Button>
             </div>
           </>
         ) : (

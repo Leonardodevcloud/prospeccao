@@ -7,6 +7,7 @@ import { estadoConexao } from '@prospeccao/integrations/whatsapp';
 import {
   AppError,
   acessoMasterAtualizar,
+  cobrarPeloSistemaEntrada,
   contaAtualizar,
   contaNova,
   credenciaisEntrada,
@@ -29,6 +30,7 @@ import { comConta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp, urlPublicaApi } from '../../endereco.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
+import * as assinatura from '../assinatura/servico.js';
 import * as auditoria from '../auditoria/repositorio.js';
 import { abrirSessao } from '../auth/sessao.js';
 import * as consumo from '../consumo/repositorio.js';
@@ -46,6 +48,12 @@ import * as repo from './repositorio.js';
 export function rotasMaster(deps: DepsApi): Router {
   const { pool, credenciais, origens, log } = deps;
   const r = Router();
+  const depsCobranca = (): assinatura.DepsAssinatura => ({
+    pool,
+    log,
+    servicos: deps.servicos,
+    cobranca: deps.cobranca ?? null,
+  });
   // No domínio próprio do cliente da conta, quando ele tem um.
   const link = (req: Request, token: string, contaId?: number) =>
     `${enderecoDoApp(req.get('origin'), origens, contaId)}/convite/${token}`;
@@ -83,7 +91,50 @@ export function rotasMaster(deps: DepsApi): Router {
     // Módulos mudam o que as unidades podem usar: esquece as credenciais lembradas.
     credenciais.invalidar();
     log.info({ organizacao: org, plano: d.plano, modulos: d.modulos }, 'master: plano do cliente salvo');
+    // Cobrado pelo sistema: a mensalidade em aberto acompanha o plano novo.
+    await assinatura
+      .contratoCombinadoMudou(depsCobranca(), org)
+      .catch((e) => log.warn({ err: e, organizacao: org }, 'master: não deu para atualizar a mensalidade'));
     res.json(await plano.planoDaConta(pool, id));
+  });
+
+  /** Como o cliente paga: combinado à mão, cobrado pelo sistema (Asaas) ou assinando sozinho. */
+  r.get('/contas/:id/cobranca', async (req, res) => {
+    res.json(await assinatura.cobrancaDoCliente(depsCobranca(), idDaRota(req)));
+  });
+  /** Cobrar pelo sistema (ou atualizar os dados de quem já é cobrado). */
+  r.post('/contas/:id/cobranca', async (req, res) => {
+    const id = idDaRota(req);
+    const d = corpo(req, cobrarPeloSistemaEntrada);
+    const r2 = await assinatura.cobrarPeloSistema(depsCobranca(), id, d);
+    await auditoria.registrar(pool, {
+      contaId: id,
+      usuarioId: req.usuario!.id,
+      usuarioNome: req.usuario!.nome,
+      comoMaster: true,
+      acao: 'cobranca',
+      descricao: `O suporte passou a cobrar pelo sistema (${r2.valor?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} por mês).`,
+      metodo: req.method,
+      caminho: req.baseUrl + req.path,
+      detalhes: { vencimento: d.vencimento, valor: r2.valor },
+    });
+    res.json(r2);
+  });
+  /** Parar de cobrar pelo sistema (volta a ser combinado à mão). */
+  r.delete('/contas/:id/cobranca', async (req, res) => {
+    const id = idDaRota(req);
+    const r2 = await assinatura.pararDeCobrar(depsCobranca(), id);
+    await auditoria.registrar(pool, {
+      contaId: id,
+      usuarioId: req.usuario!.id,
+      usuarioNome: req.usuario!.nome,
+      comoMaster: true,
+      acao: 'cobranca',
+      descricao: 'O suporte parou de cobrar pelo sistema (voltou a ser combinado à mão).',
+      metodo: req.method,
+      caminho: req.baseUrl + req.path,
+    });
+    res.json(r2);
   });
 
   /** Clientes (organizações) e as unidades de cada um. */

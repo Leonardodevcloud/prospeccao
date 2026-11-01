@@ -105,6 +105,9 @@ export function emailDescartavel(email: string): boolean {
 
 /* ───────────────────────────── Entradas ───────────────────────────── */
 
+/** Os planos que a empresa assina sozinha (o personalizado é combinado com o nosso time). */
+export const planoParaAssinar = z.enum(['start', 'time', 'escala']);
+
 export const cadastroTesteEntrada = z.object({
   nome: z.string().trim().min(2, 'Informe o seu nome.').max(120),
   empresa: z.string().trim().min(2, 'Informe o nome da empresa.').max(160),
@@ -130,12 +133,14 @@ export const cadastroTesteEntrada = z.object({
   aceite: z.literal(true, { message: 'Aceite os termos de uso para continuar.' }),
   /** Token do captcha (Cloudflare Turnstile). */
   captcha: z.string().max(4000).nullish(),
+  /** Veio do "Assinar agora" do site: depois de confirmar o e-mail, abre a assinatura neste plano. */
+  assinar: planoParaAssinar.nullish(),
 });
 export type CadastroTesteEntrada = z.infer<typeof cadastroTesteEntrada>;
 
 export const assinarEntrada = z
   .object({
-    plano: z.enum(['start', 'time', 'escala']),
+    plano: planoParaAssinar,
     usuarios: z.number().int().min(1).max(200),
     modulos: z
       .array(z.enum(LISTA_MODULOS as [Modulo, ...Modulo[]]))
@@ -169,6 +174,20 @@ export function contratoDoPedido(
     numerosExtras: d.modulos.includes('whatsapp') ? d.numerosExtras : 0,
   };
 }
+
+/** Painel master: cobrar pelo sistema um cliente de contrato combinado (o plano é o do painel). */
+export const cobrarPeloSistemaEntrada = z.object({
+  documento: z
+    .string()
+    .trim()
+    .max(30)
+    .refine((v) => !!documentoDoTexto(v), 'CNPJ ou CPF inválido: confira os números.'),
+  nome: z.string().trim().min(2, 'Informe a razão social (ou o nome).').max(160),
+  email: z.string().trim().toLowerCase().email('E-mail do financeiro inválido.').max(200),
+  /** Vencimento da primeira mensalidade (AAAA-MM-DD). */
+  vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Informe o dia do primeiro vencimento.'),
+});
+export type CobrarPeloSistemaEntrada = z.infer<typeof cobrarPeloSistemaEntrada>;
 
 export const comprarMinutosEntrada = z.object({ pacotes: z.number().int().min(1).max(10).default(1) });
 

@@ -21,7 +21,7 @@ import { comConta, usuarioAtual } from '../../contexto.js';
 import { contratoDaConta, esquecerRecursos } from '../../recursos.js';
 import type { ResolverServicos } from '../../servicos.js';
 import { notificar } from '../notificacoes/repositorio.js';
-import { organizacaoDaConta, salvarPlano, tabelaDePrecos } from '../plano/repositorio.js';
+import { organizacaoDaConta, planoDaOrganizacao, salvarPlano, tabelaDePrecos } from '../plano/repositorio.js';
 import { mandarEmailSistema } from './email.js';
 
 /**
@@ -40,8 +40,11 @@ export interface DepsAssinatura {
   cobranca: ServicoCobranca | null;
 }
 
-/** O plano pedido (ou pago), com o documento limpo e o valor do mês. */
-export type Pedido = AssinarEntrada & { valor: number };
+/**
+ * O plano pedido (ou pago), com o documento limpo e o valor do mês. manter: contrato combinado com
+ * o nosso time e cobrado pelo sistema (o plano é o do painel master; pagar não troca o plano).
+ */
+export type Pedido = AssinarEntrada & { valor: number; manter?: boolean };
 
 interface LinhaOrg {
   id: number;
@@ -271,7 +274,7 @@ export async function assinar(deps: DepsAssinatura, contaId: number, d: AssinarE
   const asaas = exigirCobranca(deps);
   const organizacaoId = await organizacaoDaConta(pool, contaId);
   const o = await org(pool, organizacaoId);
-  if (o.assinatura === null && o.plano)
+  if ((o.assinatura === null && o.plano) || o.assinatura_contrato?.manter)
     throw AppError.conflito('O seu contrato foi combinado com a gente: para mudar, fale com o nosso time.');
   const tabela = await tabelaDePrecos(pool);
   const efetivo = planoEfetivo(contratoDoPedido(d), tabela);
@@ -403,6 +406,10 @@ export async function cancelar(deps: DepsAssinatura, contaId: number): Promise<v
   const { pool } = deps;
   const organizacaoId = await organizacaoDaConta(pool, contaId);
   const o = await org(pool, organizacaoId);
+  if (o.assinatura_contrato?.manter)
+    throw AppError.conflito(
+      'O seu contrato foi combinado com a gente: para encerrar, fale com o nosso time.',
+    );
   await cancelarAbertas(deps, organizacaoId, ['mensalidade', 'diferenca']);
   const valendo = o.acesso_ate && new Date(o.acesso_ate).getTime() > Date.now();
   await pool.query(
@@ -534,7 +541,8 @@ export async function processarCobranca(deps: DepsAssinatura, c: CobrancaAsaas):
     !!b.periodo_de &&
     !!o.acesso_ate &&
     Date.now() <= somarDias(o.acesso_ate, DIAS_TOLERANCIA_ATRASO).getTime();
-  await aplicarPlano(pool, organizacaoId, b.pedido);
+  // Contrato combinado: o plano é o do painel master (pagar só estende o mês).
+  if (!b.pedido.manter) await aplicarPlano(pool, organizacaoId, b.pedido);
   await pool.query(
     `UPDATE cadastro.organizacoes
         SET assinatura = 'ativa', renovar = true, assinatura_contrato = $2, assinatura_valor = $3, assinatura_proximo = NULL,
@@ -562,6 +570,217 @@ export async function processarCobranca(deps: DepsAssinatura, c: CobrancaAsaas):
     );
   } else if (o.assinatura !== 'ativa')
     await avisarConta(deps, organizacaoId, 'Pagamento recebido', 'A conta voltou ao normal. Obrigado!');
+}
+
+/**
+ * Mensalidade do mês seguinte, gerada 7 dias antes de vencer (com a mudança marcada, se houver).
+ * Contrato combinado: o valor e o plano são os do painel master na hora de gerar.
+ */
+export async function gerarMensalidades(deps: DepsAssinatura, organizacaoId: number | null = null) {
+  const { pool } = deps;
+  if (!deps.cobranca) return;
+  const { rows } = await pool.query<{
+    id: number;
+    acesso_ate: string;
+    contrato: Pedido;
+    proximo: Pedido | null;
+    cliente: string;
+  }>(
+    `SELECT o.id, o.acesso_ate, o.assinatura_contrato AS contrato, o.assinatura_proximo AS proximo, o.asaas_cliente AS cliente
+       FROM cadastro.organizacoes o
+      WHERE o.assinatura IN ('ativa', 'atrasada') AND o.renovar AND o.assinatura_contrato IS NOT NULL
+        AND o.asaas_cliente IS NOT NULL AND o.acesso_ate < now() + make_interval(days => ${DIAS_AVISO_VENCIMENTO})
+        AND ($1::bigint IS NULL OR o.id = $1)
+        AND NOT EXISTS (SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id AND b.tipo = 'mensalidade'
+                          AND b.situacao IN ('pendente', 'atrasada', 'paga')
+                          AND b.periodo_de = (o.acesso_ate AT TIME ZONE 'America/Sao_Paulo')::date)
+      LIMIT 50`,
+    [organizacaoId],
+  );
+  for (const o of rows) {
+    const de = brData(new Date(o.acesso_ate));
+    const hoje = brData(new Date());
+    try {
+      const p = o.contrato.manter ? await pedidoCombinado(pool, o.id, o.contrato) : (o.proximo ?? o.contrato);
+      if (o.contrato.manter && p.valor !== Number(o.contrato.valor))
+        await pool.query(
+          'UPDATE cadastro.organizacoes SET assinatura_contrato = $2, assinatura_valor = $3 WHERE id = $1',
+          [o.id, JSON.stringify(p), p.valor],
+        );
+      await novaCobranca(deps, o.id, o.cliente, {
+        tipo: 'mensalidade',
+        valor: p.valor,
+        vencimento: de < hoje ? hoje : de,
+        descricao: `Mensalidade de ${diaMes(o.acesso_ate)} a ${diaMes(somarDias(o.acesso_ate, 30))} · ${descricaoDoPedido(p)}`,
+        pedido: p,
+        periodoDe: de,
+      });
+    } catch (e) {
+      deps.log.warn({ err: e, organizacao: o.id }, 'assinatura: não deu para gerar a mensalidade');
+    }
+  }
+}
+
+/* ──────────────── Contrato combinado, cobrado pelo sistema (painel master) ──────────────── */
+
+/** O contrato do painel master como pedido (o que a mensalidade paga). */
+async function pedidoCombinado(
+  db: Executor,
+  organizacaoId: number,
+  dados: Pick<AssinarEntrada, 'documento' | 'nome' | 'email'>,
+): Promise<Pedido> {
+  const p = await planoDaOrganizacao(db, organizacaoId);
+  if (!p.plano || !p.mensalidade || p.mensalidade <= 0)
+    throw AppError.invalido(
+      'Defina o plano e a mensalidade deste cliente (em Plano e módulos) antes de cobrar pelo sistema.',
+    );
+  return {
+    plano: p.plano as AssinarEntrada['plano'],
+    usuarios: p.usuarios ?? Math.max(1, p.uso.usuarios),
+    modulos: p.modulos,
+    numerosExtras: p.numerosExtras,
+    documento: dados.documento,
+    nome: dados.nome,
+    email: dados.email,
+    valor: Math.round(p.mensalidade * 100) / 100,
+    manter: true,
+  };
+}
+
+/** Painel master › cliente: como ele paga (combinado à mão, pelo sistema ou assinando sozinho). */
+export async function cobrancaDoCliente(deps: DepsAssinatura, contaId: number) {
+  const { pool } = deps;
+  const organizacaoId = await organizacaoDaConta(pool, contaId);
+  const o = await org(pool, organizacaoId);
+  const [plano, cobrancas, admin] = await Promise.all([
+    planoDaOrganizacao(pool, organizacaoId),
+    pool.query(
+      `SELECT ${CAMPOS_COBRANCA} FROM cadastro.cobrancas WHERE organizacao_id = $1
+        ORDER BY criado_em DESC, id DESC LIMIT 12`,
+      [organizacaoId],
+    ),
+    pool.query<{ email: string }>(
+      `SELECT u.email FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
+        WHERE c.organizacao_id = $1 AND u.papel = 'admin' AND u.ativo AND NOT u.master ORDER BY u.id LIMIT 1`,
+      [organizacaoId],
+    ),
+  ]);
+  const pelo = !!o.assinatura_contrato?.manter;
+  const jaPagou = (cobrancas.rows as { tipo: string; situacao: string }[]).some(
+    (b) => b.tipo === 'mensalidade' && b.situacao === 'paga',
+  );
+  return {
+    disponivel: !!deps.cobranca,
+    sandbox: deps.cobranca?.sandbox ?? false,
+    /** combinado: paga por fora; sistema: o sistema cobra todo mês; sozinho: assinou pelo site/teste. */
+    modo: pelo ? ('sistema' as const) : o.assinatura ? ('sozinho' as const) : ('combinado' as const),
+    situacao: o.assinatura,
+    acessoAte: o.acesso_ate,
+    /** Já pagou alguma mensalidade (antes disso, acessoAte é o primeiro vencimento). */
+    jaPagou,
+    renovar: o.renovar,
+    valor: o.assinatura_valor == null ? null : Number(o.assinatura_valor),
+    mensalidade: plano.plano ? plano.mensalidade : null,
+    dados: {
+      documento: o.cobranca_documento,
+      nome: o.cobranca_nome ?? o.nome,
+      email: o.cobranca_email ?? admin.rows[0]?.email ?? null,
+    },
+    cobrancas: cobrancas.rows,
+  };
+}
+
+/**
+ * Passa a cobrar pelo sistema um cliente de contrato combinado: a primeira mensalidade vence no dia
+ * escolhido (gerada 7 dias antes) e, pagou, vale um mês; venceu sem pagar, as mesmas regras de
+ * quem assina sozinho (3 dias normais, depois só leitura). Já cobrando: só atualiza os dados e o
+ * valor (a mensalidade em aberto volta com o valor novo).
+ */
+export async function cobrarPeloSistema(
+  deps: DepsAssinatura,
+  contaId: number,
+  d: { documento: string; nome: string; email: string; vencimento: string },
+) {
+  const { pool } = deps;
+  const asaas = exigirCobranca(deps);
+  const organizacaoId = await organizacaoDaConta(pool, contaId);
+  const o = await org(pool, organizacaoId);
+  const ja = !!o.assinatura_contrato?.manter;
+  if (o.assinatura && !ja)
+    throw AppError.conflito(
+      'Este cliente assina sozinho (Meu plano › Assinar): as cobranças dele já saem pelo sistema.',
+    );
+  const hoje = brData(new Date());
+  if (!ja && (d.vencimento < hoje || d.vencimento > brData(somarDias(new Date(), 60))))
+    throw AppError.invalido('A primeira mensalidade vence de hoje até 60 dias.');
+  const documento = documentoDoTexto(d.documento)!;
+  const pedido = await pedidoCombinado(pool, organizacaoId, { documento, nome: d.nome, email: d.email });
+
+  let cliente = o.asaas_cliente;
+  if (!cliente)
+    cliente = await asaas.criarCliente({
+      nome: d.nome,
+      documento,
+      email: d.email,
+      telefone: null,
+      referencia: `org:${organizacaoId}`,
+    });
+  else await asaas.atualizarCliente(cliente, { nome: d.nome, documento, email: d.email });
+
+  await cancelarAbertas(deps, organizacaoId, ja ? ['mensalidade'] : ['mensalidade', 'diferenca']);
+  await pool.query(
+    `UPDATE cadastro.organizacoes
+        SET asaas_cliente = $2, cobranca_documento = $3, cobranca_nome = $4, cobranca_email = $5,
+            assinatura_contrato = $6, assinatura_valor = $7, assinatura_proximo = NULL
+      WHERE id = $1`,
+    [organizacaoId, cliente, documento, d.nome, d.email, JSON.stringify(pedido), pedido.valor],
+  );
+  if (!ja)
+    // O mês "pago" vai até o fim do dia do primeiro vencimento.
+    await pool.query(
+      `UPDATE cadastro.organizacoes
+          SET assinatura = 'ativa', renovar = true, so_leitura_desde = NULL, teste_ate = NULL,
+              avisos_assinatura = '{}',
+              acesso_ate = (($2::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo') - interval '1 second'
+        WHERE id = $1`,
+      [organizacaoId, d.vencimento],
+    );
+  esquecerRecursos();
+  await gerarMensalidades(deps, organizacaoId);
+  return cobrancaDoCliente(deps, contaId);
+}
+
+/** O master mudou o plano de quem é cobrado pelo sistema: a mensalidade em aberto sai com o valor novo. */
+export async function contratoCombinadoMudou(deps: DepsAssinatura, organizacaoId: number): Promise<void> {
+  const o = await org(deps.pool, organizacaoId);
+  if (!o.assinatura_contrato?.manter) return;
+  const pedido = await pedidoCombinado(deps.pool, organizacaoId, o.assinatura_contrato).catch(() => null);
+  if (!pedido) return;
+  await deps.pool.query(
+    'UPDATE cadastro.organizacoes SET assinatura_contrato = $2, assinatura_valor = $3 WHERE id = $1',
+    [organizacaoId, JSON.stringify(pedido), pedido.valor],
+  );
+  if (pedido.valor === Number(o.assinatura_contrato.valor)) return;
+  await cancelarAbertas(deps, organizacaoId, ['mensalidade']);
+  await gerarMensalidades(deps, organizacaoId);
+}
+
+/** Para de cobrar pelo sistema: volta a ser contrato combinado à mão (as cobranças em aberto saem). */
+export async function pararDeCobrar(deps: DepsAssinatura, contaId: number) {
+  const organizacaoId = await organizacaoDaConta(deps.pool, contaId);
+  const o = await org(deps.pool, organizacaoId);
+  if (!o.assinatura_contrato?.manter)
+    throw AppError.conflito('Este cliente não está sendo cobrado pelo sistema.');
+  await cancelarAbertas(deps, organizacaoId, ['mensalidade', 'diferenca']);
+  await deps.pool.query(
+    `UPDATE cadastro.organizacoes
+        SET assinatura = NULL, assinatura_contrato = NULL, assinatura_valor = NULL, assinatura_proximo = NULL,
+            acesso_ate = NULL, so_leitura_desde = NULL, renovar = true
+      WHERE id = $1`,
+    [organizacaoId],
+  );
+  esquecerRecursos();
+  return cobrancaDoCliente(deps, contaId);
 }
 
 /** Notificação para os administradores da organização (em todas as contas dela). */
@@ -709,41 +928,7 @@ export async function rodadaAssinaturas(deps: DepsAssinatura, endereco: string):
   }
 
   // Mensalidade do mês seguinte: gerada 7 dias antes de vencer (com a mudança marcada, se houver).
-  if (deps.cobranca) {
-    const { rows } = await pool.query<{
-      id: number;
-      acesso_ate: string;
-      contrato: Pedido;
-      proximo: Pedido | null;
-      cliente: string;
-    }>(
-      `SELECT o.id, o.acesso_ate, o.assinatura_contrato AS contrato, o.assinatura_proximo AS proximo, o.asaas_cliente AS cliente
-         FROM cadastro.organizacoes o
-        WHERE o.assinatura IN ('ativa', 'atrasada') AND o.renovar AND o.assinatura_contrato IS NOT NULL
-          AND o.asaas_cliente IS NOT NULL AND o.acesso_ate < now() + make_interval(days => ${DIAS_AVISO_VENCIMENTO})
-          AND NOT EXISTS (SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id AND b.tipo = 'mensalidade'
-                            AND b.situacao IN ('pendente', 'atrasada', 'paga')
-                            AND b.periodo_de = (o.acesso_ate AT TIME ZONE 'America/Sao_Paulo')::date)
-        LIMIT 50`,
-    );
-    for (const o of rows) {
-      const p = o.proximo ?? o.contrato;
-      const de = brData(new Date(o.acesso_ate));
-      const hoje = brData(new Date());
-      try {
-        await novaCobranca(deps, o.id, o.cliente, {
-          tipo: 'mensalidade',
-          valor: p.valor,
-          vencimento: de < hoje ? hoje : de,
-          descricao: `Mensalidade de ${diaMes(o.acesso_ate)} a ${diaMes(somarDias(o.acesso_ate, 30))} · ${descricaoDoPedido(p)}`,
-          pedido: p,
-          periodoDe: de,
-        });
-      } catch (e) {
-        deps.log.warn({ err: e, organizacao: o.id }, 'assinatura: não deu para gerar a mensalidade');
-      }
-    }
-  }
+  await gerarMensalidades(deps);
 
   // Avisos do vencimento (7, 3 e 1 dia antes) para quem ainda não pagou o mês seguinte.
   for (const o of (
@@ -812,6 +997,7 @@ export async function rodadaAssinaturas(deps: DepsAssinatura, endereco: string):
   for (const o of (
     await admins(
       `o.assinatura = 'so_leitura' AND o.so_leitura_desde < now() - make_interval(days => ${DIAS_SO_LEITURA})
+       AND coalesce((o.assinatura_contrato->>'manter')::boolean, false) = false
        AND NOT EXISTS (SELECT 1 FROM cadastro.cobrancas b WHERE b.organizacao_id = o.id AND b.tipo = 'mensalidade' AND b.situacao = 'paga')`,
     )
   ).rows) {

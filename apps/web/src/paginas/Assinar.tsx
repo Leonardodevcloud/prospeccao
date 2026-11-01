@@ -47,7 +47,8 @@ export interface CobrancaDaConta {
   minutos: number | null;
 }
 
-type Pedido = AssinarEntrada & { valor: number };
+/** manter: contrato combinado com o nosso time, cobrado pelo sistema (não muda o plano por aqui). */
+type Pedido = AssinarEntrada & { valor: number; manter?: boolean };
 
 export interface ResumoAssinatura {
   disponivel: boolean;
@@ -102,6 +103,7 @@ const descricao = (p: AssinarEntrada) =>
 
 /** /plano/assinar */
 export function Assinar() {
+  const [params] = useSearchParams();
   const admin = useEhAdmin();
   const sessao = useSessao().data;
   const navegar = useNavigate();
@@ -118,7 +120,10 @@ export function Assinar() {
     if (!q.data || carregado) return;
     const p = q.data.pedido ?? q.data.proximo ?? q.data.contrato;
     const atual = sessao?.conta.plano;
-    const inicial: PlanoPronto = p?.plano ?? (atual === 'start' || atual === 'escala' ? atual : 'time');
+    // Veio do "Assinar" do site (?plano=start): começa nesse plano.
+    const doLink = PLANOS.find((x) => x === params.get('plano'));
+    const inicial: PlanoPronto =
+      p?.plano ?? doLink ?? (atual === 'start' || atual === 'escala' ? atual : 'time');
     setPlano(inicial);
     setUsuarios(p?.usuarios ?? q.data.tabela.planos[inicial].usuarios);
     setModulos(p?.modulos ?? []);
@@ -132,7 +137,7 @@ export function Assinar() {
       email: q.data.dados.email ?? sessao?.email ?? '',
     });
     setCarregado(true);
-  }, [q.data, carregado, sessao]);
+  }, [q.data, carregado, sessao, params]);
 
   const tabela = q.data?.tabela;
   const linha = tabela?.planos[plano];
@@ -176,6 +181,21 @@ export function Assinar() {
     );
   if (q.isPending) return <div className="esqueleto" />;
   if (!q.data || !tabela || !linha || !preco) return <ErroDaApi erro={q.error} />;
+  if (q.data.contrato?.manter)
+    return (
+      <div className="pp-panel">
+        <EmptyState
+          icone="badge-check"
+          titulo="O seu contrato é combinado com a gente"
+          texto="As mensalidades chegam por aqui, em Meu plano › Pagar (Pix, boleto ou cartão). Para mudar de plano, usuários ou módulos, fale com o nosso time pelo WhatsApp."
+          acao={
+            <Button variant="primary" onClick={() => navegar('/plano/pagar')}>
+              Ver o que pagar
+            </Button>
+          }
+        />
+      </div>
+    );
   if (!q.data.situacao)
     return (
       <div className="pp-panel">
@@ -452,7 +472,8 @@ export function Assinar() {
 }
 
 /** As cobranças da conta (Meu plano e Pagar). */
-export function ListaCobrancas(props: { cobrancas: CobrancaDaConta[] }) {
+/** master: no painel master (a cobrança em aberto abre a página do Asaas, para mandar ao cliente). */
+export function ListaCobrancas(props: { cobrancas: CobrancaDaConta[]; master?: boolean }) {
   if (!props.cobrancas.length)
     return (
       <p className="quieto" style={{ margin: 0 }}>
@@ -489,7 +510,13 @@ export function ListaCobrancas(props: { cobrancas: CobrancaDaConta[] }) {
                 <Badge tone={r.tom}>{r.texto}</Badge>
               </td>
               <td>
-                {aberta ? (
+                {aberta && props.master ? (
+                  c.link ? (
+                    <a href={c.link} target="_blank" rel="noopener noreferrer">
+                      Página de pagamento
+                    </a>
+                  ) : null
+                ) : aberta ? (
                   <Link to={`/plano/pagar?cobranca=${c.id}`}>Pagar</Link>
                 ) : c.link && c.situacao === 'paga' ? (
                   <a href={c.link} target="_blank" rel="noopener noreferrer">
@@ -731,6 +758,7 @@ export function AssinaturaNoPlano() {
   const s = r.situacao!;
   const pagante = s.situacao === 'ativa' || s.situacao === 'atrasada' || s.situacao === 'cancelada';
   const temLigacoes = !!r.contrato?.modulos.includes('ligacoes');
+  const combinado = !!r.contrato?.manter;
   return (
     <section className="pp-panel meu-plano">
       <div className="assinatura-plano__topo">
@@ -760,13 +788,15 @@ export function AssinaturaNoPlano() {
               Pagar
             </Button>
           )}
-          <Button
-            variant={s.esperandoPagamento ? 'secondary' : 'primary'}
-            onClick={() => navegar('/plano/assinar')}
-          >
-            {pagante ? 'Mudar o plano' : 'Assinar'}
-          </Button>
-          {pagante && s.renovar && s.situacao !== 'atrasada' && (
+          {!combinado && (
+            <Button
+              variant={s.esperandoPagamento ? 'secondary' : 'primary'}
+              onClick={() => navegar('/plano/assinar')}
+            >
+              {pagante ? 'Mudar o plano' : 'Assinar'}
+            </Button>
+          )}
+          {pagante && !combinado && s.renovar && s.situacao !== 'atrasada' && (
             <Button variant="ghost" onClick={() => setConfirmar(true)}>
               Não renovar
             </Button>

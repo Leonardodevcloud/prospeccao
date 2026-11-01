@@ -119,9 +119,17 @@ export function fmtMes(mes: string | null | undefined): string {
   return nome && a ? `${nome}/${a}` : mes;
 }
 
+const DIA_SP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' });
+
 export function fmtData(iso: string | null | undefined): string {
   if (!iso) return '—';
-  const [a, m, d] = iso.slice(0, 10).split('-');
+  let dia = iso.slice(0, 10);
+  // Data e hora (com fuso): o dia em Brasília (23h59 de 31/10 não vira 01/11 por causa do UTC).
+  if (iso.length > 10 && /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso)) {
+    const t = new Date(iso);
+    if (!Number.isNaN(t.getTime())) dia = DIA_SP.format(t);
+  }
+  const [a, m, d] = dia.split('-');
   return `${d}/${m}/${a}`;
 }
 

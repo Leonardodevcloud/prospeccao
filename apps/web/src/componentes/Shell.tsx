@@ -398,7 +398,10 @@ export function Shell() {
         recursos.includes('argos') && <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />}
       {/* Tour do sistema: convite no primeiro acesso; depois, em Ajuda › Tour do sistema. */}
       {sessao.data?.termos.aceitos && !plataforma && !soLeitura && (
-        <TourDoSistema convidar={sessao.data.tour?.visto === false} />
+        <TourDoSistema
+          convidar={sessao.data.tour?.visto === false}
+          pausar={local.pathname.startsWith('/plano')}
+        />
       )}
       {avisosAbertos && <PainelAvisos aoFechar={() => setAvisosAbertos(false)} />}
       {/* A ligação em curso fica por cima de qualquer tela (dá para navegar durante a ligação). */}

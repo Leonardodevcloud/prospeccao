@@ -28,6 +28,7 @@ import {
   ROTULO_PAPEL_USUARIO,
   type ServicoTestavel,
 } from '../api';
+import { CobrancaCliente } from '../componentes/CobrancaCliente';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { AcessoUsuario, SituacaoCliente } from '../componentes/GerenciarCliente';
@@ -1128,6 +1129,8 @@ function PlanoDaConta(props: { contaId: number }) {
       <ResumoPlano p={q.data} />
       <hr className="divisor" />
       <FormPlano contaId={props.contaId} p={q.data} />
+      <hr className="divisor" />
+      <CobrancaCliente contaId={props.contaId} />
     </div>
   );
 }

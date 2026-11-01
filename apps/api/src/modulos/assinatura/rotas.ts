@@ -1,6 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
 import { cobrancaDoAsaas } from '@prospeccao/integrations/cobranca';
-import { AppError, assinarEntrada, cadastroTesteEntrada, comprarMinutosEntrada } from '@prospeccao/shared';
+import {
+  AppError,
+  assinarEntrada,
+  cadastroTesteEntrada,
+  comprarMinutosEntrada,
+  planoParaAssinar,
+} from '@prospeccao/shared';
 import express, { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
@@ -56,8 +62,11 @@ export function rotasTesteGratis(deps: DepsApi): Router {
   });
 
   r.post('/reenviar', limitar, async (req, res) => {
-    const { email } = corpo(req, z.object({ email: z.string().trim().email().max(200) }));
-    await cadastro.reenviar(d, email, endereco(req.get('origin')));
+    const { email, assinar } = corpo(
+      req,
+      z.object({ email: z.string().trim().email().max(200), assinar: planoParaAssinar.nullish() }),
+    );
+    await cadastro.reenviar(d, email, endereco(req.get('origin')), assinar ?? null);
     res.json({ ok: true });
   });
 
