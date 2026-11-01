@@ -17,9 +17,10 @@ import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { comConta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
-import { corpo, idDaRota } from '../../middlewares/http.js';
+import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { numerosDaPlataforma } from '../assinatura/servico.js';
 import { notificar } from '../notificacoes/repositorio.js';
+import { contarEmpresas, NICHOS_DO_CONTADOR, situacaoDoContador } from './contador.js';
 import * as repo from './repositorio.js';
 import { apagarVisitasAntigas, quemVisita, registrarVisita, resumoVisitas } from './visitas.js';
 
@@ -80,6 +81,38 @@ export function rotasSitePublico(deps: DepsApi): Router {
         v.data,
       ).catch((e) => log.warn({ err: e }, 'site: não deu para registrar a visita'));
     res.status(204).end();
+  });
+
+  /** Contador do site: se já há contagem, de qual mês da Receita, e os nichos que dá para contar. */
+  r.get('/empresas/config', async (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=600');
+    res.json({ ...(await situacaoDoContador(pool)), nichos: NICHOS_DO_CONTADOR });
+  });
+
+  const limitarContador = rateLimit({
+    windowMs: 10 * 60_000,
+    limit: 40,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, _res, next) =>
+      next(
+        new AppError(429, 'muitas_contagens', 'Muitas contagens seguidas. Tente de novo em alguns minutos.'),
+      ),
+  });
+  const contadorEntrada = z.object({
+    nicho: z.enum(NICHOS_DO_CONTADOR.map((n) => n.id) as [string, ...string[]]),
+    uf: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2}$/, 'Escolha o estado.'),
+    cidade: z.string().trim().max(80).nullish(),
+  });
+  /** Quantas empresas ativas do nicho existem na cidade (ou no estado). Só o número. */
+  r.get('/empresas', limitarContador, async (req, res) => {
+    const q = consulta(req, contadorEntrada);
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.json(await contarEmpresas(pool, q));
   });
 
   r.get('/contato', async (_req, res) => {
@@ -180,7 +213,7 @@ export function rotasSiteMaster({ pool }: DepsApi): Router {
   });
   /** Visitas do site: os últimos N dias (7, 30, 90…), comparando com os N dias antes. */
   r.get('/visitas', async (req, res) => {
-    const { dias } = z.object({ dias: z.coerce.number().int().min(1).max(365).default(30) }).parse(req.query);
+    const { dias } = consulta(req, z.object({ dias: z.coerce.number().int().min(1).max(365).default(30) }));
     await apagarVisitasAntigas(pool);
     res.json(await resumoVisitas(pool, dias));
   });

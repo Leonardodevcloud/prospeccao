@@ -197,6 +197,17 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
       },
     ]);
 
+    // Contador do site: os ativos de cada nicho pronto em todas as UFs (a baixada e o CNAE fora não).
+    const { rows: contagem } = await pool.query(
+      'SELECT uf, municipio_codigo, nicho, ativas FROM base_cnpj.contagem_nichos ORDER BY uf, nicho',
+    );
+    expect(contagem).toEqual([
+      { uf: 'BA', municipio_codigo: '3849', nicho: 'autopecas', ativas: 1 },
+      { uf: 'BA', municipio_codigo: '3849', nicho: 'supermercados', ativas: 1 },
+      { uf: 'SP', municipio_codigo: '7107', nicho: 'autopecas', ativas: 1 },
+    ]);
+    expect((await pool.query('SELECT 1 FROM base_cnpj.contagem_nichos_nova')).rows).toHaveLength(0);
+
     const { rows: socios } = await pool.query(
       'SELECT nome, qualificacao, prioridade FROM base_cnpj.v_socios ORDER BY prioridade',
     );
@@ -234,6 +245,9 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
       'SELECT (SELECT count(*) FROM base_cnpj.estabelecimentos) AS e, (SELECT count(*) FROM base_cnpj.socios) AS s',
     );
     expect(rows[0]).toEqual({ e: 2, s: 2 });
+    // A contagem é refeita do zero, não somada à anterior.
+    const { rows: c } = await pool.query('SELECT sum(ativas)::int AS n FROM base_cnpj.contagem_nichos');
+    expect(c[0].n).toBe(3);
   });
 
   it('nova tentativa do mesmo job continua de onde parou, sem refazer arquivos nem duplicar sócios', async () => {

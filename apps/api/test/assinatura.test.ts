@@ -822,4 +822,44 @@ describe.skipIf(!URL_TESTE)('Teste grátis e assinatura pelo sistema', () => {
     expect(r.porDia).toHaveLength(7);
     expect(r.conversao.cadastros).toBeGreaterThan(0);
   });
+
+  it('contador do site: só o número de empresas ativas do nicho na cidade ou no estado', async () => {
+    const vazio = await request(app).get('/site/empresas?nicho=autopecas&uf=BA&cidade=Salvador');
+    expect(vazio.body).toEqual({ achou: false, motivo: 'sem_contagem' });
+    expect((await request(app).get('/site/empresas/config')).body).toMatchObject({ disponivel: false });
+    await pool.query(
+      `INSERT INTO base_cnpj.municipios (codigo, nome) VALUES ('3849', 'SALVADOR'), ('3577', 'FEIRA DE SANTANA')
+       ON CONFLICT (codigo) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO base_cnpj.contagem_nichos VALUES ('BA', '3849', 'autopecas', 812), ('BA', '3577', 'autopecas', 233),
+         ('BA', '3849', 'farmacias', 640)`,
+    );
+    const cfg = (await request(app).get('/site/empresas/config')).body;
+    expect(cfg.disponivel).toBe(true);
+    expect(cfg.nichos.find((n: { id: string }) => n.id === 'autopecas').nome).toBe('Autopeças');
+    const feira = await request(app)
+      .get('/site/empresas')
+      .query({ nicho: 'autopecas', uf: 'ba', cidade: ' Feira de  Santana ' });
+    expect(feira.body).toEqual({
+      achou: true,
+      ativas: 233,
+      cidade: 'Feira de Santana',
+      uf: 'BA',
+      nicho: { id: 'autopecas', nome: 'Autopeças' },
+    });
+    const estado = await request(app).get('/site/empresas').query({ nicho: 'autopecas', uf: 'BA' });
+    expect(estado.body).toMatchObject({ achou: true, ativas: 1045, cidade: null });
+    const nenhuma = await request(app)
+      .get('/site/empresas')
+      .query({ nicho: 'oticas', uf: 'BA', cidade: 'Salvador' });
+    expect(nenhuma.body).toMatchObject({ achou: true, ativas: 0 });
+    const errada = await request(app)
+      .get('/site/empresas')
+      .query({ nicho: 'autopecas', uf: 'BA', cidade: 'Gotham' });
+    expect(errada.body).toEqual({ achou: false, motivo: 'cidade' });
+    expect((await request(app).get('/site/empresas').query({ nicho: 'qualquer', uf: 'BA' })).status).toBe(
+      422,
+    );
+  });
 });

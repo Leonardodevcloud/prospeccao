@@ -1601,7 +1601,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Receita e custo de cada cliente, desativar ou excluir, e-mail e senha, os serviços da plataforma e o CRM com dados fictícios.',
     onde: { rotulo: 'Financeiro', para: '/plataforma/financeiro' },
     termos:
-      'master painel plataforma visitas do site acessos visitantes google origem utm cliques até onde rolam cobrar pelo sistema cobrança mensalidade asaas como o cliente paga contrato combinado domínio dominio vercel white label marca administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
+      'master painel plataforma contador de empresas visitas do site acessos visitantes google origem utm cliques até onde rolam cobrar pelo sistema cobrança mensalidade asaas como o cliente paga contrato combinado domínio dominio vercel white label marca administrador administradores novo master outro master excluir cliente desativar reativar mudar email senha acesso financeiro mrr receita margem custo módulos contratado franquia configuração serviços chave railway testar demonstração demo apresentar dados fictícios',
     corpo: (
       <>
         <p>
@@ -1680,6 +1680,16 @@ export const ARTIGOS: ArtigoAjuda[] = [
             está longo demais.
           </li>
         </ul>
+        <h3>Contador de empresas do site</h3>
+        <p>
+          Logo depois da abertura, o site pergunta "Quantas empresas do seu nicho existem na sua cidade?": a
+          pessoa escolhe um dos nichos prontos, o estado e a cidade e vê só o número de empresas ativas na
+          base da Receita, com o botão para testar. O número vem da importação da Base CNPJ, que conta os
+          nichos prontos no Brasil todo (não só nos estados das campanhas). Enquanto nenhuma importação rodou
+          depois da atualização, o contador não aparece e fica a chamada para a demonstração; para ligar, rode
+          uma importação em <b>Base CNPJ</b>. Quem usa o contador aparece em Visitas do site › Botões mais
+          clicados.
+        </p>
         <h3>Cobrar pelo sistema</h3>
         <p>
           Em Clientes › <b>Plano e módulos</b>, o bloco <b>Como o cliente paga</b> mostra se o cliente paga

@@ -42,6 +42,7 @@
   // Os botões que importam para a venda.
   const alvoDo = (el) => {
     const href = el.getAttribute('href') || '';
+    if (el.matches('.contador__botao')) return 'contador';
     const assinar = /\/teste\?assinar=(start|time|escala)/.exec(href);
     if (assinar) return `assinar:${assinar[1]}`;
     if (/app\.prospectteam\.com\.br\/teste/.test(href)) return 'teste';

@@ -336,33 +336,226 @@ function iniciarJornada() {
   const rotulo = $('[data-rotulo]', raiz);
   const trilho = $('.lead-vivo__trilho span', raiz);
   const NOMES = ['Encontrada', 'Enriquecida', 'Abordada', 'Respondeu', 'Reunião', 'Cliente'];
+  let atual = 0;
+  let relogio = 0;
+  let automatico = !reduzMovimento;
+  let visivel = false;
   const ir = (n) => {
-    raiz.dataset.etapa = String(n);
+    atual = (n + NOMES.length) % NOMES.length;
+    raiz.dataset.etapa = String(atual);
     passos.forEach((p, i) => {
-      p.classList.toggle('ativo', i === n);
+      p.classList.toggle('ativo', i === atual);
+      $('.jornada__botao', p)?.setAttribute('aria-expanded', String(i === atual));
     });
     blocos.forEach((b) => {
       const a = Number(b.dataset.a);
-      b.classList.toggle('feito', a <= n);
-      b.classList.toggle('atual', a === n);
+      b.classList.toggle('feito', a <= atual);
+      b.classList.toggle('atual', a === atual);
     });
-    if (rotulo) rotulo.textContent = NOMES[n];
-    if (trilho) trilho.style.setProperty('--andou', String((n + 1) / NOMES.length));
+    if (rotulo) rotulo.textContent = NOMES[atual];
+    if (trilho) trilho.style.setProperty('--andou', String((atual + 1) / NOMES.length));
   };
-  ir(0);
-  if (!('IntersectionObserver' in window)) {
-    ir(NOMES.length - 1);
-    return;
-  }
-  const obs = new IntersectionObserver(
-    (entradas) => {
-      for (const en of entradas) if (en.isIntersecting) ir(Number(en.target.dataset.passo));
+  // Anda sozinho enquanto está na tela; quem clica num passo assume o controle.
+  const agendar = () => {
+    window.clearTimeout(relogio);
+    if (automatico && visivel)
+      relogio = window.setTimeout(() => {
+        ir(atual + 1);
+        agendar();
+      }, 3400);
+  };
+  passos.forEach((p, i) => {
+    $('.jornada__botao', p)?.addEventListener('click', () => {
+      automatico = false;
+      window.clearTimeout(relogio);
+      ir(i);
+    });
+  });
+  ir(reduzMovimento ? NOMES.length - 1 : 0);
+  if (!('IntersectionObserver' in window)) return;
+  new IntersectionObserver(
+    ([en]) => {
+      visivel = en.isIntersecting;
+      if (visivel) agendar();
+      else window.clearTimeout(relogio);
     },
-    {
-      rootMargin: window.matchMedia('(max-width: 960px)').matches ? '-58% 0px -32% 0px' : '-45% 0px -45% 0px',
-    },
-  );
-  for (const p of passos) obs.observe(p);
+    { threshold: 0.4 },
+  ).observe(raiz);
+}
+
+/* ---------- canais: Instagram e Ligações em abas (os links #instagram e #ligacoes abrem a aba) ---------- */
+function iniciarCanais() {
+  const lista = $('[data-canais]');
+  if (!lista) return;
+  const abas = $$('[role="tab"]', lista);
+  const mostrar = (k, foco = false) => {
+    abas.forEach((a, i) => {
+      const sim = i === k;
+      a.setAttribute('aria-selected', String(sim));
+      a.tabIndex = sim ? 0 : -1;
+      const painel = document.getElementById(a.getAttribute('aria-controls'));
+      if (painel) painel.hidden = !sim;
+    });
+    if (foco) abas[k].focus();
+  };
+  abas.forEach((a, i) => {
+    a.addEventListener('click', () => mostrar(i));
+    a.addEventListener('keydown', (e) => {
+      const teclas = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+      if (e.key in teclas) {
+        e.preventDefault();
+        mostrar((i + teclas[e.key] + abas.length) % abas.length, true);
+      }
+    });
+  });
+  const abrirPeloLink = (id) => {
+    const k = abas.findIndex((a) => a.getAttribute('aria-controls') === id);
+    if (k < 0) return false;
+    mostrar(k);
+    $('#canais')?.scrollIntoView({ behavior: reduzMovimento ? 'auto' : 'smooth' });
+    return true;
+  };
+  document.addEventListener('click', (e) => {
+    const a =
+      e.target instanceof Element ? e.target.closest('a[href="#instagram"], a[href="#ligacoes"]') : null;
+    if (a && abrirPeloLink(a.getAttribute('href').slice(1))) {
+      e.preventDefault();
+      history.replaceState(null, '', a.getAttribute('href'));
+    }
+  });
+  if (location.hash === '#instagram' || location.hash === '#ligacoes') abrirPeloLink(location.hash.slice(1));
+}
+
+/* ---------- contador: quantas empresas do nicho existem na cidade (só o número) ---------- */
+const NICHO_DA_ABA = {
+  autopecas: 'autopecas',
+  farmacias: 'farmacias',
+  petshops: 'pet',
+  construcao: 'construcao',
+  restaurantes: 'restaurantes',
+  supermercados: 'supermercados',
+  oticas: 'oticas',
+  motopecas: 'motopecas',
+};
+const MESES = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+];
+
+function iniciarContador() {
+  const caixa = $('[data-contador]');
+  if (!caixa) return;
+  const form = $('[data-contador-form]', caixa);
+  const res = $('[data-contador-resultado]', caixa);
+  const n = $('[data-contador-n]', caixa);
+  const desc = $('[data-contador-desc]', caixa);
+  const fonte = $('[data-contador-fonte]', caixa);
+  const acoes = $('[data-contador-acoes]', caixa);
+  const selNicho = form.elements.nicho;
+  const selUf = form.elements.uf;
+  const botao = $('.contador__botao', form);
+  let mes = null;
+  let mexeuNoNicho = false;
+
+  fetch(`${API}/empresas/config`, { headers: { Accept: 'application/json' } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((c) => {
+      if (!c?.disponivel || !c.nichos?.length) return; // sem contagem ainda: fica a chamada antiga
+      mes = c.mes;
+      selNicho.innerHTML = c.nichos.map((x) => `<option value="${x.id}">${x.nome}</option>`).join('');
+      const daAba = NICHO_DA_ABA[$('.nicho[aria-selected="true"]')?.dataset.nicho ?? ''];
+      if (daAba) selNicho.value = daAba;
+      caixa.hidden = false;
+      const reserva = $('[data-cta-nicho-bloco]');
+      if (reserva) reserva.hidden = true;
+    })
+    .catch(() => undefined);
+
+  selNicho.addEventListener('change', () => {
+    mexeuNoNicho = true;
+  });
+  // O nicho escolhido nas abas acima vira o do contador (até a pessoa escolher outro).
+  const obs = new MutationObserver(() => {
+    const id = NICHO_DA_ABA[$('.nicho[aria-selected="true"]')?.dataset.nicho ?? ''];
+    if (id && !mexeuNoNicho && [...selNicho.options].some((o) => o.value === id)) selNicho.value = id;
+  });
+  for (const b of $$('.nicho')) obs.observe(b, { attributes: true, attributeFilter: ['aria-selected'] });
+
+  const fmt = (x) => x.toLocaleString('pt-BR');
+  const nomeMes = (m) => {
+    const [a, mm] = (m ?? '').split('-').map(Number);
+    return a && mm ? `${MESES[mm - 1]} de ${a}` : null;
+  };
+  const mostrar = (numero, texto, comAcoes) => {
+    n.textContent = numero ?? '';
+    $('.contador__numero', caixa).classList.toggle('contador__numero--aviso', numero == null);
+    desc.textContent = texto;
+    const m = nomeMes(mes);
+    fonte.textContent =
+      numero == null
+        ? ''
+        : `Empresas ativas na base aberta da Receita Federal${m ? ` (publicação de ${m})` : ''}, com o CNAE do nicho como atividade principal ou secundária.`;
+    acoes.hidden = !comAcoes;
+    res.hidden = false;
+  };
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!selUf.value) {
+      selUf.focus();
+      mostrar(null, 'Escolha o estado (e, se quiser, a cidade).', false);
+      return;
+    }
+    const q = new URLSearchParams({ nicho: selNicho.value, uf: selUf.value });
+    const cidade = form.elements.cidade.value.trim();
+    if (cidade) q.set('cidade', cidade);
+    botao.disabled = true;
+    botao.textContent = 'Contando…';
+    try {
+      const r = await fetch(`${API}/empresas?${q}`, { headers: { Accept: 'application/json' } });
+      const d = await r.json().catch(() => null);
+      const nomeNicho = selNicho.options[selNicho.selectedIndex]?.text ?? '';
+      const ufNome = selUf.options[selUf.selectedIndex]?.text ?? selUf.value;
+      if (!r.ok || !d)
+        mostrar(null, d?.erro?.mensagem ?? 'Não deu para contar agora. Tente de novo em instantes.', false);
+      else if (!d.achou && d.motivo === 'cidade')
+        mostrar(
+          null,
+          `Não achamos “${cidade}” em ${ufNome}. Confira o nome ou deixe a cidade em branco para contar o estado todo.`,
+          false,
+        );
+      else if (!d.achou) mostrar(null, 'A contagem está sendo atualizada. Tente de novo mais tarde.', false);
+      else if (d.ativas === 0)
+        mostrar(
+          null,
+          `Nenhuma empresa ativa de ${nomeNicho} em ${d.cidade ?? ufNome} pela Receita. Tente uma cidade vizinha ou o estado todo.`,
+          false,
+        );
+      else
+        mostrar(
+          fmt(d.ativas),
+          `${d.ativas === 1 ? 'empresa ativa' : 'empresas ativas'} de ${nomeNicho} em ${d.cidade ? `${d.cidade} · ${d.uf}` : ufNome}. Quantas o seu time consegue abordar este mês?`,
+          true,
+        );
+      const campo = $('#ct-nicho');
+      if (campo && !campo.value) campo.value = nomeNicho;
+    } catch {
+      mostrar(null, 'Não deu para contar agora. Tente de novo em instantes.', false);
+    } finally {
+      botao.disabled = false;
+      botao.textContent = 'Contar';
+    }
+  });
 }
 
 /* ---------- chamadas: botão flutuante e a do nicho escolhido ---------- */
@@ -389,7 +582,6 @@ function iniciarChamadas() {
   }
   // a chamada da seção de nichos acompanha o nicho escolhido e já preenche o formulário
   const nome = $('[data-cta-nicho-nome]');
-  const botao = $('[data-cta-nicho]');
   const escolhido = () => $('.nicho[aria-selected="true"] span')?.textContent?.trim() ?? '';
   if (nome) {
     const obs = new MutationObserver(() => {
@@ -398,11 +590,12 @@ function iniciarChamadas() {
     });
     for (const b of $$('.nicho')) obs.observe(b, { attributes: true, attributeFilter: ['aria-selected'] });
   }
-  botao?.addEventListener('click', () => {
-    const campo = $('#ct-nicho');
-    const n = escolhido();
-    if (campo && n && !campo.value) campo.value = n;
-  });
+  for (const b of $$('[data-cta-nicho], [data-cta-nicho-reserva]'))
+    b.addEventListener('click', () => {
+      const campo = $('#ct-nicho');
+      const n = escolhido();
+      if (campo && n && !campo.value) campo.value = n;
+    });
 }
 
 /* ---------- revelar ao rolar ---------- */
@@ -752,6 +945,8 @@ function iniciar() {
   iniciarNichos();
   iniciarDia();
   iniciarJornada();
+  iniciarCanais();
+  iniciarContador();
   iniciarChamadas();
   iniciarLogo();
   iniciarRevelar();

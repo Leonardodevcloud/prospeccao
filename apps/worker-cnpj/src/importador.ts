@@ -1,6 +1,7 @@
 import type { Pool } from '@prospeccao/db';
 import { receita } from '@prospeccao/integrations';
 import type { Logger } from '@prospeccao/shared';
+import { ContagemNichos, publicarContagem, zerarContagemNova } from './contagem.js';
 import type { FonteArquivos } from './fonte.js';
 import * as repo from './repositorio.js';
 
@@ -249,6 +250,9 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     (e) => e.cnpj,
     (itens) => repo.salvarEstabelecimentos(pool, importacaoId, itens),
   );
+  // Contador público do site: os ativos de cada nicho pronto por município, no Brasil todo.
+  const contagem = new ContagemNichos();
+  if (!retomando) await zerarContagemNova(pool);
   for (const [i, nome] of receita.ARQUIVOS.estabelecimentos.entries()) {
     if (feitos.has(nome)) continue;
     const total = receita.ARQUIVOS.estabelecimentos.length;
@@ -262,6 +266,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     for await (const linha of receita.lerZipReceita(caminho)) {
       placar.linhasLidas++;
       if (placar.linhasLidas % 50_000 === 0) await andamento.talvezAgora();
+      contagem.linha(linha);
       // Filtro barato antes do parse completo: UF fica na coluna 19.
       if (!ufsAlvo.has(linha[19] ?? '')) continue;
       const e = receita.lerEstabelecimento(linha);
@@ -272,10 +277,13 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
       placar.estabelecimentos++;
     }
     await loteEstab.descarregar();
+    await contagem.descarregar(pool);
     await fonte.liberar(caminho);
     await concluido(nome);
     log_.info({ arquivo: nome, ...placar }, 'arquivo de estabelecimentos processado');
   }
+  const contados = await publicarContagem(pool);
+  if (contados) log_.info({ linhas: contados }, 'contagem de nichos por município publicada');
 
   // 3. Empresas (razão social, porte) só dos estabelecimentos guardados.
   const loteEmp = new Lote<receita.Empresa>(

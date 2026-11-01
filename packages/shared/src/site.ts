@@ -102,6 +102,7 @@ export type VisitaSiteEntrada = z.infer<typeof visitaSiteEntrada>;
 /** Nome legível do botão clicado no site. */
 export const ROTULO_CLIQUE_SITE: Record<string, string> = {
   teste: 'Testar grátis',
+  contador: 'Contou as empresas do nicho',
   'assinar:start': 'Assinar o Start',
   'assinar:time': 'Assinar o Time',
   'assinar:escala': 'Assinar o Escala',
@@ -116,10 +117,10 @@ export const ROTULO_CLIQUE_SITE: Record<string, string> = {
 /** Nome das seções da página inicial (para o "até onde chegam"). */
 export const SECOES_DO_SITE: { id: string; rotulo: string }[] = [
   { id: 'inicio', rotulo: 'Abertura' },
-  { id: 'nichos', rotulo: 'Nichos e cidades' },
+  { id: 'nichos', rotulo: 'Nichos e contador' },
+  { id: 'diferencial', rotulo: 'Por que é diferente' },
   { id: 'como', rotulo: 'Como funciona' },
-  { id: 'instagram', rotulo: 'Instagram' },
-  { id: 'ligacoes', rotulo: 'Ligações' },
+  { id: 'canais', rotulo: 'Instagram e ligações' },
   { id: 'recursos', rotulo: 'Telas do sistema' },
   { id: 'funcoes', rotulo: 'Funções' },
   { id: 'planos', rotulo: 'Planos' },
