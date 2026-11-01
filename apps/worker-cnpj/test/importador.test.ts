@@ -115,7 +115,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
         i === 0
           ? [
               estab('11222333', '0001', '81', 'LADEIRA NOVA PEÇAS', '02', '4530703', 'BA', '3849'), // entra
-              estab('44555666', '0001', '00', 'FORA DO NICHO', '02', '4711302', 'BA', '3849'), // CNAE fora
+              estab('44555666', '0001', '00', 'FORA DO NICHO', '02', '6920601', 'BA', '3849'), // CNAE fora (nem nicho pronto)
               estab('77888999', '0001', '00', 'OUTRA UF', '02', '4530703', 'SP', '7107'), // UF fora
             ]
           : [];
@@ -203,7 +203,6 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     );
     expect(contagem).toEqual([
       { uf: 'BA', municipio_codigo: '3849', nicho: 'autopecas', ativas: 1 },
-      { uf: 'BA', municipio_codigo: '3849', nicho: 'supermercados', ativas: 1 },
       { uf: 'SP', municipio_codigo: '7107', nicho: 'autopecas', ativas: 1 },
     ]);
     expect((await pool.query('SELECT 1 FROM base_cnpj.contagem_nichos_nova')).rows).toHaveLength(0);
@@ -229,7 +228,9 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
       'SELECT status, ufs, cnaes, linhas_lidas FROM base_cnpj.importacoes WHERE id = $1',
       [id],
     );
-    expect(imp[0]).toMatchObject({ status: 'concluida', ufs: ['BA'], cnaes: ['4530703'] });
+    expect(imp[0]).toMatchObject({ status: 'concluida', ufs: ['BA'] });
+    // Os CNAEs do nicho da conta e os de todos os nichos prontos.
+    expect(imp[0].cnaes).toEqual(expect.arrayContaining(['4530703', '4711302']));
   });
 
   it('é idempotente: rodar de novo não duplica nada', async () => {
@@ -247,7 +248,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     expect(rows[0]).toEqual({ e: 2, s: 2 });
     // A contagem é refeita do zero, não somada à anterior.
     const { rows: c } = await pool.query('SELECT sum(ativas)::int AS n FROM base_cnpj.contagem_nichos');
-    expect(c[0].n).toBe(3);
+    expect(c[0].n).toBe(2);
   });
 
   it('nova tentativa do mesmo job continua de onde parou, sem refazer arquivos nem duplicar sócios', async () => {
@@ -300,9 +301,23 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     });
     expect(r).toMatchObject({ estabelecimentos: 0, empresas: 0, socios: 0 });
     const { rows } = await pool.query('SELECT sum(ativas)::int AS n FROM base_cnpj.contagem_nichos');
-    expect(rows[0].n).toBe(3);
+    expect(rows[0].n).toBe(2);
     // Os sócios que já estavam na base continuam lá.
     const { rows: s } = await pool.query('SELECT count(*)::int AS n FROM base_cnpj.socios');
     expect(s[0].n).toBe(2);
+  });
+
+  it('CNPJ_UFS_EXTRAS=TODAS guarda o Brasil inteiro (a loja de SP entra também)', async () => {
+    await pool.query("UPDATE cadastro.campanhas SET status = 'ativa'");
+    const id = await criarImportacao(pool, 'manual', null);
+    await importarBaseCnpj({
+      pool,
+      log,
+      fonte: new FontePasta(pasta, '2026-09'),
+      importacaoId: id,
+      ufsExtras: ['TODAS'],
+    });
+    const { rows } = await pool.query(`SELECT cnpj FROM base_cnpj.estabelecimentos WHERE uf = 'SP'`);
+    expect(rows).toHaveLength(1);
   });
 });

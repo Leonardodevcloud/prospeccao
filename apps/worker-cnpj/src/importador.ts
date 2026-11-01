@@ -1,11 +1,16 @@
 import type { Pool } from '@prospeccao/db';
 import { receita } from '@prospeccao/integrations';
-import type { Logger } from '@prospeccao/shared';
+import { type Logger, NICHOS_PRONTOS } from '@prospeccao/shared';
 import { ContagemNichos, publicarContagem, zerarContagemNova } from './contagem.js';
 import type { FonteArquivos } from './fonte.js';
 import * as repo from './repositorio.js';
 
 const LOTE = 1000;
+export const TODAS_AS_UFS =
+  'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
+const CNAES_DOS_NICHOS_PRONTOS = [
+  ...new Set(NICHOS_PRONTOS.flatMap((n) => n.cnaes.map((c) => c.replace(/\D/g, '')))),
+].filter((c) => c.length === 7);
 const TOTAL_ARQUIVOS = Object.values(receita.ARQUIVOS).reduce((n, a) => n + a.length, 0);
 
 export interface ResultadoImportacao {
@@ -180,8 +185,12 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   if (!importacao) throw new Error(`Importação ${importacaoId} não existe`);
 
   const alvos = await repo.lerAlvos(pool);
-  const ufs = [...new Set([...alvos.ufs, ...ctx.ufsExtras])].sort();
-  const cnaes = new Set(alvos.cnaes);
+  // CNPJ_UFS_EXTRAS=TODAS: guarda o Brasil inteiro (a campanha em qualquer estado já acha a base pronta).
+  const extras = ctx.ufsExtras.includes('TODAS') ? [...TODAS_AS_UFS] : ctx.ufsExtras;
+  // Só siglas válidas (campanha com cidade sem estado não vira uma UF vazia).
+  const ufs = [...new Set([...alvos.ufs, ...extras])].filter((u) => /^[A-Z]{2}$/.test(u)).sort();
+  // Os CNAEs dos nichos prontos entram sempre: o cliente que escolhe um nicho pronto já acha a base.
+  const cnaes = new Set([...alvos.cnaes, ...CNAES_DOS_NICHOS_PRONTOS]);
   // Sem nicho com CNAE ou sem campanha com cidades: não guarda empresas, só faz a contagem dos nichos
   // prontos no Brasil todo (o contador do site) e as tabelas de apoio. Pula empresas, sócios e Simples.
   const soContagem = !cnaes.size || !ufs.length;

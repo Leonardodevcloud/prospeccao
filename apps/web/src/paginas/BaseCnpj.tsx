@@ -73,9 +73,10 @@ function Andamento({ i, agora }: { i: Importacao & { iniciadoEm?: string | null 
       </div>
       <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
         A Receita publica o Brasil inteiro em 33 arquivos (os grandes com centenas de MB cada). O motor baixa
-        e lê um por vez, guardando só as empresas dos estados das suas campanhas e dos CNAEs dos seus nichos.
-        O servidor da Receita costuma ser lento, então pode levar algumas horas. Se o serviço reiniciar, a
-        importação continua do último arquivo pronto.
+        e lê um por vez: conta os nichos prontos no Brasil todo (o contador do site) e guarda as empresas dos
+        estados da coluna Estados (os das campanhas, ou todos com CNPJ_UFS_EXTRAS=TODAS) com os CNAEs dos
+        nichos prontos e dos seus nichos. O servidor da Receita costuma ser lento, então pode levar algumas
+        horas. Se o serviço reiniciar, a importação continua do último arquivo pronto.
       </p>
     </div>
   );
