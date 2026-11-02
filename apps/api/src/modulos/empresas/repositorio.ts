@@ -36,7 +36,7 @@ export const juncoesEnriq = () => `
     SELECT nome, cargo FROM enriquecimento.pessoas p
      WHERE p.empresa_id = e.id AND p.decisor AND ${visivel('p')}
        AND NOT EXISTS (SELECT 1 FROM comercial.feedback f
-                        WHERE f.empresa_id = e.id AND f.tipo = 'nao_decisor' AND f.valor = p.nome)
+                        WHERE f.conta_id = ${contaSql()} AND f.empresa_id = e.id AND f.tipo = 'nao_decisor' AND f.valor = p.nome)
      ORDER BY (p.conta_id <> 0) DESC, p.prioridade
      LIMIT 1
   ) dec ON true
@@ -45,7 +45,7 @@ export const juncoesEnriq = () => `
     SELECT canal, valor, status FROM enriquecimento.contatos c
      WHERE c.empresa_id = e.id AND c.canal IN ('whatsapp', 'telefone', 'email') AND c.status <> 'invalido' AND ${visivel('c')}
        AND NOT EXISTS (SELECT 1 FROM comercial.feedback f
-                        WHERE f.empresa_id = e.id AND f.tipo = 'numero_errado' AND f.valor = c.valor)
+                        WHERE f.conta_id = ${contaSql()} AND f.empresa_id = e.id AND f.tipo = 'numero_errado' AND f.valor = c.valor)
      ORDER BY c.principal DESC, (c.status = 'verificado') DESC, c.confianca DESC
      LIMIT 1
   ) pc ON true
@@ -182,7 +182,7 @@ export async function obter(db: Executor, id: number) {
               p.evidencia, (f.id IS NOT NULL) AS "naoDecisor", (p.decisor AND f.id IS NULL) AS decisor
          FROM enriquecimento.pessoas p
          LEFT JOIN comercial.feedback f
-           ON f.empresa_id = p.empresa_id AND f.tipo = 'nao_decisor' AND f.valor = p.nome
+           ON f.conta_id = ${contaSql()} AND f.empresa_id = p.empresa_id AND f.tipo = 'nao_decisor' AND f.valor = p.nome
         WHERE p.empresa_id = $1 AND ${visivel('p')} ORDER BY (f.id IS NOT NULL), (p.conta_id <> 0) DESC, p.prioridade, p.nome`,
       [id],
     ),
@@ -194,7 +194,7 @@ export async function obter(db: Executor, id: number) {
               c.whatsapp, c.principal, (f.id IS NOT NULL) AS "marcadoErrado"
          FROM enriquecimento.contatos c
          LEFT JOIN comercial.feedback f
-           ON f.empresa_id = c.empresa_id AND f.tipo = 'numero_errado' AND f.valor = c.valor
+           ON f.conta_id = ${contaSql()} AND f.empresa_id = c.empresa_id AND f.tipo = 'numero_errado' AND f.valor = c.valor
         WHERE c.empresa_id = $1 AND ${visivel('c')}
         ORDER BY (f.id IS NOT NULL), c.principal DESC, (c.status = 'verificado') DESC, c.confianca DESC, c.canal`,
       [id],
@@ -264,9 +264,9 @@ export async function registrarFeedback(
           [empresaId, d.valor],
         );
   await db.query(
-    `INSERT INTO comercial.feedback (empresa_id, tipo, valor, canal, fontes, autor)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (empresa_id, tipo, valor) DO NOTHING`,
+    `INSERT INTO comercial.feedback (conta_id, empresa_id, tipo, valor, canal, fontes, autor)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6)
+     ON CONFLICT (conta_id, empresa_id, tipo, valor) DO NOTHING`,
     [
       empresaId,
       d.tipo,
@@ -283,9 +283,8 @@ export async function desfazerFeedback(
   empresaId: number,
   d: { tipo: 'numero_errado' | 'nao_decisor'; valor: string },
 ): Promise<void> {
-  await db.query('DELETE FROM comercial.feedback WHERE empresa_id = $1 AND tipo = $2 AND valor = $3', [
-    empresaId,
-    d.tipo,
-    d.valor,
-  ]);
+  await db.query(
+    `DELETE FROM comercial.feedback WHERE conta_id = ${contaSql()} AND empresa_id = $1 AND tipo = $2 AND valor = $3`,
+    [empresaId, d.tipo, d.valor],
+  );
 }

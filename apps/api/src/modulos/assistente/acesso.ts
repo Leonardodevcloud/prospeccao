@@ -124,6 +124,20 @@ export function validarSql(sql: string): string {
   if (!limpo) throw new Error('Consulta vazia.');
   if (limpo.includes(';')) throw new Error('Só uma consulta por vez.');
   if (!/^(select|with)\b/i.test(limpo)) throw new Error('Só consultas de leitura (SELECT).');
+  if (/\bu&\s*["']/i.test(limpo)) throw new Error('Nome com código escapado (U&) não é permitido.');
+  // Nome entre aspas duplas vale como nome de coluna ou apelido ("valor do mês"), nunca para chegar
+  // ao catálogo do banco ("pg_stat_activity") nem a outro schema ("cadastro.usuarios").
+  for (const m of limpo.replace(/'(?:[^']|'')*'/g, "''").matchAll(/"((?:[^"]|"")*)"/g)) {
+    const nome = (m[1] ?? '').replace(/""/g, '"').trim();
+    if (
+      /^pg_/i.test(nome) ||
+      nome.includes('.') ||
+      /^(information_schema|cerebro_priv|cadastro|comercial|descoberta|enriquecimento|base_cnpj|fila|public)$/i.test(
+        nome,
+      )
+    )
+      throw new Error('Use só as tabelas do catálogo (sem prefixo de schema).');
+  }
   // Tira os textos entre aspas antes de procurar comandos ("pedido cancelado" não é DELETE).
   // Nomes entre aspas duplas ("valor do mês") também saem: só importam as palavras do comando.
   const semTextos = limpo

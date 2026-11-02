@@ -1005,8 +1005,8 @@ describe.skipIf(!URL_TESTE)('enriquecimento ponta a ponta (com Postgres e fontes
     );
     await pool.query('DELETE FROM comercial.feedback WHERE empresa_id = 3');
     await pool.query(
-      `INSERT INTO comercial.feedback (empresa_id, tipo, valor) VALUES (3, 'numero_errado', '71988776655'),
-              (3, 'nao_decisor', 'Marcos Lima')`,
+      `INSERT INTO comercial.feedback (conta_id, empresa_id, tipo, valor) VALUES (1, 3, 'numero_errado', '71988776655'),
+              (1, 3, 'nao_decisor', 'Marcos Lima')`,
     );
     const f = fontesCompletas();
     await enriquecerEmpresa(

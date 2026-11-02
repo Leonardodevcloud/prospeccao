@@ -17,7 +17,8 @@
     "./importacao": "./src/importacao/index.ts",
     "./reuniao": "./src/reuniao/index.ts",
     "./telefonia": "./src/telefonia/index.ts",
-    "./cobranca": "./src/cobranca/index.ts"
+    "./cobranca": "./src/cobranca/index.ts",
+    "./rede": "./src/rede.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -30,7 +31,7 @@
     "iconv-lite": "0.7.3",
     "livekit-server-sdk": "2.19.1",
     "yauzl": "3.4.0",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/yauzl": "3.4.0"

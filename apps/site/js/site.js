@@ -474,7 +474,7 @@ function iniciarContador() {
       // não terminou), quem clicar em Contar recebe o aviso e o convite para o teste.
       if (!c?.nichos?.length) return;
       mes = c.mes;
-      selNicho.innerHTML = c.nichos.map((x) => `<option value="${x.id}">${x.nome}</option>`).join('');
+      selNicho.replaceChildren(...c.nichos.map((x) => new Option(String(x.nome), String(x.id))));
       const daAba = NICHO_DA_ABA[$('.nicho[aria-selected="true"]')?.dataset.nicho ?? ''];
       if (daAba) selNicho.value = daAba;
       caixa.hidden = false;

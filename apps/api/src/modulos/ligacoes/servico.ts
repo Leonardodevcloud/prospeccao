@@ -15,6 +15,7 @@ import {
   type TelefoneBruto,
   type TelefoniaConfigEntrada,
 } from '@prospeccao/shared';
+import { exigirLeadDaConta } from '../../base.js';
 import { conta, contaSql, donoDaBase, usuarioAtual } from '../../contexto.js';
 import { contratoDaConta } from '../../recursos.js';
 import { visivel } from '../../visibilidade.js';
@@ -224,7 +225,7 @@ export async function telefonesDosLeads(
     ),
     db.query<{ empresa_id: number; valor: string }>(
       `SELECT empresa_id::int, valor FROM comercial.feedback
-        WHERE empresa_id = ANY($1::bigint[]) AND tipo = 'numero_errado'`,
+        WHERE conta_id = ${contaSql()} AND empresa_id = ANY($1::bigint[]) AND tipo = 'numero_errado'`,
       [ids],
     ),
   ]);
@@ -346,6 +347,7 @@ export async function iniciar(db: Executor, deps: DepsTelefonia, d: IniciarLigac
     );
   let lead: string | null = null;
   if (d.empresaId) {
+    await exigirLeadDaConta(db, d.empresaId);
     const { rows } = await db.query<{ nome: string; nao_ligar_em: Date | null }>(
       `SELECT coalesce(e.maps_nome, e.nome) AS nome, o.nao_ligar_em
          FROM descoberta.empresas e

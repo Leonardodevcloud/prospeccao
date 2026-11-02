@@ -126,11 +126,31 @@ export const senhaDoCadastro = z
   .refine((s) => /\p{Lu}/u.test(s), 'Use ao menos uma letra maiúscula na senha.')
   .refine((s) => /[^\p{L}\p{N}\s]/u.test(s), 'Use ao menos um caractere especial na senha (! @ # $ % & *).');
 
+/**
+ * Nome e empresa do cadastro aparecem nos e-mails do sistema: sem link, sem quebra de linha e sem
+ * os símbolos que montam botão ou HTML (ninguém se cadastra como "Clique aqui www.golpe.com").
+ */
+export function semLinkNoNome(v: string): boolean {
+  return !/[[\]<>{}\r\n]|:\/\/|\bwww\.|\.(com|net|org|io|app|xyz|br|me|link|site|online|top|info)(\/|\b)/i.test(
+    v,
+  );
+}
+
 export const cadastroTesteEntrada = z
   .object({
-    nome: z.string().trim().min(2, 'Informe o seu nome.').max(120),
+    nome: z
+      .string()
+      .trim()
+      .min(2, 'Informe o seu nome.')
+      .max(120)
+      .refine(semLinkNoNome, 'Use só o seu nome (sem links nem símbolos como [ ] < >).'),
     /** Opcional: autônomo deixa em branco e a conta fica no nome da pessoa. */
-    empresa: z.string().trim().max(160).nullish(),
+    empresa: z
+      .string()
+      .trim()
+      .max(160)
+      .refine(semLinkNoNome, 'Use só o nome da empresa (sem links nem símbolos como [ ] < >).')
+      .nullish(),
     email: z
       .string()
       .trim()

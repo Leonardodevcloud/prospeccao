@@ -447,7 +447,9 @@ export function rotasMaster(deps: DepsApi): Router {
       [id],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Usuário');
-    const token = await comConta(rows[0].conta_id, () => equipe.novoConvite(pool, id));
+    const token = await comConta(rows[0].conta_id, () =>
+      equipe.novoConvite(pool, id, { daPlataforma: true }),
+    );
     res.json({ convite: link(req, token, rows[0].conta_id), diasValidade: equipe.DIAS_CONVITE });
   });
 

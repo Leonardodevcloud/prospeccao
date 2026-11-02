@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { semLinkNoNome } from '../src/assinatura.js';
 import { corSegura, corSobre, marcaEmailEntrada, montarEmail } from '../src/email.js';
 
 const lead = { nome: 'Marcos', empresa: 'Auto Peças Silva', cidade: 'Salvador', remetente: 'Ana' };
@@ -95,5 +96,26 @@ describe('Montagem do e-mail com a marca', () => {
     expect(ok.data?.remetenteEmail).toBeNull();
     const ruim = marcaEmailEntrada.safeParse({ ...ok.data, corPrimaria: 'roxo' });
     expect(ruim.success).toBe(false);
+  });
+});
+
+describe('texto de fora não monta o e-mail', () => {
+  it('nome ou empresa com [[botão|link]] não vira botão nem linha nova', () => {
+    const e = montarEmail(
+      { assunto: 'Oi {empresa}', corpo: '{saudacao}\n\nBem-vindo, {empresa}.' },
+      { nome: 'Ana', empresa: 'X\n\n[[Pague aqui|https://golpe.example]]' },
+    );
+    expect(e.html).not.toMatch(/href="[^"]*golpe/);
+    expect(e.html).not.toContain('<a ');
+    expect(e.assunto).not.toContain('\n');
+  });
+
+  it('o cadastro recusa link e símbolos no nome e na empresa', () => {
+    expect(semLinkNoNome('Auto Peças Ladeira Ltda.')).toBe(true);
+    expect(semLinkNoNome("Joana D'Arc")).toBe(true);
+    expect(semLinkNoNome('Clique www.golpe.com')).toBe(false);
+    expect(semLinkNoNome('https://golpe.example')).toBe(false);
+    expect(semLinkNoNome('[[x|y]]')).toBe(false);
+    expect(semLinkNoNome('linha\nnova')).toBe(false);
   });
 });

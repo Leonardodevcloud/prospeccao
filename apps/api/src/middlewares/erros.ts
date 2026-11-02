@@ -1,6 +1,7 @@
 import { AppError, ehAppError, type Logger } from '@prospeccao/shared';
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
+import { caminhoParaLog } from './logs.js';
 
 /** Toda resposta de erro tem o mesmo formato: { erro: { codigo, mensagem, detalhes? } }. */
 export function tratarErros(log: Logger): ErrorRequestHandler {
@@ -16,7 +17,7 @@ export function tratarErros(log: Logger): ErrorRequestHandler {
       return;
     }
     if (ehAppError(erro)) {
-      if (erro.status >= 500) log.error({ err: erro, rota: req.originalUrl }, erro.message);
+      if (erro.status >= 500) log.error({ err: erro, rota: caminhoParaLog(req.originalUrl) }, erro.message);
       res
         .status(erro.status)
         .json({ erro: { codigo: erro.codigo, mensagem: erro.message, detalhes: erro.detalhes } });
@@ -29,7 +30,21 @@ export function tratarErros(log: Logger): ErrorRequestHandler {
         .json({ erro: { codigo: 'json_invalido', mensagem: 'O corpo da requisição não é um JSON válido.' } });
       return;
     }
-    log.error({ err: erro, rota: req.originalUrl }, 'erro inesperado');
+    // Corpo grande demais (acima do limite da rota) ou num formato que a rota não lê.
+    const doCorpo = erro as { type?: string; status?: number };
+    if (doCorpo.type === 'entity.too.large') {
+      res.status(413).json({
+        erro: { codigo: 'grande_demais', mensagem: 'O arquivo ou o conteúdo enviado é grande demais.' },
+      });
+      return;
+    }
+    if (typeof doCorpo.status === 'number' && doCorpo.status >= 400 && doCorpo.status < 500) {
+      res
+        .status(doCorpo.status)
+        .json({ erro: { codigo: 'requisicao_invalida', mensagem: 'Não consegui ler o que foi enviado.' } });
+      return;
+    }
+    log.error({ err: erro, rota: caminhoParaLog(req.originalUrl) }, 'erro inesperado');
     res
       .status(500)
       .json({ erro: { codigo: 'erro_interno', mensagem: 'Algo deu errado do nosso lado. Tente de novo.' } });

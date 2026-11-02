@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { travaDaBase } from '../../base.js';
 import { comConta, donoDaBase, type UsuarioSessao } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
+import { jsonGrande } from '../../middlewares/corpo.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { COOKIE_SESSAO, carregarUsuario, exigirAdmin } from '../../middlewares/seguranca.js';
 import { quando } from '../agenda/lembretes.js';
@@ -285,7 +286,7 @@ export function rotasSalaPublica(deps: DepsApi): Router {
     await publicar(req, res, texto, null);
   });
 
-  r.post('/:codigo/arquivos', limitarChat, naSala, async (req, res) => {
+  r.post('/:codigo/arquivos', limitarChat, naSala, jsonGrande, async (req, res) => {
     const a = corpo(req, arquivoSala);
     const dados = Buffer.from(a.base64, 'base64');
     if (!dados.length) throw AppError.invalido('Arquivo vazio.');
@@ -402,9 +403,10 @@ export function rotasSalaPublica(deps: DepsApi): Router {
   // Os pedaços chegam crus (sem JSON), um a cada 2 segundos, enquanto a reunião acontece.
   r.put(
     '/:codigo/gravacoes/:id/pedacos/:n',
-    express.raw({ type: '*/*', limit: LIMITE_PEDACO }),
     naSala,
     doTime,
+    // Só lê os bytes depois de conferir quem manda.
+    express.raw({ type: '*/*', limit: LIMITE_PEDACO }),
     async (req, res) => {
       const { sala, credencial } = locais(res);
       const id = z

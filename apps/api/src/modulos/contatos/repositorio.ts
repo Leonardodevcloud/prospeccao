@@ -94,7 +94,7 @@ export async function opcoesDeEnvio(db: Executor, empresaId: number): Promise<Op
          LEFT JOIN enriquecimento.pessoas p ON p.id = c.pessoa_id
         WHERE c.empresa_id = $1 AND c.status <> 'invalido' AND ${visivel('c')}
           AND (c.canal = 'whatsapp' OR (c.canal = 'telefone' AND (c.whatsapp IS NOT FALSE)))
-          AND NOT EXISTS (SELECT 1 FROM comercial.feedback f WHERE f.empresa_id = c.empresa_id
+          AND NOT EXISTS (SELECT 1 FROM comercial.feedback f WHERE f.conta_id = ${contaSql()} AND f.empresa_id = c.empresa_id
                            AND f.tipo = 'numero_errado' AND f.valor = c.valor)
         ORDER BY c.valor, c.principal DESC
      ) e

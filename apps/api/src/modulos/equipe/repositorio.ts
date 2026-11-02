@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import type { Executor } from '@prospeccao/db';
 import {
   AppError,
@@ -8,6 +7,7 @@ import {
   type UsuarioNovo,
 } from '@prospeccao/shared';
 import { contaSql, donoDaBase, usuarioAtual } from '../../contexto.js';
+import { derrubarSessoes, tokenDeConvite } from '../../convites.js';
 import { temRecurso } from '../../recursos.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import { exigirVagaDeUsuario } from '../plano/repositorio.js';
@@ -50,13 +50,9 @@ export async function listar(db: Executor) {
   return { usuarios: usuarios.rows, distribuicao: cfg, semDono: semDono[0]?.n ?? 0 };
 }
 
-function novoToken() {
-  return randomBytes(24).toString('base64url');
-}
-
 export async function criar(db: Executor, d: UsuarioNovo): Promise<{ id: number; token: string }> {
   await exigirVagaDeUsuario(db);
-  const token = novoToken();
+  const { token, hash } = tokenDeConvite();
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO cadastro.usuarios (nome, email, papel, telefone, convite_token, convite_expira, conta_id, alcance)
      VALUES ($1, $2, $3, $4, $5, now() + make_interval(days => ${DIAS_CONVITE}), ${contaSql()}, $6)
@@ -67,7 +63,7 @@ export async function criar(db: Executor, d: UsuarioNovo): Promise<{ id: number;
       d.email,
       d.papel,
       d.telefone ?? null,
-      token,
+      hash,
       d.papel === 'admin' ? 'unidade' : (d.alcance ?? 'unidade'),
     ],
   );
@@ -77,16 +73,27 @@ export async function criar(db: Executor, d: UsuarioNovo): Promise<{ id: number;
   return { id: rows[0].id, token };
 }
 
-/** Novo link para criar senha (convite que expirou ou senha esquecida). A senha antiga deixa de valer. */
-export async function novoConvite(db: Executor, id: number): Promise<string> {
-  const token = novoToken();
+/**
+ * Novo link para criar senha (convite que expirou ou senha esquecida). A senha antiga deixa de valer
+ * e a pessoa sai de todos os aparelhos. O administrador da unidade só gera para a equipe da unidade
+ * (nunca para gestor, diretoria ou administrador da plataforma); o painel master gera para qualquer
+ * pessoa de cliente (os administradores da plataforma têm a tela deles).
+ */
+export async function novoConvite(
+  db: Executor,
+  id: number,
+  opcoes: { daPlataforma?: boolean } = {},
+): Promise<string> {
+  const { token, hash } = tokenDeConvite();
   const { rowCount } = await db.query(
     `UPDATE cadastro.usuarios
         SET convite_token = $2, convite_expira = now() + make_interval(days => ${DIAS_CONVITE}), senha_hash = NULL
-      WHERE id = $1 AND conta_id = ${contaSql()}`,
-    [id, token],
+      WHERE id = $1 AND conta_id = ${contaSql()} AND NOT master
+        ${opcoes.daPlataforma ? '' : "AND papel IN ('admin', 'sdr', 'closer')"}`,
+    [id, hash],
   );
   if (!rowCount) throw AppError.naoEncontrado('Usuário');
+  await derrubarSessoes(db, id);
   return token;
 }
 
@@ -100,13 +107,16 @@ async function admins(db: Executor, exceto: number): Promise<number> {
 }
 
 export async function atualizar(db: Executor, id: number, d: UsuarioAtualizar): Promise<void> {
-  const { rows } = await db.query<{ papel: PapelUsuario; ativo: boolean }>(
-    `SELECT papel, ativo FROM cadastro.usuarios
+  const { rows } = await db.query<{ papel: PapelUsuario; ativo: boolean; master: boolean }>(
+    `SELECT papel, ativo, master FROM cadastro.usuarios
       WHERE id = $1 AND conta_id = ${contaSql()} AND papel NOT IN ('gestor', 'leitura')`,
     [id],
   );
   const u = rows[0];
   if (!u) throw AppError.naoEncontrado('Usuário');
+  // Administrador da plataforma só é mudado por outro administrador da plataforma.
+  if (u.master && !usuarioAtual()?.master)
+    throw AppError.proibido('Só um administrador da plataforma muda o acesso de outro.');
   // Reativar ocupa uma vaga do plano.
   if (d.ativo === true && !u.ativo) await exigirVagaDeUsuario(db);
   const tiraAdmin = u.papel === 'admin' && ((d.papel && d.papel !== 'admin') || d.ativo === false);

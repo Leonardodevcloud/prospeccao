@@ -69,15 +69,30 @@ export function corSobre(fundo: string): string {
 }
 
 /** {saudacao}, {nome}, {empresa}, {cidade}, {remetente}, {abertura}: as mesmas variáveis do WhatsApp e mais a da IA. */
+/**
+ * O valor de uma variável é texto do lead ou de quem se cadastrou: não vira botão ([[…|link]]),
+ * nem negrito, nem linha nova. Só o modelo escrito pela equipe monta o e-mail.
+ */
+function valorSeguro(v: string | null | undefined, multilinha = false): string {
+  let x = String(v ?? '')
+    .replace(/\[\[|\]\]/g, (t) => (t === '[[' ? '[ [' : '] ]'))
+    .replace(/\*\*/g, '*')
+    // Endereço dentro do nome não vira link clicável (um espaço invisível quebra o reconhecimento).
+    .replace(/(https?)(:\/\/)/gi, '$1\u200b$2')
+    .replace(/\b(www)\./gi, '$1\u200b.');
+  if (!multilinha) x = x.replace(/[\r\n\u2028\u2029]+/g, ' ');
+  return x.trim();
+}
+
 export function aplicarVariaveisEmail(texto: string, v: VariaveisEmail): string {
-  const nome = v.nome?.trim() || '';
+  const nome = valorSeguro(v.nome);
   const valores: Record<string, string> = {
     saudacao: nome ? `Olá, ${nome}!` : 'Olá!',
     nome,
-    empresa: v.empresa,
-    cidade: v.cidade?.trim() || 'sua cidade',
-    remetente: v.remetente?.trim() || '',
-    abertura: v.abertura?.trim() || '',
+    empresa: valorSeguro(v.empresa),
+    cidade: valorSeguro(v.cidade) || 'sua cidade',
+    remetente: valorSeguro(v.remetente),
+    abertura: valorSeguro(v.abertura, true),
   };
   return texto
     .replace(/\{(\w+)\}/g, (todo, k: string) => valores[k] ?? todo)

@@ -1,5 +1,6 @@
 import { formatarTelefone, lerVcard } from '@prospeccao/shared';
 import { requisitarJson } from '../http.js';
+import { buscarNaInternet } from '../rede.js';
 
 /**
  * WhatsApp pela Z-API. Cada número (chip) é uma instância da Z-API com ID e token próprios; a
@@ -216,12 +217,23 @@ export async function enviarMidia(
 }
 
 /** Baixa o arquivo de uma mensagem recebida (a Z-API manda o link no webhook; vale por 30 dias). */
-export async function baixarMidia(url: string): Promise<{ base64: string; mime: string | null } | null> {
-  const r = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-  if (!r.ok) return null;
-  const bytes = Buffer.from(await r.arrayBuffer());
-  return { base64: bytes.toString('base64'), mime: r.headers.get('content-type')?.split(';')[0] ?? null };
+export async function baixarMidia(
+  url: string,
+  opcoes: { redeLocal?: boolean } = {},
+): Promise<{ base64: string; mime: string | null } | null> {
+  // O link vem no corpo do webhook: só endereço público (nada de rede interna) e no máximo 16 MB.
+  const r = await buscarNaInternet(url, {
+    timeoutMs: 60_000,
+    limiteBytes: LIMITE_MIDIA,
+    redeLocal: opcoes.redeLocal,
+  });
+  if (r.status < 200 || r.status >= 300 || r.cortado) return null;
+  const tipo = r.cabecalhos['content-type'];
+  return { base64: r.corpo.toString('base64'), mime: String(tipo ?? '').split(';')[0] || null };
 }
+
+/** Maior arquivo de mensagem recebida que o sistema guarda. */
+const LIMITE_MIDIA = 16 * 1024 * 1024;
 
 /** Confere quais números têm WhatsApp (DDD + número → tem). Só consulta, não envia nada. */
 export async function verificarNumeros(

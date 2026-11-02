@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { DepsApi } from '../../dependencias.js';
 import { urlPublicaApi } from '../../endereco.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
-import { exigirAdmin } from '../../middlewares/seguranca.js';
+import { exigirAdmin, semDiretoria } from '../../middlewares/seguranca.js';
 import { temRecurso } from '../../recursos.js';
 import * as avisos from './avisos.js';
 import * as chaves from './chaves.js';
@@ -102,7 +102,7 @@ export function rotasIntegracoes(deps: DepsApi): Router {
     res.status(201).json({ id: await avisos.testar(pool, idDaRota(req)) });
   });
 
-  r.get('/avisos/:id/segredo', async (req, res) => {
+  r.get('/avisos/:id/segredo', semDiretoria, async (req, res) => {
     res.json({ segredo: await avisos.segredo(pool, opcoes(), idDaRota(req)) });
   });
 

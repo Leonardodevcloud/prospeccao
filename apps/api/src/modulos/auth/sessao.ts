@@ -2,7 +2,7 @@ import type { Executor } from '@prospeccao/db';
 import type { CookieOptions, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import type { DepsApi } from '../../dependencias.js';
-import { COOKIE_SESSAO } from '../../middlewares/seguranca.js';
+import { COOKIE_SESSAO, PUBLICO_SESSAO } from '../../middlewares/seguranca.js';
 
 export function opcoesCookie(auth: DepsApi['auth']): CookieOptions {
   return { httpOnly: true, sameSite: 'strict', secure: auth.cookieSeguro, path: '/' };
@@ -26,6 +26,7 @@ export function abrirSessao(
     {
       algorithm: 'HS256',
       subject: String(id),
+      audience: PUBLICO_SESSAO,
       expiresIn: `${auth.sessaoHoras}h`,
     },
   );

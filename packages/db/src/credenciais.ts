@@ -457,5 +457,6 @@ export async function contasAtivas(db: Executor): Promise<number[]> {
 /** Variável CHAVE_CREDENCIAIS (opcional; sem ela, só a conta principal funciona, pelo ambiente). */
 export function chaveDoAmbiente(env: NodeJS.ProcessEnv = process.env): string | null {
   const v = env.CHAVE_CREDENCIAIS?.trim();
-  return v && v.length >= 16 ? v : null;
+  // A api já exige 32 caracteres; os workers seguem a mesma regra (chave curta não cifra nada).
+  return v && v.length >= 32 ? v : null;
 }

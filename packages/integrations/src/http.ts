@@ -31,7 +31,10 @@ export async function requisitarJson<T>(url: string, opcoes: OpcoesRequisicao): 
   }
 
   if (!resposta.ok) {
-    const texto = (await resposta.text().catch(() => '')).slice(0, 300);
+    // O começo da resposta ajuda a entender o erro; sequências longas (tokens, chaves, ids) saem.
+    const texto = (await resposta.text().catch(() => ''))
+      .slice(0, 300)
+      .replace(/[A-Za-z0-9_\-+/=.]{24,}/g, '…');
     const repetivel = resposta.status === 429 || resposta.status >= 500;
     throw new AppError(502, 'falha_externa', `${servico}: HTTP ${resposta.status} ${texto}`.trim(), {
       repetivel,

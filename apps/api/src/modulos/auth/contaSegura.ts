@@ -21,6 +21,7 @@ import {
   hashRecuperacao,
   novoSegredo,
   novosCodigosRecuperacao,
+  passoConferido,
 } from '../../totp.js';
 
 /**
@@ -28,14 +29,24 @@ import {
  * termos de uso e da política de privacidade.
  */
 
-/** Desafio do login em duas etapas: a senha já conferiu; vale 5 minutos. */
+const PUBLICO_DESAFIO = 'duas-etapas';
+
+/** Desafio do login em duas etapas: a senha já conferiu; vale 5 minutos (não abre o sistema). */
 export function desafioDuasEtapas(segredo: string, usuarioId: number): string {
-  return jwt.sign({ d: 1 }, segredo, { algorithm: 'HS256', subject: String(usuarioId), expiresIn: '5m' });
+  return jwt.sign({ d: 1 }, segredo, {
+    algorithm: 'HS256',
+    subject: String(usuarioId),
+    audience: PUBLICO_DESAFIO,
+    expiresIn: '5m',
+  });
 }
 
 export function lerDesafio(segredo: string, desafio: string): number | null {
   try {
-    const d = jwt.verify(desafio, segredo, { algorithms: ['HS256'] }) as jwt.JwtPayload;
+    const d = jwt.verify(desafio, segredo, {
+      algorithms: ['HS256'],
+      audience: PUBLICO_DESAFIO,
+    }) as jwt.JwtPayload;
     const id = Number(d.sub);
     return d.d === 1 && Number.isInteger(id) && id > 0 ? id : null;
   } catch {
@@ -59,8 +70,17 @@ export async function conferirSegundaEtapa(
   );
   const u = rows[0];
   if (!u?.totp_ativo || !u.totp_segredo) return null;
-  if (/^\d{6}$/.test(digitado.replace(/\s/g, '')))
-    return conferir(decifrarSegredo(segredoApi, u.totp_segredo), digitado) ? 'app' : null;
+  if (/^\d{6}$/.test(digitado.replace(/\s/g, ''))) {
+    const passo = passoConferido(decifrarSegredo(segredoApi, u.totp_segredo), digitado);
+    if (passo == null) return null;
+    // O mesmo código (ou um mais velho) não vale duas vezes.
+    const { rowCount } = await pool.query(
+      `UPDATE cadastro.usuarios SET totp_ultimo_passo = $2
+        WHERE id = $1 AND coalesce(totp_ultimo_passo, -1) < $2`,
+      [usuarioId, passo],
+    );
+    return rowCount ? 'app' : null;
+  }
   const { rowCount } = await pool.query(
     `UPDATE cadastro.usuarios SET totp_recuperacao = array_remove(totp_recuperacao, $2)
       WHERE id = $1 AND $2 = ANY(totp_recuperacao)`,

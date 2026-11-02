@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import {
   AppError,
   aceitarConvite,
@@ -14,9 +14,11 @@ import {
 import bcrypt from 'bcryptjs';
 import { type Request, type Response, Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
+import { derrubarSessoes, hashDoToken } from '../../convites.js';
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp } from '../../endereco.js';
 import { corpo } from '../../middlewares/http.js';
+import { limitar, limitarPorSalto } from '../../middlewares/limites.js';
 import { COOKIE_SESSAO, exigirSessao } from '../../middlewares/seguranca.js';
 import { contratoDaConta, temRecurso } from '../../recursos.js';
 import { situacaoDaConta } from '../assinatura/servico.js';
@@ -30,7 +32,6 @@ const HASH_FALSO = bcrypt.hashSync('senha-que-ninguem-tem', 10);
 
 /** O link de redefinição vale 1 hora e só uma vez. No banco fica só o hash do token. */
 const HORAS_REDEFINIR = 1;
-const hashDoToken = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
 
 /**
  * Login da equipe. Cada pessoa tem e-mail e senha no banco; o login do ambiente (ADMIN_EMAIL /
@@ -47,6 +48,12 @@ export function rotasAuth(deps: DepsApi): Router {
     legacyHeaders: false,
     handler: (_req, _res, next) =>
       next(new AppError(429, 'muitas_tentativas', 'Muitas tentativas de login. Espere 15 minutos.')),
+  });
+  // Teto por endereço que chega no Railway: segura quem tenta driblar o limite por pessoa.
+  const limitarLoginSalto = limitarPorSalto({
+    janelaMs: 15 * 60_000,
+    limite: 300,
+    mensagem: 'Muitas tentativas de login agora. Espere alguns minutos.',
   });
 
   /**
@@ -102,16 +109,50 @@ export function rotasAuth(deps: DepsApi): Router {
     return !!rows[0]?.ativo;
   };
 
+  /**
+   * Erros seguidos da mesma pessoa (senha ou código), além do limite por endereço: a cada 5, o acesso
+   * trava por 15 min, 30, 60… (até 2 h). Quem tenta de vários endereços também para.
+   */
+  const registrarFalha = (id: number) =>
+    pool
+      .query(
+        `UPDATE cadastro.usuarios
+            SET falhas_login = falhas_login + 1,
+                bloqueado_ate = CASE WHEN (falhas_login + 1) % 5 = 0
+                  THEN now() + make_interval(mins => 15 * least(8, power(2, (falhas_login + 1) / 5 - 1))::int)
+                  ELSE bloqueado_ate END
+          WHERE id = $1`,
+        [id],
+      )
+      .catch((e) => deps.log.warn({ err: e }, 'login: não consegui contar a tentativa'));
+  const travado = async (id: number): Promise<number | null> => {
+    const { rows } = await pool.query<{ min: number | null }>(
+      `SELECT ceil(extract(epoch FROM bloqueado_ate - now()) / 60)::int AS min
+         FROM cadastro.usuarios WHERE id = $1 AND bloqueado_ate > now()`,
+      [id],
+    );
+    return rows[0]?.min ?? null;
+  };
+  const erroTravado = (min: number) =>
+    new AppError(
+      429,
+      'acesso_travado',
+      `Muitas tentativas erradas neste acesso. Tente de novo em ${min} minuto${min > 1 ? 's' : ''} ou use "Esqueci a senha".`,
+    );
+
   /** Abre a sessão (registrada) e deixa no histórico. */
   const entrar = async (req: Request, res: Response, id: number, descricao: string) => {
-    await pool.query('UPDATE cadastro.usuarios SET ultimo_acesso = now() WHERE id = $1', [id]);
+    await pool.query(
+      'UPDATE cadastro.usuarios SET ultimo_acesso = now(), falhas_login = 0, bloqueado_ate = NULL WHERE id = $1',
+      [id],
+    );
     await iniciarSessao(pool, req, res, auth, id);
     void registrarAcesso(req, await quem(id), 'acesso', descricao);
     deps.log.info({ usuario: id }, 'login');
     res.json({ ok: true });
   };
 
-  r.post('/login', limitarLogin, async (req, res) => {
+  r.post('/login', limitarLoginSalto, limitarLogin, async (req, res) => {
     const { email, senha } = corpo(req, loginEntrada);
     const { rows } = await pool.query<{
       id: number;
@@ -128,15 +169,20 @@ export function rotasAuth(deps: DepsApi): Router {
     );
     const u = rows[0];
     const senhaDoBancoOk = await bcrypt.compare(senha, u?.senha_hash ?? HASH_FALSO);
-    let id: number | null = u?.ativo && u.senha_hash && senhaDoBancoOk ? u.id : null;
+    // Travado por tentativas erradas: nem a senha certa entra agora (o acesso de emergência do
+    // ADMIN_EMAIL, com a senha do ambiente, continua valendo).
+    const minTravado = u ? await travado(u.id) : null;
+    let id: number | null = u?.ativo && u.senha_hash && senhaDoBancoOk && minTravado == null ? u.id : null;
     // O e-mail do ADMIN_EMAIL é sempre o master da plataforma, mesmo entrando com a senha do banco.
     if (id && !u?.master && email === auth.adminEmail.toLowerCase())
       id = await garantirAdminDoAmbiente(auth.adminEmail);
     if (!id && email === auth.adminEmail.toLowerCase() && (await bcrypt.compare(senha, auth.adminSenhaHash)))
       id = await garantirAdminDoAmbiente(auth.adminEmail);
     if (!id) {
-      // Senha errada de alguém que existe: fica no histórico da conta dela.
+      if (u && minTravado != null) throw erroTravado(minTravado);
+      // Senha errada de alguém que existe: fica no histórico da conta dela e conta para travar.
       if (u) {
+        await registrarFalha(u.id);
         const q = await quem(u.id);
         void registrarAcesso(req, q, 'acesso', 'Tentativa de login com senha errada');
       }
@@ -158,13 +204,16 @@ export function rotasAuth(deps: DepsApi): Router {
   });
 
   /** Segunda etapa do login: o código do app (ou um código de recuperação). */
-  r.post('/login/duas-etapas', limitarLogin, async (req, res) => {
+  r.post('/login/duas-etapas', limitarLoginSalto, limitarLogin, async (req, res) => {
     const { desafio, codigo } = corpo(req, loginDuasEtapas);
     const id = lerDesafio(auth.jwtSegredo, desafio);
     if (!id)
       throw new AppError(401, 'desafio_vencido', 'O tempo para digitar o código acabou. Entre de novo.');
+    const min = await travado(id);
+    if (min != null) throw erroTravado(min);
     const como = await conferirSegundaEtapa(pool, auth.jwtSegredo, id, codigo);
     if (!como) {
+      await registrarFalha(id);
       void registrarAcesso(req, await quem(id), 'acesso', 'Código das duas etapas errado');
       throw new AppError(
         401,
@@ -195,7 +244,7 @@ export function rotasAuth(deps: DepsApi): Router {
     const { rows } = await pool.query<{ nome: string; email: string; conta: string }>(
       `SELECT u.nome, u.email, c.nome AS conta FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
         WHERE u.convite_token = $1 AND u.convite_expira > now() AND u.ativo`,
-      [req.params.token],
+      [hashDoToken(String(req.params.token ?? ''))],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Convite (o link expirou ou já foi usado)');
     res.json(rows[0]);
@@ -207,12 +256,14 @@ export function rotasAuth(deps: DepsApi): Router {
     const hash = await bcrypt.hash(senha, 10);
     const { rows } = await pool.query<{ id: number }>(
       `UPDATE cadastro.usuarios
-          SET senha_hash = $2, convite_token = NULL, convite_expira = NULL, ultimo_acesso = now()
+          SET senha_hash = $2, convite_token = NULL, convite_expira = NULL, ultimo_acesso = now(),
+              falhas_login = 0, bloqueado_ate = NULL
         WHERE convite_token = $1 AND convite_expira > now() AND ativo
         RETURNING id`,
-      [req.params.token, hash],
+      [hashDoToken(String(req.params.token ?? '')), hash],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Convite (o link expirou ou já foi usado)');
+    await derrubarSessoes(pool, rows[0].id);
     if (await temDuasEtapas(rows[0].id)) {
       void registrarAcesso(req, await quem(rows[0].id), 'acesso', 'Criou a senha pelo convite');
       res.json({ duasEtapas: true, desafio: desafioDuasEtapas(auth.jwtSegredo, rows[0].id) });
@@ -231,6 +282,22 @@ export function rotasAuth(deps: DepsApi): Router {
     handler: (_req, _res, next) =>
       next(new AppError(429, 'muitas_tentativas', 'Muitos pedidos de senha. Espere 15 minutos.')),
   });
+  const limitarEsqueciSalto = limitarPorSalto({
+    janelaMs: 15 * 60_000,
+    limite: 60,
+    mensagem: 'Muitos pedidos de senha agora. Espere alguns minutos.',
+  });
+  // Por e-mail: ninguém enche a caixa de alguém pedindo links de senha sem parar.
+  const limitarEsqueciEmail = limitar({
+    janelaMs: 60 * 60_000,
+    limite: 3,
+    mensagem: 'Já mandamos alguns links de senha para este e-mail. Confira a caixa de entrada (e o spam).',
+    chave: (req) =>
+      `email:${String((req.body as { email?: unknown })?.email ?? '')
+        .trim()
+        .toLowerCase()
+        .slice(0, 200)}`,
+  });
 
   /** O e-mail do sistema (avisos de senha) sai pelo Resend da conta principal. */
   async function emailDoSistema() {
@@ -247,7 +314,7 @@ export function rotasAuth(deps: DepsApi): Router {
    * Pede o link para criar uma senha nova. A resposta é sempre a mesma (não revela quem tem
    * cadastro); a senha atual continua valendo até a nova ser criada.
    */
-  r.post('/esqueci', limitarEsqueci, async (req, res) => {
+  r.post('/esqueci', limitarEsqueciSalto, limitarEsqueci, limitarEsqueciEmail, async (req, res) => {
     const { email } = corpo(req, esqueciSenha);
     const sistema = await emailDoSistema();
     if (!sistema)
@@ -351,17 +418,15 @@ export function rotasAuth(deps: DepsApi): Router {
     const { rows } = await pool.query<{ id: number }>(
       `UPDATE cadastro.usuarios
           SET senha_hash = $2, redefinir_hash = NULL, redefinir_expira = NULL,
-              convite_token = NULL, convite_expira = NULL, ultimo_acesso = now()
+              convite_token = NULL, convite_expira = NULL, ultimo_acesso = now(),
+              falhas_login = 0, bloqueado_ate = NULL
         WHERE redefinir_hash = $1 AND redefinir_expira > now() AND ativo
         RETURNING id`,
       [hashDoToken(String(req.params.token ?? '')), hash],
     );
     if (!rows[0]) throw AppError.naoEncontrado('Link de senha (expirou ou já foi usado)');
     // Senha nova: as sessões abertas com a senha antiga caem.
-    await pool.query(
-      'UPDATE cadastro.sessoes SET revogada_em = now() WHERE usuario_id = $1 AND revogada_em IS NULL',
-      [rows[0].id],
-    );
+    await derrubarSessoes(pool, rows[0].id);
     if (await temDuasEtapas(rows[0].id)) {
       void registrarAcesso(req, await quem(rows[0].id), 'acesso', 'Criou uma senha nova pelo link do e-mail');
       res.json({ duasEtapas: true, desafio: desafioDuasEtapas(auth.jwtSegredo, rows[0].id) });

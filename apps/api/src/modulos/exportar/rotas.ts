@@ -1,5 +1,6 @@
 import { filtrosEmpresas, filtrosFunil, filtrosRelatorio } from '@prospeccao/shared';
 import { type Response, Router } from 'express';
+import { contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
@@ -69,7 +70,7 @@ export function rotasExportar({ pool, log }: DepsApi): Router {
           AND ${visivel('c')}
           AND c.status <> 'invalido'
           AND NOT EXISTS (SELECT 1 FROM comercial.feedback fb
-                           WHERE fb.empresa_id = c.empresa_id AND fb.tipo = 'numero_errado' AND fb.valor = c.valor)
+                           WHERE fb.conta_id = ${contaSql()} AND fb.empresa_id = c.empresa_id AND fb.tipo = 'numero_errado' AND fb.valor = c.valor)
         ORDER BY c.empresa_id, c.canal, c.principal DESC, (c.status = 'verificado') DESC, c.confianca DESC`,
       [ids],
     );

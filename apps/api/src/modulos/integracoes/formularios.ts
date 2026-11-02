@@ -115,9 +115,6 @@ export async function envios(db: Executor, id: number) {
 
 /* ───────────────────────────── Receber o envio ───────────────────────────── */
 
-const porIp = new Map<string, { minuto: number; n: number }>();
-const LIMITE_POR_IP = 10;
-
 export interface ResultadoEnvio {
   resultado: 'lead' | 'duplicado' | 'robo' | 'erro' | 'desligado';
   empresaId: number | null;
@@ -141,14 +138,7 @@ export async function receber(
   const f = rows[0];
   if (!f) throw AppError.naoEncontrado('Formulário');
 
-  // Mais de 10 envios por minuto do mesmo IP no mesmo formulário: robô.
-  const minuto = Math.floor(Date.now() / 60_000);
-  const k = `${f.id}|${ip}`;
-  const p = porIp.get(k);
-  const n = p && p.minuto === minuto ? p.n + 1 : 1;
-  porIp.set(k, { minuto, n });
-  if (porIp.size > 5000) porIp.clear();
-
+  // Envios demais do mesmo endereço ou no mesmo formulário: a rota já barrou (limites em v1.ts).
   return comConta(f.conta_id, async () => {
     const dados = (corpo && typeof corpo === 'object' ? corpo : {}) as Record<string, unknown>;
     const guardar = async (r: ResultadoEnvio['resultado'], empresaId: number | null, erro?: string) => {
@@ -158,7 +148,8 @@ export async function receber(
         [
           f.id,
           f.conta_id,
-          JSON.stringify(dados).slice(0, 20_000),
+          // Robô fica registrado, mas com pouco: ninguém enche o banco com envios falsos.
+          JSON.stringify(dados).slice(0, r === 'robo' ? 1000 : 20_000),
           r,
           empresaId,
           erro ?? null,
@@ -168,7 +159,7 @@ export async function receber(
       return { resultado: r, empresaId, redirecionar: f.redirecionar, mensagem: erro };
     };
     const isca = dados[CAMPO_ISCA];
-    if (n > LIMITE_POR_IP || (typeof isca === 'string' && isca.trim())) return guardar('robo', null);
+    if (typeof isca === 'string' && isca.trim()) return guardar('robo', null);
     const recebidos = achatarEnvio(dados).filter((c) => c.chave !== CAMPO_ISCA);
     if (!recebidos.length) return guardar('erro', null, 'O envio chegou vazio.');
     const campos = aprenderCampos(f.campos, recebidos);

@@ -17,8 +17,9 @@ import {
   SECOES_IA,
   salvarSecaoIa,
 } from '@prospeccao/shared';
-import { type Request, type Response, Router } from 'express';
+import express, { type Request, type RequestHandler, type Response, Router } from 'express';
 import { z } from 'zod';
+import { exigirVisivel } from '../../base.js';
 import { comConta, conta, contaSql } from '../../contexto.js';
 import type { DepsApi, WhatsappConta } from '../../dependencias.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
@@ -341,6 +342,8 @@ export function rotasAgente(deps: DepsApi): Router {
   });
 
   r.get('/conversa/:empresaId', async (req, res) => {
+    // Quem vê só a própria base não lê a conversa de lead de colega.
+    await exigirVisivel(pool, idDaRota(req, 'empresaId'));
     res.json(await repo.conversa(pool, idDaRota(req, 'empresaId')));
   });
 
@@ -492,15 +495,29 @@ export function rotasAgente(deps: DepsApi): Router {
 export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
   const r = Router();
   /** Webhook dos números (Z-API): mensagens recebidas e conexão/desconexão. `/evolution` fica por compatibilidade. */
+  /**
+   * O token diz de qual conta é o número (cada conta tem o seu endereço de webhook). Conferido antes
+   * de ler o corpo (que pode ter até 10 MB): sem token certo, nada é lido.
+   */
+  const conferirToken: RequestHandler = (req, res, next) => {
+    const token = String(req.params.token ?? '');
+    if (!/^[0-9a-f]{32,64}$/i.test(token)) return next(AppError.naoEncontrado('Webhook'));
+    pool
+      .query<{ conta_id: number }>(
+        `SELECT a.conta_id FROM comercial.config_agente a JOIN cadastro.contas c ON c.id = a.conta_id
+          WHERE a.webhook_token = $1 AND c.ativa`,
+        [token],
+      )
+      .then(({ rows }) => {
+        if (!rows[0]) return next(AppError.naoEncontrado('Webhook'));
+        res.locals.contaWebhook = rows[0].conta_id;
+        next();
+      }, next);
+  };
+  // Mensagem com mídia chega grande.
+  const corpoDoWebhook = express.json({ limit: '10mb' });
   const webhookWhatsapp = async (req: Request, res: Response) => {
-    // O token diz de qual conta é o número (cada conta tem o seu endereço de webhook).
-    const { rows } = await pool.query<{ conta_id: number }>(
-      `SELECT a.conta_id FROM comercial.config_agente a JOIN cadastro.contas c ON c.id = a.conta_id
-        WHERE a.webhook_token = $1 AND c.ativa`,
-      [req.params.token],
-    );
-    const contaId = rows[0]?.conta_id;
-    if (!contaId) throw AppError.naoEncontrado('Webhook');
+    const contaId = res.locals.contaWebhook as number;
     const conexao = eventoDeConexao(req.body);
     const m = conexao ? null : interpretarWebhook(req.body);
     // Grava antes de responder (é rápido). Falha fica no log; responde 200 para o provedor não repetir sem fim.
@@ -524,8 +541,8 @@ export function rotasWebhook({ pool, log, servicos, filas }: DepsApi): Router {
     }).catch((erro) => log.error({ err: erro, conta: contaId }, 'webhook do WhatsApp: falha ao registrar'));
     res.json({ ok: true });
   };
-  r.post('/whatsapp/:token', webhookWhatsapp);
-  r.post('/evolution/:token', webhookWhatsapp);
+  r.post('/whatsapp/:token', conferirToken, corpoDoWebhook, webhookWhatsapp);
+  r.post('/evolution/:token', conferirToken, corpoDoWebhook, webhookWhatsapp);
 
   /** O número caiu (celular desligado, WhatsApp saiu): avisa os administradores para ler o QR de novo. */
   async function avisarDesconectado(chipId: number) {

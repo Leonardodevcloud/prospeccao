@@ -1,4 +1,5 @@
 import { cnpjValido, normalizarTelefone } from '@prospeccao/shared';
+import { buscarNaInternet } from '../rede.js';
 
 /**
  * Leitura do site da empresa: home + até 3 páginas internas que costumam ter contato
@@ -166,22 +167,31 @@ export function extrairContatos(conteudo: string): ContatosExtraidos {
   return { emails, telefones, whatsapps, instagram, facebook, linkedinEmpresa, linkedinPessoas, cnpjs };
 }
 
-async function baixarHtml(
-  url: string,
-  timeoutMs: number,
-): Promise<{ html: string; urlFinal: string } | null> {
+/** Como buscar: o prazo e, só nos testes, a rede da própria máquina. */
+interface ComoBuscar {
+  timeoutMs: number;
+  redeLocal?: boolean;
+}
+
+/**
+ * Baixa uma página. Endereço vindo de planilha ou do lead: nada de rede interna (conferido em cada
+ * redirecionamento) e no máximo LIMITE_BYTES lidos.
+ */
+async function baixarHtml(url: string, como: ComoBuscar): Promise<{ html: string; urlFinal: string } | null> {
   try {
-    const r = await fetch(url, {
-      headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml', 'accept-language': 'pt-BR,pt' },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(timeoutMs),
+    const r = await buscarNaInternet(url, {
+      cabecalhos: {
+        'user-agent': UA,
+        accept: 'text/html,application/xhtml+xml',
+        'accept-language': 'pt-BR,pt',
+      },
+      timeoutMs: como.timeoutMs,
+      limiteBytes: LIMITE_BYTES,
+      redeLocal: como.redeLocal,
     });
-    if (!r.ok || !(r.headers.get('content-type') ?? '').includes('html')) {
-      await r.body?.cancel();
+    if (r.status < 200 || r.status >= 300 || !String(r.cabecalhos['content-type'] ?? '').includes('html'))
       return null;
-    }
-    const buf = await r.arrayBuffer();
-    return { html: new TextDecoder().decode(buf.slice(0, LIMITE_BYTES)), urlFinal: r.url || url };
+    return { html: new TextDecoder().decode(r.corpo), urlFinal: r.url };
   } catch {
     return null;
   }
@@ -209,15 +219,15 @@ function linksInternos(html: string, base: string): string[] {
 /** Lê o site: null quando nem a home responde. */
 export async function lerSite(
   site: string,
-  opcoes: { timeoutMs?: number } = {},
+  opcoes: { timeoutMs?: number; redeLocal?: boolean } = {},
 ): Promise<ResultadoSite | null> {
-  const timeoutMs = opcoes.timeoutMs ?? 12_000;
+  const como: ComoBuscar = { timeoutMs: opcoes.timeoutMs ?? 12_000, redeLocal: opcoes.redeLocal };
   const url = normalizarSite(site);
   if (!url) return null;
   // Muitos sites pequenos só respondem sem https ou só com "www.": tenta as variações.
   let home: { html: string; urlFinal: string } | null = null;
   for (const tentativa of variacoesDoSite(url)) {
-    home = await baixarHtml(tentativa, timeoutMs);
+    home = await baixarHtml(tentativa, como);
     if (home) break;
   }
   if (!home) return null;
@@ -225,7 +235,7 @@ export async function lerSite(
   const htmls = [home.html];
   const paginas: PaginaLida[] = [{ url: home.urlFinal, titulo: tituloDe(home.html) }];
   for (const extra of linksInternos(home.html, home.urlFinal)) {
-    const p = await baixarHtml(extra, timeoutMs);
+    const p = await baixarHtml(extra, como);
     if (!p) continue;
     htmls.push(p.html);
     paginas.push({ url: p.urlFinal, titulo: tituloDe(p.html) });
@@ -260,14 +270,14 @@ function tituloDe(html: string): string | null {
 }
 
 /** Para onde um link curto leva (segue os redirecionamentos). */
-async function destinoFinal(url: string, timeoutMs: number): Promise<string | null> {
+async function destinoFinal(url: string, como: ComoBuscar): Promise<string | null> {
   try {
-    const r = await fetch(url, {
-      headers: { 'user-agent': UA },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(timeoutMs),
+    const r = await buscarNaInternet(url, {
+      cabecalhos: { 'user-agent': UA },
+      timeoutMs: como.timeoutMs,
+      limiteBytes: 1024,
+      redeLocal: como.redeLocal,
     });
-    await r.body?.cancel();
     return r.url || null;
   } catch {
     return null;
@@ -281,9 +291,9 @@ async function destinoFinal(url: string, timeoutMs: number): Promise<string | nu
  */
 export async function lerPaginaDeLinks(
   link: string,
-  opcoes: { timeoutMs?: number } = {},
+  opcoes: { timeoutMs?: number; redeLocal?: boolean } = {},
 ): Promise<ResultadoSite | null> {
-  const timeoutMs = opcoes.timeoutMs ?? 12_000;
+  const como: ComoBuscar = { timeoutMs: opcoes.timeoutMs ?? 12_000, redeLocal: opcoes.redeLocal };
   const url = normalizarSite(link) ?? link;
   // Link direto para o WhatsApp: nem precisa abrir.
   const direto = extrairContatos(`<a href="${url}">`);
@@ -291,18 +301,18 @@ export async function lerPaginaDeLinks(
     return { urlFinal: url, paginas: [], texto: '', ...direto };
   }
   if (ENCURTADOR.test(url)) {
-    const destino = await destinoFinal(url, timeoutMs);
+    const destino = await destinoFinal(url, como);
     const doDestino = destino ? extrairContatos(`<a href="${destino}">`) : null;
     if (doDestino?.whatsapps.length)
       return { urlFinal: destino ?? url, paginas: [], texto: '', ...doDestino };
   }
-  const pagina = await baixarHtml(url, timeoutMs);
+  const pagina = await baixarHtml(url, como);
   if (!pagina) return null;
   const contatos = extrairContatos(pagina.html);
   const hrefs = [...pagina.html.replace(/\\\//g, '/').matchAll(/https?:\/\/[^"'\s<>\\]+/gi)].map((m) => m[0]);
   const curtos = [...new Set(hrefs.filter((h) => ENCURTADOR.test(h)))].slice(0, 5);
   for (const curto of curtos) {
-    const destino = await destinoFinal(curto, timeoutMs);
+    const destino = await destinoFinal(curto, como);
     if (!destino) continue;
     for (const w of extrairContatos(`<a href="${destino}">`).whatsapps)
       if (!contatos.whatsapps.includes(w)) contatos.whatsapps.push(w);

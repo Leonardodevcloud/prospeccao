@@ -5,6 +5,9 @@ import jwt from 'jsonwebtoken';
 import { comUsuario, type UsuarioSessao, usuarioAtual } from '../contexto.js';
 import { origemDeCliente } from '../dominios.js';
 
+/** Para quem é o token: a sessão (cookie) nunca é confundida com o desafio das duas etapas. */
+export const PUBLICO_SESSAO = 'sessao';
+
 export const COOKIE_SESSAO = 'sessao';
 
 declare global {
@@ -173,8 +176,15 @@ export function exigirSessao(jwtSegredo: string, db: Executor): RequestHandler {
       id = Number(dados.sub);
       // Sessão do tempo de um usuário só (sub = e-mail): faz login de novo.
       if (!Number.isInteger(id) || id <= 0) return next(AppError.naoAutorizado());
+      // Só vale o token de sessão: o desafio das duas etapas (e qualquer outro token assinado com o
+      // mesmo segredo) não abre o sistema. Sessão antiga sem o público vale até vencer.
+      if (dados.d !== undefined || (dados.aud !== undefined && dados.aud !== PUBLICO_SESSAO))
+        return next(AppError.naoAutorizado());
       if (Number.isInteger(dados.c) && dados.c > 0) contaEscolhida = dados.c as number;
-      if (typeof dados.s === 'string' && /^[0-9a-f-]{36}$/.test(dados.s)) sessaoId = dados.s;
+      // Toda sessão é registrada no banco (pode ser encerrada); sem o registro, não entra.
+      if (typeof dados.s !== 'string' || !/^[0-9a-f-]{36}$/.test(dados.s))
+        return next(AppError.naoAutorizado());
+      sessaoId = dados.s;
     } catch {
       return next(AppError.naoAutorizado('Sua sessão expirou. Faça login de novo.'));
     }
@@ -199,6 +209,14 @@ export const exigirAdmin: RequestHandler = (req, _res, next) => {
   const papel = req.usuario?.papel ?? usuarioAtual()?.papel;
   next(papel === 'admin' ? undefined : AppError.proibido());
 };
+
+/** A diretoria (acesso só de leitura) olha tudo, mas não leva dados nem segredos para fora. */
+export const semDiretoria: RequestHandler = (req, _res, next) =>
+  next(
+    req.usuario?.papelOrganizacao === 'leitura'
+      ? AppError.proibido('Seu acesso é só de leitura: exportar e ver chaves fica com a equipe.')
+      : undefined,
+  );
 
 /** Leitura para todos; criar, mudar e apagar só administrador. */
 export const adminParaAlterar: RequestHandler = (req, res, next) =>

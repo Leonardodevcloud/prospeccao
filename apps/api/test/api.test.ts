@@ -757,7 +757,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
 
     const tela = await ler('/agente');
     expect(tela.body.status).toMatchObject({ whatsapp: false, ia: false });
-    expect(tela.body.webhook).toMatch(/\/webhooks\/whatsapp\/[0-9a-f]{32}$/);
+    expect(tela.body.webhook).toMatch(/\/webhooks\/whatsapp\/[0-9a-f]{32,64}$/);
     const token = tela.body.webhook.split('/').at(-1);
     // Ligar pela tela pede o perfil da IA conferido e a prova (testado em assistente.test.ts);
     // aqui o motor é o assunto, então a IA já vem ligada.
@@ -2290,7 +2290,7 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
     expect(sem.body.segredos).toMatchObject({ placesKey: null, resendKey: '…9876' });
     const detalhe = (await ler(`/master/contas/${id}`)).body;
     expect(detalhe.webhooks.resend).toMatch(/\/e\/resend\/[0-9a-f]{32}$/);
-    expect(detalhe.webhooks.whatsapp).toMatch(/\/webhooks\/whatsapp\/[0-9a-f]{32}$/);
+    expect(detalhe.webhooks.whatsapp).toMatch(/\/webhooks\/whatsapp\/[0-9a-f]{32,64}$/);
     expect(detalhe.usuarios).toEqual([
       expect.objectContaining({ email: 'bia@fiix.com.br', papel: 'admin', convitePendente: true }),
     ]);

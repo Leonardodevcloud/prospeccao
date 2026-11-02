@@ -46,6 +46,13 @@ export async function salvarConfig(db: Executor, c: ConfigPlacesEntrada) {
   );
 }
 
+/** A conta busca com a chave do Google da plataforma (a cota é de outra conta, a principal). */
+export async function usaChaveDaPlataforma(db: Executor): Promise<boolean> {
+  const { rows } = await db.query<{ id: number | null }>(`SELECT cadastro.cota_places(${contaSql()}) AS id`);
+  const id = rows[0]?.id ?? null;
+  return id != null && id !== conta();
+}
+
 const arred = (v: number, casas = 2) => Math.round(v * 10 ** casas) / 10 ** casas;
 
 /** Painel do mês: usado x franquia, gasto, ritmo e projeção até o fim do mês. */

@@ -1,7 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import { cifrar, decifrar, type Executor, type Pool } from '@prospeccao/db';
+import { buscarNaInternet, enderecoInterno } from '@prospeccao/integrations/rede';
 import {
   AppError,
   type AvisoEntrada,
@@ -162,39 +161,7 @@ export async function testar(db: Executor, webhookId: number): Promise<number> {
 /* ───────────────────────────── Motor de entrega ───────────────────────────── */
 
 /** Endereço privado, da própria máquina ou de metadados da nuvem: não manda para lá. */
-export function ipInterno(ip: string): boolean {
-  const v = isIP(ip);
-  if (v === 4) {
-    const [a = 0, b = 0] = ip.split('.').map(Number);
-    return (
-      a === 10 ||
-      a === 127 ||
-      a === 0 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      a >= 224
-    );
-  }
-  if (v === 6) {
-    const x = ip.toLowerCase();
-    if (x.startsWith('::ffff:')) return ipInterno(x.slice(7));
-    return x === '::1' || x === '::' || /^f[cd]/.test(x) || /^fe[89ab]/.test(x);
-  }
-  return true;
-}
-
-async function conferirDestino(url: string, redeLocal: boolean): Promise<void> {
-  const u = new URL(url);
-  if (!redeLocal && u.protocol !== 'https:') throw new Error('Use um endereço https://');
-  if (redeLocal) return;
-  const host = u.hostname.replace(/^\[|\]$/g, '');
-  if (/^localhost$|\.local$|\.internal$/i.test(host)) throw new Error('Endereço interno não é permitido.');
-  const ips = isIP(host) ? [{ address: host }] : await lookup(host, { all: true });
-  if (!ips.length || ips.some((i) => ipInterno(i.address)))
-    throw new Error('Endereço interno não é permitido.');
-}
+export const ipInterno = enderecoInterno;
 
 /** Assinatura: t=<segundos>,v1=<hmac sha256 hex de "<t>.<corpo>">. */
 export function assinar(segredoTexto: string, corpo: string, t = Math.floor(Date.now() / 1000)): string {
@@ -282,23 +249,27 @@ async function entregar(pool: Pool, log: Logger, o: OpcoesAvisos, e: Pendente): 
   let resposta: string | null = null;
   let erro: string | null = null;
   try {
-    await conferirDestino(e.url, !!o.redeLocal);
     const segredoTexto = decifrar(exigirChave(o), e.segredo_cifrado);
-    const r = await fetch(e.url, {
-      method: 'POST',
-      headers: {
+    // Só https e só endereço público, conferido na hora de conectar (um DNS que muda de resposta
+    // não leva o aviso para a rede interna); não segue redirecionamento; lê no máximo 4 kB da resposta.
+    const r = await buscarNaInternet(e.url, {
+      metodo: 'POST',
+      soHttps: !o.redeLocal,
+      redeLocal: !!o.redeLocal,
+      redirecionamentos: 0,
+      limiteBytes: 4096,
+      timeoutMs: 10_000,
+      cabecalhos: {
         'Content-Type': 'application/json',
         'User-Agent': 'ProspectTeam-Avisos/1',
         'X-Prospect-Evento': e.evento,
         'X-Prospect-Entrega': `evt_${e.id}`,
         [CABECALHO_ASSINATURA]: assinar(segredoTexto, texto),
       },
-      body: texto,
-      redirect: 'manual',
-      signal: AbortSignal.timeout(10_000),
+      corpo: texto,
     });
     status = r.status;
-    resposta = (await r.text().catch(() => '')).slice(0, 500);
+    resposta = r.corpo.toString('utf8').slice(0, 500);
     if (r.status < 200 || r.status >= 300) erro = `O sistema respondeu ${r.status}.`;
   } catch (x) {
     const m =

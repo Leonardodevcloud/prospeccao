@@ -34,12 +34,13 @@ const decodificar = (v: string | undefined) => {
   }
 };
 
-/** O IP de quem visita (o Vercel repassa no x-forwarded-for) e a cidade que ele calcula. */
+/**
+ * O IP de quem visita (o `req.ip`, que a api tira do x-forwarded-for confiando só nos proxies do
+ * caminho: um x-forwarded-for inventado não muda o visitante) e a cidade que o Vercel calcula.
+ */
 export function quemVisita(cabecalho: (nome: string) => string | undefined, ipDaConexao: string): QuemVisita {
-  const encaminhado = cabecalho('x-forwarded-for')?.split(',')[0]?.trim();
   return {
-    // O primeiro do x-forwarded-for é quem abriu o site (o Vercel põe; o Railway acrescenta o resto).
-    ip: encaminhado || cabecalho('x-real-ip') || ipDaConexao,
+    ip: ipDaConexao,
     navegador: cabecalho('user-agent') ?? '',
     cidade: decodificar(cabecalho('x-vercel-ip-city')),
     estado: decodificar(cabecalho('x-vercel-ip-country-region')),

@@ -15,11 +15,13 @@ import express, {
   type Response,
   Router,
 } from 'express';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { comConta, contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp, urlPublicaApi } from '../../endereco.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
+import { limitar } from '../../middlewares/limites.js';
 import { exigirRecurso } from '../../recursos.js';
 import { registrar } from '../auditoria/repositorio.js';
 import * as pipelines from '../funil/pipelines.js';
@@ -81,6 +83,33 @@ export function rotasApiV1(deps: DepsApi): Router {
   const { pool } = deps;
   const r = Router();
   const json = express.json({ limit: '200kb' });
+  // Chave errada (da API ou do formulário): poucas tentativas por endereço. Quem acerta não conta.
+  r.use(
+    rateLimit({
+      windowMs: 10 * 60_000,
+      limit: 60,
+      skipSuccessfulRequests: true,
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+      requestWasSuccessful: (_req, res) => res.statusCode !== 401 && res.statusCode !== 404,
+      handler: (_req, _res, next) =>
+        next(new AppError(429, 'muitas_tentativas', 'Muitas chamadas com chave errada. Espere 10 minutos.')),
+    }),
+  );
+  // Formulário do site: até 10 envios por minuto do mesmo endereço, e um teto por formulário (um
+  // robô mandando telefones de outras pessoas não faz o WhatsApp da conta disparar boas-vindas sem fim).
+  const limitarEnvioPorEndereco = limitar({
+    janelaMs: 60_000,
+    limite: 10,
+    mensagem: 'Muitos envios seguidos. Espere um minuto.',
+    chave: (req) => `${String(req.params.chave)}|${ipKeyGenerator(req.ip ?? '')}`,
+  });
+  const limitarEnvioPorFormulario = limitar({
+    janelaMs: 60 * 60_000,
+    limite: 120,
+    mensagem: 'Este formulário recebeu envios demais na última hora. Tente de novo mais tarde.',
+    chave: (req) => `form:${String(req.params.chave)}`,
+  });
   const formulario = express.urlencoded({ extended: true, limit: '200kb' });
 
   const link = (contaId: number, empresaId: number) =>
@@ -111,6 +140,8 @@ export function rotasApiV1(deps: DepsApi): Router {
   r.post(
     '/entrada/:chave',
     cors,
+    limitarEnvioPorEndereco,
+    limitarEnvioPorFormulario,
     json,
     formulario,
     assincrono(async (req, res) => {

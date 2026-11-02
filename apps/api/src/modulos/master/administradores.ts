@@ -1,6 +1,6 @@
-import { randomBytes } from 'node:crypto';
 import { AppError, administradorAtualizar, administradorNovo } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
+import { derrubarSessoes, tokenDeConvite } from '../../convites.js';
 import type { DepsApi } from '../../dependencias.js';
 import { enderecoDoApp } from '../../endereco.js';
 import { corpo, idDaRota } from '../../middlewares/http.js';
@@ -107,7 +107,7 @@ export function rotasAdministradores(deps: DepsApi): Router {
       throw AppError.conflito(
         'Esse e-mail já é de alguém de um cliente. Use outro e-mail para o administrador da plataforma.',
       );
-    const token = randomBytes(24).toString('base64url');
+    const { token, hash } = tokenDeConvite();
     let id: number;
     if (existe[0]) {
       // Já é da sua equipe (conta principal): ganha o acesso master e um link novo.
@@ -117,7 +117,7 @@ export function rotasAdministradores(deps: DepsApi): Router {
                 convite_token = CASE WHEN senha_hash IS NULL THEN $3 ELSE convite_token END,
                 convite_expira = CASE WHEN senha_hash IS NULL THEN now() + make_interval(days => ${DIAS_CONVITE}) ELSE convite_expira END
           WHERE id = $1`,
-        [existe[0].id, d.nome, token],
+        [existe[0].id, d.nome, hash],
       );
       id = existe[0].id;
     } else {
@@ -126,7 +126,7 @@ export function rotasAdministradores(deps: DepsApi): Router {
          VALUES ($1, $2, 'admin', true, true, (SELECT id FROM cadastro.contas WHERE principal ORDER BY id LIMIT 1),
                  $3, now() + make_interval(days => ${DIAS_CONVITE}))
          RETURNING id`,
-        [d.nome, d.email, token],
+        [d.nome, d.email, hash],
       );
       id = rows[0]!.id;
       await pool.query('INSERT INTO comercial.metas (usuario_id) VALUES ($1) ON CONFLICT DO NOTHING', [id]);
@@ -182,17 +182,14 @@ export function rotasAdministradores(deps: DepsApi): Router {
   /** Link novo para criar a senha (convite vencido ou senha esquecida). A senha antiga deixa de valer. */
   r.post('/:id/convite', async (req, res) => {
     const a = await alvo(req);
-    const token = randomBytes(24).toString('base64url');
+    const { token, hash } = tokenDeConvite();
     await pool.query(
       `UPDATE cadastro.usuarios
           SET convite_token = $2, convite_expira = now() + make_interval(days => ${DIAS_CONVITE}), senha_hash = NULL
         WHERE id = $1`,
-      [a.id, token],
+      [a.id, hash],
     );
-    await pool.query(
-      'UPDATE cadastro.sessoes SET revogada_em = now() WHERE usuario_id = $1 AND revogada_em IS NULL',
-      [a.id],
-    );
+    await derrubarSessoes(pool, a.id);
     await registrar(req, `Gerou um link de nova senha para o administrador ${a.nome}.`);
     res.json({ convite: link(req, token), diasValidade: DIAS_CONVITE });
   });

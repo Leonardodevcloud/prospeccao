@@ -323,7 +323,8 @@ export async function agenteArgos(
       observar('Sua resposta não era um JSON válido. Devolva só o objeto JSON da próxima ação.');
       continue;
     }
-    deps.log.info({ passo, acao: p.acao, pensamento: p.pensamento?.slice(0, 200) }, 'argos: etapa');
+    // Só a ação: o raciocínio do Argos cita dados dos leads e não vai para o log.
+    deps.log.info({ passo, acao: p.acao }, 'argos: etapa');
 
     if (p.acao === 'responder' || ultimo) {
       // Trava: custos de serviços, fornecedores com preço e os bastidores do Argos não saem.

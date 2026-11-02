@@ -47,7 +47,10 @@ export async function mandarEmailSistema(
     });
     return true;
   } catch (erro) {
-    deps.log.error({ err: erro, para: e.para }, 'assinatura: o e-mail não saiu');
+    deps.log.error(
+      { err: erro, para: e.para.replace(/^(.)[^@]*(@.*)$/, '$1…$2') },
+      'assinatura: o e-mail não saiu',
+    );
     return false;
   }
 }

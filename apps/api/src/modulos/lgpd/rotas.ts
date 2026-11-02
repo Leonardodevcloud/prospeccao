@@ -1,10 +1,10 @@
 import { chaveTitular, comTransacao } from '@prospeccao/db';
 import { AppError, esquecerTitular } from '@prospeccao/shared';
-import { type RequestHandler, Router } from 'express';
+import { Router } from 'express';
 import { conta, contaSql } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { corpo } from '../../middlewares/http.js';
-import { exigirAdmin } from '../../middlewares/seguranca.js';
+import { exigirAdmin, semDiretoria } from '../../middlewares/seguranca.js';
 import * as salas from '../reunioes/repositorio.js';
 
 /**
@@ -15,8 +15,7 @@ import * as salas from '../reunioes/repositorio.js';
  */
 
 /** A leitura (diretoria) não leva os dados para fora. */
-const semLeitura: RequestHandler = (req, _res, next) =>
-  next(req.usuario?.papelOrganizacao === 'leitura' ? AppError.proibido() : undefined);
+const semLeitura = semDiretoria;
 
 export function rotasLgpd({ pool, log, reunioes }: DepsApi): Router {
   const r = Router();

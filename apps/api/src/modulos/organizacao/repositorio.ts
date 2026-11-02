@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { comTransacao, type Executor, INICIO_MES_SP_TS, type Pool } from '@prospeccao/db';
 import {
   AppError,
@@ -8,6 +7,7 @@ import {
   type UnidadeAtualizar,
   type UnidadeNova,
 } from '@prospeccao/shared';
+import { derrubarSessoes, tokenDeConvite } from '../../convites.js';
 import { DIAS_CONVITE } from '../equipe/repositorio.js';
 import { exigirVagaDeUsuario, planoDaOrganizacao } from '../plano/repositorio.js';
 
@@ -178,13 +178,13 @@ export async function criarPessoa(
 ): Promise<{ id: number; token: string }> {
   await unidadeDaOrganizacao(pool, organizacaoId, d.unidadeId);
   await exigirVagaDeUsuario(pool, d.unidadeId);
-  const token = randomBytes(24).toString('base64url');
+  const { token, hash } = tokenDeConvite();
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO cadastro.usuarios (nome, email, papel, telefone, convite_token, convite_expira, conta_id)
      VALUES ($1, $2, $3, $4, $5, now() + make_interval(days => ${DIAS_CONVITE}), $6)
      ON CONFLICT ((lower(email))) DO NOTHING
      RETURNING id`,
-    [d.nome, d.email, d.papel, d.telefone ?? null, token, d.unidadeId],
+    [d.nome, d.email, d.papel, d.telefone ?? null, hash, d.unidadeId],
   );
   if (!rows[0]) throw AppError.conflito('Já existe alguém com este e-mail no sistema.');
   await pool.query('INSERT INTO comercial.metas (usuario_id) VALUES ($1) ON CONFLICT DO NOTHING', [
@@ -270,13 +270,14 @@ export async function atualizarPessoa(
 
 export async function novoConvite(pool: Pool, organizacaoId: number, id: number): Promise<string> {
   await pessoaDaOrganizacao(pool, organizacaoId, id);
-  const token = randomBytes(24).toString('base64url');
+  const { token, hash } = tokenDeConvite();
   await pool.query(
     `UPDATE cadastro.usuarios
         SET convite_token = $2, convite_expira = now() + make_interval(days => ${DIAS_CONVITE}), senha_hash = NULL
-      WHERE id = $1`,
-    [id, token],
+      WHERE id = $1 AND NOT master`,
+    [id, hash],
   );
+  await derrubarSessoes(pool, id);
   return token;
 }
 

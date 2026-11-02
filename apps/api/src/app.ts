@@ -3,7 +3,10 @@ import express, { type Express, Router } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import type { DepsApi } from './dependencias.js';
+import { corpoGrande, lerCorpoGrande } from './middlewares/corpo.js';
 import { rotaNaoEncontrada, tratarErros } from './middlewares/erros.js';
+import { PROXIES_CONFIAVEIS } from './middlewares/limites.js';
+import { caminhoParaLog } from './middlewares/logs.js';
 import {
   adminParaAlterar,
   exigirDuasEtapas,
@@ -11,6 +14,7 @@ import {
   exigirMaster,
   exigirOrigemConhecida,
   exigirSessao,
+  semDiretoria,
 } from './middlewares/seguranca.js';
 import { rotasAgenda, rotasCalendario } from './modulos/agenda/rotas.js';
 import { rotasAgente, rotasWebhook } from './modulos/agente/rotas.js';
@@ -63,7 +67,8 @@ import { rotaComRecurso } from './recursos.js';
 export function criarApp(deps: DepsApi): Express {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 1); // atrás do proxy do Railway/Vercel: IP real para o rate limit
+  // Atrás do Vercel e da borda do Railway: o IP de quem usa, para os limites e a auditoria.
+  app.set('trust proxy', PROXIES_CONFIAVEIS);
 
   app.use(helmet());
   // Link das salas de reunião: <endereço do sistema>/r/<código>.
@@ -75,30 +80,21 @@ export function criarApp(deps: DepsApi): Express {
   );
   // O que a Meta chama sem login: o webhook (corpo cru, assinado) e a volta do login.
   app.use('/meta', rotasMeta(deps));
-  // Webhook do WhatsApp: vem da Evolution (sem origem do navegador, sem sessão); protegido por token.
-  // Antes do limite de 200 kb: mensagem com mídia chega grande.
-  app.use('/webhooks', express.json({ limit: '10mb' }), rotasWebhook(deps));
+  // Webhook do WhatsApp: vem da Z-API (sem origem do navegador, sem sessão); protegido por token
+  // (conferido antes de ler o corpo, que pode ser grande).
+  app.use('/webhooks', rotasWebhook(deps));
   // Avisos do LiveKit (reuniões): corpo cru, a assinatura é conferida sobre os bytes exatos.
   app.use('/livekit', express.raw({ type: '*/*', limit: '1mb' }), rotasAvisoVideo(deps));
   // Webhook do Resend: corpo cru (a assinatura é conferida sobre os bytes exatos).
   app.use('/e/resend', rotasWebhookResend(deps));
   // Aviso de pagamento do Asaas (sem origem do navegador; token no cabeçalho).
   app.use('/asaas', rotasWebhookAsaas(deps));
-  // Anexo da conversa e do e-mail (até 10 MB em base64) e imagem da marca são os corpos grandes;
-  // o resto fica em 200 kb.
-  const jsonGrande = express.json({ limit: '15mb' });
+  // Anexo da conversa e do e-mail (até 10 MB em base64), imagem da marca e a lista de leads para
+  // importar (até 15 MB em base64) são os corpos grandes; o resto fica em 200 kb. Os grandes só
+  // são lidos depois do login conferido (ou, na sala, da credencial de quem entrou): sem login,
+  // ninguém faz o servidor ler megabytes.
   const jsonPequeno = express.json({ limit: '200kb' });
-  // Lista de leads para importar (até 15 MB em base64).
-  const jsonPlanilha = express.json({ limit: '21mb' });
-  app.use((req, res, next) =>
-    req.path === '/importacoes-leads/analisar'
-      ? jsonPlanilha(req, res, next)
-      : /^\/marca$|^\/marca\/fundos\/fotos$|^\/meus-fundos$|^\/organizacao\/marca$|^\/conversas\/\d+\/midia$|^\/email\/(anexos|imagens)$|^\/agente\/conhecimento\/arquivo$|^\/agente\/ia\/sugestoes$|^\/salas\/[a-z0-9-]+\/arquivos$/.test(
-            req.path,
-          )
-        ? jsonGrande(req, res, next)
-        : jsonPequeno(req, res, next),
-  );
+  app.use((req, res, next) => (corpoGrande(req.path) ? next() : jsonPequeno(req, res, next)));
   app.use(cookieParser());
   app.use(
     pinoHttp({
@@ -106,12 +102,13 @@ export function criarApp(deps: DepsApi): Express {
       autoLogging: { ignore: (req) => req.url === '/saude' },
       // Uma linha curta por requisição: "GET /campanhas → 200 (12 ms)", sem os cabeçalhos todos.
       serializers: {
-        req: (req: { method: string; url: string }) => ({ metodo: req.method, url: req.url }),
+        req: (req: { method: string; url: string }) => ({ metodo: req.method, url: caminhoParaLog(req.url) }),
         res: (res: { statusCode: number }) => ({ status: res.statusCode }),
       },
       customSuccessMessage: (req, res, ms) =>
-        `${req.method} ${req.url} → ${res.statusCode} (${Math.round(ms)} ms)`,
-      customErrorMessage: (req, res, erro) => `${req.method} ${req.url} → ${res.statusCode}: ${erro.message}`,
+        `${req.method} ${caminhoParaLog(req.url)} → ${res.statusCode} (${Math.round(ms)} ms)`,
+      customErrorMessage: (req, res, erro) =>
+        `${req.method} ${caminhoParaLog(req.url)} → ${res.statusCode}: ${erro.message}`,
       customLogLevel: (_req, res, erro) =>
         erro || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
     }),
@@ -137,6 +134,7 @@ export function criarApp(deps: DepsApi): Express {
 
   const protegidas = Router();
   protegidas.use(exigirSessao(deps.auth.jwtSegredo, deps.pool));
+  protegidas.use(lerCorpoGrande);
   // Organização que exige duas etapas: sem configurar, só a conta da pessoa funciona (em /auth).
   protegidas.use(exigirDuasEtapas);
   // Acesso só de leitura (diretoria): vê tudo, não altera nada.
@@ -192,7 +190,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/atividade', rotaComRecurso(deps.pool, 'relatorios'), rotasAtividade(deps));
   protegidas.use('/places', rotasPlaces(deps));
   protegidas.use('/auditoria', rotaComRecurso(deps.pool, 'seguranca'), rotasAuditoria(deps));
-  protegidas.use('/exportar', rotasExportar(deps));
+  protegidas.use('/exportar', semDiretoria, rotasExportar(deps));
   protegidas.use('/alertas', rotasAlertas(deps));
   protegidas.use('/saude/detalhes', rotasSaudeDetalhes(deps));
   // Argos: o assistente (segundo cérebro), só leitura e só no escopo de quem pergunta.

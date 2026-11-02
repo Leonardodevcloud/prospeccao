@@ -91,7 +91,10 @@ const app = criarApp({
     adminEmail: env.ADMIN_EMAIL,
     adminSenhaHash: env.ADMIN_SENHA_HASH,
     sessaoHoras: env.SESSAO_HORAS,
-    cookieSeguro: env.NODE_ENV === 'production',
+    // Cookie só por https: em produção, ou sempre que o sistema é aberto por https (mesmo que o
+    // NODE_ENV tenha ficado de fora da configuração).
+    cookieSeguro:
+      env.NODE_ENV === 'production' || env.APP_ORIGENS.every((o: string) => o.startsWith('https://')),
   },
   origens: env.APP_ORIGENS,
   servicos,

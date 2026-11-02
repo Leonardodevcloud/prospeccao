@@ -227,7 +227,8 @@ export function rotasImportacaoLeads(deps: DepsApi): Router {
     res.status(201).json(paraTela(await obter(Number(rows[0]!.id))));
   });
 
-  r.get('/:id', async (req, res) => {
+  // As linhas da planilha (nomes, telefones, e-mails): só quem importa.
+  r.get('/:id', exigirAdmin, async (req, res) => {
     res.json(paraTela(await obter(idDaRota(req))));
   });
 

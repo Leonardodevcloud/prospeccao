@@ -13,7 +13,7 @@ import {
 } from '@prospeccao/shared';
 import express, { type NextFunction, type Request, type Response, Router } from 'express';
 import { z } from 'zod';
-import { exigirVisivel, travaDaBase } from '../../base.js';
+import { exigirLeadDaConta, exigirVisivel, travaDaBase } from '../../base.js';
 import { comConta, donoDaBase } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
@@ -264,7 +264,7 @@ export function rotasLigacoes(deps: DepsApi): Router {
   r.post('/:id/lead', async (req, res) => {
     const id = idDaRota(req);
     const { empresaId } = corpo(req, z.object({ empresaId: z.number().int().positive() }));
-    await exigirVisivel(pool, empresaId);
+    await exigirLeadDaConta(pool, empresaId);
     await pool.query(
       `UPDATE comercial.ligacoes SET empresa_id = $2 WHERE id = $1 AND conta_id = $3 AND empresa_id IS NULL`,
       [id, empresaId, req.usuario!.contaId],

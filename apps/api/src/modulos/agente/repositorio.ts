@@ -1,6 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import type { ConfigAgenteEntrada } from '@prospeccao/shared';
-import { contaSql } from '../../contexto.js';
+import { contaSql, empresaVisivel } from '../../contexto.js';
 import { visivel } from '../../visibilidade.js';
 
 /** Agente de abordagem (schema comercial, só a API escreve). */
@@ -92,7 +92,7 @@ export async function rascunhos(db: Executor) {
        FROM comercial.mensagens m
        JOIN descoberta.empresas e ON e.id = m.empresa_id
        LEFT JOIN comercial.oportunidades o ON o.conta_id = m.conta_id AND o.empresa_id = m.empresa_id
-      WHERE m.conta_id = ${C} AND m.status = 'rascunho'
+      WHERE m.conta_id = ${C} AND m.status = 'rascunho' AND ${empresaVisivel('m.empresa_id')}
       ORDER BY m.criado_em
       LIMIT 200`,
   );
@@ -182,7 +182,7 @@ export async function criarMensagem(
 export async function aprovar(db: Executor, id: number, texto?: string): Promise<boolean> {
   const { rowCount } = await db.query(
     `UPDATE comercial.mensagens SET status = 'aprovada', texto = coalesce($2, texto)
-      WHERE id = $1 AND conta_id = ${contaSql()} AND status = 'rascunho'`,
+      WHERE id = $1 AND conta_id = ${contaSql()} AND status = 'rascunho' AND ${empresaVisivel('empresa_id')}`,
     [id, texto ?? null],
   );
   return (rowCount ?? 0) > 0;
@@ -192,7 +192,7 @@ export async function aprovar(db: Executor, id: number, texto?: string): Promise
 export async function descartar(db: Executor, id: number): Promise<boolean> {
   const { rows } = await db.query<{ empresa_id: number; origem: string }>(
     `UPDATE comercial.mensagens SET status = 'descartada'
-      WHERE id = $1 AND conta_id = ${contaSql()} AND status = 'rascunho'
+      WHERE id = $1 AND conta_id = ${contaSql()} AND status = 'rascunho' AND ${empresaVisivel('empresa_id')}
      RETURNING empresa_id::int, origem`,
     [id],
   );

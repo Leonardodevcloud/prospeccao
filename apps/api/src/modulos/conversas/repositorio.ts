@@ -1,6 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import { AppError, LIMITE_MIDIA_BYTES, type MidiaEntrada } from '@prospeccao/shared';
-import { conta, contaSql, naBase, usuarioAtual } from '../../contexto.js';
+import { conta, contaSql, empresaVisivel, naBase, usuarioAtual } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { visivel } from '../../visibilidade.js';
 import { chipParaEquipe, emUso as chipsEmUso } from '../agente/chips.js';
@@ -317,7 +317,11 @@ export async function enviarMidia(deps: Deps, empresaId: number, m: MidiaEntrada
 
 export async function midia(db: Executor, id: number) {
   const { rows } = await db.query<{ mime: string; nome: string | null; dados: Buffer }>(
-    `SELECT mime, nome, dados FROM comercial.midias WHERE id = $1 AND conta_id = ${contaSql()}`,
+    `SELECT md.mime, md.nome, md.dados FROM comercial.midias md
+      WHERE md.id = $1 AND md.conta_id = ${contaSql()}
+        -- Quem vê só a própria base não abre arquivo da conversa de lead de colega.
+        AND NOT EXISTS (SELECT 1 FROM comercial.mensagens mm
+                         WHERE mm.midia_id = md.id AND mm.conta_id = md.conta_id AND NOT ${empresaVisivel('mm.empresa_id')})`,
     [id],
   );
   if (!rows[0]) throw AppError.naoEncontrado('Arquivo');

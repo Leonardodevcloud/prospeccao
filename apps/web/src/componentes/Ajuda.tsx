@@ -151,6 +151,54 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'acesso-seguro',
+    area: 'Começo',
+    titulo: 'Acesso e proteção dos dados',
+    resumo: 'Senha, verificação em duas etapas, aparelhos conectados e como o sistema protege os dados.',
+    termos:
+      'senha esqueci a senha travado bloqueado muitas tentativas duas etapas código aplicativo autenticador sessões aparelhos conectados sair de todos convite link segurança proteção dados lgpd vazamento',
+    corpo: (
+      <>
+        <p>
+          Cada pessoa entra com o próprio e-mail e senha. Em <b>Minha conta</b> (no seu nome, no canto da
+          tela) você troca a senha, liga a <b>verificação em duas etapas</b> (o código do aplicativo
+          autenticador no celular) e vê <b>onde está conectado</b>, podendo sair dos outros aparelhos.
+        </p>
+        <h3>Senha errada várias vezes</h3>
+        <p>
+          A cada 5 tentativas erradas seguidas (de senha ou do código das duas etapas), o acesso da pessoa
+          fica travado por 15 minutos; se continuar errando, a espera aumenta. Para destravar na hora, use{' '}
+          <b>Esqueci a senha</b>: ao criar a senha nova, o acesso volta. O código do aplicativo vale uma vez
+          só.
+        </p>
+        <h3>Links de convite e de senha nova</h3>
+        <ul>
+          <li>
+            O convite vale por 7 dias e o link de senha esquecida, por 1 hora; os dois funcionam uma vez só.
+            Gerar um link novo cancela a senha antiga e tira a pessoa de todos os aparelhos.
+          </li>
+          <li>
+            O administrador da unidade gera links só para a equipe da unidade. O link do gestor e da diretoria
+            sai pela tela da organização.
+          </li>
+          <li>Trocar a senha também tira a pessoa dos outros aparelhos.</li>
+        </ul>
+        <h3>Como os dados ficam protegidos</h3>
+        <ul>
+          <li>Tudo trafega com criptografia (https), e o acesso só funciona pelo endereço do sistema.</li>
+          <li>
+            Cada empresa cliente só enxerga os próprios leads, conversas e marcações (como “número errado”).
+          </li>
+          <li>
+            Senhas, chaves de serviços e o segredo das duas etapas ficam guardados cifrados; os links de
+            convite e de senha nova ficam guardados de um jeito que nem quem lê o banco consegue usar.
+          </li>
+          <li>O acesso de diretoria (só leitura) vê tudo, mas não exporta planilhas nem vê chaves.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: 'nichos-campanhas',
     area: 'Prospecção',
     titulo: 'Nichos e campanhas',

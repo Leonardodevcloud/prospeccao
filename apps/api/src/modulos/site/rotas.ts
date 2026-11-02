@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { comConta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
+import { limitarPorSalto } from '../../middlewares/limites.js';
 import { numerosDaPlataforma } from '../assinatura/servico.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import { contarEmpresas, NICHOS_DO_CONTADOR, situacaoDoContador } from './contador.js';
@@ -57,6 +58,12 @@ export function rotasSitePublico(deps: DepsApi): Router {
           'Recebemos vários pedidos seus. Tente de novo em alguns minutos.',
         ),
       ),
+  });
+
+  const limitarSalto = limitarPorSalto({
+    janelaMs: 10 * 60_000,
+    limite: 100,
+    mensagem: 'Recebemos muitos pedidos agora. Tente de novo em alguns minutos.',
   });
 
   // Visitas: uma página tem uns 3 a 5 eventos (abrir, cliques, sair); o limite só segura abuso.
@@ -121,7 +128,7 @@ export function rotasSitePublico(deps: DepsApi): Router {
     res.json({ whatsapp: c.whatsapp, email: c.email });
   });
 
-  r.post('/demonstracao', limitar, async (req, res) => {
+  r.post('/demonstracao', limitarSalto, limitar, async (req, res) => {
     const d = corpo(req, pedidoSiteEntrada);
     // Robô preencheu o campo escondido: responde como se tivesse dado certo e não grava nada.
     if (d.site) {

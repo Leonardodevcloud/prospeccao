@@ -73,6 +73,17 @@ export function conferir(segredo: string, digitado: string, quando = Date.now())
   });
 }
 
+/** O passo (contador de 30 s) do código que conferiu, ou null (para não aceitar o mesmo código de novo). */
+export function passoConferido(segredo: string, digitado: string, quando = Date.now()): number | null {
+  const d = digitado.replace(/\D/g, '');
+  if (d.length !== 6) return null;
+  for (const p of [-1, 0, 1]) {
+    const c = Buffer.from(codigo(segredo, quando, p));
+    if (timingSafeEqual(c, Buffer.from(d))) return Math.floor(quando / 1000 / 30) + p;
+  }
+  return null;
+}
+
 export function enderecoOtp(segredo: string, conta: string, emissor = 'Prospect Team'): string {
   const rotulo = encodeURIComponent(`${emissor}:${conta}`);
   return `otpauth://totp/${rotulo}?secret=${segredo}&issuer=${encodeURIComponent(emissor)}&digits=6&period=30`;

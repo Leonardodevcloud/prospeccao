@@ -70,8 +70,10 @@ export async function gravarLead(
     [contaId, empresaId, chavesDoTitular(l)],
   );
   if (sup.length) return { empresaId, nova, ligada: false, suprimida: true };
-  // Site é público: vale para a empresa (o enriquecimento lê o site), sem tirar o que já havia.
-  if (l.site)
+  // Site é público: vale para a empresa (o enriquecimento lê o site), sem tirar o que já havia. Só
+  // quando a empresa entrou agora por esta lista: a planilha de uma conta não muda o site (e os
+  // contatos que saem dele) de uma empresa que outras contas já têm.
+  if (l.site && nova)
     await db.query(`UPDATE descoberta.empresas SET maps_site = coalesce(maps_site, $2) WHERE id = $1`, [
       empresaId,
       l.site,

@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   AppError,
   conversoesEntrada,
@@ -424,6 +425,12 @@ async function listarFormularios(deps: DepsApi, dias: number) {
 export function rotasMeta(deps: DepsApi): Router {
   const r = Router();
 
+  /** Compara sem deixar o tempo da resposta dizer quantas letras acertou. */
+  const mesmoTexto = (a: string, b: string) => {
+    const h = (x: string) => createHash('sha256').update(x, 'utf8').digest();
+    return timingSafeEqual(h(a), h(b));
+  };
+
   /** Cadastro do webhook na Meta: devolve o desafio se a senha bate. */
   r.get('/webhook', (req: Request, res: Response) => {
     const m = servico.meta();
@@ -431,7 +438,7 @@ export function rotasMeta(deps: DepsApi): Router {
     if (
       m?.tokenVerificacao &&
       q['hub.mode'] === 'subscribe' &&
-      q['hub.verify_token'] === m.tokenVerificacao
+      mesmoTexto(String(q['hub.verify_token'] ?? ''), m.tokenVerificacao)
     ) {
       res.type('text/plain').send(String(q['hub.challenge'] ?? ''));
       return;

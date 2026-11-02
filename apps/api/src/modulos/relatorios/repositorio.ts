@@ -174,7 +174,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
     `WITH marcados AS (
        SELECT unnest(CASE WHEN cardinality(f.fontes) = 0 THEN ARRAY['desconhecida'] ELSE f.fontes END) AS fonte
          FROM comercial.feedback f
-        WHERE f.tipo = 'numero_errado' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}
+        WHERE f.conta_id = ${contaSql()} AND f.tipo = 'numero_errado' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}
           AND ${daConta('f.empresa_id')}
      ),
      total AS (
@@ -190,7 +190,7 @@ export async function relatorio(db: Executor, f: FiltrosRelatorio) {
   );
   const naoDecisores = await db.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM comercial.feedback f
-      WHERE f.tipo = 'nao_decisor' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}
+      WHERE f.conta_id = ${contaSql()} AND f.tipo = 'nao_decisor' AND ${noPeriodo('f.criado_em')} AND ${daCampanha('f.empresa_id')}
         AND ${daConta('f.empresa_id')}`,
     v,
   );

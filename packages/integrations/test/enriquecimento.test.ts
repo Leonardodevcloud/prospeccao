@@ -53,7 +53,7 @@ describe('site da empresa', () => {
   });
 
   it('lê a home e a página de contato do mesmo domínio', async () => {
-    const r = await lerSite(base);
+    const r = await lerSite(base, { redeLocal: true });
     expect(r?.paginas.map((p) => new URL(p.url).pathname)).toEqual(['/', '/fale-conosco']);
     expect(r?.emails).toEqual(['compras@ladeira.com.br']);
     expect(r?.telefones).toEqual(expect.arrayContaining(['7132410098', '7132410099']));
@@ -61,7 +61,11 @@ describe('site da empresa', () => {
   });
 
   it('site fora do ar não quebra', async () => {
-    expect(await lerSite(`${base}/nada`)).toBeNull();
+    expect(await lerSite(`${base}/nada`, { redeLocal: true })).toBeNull();
+  });
+
+  it('endereço da rede interna não é lido (site de planilha apontando para o servidor)', async () => {
+    expect(await lerSite(base)).toBeNull();
   });
 
   it('não confunde rede social com site', () => {
