@@ -120,7 +120,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
             ]
           : [];
       if (i === 3)
-        estabs.push(estab('22333444', '0002', '11', 'FILIAL BAIXADA', '08', '4530703', 'BA', '3849')); // entra (situação registrada)
+        estabs.push(estab('22333444', '0002', '11', 'FILIAL BAIXADA', '08', '4530703', 'BA', '3849')); // fechada: não entra
       await criarZip(pasta, `Estabelecimentos${i}.zip`, estabs);
       await criarZip(
         pasta,
@@ -164,7 +164,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     await pool?.end();
   });
 
-  it('importa só UFs e CNAEs-alvo, com empresas e sócios', async () => {
+  it('importa só as ativas das UFs e CNAEs-alvo, com empresas e sócios', async () => {
     const id = await criarImportacao(pool, 'manual', null);
     const r = await importarBaseCnpj({
       pool,
@@ -175,7 +175,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     });
     await marcarFim(pool, id, null);
 
-    expect(r).toMatchObject({ mes: '2026-09', estabelecimentos: 2, empresas: 2, socios: 2 });
+    expect(r).toMatchObject({ mes: '2026-09', estabelecimentos: 1, empresas: 1, socios: 2 });
 
     const { rows: estabs } = await pool.query(
       'SELECT cnpj, situacao, cidade, razao_social, porte FROM base_cnpj.v_estabelecimentos ORDER BY cnpj',
@@ -187,13 +187,6 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
         cidade: 'SALVADOR',
         razao_social: 'LADEIRA NOVA COMERCIO DE PECAS LTDA',
         porte: 'epp',
-      },
-      {
-        cnpj: '22333444000211',
-        situacao: '08',
-        cidade: 'SALVADOR',
-        razao_social: 'BAIXADA LTDA',
-        porte: 'me',
       },
     ]);
 
@@ -219,10 +212,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     const { rows: mei } = await pool.query(
       'SELECT cnpj, mei FROM base_cnpj.v_estabelecimentos ORDER BY cnpj',
     );
-    expect(mei).toEqual([
-      { cnpj: '11222333000181', mei: false },
-      { cnpj: '22333444000211', mei: true },
-    ]);
+    expect(mei).toEqual([{ cnpj: '11222333000181', mei: false }]);
 
     const { rows: imp } = await pool.query(
       'SELECT status, ufs, cnaes, linhas_lidas FROM base_cnpj.importacoes WHERE id = $1',
@@ -245,7 +235,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     const { rows } = await pool.query(
       'SELECT (SELECT count(*) FROM base_cnpj.estabelecimentos) AS e, (SELECT count(*) FROM base_cnpj.socios) AS s',
     );
-    expect(rows[0]).toEqual({ e: 2, s: 2 });
+    expect(rows[0]).toEqual({ e: 1, s: 2 });
     // A contagem é refeita do zero, não somada à anterior.
     const { rows: c } = await pool.query('SELECT sum(ativas)::int AS n FROM base_cnpj.contagem_nichos');
     expect(c[0].n).toBe(2);
@@ -277,7 +267,7 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
     const r = await importarBaseCnpj({ pool, log, fonte: fonte(null), importacaoId: id, ufsExtras: [] });
     await marcarFim(pool, id, null);
     expect(pedidos).toEqual([...Array.from({ length: 10 }, (_, i) => `Socios${i}.zip`), 'Simples.zip']);
-    expect(r).toMatchObject({ estabelecimentos: 2, empresas: 2, socios: 2 });
+    expect(r).toMatchObject({ estabelecimentos: 1, empresas: 1, socios: 2 });
 
     const { rows } = await pool.query(
       `SELECT (SELECT count(*) FROM base_cnpj.socios) AS s,
@@ -286,6 +276,35 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
       [id],
     );
     expect(rows[0]).toEqual({ s: 2, status: 'concluida', arquivos: 34 });
+  });
+
+  it('empresa que fechou (ou era fechada de antes) sai da base com a razão social e os sócios', async () => {
+    // Como a base ficava antes: uma fechada guardada e uma que não veio nesta publicação.
+    await pool.query(
+      `INSERT INTO base_cnpj.estabelecimentos (cnpj, cnpj_basico, matriz, situacao, cnae_principal, uf, municipio_codigo)
+       VALUES ('55666777000100', '55666777', true, '08', '4530703', 'BA', '3849'),
+              ('66777888000100', '66777888', true, '02', '4530703', 'BA', '3849')`,
+    );
+    await pool.query(
+      `INSERT INTO base_cnpj.empresas (cnpj_basico, razao_social) VALUES ('55666777', 'FECHOU LTDA'), ('66777888', 'SUMIU LTDA')`,
+    );
+    await pool.query(
+      `INSERT INTO base_cnpj.socios (cnpj_basico, tipo, nome, qualificacao_codigo) VALUES ('66777888', 'pf', 'FULANO', '49')`,
+    );
+    const id = await criarImportacao(pool, 'manual', null);
+    await importarBaseCnpj({
+      pool,
+      log,
+      fonte: new FontePasta(pasta, '2026-09'),
+      importacaoId: id,
+      ufsExtras: [],
+    });
+    const { rows } = await pool.query(
+      `SELECT (SELECT array_agg(cnpj ORDER BY cnpj) FROM base_cnpj.estabelecimentos) AS e,
+              (SELECT array_agg(cnpj_basico ORDER BY cnpj_basico) FROM base_cnpj.empresas) AS emp,
+              (SELECT count(*)::int FROM base_cnpj.socios) AS s`,
+    );
+    expect(rows[0]).toEqual({ e: ['11222333000181'], emp: ['11222333'], s: 2 });
   });
 
   it('sem campanha com cidades: não guarda empresas, mas conta os nichos para o site', async () => {

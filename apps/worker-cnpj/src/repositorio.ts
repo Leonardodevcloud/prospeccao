@@ -242,9 +242,53 @@ export async function salvarEmpresas(db: Executor, importacaoId: number, itens: 
 }
 
 /** Sócios são substituídos por inteiro a cada importação (o quadro muda). */
-export async function limparSocios(db: Executor, basicos: string[]) {
-  for (let i = 0; i < basicos.length; i += 5000) {
-    await db.query('DELETE FROM base_cnpj.socios WHERE cnpj_basico = ANY($1)', [basicos.slice(i, i + 5000)]);
+export async function limparSocios(db: Executor, basicos: Iterable<string>) {
+  let lote: string[] = [];
+  for (const b of basicos) {
+    lote.push(b);
+    if (lote.length >= 5000) {
+      await db.query('DELETE FROM base_cnpj.socios WHERE cnpj_basico = ANY($1)', [lote]);
+      lote = [];
+    }
+  }
+  if (lote.length) await db.query('DELETE FROM base_cnpj.socios WHERE cnpj_basico = ANY($1)', [lote]);
+}
+
+/** Apaga de uma vez (o banco junta as tabelas num passo só; em pedaços, cada volta relia a tabela). */
+async function apagar(db: Executor, tabela: string, condicao: string, valores: unknown[] = []) {
+  const { rowCount } = await db.query(`DELETE FROM ${tabela} t WHERE ${condicao}`, valores);
+  return rowCount ?? 0;
+}
+
+/** Tira da base o que não veio ativo nesta publicação (fechou, saiu dos alvos ou era fechada de antes). */
+export async function podarEstabelecimentos(db: Executor, importacaoId: number): Promise<number> {
+  return apagar(
+    db,
+    'base_cnpj.estabelecimentos',
+    `t.importacao_id IS DISTINCT FROM $1 OR t.situacao <> '02'`,
+    [importacaoId],
+  );
+}
+
+/** Empresas (razão social) e sócios de raízes que não têm mais nenhum estabelecimento na base. */
+export async function podarEmpresasESocios(db: Executor): Promise<{ empresas: number; socios: number }> {
+  const semEstab = `NOT EXISTS (SELECT 1 FROM base_cnpj.estabelecimentos e WHERE e.cnpj_basico = t.cnpj_basico)`;
+  const empresas = await apagar(db, 'base_cnpj.empresas', semEstab);
+  const socios = await apagar(db, 'base_cnpj.socios', semEstab);
+  return { empresas, socios };
+}
+
+/**
+ * Devolve ao disco o espaço do que foi apagado (sem isso o Postgres só reaproveita o espaço, e o
+ * volume continua do mesmo tamanho). Reescreve as tabelas: as buscas na base esperam alguns minutos.
+ */
+export async function compactarBase(db: Executor, log: { warn: (o: object, m: string) => void }) {
+  for (const tabela of ['base_cnpj.estabelecimentos', 'base_cnpj.empresas', 'base_cnpj.socios']) {
+    try {
+      await db.query(`VACUUM (FULL, ANALYZE) ${tabela}`);
+    } catch (erro) {
+      log.warn({ err: erro, tabela }, 'não consegui compactar a tabela (o espaço fica para reaproveitar)');
+    }
   }
 }
 

@@ -116,12 +116,35 @@ class Lote<T> {
 }
 
 /**
+ * Raízes de CNPJ (8 dígitos) guardadas como número: com milhões de empresas, ocupa bem menos
+ * memória que uma lista de textos (o worker não estoura a memória com o Brasil todo).
+ */
+export class Raizes {
+  private readonly s = new Set<number>();
+  constructor(iniciais: Iterable<string> = []) {
+    for (const b of iniciais) this.add(b);
+  }
+  add(basico: string) {
+    if (/^\d{8}$/.test(basico)) this.s.add(Number(basico));
+  }
+  has(basico: string): boolean {
+    return basico.length === 8 && this.s.has(Number(basico));
+  }
+  get size() {
+    return this.s.size;
+  }
+  *textos(): Generator<string> {
+    for (const n of this.s) yield String(n).padStart(8, '0');
+  }
+}
+
+/**
  * Lê o arquivo do Simples e marca Simples/MEI das empresas da base (só as raízes informadas).
  * Devolve quantas são MEI.
  */
 export async function lerSimples(
   ctx: Pick<Contexto, 'pool' | 'fonte'>,
-  basicos: Set<string>,
+  basicos: Raizes,
   etapa: string,
   placar: { linhasLidas: number },
   andamento: Andamento,
@@ -166,7 +189,7 @@ export async function importarSoSimples(ctx: Contexto): Promise<number> {
   const andamento = new Andamento((etapa) =>
     repo.registrarProgresso(pool, importacaoId, { etapa, ...placar }),
   );
-  const basicos = new Set(await repo.todosOsBasicos(pool));
+  const basicos = new Raizes(await repo.todosOsBasicos(pool));
   const mei = await lerSimples(ctx, basicos, 'Marcando MEI pelo Simples Nacional', placar, andamento);
   await andamento.agora('Finalizando');
   await andamento.terminar();
@@ -176,8 +199,8 @@ export async function importarSoSimples(ctx: Contexto): Promise<number> {
 
 /**
  * Importa uma publicação da Receita mantendo só o que interessa às campanhas:
- * estabelecimentos das UFs e CNAEs-alvo (qualquer situação, para registrar
- * fechamentos), depois as empresas e os sócios desses estabelecimentos.
+ * estabelecimentos ATIVOS das UFs e CNAEs-alvo, depois as empresas e os sócios deles. Empresa que
+ * fechou (ou saiu dos alvos) sai da base no fim da etapa: a base não guarda o que ninguém vai abordar.
  */
 export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportacao> {
   const { pool, log, fonte, importacaoId } = ctx;
@@ -258,7 +281,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
 
   // 2. Estabelecimentos: o filtro principal (UF + CNAE).
   // Na retomada, as raízes dos estabelecimentos já guardados vêm do banco.
-  const basicos = new Set<string>(retomando ? await repo.basicosDaImportacao(pool, importacaoId) : []);
+  let basicos = new Raizes(retomando ? await repo.basicosDaImportacao(pool, importacaoId) : []);
   const loteEstab = new Lote<receita.Estabelecimento>(
     (e) => e.cnpj,
     (itens) => repo.salvarEstabelecimentos(pool, importacaoId, itens),
@@ -283,6 +306,8 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
       if (soContagem) continue;
       // Filtro barato antes do parse completo: UF fica na coluna 19.
       if (!ufsAlvo.has(linha[19] ?? '')) continue;
+      // Só empresa ativa (situação 02): fechada, suspensa ou inapta não vira lead.
+      if ((linha[5] ?? '').padStart(2, '0') !== '02') continue;
       const e = receita.lerEstabelecimento(linha);
       if (!e) continue;
       if (!cnaes.has(e.cnaePrincipal) && !e.cnaesSecundarios.some((c) => cnaes.has(c))) continue;
@@ -298,6 +323,17 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   }
   const contados = await publicarContagem(pool);
   if (contados) log_.info({ linhas: contados }, 'contagem de nichos por município publicada');
+
+  // O que não veio ativo nesta publicação (fechou, mudou de CNAE/UF, ou era de antes, quando a base
+  // guardava também as fechadas) sai da base.
+  let removidos = 0;
+  if (!soContagem) {
+    await progresso('Etapa 2 de 5 · Tirando da base as empresas que fecharam');
+    removidos = await repo.podarEstabelecimentos(pool, importacaoId);
+    log_.info({ removidos }, 'estabelecimentos fora desta publicação removidos');
+    // Na retomada, as raízes vieram do banco antes da limpeza: lê de novo (só as que ficaram).
+    if (retomando) basicos = new Raizes(await repo.basicosDaImportacao(pool, importacaoId));
+  }
 
   // 3. Empresas (razão social, porte) só dos estabelecimentos guardados.
   const loteEmp = new Lote<receita.Empresa>(
@@ -333,7 +369,7 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
   // desde o primeiro arquivo (senão duplicaria os sócios do arquivo que estava no meio).
   const sociosFeitos = soContagem || receita.ARQUIVOS.socios.every((n) => feitos.has(n));
   if (!sociosFeitos) {
-    await repo.limparSocios(pool, [...basicos]);
+    await repo.limparSocios(pool, basicos.textos());
     placar.socios = 0;
   }
   let loteSocios: receita.Socio[] = [];
@@ -379,6 +415,16 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     await concluido(receita.ARQUIVOS.simples[0]);
   }
 
+  if (!soContagem) {
+    // Empresas e sócios de quem saiu da base saem junto; depois o banco devolve o espaço.
+    await progresso('Finalizando · limpando a base');
+    const orfas = await repo.podarEmpresasESocios(pool);
+    log_.info(orfas, 'empresas e sócios sem estabelecimento removidos');
+    if (removidos + orfas.empresas + orfas.socios > 0) {
+      await progresso('Finalizando · compactando a base');
+      await repo.compactarBase(pool, log_);
+    }
+  }
   await progresso('Finalizando');
   await andamento.terminar();
   log_.info(placar, 'importação concluída');

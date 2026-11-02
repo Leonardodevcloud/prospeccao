@@ -73,10 +73,11 @@ function Andamento({ i, agora }: { i: Importacao & { iniciadoEm?: string | null 
       </div>
       <p className="quieto" style={{ margin: 0, fontSize: 12, lineHeight: '16px' }}>
         A Receita publica o Brasil inteiro em 33 arquivos (os grandes com centenas de MB cada). O motor baixa
-        e lê um por vez: conta os nichos prontos no Brasil todo (o contador do site) e guarda as empresas dos
-        estados da coluna Estados (os das campanhas, ou todos com CNPJ_UFS_EXTRAS=TODAS) com os CNAEs dos
-        nichos prontos e dos seus nichos. O servidor da Receita costuma ser lento, então pode levar algumas
-        horas. Se o serviço reiniciar, a importação continua do último arquivo pronto.
+        e lê um por vez: conta os nichos prontos no Brasil todo (o contador do site) e guarda só as empresas
+        ativas dos estados da coluna Estados (os das campanhas, ou todos com CNPJ_UFS_EXTRAS=TODAS) com os
+        CNAEs dos nichos prontos e dos seus nichos. As que fecharam saem da base no fim e o banco devolve o
+        espaço. O servidor da Receita costuma ser lento, então pode levar algumas horas. Se o serviço
+        reiniciar, a importação continua do último arquivo pronto.
       </p>
     </div>
   );
@@ -261,8 +262,9 @@ export function BaseCnpj() {
         ) : (
           <p style={{ margin: 0, padding: 16, fontSize: 14 }}>
             Nenhuma importação ainda. Clique em Importar agora: ela conta os nichos no Brasil todo (o contador
-            do site) e guarda as empresas dos estados das campanhas. Sem <Link to="/nichos">nicho</Link> com
-            CNAEs ou sem <Link to="/campanhas">campanha</Link> com cidades, faz só a contagem.
+            do site) e guarda as empresas ativas dos estados das campanhas. Sem{' '}
+            <Link to="/nichos">nicho</Link> com CNAEs ou sem <Link to="/campanhas">campanha</Link> com
+            cidades, faz só a contagem.
           </p>
         )}
       </Panel>

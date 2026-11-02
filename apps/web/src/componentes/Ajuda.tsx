@@ -1739,6 +1739,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Se a api não responder, o site mostra a chamada para a demonstração no lugar. Quem usa o contador
           aparece em Visitas do site › Botões mais clicados.
         </p>
+        <h3>Base CNPJ: só empresas ativas</h3>
+        <p>
+          A importação guarda só as empresas <b>ativas</b> dos nichos (fechada, suspensa ou inapta não vira
+          lead). No fim, o que fechou desde a última importação sai da base junto com a razão social e os
+          sócios, e o banco é compactado para devolver o espaço; nesses minutos, uma busca de campanha pode
+          esperar um pouco.
+        </p>
         <h3>Cobrar pelo sistema</h3>
         <p>
           Em Clientes › <b>Plano e módulos</b>, o bloco <b>Como o cliente paga</b> mostra se o cliente paga
