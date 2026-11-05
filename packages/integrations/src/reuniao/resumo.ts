@@ -116,23 +116,29 @@ export function promptResumoReuniao(e: EntradaResumoReuniao): string {
   ].join('\n');
 }
 
-/** Pede o resumo à IA. Devolve null se a IA respondeu algo que não dá para usar. */
-export async function resumirReuniao(cfg: ConfigIa, e: EntradaResumoReuniao): Promise<ResumoReuniao | null> {
+/**
+ * Pede o resumo à IA. Resposta que não dá para usar vira erro (com o motivo), para a reunião tentar
+ * de novo mais tarde e a tela dizer por que o resumo não saiu.
+ */
+export async function resumirReuniao(cfg: ConfigIa, e: EntradaResumoReuniao): Promise<ResumoReuniao> {
   const texto = await gerarJson(cfg, {
     prompt: promptResumoReuniao(e),
     esquema: ESQUEMA,
     temperatura: 0.2,
-    maxTokens: 2500,
-    timeoutMs: 120_000,
+    // Reunião longa tem muitos destaques, próximos passos e momentos: folga para o JSON inteiro.
+    maxTokens: 8000,
+    timeoutMs: 180_000,
+    raciocinio: 'desligado',
   });
+  if (!texto.trim()) throw new Error('a IA não devolveu o resumo');
   let bruto: unknown;
   try {
-    bruto = JSON.parse(texto || '{}');
+    bruto = JSON.parse(texto);
   } catch {
-    return null;
+    throw new Error('a IA devolveu o resumo incompleto');
   }
   const r = resumoReuniao.safeParse(bruto);
-  if (!r.success) return null;
+  if (!r.success) throw new Error('a IA devolveu o resumo fora do formato');
   // Marcação fora da reunião não serve para pular na gravação.
   const limite = Math.max(0, e.duracaoSegundos);
   return {

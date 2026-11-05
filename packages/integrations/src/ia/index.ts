@@ -72,6 +72,12 @@ export interface PedidoJson {
   timeoutMs?: number;
   /** Teto de tokens da resposta (o JSON cortado no meio não serve). */
   maxTokens?: number;
+  /**
+   * "desligado": a DeepSeek responde sem a etapa de raciocínio (ligada por padrão). O raciocínio
+   * gasta o mesmo teto de tokens: num texto longo (reunião de meia hora), ele comia o teto e o JSON
+   * saía vazio ou cortado.
+   */
+  raciocinio?: 'desligado';
 }
 
 /** Exemplo do formato pedido, para os provedores sem esquema (o modo JSON só garante JSON). */
@@ -115,9 +121,12 @@ interface Resposta {
   uso: UsoIa | null;
 }
 
-async function gemini(cfg: ConfigIa, p: PedidoJson): Promise<Resposta> {
+async function gemini(cfg: ConfigIa, p: PedidoJson, comRaciocinioLimitado = true): Promise<Resposta> {
+  // Os modelos 2.5 pensam antes de responder e o pensamento gasta o mesmo teto de tokens: com
+  // raciocínio desligado, o Flash não pensa e o Pro (que não desliga) pensa o mínimo.
+  const limitar = comRaciocinioLimitado && p.raciocinio === 'desligado';
   const r = await requisitarJson<{
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
     usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
   }>(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`,
@@ -132,11 +141,14 @@ async function gemini(cfg: ConfigIa, p: PedidoJson): Promise<Resposta> {
           responseMimeType: 'application/json',
           responseSchema: p.esquema,
           ...(p.maxTokens ? { maxOutputTokens: p.maxTokens } : {}),
+          ...(limitar ? { thinkingConfig: { thinkingBudget: /pro/i.test(cfg.modelo) ? 128 : 0 } } : {}),
         },
       },
       timeoutMs: p.timeoutMs ?? 45_000,
     },
   );
+  if (r.candidates?.[0]?.finishReason === 'MAX_TOKENS')
+    throw AppError.externo('Gemini', 'a resposta passou do tamanho máximo e veio cortada');
   return {
     texto: r.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
     uso: r.usageMetadata
@@ -148,13 +160,18 @@ async function gemini(cfg: ConfigIa, p: PedidoJson): Promise<Resposta> {
   };
 }
 
-async function chat(cfg: ConfigIa, p: PedidoJson, comModoJson: boolean): Promise<Resposta> {
+async function chat(
+  cfg: ConfigIa,
+  p: PedidoJson,
+  comModoJson: boolean,
+  semRaciocinio: boolean,
+): Promise<Resposta> {
   const base = (
     cfg.baseUrl?.trim() || URL_PADRAO[cfg.provedor === 'deepseek' ? 'deepseek' : 'openai']
   ).replace(/\/+$/, '');
   const formato = JSON.stringify(exemploDoEsquema(p.esquema), null, 1);
   const r = await requisitarJson<{
-    choices?: { message?: { content?: string | null } }[];
+    choices?: { message?: { content?: string | null }; finish_reason?: string }[];
     usage?: { prompt_tokens?: number; completion_tokens?: number };
   }>(`${base}/chat/completions`, {
     servico: nomeServico(cfg),
@@ -173,10 +190,14 @@ async function chat(cfg: ConfigIa, p: PedidoJson, comModoJson: boolean): Promise
       temperature: p.temperatura ?? 0.2,
       max_tokens: p.maxTokens ?? 2000,
       ...(comModoJson ? { response_format: { type: 'json_object' } } : {}),
+      ...(semRaciocinio ? { thinking: { type: 'disabled' } } : {}),
       stream: false,
     },
     timeoutMs: p.timeoutMs ?? 45_000,
   });
+  // Resposta cortada no teto de tokens: o JSON fica pela metade e não serve.
+  if (r.choices?.[0]?.finish_reason === 'length')
+    throw AppError.externo(nomeServico(cfg), 'a resposta passou do tamanho máximo e veio cortada');
   return {
     texto: r.choices?.[0]?.message?.content ?? '',
     uso: r.usage
@@ -205,19 +226,35 @@ export async function gerarJson(cfg: ConfigIa, p: PedidoJson): Promise<string> {
   let ok = false;
   try {
     if (cfg.provedor === 'gemini') {
-      const r = await gemini(cfg, p);
+      let r: Resposta;
+      try {
+        r = await gemini(cfg, p);
+      } catch (erro) {
+        // Modelo que não aceita o controle do pensamento: pede do jeito simples.
+        const status = ((erro as AppError).detalhes as { status?: number } | undefined)?.status;
+        if (p.raciocinio !== 'desligado' || status !== 400) throw erro;
+        r = await gemini(cfg, p, false);
+      }
       uso = r.uso;
       ok = true;
       return r.texto;
     }
     let modoJson = true;
-    for (let tentativa = 0; tentativa < 2; tentativa++) {
+    const base = cfg.baseUrl?.trim() ?? '';
+    let semRaciocinio =
+      p.raciocinio === 'desligado' && (cfg.provedor === 'deepseek' || /deepseek/i.test(base));
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
       let r: Resposta;
       try {
-        r = await chat(cfg, p, modoJson);
+        r = await chat(cfg, p, modoJson, semRaciocinio);
       } catch (erro) {
-        // Serviço compatível que não conhece response_format: tenta sem (o prompt já pede JSON).
         const status = (erro as AppError).detalhes as { status?: number } | undefined;
+        // Modelo que não conhece o campo de raciocínio: tenta sem ele.
+        if (semRaciocinio && status?.status === 400) {
+          semRaciocinio = false;
+          continue;
+        }
+        // Serviço compatível que não conhece response_format: tenta sem (o prompt já pede JSON).
         if (modoJson && cfg.provedor === 'openai' && status?.status === 400) {
           modoJson = false;
           continue;

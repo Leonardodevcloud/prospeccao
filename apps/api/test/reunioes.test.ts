@@ -182,6 +182,7 @@ describe.skipIf(!URL_TESTE)('reuniões por vídeo (com Postgres)', () => {
   let cookie = '';
   const { video, chamadas } = videoFalso();
   let entradaResumo: unknown = null;
+  let falharResumo = false;
   const servicos = async (contaId: number): Promise<ServicosConta> => ({
     contaId,
     whatsapp: null,
@@ -194,6 +195,7 @@ describe.skipIf(!URL_TESTE)('reuniões por vídeo (com Postgres)', () => {
     reuniao: {
       async resumir(e) {
         entradaResumo = e;
+        if (falharResumo) throw new Error('a IA devolveu o resumo incompleto');
         return RESUMO;
       },
     },
@@ -656,6 +658,36 @@ describe.skipIf(!URL_TESTE)('reuniões por vídeo (com Postgres)', () => {
       `SELECT texto FROM comercial.atividades WHERE empresa_id = 501 AND tipo = 'nota' ORDER BY id DESC LIMIT 1`,
     );
     expect(rows[0]?.texto).toBe(`Resumo da reunião: ${RESUMO.resumo}`);
+  });
+
+  it('resumo que não saiu: a tela diz o motivo e gera de novo só o resumo, sem transcrever outra vez', async () => {
+    const processar = () =>
+      rodarProcessamento({ pool, log, servicos, reunioes, jwtSegredo: SEGREDO, aoEncerrar: () => undefined });
+    await pool.query('UPDATE comercial.sala_sessoes SET resumo = NULL, resumo_em = NULL WHERE id = $1', [
+      sessaoId,
+    ]);
+    falharResumo = true;
+    expect((await comCookie('post', `/reunioes/${sessaoId}/resumir`)).status).toBe(200);
+    // Última tentativa: a falha fica registrada (sem esperar as novas tentativas).
+    await pool.query('UPDATE comercial.sala_sessoes SET tentativas = 3 WHERE id = $1', [sessaoId]);
+    // A transcrição não é feita de novo (sem fetch para o serviço de voz).
+    const semFetch = vi.fn(async () => {
+      throw new Error('não devia transcrever de novo');
+    });
+    vi.stubGlobal('fetch', semFetch);
+    await processar();
+    let d = (await ler(`/reunioes/${sessaoId}`, { Cookie: cookie })).body;
+    expect(d).toMatchObject({ situacao: 'pronta', transcricao: 'pronta', resumo: null });
+    expect(d.resumoFalha).toContain('resumo incompleto');
+    expect(d.falas).toHaveLength(2);
+
+    falharResumo = false;
+    expect((await comCookie('post', `/reunioes/${sessaoId}/resumir`)).status).toBe(200);
+    await processar();
+    vi.unstubAllGlobals();
+    expect(semFetch).not.toHaveBeenCalled();
+    d = (await ler(`/reunioes/${sessaoId}`, { Cookie: cookie })).body;
+    expect(d).toMatchObject({ situacao: 'pronta', resumoFalha: null, resumo: { resumo: RESUMO.resumo } });
   });
 
   it('próximos passos viram tarefas; quem é do time reabre a sala em outra sessão', async () => {

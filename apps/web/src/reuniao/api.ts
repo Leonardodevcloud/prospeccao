@@ -162,6 +162,8 @@ export interface DetalheReuniao extends Omit<SessaoResumo, 'resumo'> {
   videoUrl: string | null;
   tarefasCriadasEm: string | null;
   gravou: boolean;
+  /** Por que o resumo da IA não saiu (null: saiu, ou ainda não foi tentado). */
+  resumoFalha: string | null;
   etapa: string | null;
   etapaNome: string | null;
   falas: FalaReuniao[];

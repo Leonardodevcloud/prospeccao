@@ -447,6 +447,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
           pelo navegador, no computador ou no celular. Quando acaba, a gravação, a transcrição e o resumo da
           IA aparecem na ficha do lead.
         </p>
+        <p>
+          Se o resumo e os próximos passos não ficarem prontos (a IA da conta desligada ou fora do ar na
+          hora), a tela da reunião diz o motivo e mostra <b>Gerar o resumo agora</b>, para quem conduziu ou um
+          administrador: a IA lê de novo a transcrição que já está pronta, sem transcrever outra vez.
+        </p>
         <h3>Marcar</h3>
         <Passos>
           <li>

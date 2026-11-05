@@ -46,6 +46,8 @@ interface SessaoParaProcessar {
   duracaoSegundos: number;
   transcrever: boolean;
   tentativas: number;
+  /** Pedido de gerar só o resumo (a transcrição já está pronta). */
+  soResumo: boolean;
 }
 
 /** Espera crescente entre as tentativas (5 min, 15 min, 1 h). */
@@ -60,7 +62,7 @@ async function pegarProxima(pool: Pool): Promise<SessaoParaProcessar | null> {
                       ORDER BY processar_em NULLS FIRST LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING ss.id::int, ss.conta_id AS "contaId", ss.sala_id::int AS "salaId", ss.iniciada_em AS "iniciadaEm",
                 ss.encerrada_em AS "encerradaEm", coalesce(ss.duracao_segundos, 0) AS "duracaoSegundos",
-                ss.transcrever, ss.tentativas`,
+                ss.transcrever, ss.tentativas, ss.so_resumo AS "soResumo"`,
   );
   return rows[0] ?? null;
 }
@@ -80,6 +82,8 @@ export async function processarSessao(
   d: DepsProcessar,
   s: SessaoParaProcessar,
 ): Promise<'pronta' | 'adiada'> {
+  // Só o resumo (a pessoa pediu na tela): a gravação e a transcrição já estão prontas.
+  if (s.soResumo) return terminar(d, s, null);
   const desdeOFim = Date.now() - new Date(s.encerradaEm).getTime();
 
   // Gravações do navegador: monta as que terminaram de chegar; espera as que ainda estão subindo.
@@ -185,12 +189,27 @@ export async function processarSessao(
     }
   }
 
-  // Resumo da IA (com a IA da conta).
+  return terminar(d, s, transcricao);
+}
+
+/**
+ * Resumo da IA (com a IA da conta), situação final e aviso a quem conduziu. `transcricao` null: não
+ * mexe na transcrição (pedido de gerar só o resumo).
+ */
+async function terminar(
+  d: DepsProcessar,
+  s: SessaoParaProcessar,
+  transcricao: 'pronta' | 'sem_audio' | 'desligada' | 'erro' | null,
+): Promise<'pronta' | 'adiada'> {
   let resumo: ResumoReuniao | null = null;
-  const falas = transcricao === 'pronta' ? await repo.falas(d.pool, s.id) : [];
+  // Por que não saiu resumo (a tela mostra e oferece gerar de novo).
+  let falha: string | null = null;
+  const falas = transcricao === 'pronta' || transcricao === null ? await repo.falas(d.pool, s.id) : [];
+  if (!falas.length && transcricao === null) falha = 'A reunião não tem transcrição para resumir.';
   if (falas.length) {
     const serv = await d.servicos(s.contaId);
-    if (serv.reuniao) {
+    if (!serv.reuniao) falha = 'A IA não está ligada nesta conta.';
+    else {
       try {
         const sala = await repo.salaPorId(d.pool, s.salaId);
         const quem = await repo.quemEsteve(d.pool, s.salaId);
@@ -220,6 +239,7 @@ export async function processarSessao(
           falas: falas.map((f) => ({ segundo: Math.floor(f.inicioMs / 1000), nome: f.nome, texto: f.texto })),
           chat: chat.filter((m) => m.texto).map((m) => `${m.autor}: ${m.texto}`),
         });
+        if (!resumo) throw new Error('a IA não devolveu o resumo');
       } catch (erro) {
         const msg = (erro as Error).message;
         d.log.warn({ err: erro, sessao: s.id }, 'reuniões: resumo da IA falhou');
@@ -227,17 +247,19 @@ export async function processarSessao(
           await adiar(d.pool, s.id, (ESPERAS_MIN[s.tentativas] ?? 60) * 60, `Resumo: ${msg}`);
           return 'adiada';
         }
+        falha = `A IA não conseguiu resumir (${msg}).`;
       }
     }
   }
 
   await d.pool.query(
     `UPDATE comercial.sala_sessoes
-        SET situacao = 'pronta', transcricao = $2, resumo = coalesce($3::jsonb, resumo),
+        SET situacao = 'pronta', transcricao = coalesce($2, transcricao), resumo = coalesce($3::jsonb, resumo),
             resumo_em = CASE WHEN $3::jsonb IS NULL THEN resumo_em ELSE now() END,
-            processar_em = NULL, erro = NULL
+            resumo_falha = CASE WHEN $3::jsonb IS NULL THEN $4 ELSE NULL END,
+            processar_em = NULL, erro = NULL, so_resumo = false
       WHERE id = $1`,
-    [s.id, transcricao, resumo ? JSON.stringify(resumo) : null],
+    [s.id, transcricao, resumo ? JSON.stringify(resumo) : null, falha],
   );
 
   // Avisa quem conduziu e põe o resumo no histórico do lead.

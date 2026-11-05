@@ -632,6 +632,18 @@ export function rotasReunioes(deps: DepsApi): Router {
     res.json({ ok: true });
   });
 
+  /** Gera de novo só o resumo da IA (com a transcrição que já existe). */
+  r.post('/:id/resumir', async (req, res) => {
+    const id = idDaRota(req);
+    const s = await repo.sessaoVisivel(pool, id);
+    if (req.usuario!.papel !== 'admin' && s.anfitriaoId !== req.usuario!.id)
+      throw AppError.proibido('Só quem conduziu a reunião ou um administrador pode fazer isso.');
+    if (!(await repo.pedirResumo(pool, id)))
+      throw AppError.conflito('Esta reunião não tem transcrição para resumir.');
+    reunioesDe(deps).aoEncerrar?.(id);
+    res.json({ ok: true });
+  });
+
   /** Apaga a gravação e a transcrição (o resumo e o histórico ficam). */
   r.delete('/:id/gravacao', exigirAdmin, async (req, res) => {
     const id = idDaRota(req);

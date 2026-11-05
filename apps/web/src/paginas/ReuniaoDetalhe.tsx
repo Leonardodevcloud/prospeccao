@@ -83,6 +83,10 @@ export function ReuniaoDetalhe() {
     mutationFn: () => api(`/reunioes/${id}/processar`, { metodo: 'POST', corpo: {} }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['reuniao', id] }),
   });
+  const resumir = useMutation({
+    mutationFn: () => api(`/reunioes/${id}/resumir`, { metodo: 'POST', corpo: {} }),
+    onSuccess: () => cliente.invalidateQueries({ queryKey: ['reuniao', id] }),
+  });
   const mover = useMutation({
     mutationFn: (etapa: string) => api(`/funil/${q.data?.empresaId}`, { metodo: 'PATCH', corpo: { etapa } }),
     onSuccess: () => {
@@ -163,7 +167,26 @@ export function ReuniaoDetalhe() {
           )}
         </Mensagem>
       )}
-      <ErroDaApi erro={reprocessar.error ?? mover.error ?? apagar.error} />
+      {d.situacao === 'pronta' && !r && d.transcricao === 'pronta' && (
+        <Mensagem tipo="aviso">
+          O resumo da IA e os próximos passos não ficaram prontos
+          {d.resumoFalha ? `: ${d.resumoFalha.replace(/\.$/, '')}` : ''}. A transcrição está completa abaixo.
+          {!soLeitura && (admin || anfitriao) && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className="link-botao"
+                disabled={resumir.isPending}
+                onClick={() => resumir.mutate()}
+              >
+                {resumir.isPending ? 'Pedindo…' : 'Gerar o resumo agora'}
+              </button>
+            </>
+          )}
+        </Mensagem>
+      )}
+      <ErroDaApi erro={reprocessar.error ?? resumir.error ?? mover.error ?? apagar.error} />
 
       <div className="reuniao-colunas">
         <div className="pilha" style={{ gap: 24 }}>

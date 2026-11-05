@@ -260,6 +260,20 @@ async function apagar(db: Executor, tabela: string, condicao: string, valores: u
   return rowCount ?? 0;
 }
 
+/** Quanto desta importação está guardado na base agora (depois da limpeza). */
+export async function totaisDaImportacao(
+  db: Executor,
+  importacaoId: number,
+): Promise<{ estabelecimentos: number; empresas: number; socios: number }> {
+  const { rows } = await db.query<{ estabelecimentos: number; empresas: number; socios: number }>(
+    `SELECT (SELECT count(*)::int FROM base_cnpj.estabelecimentos WHERE importacao_id = $1) AS estabelecimentos,
+            (SELECT count(*)::int FROM base_cnpj.empresas WHERE importacao_id = $1) AS empresas,
+            (SELECT count(*)::int FROM base_cnpj.socios WHERE importacao_id = $1) AS socios`,
+    [importacaoId],
+  );
+  return rows[0]!;
+}
+
 /** Tira da base o que não veio ativo nesta publicação (fechou, saiu dos alvos ou era fechada de antes). */
 export async function podarEstabelecimentos(db: Executor, importacaoId: number): Promise<number> {
   return apagar(

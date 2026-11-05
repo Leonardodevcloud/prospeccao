@@ -392,6 +392,51 @@ describe('reuniões: resumo da IA', () => {
     expect(p).toContain('Chat da sala:');
   });
 
+  it('pede sem raciocínio (o raciocínio comia o teto) e resposta cortada vira erro com o motivo', async () => {
+    const corpos: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_u: string, init: RequestInit) => {
+        corpos.push(JSON.parse(String(init.body)));
+        return json({
+          choices: [{ message: { content: '{"resumo": "Carlos qu' }, finish_reason: 'length' }],
+        });
+      }),
+    );
+    await expect(
+      resumirReuniao({ provedor: 'deepseek', apiKey: 'sk', modelo: 'deepseek-flash' }, entrada),
+    ).rejects.toThrow(/cortada/);
+    expect(corpos[0]).toMatchObject({ thinking: { type: 'disabled' }, max_tokens: 8000 });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({ choices: [{ message: { content: '{"resumo": 1}' }, finish_reason: 'stop' }] }),
+      ),
+    );
+    await expect(
+      resumirReuniao({ provedor: 'deepseek', apiKey: 'sk', modelo: 'deepseek-flash' }, entrada),
+    ).rejects.toThrow(/fora do formato/);
+    vi.unstubAllGlobals();
+  });
+
+  it('no Gemini, o Flash responde sem pensar (o pensamento também comia o teto)', async () => {
+    const corpos: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_u: string, init: RequestInit) => {
+        corpos.push(JSON.parse(String(init.body)));
+        return json({ candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: 'MAX_TOKENS' }] });
+      }),
+    );
+    await expect(
+      resumirReuniao({ provedor: 'gemini', apiKey: 'k', modelo: 'gemini-2.5-flash' }, entrada),
+    ).rejects.toThrow(/cortada/);
+    expect(corpos[0]).toMatchObject({
+      generationConfig: { maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } },
+    });
+    vi.unstubAllGlobals();
+  });
+
   it('valida a resposta e descarta marcação fora da reunião', async () => {
     vi.stubGlobal(
       'fetch',

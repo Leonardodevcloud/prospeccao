@@ -924,6 +924,7 @@ export async function detalhe(db: Executor, sessaoId: number) {
   >(
     `SELECT ${CAMPOS_SESSAO_LISTA}, ${CAMPOS_LISTA}, ss.resumo AS "resumoCompleto",
             ss.tarefas_criadas_em AS "tarefasCriadasEm", ss.transcrever, ss.gravar AS "gravou",
+            ss.resumo_falha AS "resumoFalha",
             o.etapa, et.nome AS "etapaNome"
        FROM comercial.sala_sessoes ss
        JOIN comercial.salas s ON s.id = ss.sala_id
@@ -965,8 +966,20 @@ export async function detalhe(db: Executor, sessaoId: number) {
 export async function reprocessar(db: Executor, sessaoId: number): Promise<boolean> {
   const { rowCount } = await db.query(
     `UPDATE comercial.sala_sessoes
-        SET situacao = 'processando', processar_em = now(), tentativas = 0, erro = NULL
+        SET situacao = 'processando', processar_em = now(), tentativas = 0, erro = NULL, so_resumo = false
       WHERE id = $1 AND conta_id = ${contaSql()} AND situacao IN ('pronta', 'erro') AND gravar`,
+    [sessaoId],
+  );
+  return !!rowCount;
+}
+
+/** Gera de novo só o resumo da IA (a transcrição fica como está). */
+export async function pedirResumo(db: Executor, sessaoId: number): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `UPDATE comercial.sala_sessoes
+        SET situacao = 'processando', processar_em = now(), tentativas = 0, erro = NULL, so_resumo = true
+      WHERE id = $1 AND conta_id = ${contaSql()} AND situacao IN ('pronta', 'erro')
+        AND EXISTS (SELECT 1 FROM comercial.sala_falas f WHERE f.sessao_id = $1)`,
     [sessaoId],
   );
   return !!rowCount;

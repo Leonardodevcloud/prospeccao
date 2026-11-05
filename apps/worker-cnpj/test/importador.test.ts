@@ -292,13 +292,21 @@ describe.skipIf(!URL_TESTE)('importação da base de CNPJ (com Postgres)', () =>
       `INSERT INTO base_cnpj.socios (cnpj_basico, tipo, nome, qualificacao_codigo) VALUES ('66777888', 'pf', 'FULANO', '49')`,
     );
     const id = await criarImportacao(pool, 'manual', null);
-    await importarBaseCnpj({
+    // Fechada gravada por esta mesma importação (como numa retomada de quando a base guardava tudo).
+    await pool.query(
+      `INSERT INTO base_cnpj.estabelecimentos (cnpj, cnpj_basico, matriz, situacao, cnae_principal, uf, municipio_codigo, importacao_id)
+       VALUES ('77111222000100', '77111222', true, '08', '4530703', 'BA', '3849', $1)`,
+      [id],
+    );
+    const r = await importarBaseCnpj({
       pool,
       log,
       fonte: new FontePasta(pasta, '2026-09'),
       importacaoId: id,
       ufsExtras: [],
     });
+    // O placar mostra o que ficou guardado.
+    expect(r).toMatchObject({ estabelecimentos: 1, empresas: 1, socios: 2 });
     const { rows } = await pool.query(
       `SELECT (SELECT array_agg(cnpj ORDER BY cnpj) FROM base_cnpj.estabelecimentos) AS e,
               (SELECT array_agg(cnpj_basico ORDER BY cnpj_basico) FROM base_cnpj.empresas) AS emp,

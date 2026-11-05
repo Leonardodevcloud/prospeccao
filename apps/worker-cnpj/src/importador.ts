@@ -333,6 +333,9 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     log_.info({ removidos }, 'estabelecimentos fora desta publicação removidos');
     // Na retomada, as raízes vieram do banco antes da limpeza: lê de novo (só as que ficaram).
     if (retomando) basicos = new Raizes(await repo.basicosDaImportacao(pool, importacaoId));
+    // O placar passa a mostrar o que ficou na base (na retomada, ele somava as fechadas já apagadas).
+    placar.estabelecimentos = (await repo.totaisDaImportacao(pool, importacaoId)).estabelecimentos;
+    await progresso('Etapa 2 de 5 · Empresas que fecharam tiradas da base');
   }
 
   // 3. Empresas (razão social, porte) só dos estabelecimentos guardados.
@@ -420,6 +423,8 @@ export async function importarBaseCnpj(ctx: Contexto): Promise<ResultadoImportac
     await progresso('Finalizando · limpando a base');
     const orfas = await repo.podarEmpresasESocios(pool);
     log_.info(orfas, 'empresas e sócios sem estabelecimento removidos');
+    // Números finais: o que ficou guardado na base por esta importação.
+    Object.assign(placar, await repo.totaisDaImportacao(pool, importacaoId));
     if (removidos + orfas.empresas + orfas.socios > 0) {
       await progresso('Finalizando · compactando a base');
       await repo.compactarBase(pool, log_);
