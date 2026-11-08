@@ -1681,10 +1681,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
     id: 'equipe',
     area: 'Gestão',
     titulo: 'Equipe e o que cada um vê',
-    resumo: 'Convites, papéis, unidade toda ou só a própria base.',
+    resumo: 'Convites, papéis, quem configura e quem usa, unidade toda ou só a própria base.',
     onde: { rotulo: 'Equipe', para: '/equipe' },
     termos:
-      'convidar usuário papel admin sdr closer unidade alcance própria base rodízio carteira fila sem dono puxar grupo loja departamento atendimento',
+      'convidar usuário papel admin administrador sdr closer vendedor permissão permissões configuração configurar quem configura unidade alcance própria base rodízio carteira fila sem dono puxar grupo loja departamento atendimento',
     corpo: (
       <>
         <p>
@@ -1702,6 +1702,33 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
         </ul>
         <p>O administrador sempre vê a unidade toda.</p>
+        <h3>Quem configura e quem usa</h3>
+        <p>
+          A configuração é do <b>administrador</b> da conta (o gestor que contratou o CRM). Para o resto da
+          equipe (SDR e closer), essas telas e partes nem aparecem: o menu e as telas mostram só o trabalho do
+          dia a dia.
+        </p>
+        <ul>
+          <li>
+            <b>Só o administrador configura</b>: Equipe (convites, papéis, quem vê só a própria base, como os
+            leads são divididos, grupos de atendimento), pipelines, etapas e cadência do Funil, montar os{' '}
+            <b>Quadros</b> e os gatilhos, Agente de IA (números de WhatsApp, proteção do número, configuração
+            e base de conhecimento da IA), Telefonia (gravação, receber ligações, menu de voz), Nichos,
+            conexão e “comente e receba” do Instagram, E-mail, Integrações, Marca, Meu plano e Auditoria.
+          </li>
+          <li>
+            <b>A equipe usa</b>: Meu dia, Leads, Funil, Quadros (mover os leads e confirmar o que a IA
+            sugeriu), Conversas, Ligações, Reuniões, Na rua, as mensagens para revisar e os leads que a IA
+            passou (Agente de IA), o conteúdo e os formulários do Instagram e os Relatórios.
+          </li>
+          <li>
+            <b>Diretoria (só leitura)</b>: vê tudo da organização e não altera nada.
+          </li>
+        </ul>
+        <p>
+          Mesmo que alguém da equipe abra o endereço de uma tela de configuração, o sistema não deixa alterar:
+          a trava vale no servidor, não só na tela.
+        </p>
         <h3>Carteira de clientes (fila de sem dono)</h3>
         <p>
           Em <b>Como os leads são divididos</b>, escolha <b>Carteira: fica numa fila que todo o time vê</b>. O

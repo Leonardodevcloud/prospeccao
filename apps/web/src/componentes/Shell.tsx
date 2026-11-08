@@ -213,7 +213,10 @@ export function Shell() {
               ? !!sessao.data?.papelOrganizacao
               : (!i.admin || sessao.data?.papel === 'admin') &&
                 (!i.comPlano || !!sessao.data?.conta.plano) &&
-                (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
+                (!i.modulos || i.modulos.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)) &&
+                (!i.modulosEquipe ||
+                  sessao.data?.papel === 'admin' ||
+                  i.modulosEquipe.some((m) => sessao.data?.conta.modulos?.includes(m) ?? true)),
     temRecurso: (r) => plataforma || recursos.includes(r),
     selo: (para) => selos[para] ?? null,
   };

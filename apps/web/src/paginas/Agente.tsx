@@ -9,7 +9,7 @@ import { ConfiguracaoIa, usePerfilIa } from '../componentes/ConfiguracaoIa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { ProtecaoDoNumero } from '../componentes/Porteiro';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
-import { useSessao } from '../componentes/Sessao';
+import { useEhAdmin, useSessao } from '../componentes/Sessao';
 import { DesempenhoAgente, SimuladorIa } from '../componentes/SimuladorIa';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, formatarTelefone } from '../formatar';
 
@@ -212,9 +212,11 @@ export function Agente() {
   const [params, setParams] = useSearchParams();
   const sessao = useSessao();
   const master = !!sessao.data?.master;
+  // Configuração (IA, números, proteção, base) é do administrador; a equipe vê só o atendimento.
+  const admin = useEhAdmin();
   // Módulo Agente de IA fora do plano: só ficam os chips e o WhatsApp das sequências.
   const temIa = sessao.data?.conta.modulos?.includes('agente_ia') ?? true;
-  const aba = temIa ? ((params.get('aba') as AbaAgente | null) ?? 'atendimento') : 'atendimento';
+  const aba = temIa && admin ? ((params.get('aba') as AbaAgente | null) ?? 'atendimento') : 'atendimento';
   const base = useConhecimento();
   const q = useQuery({
     queryKey: ['agente'],
@@ -263,22 +265,24 @@ export function Agente() {
           </p>
         </div>
         <div className="acoes">
-          <Button variant="ghost" icon="mail" onClick={() => navegar('/email?aba=modelos')}>
-            Textos dos e-mails
-          </Button>
+          {admin && (
+            <Button variant="ghost" icon="mail" onClick={() => navegar('/email?aba=modelos')}>
+              Textos dos e-mails
+            </Button>
+          )}
           <Badge tone={d.config.ligado ? 'brand' : 'neutral'}>
             {d.config.ligado ? 'Ligado' : 'Desligado'}
           </Badge>
         </div>
       </div>
 
-      {!temIa && (
+      {admin && !temIa && (
         <Mensagem tipo="aviso">
           O módulo Agente de IA não está no plano desta conta: a IA não aborda nem responde. Os chips e o
           WhatsApp das sequências continuam funcionando. Para contratar, fale com a gente.
         </Mensagem>
       )}
-      {temIa && (!d.status.whatsapp || !d.status.ia) && (
+      {admin && temIa && (!d.status.whatsapp || !d.status.ia) && (
         <Mensagem tipo="aviso">
           {master ? (
             <>
@@ -308,27 +312,29 @@ export function Agente() {
         <Stat rotulo="Para você" valor={fmtNumero(d.resumo.rascunhos + d.resumo.pausados)} />
       </div>
 
-      <div className="pipelines abas-agente" role="tablist" aria-label="Seções do agente">
-        {abas
-          .filter((a) => temIa || a.id === 'atendimento')
-          .map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              role="tab"
-              aria-selected={aba === a.id}
-              className="pipelines__aba"
-              onClick={() => setParams({ aba: a.id }, { replace: true })}
-            >
-              {a.rotulo}
-              {!!a.conta && (
-                <span className={`pipelines__conta${a.nova ? ' pipelines__conta--nova' : ''}`}>
-                  {a.conta}
-                </span>
-              )}
-            </button>
-          ))}
-      </div>
+      {admin && (
+        <div className="pipelines abas-agente" role="tablist" aria-label="Seções do agente">
+          {abas
+            .filter((a) => temIa || a.id === 'atendimento')
+            .map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                role="tab"
+                aria-selected={aba === a.id}
+                className="pipelines__aba"
+                onClick={() => setParams({ aba: a.id }, { replace: true })}
+              >
+                {a.rotulo}
+                {!!a.conta && (
+                  <span className={`pipelines__conta${a.nova ? ' pipelines__conta--nova' : ''}`}>
+                    {a.conta}
+                  </span>
+                )}
+              </button>
+            ))}
+        </div>
+      )}
 
       {aba === 'configuracao' && (
         <ConfiguracaoIa config={d.config} aoVerBase={() => setParams({ aba: 'base' }, { replace: true })} />
@@ -403,27 +409,34 @@ export function Agente() {
             )}
           </Panel>
 
-          <Panel
-            titulo="Configuração"
-            acoes={
-              <Button size="sm" variant="ghost" disabled={emMassa.isPending} onClick={() => emMassa.mutate()}>
-                Ligar a IA em todos de "A abordar"
-              </Button>
-            }
-          >
-            {emMassa.data && (
-              <Mensagem tipo="ok">
-                IA ligada em {fmtNumero(emMassa.data.ligados)} lead(s) de "A abordar".
-              </Mensagem>
-            )}
-            <FormConfig
-              config={d.config}
-              aoConfigurar={() => setParams({ aba: 'configuracao' }, { replace: true })}
-            />
-          </Panel>
+          {admin && (
+            <Panel
+              titulo="Configuração"
+              acoes={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={emMassa.isPending}
+                  onClick={() => emMassa.mutate()}
+                >
+                  Ligar a IA em todos de "A abordar"
+                </Button>
+              }
+            >
+              {emMassa.data && (
+                <Mensagem tipo="ok">
+                  IA ligada em {fmtNumero(emMassa.data.ligados)} lead(s) de "A abordar".
+                </Mensagem>
+              )}
+              <FormConfig
+                config={d.config}
+                aoConfigurar={() => setParams({ aba: 'configuracao' }, { replace: true })}
+              />
+            </Panel>
+          )}
 
-          <Chips />
-          <ProtecaoDoNumero />
+          {admin && <Chips />}
+          {admin && <ProtecaoDoNumero />}
         </>
       )}
     </>

@@ -148,11 +148,11 @@ interface Formulario {
 /* ───────────────────────── Página ───────────────────────── */
 
 type Aba = 'conteudo' | 'regras' | 'formularios' | 'conexao';
-const ABAS: { id: Aba; rotulo: string }[] = [
+const ABAS: { id: Aba; rotulo: string; admin?: boolean }[] = [
   { id: 'conteudo', rotulo: 'Conteúdo' },
-  { id: 'regras', rotulo: 'Comente e receba' },
+  { id: 'regras', rotulo: 'Comente e receba', admin: true },
   { id: 'formularios', rotulo: 'Formulários' },
-  { id: 'conexao', rotulo: 'Conexão' },
+  { id: 'conexao', rotulo: 'Conexão', admin: true },
 ];
 
 function useSituacao() {
@@ -166,7 +166,13 @@ export function Instagram() {
   const admin = sessao.data?.papel === 'admin';
   const conectado = !!q.data?.conexao;
   const pedida = params.get('aba') as Aba | null;
-  const aba: Aba = ABAS.some((a) => a.id === pedida) ? (pedida as Aba) : conectado ? 'conteudo' : 'conexao';
+  // Conexão e regras são configuração (administrador); a equipe vê o conteúdo e os formulários.
+  const abas = ABAS.filter((a) => admin || !a.admin);
+  const aba: Aba = abas.some((a) => a.id === pedida)
+    ? (pedida as Aba)
+    : conectado || !admin
+      ? 'conteudo'
+      : 'conexao';
   const [novaRegra, setNovaRegra] = useState(false);
   // Volta do login na Meta: mostra o resultado uma vez e limpa o endereço.
   const [retorno] = useState(() => ({
@@ -215,7 +221,7 @@ export function Instagram() {
       {retorno.conectado && <Mensagem tipo="ok">Instagram conectado. Agora crie a primeira regra.</Mensagem>}
       {retorno.erro && <Mensagem tipo="erro">Não deu para conectar: {retorno.erro}</Mensagem>}
       <div className="pipelines" role="tablist" aria-label="Seções do Instagram">
-        {ABAS.map((a) => (
+        {abas.map((a) => (
           <button
             key={a.id}
             type="button"
@@ -239,6 +245,11 @@ export function Instagram() {
         <Mensagem tipo="aviso">
           A integração com o Instagram ainda não foi liberada na plataforma. Fale com o suporte do Prospect
           Team.
+        </Mensagem>
+      ) : !conectado && !admin ? (
+        <Mensagem tipo="aviso">
+          O Instagram da empresa ainda não foi conectado. Quem administra a conta conecta em Instagram ›
+          Conexão.
         </Mensagem>
       ) : aba === 'conexao' || !conectado ? (
         <AbaConexao s={q.data} admin={admin} />

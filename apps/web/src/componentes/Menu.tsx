@@ -21,6 +21,8 @@ export interface ItemMenu {
   comPlano?: boolean;
   /** Só aparece se a conta tem algum destes módulos no plano. */
   modulos?: Modulo[];
+  /** Para quem não é administrador, só aparece com estes módulos (o resto da tela é configuração). */
+  modulosEquipe?: Modulo[];
   /** Só para o gestor e a leitura da organização. */
   organizacao?: boolean;
   /** Recurso do plano: sem ele, o item aparece com cadeado e a tela explica como liberar. */
@@ -85,7 +87,13 @@ export const MENU_CRM: EntradaMenu[] = [
     icone: 'send',
     itens: [
       { para: '/email', rotulo: 'E-mail', icone: 'mail', modulos: ['email'] },
-      { para: '/agente', rotulo: 'Agente de IA', icone: 'bot', modulos: ['whatsapp', 'agente_ia'] },
+      {
+        para: '/agente',
+        rotulo: 'Agente de IA',
+        icone: 'bot',
+        modulos: ['whatsapp', 'agente_ia'],
+        modulosEquipe: ['agente_ia'],
+      },
       { para: '/instagram', rotulo: 'Instagram', icone: 'camera', recurso: 'instagram' },
     ],
   },
