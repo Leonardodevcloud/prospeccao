@@ -1,4 +1,4 @@
-import { criarServicoTelefonia } from '@prospeccao/integrations/telefonia';
+import { criarRoboMenu, criarServicoTelefonia } from '@prospeccao/integrations/telefonia';
 import type { Logger } from '@prospeccao/shared';
 import type { EnvApi } from '../../config.js';
 import type { DepsAssistente } from '../assistente/rotas.js';
@@ -36,5 +36,6 @@ export function prepararTelefonia(
     armazenamento: reunioes.armazenamento,
     transcricao: reunioes.transcricao,
     fala: assistente?.fala ?? null,
+    menu: servico && assistente?.fala ? criarRoboMenu() : null,
   };
 }

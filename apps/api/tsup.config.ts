@@ -10,4 +10,6 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   noExternal: [/^@prospeccao\//],
+  // Módulo nativo (o menu de voz das ligações): fica em node_modules, não dá para empacotar.
+  external: ['@livekit/rtc-node'],
 });

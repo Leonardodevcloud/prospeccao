@@ -1,7 +1,7 @@
 import { criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
 import type { Armazenamento } from '@prospeccao/integrations/reuniao';
-import type { ServicoTelefonia } from '@prospeccao/integrations/telefonia';
+import type { RespostaMenu, RoboMenu, ServicoTelefonia } from '@prospeccao/integrations/telefonia';
 import { criarLogger, type ResumoLigacao } from '@prospeccao/shared';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
@@ -106,6 +106,7 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
       armazenamento,
       transcricao: { baseUrl: 'https://api.groq.com/openai/v1', chave: 'x', modelo: 'whisper' },
       fala: null,
+      menu: null,
     },
   };
 
@@ -147,6 +148,7 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
         // A transcrição de verdade é trocada pelo fetch simulado abaixo.
         transcricao: { baseUrl: 'https://api.groq.com/openai/v1', chave: 'x', modelo: 'whisper' },
         fala: { falar: async (t) => new TextEncoder().encode(`mp3:${t}`) },
+        menu: null,
       },
     });
     const ok = await request(app)
@@ -624,6 +626,152 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
       perdida: false,
     });
     estadoLead = 'atendida';
+  });
+
+  it('menu de voz: quem ligou escolhe a loja e só toca para quem é do grupo', async () => {
+    const eu = (
+      await pool.query<{ id: number }>(`SELECT id FROM cadastro.usuarios WHERE email = 'dona@exemplo.com'`)
+    ).rows[0]!.id;
+    const { rows: c } = await pool.query<{ conta_id: number }>(
+      `SELECT conta_id FROM comercial.telefonia_numeros WHERE numero = '7133330400'`,
+    );
+    const contaId = c[0]!.conta_id;
+    const rui = (
+      await pool.query<{ id: number }>(
+        `INSERT INTO cadastro.usuarios (nome, email, papel, conta_id) VALUES ('Rui Norte', 'rui@norte.com', 'sdr', $1)
+         RETURNING id`,
+        [contaId],
+      )
+    ).rows[0]!.id;
+    const grupo = async (nome: string, ordem: number, membro: number) => {
+      const id = (
+        await pool.query<{ id: number }>(
+          `INSERT INTO cadastro.grupos_atendimento (conta_id, nome, ordem) VALUES ($1, $2, $3) RETURNING id`,
+          [contaId, nome, ordem],
+        )
+      ).rows[0]!.id;
+      await pool.query('INSERT INTO cadastro.grupo_membros (grupo_id, usuario_id) VALUES ($1, $2)', [
+        id,
+        membro,
+      ]);
+      return id;
+    };
+    const centro = await grupo('Loja Centro', 0, eu);
+    const norte = await grupo('Loja Norte', 1, rui);
+    const base = (await ler('/ligacoes/config')).body.config;
+    const cfg = await enviar('put', '/ligacoes/config', {
+      ...base,
+      menu: true,
+      menuSaudacao: 'Olá! Você ligou para a Sorriso',
+    });
+    expect(cfg.status).toBe(200);
+    expect(cfg.body.menu.grupos.map((g: { nome: string }) => g.nome)).toEqual(['Loja Centro', 'Loja Norte']);
+
+    // Robô de mentira: responde o que o teste mandar e anota o que falou.
+    const falou: string[] = [];
+    let respostas: RespostaMenu[] = [];
+    const robo: RoboMenu = {
+      entrar: async () => ({
+        perguntar: async (mp3) => {
+          falou.push(new TextDecoder().decode(mp3));
+          return respostas.shift() ?? { semResposta: true };
+        },
+        falar: async (mp3) => {
+          falou.push(new TextDecoder().decode(mp3));
+          return 'ok';
+        },
+        chamar: async () => 'atendeu',
+        sair: async () => undefined,
+      }),
+    };
+    const comMenu = () =>
+      ({
+        pool,
+        log,
+        telefonia: {
+          ...deps.telefonia,
+          fala: { falar: async (t: string) => new TextEncoder().encode(t) },
+          menu: robo,
+        },
+      }) as unknown as Parameters<typeof tratarAvisoLigacao>[0];
+    const ligar = async (sala: string) => {
+      chamadores.set(sala, { de: '+5571998765432', para: '+557133330400' });
+      await tratarAvisoLigacao(comMenu(), {
+        tipo: 'entrou',
+        id: sala,
+        sala,
+        identidade: 'sip_+5571998765432',
+        nome: '',
+        em: new Date(),
+      });
+      await vi.waitFor(async () => {
+        const { rows } = await pool.query(`SELECT situacao FROM comercial.ligacoes WHERE sala = $1`, [sala]);
+        expect(rows[0].situacao).not.toBe('menu');
+      });
+      return (
+        await pool.query(`SELECT id::int, grupo_id, situacao FROM comercial.ligacoes WHERE sala = $1`, [sala])
+      ).rows[0] as { id: number; grupo_id: number | null; situacao: string };
+    };
+
+    // Tecla errada, depois o 2: Loja Norte. O dono (que é da Centro) não vê nem atende.
+    respostas = [{ tecla: '7' }, { tecla: '2' }];
+    const n = await ligar('lig-in-m1');
+    expect(n).toMatchObject({ grupo_id: norte, situacao: 'tocando' });
+    expect(falou).toEqual([
+      'Olá! Você ligou para a Sorriso. Para Loja Centro, digite 1. Para Loja Norte, digite 2.',
+      'Opção inválida.',
+      'Olá! Você ligou para a Sorriso. Para Loja Centro, digite 1. Para Loja Norte, digite 2.',
+      'Um momento, estamos chamando Loja Norte.',
+    ]);
+    expect((await ler('/ligacoes/entrando')).body).toHaveLength(0);
+    expect((await enviar('post', `/ligacoes/${n.id}/atender`)).status).toBe(409);
+    // Ninguém da Norte atendeu: perdida, aviso só para quem é da Norte (sem siga-me para o dono).
+    const discou = chamadas.filter((x) => x.tipo === 'discar').length;
+    await pool.query(
+      `UPDATE comercial.ligacoes SET tocando_desde = now() - interval '45 seconds' WHERE sala = 'lig-in-m1'`,
+    );
+    await rodadaEntrada(pool, comMenu().telefonia!, log);
+    expect(chamadas.filter((x) => x.tipo === 'discar')).toHaveLength(discou);
+    const { rows: avisos } = await pool.query(
+      `SELECT usuario_id FROM comercial.notificacoes WHERE titulo LIKE 'Ligação perdida%' AND criado_em > now() - interval '1 minute'
+        ORDER BY id DESC LIMIT 1`,
+    );
+    expect(avisos[0].usuario_id).toBe(rui);
+
+    // 1: Loja Centro. O dono é de lá: toca para ele (é o lead dele).
+    falou.length = 0;
+    respostas = [{ tecla: '1' }];
+    const c1 = await ligar('lig-in-m2');
+    expect(c1.grupo_id).toBe(centro);
+    expect((await ler('/ligacoes/entrando')).body[0]).toMatchObject({
+      id: c1.id,
+      grupo: 'Loja Centro',
+      meu: true,
+    });
+    expect((await enviar('post', `/ligacoes/${c1.id}/atender`)).status).toBe(200);
+    await enviar('post', `/ligacoes/${c1.id}/estado`, { evento: 'encerrou' });
+
+    // Não apertou nada duas vezes: toca para todo mundo.
+    falou.length = 0;
+    respostas = [];
+    const todos = await ligar('lig-in-m3');
+    expect(todos.grupo_id).toBeNull();
+    expect(falou.at(-1)).toBe('Um momento, estamos chamando um atendente.');
+    expect((await ler('/ligacoes/entrando')).body[0]).toMatchObject({ id: todos.id, grupo: null });
+    await pool.query(`UPDATE comercial.ligacoes SET situacao = 'encerrada' WHERE situacao <> 'encerrada'`);
+
+    // Menu parado (a api reiniciou no meio): depois de 2 min, toca para todos.
+    await pool.query(
+      `INSERT INTO comercial.ligacoes (conta_id, direcao, telefone, sala, situacao, iniciada_em)
+       VALUES ($1, 'entrada', '71900000000', 'lig-in-m4', 'menu', now() - interval '3 minutes')`,
+      [contaId],
+    );
+    await rodadaEntrada(pool, comMenu().telefonia!, log);
+    const { rows: m4 } = await pool.query(`SELECT situacao FROM comercial.ligacoes WHERE sala = 'lig-in-m4'`);
+    expect(m4[0].situacao).toBe('tocando');
+    await pool.query(`UPDATE comercial.ligacoes SET situacao = 'encerrada' WHERE situacao <> 'encerrada'`);
+    await enviar('put', '/ligacoes/config', { ...base, menu: false });
+    await pool.query('DELETE FROM cadastro.grupos_atendimento WHERE conta_id = $1', [contaId]);
   });
 
   it('relatório de ligações e o aviso de 80% da franquia', async () => {

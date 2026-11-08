@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { type Executor, INICIO_MES_SP_TS, type Pool } from '@prospeccao/db';
 import type { Armazenamento, ConfigTranscricao } from '@prospeccao/integrations/reuniao';
-import type { ServicoTelefonia } from '@prospeccao/integrations/telefonia';
+import type { RoboMenu, ServicoTelefonia } from '@prospeccao/integrations/telefonia';
 import {
   AppError,
   type IniciarLigacaoEntrada,
+  MAX_OPCOES_MENU,
   minutosCobrados,
   numeroDeSaida,
   ordenarTelefones,
@@ -41,6 +42,8 @@ export interface DepsTelefonia {
   transcricao: ConfigTranscricao | null;
   /** Voz para tocar o aviso de gravação (sem ela, o comercial lê o aviso). */
   fala: { falar(texto: string, o: { voz: string; velocidade: number }): Promise<Uint8Array> } | null;
+  /** Menu de voz das recebidas (precisa da voz). */
+  menu: RoboMenu | null;
 }
 
 export const SEM_TELEFONIA: DepsTelefonia = {
@@ -48,9 +51,10 @@ export const SEM_TELEFONIA: DepsTelefonia = {
   armazenamento: null,
   transcricao: null,
   fala: null,
+  menu: null,
 };
 
-const ABERTAS = `('preparando', 'chamando', 'tocando', 'em_andamento', 'siga_me')`;
+const ABERTAS = `('preparando', 'chamando', 'menu', 'tocando', 'em_andamento', 'siga_me')`;
 
 /* ───────────────────────────── Plano e configuração ───────────────────────────── */
 
@@ -74,7 +78,8 @@ export async function config(db: Executor, contaId: number = conta()): Promise<T
   const { rows } = await db.query<TelefoniaConfigEntrada>(
     `SELECT gravar, aviso_gravacao AS "avisoGravacao", aviso_falado AS "avisoFalado", transcrever,
             toque_segundos AS "toqueSegundos", mesmo_ddd AS "mesmoDdd", guardar_meses AS "guardarMeses",
-            receber, toque_dono AS "toqueDono", toque_entrada AS "toqueEntrada", siga_me AS "sigaMe"
+            receber, toque_dono AS "toqueDono", toque_entrada AS "toqueEntrada", siga_me AS "sigaMe",
+            menu, menu_saudacao AS "menuSaudacao"
        FROM comercial.telefonia_contas WHERE conta_id = $1`,
     [contaId],
   );
@@ -85,11 +90,11 @@ export async function salvarConfig(db: Executor, c: TelefoniaConfigEntrada): Pro
   await db.query(
     `INSERT INTO comercial.telefonia_contas
        (conta_id, gravar, aviso_gravacao, aviso_falado, transcrever, toque_segundos, mesmo_ddd, guardar_meses,
-        receber, toque_dono, toque_entrada, siga_me)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        receber, toque_dono, toque_entrada, siga_me, menu, menu_saudacao)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (conta_id) DO UPDATE SET gravar = $1, aviso_gravacao = $2, aviso_falado = $3, transcrever = $4,
        toque_segundos = $5, mesmo_ddd = $6, guardar_meses = $7, receber = $8, toque_dono = $9,
-       toque_entrada = $10, siga_me = $11, atualizado_em = now()`,
+       toque_entrada = $10, siga_me = $11, menu = $12, menu_saudacao = $13, atualizado_em = now()`,
     [
       c.gravar,
       c.avisoGravacao,
@@ -102,6 +107,8 @@ export async function salvarConfig(db: Executor, c: TelefoniaConfigEntrada): Pro
       c.toqueDono,
       c.toqueEntrada,
       c.sigaMe,
+      c.menu,
+      c.menuSaudacao,
     ],
   );
 }
@@ -163,7 +170,22 @@ export async function situacao(db: Executor, deps: DepsTelefonia) {
     gravacao: !!deps.armazenamento && cfg.gravar,
     transcricao: !!deps.armazenamento && !!deps.transcricao && cfg.gravar && cfg.transcrever,
     avisoFalado: !!deps.fala && cfg.avisoFalado,
+    /** Dá para ligar o menu de voz (precisa da voz) e os grupos na ordem das teclas. */
+    menu: { disponivel: !!deps.menu && !!deps.fala, grupos: await gruposDoMenu(db) },
   };
+}
+
+/** Grupos de atendimento na ordem das teclas do menu (1, 2, 3…), só os que têm alguém. */
+export async function gruposDoMenu(db: Executor): Promise<{ id: number; nome: string; pessoas: number }[]> {
+  const { rows } = await db.query<{ id: number; nome: string; pessoas: number }>(
+    `SELECT g.id, g.nome, count(u.id)::int AS pessoas
+       FROM cadastro.grupos_atendimento g
+       JOIN cadastro.grupo_membros m ON m.grupo_id = g.id
+       JOIN cadastro.usuarios u ON u.id = m.usuario_id AND u.ativo
+      WHERE g.conta_id = ${contaSql()}
+      GROUP BY g.id ORDER BY g.ordem, g.nome LIMIT ${MAX_OPCOES_MENU}`,
+  );
+  return rows;
 }
 
 /* ───────────────────────────── Números do lead ───────────────────────────── */

@@ -5,15 +5,22 @@ import { comConta, contaSql, usuarioAtual } from '../../contexto.js';
 import * as agenda from '../agenda/repositorio.js';
 import { leadPorTelefone } from '../agente/repositorio.js';
 import { notificar } from '../notificacoes/repositorio.js';
-import { config, type DepsTelefonia, encerrar, numeros, temModulo } from './servico.js';
+import { conduzirMenu, liberar } from './menu.js';
+import { config, type DepsTelefonia, encerrar, gruposDoMenu, numeros, temModulo } from './servico.js';
 
 /**
  * Ligações recebidas. O provedor manda a ligação para o LiveKit, que abre uma sala "lig-in-…" com
  * quem ligou (a pessoa ouve chamando até alguém entrar). O CRM reconhece o lead pelo número, toca
  * primeiro para o dono dele e, depois de alguns segundos, para o time (os navegadores conferem a
  * cada poucos segundos). Ninguém atendeu: siga-me para o celular do dono ou ligação perdida (aviso
- * e tarefa de retorno).
+ * e tarefa de retorno). Com o menu de voz ligado, quem ligou escolhe o grupo (loja, setor) antes e
+ * só toca para quem é dele (menu.ts).
  */
+
+/** Quem é do grupo da ligação (ou ligação sem grupo). */
+const DO_GRUPO = (usuario: string) =>
+  `(l.grupo_id IS NULL OR EXISTS (SELECT 1 FROM cadastro.grupo_membros m
+     WHERE m.grupo_id = l.grupo_id AND m.usuario_id = ${usuario}))`;
 
 /** O LiveKit avisou que alguém ligou (participante sip_… entrou na sala lig-in-…). */
 export async function receber(
@@ -58,12 +65,14 @@ export async function receber(
       );
       dono = o[0]?.r ?? null;
     }
-    await pool.query(
+    // Menu de voz: precisa de grupos com gente; com um grupo só, não pergunta (toca para ele).
+    const grupos = cfg.menu ? await gruposDoMenu(pool) : [];
+    const { rows: nova } = await pool.query<{ id: number }>(
       `INSERT INTO comercial.ligacoes
          (conta_id, empresa_id, direcao, telefone, numero_empresa, sala, situacao, gravar, dono_id, time_desde)
-       VALUES (${contaSql()}, $1, 'entrada', $2, $3, $4, 'tocando', $5, $6,
-               now() + make_interval(secs => $7))
-       ON CONFLICT (sala) DO NOTHING`,
+       VALUES (${contaSql()}, $1, 'entrada', $2, $3, $4, $8, $5, $6, now() + make_interval(secs => $7))
+       ON CONFLICT (sala) DO NOTHING
+       RETURNING id::int`,
       [
         lead?.empresaId ?? null,
         de || 'desconhecido',
@@ -72,7 +81,18 @@ export async function receber(
         !!deps.armazenamento && cfg.gravar,
         dono,
         dono ? cfg.toqueDono : 0,
+        grupos.length ? 'menu' : 'tocando',
       ],
+    );
+    const id = nova[0]?.id;
+    if (!id || !grupos.length) return;
+    if (grupos.length === 1) {
+      await liberar(pool, id, grupos[0]!, cfg.toqueDono);
+      return;
+    }
+    // Roda solto: o aviso do LiveKit não espera o menu terminar.
+    void conduzirMenu(pool, deps, log, { id, sala, chamador: identidade, grupos, cfg }).catch((e) =>
+      log.warn({ err: e, ligacao: id }, 'ligações: menu de voz falhou'),
     );
   });
 }
@@ -84,6 +104,7 @@ export async function entrando(db: Executor) {
   const { rows } = await db.query(
     `SELECT l.id::int, l.empresa_id::int AS "empresaId", coalesce(e.maps_nome, e.nome) AS lead, l.telefone,
             l.numero_empresa AS "numeroEmpresa", l.iniciada_em AS "iniciadaEm", coalesce(l.dono_id = $1, false) AS meu,
+            g.nome AS grupo,
             d.nome AS "donoNome", coalesce(et.nome, o.etapa) AS etapa, o.ultimo_contato_em AS "ultimoContatoEm",
             (SELECT t.inicio FROM comercial.tarefas t WHERE t.conta_id = l.conta_id AND t.empresa_id = l.empresa_id
                 AND t.tipo = 'reuniao' AND t.inicio > now() AND t.concluida_em IS NULL ORDER BY t.inicio LIMIT 1) AS "proximaReuniao"
@@ -92,9 +113,10 @@ export async function entrando(db: Executor) {
        LEFT JOIN comercial.oportunidades o ON o.conta_id = l.conta_id AND o.empresa_id = l.empresa_id
        LEFT JOIN comercial.etapas et ON et.id = o.etapa_id
        LEFT JOIN cadastro.usuarios d ON d.id = l.dono_id
+       LEFT JOIN cadastro.grupos_atendimento g ON g.id = l.grupo_id
       WHERE l.conta_id = ${contaSql()} AND l.direcao = 'entrada' AND l.situacao = 'tocando'
-        AND l.iniciada_em > now() - interval '3 minutes'
-        AND (l.dono_id = $1 OR l.time_desde <= now())
+        AND l.iniciada_em > now() - interval '5 minutes'
+        AND (l.dono_id = $1 OR l.time_desde <= now()) AND ${DO_GRUPO('$1')}
       ORDER BY l.iniciada_em`,
     [u.id],
   );
@@ -116,6 +138,7 @@ export async function atender(db: Executor, deps: DepsTelefonia, id: number) {
   }>(
     `UPDATE comercial.ligacoes l SET usuario_id = $2, situacao = 'em_andamento', atendida_em = now()
       WHERE l.id = $1 AND l.conta_id = ${contaSql()} AND l.direcao = 'entrada' AND l.situacao = 'tocando'
+        AND ${DO_GRUPO('$2')}
       RETURNING l.sala, l.telefone, l.numero_empresa, l.empresa_id::int, l.gravar,
                 (SELECT coalesce(e.maps_nome, e.nome) FROM descoberta.empresas e WHERE e.id = l.empresa_id) AS lead`,
     [id, u.id],
@@ -155,14 +178,17 @@ export async function perdida(pool: Pool, deps: DepsTelefonia, id: number, motiv
     sala: string;
     empresa_id: number | null;
     dono_id: number | null;
+    grupo_id: number | null;
     telefone: string;
     lead: string | null;
   }>(
     `UPDATE comercial.ligacoes l
         SET situacao = 'encerrada', perdida = true, encerrada_em = now(), duracao_segundos = 0,
             motivo_fim = $2, processamento = 'sem_gravacao'
-      WHERE l.id = $1 AND l.situacao IN ('tocando', 'siga_me') AND l.atendida_em IS NULL
-      RETURNING l.sala, l.empresa_id::int, l.dono_id, l.telefone,
+      WHERE l.id = $1 AND l.situacao IN ('menu', 'tocando', 'siga_me') AND l.atendida_em IS NULL
+      RETURNING l.sala, l.empresa_id::int, l.telefone, l.grupo_id,
+                -- O dono só conta se é do grupo que a pessoa escolheu no menu.
+                CASE WHEN ${DO_GRUPO('l.dono_id')} THEN l.dono_id END AS dono_id,
                 (SELECT coalesce(e.maps_nome, e.nome) FROM descoberta.empresas e WHERE e.id = l.empresa_id) AS lead`,
     [id, motivo.slice(0, 120)],
   );
@@ -174,7 +200,11 @@ export async function perdida(pool: Pool, deps: DepsTelefonia, id: number, motiv
     ? [l.dono_id]
     : (
         await pool.query<{ id: number }>(
-          `SELECT id FROM cadastro.usuarios WHERE conta_id = ${contaSql()} AND ativo LIMIT 30`,
+          l.grupo_id
+            ? `SELECT u.id FROM cadastro.grupo_membros m JOIN cadastro.usuarios u ON u.id = m.usuario_id AND u.ativo
+                WHERE m.grupo_id = $1 LIMIT 30`
+            : `SELECT id FROM cadastro.usuarios WHERE conta_id = ${contaSql()} AND ativo LIMIT 30`,
+          l.grupo_id ? [l.grupo_id] : [],
         )
       ).rows.map((r) => r.id);
   for (const u of avisar)
@@ -206,23 +236,31 @@ export async function rodadaEntrada(pool: Pool, deps: DepsTelefonia, log: Logger
     id: number;
     conta_id: number;
     sala: string;
-    situacao: 'tocando' | 'siga_me';
+    situacao: 'menu' | 'tocando' | 'siga_me';
     numero_empresa: string | null;
     dono_telefone: string | null;
     passou: boolean;
     atendida: boolean;
   }>(
     `SELECT l.id::int, l.conta_id, l.sala, l.situacao, l.numero_empresa, d.telefone AS dono_telefone,
-            (l.iniciada_em < now() - make_interval(secs => coalesce(t.toque_entrada, 40))) AS passou,
+            CASE WHEN l.situacao = 'menu' THEN l.iniciada_em < now() - interval '2 minutes'
+                 ELSE coalesce(l.tocando_desde, l.iniciada_em) < now() - make_interval(secs => coalesce(t.toque_entrada, 40))
+            END AS passou,
             (l.atendida_em IS NOT NULL) AS atendida
        FROM comercial.ligacoes l
        LEFT JOIN comercial.telefonia_contas t ON t.conta_id = l.conta_id
-       LEFT JOIN cadastro.usuarios d ON d.id = l.dono_id AND d.ativo
-      WHERE l.direcao = 'entrada' AND l.situacao IN ('tocando', 'siga_me')
+       -- Siga-me só para o dono que é do grupo escolhido no menu.
+       LEFT JOIN cadastro.usuarios d ON d.id = l.dono_id AND d.ativo AND ${DO_GRUPO('l.dono_id')}
+      WHERE l.direcao = 'entrada' AND l.situacao IN ('menu', 'tocando', 'siga_me')
       ORDER BY l.iniciada_em LIMIT 50`,
   );
   for (const r of rows)
     await comConta(r.conta_id, async () => {
+      // Menu parado (a api reiniciou no meio, por exemplo): toca para todos.
+      if (r.situacao === 'menu') {
+        if (r.passou) await liberar(pool, r.id, null, 0);
+        return;
+      }
       if (r.situacao === 'tocando') {
         if (!r.passou) return;
         const cfg = await config(pool);

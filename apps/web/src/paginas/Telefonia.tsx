@@ -1,7 +1,8 @@
-import type { TelefoniaConfigEntrada } from '@prospeccao/shared/ligacoes';
+import { type TelefoniaConfigEntrada, textoDoMenu } from '@prospeccao/shared/ligacoes';
 import { Badge, Button, EmptyState } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
@@ -324,6 +325,7 @@ function Conteudo(props: { s: SituacaoTelefonia }) {
                 Ligação perdida avisa o dono do lead (ou o time, se o número não é de nenhum lead) e vira uma
                 tarefa de retorno na agenda.
               </span>
+              <MenuDeVoz s={s} f={f} ro={ro} set={set} />
             </>
           )}
           <ErroDaApi erro={salvar.error} />
@@ -337,6 +339,81 @@ function Conteudo(props: { s: SituacaoTelefonia }) {
           )}
         </form>
       </div>
+    </div>
+  );
+}
+
+/** Menu de voz: "para a loja Centro, digite 1"; toca só para quem é do grupo escolhido. */
+function MenuDeVoz(p: {
+  s: SituacaoTelefonia;
+  f: TelefoniaConfigEntrada;
+  ro: boolean;
+  set: <K extends keyof TelefoniaConfigEntrada>(k: K, v: TelefoniaConfigEntrada[K]) => void;
+}) {
+  const { grupos, disponivel } = p.s.menu;
+  return (
+    <div className="tel-menu">
+      <label className="opcao">
+        <input
+          type="checkbox"
+          checked={p.f.menu}
+          disabled={p.ro}
+          onChange={(e) => p.set('menu', e.target.checked)}
+        />
+        <span>
+          <b>Menu de voz:</b> quem liga escolhe a loja ou o setor pela tecla do telefone e só toca para quem é
+          daquele grupo
+        </span>
+      </label>
+      {p.f.menu && (
+        <>
+          {!disponivel && (
+            <Mensagem tipo="aviso">
+              A voz do menu ainda não está ligada na plataforma. Até lá, as ligações tocam para todo o time.
+            </Mensagem>
+          )}
+          {grupos.length === 0 ? (
+            <Mensagem tipo="aviso">
+              Crie os grupos de atendimento em <Link to="/equipe">Equipe</Link> (por exemplo, uma loja por
+              grupo, com os vendedores dela). Sem grupos, o menu não toca.
+            </Mensagem>
+          ) : (
+            <>
+              <div className="campo">
+                <label htmlFor="tel-saudacao">Primeira frase</label>
+                <input
+                  id="tel-saudacao"
+                  maxLength={200}
+                  disabled={p.ro}
+                  placeholder="Ex.: Olá! Você ligou para a Autopeças Silva."
+                  value={p.f.menuSaudacao}
+                  onChange={(e) => p.set('menuSaudacao', e.target.value)}
+                />
+              </div>
+              <div className="tel-menu__previa">
+                <small>Quem ligar vai ouvir</small>
+                <p>“{textoDoMenu(p.f.menuSaudacao, grupos)}”</p>
+                <ol>
+                  {grupos.map((g, i) => (
+                    <li key={g.id}>
+                      <kbd>{i + 1}</kbd> {g.nome}{' '}
+                      <span className="quieto">
+                        · toca para {g.pessoas} {g.pessoas === 1 ? 'pessoa' : 'pessoas'}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <span className="campo__dica">
+                {grupos.length === 1
+                  ? 'Com um grupo só, não pergunta nada: toca direto para ele.'
+                  : 'Sem apertar nada (o menu repete uma vez) ou com tecla errada, toca para todo o time. O dono do lead toca primeiro se for do grupo escolhido.'}{' '}
+                A ordem e quem é de cada grupo ficam em <Link to="/equipe">Equipe</Link>.
+              </span>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

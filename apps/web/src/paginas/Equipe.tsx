@@ -758,9 +758,9 @@ function GruposAtendimento(props: { equipe: TEquipe }) {
             Grupos de atendimento
           </h2>
           <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
-            Lojas ou departamentos e quem atende cada um (uma pessoa pode estar em mais de um). São a base do
-            menu da central telefônica, que toca para todos do grupo escolhido: o menu chega na próxima
-            versão.
+            Lojas ou departamentos e quem atende cada um (uma pessoa pode estar em mais de um). São as opções
+            do menu de voz das ligações recebidas, na ordem da lista (o primeiro é a tecla 1); o menu se liga
+            em Gestão › Telefonia.
           </p>
         </div>
         {!editando && (
@@ -784,15 +784,16 @@ function GruposAtendimento(props: { equipe: TEquipe }) {
         <ul className="lista-simples">
           {q.data.map((g, i) => (
             <li key={g.id} className="grupo-atendimento">
-              <span className="grupo-atendimento__numero mono" title="Tecla no menu da central">
-                {i + 1}
+              <span className="grupo-atendimento__numero mono" title="Tecla no menu de voz">
+                {/* Grupo sem ninguém fica fora do menu (as teclas pulam ele). */}
+                {g.membros.length ? q.data.slice(0, i).filter((x) => x.membros.length).length + 1 : '–'}
               </span>
               <div className="grupo-atendimento__corpo">
                 <b>{g.nome}</b>
                 <span className="quieto" style={{ fontSize: 13 }}>
                   {g.membros.length
                     ? g.membros.map((m) => m.nome).join(', ')
-                    : 'Ninguém neste grupo ainda: as ligações dele não tocam para ninguém.'}
+                    : 'Ninguém neste grupo ainda: ele fica fora do menu de voz.'}
                 </span>
               </div>
               <div className="acoes">

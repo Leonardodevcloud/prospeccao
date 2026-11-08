@@ -370,7 +370,7 @@ export async function tratarAvisoLigacao(deps: DepsApi, aviso: AvisoVideo): Prom
     atendida: boolean;
   }>(
     `SELECT id::int, conta_id, direcao, atendida_em IS NOT NULL AS atendida FROM comercial.ligacoes
-      WHERE sala = $1 AND situacao IN ('preparando', 'chamando', 'tocando', 'em_andamento', 'siga_me')`,
+      WHERE sala = $1 AND situacao IN ('preparando', 'chamando', 'menu', 'tocando', 'em_andamento', 'siga_me')`,
     [aviso.sala],
   );
   for (const l of rows)

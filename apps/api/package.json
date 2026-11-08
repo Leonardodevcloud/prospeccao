@@ -14,6 +14,7 @@
     "hash-senha": "tsx src/hash-senha.ts"
   },
   "dependencies": {
+    "@livekit/rtc-node": "1.2.1",
     "@prospeccao/config": "workspace:*",
     "@prospeccao/db": "workspace:*",
     "@prospeccao/integrations": "workspace:*",

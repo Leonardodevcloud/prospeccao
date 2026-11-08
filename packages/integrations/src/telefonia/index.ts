@@ -156,4 +156,5 @@ export function criarServicoTelefonia(cfg: ConfigTelefonia): ServicoTelefonia {
     },
   };
 }
+export * from './menu.js';
 export * from './resumo.js';

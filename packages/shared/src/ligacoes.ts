@@ -236,6 +236,10 @@ export const telefoniaConfigEntrada = z.object({
   toqueEntrada: z.number().int().min(15).max(120),
   /** Ninguém atendeu no CRM: toca no celular do dono do lead (o cadastrado na Equipe). */
   sigaMe: z.boolean(),
+  /** Menu de voz ao receber ("para a loja Centro, digite 1"): toca só para quem é do grupo escolhido. */
+  menu: z.boolean().default(false),
+  /** Primeira frase do menu (o nome da empresa, um bom-dia). */
+  menuSaudacao: z.string().trim().max(200).default(''),
 });
 export type TelefoniaConfigEntrada = z.infer<typeof telefoniaConfigEntrada>;
 
@@ -251,7 +255,28 @@ export const TELEFONIA_PADRAO: TelefoniaConfigEntrada = {
   toqueDono: 20,
   toqueEntrada: 40,
   sigaMe: true,
+  menu: false,
+  menuSaudacao: '',
 };
+
+/** Até 9 opções no menu (uma tecla cada). */
+export const MAX_OPCOES_MENU = 9;
+
+/** O que o menu fala para quem liga, com os grupos na ordem das teclas. */
+export function textoDoMenu(saudacao: string, grupos: { nome: string }[]): string {
+  const opcoes = grupos
+    .slice(0, MAX_OPCOES_MENU)
+    .map((g, i) => `Para ${g.nome.trim()}, digite ${i + 1}.`)
+    .join(' ');
+  const ola = saudacao.trim();
+  return [ola && !/[.!?]$/.test(ola) ? `${ola}.` : ola, opcoes].filter(Boolean).join(' ');
+}
+
+/** Depois da escolha (ou sem escolha: chama todo mundo). */
+export const textoChamandoGrupo = (grupo: string | null) =>
+  grupo ? `Um momento, estamos chamando ${grupo.trim()}.` : 'Um momento, estamos chamando um atendente.';
+
+export const TEXTO_OPCAO_INVALIDA = 'Opção inválida.';
 
 /* ───────────────────────────── Lista de ligação ───────────────────────────── */
 

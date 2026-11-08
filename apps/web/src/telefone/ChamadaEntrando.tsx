@@ -21,6 +21,8 @@ interface Entrando {
   iniciadaEm: string;
   meu: boolean;
   donoNome: string | null;
+  /** O grupo que quem ligou escolheu no menu de voz. */
+  grupo: string | null;
   etapa: string | null;
   ultimoContatoEm: string | null;
   proximaReuniao: string | null;
@@ -146,8 +148,9 @@ export function ChamadaEntrando() {
             {primeira.proximaReuniao && <li>reunião {quando(primeira.proximaReuniao)}</li>}
           </>
         ) : (
-          <li>não é lead · tocando para o time</li>
+          <li>não é lead · tocando para {primeira.grupo ? 'o grupo' : 'o time'}</li>
         )}
+        {primeira.grupo && <li>escolheu {primeira.grupo}</li>}
         {primeira.numeroEmpresa && <li>para {formatarTelefone(primeira.numeroEmpresa)}</li>}
       </ul>
       {ocupado && <p className="quieto">Termine a ligação atual para atender.</p>}

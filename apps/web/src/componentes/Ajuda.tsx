@@ -293,7 +293,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Ligue e receba ligações pelo navegador com o número da empresa, monte listas de ligação e veja o relatório; a IA resume e sugere o próximo passo.',
     onde: { rotulo: 'Ligações', para: '/ligacoes' },
     termos:
-      'ligar ligação ligacao telefone telefonia chamada celular fixo número numero gravação gravar transcrição resumo clima sentimento caixa postal não atendeu número errado não ligar minutos franquia aviso LGPD discar lista de ligação discador paralelo power dialer receber recebida perdida siga-me celular retornar relatório melhor horário',
+      'ligar ligação ligacao telefone telefonia chamada celular fixo número numero gravação gravar transcrição resumo clima sentimento caixa postal não atendeu número errado não ligar minutos franquia aviso LGPD discar lista de ligação discador paralelo power dialer receber recebida perdida siga-me celular retornar relatório melhor horário menu de voz URA central telefônica digite tecla loja setor grupo',
     corpo: (
       <>
         <p>
@@ -400,6 +400,30 @@ export const ARTIGOS: ArtigoAjuda[] = [
           As abas <b>Recebidas</b> e <b>Perdidas</b> mostram essas ligações. O administrador liga e desliga o
           receber pelo CRM, o tempo de cada etapa e o siga-me em <b>Gestão › Telefonia</b>.
         </p>
+        <h3>Menu de voz (uma loja ou setor por tecla)</h3>
+        <p>
+          Com várias lojas ou setores no mesmo número, ligue o <b>Menu de voz</b> em <b>Gestão › Telefonia</b>
+          . Quem liga ouve a primeira frase que você escrever e as opções (“Para a Loja Centro, digite 1. Para
+          a Loja Norte, digite 2.”) e escolhe pela tecla do telefone. Aí toca ao mesmo tempo para todos
+          daquele grupo; quem atender primeiro leva. A pessoa ouve “Um momento, estamos chamando a Loja
+          Centro” e o sinal de chamada até alguém atender.
+        </p>
+        <ul>
+          <li>
+            As opções são os <b>grupos de atendimento</b> de <b>Equipe</b>, na ordem em que aparecem lá (só os
+            que têm alguém, até 9). Com um grupo só, o menu não pergunta nada e toca direto para ele.
+          </li>
+          <li>
+            Se a pessoa não apertar nada (o menu repete uma vez) ou apertar uma tecla que não existe, toca
+            para todo o time, como sem menu.
+          </li>
+          <li>
+            O dono do lead toca primeiro se for do grupo escolhido. Se não for, toca só para o grupo, e o
+            siga-me e o aviso de perdida também ficam com o grupo.
+          </li>
+          <li>Quem não é do grupo escolhido não vê a ligação nem consegue atender.</li>
+          <li>Ninguém atendeu: vira ligação perdida e o aviso vai para quem é do grupo.</li>
+        </ul>
         <h3>Relatório</h3>
         <p>
           A aba <b>Relatório</b> mostra quantas ligações foram feitas e atendidas, quantas viraram conversa (e
@@ -1579,9 +1603,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>Grupos de atendimento</h3>
         <p>
           Em <b>Equipe › Grupos de atendimento</b>, crie as lojas ou departamentos e marque quem atende cada
-          um (uma pessoa pode estar em mais de um). Eles são a base do menu da central telefônica (“aperte 1
-          para a loja A”), que toca para todos do grupo escolhido ao mesmo tempo: o menu chega na próxima
-          versão.
+          um (uma pessoa pode estar em mais de um). Eles são as opções do <b>menu de voz</b> das ligações
+          recebidas (“para a Loja Centro, digite 1”), que toca para todos do grupo escolhido ao mesmo tempo. A
+          tecla de cada grupo segue a ordem da lista. Para ligar o menu, veja{' '}
+          <Link to="/ajuda/ligacoes">Ligações</Link>.
         </p>
       </>
     ),

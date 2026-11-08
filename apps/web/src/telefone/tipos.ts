@@ -64,6 +64,8 @@ export interface SituacaoTelefonia {
   gravacao: boolean;
   transcricao: boolean;
   avisoFalado: boolean;
+  /** Menu de voz das recebidas: se dá para ligar e os grupos na ordem das teclas. */
+  menu: { disponivel: boolean; grupos: { id: number; nome: string; pessoas: number }[] };
 }
 
 /** A ligação em curso (o painel e os botões acompanham). */
