@@ -170,6 +170,26 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
     comoFazer: ass?.fala ? null : 'Crie a chave em platform.openai.com e coloque em OPENAI_CHAVE na api.',
     testavel: false,
   });
+  const { rows: cl } = await pool.query<{ carrosseis: number; usd: number; contas: number }>(
+    `SELECT (SELECT count(*)::int FROM comercial.carrossel_pedidos
+              WHERE tipo = 'carrossel' AND situacao = 'pronto' AND criado_em > now() - interval '30 days') AS carrosseis,
+            (SELECT coalesce(sum(custo_usd), 0)::float8 FROM cadastro.consumo_carrosseis WHERE dia > current_date - 30) AS usd,
+            (SELECT count(DISTINCT conta_id)::int FROM cadastro.consumo_carrosseis WHERE dia > current_date - 30) AS contas`,
+  );
+  const ci = deps.carrosseisIa;
+  lista.push({
+    id: 'claude',
+    nome: 'Carrosséis com IA · Claude (Anthropic)',
+    papel: 'O time de IA dos carrosséis: estratégia, texto, revisão e o cérebro da marca de cada cliente.',
+    estado: ci ? 'ok' : 'falta',
+    detalhe: ci
+      ? `${ci.modelo} · ${n(cl[0]?.carrosseis ?? 0)} carrosséis em 30 dias, em ${n(cl[0]?.contas ?? 0)} ${cl[0]?.contas === 1 ? 'conta' : 'contas'} · US$ ${(cl[0]?.usd ?? 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`
+      : 'Sem ANTHROPIC_CHAVE: os carrosséis funcionam só à mão (a tela explica que o time de IA não está ligado).',
+    comoFazer: ci
+      ? null
+      : 'Crie a chave em console.anthropic.com (Settings › API keys) e coloque em ANTHROPIC_CHAVE na api do Railway. O modelo padrão é claude-sonnet-5-5 (troque em CARROSSEIS_MODELO).',
+    testavel: !!ci,
+  });
   lista.push({
     id: 'argos',
     nome: 'Argos · acesso aos dados',
@@ -288,6 +308,11 @@ export async function testarServico(deps: DepsApi, id: string): Promise<{ ok: bo
       await v.abrirSala({ sala: 'teste-plataforma', maxPessoas: 1 });
       await v.acesso({ sala: 'teste-plataforma', identidade: 'teste', nome: 'Teste', horas: 1 });
       return { ok: true, resultado: 'ok (sala de teste criada no LiveKit)' };
+    }
+    if (id === 'claude') {
+      const ci = deps.carrosseisIa;
+      if (!ci) return { ok: false, resultado: 'ANTHROPIC_CHAVE não configurada.' };
+      return { ok: true, resultado: await ci.testar() };
     }
     if (id === 'gravacoes') {
       const a = deps.reunioes?.armazenamento;

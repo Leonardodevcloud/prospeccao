@@ -1192,21 +1192,26 @@ export const ARTIGOS: ArtigoAjuda[] = [
   {
     id: 'carrosseis',
     area: 'WhatsApp e IA',
-    titulo: 'Carrosséis: identidade visual, fotos, editor e imagens para o Instagram',
-    resumo: 'Monte carrosséis com as cores, fontes e logo da empresa e baixe as imagens prontas para postar.',
+    titulo: 'Carrosséis: o time de IA, o cérebro da marca, a identidade visual e o editor',
+    resumo:
+      'O time de IA escreve carrosséis com a identidade e o jeito de falar da empresa; você confere, ajusta e baixa as imagens.',
     onde: { rotulo: 'Carrosséis', para: '/carrosseis' },
     termos:
-      'carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda baixar zip arte publicação feed conteúdo',
+      'carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho franquia',
     corpo: (
       <>
         <p>
-          Em <b>Carrosséis</b> você monta carrosséis para o Instagram com a cara da empresa: cada slide sai
-          com as mesmas cores, fontes, logo e margens, em 1080 × 1350 (o formato em pé do feed). O texto é
-          desenhado pelo sistema, então fica sempre nítido, sem letra torta nem erro de digitação na imagem.
+          Em <b>Carrosséis</b> um time de IA cria carrosséis para o Instagram com a cara da empresa: o{' '}
+          <b>estrategista</b> escolhe o ângulo e o gancho da capa, o <b>redator</b> escreve cada slide, a
+          legenda e as hashtags, o <b>diretor de arte</b> escolhe o modelo e a foto de cada slide e confere se
+          o texto cabe, e o <b>revisor</b> dá nota e devolve para reescrever o que não está bom. Cada slide
+          sai em 1080 × 1350 (o formato em pé do feed), com as cores, fontes e logo da empresa. O texto é
+          desenhado pelo sistema: fica sempre nítido, sem letra torta.
         </p>
         <p>
-          É um <b>módulo à parte</b> e só o <b>administrador</b> da conta entra. Sem o módulo, a tela explica
-          o que ele faz; para liberar, fale com a gente.
+          É um <b>módulo à parte</b> e só o <b>administrador</b> da conta entra. O plano tem uma quantidade de
+          carrosséis do time de IA por mês; os montados à mão não contam. Sem o módulo, a tela explica o que
+          ele faz; para liberar, fale com a gente.
         </p>
         <h3>1. Identidade visual (uma vez)</h3>
         <Passos>
@@ -1224,31 +1229,103 @@ export const ARTIGOS: ArtigoAjuda[] = [
             transparente fica melhor). Sem logo própria, o sistema usa a de Marca e domínio.
           </li>
           <li>
-            Preencha a <b>assinatura</b> (o @ da empresa, que aparece no rodapé) e, em{' '}
-            <b>Como a empresa fala</b>, o que a empresa vende, para quem, o tom e as palavras que nunca devem
-            aparecer.
+            Preencha a <b>assinatura</b> (o @ da empresa, que aparece no rodapé).
           </li>
         </Passos>
         <Nota>
           Se uma combinação de cores ficar difícil de ler, o sistema escurece ou clareia o tom só o bastante
           para dar leitura e avisa o que ajustou. As suas cores salvas não mudam.
         </Nota>
-        <h3>2. Fotos da empresa</h3>
+        <h3>2. Cérebro da marca (antes do primeiro carrossel com IA)</h3>
         <p>
-          Guarde ali as fotos da loja, dos produtos e da equipe (até 60). Elas entram nos slides de capa e de
-          foto. Use fotos com pelo menos 500 px no lado menor; as do celular servem, e o sistema tira os dados
-          do aparelho (como a localização) antes de guardar.
+          É o que o time lê antes de cada carrossel: o nicho, para quem a empresa vende, o que vende, os
+          diferenciais, as provas, o que os clientes perguntam, as objeções, o tom de voz, o que nunca dizer e
+          os assuntos dos posts.
         </p>
-        <h3>3. Montar o carrossel</h3>
         <Passos>
           <li>
-            Clique em <b>Novo carrossel</b>, dê um título e escolha começar por um <b>roteiro pronto</b>{' '}
-            (capa, conteúdo e fechamento) ou só pela capa.
+            Na aba <b>Cérebro da marca</b>, clique em <b>Montar com a IA</b>. Ela lê o que o CRM já sabe da
+            empresa: a configuração da IA de atendimento, a base de conhecimento, o site, os posts do
+            Instagram com os números, os comentários, as mensagens dos clientes, os quadros e os resumos de
+            ligações e reuniões. Telefone, e-mail e documento saem antes de qualquer texto ir para a IA, e o
+            que aparece é sempre padrão (“quando trocar a pastilha”), nunca o que uma pessoa disse.
           </li>
           <li>
-            No editor, cada slide tem um <b>modelo</b>: capa, item, texto, lista, número, citação, comparação,
-            foto e chamada. Os campos mostram quantas letras cabem; passando disso, o texto diminui para caber
-            e aparece um aviso.
+            Leia e corrija. Em <b>Provas</b> ficam os números, prazos e garantias que podem aparecer num post,
+            com de onde veio cada um.
+          </li>
+          <li>
+            Clique em <b>Está certo: conferi</b>. O time só usa o cérebro conferido; se você mudar depois,
+            confira de novo.
+          </li>
+        </Passos>
+        <Nota>
+          O time não inventa fato da empresa: número, preço, prazo, garantia ou resultado só entram se
+          estiverem no cérebro da marca, no que divulgar ou no seu pedido. O revisor confere cada afirmação
+          contra essas fontes.
+        </Nota>
+        <h3>3. O que divulgar</h3>
+        <p>
+          Ainda na aba Cérebro da marca, em <b>O que divulgar</b>, cadastre as promoções, lançamentos e datas
+          do mês. Preço de, preço por, validade e condições saem nos slides <b>exatamente</b> como foram
+          digitados: o sistema confere, e um preço que não foi informado não passa. Com a data de{' '}
+          <b>Some da lista depois de</b>, o item sai das sugestões sozinho.
+        </p>
+        <h3>4. Pedir um carrossel ao time</h3>
+        <Passos>
+          <li>
+            Clique em <b>Novo carrossel</b>, diga sobre o que é (uma frase basta) ou escolha o que divulgar.
+          </li>
+          <li>
+            Escolha o <b>objetivo</b> (ensinar, vender, mostrar resultado ou bastidores), quantos slides (ou
+            deixe o time decidir, de 5 a 10), o estilo e a <b>chamada do último slide</b>. Em “Comentar uma
+            palavra”, o botão sai como “Comente PALAVRA”; para responder quem comentar, crie a regra em
+            Instagram › Comente e receba.
+          </li>
+          <li>
+            Clique em <b>Criar com o time de IA</b>. A tela mostra cada etapa; leva de 1 a 2 minutos. Pode
+            fechar: o aviso chega no sino quando o carrossel ficar pronto, e ele abre no editor.
+          </li>
+        </Passos>
+        <p>
+          Se o time não conseguir terminar, o pedido aparece na lista com o motivo e não conta na franquia.
+          Para montar à mão, use <b>Começar em branco</b>.
+        </p>
+        <h3>5. O que o revisor deixou para você</h3>
+        <ul>
+          <li>
+            O revisor dá nota de 1 a 5 em gancho, uma ideia por slide, clareza, se é específico, tamanho do
+            texto, chamada final, tom da marca e português. Abaixo de 4 de média (ou com afirmação sem fonte,
+            preço errado ou texto que não cabe), o carrossel volta ao redator, até duas vezes.
+          </li>
+          <li>
+            O que ainda ficou aparece no slide como <b>Revisor · slide N</b>, com a sugestão pronta: clique em{' '}
+            <b>Usar a sugestão</b> ou <b>Manter como está</b>. Na lista, o cartão mostra quantos pontos
+            esperam você.
+          </li>
+          <li>
+            A aba <b>Time de IA</b> do editor mostra o ângulo, de onde veio a ideia, os outros ganchos que o
+            estrategista pensou (dá para trocar a capa com um clique), as notas do revisor e as hashtags.
+          </li>
+        </ul>
+        <h3>6. Fotos da empresa</h3>
+        <p>
+          Guarde na aba Identidade visual as fotos da loja, dos produtos e da equipe (até 60). O diretor de
+          arte usa nas capas e nos slides de foto quando combinam (dá para desligar no pedido). Use fotos com
+          pelo menos 500 px no lado menor; as do celular servem, e o sistema tira os dados do aparelho (como a
+          localização) antes de guardar.
+        </p>
+        <h3>7. Editar, conferir e postar</h3>
+        <Passos>
+          <li>
+            Cada slide tem um <b>modelo</b>: capa, item, texto, lista, número, citação, comparação, foto e
+            chamada. Os campos mostram quantas letras cabem; passando disso, o texto diminui para caber e
+            aparece um aviso.
+          </li>
+          <li>
+            Em <b>Pedir ao redator</b>, embaixo dos campos do slide: <b>Mais curto</b>, <b>Mais direto</b>,{' '}
+            <b>Outro jeito de dizer</b> ou escreva o que mudar. Ele reescreve só aquele slide, no mesmo
+            modelo.
           </li>
           <li>
             Na faixa de slides, suba, desça, duplique ou tire cada slide (até 10 por carrossel). A aba{' '}
@@ -1259,20 +1336,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
             Tudo é salvo sozinho. Se o mesmo carrossel estiver aberto em outra aba, o sistema avisa em vez de
             apagar o que a outra salvou.
           </li>
+          <li>
+            <b>Ver como no Instagram</b> mostra o carrossel num celular, deslizando como no feed.{' '}
+            <b>Baixar as imagens</b> traz um .zip com os slides na ordem e a legenda num arquivo de texto: no
+            Instagram, crie o post, escolha as imagens na ordem e cole a legenda. <b>Marcar como pronto</b>{' '}
+            separa na lista o que já pode ir ao ar.
+          </li>
         </Passos>
-        <h3>4. Conferir e postar</h3>
-        <ul>
-          <li>
-            <b>Ver como no Instagram</b> mostra o carrossel num celular, deslizando como no feed.
-          </li>
-          <li>
-            <b>Baixar as imagens</b> traz um .zip com os slides na ordem e a legenda num arquivo de texto. No
-            Instagram, crie o post, escolha várias imagens na ordem e cole a legenda.
-          </li>
-          <li>
-            <b>Marcar como pronto</b> separa na lista o que já pode ir ao ar.
-          </li>
-        </ul>
         <Nota>Emojis não entram nos slides (as fontes não têm); use-os à vontade na legenda.</Nota>
       </>
     ),
@@ -1631,8 +1701,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
             <b>Usuário adicional</b>: cada pessoa a mais que o plano inclui.
           </li>
           <li>
-            <b>Carrosséis com IA</b>: carrosséis para o Instagram com a identidade visual da empresa, feitos
-            pelo administrador. Por enquanto é liberado pelo nosso time (fale com a gente).
+            <b>Carrosséis com IA</b>: o time de IA escreve carrosséis para o Instagram com a identidade visual
+            e o jeito de falar da empresa (só o administrador usa), com uma quantidade por mês. Por enquanto é
+            liberado pelo nosso time (fale com a gente).
           </li>
         </ul>
         <h3>Quando algo não está no plano</h3>

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { refazerSlide } from '@prospeccao/integrations/carrosseis';
 import { prepararImagem } from '@prospeccao/integrations/slides';
 import { AppError } from '@prospeccao/shared';
 import {
@@ -15,6 +16,14 @@ import {
   slideEntrada,
   slideNovo,
 } from '@prospeccao/shared/carrosseis';
+import {
+  avisoResolverEntrada,
+  divulgarEntrada,
+  dossieEntrada,
+  PEDIDO_RAPIDO,
+  pedidoSlideEntrada,
+  textoDoDossie,
+} from '@prospeccao/shared/carrosseis-time';
 import express, { type Request, type Response, Router } from 'express';
 import { strToU8, zipSync } from 'fflate';
 import { z } from 'zod';
@@ -22,11 +31,13 @@ import { conta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
-import { contratoDaConta, rotaComModulo, temModulo } from '../../recursos.js';
+import { rotaComModulo, temModulo } from '../../recursos.js';
 import * as marca from '../marca/repositorio.js';
 import { organizacaoDaConta } from '../plano/repositorio.js';
+import * as cerebro from './cerebro.js';
 import { desenhar, materialDaConta } from './desenho.js';
 import * as repo from './repositorio.js';
+import * as time from './time.js';
 
 /**
  * Carrosséis com IA (módulo à parte). Só o administrador da conta entra (configuração e conteúdo
@@ -57,17 +68,70 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   r.use(exigirAdmin);
   r.use(rotaComModulo(pool, 'carrosseis', (req) => req.method === 'GET' && req.path === '/situacao'));
 
-  const franquia = async () => {
-    const c = await contratoDaConta(pool).catch(() => null);
-    return { usados: await repo.feitosPelaIaNoMes(pool), limite: c ? c.carrosseisMes : null };
-  };
+  const franquia = () => time.franquia(pool);
+  const ia = () => deps.carrosseisIa ?? null;
 
   r.get('/situacao', async (_req, res) => {
+    const modulo = await temModulo(pool, 'carrosseis');
     res.json({
-      modulo: await temModulo(pool, 'carrosseis'),
+      modulo,
       armazenamento: !!arm(),
       franquia: await franquia(),
+      ia: {
+        ligada: !!ia(),
+        cerebroConferido: modulo ? !!(await cerebro.cerebro(pool)).conferidoEm : false,
+      },
     });
+  });
+
+  /* ── Cérebro da marca ── */
+
+  r.get('/cerebro', async (_req, res) => {
+    res.json({ ...(await cerebro.cerebro(pool)), pedido: await time.pedidoDoDossie(pool), iaLigada: !!ia() });
+  });
+
+  r.put('/cerebro', async (req, res) => {
+    const d = corpo(req, z.object({ dossie: dossieEntrada, conferir: z.boolean().default(false) }));
+    await cerebro.salvarDossie(pool, d.dossie, d.conferir);
+    res.json(await cerebro.cerebro(pool));
+  });
+
+  /** A IA lê o que o CRM sabe da empresa e monta um rascunho (a pessoa confere depois). */
+  r.post('/cerebro/gerar', async (_req, res) => {
+    res.status(202).json(await time.pedirDossie(pool, ia()));
+  });
+
+  /* ── O que divulgar ── */
+
+  r.get('/divulgar', async (req, res) => {
+    const { antigos } = consulta(req, z.object({ antigos: z.enum(['sim', 'nao']).default('nao') }));
+    res.json({ itens: await cerebro.listarDivulgar(pool, antigos === 'sim') });
+  });
+  r.post('/divulgar', async (req, res) => {
+    res.status(201).json(await cerebro.criarDivulgar(pool, corpo(req, divulgarEntrada)));
+  });
+  r.put('/divulgar/:id', async (req, res) => {
+    res.json(await cerebro.atualizarDivulgar(pool, idDaRota(req), corpo(req, divulgarEntrada)));
+  });
+  r.delete('/divulgar/:id', async (req, res) => {
+    await cerebro.apagarDivulgar(pool, idDaRota(req));
+    res.json({ ok: true });
+  });
+
+  /* ── O time de IA ── */
+
+  r.get('/time', async (_req, res) => {
+    res.json({ pedidos: await time.pedidosRecentes(pool), franquia: await franquia(), iaLigada: !!ia() });
+  });
+  r.post('/time', async (req, res) => {
+    res.status(201).json(await time.pedirCarrossel(pool, ia(), req.body));
+  });
+  r.get('/time/:id', async (req, res) => {
+    res.json(await time.pedido(pool, idDaRota(req)));
+  });
+  r.post('/time/:id/cancelar', async (req, res) => {
+    await time.cancelar(pool, idDaRota(req));
+    res.json({ ok: true });
   });
 
   /* ── Identidade visual ── */
@@ -236,7 +300,11 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   /* ── Carrosséis ── */
 
   r.get('/', async (_req, res) => {
-    res.json({ carrosseis: await repo.listar(pool), franquia: await franquia() });
+    res.json({
+      carrosseis: await repo.listar(pool),
+      franquia: await franquia(),
+      pedidos: await time.pedidosRecentes(pool),
+    });
   });
 
   r.post('/', async (req, res) => {
@@ -271,6 +339,80 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     res.json(await repo.atualizar(pool, idDaRota(req), { ...d, slides }));
   });
 
+  /**
+   * Pedido ao redator num slide ("mais curto", ou o que a pessoa escrever). Devolve o slide novo
+   * sem salvar: o editor troca e salva sozinho (assim não briga com o que está aberto na tela).
+   */
+  r.post('/:id/slides/:n/pedir', async (req, res) => {
+    const cfg = ia();
+    if (!cfg) throw new AppError(503, 'indisponivel', 'O time de IA ainda não foi ligado na plataforma.');
+    const d = corpo(
+      req,
+      z.object({
+        pedido: pedidoSlideEntrada,
+        slides: z.array(slideEntrada).min(1).max(MAX_SLIDES),
+        estilo: z.enum(ESTILOS),
+      }),
+    );
+    const c = await repo.carrossel(pool, idDaRota(req));
+    const n = Number(req.params.n);
+    if (!Number.isInteger(n) || !d.slides[n]) throw AppError.naoEncontrado('Slide');
+    const cb = await cerebro.cerebro(pool);
+    const empresa = await cerebro.nomeDaEmpresa(pool);
+    const { identidade } = await repo.identidade(pool);
+    const rel = c.relatorio;
+    const divulgar = rel?.divulgarId ? await cerebro.divulgar(pool, rel.divulgarId).catch(() => null) : null;
+    const instrucao = [d.pedido.rapido ? PEDIDO_RAPIDO[d.pedido.rapido].instrucao : '', d.pedido.texto]
+      .filter(Boolean)
+      .join(' ');
+    const pedidoCarrossel = {
+      objetivo: rel?.objetivo ?? ('ensinar' as const),
+      chamada: rel?.chamada ?? ('salvar' as const),
+      palavra: rel?.palavra ?? '',
+      assunto: rel?.assunto ?? c.titulo,
+    };
+    const r = await refazerSlide(cfg.cliente(pool, conta()), {
+      empresa,
+      dossieTexto: textoDoDossie(cb.dossie, empresa),
+      fontes: await cerebro.fontesParaOsFatos(pool, {
+        dossie: cb.dossie,
+        empresa,
+        divulgar,
+        assunto: pedidoCarrossel.assunto,
+      }),
+      identidade,
+      estilo: d.estilo,
+      divulgar,
+      pedido: pedidoCarrossel,
+      slides: d.slides,
+      indice: n,
+      instrucao,
+      hoje: new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full' }).format(
+        new Date(),
+      ),
+    });
+    res.json({ slide: r.slide, avisos: r.avisos });
+  });
+
+  /** A pessoa decidiu um aviso do revisor (a sugestão, se usou, já foi aplicada no editor). */
+  r.post('/:id/avisos/:aviso', async (req, res) => {
+    const { acao } = corpo(req, avisoResolverEntrada);
+    const c = await repo.carrossel(pool, idDaRota(req));
+    if (!c.relatorio) throw AppError.naoEncontrado('Aviso');
+    const alvo = c.relatorio.avisos.find((a) => a.id === req.params.aviso);
+    if (!alvo) throw AppError.naoEncontrado('Aviso');
+    const relatorio = {
+      ...c.relatorio,
+      avisos: c.relatorio.avisos.map((a) =>
+        a.id === alvo.id
+          ? { ...a, resolvido: acao === 'usar' ? ('usou' as const) : ('manteve' as const) }
+          : a,
+      ),
+    };
+    await repo.salvarRelatorio(pool, c.id, { relatorio });
+    res.json({ relatorio });
+  });
+
   r.post('/:id/duplicar', async (req, res) => {
     const c = await repo.carrossel(pool, idDaRota(req));
     if ((await repo.contar(pool)) >= MAX_CARROSSEIS_CONTA)
@@ -280,6 +422,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
       estilo: c.estilo,
       slides: c.conteudo,
       legenda: c.legenda,
+      relatorio: c.relatorio,
     });
     res.status(201).json(await repo.carrossel(pool, id));
   });

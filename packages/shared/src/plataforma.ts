@@ -74,6 +74,8 @@ export interface UsoPago {
   /** Minutos de ligação cobrados pela operadora no mês (já na cadência dela), para celular e fixo. */
   ligacaoCelularMin?: number;
   ligacaoFixoMin?: number;
+  /** Carrosséis com IA: o que o Claude cobrou no mês (US$, já calculado por chamada). */
+  carrosseisUsd?: number;
 }
 
 export interface CustoEstimado {
@@ -86,6 +88,8 @@ export interface CustoEstimado {
   reunioes: number;
   /** Ligações: o minuto da operadora (celular e fixo). */
   ligacoes: number;
+  /** Carrosséis com IA: o Claude do time de IA. */
+  carrosseis: number;
   /** Custos fixos do mês (planos dos serviços e servidores), divididos entre os clientes pagantes. */
   infra: number;
   total: number;
@@ -112,6 +116,7 @@ export function custoEstimado(
   const ligacoes = r2(
     (u.ligacaoCelularMin ?? 0) * telefone.celularMin + (u.ligacaoFixoMin ?? 0) * telefone.fixoMin,
   );
+  const carrosseis = r2((u.carrosseisUsd ?? 0) * c.dolar);
   const infra = r2(infraPorConta);
   return {
     buscas,
@@ -121,8 +126,9 @@ export function custoEstimado(
     whatsapp,
     reunioes,
     ligacoes,
+    carrosseis,
     infra,
-    total: r2(buscas + ia + maps + email + whatsapp + reunioes + ligacoes + infra),
+    total: r2(buscas + ia + maps + email + whatsapp + reunioes + ligacoes + carrosseis + infra),
   };
 }
 

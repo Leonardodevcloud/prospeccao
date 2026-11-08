@@ -2,19 +2,19 @@
 
 Definido em 08/11/2026 com o Leonardo, a partir da v120 (commit 9358d96). Mockup: canvas "Prospect Team — Carrosséis com IA (mockup)" (https://claude.ai/artifact/5SxKvqUbZj3rmWFvTv4fDb), 8 telas: lista, identidade visual, novo carrossel (o time de IA), editor, publicar/agendar, o carrossel de exemplo em dois estilos, ideias e o que o time aprendeu, promoção com imagem de referência. **As 8 telas foram aprovadas em 08/11.** Este doc fica no repositório (`docs/plano-carrosseis.md`) e nos docs do projeto (`claude/plano-carrosseis.md`), com o mesmo texto.
 
-**Situação: v121 (fundação visual) feita em 08/11.** Próxima: v122.
+**Situação: v121 (fundação visual) e v122 (o time de IA escrevendo) feitas em 08/11.** Próxima: v123 (imagens).
 
 ## O que é
 Um "time de IA" dentro do CRM que cria carrosséis do Instagram com a identidade da empresa do cliente: o **estrategista** escolhe o tema e o gancho, o **redator** escreve slide a slide, a legenda e as hashtags, o **diretor de arte** escolhe o modelo de cada slide e as imagens, o **revisor** confere ortografia, tamanho do texto, promessa sem fonte e o tom da marca, e o **publicador** posta ou agenda. Só o **administrador** da conta usa (menu Automação › Carrosséis com `admin: true`, rotas com `exigirAdmin`).
 
 ## Decisões (08/11)
-- **Cobrança: módulo à parte**, como Ligações: `carrosseis` em `MODULOS` (`packages/shared/src/planos.ts`) com preço próprio e **franquia de carrosséis feitos pela IA por mês** (`carrosseisMes` na tabela de preços e por cliente). Valor de partida no código: R$ 397 com 20 por mês, **preço a decidir** com o custo real (Saúde e consumo). Fica fora do Assinar e do site (`MODULOS_NA_ASSINATURA`) até a v122.
-- **Texto: Claude Sonnet** (estratégia, redação e revisão). O Leonardo aceita custo maior para ter qualidade de agência.
+- **Cobrança: módulo à parte**, como Ligações: `carrosseis` em `MODULOS` (`packages/shared/src/planos.ts`) com preço próprio e **franquia de carrosséis feitos pela IA por mês** (`carrosseisMes` na tabela de preços e por cliente). Valor de partida no código: R$ 397 com 20 por mês, **preço a decidir** com o custo real (Saúde e consumo). Fica fora do Assinar e do site (`MODULOS_NA_ASSINATURA`) até o preço ser decidido.
+- **Texto: Claude Sonnet 5.5** (`claude-sonnet-5-5`, estratégia, redação e revisão; trocar em `CARROSSEIS_MODELO`). O Leonardo aceita custo maior para ter qualidade de agência.
 - **Imagens: GPT Image 2 em qualidade média** ("não precisa ser no máximo").
 - **Visão** (ler os posts, conferir as imagens geradas e os slides prontos): o modelo de visão mais barato que der conta, escolhido na v123.
 
 ## Custo estimado por carrossel (08/11, dólar a R$ 5,40; conferir com o consumo real)
-- Texto com o Sonnet (estrategista, redator, revisor e até 2 voltas de reescrita): cerca de **US$ 0,27** num carrossel de 8 slides.
+- Texto com o Sonnet 5.5 (US$ 2 / US$ 10 por milhão de tokens; estrategista, redator, revisor e até 2 voltas de reescrita, 4 a 7 chamadas, com o cérebro da marca no cache): cerca de **US$ 0,10 a 0,25** por carrossel (a estimativa antiga era US$ 0,27). O custo real de cada conta fica em `cadastro.consumo_carrosseis` e aparece no Financeiro.
 - Revisão visual dos slides prontos: cerca de **US$ 0,08**.
 - Imagem gerada (GPT Image 2 médio): cerca de **US$ 0,05 cada**, contando 1,6 tentativa por imagem aproveitada (as recusadas pelo revisor são geradas de novo).
 - Um carrossel conta como **1 post** no limite do Instagram e cada um é contado inteiro na franquia (não cada imagem).
@@ -40,9 +40,9 @@ Cada ideia na aba Ideias mostra de onde veio (CAMPANHA, CONVERSAS, INSTAGRAM, OB
 - **Promoção**: produto, preço de/por, validade e condições saem **exatamente como digitados** (a IA não muda nem inventa).
 
 ## Qualidade dos agentes (o que os deixa excepcionais)
-- **Modelos de ponta só para isso**, escolhidos em Configurações da plataforma e medidos no consumo: Claude Sonnet (Anthropic) para estratégia, texto e revisão; GPT Image 2 (qualidade média) para imagens. Provedor novo `anthropic` em `packages/integrations/src/ia`.
+- **Modelos de ponta só para isso**, escolhidos em Configurações da plataforma e medidos no consumo: Claude Sonnet 5.5 (Anthropic) para estratégia, texto e revisão, pela chave da plataforma (`ANTHROPIC_CHAVE`; cliente em `packages/integrations/src/carrosseis/claude.ts`, com a resposta por ferramenta forçada e o cérebro da marca no cache); GPT Image 2 (qualidade média) para imagens.
 - **Escrever → avaliar → reescrever**: o redator faz opções de gancho, o revisor dá nota por uma régua (gancho, uma ideia por slide, clareza, especificidade, tamanho, chamada final, tom) e devolve para reescrever até passar (máx. 2 voltas).
-- **Fatos conferidos** frase a frase contra o dossiê (o mesmo `conferirFatos` da v59): número ou promessa sem fonte vira aviso.
+- **Fatos conferidos**: o revisor lista cada afirmação sobre a empresa com o trecho exato da fonte (cérebro da marca, o que divulgar, o pedido, a configuração da IA) e o código confere o trecho com o `trechoNaFonte` da v59: número ou promessa sem fonte volta ao redator ou vira aviso.
 - **Texto que cabe**: o diretor de arte usa os mesmos limites e a mesma medida do editor (`MODELO`, `contarLinhas`, `caberBlocos`); não coube, pede para o redator encurtar.
 - **Revisor visual**: um modelo de visão olha cada imagem gerada (produto igual, sem texto nem marca estranha, sem defeito) e, no fim, os slides prontos como um designer olharia (leitura, equilíbrio, ritmo entre slides).
 
@@ -57,7 +57,13 @@ Cada ideia na aba Ideias mostra de onde veio (CAMPANHA, CONVERSAS, INSTAGRAM, OB
 
 ## Etapas
 1. **v121: fundação visual (feita em 08/11).** Identidade visual (cores com "Usar as cores de Marca e domínio", estilo, par de fontes, logos para fundo claro e escuro ou as de Marca e domínio, assinatura, número do slide, como a empresa fala), fotos da empresa (até 60), motor de slides (4 estilos × 9 modelos), editor (roteiro pronto ou só a capa, trocar modelo, subir/descer/duplicar/tirar, foto da empresa, fundo por slide, legenda com os 2.200 caracteres, salva sozinho com conflito entre abas, prévia como no Instagram, baixar as imagens em .zip com a legenda, marcar como pronto) e o módulo na cobrança. Já dá para postar à mão. Migration 089.
-2. **v122: cérebro da marca + o time de IA escrevendo.** Dossiê automático, "o que divulgar este mês", leitura das perguntas reais dos clientes, provedor Anthropic (Sonnet), ciclo escrever → avaliar → reescrever, conferência de fatos, legenda e hashtags, pedidos ao redator por slide, fila com progresso, franquia contando. O módulo entra no Assinar e no site.
+2. **v122: cérebro da marca + o time de IA escrevendo (feita em 08/11).** Migration 090.
+   - **Cérebro da marca**: rascunho montado pelo Claude com a configuração da IA de atendimento, a base de conhecimento, o site, os posts com números, os comentários com interesse, até 150 mensagens de clientes (sem telefone, e-mail, documento e site), os quadros e os resumos de ligações e reuniões; nicho, público, o que vende, diferenciais, dores, desejos, objeções, provas com fonte, perguntas com quantas vezes, tom, palavras, nunca dizer e pilares. Só vale depois de "Está certo: conferi"; mudou, confere de novo.
+   - **O que divulgar**: promoção, lançamento, campanha, data, novidade; preço de/por, validade e condições conferidos pelo sistema (`conferirPromocao`: o valor digitado aparece igual e nenhum preço não informado aparece).
+   - **O time**: estrategista (ângulo, 3 ganchos, roteiro com modelos e fotos), redator (slides nos limites de cada modelo, legenda, hashtags), diretor de arte por código (`montarSlide` mede o texto com as fontes de verdade; "Comente PALAVRA" no botão), revisor (8 critérios de 1 a 5; passa com média 4 e nenhum abaixo de 3, sem fato sem fonte, preço errado ou texto que não cabe; fatos com o trecho exato da fonte, conferido por código). Até 2 voltas; o que sobra vira aviso com a sugestão no editor.
+   - **Editor**: avisos do revisor no slide e na legenda (Usar a sugestão / Manter), Pedir ao redator (mais curto, mais direto, outro jeito, ou texto livre), aba Time de IA (ângulo, fontes, ganchos alternativos com "Usar na capa", notas, hashtags).
+   - **Operação**: fila na api (2 ao mesmo tempo), aviso no sino quando fica pronto ou falha, franquia conta o pedido (falhou ou cancelado não conta), avisos de 80% e 100%, custo por conta no Financeiro e em Saúde e consumo, serviço com Testar nas Configurações.
+   - Ficou de fora de propósito: o módulo no Assinar e no site (preço em aberto); a regra do Comente e receba criada sozinha (v124, junto com a publicação); imagens geradas (v123).
 3. **v123: imagens.** GPT Image 2 médio: foto do produto em cenários, referência de estilo, imagens geradas sem texto na paleta da marca, revisor visual, custo por imagem em Saúde e consumo.
 4. **v124: publicar e agendar.** `instagram_content_publish` (revisão do app na Meta: pedir já), publicar agora ou agendar, calendário, Comente e receba ligado ao post, aviso se a Meta recusar, DNA de cada post. Limites: até 10 imagens por carrossel, JPEG, 1 post no limite diário.
 5. **v125: aprender.** Aba Ideias com a fonte de cada ideia, aprendizados com evidência, 2 em 10 como teste, edições do admin como sinal, contas de referência, resultados por carrossel, o Argos sabe dos carrosséis.

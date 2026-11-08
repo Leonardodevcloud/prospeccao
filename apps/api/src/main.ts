@@ -11,6 +11,7 @@ import { iniciarAgente } from './modulos/agente/motor.js';
 import { iniciarAlertas } from './modulos/alertas/rotina.js';
 import { iniciarAssinaturas } from './modulos/assinatura/servico.js';
 import { prepararAssistente } from './modulos/assistente/preparar.js';
+import { iniciarTimeCarrosseis, prepararCarrosseisIa } from './modulos/carrosseis/time.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
@@ -84,6 +85,10 @@ const captcha =
     ? { site: env.TURNSTILE_SITE, segredo: env.TURNSTILE_SEGREDO }
     : null;
 
+// Carrosséis com IA: o time escreve com o Claude (chave da plataforma); sem ela, só à mão.
+const carrosseisIa = prepararCarrosseisIa(env);
+if (!carrosseisIa) log.info('ANTHROPIC_CHAVE não configurada: o time de IA dos carrosséis fica desligado.');
+
 const app = criarApp({
   pool,
   filas,
@@ -107,6 +112,7 @@ const app = criarApp({
   cobranca,
   asaasTokenWebhook: env.ASAAS_TOKEN_WEBHOOK ?? null,
   captcha,
+  carrosseisIa,
 });
 
 const servidor = createServer(app);
@@ -136,6 +142,8 @@ const pararConversoes = iniciarConversoes({ pool, log });
 const pararLigacoes = iniciarLigacoes({ pool, log, servicos, telefonia });
 // Quadros: a IA lê as conversas que pararam e põe os leads nas colunas pelos gatilhos.
 const pararQuadros = iniciarQuadros({ pool, log, servicos });
+// Carrosséis: a fila do time de IA (até 2 pedidos ao mesmo tempo).
+const pararCarrosseis = iniciarTimeCarrosseis({ pool, log, ia: carrosseisIa });
 // Porteiro do WhatsApp: sinais de risco do número (pedidos para parar, ninguém respondendo).
 const pararPorteiro = iniciarPorteiro({ pool, log });
 // API aberta: entrega os avisos (webhooks) aos sistemas dos clientes, com novas tentativas.
@@ -164,6 +172,7 @@ encerrarAoReceberSinal(log, async () => {
   pararConversoes();
   pararLigacoes();
   pararQuadros();
+  pararCarrosseis();
   pararPorteiro();
   pararListaDominios();
   pararDominios();

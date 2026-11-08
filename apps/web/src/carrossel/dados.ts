@@ -5,6 +5,7 @@ import type {
   LogoSlide,
   ResumoCarrossel,
 } from '@prospeccao/shared/carrosseis';
+import type { DivulgarItem, DossieMarca, PedidoDoTime } from '@prospeccao/shared/carrosseis-time';
 import { useQuery } from '@tanstack/react-query';
 import { api, ErroApi } from '../api';
 
@@ -14,6 +15,20 @@ export interface SituacaoCarrosseis {
   modulo: boolean;
   armazenamento: boolean;
   franquia: { usados: number; limite: number | null };
+  /** O time de IA: a chave da plataforma ligada e o cérebro da marca conferido. */
+  ia: { ligada: boolean; cerebroConferido: boolean };
+}
+
+export interface CerebroDaConta {
+  dossie: DossieMarca;
+  fontes: { rotulo: string; quantos: number }[];
+  geradoEm: string | null;
+  conferidoEm: string | null;
+  conferidoPor: string | null;
+  faltando: string[];
+  atualizadoEm: string | null;
+  pedido: PedidoDoTime | null;
+  iaLigada: boolean;
 }
 
 export interface LogoDaIdentidade {
@@ -35,7 +50,43 @@ export interface IdentidadeDaConta {
 export interface ListaCarrosseis {
   carrosseis: ResumoCarrossel[];
   franquia: SituacaoCarrosseis['franquia'];
+  /** Pedidos ao time de IA em andamento (e os que falharam no último dia). */
+  pedidos: PedidoDoTime[];
 }
+
+const andando = (p: PedidoDoTime | null | undefined) =>
+  p?.situacao === 'fila' || p?.situacao === 'trabalhando';
+
+export const useListaCarrosseis = () =>
+  useQuery({
+    queryKey: ['carrosseis', 'lista'],
+    queryFn: () => api<ListaCarrosseis>('/carrosseis'),
+    // Com o time trabalhando, a lista acompanha (os pedidos viram carrosséis prontos).
+    refetchInterval: (q) => (q.state.data?.pedidos.some(andando) ? 4000 : false),
+  });
+
+export const useCerebro = (ligado = true) =>
+  useQuery({
+    queryKey: ['carrosseis', 'cerebro'],
+    queryFn: () => api<CerebroDaConta>('/carrosseis/cerebro'),
+    enabled: ligado,
+    refetchInterval: (q) => (andando(q.state.data?.pedido) ? 3000 : false),
+  });
+
+export const useDivulgar = (antigos = false) =>
+  useQuery({
+    queryKey: ['carrosseis', 'divulgar', antigos],
+    queryFn: () => api<{ itens: DivulgarItem[] }>(`/carrosseis/divulgar?antigos=${antigos ? 'sim' : 'nao'}`),
+  });
+
+/** Um pedido ao time, acompanhado a cada 2 s enquanto trabalha. */
+export const usePedidoDoTime = (id: number | null) =>
+  useQuery({
+    queryKey: ['carrosseis', 'pedido', id],
+    queryFn: () => api<PedidoDoTime>(`/carrosseis/time/${id}`),
+    enabled: id != null,
+    refetchInterval: (q) => (!q.state.data || andando(q.state.data) ? 2000 : false),
+  });
 
 export const useSituacaoCarrosseis = () =>
   useQuery({

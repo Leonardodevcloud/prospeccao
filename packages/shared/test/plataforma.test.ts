@@ -39,6 +39,7 @@ describe('custos da plataforma', () => {
         armazenamentoGb: 50,
         ligacaoCelularMin: 100,
         ligacaoFixoMin: 10,
+        carrosseisUsd: 3,
       },
       c,
       50,
@@ -52,8 +53,10 @@ describe('custos da plataforma', () => {
       whatsapp: 100,
       reunioes: 13,
       ligacoes: 20.5,
+      // Claude dos carrosséis: US$ 3 × 5.
+      carrosseis: 15,
       infra: 50,
-      total: 209.5,
+      total: 224.5,
     });
   });
   it('campo faltando ou inválido volta para o padrão', () => {
@@ -75,6 +78,7 @@ describe('saúde e consumo', () => {
       'livekit',
     );
     expect(servicoDoEndereco('https://google.serper.dev/search')).toBe('serper');
+    expect(servicoDoEndereco('https://api.anthropic.com/v1/messages')).toBe('claude');
     expect(servicoDoEndereco('https://www.autopecasladeira.com.br/')).toBeNull();
     expect(servicoDoEndereco('não é url')).toBeNull();
   });

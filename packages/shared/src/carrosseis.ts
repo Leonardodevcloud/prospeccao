@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { chaveFonte } from './carrosseisFontes.js';
 import { METRICAS_FONTES } from './carrosseisMetricas.gerada.js';
 
+import type { RelatorioTime } from './carrosseisTime.js';
+
 export { arquivoDaFonte, chaveFonte, FONTES_SLIDES, type FonteSlide } from './carrosseisFontes.js';
 
 /*
@@ -364,6 +366,10 @@ export interface ResumoCarrossel {
   situacao: SituacaoCarrossel;
   slides: number;
   versao: number;
+  /** Montado à mão ou pelo time de IA. */
+  origem: 'manual' | 'ia';
+  /** Avisos do revisor esperando alguém decidir. */
+  avisosAbertos: number;
   criadoEm: string;
   atualizadoEm: string;
   criadoPor: string | null;
@@ -371,6 +377,8 @@ export interface ResumoCarrossel {
 export interface Carrossel extends ResumoCarrossel {
   conteudo: SlideCarrossel[];
   legenda: string;
+  /** O que o time de IA deixou: o porquê das escolhas e o que falta decidir (null: feito à mão). */
+  relatorio: RelatorioTime | null;
 }
 
 export interface FotoCarrossel {

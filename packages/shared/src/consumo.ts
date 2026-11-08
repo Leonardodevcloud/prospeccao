@@ -23,6 +23,7 @@ export const SERVICOS_EXTERNOS = [
   'brasilapi',
   'directd',
   'vercel',
+  'claude',
 ] as const;
 export type ServicoExterno = (typeof SERVICOS_EXTERNOS)[number];
 
@@ -42,6 +43,7 @@ export const NOME_SERVICO: Record<ServicoExterno, string> = {
   brasilapi: 'CNPJ · BrasilAPI',
   directd: 'Base paga · Direct Data',
   vercel: 'Domínios · Vercel',
+  claude: 'Carrosséis · Claude (Anthropic)',
 };
 
 export const PAPEL_SERVICO: Record<ServicoExterno, string> = {
@@ -60,6 +62,7 @@ export const PAPEL_SERVICO: Record<ServicoExterno, string> = {
   brasilapi: 'confere o CNPJ de quem veio só do Maps',
   directd: 'telefones atualizados por CNPJ',
   vercel: 'domínio próprio dos clientes',
+  claude: 'o time de IA dos carrosséis (estratégia, texto e revisão)',
 };
 
 /**
@@ -91,6 +94,7 @@ export function servicoDoEndereco(url: string): ServicoExterno | null {
   if (fim('brasilapi.com.br')) return 'brasilapi';
   if (fim('directd.com.br')) return 'directd';
   if (fim('api.vercel.com')) return 'vercel';
+  if (fim('api.anthropic.com')) return 'claude';
   return null;
 }
 

@@ -253,6 +253,7 @@ export function PlataformaFinanceiro() {
     { rotulo: 'Buscas e Maps', valor: clientes.reduce((s, c) => s + c.custo.buscas + c.custo.maps, 0) },
     { rotulo: 'E-mail', valor: clientes.reduce((s, c) => s + c.custo.email, 0) },
     { rotulo: 'Ligações', valor: clientes.reduce((s, c) => s + c.custo.ligacoes, 0) },
+    { rotulo: 'Carrosséis com IA', valor: clientes.reduce((s, c) => s + (c.custo.carrosseis ?? 0), 0) },
     { rotulo: 'Custos fixos', valor: clientes.reduce((s, c) => s + c.custo.infra, 0) },
   ]
     .filter((i) => i.valor > 0)
@@ -624,6 +625,7 @@ function DetalheFinanceiro(props: { c: ClientePainel; aoFechar: () => void }) {
         c.custo.email,
       ],
       [`Ligações (${plural(c.uso.ligacaoMinutos, 'minuto', 'minutos')})`, c.custo.ligacoes],
+      ['Carrosséis com IA (Claude)', c.custo.carrosseis ?? 0],
       ['Custos fixos (rateio)', c.custo.infra],
     ] as [string, number][]
   ).filter(([r, v]) => v > 0 || r.startsWith('Custos fixos'));

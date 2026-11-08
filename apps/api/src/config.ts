@@ -70,6 +70,15 @@ export const esquemaEnvApi = envBase.extend({
   VOZ_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
   VOZ_MODELO: z.string().default('whisper-large-v3-turbo'),
   OPENAI_CHAVE: opcional(z.string().min(10)),
+  /**
+   * Carrosséis com IA: a chave da Anthropic (o time de IA escreve com o Claude) e o modelo. Sem a
+   * chave, a tela dos carrosséis funciona à mão e explica que o time de IA não está ligado.
+   */
+  ANTHROPIC_CHAVE: opcional(z.string().min(20)),
+  CARROSSEIS_MODELO: z
+    .string()
+    .regex(/^claude-[\w.-]+$/, 'CARROSSEIS_MODELO começa com claude-')
+    .default('claude-sonnet-5-5'),
   FALA_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   FALA_MODELO: z.string().default('gpt-4o-mini-tts'),
   /**

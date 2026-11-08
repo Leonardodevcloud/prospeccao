@@ -14,36 +14,40 @@ import {
 } from '@prospeccao/shared/carrosseis';
 import { MODULOS } from '@prospeccao/shared/planos';
 import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
+import { AbaCerebro } from '../carrossel/Cerebro';
 import {
   enviarImagem,
   type IdentidadeDaConta,
-  type ListaCarrosseis,
   logosDaIdentidade,
+  type SituacaoCarrosseis,
   urlFoto,
   useFotos,
   useIdentidade,
+  useListaCarrosseis,
   useSituacaoCarrosseis,
 } from '../carrossel/dados';
 import { SlideHtml } from '../carrossel/SlideHtml';
+import { CartaoPedido, NovoComTime } from '../carrossel/Time';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Drawer } from '../componentes/Drawer';
-import { CampoEtiquetas, ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando } from '../formatar';
 
 /**
- * Carrosséis com IA (módulo à parte, só o administrador): a lista dos carrosséis e a identidade
- * visual que todos seguem (cores, fontes, estilo, logo, como a empresa fala e as fotos da empresa).
- * O editor de cada carrossel fica em CarrosselEditor.
+ * Carrosséis com IA (módulo à parte, só o administrador): a lista dos carrosséis (e os pedidos que
+ * o time de IA está fazendo), o cérebro da marca que o time lê e a identidade visual que todos
+ * seguem (cores, fontes, estilo, logo e as fotos da empresa). O editor fica em CarrosselEditor.
  */
 
-type Aba = 'carrosseis' | 'identidade';
+type Aba = 'carrosseis' | 'cerebro' | 'identidade';
 const ABAS: { id: Aba; rotulo: string }[] = [
   { id: 'carrosseis', rotulo: 'Carrosséis' },
+  { id: 'cerebro', rotulo: 'Cérebro da marca' },
   { id: 'identidade', rotulo: 'Identidade visual' },
 ];
 
@@ -51,7 +55,8 @@ export function Carrosseis() {
   const admin = useEhAdmin();
   const [params, setParams] = useSearchParams();
   const situacao = useSituacaoCarrosseis();
-  const aba: Aba = params.get('aba') === 'identidade' ? 'identidade' : 'carrosseis';
+  const pedida = params.get('aba');
+  const aba: Aba = pedida === 'identidade' || pedida === 'cerebro' ? pedida : 'carrosseis';
   const [novo, setNovo] = useState(false);
 
   if (!admin) return <Navigate to="/" replace />;
@@ -94,11 +99,27 @@ export function Carrosseis() {
         ))}
       </div>
       {aba === 'carrosseis' ? (
-        <AbaCarrosseis aoNovo={() => setNovo(true)} aoIdentidade={() => setParams({ aba: 'identidade' })} />
+        <AbaCarrosseis
+          situacao={situacao.data}
+          aoNovo={() => setNovo(true)}
+          aoIdentidade={() => setParams({ aba: 'identidade' })}
+          aoCerebro={() => setParams({ aba: 'cerebro' })}
+        />
+      ) : aba === 'cerebro' ? (
+        <AbaCerebro />
       ) : (
         <AbaIdentidade />
       )}
-      {novo && <NovoCarrossel aoFechar={() => setNovo(false)} />}
+      {novo && (
+        <NovoCarrossel
+          situacao={situacao.data}
+          aoFechar={() => setNovo(false)}
+          aoCerebro={() => {
+            setNovo(false);
+            setParams({ aba: 'cerebro' });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -128,11 +149,13 @@ function ModuloFora() {
 
 type Filtro = 'todos' | 'rascunho' | 'pronto';
 
-function AbaCarrosseis(props: { aoNovo: () => void; aoIdentidade: () => void }) {
-  const q = useQuery({
-    queryKey: ['carrosseis', 'lista'],
-    queryFn: () => api<ListaCarrosseis>('/carrosseis'),
-  });
+function AbaCarrosseis(props: {
+  situacao: SituacaoCarrosseis;
+  aoNovo: () => void;
+  aoIdentidade: () => void;
+  aoCerebro: () => void;
+}) {
+  const q = useListaCarrosseis();
   const identidade = useIdentidade();
   const [filtro, setFiltro] = useState<Filtro>('todos');
   const cliente = useQueryClient();
@@ -152,11 +175,13 @@ function AbaCarrosseis(props: { aoNovo: () => void; aoIdentidade: () => void }) 
   if (q.isPending) return <div className="esqueleto" style={{ height: 320 }} />;
   if (q.error) return <ErroDaApi erro={q.error} />;
   const lista = q.data.carrosseis.filter((c) => filtro === 'todos' || c.situacao === filtro);
+  // Os pedidos ao time são rascunhos que ainda não nasceram: aparecem em Todos e em Rascunhos.
+  const pedidos = filtro === 'pronto' ? [] : q.data.pedidos;
   const { franquia } = q.data;
 
   return (
     <div className="carrosseis__lista">
-      {identidade.data && !identidade.data.salva && (
+      {identidade.data && !identidade.data.salva ? (
         <div className="carrosseis__comece" role="note">
           <Icon name="palette" size={18} />
           <span>
@@ -167,7 +192,18 @@ function AbaCarrosseis(props: { aoNovo: () => void; aoIdentidade: () => void }) 
             Montar a identidade
           </Button>
         </div>
-      )}
+      ) : props.situacao.ia.ligada && !props.situacao.ia.cerebroConferido ? (
+        <div className="carrosseis__comece" role="note">
+          <Icon name="sparkles" size={18} />
+          <span>
+            <b>Agora, o cérebro da marca.</b> A IA lê o que o CRM já sabe da empresa e monta o dossiê; você
+            confere e o time passa a escrever os carrosséis.
+          </span>
+          <Button size="sm" variant="secondary" onClick={props.aoCerebro}>
+            Abrir o cérebro da marca
+          </Button>
+        </div>
+      ) : null}
       <div className="barra carrosseis__barra">
         <div className="segmentos" role="radiogroup" aria-label="Situação">
           {(
@@ -197,21 +233,25 @@ function AbaCarrosseis(props: { aoNovo: () => void; aoIdentidade: () => void }) 
         )}
       </div>
       {acao.error && <ErroDaApi erro={acao.error} />}
-      {!q.data.carrosseis.length ? (
+      {!q.data.carrosseis.length && !q.data.pedidos.length ? (
         <EmptyState
           icone="gallery-horizontal-end"
           titulo="Nenhum carrossel ainda"
-          texto="Monte o primeiro: capa, os pontos principais e a chamada final, com a identidade da empresa."
+          texto="Peça o primeiro ao time de IA ou monte à mão: capa, os pontos principais e a chamada final, com a identidade da empresa."
           acao={
             <Button variant="primary" icon="plus" onClick={props.aoNovo}>
               Novo carrossel
             </Button>
           }
         />
-      ) : !lista.length ? (
+      ) : !lista.length && !pedidos.length ? (
         <p className="quieto">Nenhum carrossel nesta situação.</p>
       ) : (
         <ul className="carrosseis__grade">
+          {/* O que o time ainda está fazendo vem primeiro, no mesmo lugar onde o carrossel vai aparecer. */}
+          {pedidos.map((p) => (
+            <CartaoPedido key={`p${p.id}`} p={p} />
+          ))}
           {lista.map((c) => (
             <CartaoCarrossel
               key={c.id}
@@ -255,6 +295,16 @@ function CartaoCarrossel(props: { c: ResumoCarrossel; aoDuplicar: () => void; ao
         </Link>
         <div className="carrossel-cartao__meta">
           <Badge tone={TOM_SITUACAO[c.situacao]}>{ROTULO_SITUACAO_CARROSSEL[c.situacao]}</Badge>
+          {c.origem === 'ia' && (
+            <Badge tone="neutral">
+              <Icon name="sparkles" size={11} /> Time de IA
+            </Badge>
+          )}
+          {c.avisosAbertos > 0 && (
+            <Badge tone="warning">
+              {c.avisosAbertos} {c.avisosAbertos === 1 ? 'ponto' : 'pontos'} do revisor
+            </Badge>
+          )}
           <span className="quieto">
             {c.slides} slides · {ESTILO[c.estilo].nome} · {fmtQuando(c.atualizadoEm)}
           </span>
@@ -272,8 +322,9 @@ function CartaoCarrossel(props: { c: ResumoCarrossel; aoDuplicar: () => void; ao
   );
 }
 
-function NovoCarrossel(props: { aoFechar: () => void }) {
+function NovoCarrossel(props: { situacao: SituacaoCarrosseis; aoFechar: () => void; aoCerebro: () => void }) {
   const identidade = useIdentidade();
+  const [modo, setModo] = useState<'time' | 'branco'>(props.situacao.ia.ligada ? 'time' : 'branco');
   const [titulo, setTitulo] = useState('');
   const [estilo, setEstilo] = useState<EstiloCarrossel | null>(null);
   const [comeco, setComeco] = useState<'roteiro' | 'capa'>('roteiro');
@@ -295,79 +346,97 @@ function NovoCarrossel(props: { aoFechar: () => void }) {
     criar.mutate();
   };
   const estiloAtual = estilo ?? identidade.data?.identidade.estilo ?? 'editorial';
-  return (
-    <Drawer titulo="Novo carrossel" aoFechar={props.aoFechar}>
-      <form className="form" onSubmit={enviar}>
-        <div className="campo">
-          <label htmlFor="nc-titulo">Sobre o que é o carrossel</label>
-          <input
-            id="nc-titulo"
-            className="filtro"
-            value={titulo}
-            maxLength={120}
-            onChange={(e) => setTitulo(e.target.value)}
-            placeholder="Ex.: 5 sinais de que está na hora de trocar a pastilha de freio"
-            required
+  if (modo === 'time')
+    return (
+      <Drawer titulo="Novo carrossel" barra="Novo carrossel" aoFechar={props.aoFechar}>
+        <div className="drawer__corpo">
+          <NovoComTime
+            situacao={props.situacao}
+            estiloDaIdentidade={identidade.data?.identidade.estilo ?? 'editorial'}
+            aoEmBranco={() => setModo('branco')}
+            aoFechar={props.aoFechar}
+            aoCerebro={props.aoCerebro}
           />
-          <span className="campo__dica">Vira o título da capa. Dá para mudar tudo depois.</span>
         </div>
-        <fieldset className="campo">
-          <legend>Estilo</legend>
-          <div className="segmentos">
-            {ESTILOS.map((e) => (
-              <label key={e} className="segmento">
-                <input
-                  type="radio"
-                  name="nc-estilo"
-                  className="pp-sr"
-                  checked={estiloAtual === e}
-                  onChange={() => setEstilo(e)}
-                />
-                {ESTILO[e].nome}
-                {identidade.data?.identidade.estilo === e ? ' (da identidade)' : ''}
-              </label>
-            ))}
+      </Drawer>
+    );
+  return (
+    <Drawer titulo="Novo carrossel" barra="Novo carrossel em branco" aoFechar={props.aoFechar}>
+      <div className="drawer__corpo">
+        <form className="form" onSubmit={enviar}>
+          <div className="campo">
+            <label htmlFor="nc-titulo">Sobre o que é o carrossel</label>
+            <input
+              id="nc-titulo"
+              className="filtro"
+              value={titulo}
+              maxLength={120}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Ex.: 5 sinais de que está na hora de trocar a pastilha de freio"
+              required
+            />
+            <span className="campo__dica">Vira o título da capa. Dá para mudar tudo depois.</span>
           </div>
-        </fieldset>
-        <fieldset className="campo">
-          <legend>Começar com</legend>
-          <label className="opcao">
-            <input
-              type="radio"
-              name="nc-comeco"
-              checked={comeco === 'roteiro'}
-              onChange={() => setComeco('roteiro')}
-            />
-            <span>
-              <b>Roteiro pronto</b>{' '}
-              <span className="quieto">· capa, 3 pontos e a chamada final, para trocar o texto</span>
-            </span>
-          </label>
-          <label className="opcao">
-            <input
-              type="radio"
-              name="nc-comeco"
-              checked={comeco === 'capa'}
-              onChange={() => setComeco('capa')}
-            />
-            <span>
-              <b>Só a capa</b> <span className="quieto">· você monta o resto</span>
-            </span>
-          </label>
-        </fieldset>
-        <p className="quieto">
-          Na próxima versão, o time de IA escreve e monta o carrossel inteiro a partir deste tema.
-        </p>
-        {criar.error && <ErroDaApi erro={criar.error} />}
-        <div className="acoes">
-          <Button type="submit" variant="primary" disabled={!titulo.trim() || criar.isPending}>
-            {criar.isPending ? 'Criando…' : 'Criar e abrir o editor'}
-          </Button>
-          <Button type="button" variant="ghost" onClick={props.aoFechar}>
-            Cancelar
-          </Button>
-        </div>
-      </form>
+          <fieldset className="campo">
+            <legend>Estilo</legend>
+            <div className="segmentos">
+              {ESTILOS.map((e) => (
+                <label key={e} className="segmento">
+                  <input
+                    type="radio"
+                    name="nc-estilo"
+                    className="pp-sr"
+                    checked={estiloAtual === e}
+                    onChange={() => setEstilo(e)}
+                  />
+                  {ESTILO[e].nome}
+                  {identidade.data?.identidade.estilo === e ? ' (da identidade)' : ''}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="campo">
+            <legend>Começar com</legend>
+            <label className="opcao">
+              <input
+                type="radio"
+                name="nc-comeco"
+                checked={comeco === 'roteiro'}
+                onChange={() => setComeco('roteiro')}
+              />
+              <span>
+                <b>Roteiro pronto</b>{' '}
+                <span className="quieto">· capa, 3 pontos e a chamada final, para trocar o texto</span>
+              </span>
+            </label>
+            <label className="opcao">
+              <input
+                type="radio"
+                name="nc-comeco"
+                checked={comeco === 'capa'}
+                onChange={() => setComeco('capa')}
+              />
+              <span>
+                <b>Só a capa</b> <span className="quieto">· você monta o resto</span>
+              </span>
+            </label>
+          </fieldset>
+          {props.situacao.ia.ligada && (
+            <button type="button" className="link-botao" onClick={() => setModo('time')}>
+              <Icon name="sparkles" size={14} /> Prefiro que o time de IA escreva
+            </button>
+          )}
+          {criar.error && <ErroDaApi erro={criar.error} />}
+          <div className="acoes">
+            <Button type="submit" variant="primary" disabled={!titulo.trim() || criar.isPending}>
+              {criar.isPending ? 'Criando…' : 'Criar e abrir o editor'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={props.aoFechar}>
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      </div>
     </Drawer>
   );
 }
@@ -641,61 +710,10 @@ function FormIdentidade(props: { d: IdentidadeDaConta }) {
         <section className="pp-panel identidade__bloco" aria-labelledby="id-fala">
           <h2 id="id-fala">Como a empresa fala</h2>
           <p className="quieto">
-            O time de IA escreve os carrosséis a partir daqui (chega na próxima versão).
+            O público, o tom de voz, o que a empresa vende e o que nunca dizer ficam no{' '}
+            <Link to="/carrosseis?aba=cerebro">cérebro da marca</Link>, junto com as provas e o que os
+            clientes perguntam. É de lá que o time de IA escreve.
           </p>
-          <div className="form__duas">
-            <div className="campo">
-              <label htmlFor="id-publico">Para quem a empresa fala</label>
-              <textarea
-                id="id-publico"
-                rows={3}
-                maxLength={600}
-                value={f.publico}
-                placeholder="Ex.: donos de carro e mecânicos da região"
-                onChange={(e) => setF({ ...f, publico: e.target.value })}
-              />
-            </div>
-            <div className="campo">
-              <label htmlFor="id-tom">Tom de voz</label>
-              <textarea
-                id="id-tom"
-                rows={3}
-                maxLength={600}
-                value={f.tom}
-                placeholder="Ex.: direto, prático, sem promessa milagrosa"
-                onChange={(e) => setF({ ...f, tom: e.target.value })}
-              />
-            </div>
-            <div className="campo">
-              <label htmlFor="id-vende">O que a empresa vende</label>
-              <textarea
-                id="id-vende"
-                rows={3}
-                maxLength={600}
-                value={f.vende}
-                placeholder="A IA não inventa produto, preço ou promessa além disto"
-                onChange={(e) => setF({ ...f, vende: e.target.value })}
-              />
-            </div>
-            <div className="campo">
-              <label htmlFor="id-nunca">Nunca dizer</label>
-              <textarea
-                id="id-nunca"
-                rows={3}
-                maxLength={400}
-                value={f.nuncaDizer}
-                placeholder="Ex.: garantido, milagre, o mais barato da cidade"
-                onChange={(e) => setF({ ...f, nuncaDizer: e.target.value })}
-              />
-            </div>
-          </div>
-          <CampoEtiquetas
-            id="id-pilares"
-            rotulo="Assuntos da empresa"
-            valor={f.pilares}
-            aoMudar={(v) => setF({ ...f, pilares: v.slice(0, 8).map((x) => x.slice(0, 40)) })}
-            dica="Até 8. Ex.: dicas de manutenção, bastidores, promoções"
-          />
         </section>
 
         <FotosDaEmpresa />

@@ -127,6 +127,7 @@ interface LinhaConta {
   /** Ligações feitas e atendidas no mês: segundos que a operadora cobra (cadência 3/30/6). */
   ligacaoCelularSeg: number;
   ligacaoFixoSeg: number;
+  carrosseisUsd: number;
   /** Minutos de ligação no mês (feitas e recebidas, atendidas). */
   ligacaoMinutos: number;
   conversasIa: number;
@@ -190,6 +191,8 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
               AS "armazenamentoBytes",
             coalesce(lg.celular, 0)::float8 AS "ligacaoCelularSeg", coalesce(lg.fixo, 0)::float8 AS "ligacaoFixoSeg",
             coalesce(lg.minutos, 0)::float8 AS "ligacaoMinutos",
+            coalesce((SELECT sum(cc.custo_usd) FROM cadastro.consumo_carrosseis cc
+                       WHERE cc.conta_id = c.id AND cc.dia >= ${INICIO_MES_SP}), 0)::float8 AS "carrosseisUsd",
             (SELECT count(DISTINCT a.empresa_id) FROM comercial.atividades a
               WHERE a.conta_id = c.id AND a.autor = 'agente' AND a.direcao = 'enviada'
                 AND a.criado_em >= ${INICIO_MES_SP_TS})::int AS "conversasIa",
@@ -484,6 +487,7 @@ export async function clientes(
             armazenamentoGb: l.armazenamentoBytes / 1e9,
             ligacaoCelularMin: l.ligacaoCelularSeg / 60,
             ligacaoFixoMin: l.ligacaoFixoSeg / 60,
+            carrosseisUsd: l.carrosseisUsd,
           };
           return {
             l,
@@ -505,6 +509,7 @@ export async function clientes(
         whatsapp: r2(somaCusto('whatsapp')),
         reunioes: r2(somaCusto('reunioes')),
         ligacoes: r2(somaCusto('ligacoes')),
+        carrosseis: r2(somaCusto('carrosseis')),
         infra: r2(infra),
         total: r2(somaCusto('total') + infra),
       };

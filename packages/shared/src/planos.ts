@@ -41,7 +41,7 @@ export const MODULOS = {
   carrosseis: {
     nome: 'Carrosséis com IA',
     descricao:
-      'Carrosséis do Instagram com a identidade visual da empresa: o time de IA escreve e desenha, o administrador revisa e publica (com franquia de carrosséis por mês).',
+      'Carrosséis do Instagram com a identidade visual e o jeito de falar da empresa: o time de IA escreve e monta, o administrador revisa e baixa as imagens prontas para postar (com franquia de carrosséis por mês).',
   },
 } as const;
 export type Modulo = keyof typeof MODULOS;

@@ -53,6 +53,7 @@ const ORDEM: ServicoExterno[] = [
   'brasilapi',
   'directd',
   'vercel',
+  'claude',
 ];
 
 /** Serviços configurados (aparecem mesmo sem chamadas); os outros só aparecem se foram usados. */
@@ -70,6 +71,7 @@ function configurados(deps: DepsApi): Set<ServicoExterno> {
   if (deps.cobranca) s.add('asaas');
   if (a.metaAppId) s.add('meta');
   if (deps.reunioes?.armazenamento) s.add('r2');
+  if (deps.carrosseisIa) s.add('claude');
   return s;
 }
 
@@ -219,6 +221,9 @@ export interface UsoDoMes {
   iaChamadas: number;
   iaEntrada: number;
   iaSaida: number;
+  /** Carrosséis com IA (Claude): chamadas e o custo em dólar do mês. */
+  carrosseisChamadas: number;
+  carrosseisUsd: number;
   placesUsd: number;
   serper: number;
   emails: number;
@@ -272,6 +277,10 @@ export async function usoDoMes(db: Executor): Promise<UsoDoMes> {
          AS "iaEntrada",
        coalesce((SELECT sum(tokens_saida) FROM cadastro.consumo_ia WHERE origem = 'plataforma' AND dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
          AS "iaSaida",
+       coalesce((SELECT sum(chamadas) FROM cadastro.consumo_carrosseis WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::int
+         AS "carrosseisChamadas",
+       coalesce((SELECT sum(custo_usd) FROM cadastro.consumo_carrosseis WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
+         AS "carrosseisUsd",
        coalesce((SELECT sum(gasto_usd) FROM descoberta.v_uso_places_mes WHERE mes = ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
          AS "placesUsd",
        coalesce((SELECT sum(buscas) FROM cadastro.consumo_buscas WHERE servico = 'serper' AND dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::int
@@ -461,6 +470,16 @@ export function calcularMes(
     ate: r2(iaAte),
     previsao: r2(iaPrev),
   });
+  // Carrosséis com IA (Claude, cobrado em dólar por token; o custo já vem calculado por chamada).
+  if (u.carrosseisChamadas > 0) {
+    const clAte = u.carrosseisUsd * c.dolar;
+    variaveis.push({
+      nome: 'Carrosséis com IA · Claude',
+      detalhe: `${fmt(u.carrosseisChamadas)} chamadas · US$ ${fmt(u.carrosseisUsd, 2)}`,
+      ate: r2(clAte),
+      previsao: r2(prev(clAte)),
+    });
+  }
 
   // Transcrição (Groq).
   const groqH = u.transcricaoReuniaoH + u.transcricaoLigacaoH;

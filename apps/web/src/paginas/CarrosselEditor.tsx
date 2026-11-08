@@ -16,6 +16,7 @@ import {
   type SlideCarrossel,
   slideNovo,
 } from '@prospeccao/shared/carrosseis';
+import { type AvisoTime, aplicarSugestao, type RelatorioTime } from '@prospeccao/shared/carrosseis-time';
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -27,8 +28,10 @@ import {
   urlFoto,
   useCarrossel,
   useIdentidade,
+  useSituacaoCarrosseis,
 } from '../carrossel/dados';
 import { SlideHtml } from '../carrossel/SlideHtml';
+import { AvisosDoRevisor, PainelTime, PedirAoRedator } from '../carrossel/Time';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
@@ -161,7 +164,19 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
   const { c, d } = props;
   const [r, setR] = useState<Rascunho>(() => rascunhoDe(c));
   const [atual, setAtual] = useState(0);
-  const [aba, setAba] = useState<'slide' | 'legenda' | 'carrossel'>('slide');
+  const [aba, setAba] = useState<'slide' | 'legenda' | 'carrossel' | 'time'>('slide');
+  const situacao = useSituacaoCarrosseis();
+  const iaLigada = !!situacao.data?.ia.ligada;
+  // O que o revisor deixou para decidir: a decisão vai para o servidor, a sugestão entra no rascunho.
+  const [relatorio, setRelatorio] = useState<RelatorioTime | null>(c.relatorio);
+  const decidir = useMutation({
+    mutationFn: (p: { a: AvisoTime; acao: 'usar' | 'manter' }) =>
+      api<{ relatorio: RelatorioTime }>(`/carrosseis/${c.id}/avisos/${p.a.id}`, {
+        metodo: 'POST',
+        corpo: { acao: p.acao },
+      }),
+    onSuccess: (x) => setRelatorio(x.relatorio),
+  });
   const [instagram, setInstagram] = useState(false);
   const [baixando, setBaixando] = useState(false);
   const s = useSalvarSozinho(c, r);
@@ -257,6 +272,28 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
     }
   };
 
+  const aoDecidir = (a: AvisoTime, acao: 'usar' | 'manter') => {
+    if (acao === 'usar')
+      setR((x) => {
+        const n = aplicarSugestao(a, x.slides, x.legenda);
+        return { ...x, slides: n.slides, legenda: n.legenda };
+      });
+    decidir.mutate({ a, acao });
+  };
+  const avisosDoSlide = (id: string) =>
+    relatorio?.avisos.filter((a) => a.slideId === id && !a.resolvido) ?? [];
+  const avisosDaLegenda = relatorio?.avisos.filter((a) => a.slideId === null) ?? [];
+  const usarGancho = (g: string) => {
+    const i = r.slides.findIndex((x) => x.modelo === 'capa');
+    if (i < 0) return;
+    setR((x) => ({
+      ...x,
+      slides: x.slides.map((y, j) => (j === i ? { ...y, titulo: g.slice(0, 160) } : y)),
+    }));
+    setAtual(i);
+    setAba('slide');
+  };
+
   const avisosGerais = avisosDoCarrossel(r.slides);
   const avisosSlide = montados[indice]?.avisos ?? [];
   const estado = s.travado
@@ -339,7 +376,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                 >
                   <span className="editor-carrossel__num">{i + 1}</span>
                   <SlideHtml no={montados[i]!.no} largura={104} />
-                  {!!montados[i]!.avisos.length && (
+                  {(!!montados[i]!.avisos.length || avisosDoSlide(x.id).length > 0) && (
                     <span className="editor-carrossel__ponto" title="Tem aviso" />
                   )}
                 </button>
@@ -439,6 +476,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                 ['slide', 'Slide'],
                 ['legenda', 'Legenda'],
                 ['carrossel', 'Estilo'],
+                ...(relatorio ? ([['time', 'Time de IA']] as const) : []),
               ] as const
             ).map(([idAba, rotulo]) => (
               <button
@@ -455,12 +493,48 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
           </div>
           <fieldset className="editor-carrossel__campos" disabled={s.travado}>
             {aba === 'slide' ? (
-              <PainelSlide slide={slide} avisos={avisosSlide} aoMudar={mudarSlide} aoModelo={trocarModelo} />
+              <>
+                <AvisosDoRevisor
+                  avisos={avisosDoSlide(slide.id)}
+                  rotulo={`slide ${indice + 1}`}
+                  aoDecidir={aoDecidir}
+                  decidindo={decidir.isPending}
+                />
+                <PainelSlide
+                  slide={slide}
+                  avisos={avisosSlide}
+                  aoMudar={mudarSlide}
+                  aoModelo={trocarModelo}
+                />
+                {iaLigada && !s.travado && (
+                  <PedirAoRedator
+                    key={slide.id}
+                    carrosselId={c.id}
+                    slides={r.slides}
+                    indice={indice}
+                    estilo={r.estilo}
+                    aoTrocar={(novo) =>
+                      setR((x) => ({ ...x, slides: x.slides.map((y, i) => (i === indice ? novo : y)) }))
+                    }
+                  />
+                )}
+              </>
             ) : aba === 'legenda' ? (
-              <PainelLegenda legenda={r.legenda} aoMudar={(legenda) => setR({ ...r, legenda })} />
+              <>
+                <AvisosDoRevisor
+                  avisos={avisosDaLegenda}
+                  rotulo="legenda"
+                  aoDecidir={aoDecidir}
+                  decidindo={decidir.isPending}
+                />
+                <PainelLegenda legenda={r.legenda} aoMudar={(legenda) => setR({ ...r, legenda })} />
+              </>
+            ) : aba === 'time' && relatorio ? (
+              <PainelTime r={relatorio} aoUsarGancho={usarGancho} travado={s.travado} />
             ) : (
               <PainelEstilo estilo={r.estilo} aoMudar={(estilo) => setR({ ...r, estilo })} />
             )}
+            {decidir.error && <ErroDaApi erro={decidir.error} />}
           </fieldset>
         </aside>
       </div>

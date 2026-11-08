@@ -3,6 +3,7 @@ import type { ServicoCobranca } from '@prospeccao/integrations/cobranca';
 import type { Filas } from '@prospeccao/queue';
 import type { Logger } from '@prospeccao/shared';
 import type { DepsAssistente } from './modulos/assistente/rotas.js';
+import type { CarrosseisIa } from './modulos/carrosseis/time.js';
 import type { ServicoDominios } from './modulos/email/dominio.js';
 import type { ClienteMeta } from './modulos/instagram/meta.js';
 import type { DepsTelefonia } from './modulos/ligacoes/servico.js';
@@ -60,4 +61,6 @@ export interface DepsApi {
   asaasTokenWebhook?: string | null;
   /** Captcha do cadastro do teste grátis (Cloudflare Turnstile). */
   captcha?: { site: string; segredo: string } | null;
+  /** O time de IA dos carrosséis (Claude, pela chave da plataforma; os testes simulam). */
+  carrosseisIa?: CarrosseisIa | null;
 }
