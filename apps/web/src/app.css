@@ -14987,3 +14987,88 @@ fieldset.assinar__formas {
     margin-left: 0;
   }
 }
+
+/* ---------- Porteiro do WhatsApp (proteção do número) ---------- */
+.porteiro-aviso {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 18px;
+}
+.porteiro-aviso > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.porteiro-aviso__texto {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.porteiro-aviso__texto .acoes {
+  justify-content: flex-start;
+  margin-top: 4px;
+}
+.porteiro {
+  display: grid;
+  gap: var(--space-3);
+}
+.porteiro__numeros {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.porteiro__numeros li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px var(--space-3);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.porteiro__pausa {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+  color: var(--danger);
+}
+.porteiro__grupo {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.porteiro__grupo legend {
+  padding: 0 4px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.porteiro__eventos summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.porteiro__eventos ul {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+.porteiro__eventos p {
+  margin: 2px 0 0;
+  color: var(--ink-muted);
+}

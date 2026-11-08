@@ -1,0 +1,8 @@
+# Ponte do WhatsApp (Z-API) ↔ telefonia do Prospect Team (LiveKit). Rode numa VPS em São Paulo.
+services:
+  ponte:
+    build: .
+    env_file: .env
+    # Rede da máquina: o SIP (5060/udp) e o áudio (RTP_INICIO a RTP_FIM/udp) sem tradução de porta.
+    network_mode: host
+    restart: unless-stopped

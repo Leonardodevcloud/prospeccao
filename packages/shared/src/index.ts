@@ -20,6 +20,7 @@ export * from './normalizar.js';
 export * from './planilha.js';
 export * from './planos.js';
 export * from './plataforma.js';
+export * from './porteiro.js';
 export * from './postgres.js';
 export * from './quadros.js';
 export * from './reunioes.js';

@@ -85,6 +85,13 @@ export const esquemaEnvApi = envBase.extend({
    */
   TELEFONIA_TRONCO_SAIDA: opcional(z.string().regex(/^ST_\w+$/, 'TELEFONIA_TRONCO_SAIDA começa com ST_')),
   /**
+   * Ligação pelo WhatsApp: o tronco de saída do LiveKit (ST_…) que aponta para a ponte (Asterisk
+   * registrado na Z-API, infra/whatsapp-sip). Sem ele, o botão "Ligar pelo WhatsApp" não aparece.
+   */
+  TELEFONIA_TRONCO_WHATSAPP: opcional(
+    z.string().regex(/^ST_\w+$/, 'TELEFONIA_TRONCO_WHATSAPP começa com ST_'),
+  ),
+  /**
    * Assinatura pelo sistema (teste grátis → pagar): a chave da API do Asaas ($aact_…), "sim" em
    * ASAAS_SANDBOX para testar sem dinheiro de verdade e o token que você inventa para o aviso de
    * pagamento (o mesmo no cadastro do webhook no Asaas). Sem a chave, o botão Assinar explica.

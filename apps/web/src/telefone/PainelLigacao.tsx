@@ -82,6 +82,7 @@ export function PainelLigacao() {
           <span className={l?.lead ? 'quieto mono' : 'quieto'}>
             {l?.lead ? formatarTelefone(l.telefone) : l ? 'Número que não é lead' : null}
             {l?.direcao === 'entrada' && <span className="lig-recebida"> · recebida</span>}
+            {l?.canal === 'whatsapp' && <span className="lig-recebida"> · WhatsApp</span>}
           </span>
         </div>
         <div className="lig-topo__tempo">
@@ -140,7 +141,9 @@ export function PainelLigacao() {
           <div className="lig-corpo">
             {l?.numeroEmpresa && (
               <span className="lig-saida">
-                {l.direcao === 'entrada' ? 'Ligou para o número da empresa' : 'Saindo pelo número da empresa'}{' '}
+                {l.direcao === 'entrada'
+                  ? `Ligou para o ${l.canal === 'whatsapp' ? 'WhatsApp' : 'número'} da empresa`
+                  : `Saindo pelo ${l.canal === 'whatsapp' ? 'WhatsApp' : 'número'} da empresa`}{' '}
                 {formatarTelefone(l.numeroEmpresa)}
               </span>
             )}

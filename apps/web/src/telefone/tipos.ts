@@ -18,6 +18,8 @@ export interface LigacaoResumida {
   usuarioId: number | null;
   usuarioNome: string | null;
   direcao: 'saida' | 'entrada';
+  /** Pela linha telefônica ou pelo WhatsApp da conta. */
+  canal?: 'telefone' | 'whatsapp';
   /** Recebida que ninguém atendeu. */
   perdida?: boolean;
   /** Recebida atendida no celular (siga-me). */
@@ -57,13 +59,23 @@ export interface SituacaoTelefonia {
   modulo: boolean;
   disponivel: boolean;
   motivo: 'fora_do_plano' | 'sem_telefonia' | 'sem_numero' | 'sem_minutos' | null;
-  numeros: { id: number; numero: string; rotulo: string | null; principal: boolean }[];
+  numeros: {
+    id: number;
+    numero: string;
+    rotulo: string | null;
+    principal: boolean;
+    canal: 'telefone' | 'whatsapp';
+  }[];
   config: TelefoniaConfigEntrada;
   /** pacote: minutos comprados que sobram; compraPacote: assina pelo sistema (acabou, compra um pacote). */
   minutos: { usados: number; franquia: number | null; pacote: number; compraPacote: boolean };
   gravacao: boolean;
   transcricao: boolean;
   avisoFalado: boolean;
+  /** Dá para ligar pelo WhatsApp da conta. */
+  whatsapp: boolean;
+  /** Tem número de linha telefônica (sem ele, só pelo WhatsApp). */
+  telefone: boolean;
   /** Menu de voz das recebidas: se dá para ligar e os grupos na ordem das teclas. */
   menu: { disponivel: boolean; grupos: { id: number; nome: string; pessoas: number }[] };
 }

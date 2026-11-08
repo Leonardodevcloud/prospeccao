@@ -797,6 +797,69 @@ describe.skipIf(!URL_TESTE)('Ligações: ligar, gravar, resumo da IA e o "Como f
     esquecerRecursos();
   });
 
+  it('ligação pelo WhatsApp: número de WhatsApp da conta, sai pelo tronco da ponte e chega como recebida', async () => {
+    // Sem a ponte (tronco do WhatsApp) na plataforma, explica.
+    const sem = await enviar('post', '/ligacoes', { empresaId, telefone: '71998765432', pelo: 'whatsapp' });
+    expect(sem.status).toBe(422);
+    expect(sem.body.erro.mensagem).toMatch(/WhatsApp ainda não foi ligada/);
+    (telefonia as { temWhatsapp?: boolean }).temWhatsapp = true;
+    try {
+      const semNumero = await enviar('post', '/ligacoes', {
+        empresaId,
+        telefone: '71998765432',
+        pelo: 'whatsapp',
+      });
+      expect(semNumero.body.erro.mensagem).toMatch(/não tem número de WhatsApp/);
+      expect(
+        (
+          await enviar('post', '/master/contas/1/telefonia/numeros', {
+            numero: '(71) 99100-2000',
+            rotulo: 'WhatsApp da loja',
+            canal: 'whatsapp',
+          })
+        ).status,
+      ).toBe(201);
+      const s = (await ler('/ligacoes/situacao')).body;
+      expect(s).toMatchObject({ whatsapp: true, telefone: true });
+      // Ligação comum continua saindo pela linha telefônica (nunca pelo número de WhatsApp).
+      const comum = await enviar('post', '/ligacoes', { empresaId, telefone: '71998765432' });
+      expect(comum.body).toMatchObject({ numeroEmpresa: '7133330400', canal: 'telefone' });
+      await enviar('post', `/ligacoes/${comum.body.id}/estado`, { evento: 'falhou', motivo: 'teste' });
+
+      const r = await enviar('post', '/ligacoes', { empresaId, telefone: '71998765432', pelo: 'whatsapp' });
+      expect(r.status).toBe(201);
+      expect(r.body).toMatchObject({ numeroEmpresa: '71991002000', canal: 'whatsapp' });
+      expect((await enviar('post', `/ligacoes/${r.body.id}/discar`)).status).toBe(200);
+      expect(chamadas.filter((c) => c.tipo === 'discar').at(-1)?.dados).toMatchObject({
+        numero: '71998765432',
+        de: '71991002000',
+        canal: 'whatsapp',
+      });
+      await enviar('post', `/ligacoes/${r.body.id}/estado`, { evento: 'encerrou', motivo: 'desligou' });
+
+      // Alguém liga no WhatsApp da conta: entra como recebida, marcada como WhatsApp.
+      chamadores.set('lig-in-zap', { de: '+5571998765432', para: '+5571991002000' });
+      await tratarAvisoLigacao(appDeps(), {
+        tipo: 'entrou',
+        id: 'zap',
+        sala: 'lig-in-zap',
+        identidade: 'sip_+5571998765432',
+        nome: '',
+        em: new Date(),
+      });
+      const entrando = (await ler('/ligacoes/entrando')).body[0];
+      expect(entrando).toMatchObject({ canal: 'whatsapp', numeroEmpresa: '71991002000' });
+      const at = await enviar('post', `/ligacoes/${entrando.id}/atender`);
+      expect(at.body.canal).toBe('whatsapp');
+      await enviar('post', `/ligacoes/${entrando.id}/estado`, { evento: 'encerrou' });
+      const lista = (await ler('/ligacoes?ver=recebidas&usuario=todos')).body.ligacoes;
+      expect(lista[0]).toMatchObject({ canal: 'whatsapp' });
+    } finally {
+      (telefonia as { temWhatsapp?: boolean }).temWhatsapp = false;
+      await pool.query(`UPDATE comercial.ligacoes SET situacao = 'encerrada' WHERE situacao <> 'encerrada'`);
+    }
+  });
+
   it('é um módulo à parte: sem ele, não liga (o histórico continua visível)', async () => {
     await pool.query(`UPDATE cadastro.organizacoes SET plano = 'time', modulos = '{}'`);
     esquecerRecursos();

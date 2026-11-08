@@ -168,6 +168,8 @@ export const iniciarLigacaoEntrada = z.object({
   telefone,
   /** Ligação da lista de ligação (o item reservado em "próximo"). */
   listaItemId: z.number().int().positive().nullish(),
+  /** Pelo WhatsApp: liga do número de WhatsApp da conta para o WhatsApp do lead. */
+  pelo: z.enum(['telefone', 'whatsapp']).default('telefone'),
 });
 export type IniciarLigacaoEntrada = z.infer<typeof iniciarLigacaoEntrada>;
 
@@ -316,10 +318,15 @@ export function horarioDeLigar(agora: Date = new Date()): boolean {
 export const HORARIO_DE_LIGAR = 'segunda a sexta, das 8h às 20h, e sábado, das 8h às 14h';
 
 /** Painel master: número da empresa (comprado no provedor e ligado ao LiveKit). */
+/** Por onde a ligação passa: a linha telefônica ou o WhatsApp da conta (ponte SIP da Z-API). */
+export const CANAIS_LIGACAO = ['telefone', 'whatsapp'] as const;
+export type CanalLigacao = (typeof CANAIS_LIGACAO)[number];
+
 export const numeroEmpresaEntrada = z.object({
   numero: telefone,
   rotulo: z.string().trim().max(60).nullish(),
   principal: z.boolean().default(false),
+  canal: z.enum(CANAIS_LIGACAO).default('telefone'),
 });
 
 /* ───────────────────────────── Resumo da IA ───────────────────────────── */

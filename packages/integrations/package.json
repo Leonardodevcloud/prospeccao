@@ -18,6 +18,7 @@
     "./reuniao": "./src/reuniao/index.ts",
     "./telefonia": "./src/telefonia/index.ts",
     "./quadros": "./src/quadros/index.ts",
+    "./porteiro": "./src/porteiro/index.ts",
     "./cobranca": "./src/cobranca/index.ts",
     "./rede": "./src/rede.ts"
   },

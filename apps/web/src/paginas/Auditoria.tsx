@@ -27,6 +27,7 @@ const ROTULO_ACAO: Record<string, string> = {
   equipe: 'Equipe',
   lead: 'Lead',
   importação: 'Importação',
+  quadros: 'Quadros',
   exportação: 'Exportação',
   master: 'Suporte Prospect Team',
   outro: 'Outro',

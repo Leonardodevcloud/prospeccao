@@ -4,6 +4,7 @@ import type { Armazenamento, ConfigTranscricao } from '@prospeccao/integrations/
 import type { RoboMenu, ServicoTelefonia } from '@prospeccao/integrations/telefonia';
 import {
   AppError,
+  type CanalLigacao,
   type IniciarLigacaoEntrada,
   MAX_OPCOES_MENU,
   minutosCobrados,
@@ -118,11 +119,12 @@ export interface NumeroEmpresa {
   numero: string;
   rotulo: string | null;
   principal: boolean;
+  canal: CanalLigacao;
 }
 
 export async function numeros(db: Executor, contaId: number = conta()): Promise<NumeroEmpresa[]> {
   const { rows } = await db.query<NumeroEmpresa>(
-    `SELECT id::int, numero, rotulo, principal FROM comercial.telefonia_numeros
+    `SELECT id::int, numero, rotulo, principal, canal FROM comercial.telefonia_numeros
       WHERE conta_id = $1 AND ativo ORDER BY principal DESC, id`,
     [contaId],
   );
@@ -170,6 +172,10 @@ export async function situacao(db: Executor, deps: DepsTelefonia) {
     gravacao: !!deps.armazenamento && cfg.gravar,
     transcricao: !!deps.armazenamento && !!deps.transcricao && cfg.gravar && cfg.transcrever,
     avisoFalado: !!deps.fala && cfg.avisoFalado,
+    /** Dá para ligar pelo WhatsApp (ponte da Z-API e um número de WhatsApp cadastrado). */
+    whatsapp: !!deps.servico?.temWhatsapp && nums.some((n) => n.canal === 'whatsapp'),
+    /** Tem número de linha telefônica (sem ele, só pelo WhatsApp). */
+    telefone: nums.some((n) => n.canal === 'telefone'),
     /** Dá para ligar o menu de voz (precisa da voz) e os grupos na ordem das teclas. */
     menu: { disponivel: !!deps.menu && !!deps.fala, grupos: await gruposDoMenu(db) },
   };
@@ -307,6 +313,7 @@ export interface Ligacao {
   numeroEmpresa: string | null;
   sala: string;
   situacao: 'preparando' | 'chamando' | 'tocando' | 'em_andamento' | 'encerrada' | 'falhou';
+  canal: CanalLigacao;
   atendidaEm: Date | null;
   encerradaEm: Date | null;
   duracaoSegundos: number | null;
@@ -317,7 +324,8 @@ export interface Ligacao {
 
 const CAMPOS = `l.id::int, l.conta_id AS "contaId", l.empresa_id::int AS "empresaId", l.usuario_id AS "usuarioId",
   l.telefone, l.numero_empresa AS "numeroEmpresa", l.sala, l.situacao, l.atendida_em AS "atendidaEm",
-  l.encerrada_em AS "encerradaEm", l.duracao_segundos AS "duracaoSegundos", l.resultado, l.gravar, l.processamento`;
+  l.encerrada_em AS "encerradaEm", l.duracao_segundos AS "duracaoSegundos", l.resultado, l.gravar, l.processamento,
+  l.canal`;
 
 export async function ligacao(db: Executor, id: number): Promise<Ligacao> {
   const { rows } = await db.query<Ligacao>(
@@ -360,12 +368,19 @@ export async function iniciar(db: Executor, deps: DepsTelefonia, d: IniciarLigac
     );
   const u = usuarioAtual();
   if (!u) throw AppError.naoAutorizado();
-  const nums = await numeros(db);
+  const pelo = d.pelo ?? 'telefone';
+  if (pelo === 'whatsapp' && !deps.servico.temWhatsapp)
+    throw AppError.invalido(
+      'A ligação pelo WhatsApp ainda não foi ligada na plataforma. Fale com o suporte do Prospect Team.',
+    );
+  const nums = (await numeros(db)).filter((n) => n.canal === pelo);
   const cfg = await config(db);
   const saida = numeroDeSaida(nums, d.telefone, cfg.mesmoDdd);
   if (!saida)
     throw AppError.invalido(
-      'A conta ainda não tem número de telefone para ligar. Peça ao suporte do Prospect Team em Gestão › Telefonia.',
+      pelo === 'whatsapp'
+        ? 'A conta ainda não tem número de WhatsApp para ligação. Peça ao suporte do Prospect Team.'
+        : 'A conta ainda não tem número de telefone para ligar. Peça ao suporte do Prospect Team em Gestão › Telefonia.',
     );
   let lead: string | null = null;
   if (d.empresaId) {
@@ -409,9 +424,9 @@ export async function iniciar(db: Executor, deps: DepsTelefonia, d: IniciarLigac
   const sala = nomeSala(conta());
   const gravar = !!deps.armazenamento && cfg.gravar;
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO comercial.ligacoes (conta_id, empresa_id, usuario_id, telefone, numero_empresa, sala, gravar, lista_item_id)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7) RETURNING id::int`,
-    [d.empresaId, u.id, d.telefone, saida.numero, sala, gravar, d.listaItemId ?? null],
+    `INSERT INTO comercial.ligacoes (conta_id, empresa_id, usuario_id, telefone, numero_empresa, sala, gravar, lista_item_id, canal)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8) RETURNING id::int`,
+    [d.empresaId, u.id, d.telefone, saida.numero, sala, gravar, d.listaItemId ?? null, pelo],
   );
   const id = rows[0]!.id;
   if (d.listaItemId)
@@ -439,6 +454,7 @@ export async function iniciar(db: Executor, deps: DepsTelefonia, d: IniciarLigac
     gravar,
     aviso: gravar ? { texto: cfg.avisoGravacao, falado: !!deps.fala && cfg.avisoFalado } : null,
     listaItemId: d.listaItemId ?? null,
+    canal: pelo,
   };
 }
 
@@ -459,6 +475,7 @@ export async function discar(db: Executor, deps: DepsTelefonia, id: number): Pro
       de: l.numeroEmpresa,
       nome: rows[0]?.nome ?? 'Lead',
       toqueSegundos: cfg.toqueSegundos,
+      canal: l.canal,
     });
   } catch (e) {
     await falhou(db, id, (e as Error).message);
@@ -673,7 +690,7 @@ export async function salvarResultado(pool: Pool, id: number, d: ResultadoLigaca
 /* ───────────────────────────── Leitura ───────────────────────────── */
 
 const CAMPOS_LISTA = `l.id::int, l.empresa_id::int AS "empresaId", coalesce(e.maps_nome, e.nome) AS "leadNome",
-  l.usuario_id AS "usuarioId", u.nome AS "usuarioNome", l.direcao, l.telefone, l.numero_empresa AS "numeroEmpresa",
+  l.usuario_id AS "usuarioId", u.nome AS "usuarioNome", l.direcao, l.canal, l.telefone, l.numero_empresa AS "numeroEmpresa",
   l.situacao, l.iniciada_em AS "iniciadaEm", l.atendida_em AS "atendidaEm", l.duracao_segundos AS "duracaoSegundos",
   l.resultado, l.processamento, l.resumo->>'resumo' AS resumo, l.resumo->>'clima' AS clima,
   l.resumo->>'sentimento' AS sentimento, l.nota, l.perdida, l.siga_me AS "sigaMe",

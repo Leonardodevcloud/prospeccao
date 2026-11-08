@@ -7,6 +7,7 @@ import { Aprendizados, BaseConhecimento, useConhecimento } from '../componentes/
 import { Chips } from '../componentes/Chips';
 import { ConfiguracaoIa, usePerfilIa } from '../componentes/ConfiguracaoIa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { ProtecaoDoNumero } from '../componentes/Porteiro';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
 import { useSessao } from '../componentes/Sessao';
 import { DesempenhoAgente, SimuladorIa } from '../componentes/SimuladorIa';
@@ -422,6 +423,7 @@ export function Agente() {
           </Panel>
 
           <Chips />
+          <ProtecaoDoNumero />
         </>
       )}
     </>

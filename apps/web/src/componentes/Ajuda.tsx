@@ -366,7 +366,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Ligue e receba ligações pelo navegador com o número da empresa, monte listas de ligação e veja o relatório; a IA resume e sugere o próximo passo.',
     onde: { rotulo: 'Ligações', para: '/ligacoes' },
     termos:
-      'ligar ligação ligacao telefone telefonia chamada celular fixo número numero gravação gravar transcrição resumo clima sentimento caixa postal não atendeu número errado não ligar minutos franquia aviso LGPD discar lista de ligação discador paralelo power dialer receber recebida perdida siga-me celular retornar relatório melhor horário menu de voz URA central telefônica digite tecla loja setor grupo',
+      'ligar ligação ligacao telefone telefonia chamada celular fixo número numero gravação gravar transcrição resumo clima sentimento caixa postal não atendeu número errado não ligar minutos franquia aviso LGPD discar lista de ligação discador paralelo power dialer receber recebida perdida siga-me celular retornar relatório melhor horário menu de voz URA central telefônica digite tecla loja setor grupo ligação de whatsapp chamada whatsapp z-api',
     corpo: (
       <>
         <p>
@@ -473,6 +473,20 @@ export const ARTIGOS: ArtigoAjuda[] = [
           As abas <b>Recebidas</b> e <b>Perdidas</b> mostram essas ligações. O administrador liga e desliga o
           receber pelo CRM, o tempo de cada etapa e o siga-me em <b>Gestão › Telefonia</b>.
         </p>
+        <h3>Ligação pelo WhatsApp</h3>
+        <p>
+          Com o WhatsApp da conta ligado à telefonia (o suporte do Prospect Team configura a ponte com a
+          Z-API), as ligações de WhatsApp para o número da loja chegam no CRM como as do telefone: aparece{' '}
+          <b>Ligação de WhatsApp</b> na tela, com o mesmo menu de voz, os grupos, a gravação e o resumo da IA.
+        </p>
+        <ul>
+          <li>
+            Para ligar pelo WhatsApp, use o botão com o <b>balão</b> ao lado do número de celular, na ficha do
+            lead (o de telefone continua ligando pela linha telefônica).
+          </li>
+          <li>Pelo WhatsApp, dá para até 3 ligações ao mesmo tempo no mesmo número (limite da Z-API).</li>
+          <li>Ligação comum e a lista de ligação nunca saem pelo número de WhatsApp.</li>
+        </ul>
         <h3>Menu de voz (uma loja ou setor por tecla)</h3>
         <p>
           Com várias lojas ou setores no mesmo número, ligue o <b>Menu de voz</b> em <b>Gestão › Telefonia</b>
@@ -815,9 +829,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
     id: 'whatsapp-numeros',
     area: 'WhatsApp e IA',
     titulo: 'Conectar números de WhatsApp',
-    resumo: 'QR Code, limite por dia, aquecimento e número de cada comercial.',
+    resumo:
+      'QR Code, limite por dia, aquecimento, número de cada comercial e a proteção do número (porteiro).',
     onde: { rotulo: 'Agente › Atendimento', para: '/agente' },
-    termos: 'qr code chip conectar desconectar limite aquecimento bloqueio dono comercial',
+    termos:
+      'qr code chip conectar desconectar limite aquecimento bloqueio dono comercial porteiro proteção banimento ban banido mensagem repetida variar texto contatos novos pausa denunciar spam',
     corpo: (
       <>
         <h3>Conectar</h3>
@@ -853,6 +869,38 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <p>
           Em <b>De quem é</b>, escolha a pessoa dona do número. Os leads novos que chegam por ele ficam com
           ela, e o que é dela sai pelo número dela.
+        </p>
+        <h3>Proteção do número (porteiro)</h3>
+        <p>
+          Quando a equipe toda usa o mesmo número (e ainda mais por uma API que não é a oficial do WhatsApp),
+          o que mais derruba o número é: o mesmo texto para muita gente em pouco tempo, muitos contatos novos
+          seguidos e continuar abordando quem pede para parar. Em{' '}
+          <b>Agente › Atendimento › Proteção do número</b>, o administrador liga a proteção e escolhe os
+          limites:
+        </p>
+        <ul>
+          <li>
+            <b>Mesmo texto para muita gente</b>: a mensagem que já foi, igual ou quase igual (trocar só o “bom
+            dia” ou o nome não engana), para vários contatos dentro do tempo escolhido é segurada. Na conversa
+            aparece o aviso com <b>Variar com a IA</b>: a IA reescreve com outras palavras e os mesmos preços,
+            prazos e links, e você confere antes de mandar. No modo <b>Avisar</b>, dá para{' '}
+            <b>Mandar mesmo assim</b> (fica registrado). Mensagem curta (“bom dia”, “ok, obrigado”) não conta.
+          </li>
+          <li>
+            <b>Contatos novos</b> (a primeira mensagem para quem nunca conversou): até tantos por número por
+            dia, somando a equipe e as mensagens automáticas, e uma espera entre um e outro. Número em
+            aquecimento usa o teto menor do aquecimento.
+          </li>
+          <li>
+            <b>Sinal de risco</b>: com 3 contatos pedindo para parar ou falando em denunciar, ou quase ninguém
+            respondendo os contatos novos do dia, o número fica 6 horas sem abordar contatos novos (equipe e
+            automáticos) e os administradores recebem um alerta. O administrador pode <b>Liberar agora</b>.
+          </li>
+          <li>Responder quem já conversa nunca é segurado (só a conferência de texto repetido vale).</li>
+        </ul>
+        <p>
+          O painel mostra quantos contatos novos cada número já abordou hoje e o que a proteção segurou nos
+          últimos 7 dias, com quem e para qual lead.
         </p>
       </>
     ),

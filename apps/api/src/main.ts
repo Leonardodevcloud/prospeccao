@@ -22,6 +22,7 @@ import { iniciarLigacoes } from './modulos/ligacoes/processar.js';
 import { iniciarDominios } from './modulos/marca/rotina.js';
 import { dominiosDoAmbiente } from './modulos/marca/vercel.js';
 import { iniciarPlanos } from './modulos/plano/rotina.js';
+import { iniciarPorteiro } from './modulos/porteiro/risco.js';
 import { iniciarPush } from './modulos/push/servico.js';
 import { iniciarQuadros } from './modulos/quadros/leitura.js';
 import { prepararReunioes } from './modulos/reunioes/preparar.js';
@@ -135,6 +136,8 @@ const pararConversoes = iniciarConversoes({ pool, log });
 const pararLigacoes = iniciarLigacoes({ pool, log, servicos, telefonia });
 // Quadros: a IA lê as conversas que pararam e põe os leads nas colunas pelos gatilhos.
 const pararQuadros = iniciarQuadros({ pool, log, servicos });
+// Porteiro do WhatsApp: sinais de risco do número (pedidos para parar, ninguém respondendo).
+const pararPorteiro = iniciarPorteiro({ pool, log });
 // API aberta: entrega os avisos (webhooks) aos sistemas dos clientes, com novas tentativas.
 const pararAvisos = iniciarAvisos({ pool, log, chave });
 // Teste grátis e assinatura: avisos do fim do teste, só leitura, arquivar e conferir os pagamentos.
@@ -161,6 +164,7 @@ encerrarAoReceberSinal(log, async () => {
   pararConversoes();
   pararLigacoes();
   pararQuadros();
+  pararPorteiro();
   pararListaDominios();
   pararDominios();
   processamento.parar();

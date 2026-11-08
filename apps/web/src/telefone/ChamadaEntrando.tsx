@@ -23,6 +23,8 @@ interface Entrando {
   donoNome: string | null;
   /** O grupo que quem ligou escolheu no menu de voz. */
   grupo: string | null;
+  /** Chegou pelo WhatsApp da conta. */
+  canal?: 'telefone' | 'whatsapp';
   etapa: string | null;
   ultimoContatoEm: string | null;
   proximaReuniao: string | null;
@@ -127,7 +129,8 @@ export function ChamadaEntrando() {
         </span>
         <div>
           <small>
-            Ligação entrando{primeira.meu ? ' · para você' : ''}
+            {primeira.canal === 'whatsapp' ? 'Ligação de WhatsApp' : 'Ligação entrando'}
+            {primeira.meu ? ' · para você' : ''}
             {lista.length > 1 ? ` · +${lista.length - 1} na espera` : ''}
           </small>
           <b>{nome}</b>

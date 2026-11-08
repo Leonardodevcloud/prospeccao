@@ -23,12 +23,18 @@ export function prepararTelefonia(
           apiKey: env.LIVEKIT_API_KEY,
           apiSecret: env.LIVEKIT_API_SECRET,
           troncoSaida: env.TELEFONIA_TRONCO_SAIDA,
+          troncoWhatsapp: env.TELEFONIA_TRONCO_WHATSAPP ?? null,
         })
       : null;
   if (!servico) log.info('ligações desligadas (falta LIVEKIT_* e TELEFONIA_TRONCO_SAIDA)');
   else
     log.info(
-      { gravacao: !!reunioes.armazenamento, transcricao: !!reunioes.transcricao, aviso: !!assistente?.fala },
+      {
+        gravacao: !!reunioes.armazenamento,
+        transcricao: !!reunioes.transcricao,
+        aviso: !!assistente?.fala,
+        whatsapp: !!env.TELEFONIA_TRONCO_WHATSAPP,
+      },
       'ligações ligadas',
     );
   return {

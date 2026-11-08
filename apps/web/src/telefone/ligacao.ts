@@ -28,6 +28,8 @@ export interface DadosLigacao {
   aviso: { texto: string; falado: boolean } | null;
   listaItemId?: number | null;
   direcao?: 'saida' | 'entrada';
+  /** Pela linha telefônica ou pelo WhatsApp da conta. */
+  canal?: 'telefone' | 'whatsapp';
 }
 
 export type Credenciais = DadosLigacao & { url: string; token: string };
@@ -241,7 +243,13 @@ class Telefone {
   }
 
   /** Ligação avulsa pela ficha (ou pelo número digitado). */
-  async ligar(alvo: { telefone: string; empresaId: number | null; lead?: string | null }): Promise<void> {
+  async ligar(alvo: {
+    telefone: string;
+    empresaId: number | null;
+    lead?: string | null;
+    /** Pelo WhatsApp da conta (para o WhatsApp do lead). */
+    pelo?: 'telefone' | 'whatsapp';
+  }): Promise<void> {
     if (!this.livre) return;
     this.mudar({ ...INICIAL, fase: 'preparando', aberto: true });
     if (!(await this.prepararAudio())) return;
@@ -249,7 +257,7 @@ class Telefone {
     try {
       dados = await api('/ligacoes', {
         metodo: 'POST',
-        corpo: { telefone: alvo.telefone, empresaId: alvo.empresaId },
+        corpo: { telefone: alvo.telefone, empresaId: alvo.empresaId, pelo: alvo.pelo ?? 'telefone' },
       });
     } catch (e) {
       this.mudar({ fase: 'falhou', erro: (e as Error).message });

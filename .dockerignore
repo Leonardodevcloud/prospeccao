@@ -7,3 +7,4 @@
 !.env.example
 apps/web
 coverage
+infra

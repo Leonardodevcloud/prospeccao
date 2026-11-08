@@ -57,19 +57,27 @@ export function BotaoLigar(props: { empresaId: number; nome: string }) {
   const modulo = useModuloLigacoes();
   const soLeitura = useSoLeitura();
   const q = useLigacoesDoLead(props.empresaId, modulo && !soLeitura);
+  const situacao = useSituacaoTelefonia(modulo && !soLeitura);
   const e = useTelefone();
   if (!modulo || soLeitura) return null;
   const primeiro = q.data?.telefones.find((t) => t.ordem === 1);
   if (!primeiro || q.data?.naoLigar) return null;
   const ocupado = telefone.ocupado || e.aberto;
+  // Conta só com o WhatsApp (sem linha telefônica): o botão liga pelo WhatsApp.
+  const soWhatsapp = situacao.data?.telefone === false && situacao.data.whatsapp;
   return (
     <Button
       variant="primary"
       icon="phone"
       disabled={ocupado}
-      title={`Ligar para ${formatarTelefone(primeiro.numero)}`}
+      title={`Ligar${soWhatsapp ? ' pelo WhatsApp' : ''} para ${formatarTelefone(primeiro.numero)}`}
       onClick={() =>
-        void telefone.ligar({ telefone: primeiro.numero, empresaId: props.empresaId, lead: props.nome })
+        void telefone.ligar({
+          telefone: primeiro.numero,
+          empresaId: props.empresaId,
+          lead: props.nome,
+          pelo: soWhatsapp ? 'whatsapp' : 'telefone',
+        })
       }
     >
       Ligar
@@ -77,7 +85,16 @@ export function BotaoLigar(props: { empresaId: number; nome: string }) {
   );
 }
 
-function LinhaTelefone(props: { t: TelefoneParaLigar; empresaId: number; nome: string; podeLigar: boolean }) {
+function LinhaTelefone(props: {
+  t: TelefoneParaLigar;
+  empresaId: number;
+  nome: string;
+  podeLigar: boolean;
+  /** Pela linha telefônica (a conta tem número de telefone). */
+  porTelefone: boolean;
+  /** Pelo WhatsApp da conta (ponte da Z-API ligada). */
+  porWhatsapp: boolean;
+}) {
   const { t } = props;
   const origem = t.origens.length > 1 ? `${t.origens.length} fontes` : ROTULO_ORIGEM[t.origens[0] ?? ''];
   // "Cadastro da Receita · Receita": a origem só entra quando o nome não a repete.
@@ -106,7 +123,24 @@ function LinhaTelefone(props: { t: TelefoneParaLigar; empresaId: number; nome: s
             {ROTULO_RESULTADO_LIGACAO[t.ultimoResultado].toLowerCase()} {fmtQuando(t.ultimaEm)}
           </Badge>
         ) : null}
-        {!t.errado && props.podeLigar && (
+        {!t.errado && props.podeLigar && props.porWhatsapp && (t.whatsapp || t.tipo === 'celular') && (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="message-circle"
+            aria-label={`Ligar pelo WhatsApp para ${formatarTelefone(t.numero)}`}
+            title="Ligar pelo WhatsApp"
+            onClick={() =>
+              void telefone.ligar({
+                telefone: t.numero,
+                empresaId: props.empresaId,
+                lead: props.nome,
+                pelo: 'whatsapp',
+              })
+            }
+          />
+        )}
+        {!t.errado && props.podeLigar && props.porTelefone && (
           <Button
             size="sm"
             variant={t.ordem === 1 ? 'primary' : 'secondary'}
@@ -169,6 +203,8 @@ export function LigacoesDoLead(props: { empresaId: number; nome: string }) {
                   empresaId={props.empresaId}
                   nome={props.nome}
                   podeLigar={podeLigar}
+                  porTelefone={s?.telefone !== false}
+                  porWhatsapp={!!s?.whatsapp}
                 />
               ))}
             </ul>

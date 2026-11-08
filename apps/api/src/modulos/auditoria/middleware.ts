@@ -56,6 +56,15 @@ const REGRAS: Record<string, Regra | null> = {
   },
   'POST /integracoes/avisos/:id/testar': null,
   'POST /integracoes/entregas/:id/reenviar': null,
+  'PUT /porteiro': {
+    acao: 'configuração',
+    texto: (b) => `${b.ativo ? 'Ligou' : 'Desligou'} a proteção do número (porteiro do WhatsApp)`,
+  },
+  'POST /porteiro/numeros/:id/liberar': {
+    acao: 'configuração',
+    texto: 'Liberou os contatos novos do número antes da hora',
+  },
+  'POST /conversas/:empresaId/variar': null,
   'POST /quadros': { acao: 'quadros', texto: (b) => `Criou o quadro ${txt(b.nome)}` },
   'PUT /quadros/:id': { acao: 'quadros', texto: (b) => `Editou o quadro ${txt(b.nome)}` },
   'DELETE /quadros/:id': { acao: 'quadros', texto: 'Apagou um quadro' },

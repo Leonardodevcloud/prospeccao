@@ -11,6 +11,7 @@ import { dadosDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
 import { janelaDoDirect } from '../instagram/canal.js';
 import { lerAvisosDoLead } from '../notificacoes/repositorio.js';
+import * as porteiro from '../porteiro/regras.js';
 
 /**
  * Caixa de entrada do WhatsApp. A conversa junta as mensagens do sistema (IA, cadência, você
@@ -229,12 +230,24 @@ async function exigirWhatsapp(deps: Deps) {
   return whatsapp;
 }
 
-export async function enviarTexto(deps: Deps, empresaId: number, texto: string): Promise<void> {
+export async function enviarTexto(
+  deps: Deps,
+  empresaId: number,
+  texto: string,
+  opcoes: { mesmoAssim?: boolean } = {},
+): Promise<void> {
   const whatsapp = await exigirWhatsapp(deps);
   const lead = await dadosDoLead(deps.pool, empresaId);
   if (!lead.telefone) throw AppError.invalido('Este lead não tem telefone.');
   const quem = usuarioAtual();
   const chip = await chipParaEquipe(deps.pool, empresaId, await chipsEmUso(deps.pool, whatsapp));
+  // Porteiro: texto repetido para muita gente, ritmo dos contatos novos e número em pausa.
+  await porteiro.conferirEnvio(deps.pool, {
+    empresaId,
+    chipId: chip?.id ?? null,
+    texto,
+    mesmoAssim: opcoes.mesmoAssim,
+  });
   const r = await whatsapp.enviar(lead.telefone, texto, chip?.instancia);
   await agente.criarMensagem(deps.pool, {
     chipId: chip?.id ?? null,
@@ -285,9 +298,11 @@ export async function enviarMidia(deps: Deps, empresaId: number, m: MidiaEntrada
   if (!whatsapp.enviarMidia) throw AppError.invalido('Envio de arquivos não disponível.');
   const lead = await dadosDoLead(deps.pool, empresaId);
   if (!lead.telefone) throw AppError.invalido('Este lead não tem telefone.');
-  const midiaId = await guardarMidia(deps.pool, m);
   const quem = usuarioAtual();
   const chip = await chipParaEquipe(deps.pool, empresaId, await chipsEmUso(deps.pool, whatsapp));
+  // Porteiro: arquivo para contato novo segue o mesmo ritmo; a legenda conta como texto.
+  await porteiro.conferirEnvio(deps.pool, { empresaId, chipId: chip?.id ?? null, texto: m.legenda ?? null });
+  const midiaId = await guardarMidia(deps.pool, m);
   const r = await whatsapp.enviarMidia(
     lead.telefone,
     {
@@ -381,4 +396,21 @@ export async function salvarResposta(db: Executor, d: { atalho: string; texto: s
 
 export async function apagarResposta(db: Executor, id: number) {
   await db.query(`DELETE FROM comercial.respostas_rapidas WHERE id = $1 AND conta_id = ${contaSql()}`, [id]);
+}
+
+/** "Variar com a IA": outra versão da mensagem que ia igual para muita gente. */
+export async function variar(deps: Deps, empresaId: number, texto: string): Promise<string> {
+  const ia = (await deps.servicos(conta())).porteiro;
+  if (!ia)
+    throw AppError.invalido('A IA não está ligada nesta conta: reescreva a mensagem com outras palavras.');
+  const nova = await ia.variar({ texto, nome: null });
+  if (!nova)
+    throw AppError.invalido('A IA não conseguiu uma versão boa agora. Tente de novo ou reescreva à mão.');
+  await porteiro.registrar(deps.pool, {
+    tipo: 'variou',
+    chipId: null,
+    empresaId,
+    detalhe: `Variou com a IA: “${texto.slice(0, 150)}” → “${nova.slice(0, 150)}”`,
+  });
+  return nova;
 }

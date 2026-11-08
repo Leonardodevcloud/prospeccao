@@ -1,6 +1,6 @@
 import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
   api,
@@ -18,6 +18,7 @@ import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { IconeInstagram } from '../componentes/IconeInstagram';
+import { AvisoPorteiro, doPorteiro } from '../componentes/Porteiro';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
 import { Dono, useSoLeitura, useSoPropriaBase, useVeFilaSemDono } from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
@@ -318,10 +319,10 @@ function Compositor(props: {
   });
 
   const enviarTexto = useMutation({
-    mutationFn: (t: string) =>
+    mutationFn: (p: { texto: string; mesmoAssim?: boolean }) =>
       api<ConversaAberta>(`/conversas/${conversa.empresaId}/mensagens`, {
         metodo: 'POST',
-        corpo: { texto: t },
+        corpo: p,
       }),
     onSuccess: (c) => {
       setTexto('');
@@ -359,6 +360,24 @@ function Compositor(props: {
       props.aoEnviado(c);
     },
   });
+  // Porteiro do WhatsApp: a IA reescreve a mensagem que ia igual para muita gente.
+  const variar = useMutation({
+    mutationFn: (t: string) =>
+      api<{ texto: string }>(`/conversas/${conversa.empresaId}/variar`, {
+        metodo: 'POST',
+        corpo: { texto: t },
+      }),
+    onSuccess: (r) => {
+      setTexto(r.texto);
+      enviarTexto.reset();
+      campo.current?.focus();
+    },
+  });
+  const porteiro = doPorteiro(enviarTexto.error ?? enviarMidia.error);
+  const liberarPorteiro = useCallback(() => {
+    enviarTexto.reset();
+    enviarMidia.reset();
+  }, [enviarTexto.reset, enviarMidia.reset]);
 
   useEffect(() => {
     if (!gravando) return;
@@ -385,7 +404,7 @@ function Compositor(props: {
     if (!t || enviarTexto.isPending || enviarEmail.isPending || enviarDirect.isPending) return;
     if (canal === 'email') enviarEmail.mutate(t);
     else if (canal === 'instagram') enviarDirect.mutate(t);
-    else enviarTexto.mutate(t);
+    else enviarTexto.mutate({ texto: t });
   };
 
   const tecla = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -543,7 +562,21 @@ function Compositor(props: {
           </button>
         </div>
       )}
-      <ErroDaApi erro={enviarTexto.error ?? enviarMidia.error ?? enviarEmail.error ?? enviarDirect.error} />
+      {porteiro ? (
+        <AvisoPorteiro
+          erro={porteiro}
+          ocupado={enviarTexto.isPending}
+          variando={variar.isPending}
+          aoVariar={() => texto.trim() && variar.mutate(texto.trim())}
+          aoMandarMesmoAssim={() =>
+            texto.trim() && enviarTexto.mutate({ texto: texto.trim(), mesmoAssim: true })
+          }
+          aoLiberar={liberarPorteiro}
+        />
+      ) : (
+        <ErroDaApi erro={enviarTexto.error ?? enviarMidia.error ?? enviarEmail.error ?? enviarDirect.error} />
+      )}
+      <ErroDaApi erro={variar.error} />
       {erroLocal && <Mensagem tipo="erro">{erroLocal}</Mensagem>}
       <div className="compositor__linha">
         <input

@@ -306,8 +306,8 @@ export function rotasMasterTelefonia(deps: DepsApi): Router {
       [contaId],
     );
     await pool.query(
-      `INSERT INTO comercial.telefonia_numeros (conta_id, numero, rotulo, principal) VALUES ($1, $2, $3, $4)`,
-      [contaId, d.numero, d.rotulo ?? null, d.principal || !tem.length],
+      `INSERT INTO comercial.telefonia_numeros (conta_id, numero, rotulo, principal, canal) VALUES ($1, $2, $3, $4, $5)`,
+      [contaId, d.numero, d.rotulo ?? null, d.principal || !tem.length, d.canal],
     );
     if (d.principal)
       await pool.query(

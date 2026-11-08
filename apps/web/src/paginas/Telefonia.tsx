@@ -96,7 +96,9 @@ function Conteudo(props: { s: SituacaoTelefonia }) {
                 <li key={n.id}>
                   <span className="mono">{formatarTelefone(n.numero)}</span>
                   <span className="quieto">
-                    {[n.rotulo, n.principal ? 'principal' : null].filter(Boolean).join(' · ')}
+                    {[n.canal === 'whatsapp' ? 'WhatsApp' : null, n.rotulo, n.principal ? 'principal' : null]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
                   <Badge tone="brand">ativo</Badge>
                 </li>
@@ -424,6 +426,7 @@ export function NumerosDaConta(props: { contaId: number }) {
   const chave = ['master', 'telefonia', props.contaId];
   const [numero, setNumero] = useState('');
   const [rotulo, setRotulo] = useState('');
+  const [canal, setCanal] = useState<'telefone' | 'whatsapp'>('telefone');
   const q = useQueryMaster(props.contaId);
   const mexer = useMutation({
     mutationFn: (p: { metodo: string; caminho: string; corpo?: unknown }) =>
@@ -459,6 +462,7 @@ export function NumerosDaConta(props: { contaId: number }) {
             <li key={n.id}>
               <span className="mono">{formatarTelefone(n.numero)}</span>
               <span className="quieto">{n.rotulo ?? ''}</span>
+              {n.canal === 'whatsapp' && <Badge tone="neutral">WhatsApp</Badge>}
               {n.principal ? (
                 <Badge tone="brand">principal</Badge>
               ) : (
@@ -487,7 +491,11 @@ export function NumerosDaConta(props: { contaId: number }) {
         className="form__duas"
         onSubmit={(e) => {
           e.preventDefault();
-          mexer.mutate({ metodo: 'POST', caminho: '/numeros', corpo: { numero, rotulo: rotulo || null } });
+          mexer.mutate({
+            metodo: 'POST',
+            caminho: '/numeros',
+            corpo: { numero, rotulo: rotulo || null, canal },
+          });
         }}
       >
         <div className="campo">
@@ -509,6 +517,18 @@ export function NumerosDaConta(props: { contaId: number }) {
               value={rotulo}
               onChange={(e) => setRotulo(e.target.value)}
             />
+            <label className="pp-sr" htmlFor="mt-canal">
+              Tipo
+            </label>
+            <select
+              id="mt-canal"
+              className="filtro"
+              value={canal}
+              onChange={(e) => setCanal(e.target.value as 'telefone' | 'whatsapp')}
+            >
+              <option value="telefone">Linha telefônica</option>
+              <option value="whatsapp">WhatsApp (ponte Z-API)</option>
+            </select>
             <Button type="submit" variant="primary" disabled={!numero.trim() || mexer.isPending}>
               Cadastrar
             </Button>

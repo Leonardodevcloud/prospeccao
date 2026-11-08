@@ -38,11 +38,12 @@ export async function receber(
     log.warn({ sala }, 'ligações: recebida sem o número chamado');
     return;
   }
-  const { rows } = await pool.query<{ conta_id: number }>(
-    `SELECT conta_id FROM comercial.telefonia_numeros WHERE numero = $1 AND ativo LIMIT 1`,
+  const { rows } = await pool.query<{ conta_id: number; canal: string }>(
+    `SELECT conta_id, canal FROM comercial.telefonia_numeros WHERE numero = $1 AND ativo LIMIT 1`,
     [para],
   );
   const contaId = rows[0]?.conta_id;
+  const canal = rows[0]?.canal ?? 'telefone';
   if (!contaId) {
     log.warn({ sala, para }, 'ligações: número chamado não é de nenhuma conta');
     await deps.servico.encerrar(sala).catch(() => undefined);
@@ -69,8 +70,8 @@ export async function receber(
     const grupos = cfg.menu ? await gruposDoMenu(pool) : [];
     const { rows: nova } = await pool.query<{ id: number }>(
       `INSERT INTO comercial.ligacoes
-         (conta_id, empresa_id, direcao, telefone, numero_empresa, sala, situacao, gravar, dono_id, time_desde)
-       VALUES (${contaSql()}, $1, 'entrada', $2, $3, $4, $8, $5, $6, now() + make_interval(secs => $7))
+         (conta_id, empresa_id, direcao, telefone, numero_empresa, sala, situacao, gravar, dono_id, time_desde, canal)
+       VALUES (${contaSql()}, $1, 'entrada', $2, $3, $4, $8, $5, $6, now() + make_interval(secs => $7), $9)
        ON CONFLICT (sala) DO NOTHING
        RETURNING id::int`,
       [
@@ -82,6 +83,7 @@ export async function receber(
         dono,
         dono ? cfg.toqueDono : 0,
         grupos.length ? 'menu' : 'tocando',
+        canal,
       ],
     );
     const id = nova[0]?.id;
@@ -104,7 +106,7 @@ export async function entrando(db: Executor) {
   const { rows } = await db.query(
     `SELECT l.id::int, l.empresa_id::int AS "empresaId", coalesce(e.maps_nome, e.nome) AS lead, l.telefone,
             l.numero_empresa AS "numeroEmpresa", l.iniciada_em AS "iniciadaEm", coalesce(l.dono_id = $1, false) AS meu,
-            g.nome AS grupo,
+            g.nome AS grupo, l.canal,
             d.nome AS "donoNome", coalesce(et.nome, o.etapa) AS etapa, o.ultimo_contato_em AS "ultimoContatoEm",
             (SELECT t.inicio FROM comercial.tarefas t WHERE t.conta_id = l.conta_id AND t.empresa_id = l.empresa_id
                 AND t.tipo = 'reuniao' AND t.inicio > now() AND t.concluida_em IS NULL ORDER BY t.inicio LIMIT 1) AS "proximaReuniao"
@@ -135,11 +137,12 @@ export async function atender(db: Executor, deps: DepsTelefonia, id: number) {
     empresa_id: number | null;
     gravar: boolean;
     lead: string | null;
+    canal: 'telefone' | 'whatsapp';
   }>(
     `UPDATE comercial.ligacoes l SET usuario_id = $2, situacao = 'em_andamento', atendida_em = now()
       WHERE l.id = $1 AND l.conta_id = ${contaSql()} AND l.direcao = 'entrada' AND l.situacao = 'tocando'
         AND ${DO_GRUPO('$2')}
-      RETURNING l.sala, l.telefone, l.numero_empresa, l.empresa_id::int, l.gravar,
+      RETURNING l.sala, l.telefone, l.numero_empresa, l.empresa_id::int, l.gravar, l.canal,
                 (SELECT coalesce(e.maps_nome, e.nome) FROM descoberta.empresas e WHERE e.id = l.empresa_id) AS lead`,
     [id, u.id],
   );
@@ -160,6 +163,7 @@ export async function atender(db: Executor, deps: DepsTelefonia, id: number) {
     gravar: l.gravar,
     aviso: l.gravar ? { texto: cfg.avisoGravacao, falado: !!deps.fala && cfg.avisoFalado } : null,
     direcao: 'entrada' as const,
+    canal: l.canal,
   };
 }
 

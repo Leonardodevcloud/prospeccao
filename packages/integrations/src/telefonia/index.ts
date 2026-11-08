@@ -16,6 +16,8 @@ export interface ConfigTelefonia {
   apiSecret: string;
   /** Tronco de saída criado no LiveKit (ST_…), com o login do provedor. */
   troncoSaida: string;
+  /** Tronco de saída para a ponte do WhatsApp (Asterisk registrado na Z-API), se houver. */
+  troncoWhatsapp?: string | null;
 }
 
 /** Estado do lado do lead, como o LiveKit conta (atributo sip.callStatus). */
@@ -23,6 +25,8 @@ export type EstadoChamada = 'discando' | 'tocando' | 'atendida' | 'encerrada';
 
 export interface ServicoTelefonia {
   readonly urlCliente: string;
+  /** Dá para ligar pelo WhatsApp (há o tronco da ponte da Z-API). */
+  readonly temWhatsapp?: boolean;
   /** Acesso do comercial à sala da ligação (vale 2 horas). */
   acesso(p: { sala: string; identidade: string; nome: string }): Promise<string>;
   /** Cria a sala (fecha sozinha 1 min depois de vazia). */
@@ -40,6 +44,8 @@ export interface ServicoTelefonia {
     maxSegundos?: number;
     /** Quem é na sala (padrão: "lead"; o siga-me usa "siga-me"). */
     identidade?: string;
+    /** Pelo WhatsApp: sai pelo tronco da ponte da Z-API (o número vai sem o "+"). */
+    canal?: 'telefone' | 'whatsapp';
   }): Promise<void>;
   /** Encerra a ligação (derruba a sala; o lado do lead desliga). */
   encerrar(sala: string): Promise<void>;
@@ -79,6 +85,7 @@ export function criarServicoTelefonia(cfg: ConfigTelefonia): ServicoTelefonia {
   const naoAchou = (e: Error) => /not.?found|404/i.test(e.message);
   return {
     urlCliente: cfg.url.replace(/\/+$/, ''),
+    temWhatsapp: !!cfg.troncoWhatsapp,
 
     async acesso(p) {
       const t = new AccessToken(cfg.apiKey, cfg.apiSecret, {
@@ -101,7 +108,10 @@ export function criarServicoTelefonia(cfg: ConfigTelefonia): ServicoTelefonia {
     },
 
     async discar(p) {
-      await sip.createSipParticipant(cfg.troncoSaida, e164(p.numero), p.sala, {
+      const whatsapp = p.canal === 'whatsapp';
+      if (whatsapp && !cfg.troncoWhatsapp) throw new Error('Sem o tronco da ponte do WhatsApp.');
+      const tronco = whatsapp ? cfg.troncoWhatsapp! : cfg.troncoSaida;
+      await sip.createSipParticipant(tronco, e164(p.numero), p.sala, {
         participantIdentity: p.identidade ?? IDENTIDADE_LEAD,
         participantName: p.nome,
         ...(p.de ? { fromNumber: e164(p.de) } : {}),
@@ -109,6 +119,7 @@ export function criarServicoTelefonia(cfg: ConfigTelefonia): ServicoTelefonia {
         maxCallDuration: p.maxSegundos ?? 2 * 3600,
         // Tira o ruído do lado do lead (rua, loja).
         krispEnabled: true,
+        ...(whatsapp ? { participantAttributes: { canal: 'whatsapp' } } : {}),
         waitUntilAnswered: false,
       });
     },
@@ -152,7 +163,10 @@ export function criarServicoTelefonia(cfg: ConfigTelefonia): ServicoTelefonia {
       const troncos = await sip.listSipOutboundTrunk();
       const meu = troncos.find((t) => t.sipTrunkId === cfg.troncoSaida);
       if (!meu) throw new Error(`O tronco ${cfg.troncoSaida} não existe neste projeto do LiveKit.`);
-      return `ok (tronco ${meu.name || meu.sipTrunkId} → ${meu.address})`;
+      const zap = cfg.troncoWhatsapp ? troncos.find((t) => t.sipTrunkId === cfg.troncoWhatsapp) : null;
+      if (cfg.troncoWhatsapp && !zap)
+        throw new Error(`O tronco do WhatsApp ${cfg.troncoWhatsapp} não existe neste projeto do LiveKit.`);
+      return `ok (tronco ${meu.name || meu.sipTrunkId} → ${meu.address}${zap ? `; WhatsApp → ${zap.address}` : ''})`;
     },
   };
 }

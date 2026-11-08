@@ -22,6 +22,8 @@ export interface Chip {
   limiteDia: number | null;
   /** Teto de hoje pelo aquecimento do número (chip novo manda pouco e vai subindo); null: sem teto. */
   tetoAquecimento?: number | null;
+  /** Porteiro: sem abordar contatos novos até esta hora (ms), por sinal de risco. */
+  friosAte?: number | null;
 }
 
 /** Mensagens automáticas (IA, cadência, sequência). */
@@ -94,8 +96,9 @@ export async function emUso(
     limite_dia: number;
     aquecer: boolean;
     ativado_em: string;
+    frios_ate: Date | null;
   }>(
-    `SELECT id, nome, instancia, limite_dia, aquecer, ativado_em
+    `SELECT id, nome, instancia, limite_dia, aquecer, ativado_em, CASE WHEN frios_ate > now() THEN frios_ate END AS frios_ate
        FROM comercial.chips
       WHERE conta_id = ${contaSql()} AND ativo AND token_cifrado IS NOT NULL
         AND (pausado_ate IS NULL OR pausado_ate <= now())
@@ -109,6 +112,7 @@ export async function emUso(
     instancia: r.instancia,
     limiteDia: r.limite_dia,
     tetoAquecimento: r.aquecer ? tetoDeAquecimento(diasDesde(r.ativado_em)) : null,
+    friosAte: r.frios_ate ? new Date(r.frios_ate).getTime() : null,
   }));
 }
 
@@ -161,6 +165,8 @@ export async function chipParaAutomatica(
   const uso = await usoDeHoje(db);
   const livre = (c: Chip) => {
     if (opcoes.resposta) return true;
+    // Porteiro: número em pausa de contatos novos (sinal de risco).
+    if (c.friosAte && c.friosAte > agora) return false;
     const u = uso.get(c.id ?? 0) ?? { hoje: 0, ultima: 0 };
     return (
       u.hoje < limiteDeHoje(c, limites.limiteDia) &&

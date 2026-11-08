@@ -5,10 +5,11 @@ import {
   conversaNovaEntrada,
   destinoEntrada,
   directEntrada,
+  enviarMensagemEntrada,
   filtrosConversas,
-  mensagemEntrada,
   midiaEntrada,
   respostaRapidaEntrada,
+  variarEntrada,
   vincularEntrada,
 } from '@prospeccao/shared';
 import { type Request, Router } from 'express';
@@ -176,8 +177,15 @@ export function rotasConversas(deps: DepsApi): Router {
 
   r.post('/:empresaId/mensagens', async (req, res) => {
     const id = idDaRota(req, 'empresaId');
-    await repo.enviarTexto(deps, id, corpo(req, mensagemEntrada).texto);
+    const d = corpo(req, enviarMensagemEntrada);
+    await repo.enviarTexto(deps, id, d.texto, { mesmoAssim: d.mesmoAssim });
     res.status(201).json(await repo.abrir(pool, id));
+  });
+
+  /** Porteiro: a IA reescreve a mensagem que ia igual para muita gente. */
+  r.post('/:empresaId/variar', async (req, res) => {
+    const id = idDaRota(req, 'empresaId');
+    res.json({ texto: await repo.variar(deps, id, corpo(req, variarEntrada).texto) });
   });
 
   /** E-mail pela conversa: responde a última mensagem dele por e-mail ou manda um novo. */
