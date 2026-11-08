@@ -56,6 +56,20 @@ const REGRAS: Record<string, Regra | null> = {
   },
   'POST /integracoes/avisos/:id/testar': null,
   'POST /integracoes/entregas/:id/reenviar': null,
+  'POST /quadros': { acao: 'quadros', texto: (b) => `Criou o quadro ${txt(b.nome)}` },
+  'PUT /quadros/:id': { acao: 'quadros', texto: (b) => `Editou o quadro ${txt(b.nome)}` },
+  'DELETE /quadros/:id': { acao: 'quadros', texto: 'Apagou um quadro' },
+  'POST /quadros/:id/cartoes': { acao: 'quadros', texto: 'Pôs um lead num quadro' },
+  'PATCH /quadros/:id/cartoes/:empresaId': { acao: 'quadros', texto: 'Moveu o lead de coluna num quadro' },
+  'POST /quadros/:id/cartoes/:empresaId/confirmar': {
+    acao: 'quadros',
+    texto: 'Confirmou a sugestão da IA num quadro',
+  },
+  'POST /quadros/:id/cartoes/:empresaId/descartar': {
+    acao: 'quadros',
+    texto: 'Descartou a sugestão da IA num quadro',
+  },
+  'DELETE /quadros/:id/cartoes/:empresaId': { acao: 'quadros', texto: 'Tirou o lead de um quadro' },
   'POST /funil/leads': {
     acao: 'funil',
     texto: (b) =>

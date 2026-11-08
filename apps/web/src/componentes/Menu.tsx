@@ -72,6 +72,7 @@ export const MENU_CRM: EntradaMenu[] = [
     icone: 'kanban',
     itens: [
       { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
+      { para: '/quadros', rotulo: 'Quadros', icone: 'layout-grid' },
       { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle' },
       { para: '/ligacoes', rotulo: 'Ligações', icone: 'phone', modulos: ['ligacoes'] },
       { para: '/reunioes', rotulo: 'Reuniões', icone: 'video' },

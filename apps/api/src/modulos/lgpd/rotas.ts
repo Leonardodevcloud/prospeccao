@@ -107,6 +107,11 @@ export function rotasLgpd({ pool, log, reunioes }: DepsApi): Router {
       await tx.query(`DELETE FROM comercial.mensagens WHERE conta_id IN ${unidades} AND empresa_id = $1`, [
         d.empresaId,
       ]);
+      // Quadros: o cartão (com o trecho da conversa) e até onde a IA leu.
+      for (const t of ['quadro_cartoes', 'quadro_leituras'])
+        await tx.query(`DELETE FROM comercial.${t} WHERE conta_id IN ${unidades} AND empresa_id = $1`, [
+          d.empresaId,
+        ]);
       // Comentários no Instagram e cadastros dos anúncios dele.
       await tx.query(
         `DELETE FROM comercial.instagram_interacoes WHERE conta_id IN ${unidades} AND empresa_id = $1`,

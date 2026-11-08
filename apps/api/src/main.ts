@@ -23,6 +23,7 @@ import { iniciarDominios } from './modulos/marca/rotina.js';
 import { dominiosDoAmbiente } from './modulos/marca/vercel.js';
 import { iniciarPlanos } from './modulos/plano/rotina.js';
 import { iniciarPush } from './modulos/push/servico.js';
+import { iniciarQuadros } from './modulos/quadros/leitura.js';
 import { prepararReunioes } from './modulos/reunioes/preparar.js';
 import { iniciarProcessamento } from './modulos/reunioes/processar.js';
 import { criarServicos } from './servicos.js';
@@ -132,6 +133,8 @@ const pararConteudo = iniciarConteudo({ pool, log });
 const pararConversoes = iniciarConversoes({ pool, log });
 // Ligações: transcrição e resumo depois de cada uma; fecha as esquecidas abertas.
 const pararLigacoes = iniciarLigacoes({ pool, log, servicos, telefonia });
+// Quadros: a IA lê as conversas que pararam e põe os leads nas colunas pelos gatilhos.
+const pararQuadros = iniciarQuadros({ pool, log, servicos });
 // API aberta: entrega os avisos (webhooks) aos sistemas dos clientes, com novas tentativas.
 const pararAvisos = iniciarAvisos({ pool, log, chave });
 // Teste grátis e assinatura: avisos do fim do teste, só leitura, arquivar e conferir os pagamentos.
@@ -157,6 +160,7 @@ encerrarAoReceberSinal(log, async () => {
   pararConteudo();
   pararConversoes();
   pararLigacoes();
+  pararQuadros();
   pararListaDominios();
   pararDominios();
   processamento.parar();

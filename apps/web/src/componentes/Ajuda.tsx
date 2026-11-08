@@ -1,3 +1,4 @@
+import { PARADA_QUADROS_MIN } from '@prospeccao/shared/quadros';
 import { Icon } from '@prospeccao/ui';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
@@ -282,6 +283,78 @@ export const ARTIGOS: ArtigoAjuda[] = [
           acontecer na sala de vídeo do próprio sistema: depois dela, o quadro <b>Reuniões gravadas</b> mostra
           a gravação e o resumo da IA (<Link to="/ajuda/reunioes">veja como funciona</Link>).
         </p>
+      </>
+    ),
+  },
+  {
+    id: 'quadros',
+    area: 'Vendas',
+    titulo: 'Quadros com gatilhos da IA',
+    resumo:
+      'Quadros com as colunas que você quiser (achou caro, sem estoque, vai pensar); a IA lê as conversas e põe cada lead na coluna certa, com o trecho que mostra isso.',
+    onde: { rotulo: 'Quadros', para: '/quadros' },
+    termos:
+      'quadro quadros kanban coluna colunas gatilho gatilhos IA objeção objeções achou caro sem estoque vai pensar concorrente orçamento sugestão confirmar descartar mover arrastar',
+    corpo: (
+      <>
+        <p>
+          O <b>Funil</b> mostra as etapas da venda. Os <b>Quadros</b> mostram outras coisas que você quer
+          acompanhar: as objeções (“achou caro”, “sem estoque”), o atendimento (“pediu orçamento”, “orçamento
+          enviado”, “fechou”) ou o que fizer sentido para a sua loja. Cada lead fica em uma coluna de cada
+          quadro.
+        </p>
+        <h3>Montar o quadro (administrador)</h3>
+        <ul>
+          <li>
+            Em <b>Vendas › Quadros</b>, clique em <b>Criar o primeiro quadro</b> (ou <b>Novo quadro</b>). Dá
+            para começar de um modelo e mudar tudo.
+          </li>
+          <li>
+            Cada coluna pode ter um <b>gatilho</b>: a situação que põe o lead nela, escrita como você
+            explicaria para um vendedor novo (“o cliente disse que achou caro ou pediu desconto”). Coluna sem
+            gatilho é só para mover à mão.
+          </li>
+          <li>
+            Escolha o que a IA faz quando acha um gatilho: <b>sugere e alguém confirma</b> (o dono do lead
+            recebe um aviso) ou <b>já move</b>. Também dá para desligar a IA no quadro e usar só à mão.
+          </li>
+          <li>Até 10 quadros por conta e 12 colunas por quadro. Tirar uma coluna tira os leads dela.</li>
+        </ul>
+        <h3>Como a IA lê</h3>
+        <ul>
+          <li>
+            Ela lê as conversas do WhatsApp e do Instagram quando param por {PARADA_QUADROS_MIN} minutos, para
+            não ler no meio da conversa, e só quando chegou mensagem nova. Uma leitura vale para todos os
+            quadros.
+          </li>
+          <li>
+            Só move quando o que foi dito nas mensagens novas mostra o gatilho, e mostra no cartão o trecho da
+            conversa, palavra por palavra, e o porquê. Na dúvida, não move.
+          </li>
+          <li>
+            Ela lê só as conversas do último dia: criar um quadro não relê as conversas antigas. Para pôr
+            leads antigos, use o <b>+</b> da coluna.
+          </li>
+          <li>
+            Usa a IA da conta (conta no consumo do mês). Com a IA desligada ou no limite do mês, a leitura
+            para e o quadro continua funcionando à mão.
+          </li>
+        </ul>
+        <h3>No dia a dia</h3>
+        <ul>
+          <li>
+            A sugestão da IA aparece tracejada na coluna sugerida. <b>Confirmar</b> põe o lead lá;{' '}
+            <b>Descartar</b> deixa onde estava.
+          </li>
+          <li>
+            Arraste o cartão para outra coluna para mover à mão, ou use o <b>+</b> da coluna para pôr um lead
+            do funil. Clique no cartão para abrir a ficha; <b>Conversa</b> abre o WhatsApp do lead.
+          </li>
+          <li>
+            Cada pessoa vê os cartões dos leads que ela vê no funil (quem trabalha só com a própria base vê só
+            os seus). Tudo o que entra ou muda de coluna fica anotado no histórico do lead.
+          </li>
+        </ul>
       </>
     ),
   },

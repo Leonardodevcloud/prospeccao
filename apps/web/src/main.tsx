@@ -97,6 +97,7 @@ const roteador = createBrowserRouter([
       { path: 'instagram/regra/:id', element: <InstagramRegra /> },
       { path: 'instagram/post/:midiaId', element: <InstagramPost /> },
       { path: 'funil', element: <Funil /> },
+      { path: 'quadros', lazy: async () => ({ Component: (await import('./paginas/Quadros')).Quadros }) },
       { path: 'relatorios', element: <Relatorios /> },
       { path: 'reunioes', element: <Reunioes /> },
       { path: 'ligacoes', lazy: async () => ({ Component: (await import('./paginas/Ligacoes')).Ligacoes }) },

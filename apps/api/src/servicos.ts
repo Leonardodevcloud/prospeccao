@@ -36,6 +36,7 @@ import {
 import { type ConfigIa, configIa, conversarJson, type PedidoConversa } from '@prospeccao/integrations/ia';
 import { extrairLeadsDoTexto, mapearColunasComIa } from '@prospeccao/integrations/importacao';
 import * as ors from '@prospeccao/integrations/ors';
+import { type EntradaGatilhos, lerGatilhos, type MovimentoConferido } from '@prospeccao/integrations/quadros';
 import { type EntradaResumoReuniao, resumirReuniao } from '@prospeccao/integrations/reuniao';
 import { type EntradaResumoLigacao, resumirLigacao } from '@prospeccao/integrations/telefonia';
 import {
@@ -158,6 +159,8 @@ export interface ServicosConta {
   reuniao?: { resumir(e: EntradaResumoReuniao): Promise<ResumoReuniao | null> } | null;
   /** IA que resume as ligações (o que foi dito, clima, o que fazer no lead). */
   ligacao?: { resumir(e: EntradaResumoLigacao): Promise<ResumoLigacao | null> } | null;
+  /** IA que lê as conversas paradas e põe os leads nas colunas dos quadros (gatilhos). */
+  quadros?: { ler(e: EntradaGatilhos): Promise<MovimentoConferido[]> } | null;
   /** Endereço → coordenadas (bases de operação). */
   geocodificar: ((endereco: string) => Promise<{ lat: number; lng: number } | null>) | null;
   /**
@@ -264,6 +267,7 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
     assistente: iaCfg ? (p) => conversarJson(iaCfg, p) : null,
     reuniao: iaCfg ? { resumir: (e) => resumirReuniao(iaCfg, e) } : null,
     ligacao: iaCfg ? { resumir: (e) => resumirLigacao(iaCfg, e) } : null,
+    quadros: iaCfg ? { ler: (e) => lerGatilhos(iaCfg, e) } : null,
     geocodificar: c.ors
       ? async (endereco) => {
           const r = await ors.geocodificar({ apiKey: c.ors!.apiKey }, endereco);

@@ -54,6 +54,7 @@ import { rotasNotificacoes } from './modulos/notificacoes/rotas.js';
 import { rotasOrganizacao } from './modulos/organizacao/rotas.js';
 import { rotasPlaces } from './modulos/places/rotas.js';
 import { rotasPlataforma } from './modulos/plataforma/rotas.js';
+import { rotasQuadros } from './modulos/quadros/rotas.js';
 import { rotasRelatorios } from './modulos/relatorios/rotas.js';
 import { definirEnderecoDasSalas } from './modulos/reunioes/repositorio.js';
 import { rotasAvisoVideo, rotasReunioes, rotasSalaPublica } from './modulos/reunioes/rotas.js';
@@ -147,6 +148,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/bases', adminParaAlterar, rotasBases(deps));
   protegidas.use('/empresas', rotasEmpresas(deps));
   protegidas.use('/funil', rotasFunil(deps));
+  protegidas.use('/quadros', rotasQuadros(deps));
   protegidas.use('/agente', rotasAgente(deps));
   protegidas.use('/relatorios', rotasRelatorios(deps));
   protegidas.use('/importacoes', adminParaAlterar, rotasImportacoes(deps));

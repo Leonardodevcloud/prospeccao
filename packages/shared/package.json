@@ -23,6 +23,7 @@
     "./fundos": "./src/fundos.ts",
     "./instagram": "./src/instagram.ts",
     "./ligacoes": "./src/ligacoes.ts",
+    "./quadros": "./src/quadros.ts",
     "./integracoes": "./src/integracoes.ts",
     "./assinatura": "./src/assinatura.ts",
     "./consumo": "./src/consumo.ts",

@@ -14877,3 +14877,113 @@ fieldset.assinar__formas {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
   gap: 4px var(--space-3);
 }
+
+/* ---------- Quadros com gatilhos da IA ---------- */
+.quadros__barra {
+  margin-bottom: var(--space-3);
+  align-items: center;
+}
+.quadros__estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  margin-left: auto;
+}
+.quadros__sugestoes {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+.cartao--quadro[data-sugestao] {
+  border-style: dashed;
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.cartao--quadro .etiqueta {
+  justify-self: start;
+}
+.cartao--quadro .cartao__acoes {
+  justify-content: flex-start;
+}
+.cartao--quadro .cartao__acoes .pp-btn {
+  flex: 0 0 auto;
+}
+.coluna__dica svg {
+  vertical-align: -1px;
+}
+.quadros__leads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.quadros__lead {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+}
+.quadros__lead:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+.quadros__lead:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.quadros__modelos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+.quadros__modo {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 0 28px;
+  border: 0;
+}
+.quadros__colunas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.quadros__coluna {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cor-etapa, var(--line-strong));
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.quadros__coluna textarea {
+  width: 100%;
+  resize: vertical;
+}
+@media (max-width: 640px) {
+  .quadros__estado {
+    margin-left: 0;
+  }
+}
