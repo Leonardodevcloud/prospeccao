@@ -22,6 +22,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router';
 import { api, ErroApi } from '../api';
+import { ConversaComOTime, PedirAoTime, useConversaComOTime } from '../carrossel/Conversa';
 import {
   type IdentidadeDaConta,
   logosDaIdentidade,
@@ -31,7 +32,7 @@ import {
   useSituacaoCarrosseis,
 } from '../carrossel/dados';
 import { SlideHtml } from '../carrossel/SlideHtml';
-import { AvisosDoRevisor, PainelTime, PedirAoRedator } from '../carrossel/Time';
+import { AvisosDoRevisor, PainelTime } from '../carrossel/Time';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
@@ -164,9 +165,10 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
   const { c, d } = props;
   const [r, setR] = useState<Rascunho>(() => rascunhoDe(c));
   const [atual, setAtual] = useState(0);
-  const [aba, setAba] = useState<'slide' | 'legenda' | 'carrossel' | 'time'>('slide');
+  const [aba, setAba] = useState<'slide' | 'legenda' | 'carrossel' | 'time' | 'conversa'>('slide');
   const situacao = useSituacaoCarrosseis();
   const iaLigada = !!situacao.data?.ia.ligada;
+  const conversa = useConversaComOTime(c.id, iaLigada);
   // O que o revisor deixou para decidir: a decisão vai para o servidor, a sugestão entra no rascunho.
   const [relatorio, setRelatorio] = useState<RelatorioTime | null>(c.relatorio);
   const decidir = useMutation({
@@ -291,6 +293,30 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
       slides: x.slides.map((y, j) => (j === i ? { ...y, titulo: g.slice(0, 160) } : y)),
     }));
     setAtual(i);
+    setAba('slide');
+  };
+
+  const desenhar = (slides: SlideCarrossel[]) =>
+    slides.map(
+      (x, i) =>
+        montarSlide({
+          slide: x,
+          indice: i,
+          total: slides.length,
+          identidade,
+          estilo: r.estilo,
+          foto: x.fotoId && MODELO[x.modelo].foto ? urlFoto(x.fotoId) : null,
+          ...logos,
+        }).no,
+    );
+  // A proposta aplicada entra no rascunho (e o editor salva sozinho, como qualquer mudança).
+  const aplicarDoTime = (novo: { slides: SlideCarrossel[]; legenda: string }) => {
+    setR((x) => ({ ...x, slides: novo.slides, legenda: novo.legenda }));
+    setAtual((i) => Math.min(i, novo.slides.length - 1));
+  };
+  const verSlide = (id: string) => {
+    const i = r.slides.findIndex((x) => x.id === id);
+    if (i >= 0) setAtual(i);
     setAba('slide');
   };
 
@@ -477,6 +503,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                 ['legenda', 'Legenda'],
                 ['carrossel', 'Estilo'],
                 ...(relatorio ? ([['time', 'Time de IA']] as const) : []),
+                ...(iaLigada && !s.travado ? ([['conversa', 'Conversa']] as const) : []),
               ] as const
             ).map(([idAba, rotulo]) => (
               <button
@@ -488,6 +515,14 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                 onClick={() => setAba(idAba)}
               >
                 {rotulo}
+                {idAba === 'conversa' && (conversa.aberta || conversa.pensando) && (
+                  <>
+                    <span className="pipelines__ponto" aria-hidden="true" />
+                    <span className="pp-sr">
+                      {conversa.aberta ? '(proposta esperando)' : '(o time está respondendo)'}
+                    </span>
+                  </>
+                )}
               </button>
             ))}
           </div>
@@ -507,15 +542,19 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                   aoModelo={trocarModelo}
                 />
                 {iaLigada && !s.travado && (
-                  <PedirAoRedator
+                  <PedirAoTime
                     key={slide.id}
-                    carrosselId={c.id}
-                    slides={r.slides}
+                    conversa={conversa}
                     indice={indice}
-                    estilo={r.estilo}
-                    aoTrocar={(novo) =>
-                      setR((x) => ({ ...x, slides: x.slides.map((y, i) => (i === indice ? novo : y)) }))
-                    }
+                    aoPedir={(p) => {
+                      conversa.pedir.mutate({
+                        alcance: 'slide',
+                        slideId: slide.id,
+                        ...p,
+                        estado: { slides: r.slides, legenda: r.legenda, estilo: r.estilo },
+                      });
+                      setAba('conversa');
+                    }}
                   />
                 )}
               </>
@@ -529,6 +568,15 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                 />
                 <PainelLegenda legenda={r.legenda} aoMudar={(legenda) => setR({ ...r, legenda })} />
               </>
+            ) : aba === 'conversa' && iaLigada && !s.travado ? (
+              <ConversaComOTime
+                conversa={conversa}
+                estado={{ slides: r.slides, legenda: r.legenda, estilo: r.estilo }}
+                slideAtual={{ id: slide.id, indice }}
+                desenhar={desenhar}
+                aoAplicar={aplicarDoTime}
+                aoVerSlide={verSlide}
+              />
             ) : aba === 'time' && relatorio ? (
               <PainelTime r={relatorio} aoUsarGancho={usarGancho} travado={s.travado} />
             ) : (

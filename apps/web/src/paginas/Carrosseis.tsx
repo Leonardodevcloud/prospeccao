@@ -136,10 +136,10 @@ function ModuloFora() {
       </h1>
       <p className="fora-plano__texto">{m.descricao}</p>
       <p className="fora-plano__texto fora-plano__plano">
-        <b>É um módulo à parte.</b> Fale com a gente para liberar na sua conta.
+        <b>É um módulo à parte</b>, sem limite de carrosséis. O preço aparece ao assinar.
       </p>
-      <Button variant="secondary" href="/plano">
-        Ver Meu plano
+      <Button variant="primary" href="/plano/assinar">
+        Assinar o módulo
       </Button>
     </section>
   );

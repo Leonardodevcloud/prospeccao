@@ -1,6 +1,7 @@
 import {
   type EstiloCarrossel,
   type IdentidadeCarrossel,
+  MAX_SLIDES,
   MODELO,
   MODELOS,
   type ModeloSlide,
@@ -8,6 +9,7 @@ import {
   type SlideCarrossel,
 } from '@prospeccao/shared/carrosseis';
 import {
+  type AlcanceConversa,
   type AvisoTime,
   botaoDaChamada,
   CAMPOS_SUGESTAO,
@@ -18,9 +20,12 @@ import {
   type CriterioRevisor,
   conferirPromocao,
   type DivulgarEntrada,
+  type EstadoCarrossel,
   type EtapaTime,
   limitesParaORedator,
   MAX_VOLTAS_REVISOR,
+  type MudancaConversa,
+  mudancasEntre,
   OBJETIVO,
   type PedidoTime,
   type RelatorioTime,
@@ -130,13 +135,17 @@ function blocoDaMarca(e: EntradaTime): string {
     .join('\n');
 }
 
-function blocoDoPedido(e: EntradaTime): string {
+function blocoDoPedido(
+  e: Pick<EntradaTime, 'pedido' | 'divulgar' | 'hoje' | 'estilo' | 'identidade'>,
+): string {
   const p = e.pedido;
   const d = e.divulgar;
   const linhas = [
     `HOJE: ${e.hoje}`,
     `OBJETIVO: ${OBJETIVO[p.objetivo].nome} (${OBJETIVO[p.objetivo].dica})`,
-    p.assunto ? `PEDIDO DE QUEM CRIOU: ${p.assunto}` : '',
+    p.assunto
+      ? `INSTRUÇÕES DE QUEM CRIOU (siga: o que pede para ter tem que aparecer; o que pede para não ter não aparece): ${p.assunto}`
+      : '',
     d
       ? [
           `O QUE DIVULGAR (${ROTULO_DIVULGAR[d.tipo]}): ${d.titulo}`,
@@ -523,6 +532,25 @@ interface Revisao {
   aprovado: boolean;
 }
 
+/**
+ * Os fatos que o revisor listou e que não têm um trecho que esteja mesmo na fonte (o revisor às vezes
+ * "cita" o que não leu): esses não valem.
+ */
+function fatosSemFonte(brutos: unknown, fontes: FonteDoTime[]): { slide: number; frase: string }[] {
+  const porRotulo = new Map(fontes.map((f) => [f.rotulo.toLowerCase(), f]));
+  const sem: { slide: number; frase: string }[] = [];
+  for (const f of (Array.isArray(brutos) ? brutos : []) as Record<string, unknown>[]) {
+    const frase = String(f.frase ?? '').trim();
+    if (!frase) continue;
+    const fonte =
+      porRotulo.get(String(f.fonte ?? '').toLowerCase()) ??
+      fontes.find((x) => trechoNaFonte(String(f.trecho ?? ''), x.texto));
+    if (!(fonte && f.trecho && trechoNaFonte(String(f.trecho), fonte.texto)))
+      sem.push({ slide: Math.round(Number(f.slide) || 0), frase });
+  }
+  return sem;
+}
+
 function lerRevisao(
   d: Record<string, unknown>,
   total: number,
@@ -552,23 +580,15 @@ function lerRevisao(
     }))
     .filter((a) => a.problema)
     .slice(0, 20);
-  // Fato que não tem trecho que esteja mesmo na fonte: não vale (o revisor às vezes "cita" o que não leu).
-  const porRotulo = new Map(fontes.map((f) => [f.rotulo.toLowerCase(), f]));
-  for (const f of (Array.isArray(d.fatos) ? d.fatos : []) as Record<string, unknown>[]) {
-    const frase = String(f.frase ?? '').trim();
-    if (!frase) continue;
-    const fonte =
-      porRotulo.get(String(f.fonte ?? '').toLowerCase()) ??
-      fontes.find((x) => trechoNaFonte(String(f.trecho ?? ''), x.texto));
-    const ok = !!fonte && !!f.trecho && trechoNaFonte(String(f.trecho), fonte.texto);
-    if (!ok)
-      ajustes.push({
-        slide: Math.max(0, Math.min(total, Math.round(Number(f.slide) || 0))),
-        campo: Number(f.slide) ? 'texto' : 'legenda',
-        tipo: 'fato',
-        problema: `"${frase.slice(0, 200)}" é uma afirmação sem fonte no cérebro da marca. Tire ou diga de um jeito que não afirme o fato.`,
-        sugestao: null,
-      });
+  for (const f of fatosSemFonte(d.fatos, fontes)) {
+    const frase = f.frase;
+    ajustes.push({
+      slide: Math.max(0, Math.min(total, Math.round(Number(f.slide) || 0))),
+      campo: Number(f.slide) ? 'texto' : 'legenda',
+      tipo: 'fato',
+      problema: `"${frase.slice(0, 200)}" é uma afirmação sem fonte no cérebro da marca. Tire ou diga de um jeito que não afirme o fato.`,
+      sugestao: null,
+    });
   }
   for (const p of problemas)
     ajustes.push({
@@ -814,74 +834,328 @@ export async function trabalharNoCarrossel(
   };
 }
 
-/* ───────────────────────────── Pedido ao redator num slide ───────────────────────────── */
+/* ───────────────────────────── A conversa com o time ───────────────────────────── */
 
-const ESQUEMA_UM_SLIDE = {
-  type: 'object',
-  properties: { slide: ESQUEMA_SLIDE, observacao: { type: 'string' } },
-  required: ['slide'],
-};
-
-export interface EntradaSlide
-  extends Omit<EntradaTime, 'pedido' | 'postsQueFuncionaram' | 'anteriores' | 'fotos'> {
+export interface EntradaConversa extends Omit<EntradaTime, 'pedido' | 'postsQueFuncionaram' | 'anteriores'> {
   pedido: Pick<PedidoTime, 'objetivo' | 'chamada' | 'palavra'> & { assunto: string };
-  slides: SlideCarrossel[];
-  indice: number;
+  /** Como o carrossel está na tela agora. */
+  atual: EstadoCarrossel;
+  alcance: AlcanceConversa;
+  slideId: string | null;
   instrucao: string;
+  /** As últimas mensagens (para entender um "agora tira o número"). */
+  historico: { autor: 'pessoa' | 'time'; texto: string }[];
 }
 
-/** Reescreve um slide com o pedido da pessoa (no mesmo modelo) e confere se cabe; até 2 tentativas. */
-export async function refazerSlide(
+export interface ResultadoConversa {
+  resposta: string;
+  depois: EstadoCarrossel;
+  mudancas: MudancaConversa[];
+  /** O que o diretor de arte e o revisor ainda acharam na proposta. */
+  avisos: string[];
+  uso: UsoClaude;
+  custoUsd: number;
+}
+
+const ESQUEMA_CONVERSA = {
+  type: 'object',
+  properties: {
+    resposta: {
+      type: 'string',
+      description:
+        'Para a pessoa, em uma ou duas frases: o que você mudou (ou por que não mudou). Sem repetir os textos.',
+    },
+    slides: {
+      type: 'array',
+      description: 'Os slides como devem ficar (veja as regras do alcance).',
+      items: {
+        type: 'object',
+        properties: {
+          id: {
+            type: ['string', 'null'],
+            description: 'O id do slide que já existe; null para um slide novo.',
+          },
+          igual: { type: 'boolean', description: 'true: o slide fica exatamente como está (só o id basta).' },
+          fotoId: { type: ['integer', 'null'], description: 'Só para slide novo com foto.' },
+          ...ESQUEMA_SLIDE.properties,
+        },
+        required: ['id'],
+      },
+    },
+    legenda: {
+      type: ['string', 'null'],
+      description: 'A legenda inteira como deve ficar (com as hashtags no fim), ou null se não muda.',
+    },
+  },
+  required: ['resposta'],
+};
+
+const ESQUEMA_CONFERENCIA = {
+  type: 'object',
+  properties: {
+    problemas: {
+      type: 'array',
+      description: 'Só o que precisa mudar antes de publicar (no máximo 5). Gosto pessoal não entra.',
+      items: {
+        type: 'object',
+        properties: {
+          slide: { type: 'integer', description: 'Número do slide (0 = a legenda).' },
+          problema: { type: 'string' },
+        },
+        required: ['slide', 'problema'],
+      },
+    },
+    fatos: ESQUEMA_REVISAO.properties.fatos,
+  },
+  required: ['problemas', 'fatos'],
+};
+
+const REGRAS_ALCANCE: Record<AlcanceConversa, string> = {
+  slide:
+    'ALCANCE: SÓ O SLIDE MARCADO. Devolva em "slides" um item só, com o id desse slide. Pode trocar o modelo se o pedido pedir. Não mexa na legenda (legenda null).',
+  carrossel:
+    'ALCANCE: O CARROSSEL INTEIRO. Devolva em "slides" TODOS os slides na ordem final: os que ficam iguais só com o id e "igual": true; os que mudam com o id e o conteúdo novo; os novos com id null. Slide que não aparece na lista sai. Até 10 slides. Se o pedido mexer no que a legenda diz, devolva a legenda nova; senão, null.',
+  legenda: 'ALCANCE: SÓ A LEGENDA. Devolva a legenda inteira em "legenda" e não devolva slides.',
+};
+
+function mensagemEditor(e: EntradaConversa, base: EstadoCarrossel, naoCoube: string[]): string {
+  const alvo = e.alcance === 'slide' ? base.slides.findIndex((s) => s.id === e.slideId) : -1;
+  const comId = JSON.stringify(
+    base.slides.map((s, i) => {
+      const d = MODELO[s.modelo];
+      const o: Record<string, unknown> = { slide: i + 1, id: s.id, modelo: s.modelo };
+      for (const c of d.campos) o[c.campo] = s[c.campo];
+      if (d.itens) o.itens = s.itens;
+      if (d.colunas) o.colunas = s.colunas;
+      if (s.fotoId) o.comFoto = true;
+      return o;
+    }),
+    null,
+    1,
+  );
+  const conversa = e.historico
+    .slice(-6)
+    .map((m) => `${m.autor === 'pessoa' ? 'PESSOA' : 'TIME'}: ${m.texto.slice(0, 300)}`);
+  return [
+    'Você é o REDATOR, agora conversando com quem vai publicar o carrossel. Faça exatamente o que a pessoa pediu, sem mexer no que ela não pediu. As regras do manual continuam valendo (nada de fato sem fonte).',
+    '',
+    blocoDoPedido({
+      ...e,
+      pedido: { ...e.pedido, divulgarId: null, slides: null, estilo: null, usarFotos: true },
+    }),
+    '',
+    REGRAS_ALCANCE[e.alcance],
+    alvo >= 0 ? `O SLIDE MARCADO: slide ${alvo + 1} (id ${e.slideId}).` : '',
+    '',
+    conversa.length ? `A CONVERSA ATÉ AQUI:\n${conversa.join('\n')}` : '',
+    `O PEDIDO AGORA: ${e.instrucao}`,
+    naoCoube.length ? `\nNA SUA PROPOSTA ANTERIOR NÃO COUBE (encurte):\n${lista(naoCoube)}` : '',
+    '',
+    'O CARROSSEL COMO ESTÁ:',
+    comId,
+    '',
+    `LEGENDA COMO ESTÁ:\n${base.legenda || '(vazia)'}`,
+    '',
+    'LIMITES DE CADA MODELO (escreva abaixo do limite):',
+    limitesParaORedator(),
+    e.alcance === 'carrossel' && e.fotos.length
+      ? `\nFOTOS DA EMPRESA (para slide novo com foto, use o id): ${e.fotos.map((f) => `${f.id}: ${f.nome}`).join('; ')}`
+      : '',
+    '',
+    '- Se o pedido não der para fazer sem inventar fato, não invente: explique na resposta o que precisa estar no cérebro da marca.',
+    '- Se o pedido pedir algo que já está assim, diga na resposta e devolva sem mudança.',
+  ]
+    .filter((x) => x !== '')
+    .join('\n');
+}
+
+function lerProposta(
+  d: Record<string, unknown>,
+  e: EntradaConversa,
+  base: EstadoCarrossel,
+  novoId: () => string,
+): EstadoCarrossel {
+  const porId = new Map(base.slides.map((s) => [s.id, s]));
+  const botao = botaoDaChamada(e.pedido.chamada, e.pedido.palavra);
+  const fotos = new Set(e.fotos.map((f) => f.id));
+  const ler = (b: Record<string, unknown>): SlideCarrossel => {
+    const velho = typeof b.id === 'string' ? porId.get(b.id) : undefined;
+    if (velho && b.igual === true) return velho;
+    const modelo: ModeloSlide = (MODELOS as readonly string[]).includes(String(b.modelo))
+      ? (b.modelo as ModeloSlide)
+      : (velho?.modelo ?? 'texto');
+    const s = slideDoTime(b, modelo, velho?.id ?? novoId());
+    const pedida = Number(b.fotoId);
+    const fotoId = MODELO[modelo].foto ? (velho ? velho.fotoId : fotos.has(pedida) ? pedida : null) : null;
+    const r: SlideCarrossel = { ...s, fotoId, fundo: velho?.fundo ?? 'auto' };
+    if (botao && modelo === 'chamada') r.botao = botao;
+    return r;
+  };
+  const brutos = (Array.isArray(d.slides) ? d.slides : []).filter(
+    (x): x is Record<string, unknown> => !!x && typeof x === 'object',
+  );
+  let slides = base.slides;
+  if (e.alcance === 'slide' && e.slideId && porId.has(e.slideId)) {
+    const b = brutos.find((x) => x.id === e.slideId) ?? brutos[0];
+    if (b) slides = base.slides.map((s) => (s.id === e.slideId ? ler({ ...b, id: e.slideId }) : s));
+  } else if (e.alcance === 'carrossel' && brutos.length) {
+    const vistos = new Set<string>();
+    const novos: SlideCarrossel[] = [];
+    for (const b of brutos) {
+      const s = ler(b);
+      if (vistos.has(s.id)) continue;
+      vistos.add(s.id);
+      novos.push(s);
+    }
+    if (novos.length) slides = novos.slice(0, MAX_SLIDES);
+  }
+  let legenda = base.legenda;
+  if (e.alcance !== 'slide' && typeof d.legenda === 'string' && d.legenda.trim())
+    legenda = d.legenda
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+      .slice(0, 2200);
+  return { slides, legenda };
+}
+
+/** Os slides que a proposta mexeu (novos ou alterados). */
+const idsMexidos = (m: MudancaConversa[]) =>
+  new Set(m.filter((x) => x.tipo === 'mudou' || x.tipo === 'novo').map((x) => x.slideId));
+
+/** O que não coube (só nos slides que mudaram) e a promoção que deixou de bater com esta proposta. */
+function encaixeDaProposta(e: EntradaConversa, depois: EstadoCarrossel, mudancas: MudancaConversa[]) {
+  const mexidos = idsMexidos(mudancas);
+  const antesPromo = new Set(
+    conferirEncaixe(e.atual.slides, e.atual.legenda, e)
+      .filter((p) => p.tipo === 'promocao')
+      .map((p) => p.texto),
+  );
+  return conferirEncaixe(depois.slides, depois.legenda, e).filter((p) =>
+    p.tipo === 'promocao' ? !antesPromo.has(p.texto) : mexidos.has(depois.slides[p.slide - 1]?.id ?? ''),
+  );
+}
+
+let sequencia = 0;
+const idDeSlideNovo = () => `c${Date.now().toString(36)}${(sequencia++).toString(36)}`;
+
+/**
+ * Um pedido da pessoa no editor: o redator propõe a mudança (no alcance escolhido), o diretor de
+ * arte confere se cabe (uma volta para encurtar) e o revisor confere o que mudou (fatos com fonte,
+ * português, tom). Nada é salvo aqui: a proposta volta para a pessoa aplicar ou descartar.
+ */
+export async function conversarComOTime(
   claude: ClienteClaude,
-  e: EntradaSlide,
-): Promise<{ slide: SlideCarrossel; avisos: string[]; uso: UsoClaude; custoUsd: number }> {
-  const atual = e.slides[e.indice]!;
+  e: EntradaConversa,
+  novoId: () => string = idDeSlideNovo,
+): Promise<ResultadoConversa> {
   const entradaTime: EntradaTime = {
     ...e,
     pedido: { ...e.pedido, divulgarId: e.divulgar?.id ?? null, slides: null, estilo: null, usarFotos: true },
     postsQueFuncionaram: [],
     anteriores: [],
-    fotos: [],
   };
   let uso = USO_ZERO;
   let custo = 0;
-  let problemas: string[] = [];
-  let slide = atual;
-  for (let tentativa = 0; tentativa < 2; tentativa++) {
+  const pedir = async (
+    agente: string,
+    mensagem: string,
+    ferramenta: { nome: string; descricao: string; esquema: Record<string, unknown> },
+    maxTokens: number,
+    temperatura: number,
+  ) => {
     const r = await claude.pedir({
-      agente: 'redator',
+      agente,
       sistema: sistema(entradaTime),
-      mensagem: [
-        `Você é o REDATOR. Reescreva SÓ o slide ${e.indice + 1} de ${e.slides.length}, no mesmo modelo (${atual.modelo}).`,
-        '',
-        blocoDoPedido(entradaTime),
-        '',
-        `O PEDIDO: ${e.instrucao}`,
-        problemas.length ? `NÃO COUBE NA TENTATIVA ANTERIOR:\n${lista(problemas)}` : '',
-        '',
-        'O CARROSSEL (para o slide continuar combinando com os outros):',
-        jsonDosSlides(e.slides),
-        '',
-        'LIMITES DO MODELO:',
-        limitesParaORedator([atual.modelo]),
-      ]
-        .filter((x) => x !== '')
-        .join('\n'),
-      ferramenta: { nome: 'slide', descricao: 'O slide reescrito.', esquema: ESQUEMA_UM_SLIDE },
-      maxTokens: 1500,
-      temperatura: 0.7,
+      mensagem,
+      ferramenta,
+      maxTokens,
+      temperatura,
     });
     uso = somarUso(uso, r.uso);
     custo += r.custoUsd;
-    const novo = slideDoTime((r.dados.slide ?? {}) as Record<string, unknown>, atual.modelo, atual.id);
-    slide = { ...novo, fotoId: atual.fotoId, fundo: atual.fundo };
-    const botao = botaoDaChamada(e.pedido.chamada, e.pedido.palavra);
-    if (botao && slide.modelo === 'chamada') slide.botao = botao;
-    const outros = e.slides.map((s, i) => (i === e.indice ? slide : s));
-    problemas = conferirEncaixe(outros, '', { ...e, divulgar: null })
-      .filter((p) => p.slide === e.indice + 1)
-      .map((p) => p.texto);
-    if (!problemas.length) break;
+    return r.dados;
+  };
+  const ferramenta = { nome: 'proposta', descricao: 'A mudança pedida.', esquema: ESQUEMA_CONVERSA };
+  const tokens = e.alcance === 'carrossel' ? 6000 : 2000;
+
+  let d = await pedir('redator', mensagemEditor(e, e.atual, []), ferramenta, tokens, 0.6);
+  let resposta = String(d.resposta ?? '')
+    .trim()
+    .slice(0, 600);
+  let depois = lerProposta(d, e, e.atual, novoId);
+  let mudancas = mudancasEntre(e.atual, depois);
+  const problemas = encaixeDaProposta(e, depois, mudancas).filter((p) => p.tipo === 'tamanho');
+
+  // O diretor de arte: o que não coube volta uma vez para o redator encurtar.
+  if (problemas.length) {
+    const naoCoube = problemas.map((p) => `slide ${p.slide}: ${p.texto}`);
+    d = await pedir('redator', mensagemEditor(e, depois, naoCoube), ferramenta, tokens, 0.4);
+    const segunda = lerProposta(d, { ...e, atual: depois }, depois, novoId);
+    depois = segunda;
+    mudancas = mudancasEntre(e.atual, depois);
+    resposta =
+      String(d.resposta ?? '')
+        .trim()
+        .slice(0, 600) || resposta;
   }
-  return { slide, avisos: problemas, uso, custoUsd: Math.round(custo * 1e6) / 1e6 };
+  const encaixe = encaixeDaProposta(e, depois, mudancas);
+  const avisos = encaixe.map((p) => (p.slide ? `Slide ${p.slide}: ${p.texto}` : p.texto));
+
+  // O revisor confere só o que mudou.
+  const mexidos = idsMexidos(mudancas);
+  const legendaMudou = mudancas.some((m) => m.tipo === 'legenda');
+  if (mexidos.size || legendaMudou) {
+    const conferir = depois.slides.map((s, i) => ({ s, i })).filter((x) => mexidos.has(x.s.id));
+    const c = await pedir(
+      'revisor',
+      [
+        'Você é o REVISOR. A pessoa pediu uma mudança e o redator propôs o que está abaixo. Confira SÓ o que mudou: erro de português, fato sobre a empresa sem fonte, tom fora da marca, NUNCA DIZER, chamada confusa.',
+        '',
+        `O PEDIDO: ${e.instrucao}`,
+        '',
+        conferir.length
+          ? `SLIDES QUE MUDARAM (o número é a posição no carrossel):\n${conferir.map((x) => `${x.i + 1}. ${jsonDosSlides([x.s])}`).join('\n')}`
+          : '',
+        legendaMudou ? `LEGENDA NOVA:\n${depois.legenda}` : '',
+        '',
+        'FONTES QUE OS FATOS PODEM CITAR:',
+        e.fontes.map((f) => `[${f.rotulo}]\n${f.texto.slice(0, 4000)}`).join('\n\n'),
+        '',
+        '- Em "fatos", liste toda afirmação sobre a empresa no que mudou e copie o trecho exato da fonte. Sem fonte, fonte e trecho ficam null.',
+        '- Se o que a pessoa pediu foi exatamente isso, não reclame da escolha dela; só do que está errado.',
+      ]
+        .filter((x) => x !== '')
+        .join('\n'),
+      {
+        nome: 'conferencia',
+        descricao: 'O que ainda precisa mudar e os fatos.',
+        esquema: ESQUEMA_CONFERENCIA,
+      },
+      2000,
+      0.2,
+    );
+    for (const p of (Array.isArray(c.problemas) ? c.problemas : []).slice(0, 5) as Record<
+      string,
+      unknown
+    >[]) {
+      const t = String(p.problema ?? '')
+        .trim()
+        .slice(0, 300);
+      const n = Math.round(Number(p.slide) || 0);
+      if (t) avisos.push(n ? `Slide ${n}: ${t}` : `Legenda: ${t}`);
+    }
+    for (const f of fatosSemFonte(c.fatos, e.fontes))
+      avisos.push(
+        `${f.slide ? `Slide ${f.slide}` : 'Legenda'}: "${f.frase.slice(0, 160)}" não tem fonte no cérebro da marca.`,
+      );
+  }
+  if (!resposta) resposta = mudancas.length ? 'Pronto, veja a proposta.' : 'Não precisei mudar nada.';
+  return {
+    resposta,
+    depois,
+    mudancas,
+    avisos: [...new Set(avisos)].slice(0, 10),
+    uso,
+    custoUsd: Math.round(custo * 1e6) / 1e6,
+  };
 }

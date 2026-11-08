@@ -6,6 +6,7 @@ import {
   MODELOS,
   type ModeloSlide,
   type SlideCarrossel,
+  slideEntrada,
   slideNovo,
 } from './carrosseis.js';
 
@@ -244,7 +245,8 @@ export const PALAVRA_COMENTAR = /^[\p{L}\p{N}]{2,20}$/u;
 
 export const pedidoTimeEntrada = z
   .object({
-    assunto: z.string().trim().max(500, 'Use até 500 letras.').default(''),
+    /** Sobre o que é e o que não pode faltar (vai para o time como o pedido de quem criou). */
+    assunto: z.string().trim().max(1000, 'Use até 1.000 letras.').default(''),
     divulgarId: z.number().int().positive().nullable().default(null),
     objetivo: z.enum(OBJETIVOS_CARROSSEL).default('ensinar'),
     /** null: o time decide (5 a 10). */
@@ -276,16 +278,6 @@ export const PEDIDO_RAPIDO: Record<PedidoRapido, { rotulo: string; instrucao: st
     instrucao: 'Diga a mesma ideia de outro jeito, com outras palavras.',
   },
 };
-
-export const pedidoSlideEntrada = z
-  .object({
-    rapido: z.enum(PEDIDOS_RAPIDOS).nullable().default(null),
-    texto: z.string().trim().max(300).default(''),
-  })
-  .refine((d) => d.rapido || d.texto.length >= 3, {
-    message: 'Diga o que mudar no slide.',
-    path: ['texto'],
-  });
 
 /* ───────────────────────────── As etapas do time ───────────────────────────── */
 
@@ -475,4 +467,173 @@ export function slideDoTime(bruto: Record<string, unknown>, modelo: ModeloSlide,
 export function botaoDaChamada(chamada: ChamadaFinal, palavra: string): string | null {
   if (chamada === 'comentar' && palavra) return `Comente ${palavra.toUpperCase()}`;
   return null;
+}
+
+/* ───────────────────────────── A conversa com o time ───────────────────────────── */
+
+export const ALCANCES_CONVERSA = ['slide', 'carrossel', 'legenda'] as const;
+export type AlcanceConversa = (typeof ALCANCES_CONVERSA)[number];
+export const ROTULO_ALCANCE: Record<AlcanceConversa, string> = {
+  slide: 'Este slide',
+  carrossel: 'Carrossel inteiro',
+  legenda: 'Legenda',
+};
+
+export const conversaEntrada = z
+  .object({
+    alcance: z.enum(ALCANCES_CONVERSA),
+    slideId: z.string().trim().max(40).nullable().default(null),
+    texto: z.string().trim().max(800, 'Use até 800 letras.').default(''),
+    rapido: z.enum(PEDIDOS_RAPIDOS).nullable().default(null),
+    /** Como o carrossel está na tela agora (com o que ainda não foi salvo). */
+    slides: z.array(slideEntrada).min(1).max(MAX_SLIDES),
+    legenda: z.string().max(2200).default(''),
+    estilo: z.enum(ESTILOS),
+  })
+  .refine((d) => d.rapido || d.texto.length >= 3, { message: 'Diga o que mudar.', path: ['texto'] })
+  .refine((d) => !d.rapido || d.alcance === 'slide', {
+    message: 'Os atalhos são para um slide.',
+    path: ['rapido'],
+  })
+  .refine((d) => d.alcance !== 'slide' || (d.slideId && d.slides.some((s) => s.id === d.slideId)), {
+    message: 'Escolha o slide.',
+    path: ['slideId'],
+  });
+export type ConversaEntrada = z.infer<typeof conversaEntrada>;
+
+/** O pedido como o time lê (o atalho vira a instrução dele; o texto da pessoa vem junto). */
+export function instrucaoDaConversa(d: Pick<ConversaEntrada, 'rapido' | 'texto'>): string {
+  return [d.rapido ? PEDIDO_RAPIDO[d.rapido].instrucao : '', d.texto].filter(Boolean).join(' ');
+}
+
+/** O pedido como aparece na conversa (o atalho com o nome do botão). */
+export function textoDoPedido(d: Pick<ConversaEntrada, 'rapido' | 'texto'>): string {
+  return [d.rapido ? PEDIDO_RAPIDO[d.rapido].rotulo : '', d.texto].filter(Boolean).join(' · ');
+}
+
+/** Aplicar, descartar ou desfazer (depois de aplicada: a tela volta o que estava antes). */
+export const decisaoConversaEntrada = z.object({ acao: z.enum(['aplicar', 'descartar', 'desfazer']) });
+
+/**
+ * Aplica a proposta no carrossel como está na tela. Se ninguém mexeu desde o pedido, fica igual à
+ * proposta. Se mexeu: um slide ou a legenda trocam só o que foi pedido; o carrossel inteiro troca
+ * tudo (a tela confirma antes, `mudouDesdeOPedido`).
+ */
+export function aplicarProposta(
+  m: Pick<MensagemConversa, 'alcance' | 'slideId' | 'proposta'>,
+  agora: EstadoCarrossel,
+  lado: 'depois' | 'antes' = 'depois',
+): EstadoCarrossel {
+  const p = m.proposta;
+  if (!p) return agora;
+  const alvo = p[lado];
+  if (m.alcance === 'legenda') return { ...agora, legenda: alvo.legenda };
+  if (m.alcance === 'slide') {
+    const novo = alvo.slides.find((s) => s.id === m.slideId);
+    return novo ? { ...agora, slides: agora.slides.map((s) => (s.id === m.slideId ? novo : s)) } : agora;
+  }
+  return { slides: alvo.slides, legenda: alvo.legenda };
+}
+
+/** O que a pessoa mudou na tela depois de pedir (no que a proposta vai trocar). */
+export function mudouDesdeOPedido(
+  m: Pick<MensagemConversa, 'alcance' | 'slideId' | 'proposta'>,
+  agora: EstadoCarrossel,
+): boolean {
+  const p = m.proposta;
+  if (!p) return false;
+  if (m.alcance === 'legenda') return p.antes.legenda.trim() !== agora.legenda.trim();
+  if (m.alcance === 'slide') {
+    return !mesmoSlide(
+      p.antes.slides.find((s) => s.id === m.slideId),
+      agora.slides.find((s) => s.id === m.slideId),
+    );
+  }
+  return mudancasEntre(p.antes, agora).length > 0;
+}
+
+export interface EstadoCarrossel {
+  slides: SlideCarrossel[];
+  legenda: string;
+}
+
+/** O que mudou de uma versão para a outra, em português (a resposta do time mostra). */
+export interface MudancaConversa {
+  tipo: 'mudou' | 'novo' | 'saiu' | 'ordem' | 'legenda';
+  slideId: string | null;
+  texto: string;
+}
+
+export interface MensagemConversa {
+  id: number;
+  autor: 'pessoa' | 'time';
+  texto: string;
+  alcance: AlcanceConversa;
+  slideId: string | null;
+  /** null: o pedido da pessoa, ou a resposta sem mudança. */
+  situacao: 'pensando' | 'proposta' | 'aplicada' | 'descartada' | 'desfeita' | 'erro' | null;
+  proposta: { antes: EstadoCarrossel; depois: EstadoCarrossel } | null;
+  mudancas: MudancaConversa[];
+  /** O que o revisor ainda achou na proposta (a pessoa decide se aplica assim). */
+  avisos: string[];
+  criadoEm: string;
+}
+
+const ROTULO_CAMPO: Record<string, string> = {
+  modelo: 'modelo',
+  sobretitulo: 'assunto',
+  titulo: 'título',
+  texto: 'texto',
+  destaque: 'número',
+  botao: 'botão',
+  itens: 'itens',
+  colunas: 'colunas',
+  fotoId: 'foto',
+  fundo: 'fundo',
+};
+
+/** Um campo do slide para comparar (a ordem das chaves muda quando passa pelo banco). */
+const valorDoCampo = (s: SlideCarrossel, k: keyof SlideCarrossel) =>
+  k === 'colunas' ? JSON.stringify(s.colunas.map((c) => [c.rotulo, c.texto])) : JSON.stringify(s[k] ?? null);
+
+/** O mesmo slide, campo a campo. */
+export function mesmoSlide(a: SlideCarrossel | undefined, b: SlideCarrossel | undefined): boolean {
+  if (!a || !b) return a === b;
+  return (['id', ...Object.keys(ROTULO_CAMPO)] as (keyof SlideCarrossel)[]).every(
+    (k) => valorDoCampo(a, k) === valorDoCampo(b, k),
+  );
+}
+
+/** As mudanças entre duas versões do carrossel (pelo identificador de cada slide). */
+export function mudancasEntre(antes: EstadoCarrossel, depois: EstadoCarrossel): MudancaConversa[] {
+  const m: MudancaConversa[] = [];
+  const porId = new Map(antes.slides.map((s, i) => [s.id, { s, i }]));
+  const ficaram = new Set(depois.slides.map((s) => s.id));
+  depois.slides.forEach((s, i) => {
+    const a = porId.get(s.id);
+    if (!a) {
+      m.push({ tipo: 'novo', slideId: s.id, texto: `Slide ${i + 1} novo (${MODELO[s.modelo].nome})` });
+      return;
+    }
+    const campos = (Object.keys(ROTULO_CAMPO) as (keyof SlideCarrossel)[]).filter(
+      (k) => valorDoCampo(a.s, k) !== valorDoCampo(s, k),
+    );
+    if (campos.length)
+      m.push({
+        tipo: 'mudou',
+        slideId: s.id,
+        texto: `Slide ${i + 1}: ${campos.map((k) => ROTULO_CAMPO[k]).join(', ')}`,
+      });
+  });
+  antes.slides.forEach((s, i) => {
+    if (!ficaram.has(s.id))
+      m.push({ tipo: 'saiu', slideId: s.id, texto: `Saiu o slide ${i + 1} (${MODELO[s.modelo].nome})` });
+  });
+  const ordemAntes = antes.slides.map((s) => s.id).filter((id) => ficaram.has(id));
+  const ordemDepois = depois.slides.map((s) => s.id).filter((id) => porId.has(id));
+  if (ordemAntes.join('|') !== ordemDepois.join('|'))
+    m.push({ tipo: 'ordem', slideId: null, texto: 'Mudou a ordem dos slides' });
+  if (antes.legenda.trim() !== depois.legenda.trim())
+    m.push({ tipo: 'legenda', slideId: null, texto: 'Legenda reescrita' });
+  return m;
 }

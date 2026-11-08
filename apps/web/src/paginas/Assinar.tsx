@@ -358,6 +358,16 @@ export function Assinar() {
                             {fmtNumero(tabela.pacoteMinutos)} por {fmtReais(tabela.pacotePreco)})
                           </span>
                         )}
+                        {m === 'carrosseis' && !incluso && (
+                          <span className="quieto">
+                            {' '}
+                            (
+                            {tabela.carrosseisMes == null
+                              ? 'carrosséis sem limite'
+                              : `${fmtNumero(tabela.carrosseisMes)} carrosséis por mês`}{' '}
+                            do time de IA)
+                          </span>
+                        )}
                         {m === 'agente_ia' && (
                           <span className="quieto">
                             {' '}

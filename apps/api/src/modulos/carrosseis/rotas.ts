@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { refazerSlide } from '@prospeccao/integrations/carrosseis';
 import { prepararImagem } from '@prospeccao/integrations/slides';
 import { AppError } from '@prospeccao/shared';
 import {
@@ -18,11 +17,10 @@ import {
 } from '@prospeccao/shared/carrosseis';
 import {
   avisoResolverEntrada,
+  conversaEntrada,
+  decisaoConversaEntrada,
   divulgarEntrada,
   dossieEntrada,
-  PEDIDO_RAPIDO,
-  pedidoSlideEntrada,
-  textoDoDossie,
 } from '@prospeccao/shared/carrosseis-time';
 import express, { type Request, type Response, Router } from 'express';
 import { strToU8, zipSync } from 'fflate';
@@ -35,6 +33,7 @@ import { rotaComModulo, temModulo } from '../../recursos.js';
 import * as marca from '../marca/repositorio.js';
 import { organizacaoDaConta } from '../plano/repositorio.js';
 import * as cerebro from './cerebro.js';
+import * as conversa from './conversa.js';
 import { desenhar, materialDaConta } from './desenho.js';
 import * as repo from './repositorio.js';
 import * as time from './time.js';
@@ -339,59 +338,25 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     res.json(await repo.atualizar(pool, idDaRota(req), { ...d, slides }));
   });
 
-  /**
-   * Pedido ao redator num slide ("mais curto", ou o que a pessoa escrever). Devolve o slide novo
-   * sem salvar: o editor troca e salva sozinho (assim não briga com o que está aberto na tela).
-   */
-  r.post('/:id/slides/:n/pedir', async (req, res) => {
-    const cfg = ia();
-    if (!cfg) throw new AppError(503, 'indisponivel', 'O time de IA ainda não foi ligado na plataforma.');
-    const d = corpo(
-      req,
-      z.object({
-        pedido: pedidoSlideEntrada,
-        slides: z.array(slideEntrada).min(1).max(MAX_SLIDES),
-        estilo: z.enum(ESTILOS),
-      }),
-    );
-    const c = await repo.carrossel(pool, idDaRota(req));
-    const n = Number(req.params.n);
-    if (!Number.isInteger(n) || !d.slides[n]) throw AppError.naoEncontrado('Slide');
-    const cb = await cerebro.cerebro(pool);
-    const empresa = await cerebro.nomeDaEmpresa(pool);
-    const { identidade } = await repo.identidade(pool);
-    const rel = c.relatorio;
-    const divulgar = rel?.divulgarId ? await cerebro.divulgar(pool, rel.divulgarId).catch(() => null) : null;
-    const instrucao = [d.pedido.rapido ? PEDIDO_RAPIDO[d.pedido.rapido].instrucao : '', d.pedido.texto]
-      .filter(Boolean)
-      .join(' ');
-    const pedidoCarrossel = {
-      objetivo: rel?.objetivo ?? ('ensinar' as const),
-      chamada: rel?.chamada ?? ('salvar' as const),
-      palavra: rel?.palavra ?? '',
-      assunto: rel?.assunto ?? c.titulo,
-    };
-    const r = await refazerSlide(cfg.cliente(pool, conta()), {
-      empresa,
-      dossieTexto: textoDoDossie(cb.dossie, empresa),
-      fontes: await cerebro.fontesParaOsFatos(pool, {
-        dossie: cb.dossie,
-        empresa,
-        divulgar,
-        assunto: pedidoCarrossel.assunto,
-      }),
-      identidade,
-      estilo: d.estilo,
-      divulgar,
-      pedido: pedidoCarrossel,
-      slides: d.slides,
-      indice: n,
-      instrucao,
-      hoje: new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full' }).format(
-        new Date(),
-      ),
-    });
-    res.json({ slide: r.slide, avisos: r.avisos });
+  /* ── A conversa com o time (o pedido de ajuste no editor) ── */
+
+  r.get('/:id/conversa', async (req, res) => {
+    const id = idDaRota(req);
+    await repo.carrossel(pool, id);
+    res.json({ mensagens: await conversa.historico(pool, id) });
+  });
+
+  /** O time responde em segundo plano: a tela pergunta a conversa até a resposta chegar. */
+  r.post('/:id/conversa', async (req, res) => {
+    const d = corpo(req, conversaEntrada);
+    res.status(202).json(await conversa.pedir(pool, ia(), deps.log, idDaRota(req), d));
+  });
+
+  r.post('/:id/conversa/:msg', async (req, res) => {
+    const { acao } = corpo(req, decisaoConversaEntrada);
+    const msg = Number(req.params.msg);
+    if (!Number.isInteger(msg) || msg <= 0) throw AppError.naoEncontrado('Mensagem');
+    res.json(await conversa.decidir(pool, idDaRota(req), msg, acao));
   });
 
   /** A pessoa decidiu um aviso do revisor (a sugestão, se usou, já foi aplicada no editor). */

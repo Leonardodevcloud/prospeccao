@@ -1,13 +1,14 @@
-import { IDENTIDADE_PADRAO } from '@prospeccao/shared/carrosseis';
+import { IDENTIDADE_PADRAO, slideNovo } from '@prospeccao/shared/carrosseis';
 import { pedidoTimeEntrada } from '@prospeccao/shared/carrosseis-time';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   type ClienteClaude,
+  conversarComOTime,
   criarClaude,
   custoUsd,
+  type EntradaConversa,
   type EntradaTime,
   type PedidoClaude,
-  refazerSlide,
   semDadosPessoais,
   trabalharNoCarrossel,
   USO_ZERO,
@@ -277,37 +278,156 @@ describe('o time de IA', () => {
     // "Foto" com uma foto que não existe vira texto.
     expect(r.slides.some((s) => s.modelo === 'foto')).toBe(false);
   });
+});
 
-  it('pedido ao redator num slide: mesmo modelo, a foto e o fundo continuam', async () => {
-    const { c, pedidos } = claudeFalso({
-      redator: [{ slide: { modelo: 'texto', titulo: 'Chiou, trocou', texto: 'Simples assim.' } }],
-    });
-    const e = entrada();
-    const slides = [
+describe('a conversa com o time', () => {
+  const base = (): EntradaConversa['atual'] => ({
+    slides: [
+      { ...slideNovo('capa', 's1'), titulo: 'Freio chiando?', texto: 'Veja o que fazer', fotoId: 3 },
       {
-        ...(
-          await trabalharNoCarrossel(
-            claudeFalso({
-              estrategista: [estrategia],
-              redator: [redacao()],
-              revisor: [{ notas: notas(5), ajustes: [], fatos: [] }],
-            }).c,
-            e,
-          )
-        ).slides[1]!,
-        fundo: 'escuro' as const,
+        ...slideNovo('texto', 's2'),
+        titulo: 'Chiado é aviso',
+        texto: 'A pastilha está no fim.',
+        fundo: 'escuro',
       },
-    ];
-    const r = await refazerSlide(c, {
-      ...e,
+      { ...slideNovo('chamada', 's3'), titulo: 'Quer a promoção?', botao: 'Comente FREIO' },
+    ],
+    legenda: 'Freio chiando? Veja o que fazer.\n\n#freio',
+  });
+  const conversa = (extra: Partial<EntradaConversa> = {}): EntradaConversa => {
+    const { pedido: _p, postsQueFuncionaram: _x, anteriores: _a, ...resto } = entrada();
+    return {
+      ...resto,
       pedido: { objetivo: 'vender', chamada: 'comentar', palavra: 'freio', assunto: 'Promoção' },
-      slides,
-      indice: 0,
-      instrucao: 'Deixe o slide bem mais curto.',
+      atual: base(),
+      alcance: 'slide',
+      slideId: 's2',
+      instrucao: 'Cite a garantia de 6 meses.',
+      historico: [{ autor: 'pessoa', texto: 'Deixe a capa mais curta' }],
+      ...extra,
+    };
+  };
+  const conferencia = { problemas: [], fatos: [] };
+
+  it('um slide: muda só ele, mantém foto e fundo, e o revisor confere o fato pela fonte', async () => {
+    const { c, pedidos } = claudeFalso({
+      redator: [
+        {
+          resposta: 'Coloquei a garantia no slide 2.',
+          slides: [
+            {
+              id: 's2',
+              modelo: 'texto',
+              titulo: 'Chiado é aviso',
+              texto: 'Pastilha com garantia de 6 meses.',
+            },
+          ],
+          legenda: 'não deve mudar',
+        },
+      ],
+      revisor: [
+        {
+          problemas: [],
+          fatos: [
+            {
+              slide: 2,
+              frase: 'garantia de 6 meses',
+              fonte: 'Cérebro da marca',
+              trecho: 'Garantia de 6 meses em pastilhas',
+            },
+          ],
+        },
+      ],
     });
-    expect(r.slide).toMatchObject({ id: 's2', modelo: 'texto', titulo: 'Chiou, trocou', fundo: 'escuro' });
+    const r = await conversarComOTime(c, conversa());
+    expect(r.resposta).toBe('Coloquei a garantia no slide 2.');
+    expect(r.depois.slides[1]).toMatchObject({
+      id: 's2',
+      texto: 'Pastilha com garantia de 6 meses.',
+      fundo: 'escuro',
+    });
+    expect(r.depois.slides[0]).toEqual(base().slides[0]);
+    expect(r.depois.legenda).toBe(base().legenda);
+    expect(r.mudancas).toEqual([{ tipo: 'mudou', slideId: 's2', texto: 'Slide 2: texto' }]);
     expect(r.avisos).toEqual([]);
-    expect(pedidos[0]!.mensagem).toContain('Deixe o slide bem mais curto.');
+    expect(pedidos.map((p) => p.agente)).toEqual(['redator', 'revisor']);
+    expect(pedidos[0]!.mensagem).toContain('SÓ O SLIDE MARCADO');
+    expect(pedidos[0]!.mensagem).toContain('PESSOA: Deixe a capa mais curta');
+    expect(pedidos[0]!.mensagem).toContain('Cite a garantia de 6 meses.');
+  });
+
+  it('o carrossel inteiro: inclui, tira e reordena, e o botão da chamada continua com a palavra', async () => {
+    const { c } = claudeFalso({
+      redator: [
+        {
+          resposta: 'Troquei a ordem e incluí um slide com o preço.',
+          slides: [
+            { id: 's1', igual: true },
+            { id: null, modelo: 'numero', destaque: 'R$ 139,90', titulo: 'A pastilha instalada' },
+            { id: 's3', modelo: 'chamada', titulo: 'Quer a promoção?', botao: 'Chame no WhatsApp' },
+          ],
+          legenda: null,
+        },
+      ],
+      revisor: [conferencia],
+    });
+    const r = await conversarComOTime(c, conversa({ alcance: 'carrossel', slideId: null }), () => 'n1');
+    expect(r.depois.slides.map((s) => s.id)).toEqual(['s1', 'n1', 's3']);
+    expect(r.depois.slides[0]).toEqual(base().slides[0]);
+    expect(r.depois.slides[2]!.botao).toBe('Comente FREIO');
+    expect(r.mudancas.map((m) => m.tipo)).toEqual(['novo', 'mudou', 'saiu']);
+  });
+
+  it('a legenda: muda só ela e não mexe nos slides', async () => {
+    const { c } = claudeFalso({
+      redator: [
+        {
+          resposta: 'Legenda mais curta.',
+          slides: [{ id: 's1', titulo: 'x' }],
+          legenda: 'Freio chiando?\n\n#freio',
+        },
+      ],
+      revisor: [conferencia],
+    });
+    const r = await conversarComOTime(c, conversa({ alcance: 'legenda', slideId: null }));
+    expect(r.depois.slides).toEqual(base().slides);
+    expect(r.depois.legenda).toBe('Freio chiando?\n\n#freio');
+    expect(r.mudancas).toEqual([{ tipo: 'legenda', slideId: null, texto: 'Legenda reescrita' }]);
+  });
+
+  it('não coube: volta uma vez para encurtar; fato sem fonte vira aviso', async () => {
+    const longo = 'Muito texto '.repeat(30).trim().slice(0, 380);
+    const { c, pedidos } = claudeFalso({
+      redator: [
+        {
+          resposta: 'Pronto.',
+          slides: [{ id: 's2', modelo: 'texto', titulo: 'Chiado é aviso', texto: longo }],
+        },
+        {
+          resposta: 'Encurtei.',
+          slides: [{ id: 's2', modelo: 'texto', titulo: 'Chiado é aviso', texto: 'Curto agora.' }],
+        },
+      ],
+      revisor: [
+        { problemas: [], fatos: [{ slide: 2, frase: 'Somos os mais rápidos', fonte: null, trecho: null }] },
+      ],
+    });
+    const r = await conversarComOTime(c, conversa());
+    expect(pedidos.map((p) => p.agente)).toEqual(['redator', 'redator', 'revisor']);
+    expect(pedidos[1]!.mensagem).toContain('NÃO COUBE');
+    expect(r.resposta).toBe('Encurtei.');
+    expect(r.depois.slides[1]!.texto).toBe('Curto agora.');
+    expect(r.avisos).toEqual(['Slide 2: "Somos os mais rápidos" não tem fonte no cérebro da marca.']);
+  });
+
+  it('nada mudou: não chama o revisor', async () => {
+    const { c, pedidos } = claudeFalso({
+      redator: [{ resposta: 'Já está assim.', slides: [{ id: 's2', igual: true }] }],
+    });
+    const r = await conversarComOTime(c, conversa());
+    expect(r.mudancas).toEqual([]);
+    expect(r.resposta).toBe('Já está assim.');
+    expect(pedidos.map((p) => p.agente)).toEqual(['redator']);
   });
 });
 

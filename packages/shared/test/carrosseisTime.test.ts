@@ -2,18 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { MODELO, slideNovo } from '../src/carrosseis.js';
 import {
   type AvisoTime,
+  aplicarProposta,
   aplicarSugestao,
   botaoDaChamada,
   conferirPromocao,
+  conversaEntrada,
   DOSSIE_VAZIO,
   dossieCompleto,
   faltandoNoDossie,
+  instrucaoDaConversa,
   limitesParaORedator,
+  type MensagemConversa,
+  mudancasEntre,
+  mudouDesdeOPedido,
   pedidoTimeEntrada,
   precosDoTexto,
   revisaoAprovada,
   slideDoTime,
   textoDoDossie,
+  textoDoPedido,
 } from '../src/carrosseisTime.js';
 
 const promo = {
@@ -177,5 +184,87 @@ describe('o slide que o redator devolve', () => {
     expect(t).toContain(
       `titulo (Título, até ${MODELO.capa.campos.find((c) => c.campo === 'titulo')!.limite} letras)`,
     );
+  });
+});
+
+describe('a conversa com o time', () => {
+  const antes = {
+    slides: [slideNovo('capa', 'a'), slideNovo('texto', 'b'), slideNovo('chamada', 'c')],
+    legenda: 'Legenda',
+  };
+
+  it('as mudanças em português: mudou, novo, saiu, ordem e legenda', () => {
+    const depois = {
+      slides: [antes.slides[2]!, { ...antes.slides[0]!, titulo: 'Outro' }, slideNovo('item', 'n')],
+      legenda: 'Outra',
+    };
+    expect(mudancasEntre(antes, depois)).toEqual([
+      { tipo: 'mudou', slideId: 'a', texto: 'Slide 2: título' },
+      { tipo: 'novo', slideId: 'n', texto: 'Slide 3 novo (Item numerado)' },
+      { tipo: 'saiu', slideId: 'b', texto: 'Saiu o slide 2 (Texto)' },
+      { tipo: 'ordem', slideId: null, texto: 'Mudou a ordem dos slides' },
+      { tipo: 'legenda', slideId: null, texto: 'Legenda reescrita' },
+    ]);
+    expect(mudancasEntre(antes, antes)).toEqual([]);
+  });
+
+  it('o pedido: atalho só num slide, slide que existe e texto mínimo', () => {
+    const ok = { slides: antes.slides, legenda: '', estilo: 'editorial' };
+    expect(
+      conversaEntrada.safeParse({ ...ok, alcance: 'slide', slideId: 'b', rapido: 'curto' }).success,
+    ).toBe(true);
+    expect(conversaEntrada.safeParse({ ...ok, alcance: 'carrossel', rapido: 'curto' }).success).toBe(false);
+    expect(
+      conversaEntrada.safeParse({ ...ok, alcance: 'slide', slideId: 'x', texto: 'mais curto' }).success,
+    ).toBe(false);
+    expect(conversaEntrada.safeParse({ ...ok, alcance: 'legenda', texto: 'ok' }).success).toBe(false);
+    const d = { rapido: 'curto' as const, texto: 'cite a garantia' };
+    expect(instrucaoDaConversa(d)).toBe('Deixe o slide bem mais curto, sem perder a ideia. cite a garantia');
+    expect(textoDoPedido(d)).toBe('Mais curto · cite a garantia');
+  });
+
+  it('aplicar e desfazer: um slide troca só ele, mesmo que a pessoa tenha mexido em outro', () => {
+    const novoB = { ...antes.slides[1]!, titulo: 'Proposto' };
+    const m: Pick<MensagemConversa, 'alcance' | 'slideId' | 'proposta'> = {
+      alcance: 'slide',
+      slideId: 'b',
+      proposta: { antes, depois: { ...antes, slides: [antes.slides[0]!, novoB, antes.slides[2]!] } },
+    };
+    const mexeu = { ...antes, slides: [{ ...antes.slides[0]!, titulo: 'Mexi' }, ...antes.slides.slice(1)] };
+    expect(mudouDesdeOPedido(m, mexeu)).toBe(false);
+    const aplicado = aplicarProposta(m, mexeu);
+    expect(aplicado.slides.map((s) => s.titulo)).toEqual(['Mexi', 'Proposto', antes.slides[2]!.titulo]);
+    expect(aplicarProposta(m, aplicado, 'antes').slides[1]).toEqual(antes.slides[1]);
+    expect(mudouDesdeOPedido(m, { ...antes, slides: [antes.slides[0]!, { ...novoB, titulo: 'Mexi' }] })).toBe(
+      true,
+    );
+  });
+
+  it('a ordem das chaves (o banco reordena) não conta como mudança', () => {
+    const s = { ...slideNovo('comparacao', 'z'), colunas: [{ rotulo: 'Antes', texto: 'a' }] };
+    const reordenado = JSON.parse(
+      JSON.stringify({
+        ...Object.fromEntries(Object.entries(s).reverse()),
+        colunas: [{ texto: 'a', rotulo: 'Antes' }],
+      }),
+    );
+    const m = {
+      alcance: 'slide' as const,
+      slideId: 'z',
+      proposta: { antes: { slides: [s], legenda: '' }, depois: { slides: [s], legenda: '' } },
+    };
+    expect(mudouDesdeOPedido(m, { slides: [reordenado], legenda: '' })).toBe(false);
+    expect(mudancasEntre({ slides: [s], legenda: '' }, { slides: [reordenado], legenda: '' })).toEqual([]);
+  });
+
+  it('o carrossel inteiro avisa quando a tela mudou depois do pedido', () => {
+    const m = {
+      alcance: 'carrossel' as const,
+      slideId: null,
+      proposta: { antes, depois: { ...antes, legenda: 'Nova' } },
+    };
+    expect(mudouDesdeOPedido(m, antes)).toBe(false);
+    expect(mudouDesdeOPedido(m, { ...antes, legenda: 'Mexi' })).toBe(true);
+    expect(aplicarProposta(m, antes).legenda).toBe('Nova');
   });
 });

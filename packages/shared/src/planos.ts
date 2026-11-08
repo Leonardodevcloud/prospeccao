@@ -47,10 +47,10 @@ export const MODULOS = {
 export type Modulo = keyof typeof MODULOS;
 export const LISTA_MODULOS = Object.keys(MODULOS) as Modulo[];
 /**
- * Módulos que a empresa contrata sozinha em Meu plano › Assinar. Os Carrosséis com IA entram na
- * venda quando o time de IA estiver pronto (v122); até lá, só o master libera.
+ * Módulos que a empresa contrata sozinha em Meu plano › Assinar (todos, desde a v123: os
+ * Carrosséis com IA entraram com o preço definido).
  */
-export const MODULOS_NA_ASSINATURA: Modulo[] = LISTA_MODULOS.filter((m) => m !== 'carrosseis');
+export const MODULOS_NA_ASSINATURA: Modulo[] = [...LISTA_MODULOS];
 
 /**
  * Recursos que mudam de um plano para outro. A base (prospecção, campanhas, enriquecimento, funil,
@@ -145,8 +145,8 @@ export interface TabelaPrecos {
   /** Pacote de minutos que a empresa compra sozinha quando a franquia acaba (não vence). */
   pacoteMinutos: number;
   pacotePreco: number;
-  /** Carrosséis criados pelo time de IA por mês que vêm com o módulo Carrosséis com IA. */
-  carrosseisMes: number;
+  /** Carrosséis do time de IA por mês no módulo Carrosséis com IA (null = sem limite). */
+  carrosseisMes: number | null;
 }
 
 const RECURSOS_TIME: Recurso[] = [
@@ -181,7 +181,7 @@ export const TABELA_PADRAO: TabelaPrecos = {
       modulosInclusos: ['email'],
     },
   },
-  modulos: { whatsapp: 250, agente_ia: 297, email: 200, ligacoes: 499, carrosseis: 397 },
+  modulos: { whatsapp: 250, agente_ia: 297, email: 200, ligacoes: 499, carrosseis: 200 },
   comboWhatsappIa: 999,
   numerosInclusos: 3,
   numeroExtra: 110,
@@ -192,7 +192,7 @@ export const TABELA_PADRAO: TabelaPrecos = {
   minutoExtra: 0.35,
   pacoteMinutos: 500,
   pacotePreco: 149,
-  carrosseisMes: 20,
+  carrosseisMes: null,
 };
 
 const numero = (min: number, max: number) => z.number().min(min).max(max);
@@ -224,7 +224,7 @@ export const tabelaPrecosEntrada = z.object({
   minutoExtra: numero(0, 100),
   pacoteMinutos: inteiro(1, 100_000),
   pacotePreco: numero(1, 100_000),
-  carrosseisMes: inteiro(0, 10_000),
+  carrosseisMes: inteiro(0, 10_000).nullable(),
 });
 
 /**

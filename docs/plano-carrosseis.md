@@ -2,22 +2,22 @@
 
 Definido em 08/11/2026 com o Leonardo, a partir da v120 (commit 9358d96). Mockup: canvas "Prospect Team — Carrosséis com IA (mockup)" (https://claude.ai/artifact/5SxKvqUbZj3rmWFvTv4fDb), 8 telas: lista, identidade visual, novo carrossel (o time de IA), editor, publicar/agendar, o carrossel de exemplo em dois estilos, ideias e o que o time aprendeu, promoção com imagem de referência. **As 8 telas foram aprovadas em 08/11.** Este doc fica no repositório (`docs/plano-carrosseis.md`) e nos docs do projeto (`claude/plano-carrosseis.md`), com o mesmo texto.
 
-**Situação: v121 (fundação visual) e v122 (o time de IA escrevendo) feitas em 08/11.** Próxima: v123 (imagens).
+**Situação: v121 (fundação visual), v122 (o time de IA escrevendo) e v123 (preço, Assinar, site e a conversa com o time) feitas em 08/11.** Próxima: v124 (imagens).
 
 ## O que é
 Um "time de IA" dentro do CRM que cria carrosséis do Instagram com a identidade da empresa do cliente: o **estrategista** escolhe o tema e o gancho, o **redator** escreve slide a slide, a legenda e as hashtags, o **diretor de arte** escolhe o modelo de cada slide e as imagens, o **revisor** confere ortografia, tamanho do texto, promessa sem fonte e o tom da marca, e o **publicador** posta ou agenda. Só o **administrador** da conta usa (menu Automação › Carrosséis com `admin: true`, rotas com `exigirAdmin`).
 
 ## Decisões (08/11)
-- **Cobrança: módulo à parte**, como Ligações: `carrosseis` em `MODULOS` (`packages/shared/src/planos.ts`) com preço próprio e **franquia de carrosséis feitos pela IA por mês** (`carrosseisMes` na tabela de preços e por cliente). Valor de partida no código: R$ 397 com 20 por mês, **preço a decidir** com o custo real (Saúde e consumo). Fica fora do Assinar e do site (`MODULOS_NA_ASSINATURA`) até o preço ser decidido.
+- **Cobrança: módulo à parte**, como Ligações: `carrosseis` em `MODULOS` (`packages/shared/src/planos.ts`). **Decidido em 08/11 (v123): R$ 200 por mês, sem limite de carrosséis** (`carrosseisMes` = null na tabela; o master ainda pode pôr um limite por cliente em Plano e módulos). Está no Assinar e no site desde a v123.
 - **Texto: Claude Sonnet 5.5** (`claude-sonnet-5-5`, estratégia, redação e revisão; trocar em `CARROSSEIS_MODELO`). O Leonardo aceita custo maior para ter qualidade de agência.
 - **Imagens: GPT Image 2 em qualidade média** ("não precisa ser no máximo").
-- **Visão** (ler os posts, conferir as imagens geradas e os slides prontos): o modelo de visão mais barato que der conta, escolhido na v123.
+- **Visão** (ler os posts, conferir as imagens geradas e os slides prontos): o modelo de visão mais barato que der conta, escolhido na v124.
 
 ## Custo estimado por carrossel (08/11, dólar a R$ 5,40; conferir com o consumo real)
 - Texto com o Sonnet 5.5 (US$ 2 / US$ 10 por milhão de tokens; estrategista, redator, revisor e até 2 voltas de reescrita, 4 a 7 chamadas, com o cérebro da marca no cache): cerca de **US$ 0,10 a 0,25** por carrossel (a estimativa antiga era US$ 0,27). O custo real de cada conta fica em `cadastro.consumo_carrosseis` e aparece no Financeiro.
 - Revisão visual dos slides prontos: cerca de **US$ 0,08**.
 - Imagem gerada (GPT Image 2 médio): cerca de **US$ 0,05 cada**, contando 1,6 tentativa por imagem aproveitada (as recusadas pelo revisor são geradas de novo).
-- Um carrossel conta como **1 post** no limite do Instagram e cada um é contado inteiro na franquia (não cada imagem).
+- Um carrossel conta como **1 post** no limite do Instagram. Sem limite de carrosséis no módulo (v123); um pedido na Conversa do editor custa cerca de **US$ 0,02 a 0,06** (2 ou 3 chamadas).
 
 ## Como os agentes sabem o que fazer (o "cérebro da marca")
 1. **Dossiê da marca**, montado sozinho e revisado pelo admin: nicho, público, o que vende, diferenciais, objeções, tom, o que nunca dizer. Fontes já no CRM: perfil da IA de atendimento (v59: quem, empresa, oferta, objeções, limites), base de conhecimento, nichos da conta, site da empresa, os posts do Instagram (texto + imagem lidos por um modelo de visão, para aprender também o visual). A v121 já guarda na identidade o que a empresa vende, o público, o tom, o que nunca dizer e os pilares (aba "Como a empresa fala").
@@ -53,7 +53,8 @@ Cada ideia na aba Ideias mostra de onde veio (CAMPANHA, CONVERSAS, INSTAGRAM, OB
 - **Fontes embarcadas** (licença aberta): Fraunces + Inter, Archivo + Inter, Plus Jakarta Sans + Inter, Space Grotesk + Inter, Playfair Display + Lato. As larguras de cada letra são medidas no próprio Resvg (`pnpm --filter @prospeccao/integrations medir-fontes` → `carrosseisMetricas.gerada.ts`); o teste confere que a conta das linhas bate com o desenho.
 - **Estilos**: Editorial, Impacto, Clean e Foto; em cada um os modelos capa, item numerado, texto, lista, número grande, citação, antes e depois, foto, chamada final.
 - **Cores** com conferência de leitura (texto ≥ 4,5:1 em cada fundo, destaque grande ≥ 3), ajustando o tom só o bastante e avisando, como a v88.
-- **Arquivos** no bucket R2 das reuniões (`carrosseis/<conta>/logos` e `/fotos`); a Meta vai buscar as imagens por link assinado ao publicar (v124).
+- **Arquivos** no bucket R2 das reuniões (`carrosseis/<conta>/logos` e `/fotos`); a Meta vai buscar as imagens por link assinado ao publicar (v125).
+- **Ajustes conversando (08/11, v123)**: a pessoa pede ao time o que mudar (um slide, o carrossel inteiro ou a legenda) e vê a proposta antes de aplicar. **Sem comandos com barra** (decisão do Leonardo).
 
 ## Etapas
 1. **v121: fundação visual (feita em 08/11).** Identidade visual (cores com "Usar as cores de Marca e domínio", estilo, par de fontes, logos para fundo claro e escuro ou as de Marca e domínio, assinatura, número do slide, como a empresa fala), fotos da empresa (até 60), motor de slides (4 estilos × 9 modelos), editor (roteiro pronto ou só a capa, trocar modelo, subir/descer/duplicar/tirar, foto da empresa, fundo por slide, legenda com os 2.200 caracteres, salva sozinho com conflito entre abas, prévia como no Instagram, baixar as imagens em .zip com a legenda, marcar como pronto) e o módulo na cobrança. Já dá para postar à mão. Migration 089.
@@ -63,10 +64,15 @@ Cada ideia na aba Ideias mostra de onde veio (CAMPANHA, CONVERSAS, INSTAGRAM, OB
    - **O time**: estrategista (ângulo, 3 ganchos, roteiro com modelos e fotos), redator (slides nos limites de cada modelo, legenda, hashtags), diretor de arte por código (`montarSlide` mede o texto com as fontes de verdade; "Comente PALAVRA" no botão), revisor (8 critérios de 1 a 5; passa com média 4 e nenhum abaixo de 3, sem fato sem fonte, preço errado ou texto que não cabe; fatos com o trecho exato da fonte, conferido por código). Até 2 voltas; o que sobra vira aviso com a sugestão no editor.
    - **Editor**: avisos do revisor no slide e na legenda (Usar a sugestão / Manter), Pedir ao redator (mais curto, mais direto, outro jeito, ou texto livre), aba Time de IA (ângulo, fontes, ganchos alternativos com "Usar na capa", notas, hashtags).
    - **Operação**: fila na api (2 ao mesmo tempo), aviso no sino quando fica pronto ou falha, franquia conta o pedido (falhou ou cancelado não conta), avisos de 80% e 100%, custo por conta no Financeiro e em Saúde e consumo, serviço com Testar nas Configurações.
-   - Ficou de fora de propósito: o módulo no Assinar e no site (preço em aberto); a regra do Comente e receba criada sozinha (v124, junto com a publicação); imagens geradas (v123).
-3. **v123: imagens.** GPT Image 2 médio: foto do produto em cenários, referência de estilo, imagens geradas sem texto na paleta da marca, revisor visual, custo por imagem em Saúde e consumo.
-4. **v124: publicar e agendar.** `instagram_content_publish` (revisão do app na Meta: pedir já), publicar agora ou agendar, calendário, Comente e receba ligado ao post, aviso se a Meta recusar, DNA de cada post. Limites: até 10 imagens por carrossel, JPEG, 1 post no limite diário.
-5. **v125: aprender.** Aba Ideias com a fonte de cada ideia, aprendizados com evidência, 2 em 10 como teste, edições do admin como sinal, contas de referência, resultados por carrossel, o Argos sabe dos carrosséis.
+   - Ficou de fora de propósito: o módulo no Assinar e no site (preço em aberto, resolvido na v123); a regra do Comente e receba criada sozinha (v125, junto com a publicação); imagens geradas (v124).
+3. **v123: preço, Assinar, site e a conversa com o time (feita em 08/11).** Migration 091.
+   - **Preço**: R$ 200 sem limite (migration 091 troca o valor salvo na tabela se ainda for o de partida); entra no Assinar (`MODULOS_NA_ASSINATURA` = todos), no site (cartão de módulo, seção de funções, `llms.txt`, JSON-LD) e na tela de módulo bloqueado ("Assinar o módulo").
+   - **Conversa com o time** (aba Conversa do editor; tabela `comercial.carrossel_conversa`): alcance este slide, carrossel inteiro (incluir, tirar, reordenar, até 10) ou legenda; o redator propõe (`conversarComOTime`: slides com id, "igual" para os que ficam, novos com id null), o diretor de arte confere o que mudou e devolve uma vez para encurtar, o revisor confere só o que mudou (português, tom, nunca dizer, fatos com trecho conferido); as mudanças são calculadas por código (`mudancasEntre`). A resposta vem em segundo plano (a tela pergunta a cada 2 s; 5 min sem resposta vira erro). Aplicar troca no editor (que salva sozinho), Descartar, Desfazer; se a pessoa mexeu depois de pedir, a tela pergunta. Um pedido por vez. O time lê as últimas 6 mensagens.
+   - **Atalho no slide**: "Pedir ao time" (Mais curto, Mais direto, Outro jeito de dizer ou texto) vai para a conversa daquele slide; o antigo "Pedir ao redator" (`refazerSlide`, `/slides/:n/pedir`) saiu.
+   - **Criação**: o campo virou **Instruções para o time** (até 1.000 letras; o que tem que aparecer e o que não pode).
+4. **v124: imagens.** GPT Image 2 médio: foto do produto em cenários, referência de estilo, imagens geradas sem texto na paleta da marca, revisor visual, custo por imagem em Saúde e consumo.
+5. **v125: publicar e agendar.** `instagram_content_publish` (revisão do app na Meta: pedir já), publicar agora ou agendar, calendário, Comente e receba ligado ao post, aviso se a Meta recusar, DNA de cada post. Limites: até 10 imagens por carrossel, JPEG, 1 post no limite diário.
+6. **v126: aprender.** Aba Ideias com a fonte de cada ideia, aprendizados com evidência, 2 em 10 como teste, edições do admin como sinal, contas de referência, resultados por carrossel, o Argos sabe dos carrosséis.
 
 ## Em aberto
-- Preço do módulo e franquia (partida: R$ 397 com 20 carrosséis da IA por mês).
+- Sem limite de carrosséis: acompanhar o custo por conta em Saúde e consumo (Claude). Se algum cliente fugir muito da média, o master pode pôr um limite só para ele em Plano e módulos.

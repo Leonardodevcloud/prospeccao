@@ -1,10 +1,4 @@
-import {
-  ESTILO,
-  ESTILOS,
-  type EstiloCarrossel,
-  MAX_SLIDES,
-  type SlideCarrossel,
-} from '@prospeccao/shared/carrosseis';
+import { ESTILO, ESTILOS, type EstiloCarrossel, MAX_SLIDES } from '@prospeccao/shared/carrosseis';
 import {
   type AvisoTime,
   CHAMADA_FINAL,
@@ -18,10 +12,7 @@ import {
   OBJETIVOS_CARROSSEL,
   type ObjetivoCarrossel,
   PALAVRA_COMENTAR,
-  PEDIDO_RAPIDO,
-  PEDIDOS_RAPIDOS,
   type PedidoDoTime,
-  type PedidoRapido,
   type RelatorioTime,
   ROTULO_AVISO_TIME,
   ROTULO_DIVULGAR,
@@ -113,16 +104,21 @@ export function NovoComTime(props: {
       ) : null}
 
       <div className="campo">
-        <label htmlFor="nt-assunto">Sobre o que é o carrossel</label>
+        <label htmlFor="nt-assunto">Instruções para o time</label>
         <textarea
           id="nt-assunto"
-          rows={3}
-          maxLength={500}
+          rows={4}
+          maxLength={1000}
           value={assunto}
           onChange={(e) => setAssunto(e.target.value)}
-          placeholder="Ex.: os sinais de que a pastilha de freio está no fim"
+          placeholder={
+            'Ex.: os sinais de que a pastilha de freio está no fim. Cite a garantia de 6 meses e a entrega no mesmo dia; não fale de preço.'
+          }
         />
-        <span className="campo__dica">Pode ser uma frase solta. Ou escolha o que divulgar logo abaixo.</span>
+        <span className="campo__dica">
+          Sobre o que é e o que não pode faltar (ou não pode aparecer). Pode ser uma frase solta; ou escolha o
+          que divulgar logo abaixo. Depois de pronto, dá para pedir ajustes na Conversa do editor.
+        </span>
       </div>
 
       {itens.length > 0 && (
@@ -387,88 +383,6 @@ export function CartaoPedido(props: { p: PedidoDoTime }) {
         )}
       </div>
     </li>
-  );
-}
-
-/* ───────────────────────────── Pedir ao redator ───────────────────────────── */
-
-export function PedirAoRedator(props: {
-  carrosselId: number;
-  slides: SlideCarrossel[];
-  indice: number;
-  estilo: EstiloCarrossel;
-  aoTrocar: (s: SlideCarrossel) => void;
-}) {
-  const [texto, setTexto] = useState('');
-  const [avisos, setAvisos] = useState<string[]>([]);
-  const pedir = useMutation({
-    mutationFn: (rapido: PedidoRapido | null) =>
-      api<{ slide: SlideCarrossel; avisos: string[] }>(
-        `/carrosseis/${props.carrosselId}/slides/${props.indice}/pedir`,
-        {
-          metodo: 'POST',
-          corpo: {
-            pedido: { rapido, texto: rapido ? '' : texto },
-            slides: props.slides,
-            estilo: props.estilo,
-          },
-        },
-      ),
-    onSuccess: (r) => {
-      props.aoTrocar(r.slide);
-      setAvisos(r.avisos);
-      setTexto('');
-    },
-  });
-  return (
-    <section className="pedir-redator" aria-labelledby="pr-titulo">
-      <h3 id="pr-titulo" className="pedir-redator__titulo">
-        <Icon name="sparkles" size={14} /> Pedir ao redator
-      </h3>
-      <div className="pedir-redator__rapidos">
-        {PEDIDOS_RAPIDOS.map((r) => (
-          <Button
-            key={r}
-            size="sm"
-            variant="secondary"
-            onClick={() => pedir.mutate(r)}
-            disabled={pedir.isPending}
-          >
-            {PEDIDO_RAPIDO[r].rotulo}
-          </Button>
-        ))}
-      </div>
-      <div className="pedir-redator__livre">
-        <label className="pp-sr" htmlFor="pr-texto">
-          O que mudar neste slide
-        </label>
-        <input
-          id="pr-texto"
-          className="filtro"
-          value={texto}
-          maxLength={300}
-          placeholder="Ou diga o que mudar (ex.: cite a garantia de 6 meses)"
-          onChange={(e) => setTexto(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && texto.trim().length >= 3) {
-              e.preventDefault();
-              pedir.mutate(null);
-            }
-          }}
-        />
-        <Button
-          size="sm"
-          variant="ghost"
-          icon="send"
-          aria-label="Pedir"
-          onClick={() => pedir.mutate(null)}
-          disabled={pedir.isPending || texto.trim().length < 3}
-        />
-      </div>
-      {pedir.isPending && <p className="quieto">O redator está reescrevendo…</p>}
-      {pedir.error && <ErroDaApi erro={pedir.error} />}
-      {!!avisos.length && <Mensagem tipo="aviso">{avisos.join(' ')}</Mensagem>}
-    </section>
   );
 }
 

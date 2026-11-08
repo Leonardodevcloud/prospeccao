@@ -490,7 +490,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
                   id="pl-carrosseis"
                   className="filtro mono"
                   inputMode="numeric"
-                  placeholder={`Padrão: ${fmtNumero(tabela.carrosseisMes)}`}
+                  placeholder={`Padrão: ${tabela.carrosseisMes == null ? 'sem limite' : fmtNumero(tabela.carrosseisMes)}`}
                   value={f.carrosseis}
                   onChange={(e) => setF({ ...f, carrosseis: e.target.value.replace(/\D/g, '') })}
                 />
@@ -741,12 +741,11 @@ export function TabelaDePrecos() {
           {campo('tp-pacote-preco', 'Preço do pacote de minutos (R$)', t.pacotePreco, (v) =>
             setT({ ...t, pacotePreco: v }),
           )}
-          {campo(
+          {campoLimite(
             'tp-carrosseis',
             'Carrosséis do time de IA por mês (no módulo Carrosséis com IA)',
             t.carrosseisMes,
-            (v) => setT({ ...t, carrosseisMes: Math.round(v) }),
-            false,
+            (v) => setT({ ...t, carrosseisMes: v }),
           )}
           {campoLimite('tp-conversas', 'Conversas do Agente de IA por mês', t.conversasIaMes, (v) =>
             setT({ ...t, conversasIaMes: v }),

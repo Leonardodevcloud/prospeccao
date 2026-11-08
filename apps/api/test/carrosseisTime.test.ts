@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
+import { esperarRespostas } from '../src/modulos/carrosseis/conversa.js';
 import { type CarrosseisIa, medidorClaude, rodarUmPedido } from '../src/modulos/carrosseis/time.js';
 import type { ServicosConta } from '../src/servicos.js';
 
@@ -67,9 +68,13 @@ const RESPOSTAS: Record<string, Record<string, unknown>> = {
     ],
     legenda: 'Freio chiando? Não espere.',
     hashtags: ['freios', 'salvador'],
-    // O pedido num slide só usa este campo.
-    slide: { modelo: 'texto', titulo: 'Chiou, trocou', texto: 'Simples.' },
   },
+  // A conversa no editor: o redator propõe, o revisor confere o que mudou.
+  proposta: {
+    resposta: 'Deixei o slide 2 mais curto.',
+    slides: [{ id: 's2', modelo: 'texto', titulo: 'Chiou, trocou', texto: 'Simples.' }],
+  },
+  conferencia: { problemas: [{ slide: 2, problema: 'Falta vírgula' }], fatos: [] },
   revisor: {
     notas: notas(5),
     ajustes: [
@@ -96,7 +101,10 @@ function iaFalsa(): CarrosseisIa {
           }
           const uso = { ...USO_ZERO, entrada: 3000, saida: 800 };
           await medidor.depois(uso, 0.014, true);
-          return { dados: RESPOSTAS[p.agente] ?? {}, uso, custoUsd: 0.014 };
+          const chave = ['proposta', 'conferencia'].includes(p.ferramenta.nome)
+            ? p.ferramenta.nome
+            : p.agente;
+          return { dados: RESPOSTAS[chave] ?? {}, uso, custoUsd: 0.014 };
         },
       };
     },
@@ -316,27 +324,119 @@ describe.skipIf(!URL_TESTE)('carrosséis: o time de IA (com Postgres)', () => {
     ).toBe(404);
   });
 
-  it('pedido ao redator num slide devolve o slide novo sem salvar', async () => {
+  it('a conversa: o time propõe, nada muda até aplicar, e dá para desfazer', async () => {
     const c = (await ler(`/carrosseis/${carrosselId}`)).body;
     recebidos.length = 0;
-    const r = await mandar('post', `/carrosseis/${carrosselId}/slides/1/pedir`, {
-      pedido: { rapido: 'curto' },
-      slides: c.conteudo,
-      estilo: c.estilo,
+    const corpo = { slides: c.conteudo, legenda: c.legenda, estilo: c.estilo };
+    const p = await mandar('post', `/carrosseis/${carrosselId}/conversa`, {
+      ...corpo,
+      alcance: 'slide',
+      slideId: 's2',
+      rapido: 'curto',
+      texto: 'sem perder o chiado',
     });
-    expect(r.status).toBe(200);
-    expect(r.body.slide).toMatchObject({ id: 's2', modelo: 'texto', titulo: 'Chiou, trocou' });
+    expect(p.status).toBe(202);
+    expect(p.body.pessoa).toMatchObject({ autor: 'pessoa', texto: 'Mais curto · sem perder o chiado' });
+    expect(p.body.time).toMatchObject({ autor: 'time', situacao: 'pensando' });
+    // Um pedido por vez.
+    const outro = { ...corpo, alcance: 'legenda', texto: 'Mais curta' };
+    expect((await mandar('post', `/carrosseis/${carrosselId}/conversa`, outro)).status).toBe(409);
+    await esperarRespostas();
+
+    const h = (await ler(`/carrosseis/${carrosselId}/conversa`)).body.mensagens;
+    expect(h).toHaveLength(2);
+    expect(h[1]).toMatchObject({
+      situacao: 'proposta',
+      texto: 'Deixei o slide 2 mais curto.',
+      mudancas: [{ tipo: 'mudou', slideId: 's2', texto: 'Slide 2: título, texto' }],
+      avisos: ['Slide 2: Falta vírgula'],
+    });
+    expect(h[1].proposta.depois.slides[1]).toMatchObject({ id: 's2', titulo: 'Chiou, trocou' });
+    expect(h[1].proposta.antes.slides[1].titulo).toBe(c.conteudo[1].titulo);
+    expect(recebidos.map((r) => r.agente)).toEqual(['redator', 'revisor']);
     expect(recebidos[0]!.mensagem).toContain('Deixe o slide bem mais curto');
+    expect(recebidos[0]!.mensagem).toContain('sem perder o chiado');
+    // O carrossel não mudou e, com a proposta aberta, não dá para pedir outra coisa.
     expect((await ler(`/carrosseis/${carrosselId}`)).body.conteudo[1].titulo).toBe(c.conteudo[1].titulo);
+    const aberta = await mandar('post', `/carrosseis/${carrosselId}/conversa`, outro);
+    expect(aberta.status).toBe(409);
+    expect(aberta.body.erro.mensagem).toContain('Aplique ou descarte');
+
+    const decidir = (acao: string, id = h[1].id) =>
+      mandar('post', `/carrosseis/${carrosselId}/conversa/${id}`, { acao });
+    expect((await decidir('desfazer')).status).toBe(409);
+    expect((await decidir('aplicar')).body.situacao).toBe('aplicada');
+    expect((await decidir('aplicar')).status).toBe(409);
+    expect((await decidir('desfazer')).body.situacao).toBe('desfeita');
+    expect((await decidir('aplicar', 999999)).status).toBe(404);
+
+    // Atalho é só para um slide; slide que não existe também não.
     expect(
       (
-        await mandar('post', `/carrosseis/${carrosselId}/slides/9/pedir`, {
-          pedido: { rapido: 'curto' },
-          slides: c.conteudo,
-          estilo: c.estilo,
+        await mandar('post', `/carrosseis/${carrosselId}/conversa`, {
+          ...corpo,
+          alcance: 'carrossel',
+          rapido: 'curto',
         })
       ).status,
-    ).toBe(404);
+    ).toBe(422);
+    expect(
+      (
+        await mandar('post', `/carrosseis/${carrosselId}/conversa`, {
+          ...corpo,
+          alcance: 'slide',
+          slideId: 'x',
+          texto: 'mais curto',
+        })
+      ).status,
+    ).toBe(422);
+  });
+
+  it('a conversa: sem mudança fica só a resposta; o time falhou vira erro e libera outro pedido', async () => {
+    const c = (await ler(`/carrosseis/${carrosselId}`)).body;
+    const corpo = { slides: c.conteudo, legenda: c.legenda, estilo: c.estilo };
+    const guardada = RESPOSTAS.proposta!;
+    RESPOSTAS.proposta = { resposta: 'Já está curto assim.', slides: [{ id: 's2', igual: true }] };
+    await mandar('post', `/carrosseis/${carrosselId}/conversa`, {
+      ...corpo,
+      alcance: 'slide',
+      slideId: 's2',
+      rapido: 'curto',
+    });
+    await esperarRespostas();
+    RESPOSTAS.proposta = guardada;
+    let h = (await ler(`/carrosseis/${carrosselId}/conversa`)).body.mensagens;
+    expect(h.at(-1)).toMatchObject({
+      texto: 'Já está curto assim.',
+      situacao: null,
+      proposta: null,
+      mudancas: [],
+    });
+
+    falharTudo = true;
+    const p = await mandar('post', `/carrosseis/${carrosselId}/conversa`, {
+      ...corpo,
+      alcance: 'carrossel',
+      texto: 'Inclua um slide de garantia',
+    });
+    expect(p.status).toBe(202);
+    await esperarRespostas();
+    falharTudo = false;
+    h = (await ler(`/carrosseis/${carrosselId}/conversa`)).body.mensagens;
+    expect(h.at(-1)).toMatchObject({
+      situacao: 'erro',
+      texto: 'O time não conseguiu responder agora. Peça de novo em instantes.',
+    });
+    expect(
+      (
+        await mandar('post', `/carrosseis/${carrosselId}/conversa`, {
+          ...corpo,
+          alcance: 'legenda',
+          texto: 'Mais curta',
+        })
+      ).status,
+    ).toBe(202);
+    await esperarRespostas();
   });
 
   it('falhou: não conta na franquia, avisa e diz o que fazer', async () => {

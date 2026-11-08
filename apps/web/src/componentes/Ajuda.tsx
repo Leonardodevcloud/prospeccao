@@ -1197,7 +1197,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'O time de IA escreve carrosséis com a identidade e o jeito de falar da empresa; você confere, ajusta e baixa as imagens.',
     onde: { rotulo: 'Carrosséis', para: '/carrosseis' },
     termos:
-      'carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho franquia',
+      'carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer',
     corpo: (
       <>
         <p>
@@ -1209,9 +1209,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
           desenhado pelo sistema: fica sempre nítido, sem letra torta.
         </p>
         <p>
-          É um <b>módulo à parte</b> e só o <b>administrador</b> da conta entra. O plano tem uma quantidade de
-          carrosséis do time de IA por mês; os montados à mão não contam. Sem o módulo, a tela explica o que
-          ele faz; para liberar, fale com a gente.
+          É um <b>módulo à parte</b> (sem limite de carrosséis) e só o <b>administrador</b> da conta entra.
+          Sem o módulo, a tela explica o que ele faz; para liberar, assine em <b>Meu plano › Assinar</b>.
         </p>
         <h3>1. Identidade visual (uma vez)</h3>
         <Passos>
@@ -1274,7 +1273,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>4. Pedir um carrossel ao time</h3>
         <Passos>
           <li>
-            Clique em <b>Novo carrossel</b>, diga sobre o que é (uma frase basta) ou escolha o que divulgar.
+            Clique em <b>Novo carrossel</b> e escreva as <b>Instruções para o time</b>: sobre o que é e o que
+            não pode faltar (ou não pode aparecer), como “cite a garantia de 6 meses; não fale de preço”. Uma
+            frase basta. Ou escolha o que divulgar.
           </li>
           <li>
             Escolha o <b>objetivo</b> (ensinar, vender, mostrar resultado ou bastidores), quantos slides (ou
@@ -1288,8 +1289,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
         </Passos>
         <p>
-          Se o time não conseguir terminar, o pedido aparece na lista com o motivo e não conta na franquia.
-          Para montar à mão, use <b>Começar em branco</b>.
+          Se o time não conseguir terminar, o pedido aparece na lista com o motivo; peça de novo. Para montar
+          à mão, use <b>Começar em branco</b>.
         </p>
         <h3>5. O que o revisor deixou para você</h3>
         <ul>
@@ -1308,24 +1309,52 @@ export const ARTIGOS: ArtigoAjuda[] = [
             estrategista pensou (dá para trocar a capa com um clique), as notas do revisor e as hashtags.
           </li>
         </ul>
-        <h3>6. Fotos da empresa</h3>
+        <h3>6. Pedir ajustes ao time (Conversa)</h3>
+        <p>
+          Na aba <b>Conversa</b> do editor, diga ao time o que mudar, do seu jeito: “coloque a entrega no
+          mesmo dia no slide 3”, “inclua um slide com as marcas que trabalhamos”, “deixe a legenda mais
+          curta”.
+        </p>
+        <Passos>
+          <li>
+            Escolha o alcance: o <b>slide</b> que está aberto, o <b>carrossel inteiro</b> (o time pode
+            incluir, tirar e trocar a ordem dos slides) ou a <b>legenda</b>. Escreva e clique em{' '}
+            <b>Pedir ao time</b>.
+          </li>
+          <li>
+            Em alguns segundos o time responde com a <b>proposta</b>: o que mudou, a miniatura de cada slide
+            novo ou alterado e, se for o caso, a legenda nova. O diretor de arte já conferiu se o texto cabe e
+            o revisor conferiu o que mudou; o que ele ainda achou aparece em amarelo.
+          </li>
+          <li>
+            Nada muda até você clicar em <b>Aplicar</b>. Não gostou? <b>Descartar</b>. Depois de aplicar, dá
+            para <b>Desfazer</b>. Se você mexeu no carrossel enquanto o time respondia, a tela pergunta antes
+            de trocar.
+          </li>
+          <li>
+            Na aba <b>Slide</b>, o quadro <b>Pedir ao time</b> tem os atalhos <b>Mais curto</b>,{' '}
+            <b>Mais direto</b> e <b>Outro jeito de dizer</b> (ou escreva o que mudar): o pedido vai para a
+            Conversa daquele slide.
+          </li>
+        </Passos>
+        <Nota>
+          Um pedido por vez: aplique ou descarte a proposta antes de pedir outra coisa. O time lembra das
+          últimas mensagens, então “agora tire o número” funciona. Fato que não está no cérebro da marca o
+          time não inventa: ele avisa o que falta cadastrar.
+        </Nota>
+        <h3>7. Fotos da empresa</h3>
         <p>
           Guarde na aba Identidade visual as fotos da loja, dos produtos e da equipe (até 60). O diretor de
           arte usa nas capas e nos slides de foto quando combinam (dá para desligar no pedido). Use fotos com
           pelo menos 500 px no lado menor; as do celular servem, e o sistema tira os dados do aparelho (como a
           localização) antes de guardar.
         </p>
-        <h3>7. Editar, conferir e postar</h3>
+        <h3>8. Editar, conferir e postar</h3>
         <Passos>
           <li>
             Cada slide tem um <b>modelo</b>: capa, item, texto, lista, número, citação, comparação, foto e
             chamada. Os campos mostram quantas letras cabem; passando disso, o texto diminui para caber e
             aparece um aviso.
-          </li>
-          <li>
-            Em <b>Pedir ao redator</b>, embaixo dos campos do slide: <b>Mais curto</b>, <b>Mais direto</b>,{' '}
-            <b>Outro jeito de dizer</b> ou escreva o que mudar. Ele reescreve só aquele slide, no mesmo
-            modelo.
           </li>
           <li>
             Na faixa de slides, suba, desça, duplique ou tire cada slide (até 10 por carrossel). A aba{' '}
@@ -1702,8 +1731,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             <b>Carrosséis com IA</b>: o time de IA escreve carrosséis para o Instagram com a identidade visual
-            e o jeito de falar da empresa (só o administrador usa), com uma quantidade por mês. Por enquanto é
-            liberado pelo nosso time (fale com a gente).
+            e o jeito de falar da empresa (só o administrador usa), sem limite de carrosséis.
           </li>
         </ul>
         <h3>Quando algo não está no plano</h3>
