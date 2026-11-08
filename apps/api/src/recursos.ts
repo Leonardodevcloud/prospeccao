@@ -1,6 +1,8 @@
 import { type Executor, INICIO_MES_SP_TS } from '@prospeccao/db';
 import {
   AppError,
+  MODULOS,
+  type Modulo,
   NOME_PLANO,
   planoQueLibera,
   RECURSOS,
@@ -75,6 +77,34 @@ export function rotaComRecurso(
   return (req: Request, _res: Response, next: NextFunction) => {
     if (livre(req)) return next();
     exigirRecurso(db, r).then(() => next(), next);
+  };
+}
+
+/** O módulo à parte está contratado? (Conta sem plano tem tudo.) */
+export async function temModulo(db: Executor, m: Modulo, contaId: number = conta()): Promise<boolean> {
+  const c = await contratoDaConta(db, contaId).catch(() => null);
+  return !c || c.modulos.includes(m);
+}
+
+export async function exigirModulo(db: Executor, m: Modulo, contaId: number = conta()): Promise<void> {
+  if (!(await temModulo(db, m, contaId)))
+    throw new AppError(
+      403,
+      'fora_do_plano',
+      `${MODULOS[m].nome} é um módulo à parte. Fale com a gente para liberar.`,
+      { detalhes: { modulo: m } },
+    );
+}
+
+/** Trava de rota: o módulo precisa estar contratado (menos nos caminhos de `livre`). */
+export function rotaComModulo(
+  db: Executor,
+  m: Modulo,
+  livre: (req: Request) => boolean = () => false,
+): RequestHandler {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (livre(req)) return next();
+    exigirModulo(db, m).then(() => next(), next);
   };
 }
 

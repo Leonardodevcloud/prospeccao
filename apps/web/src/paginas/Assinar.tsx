@@ -8,8 +8,8 @@ import {
   type TipoCobranca,
 } from '@prospeccao/shared/assinatura';
 import {
-  LISTA_MODULOS,
   MODULOS,
+  MODULOS_NA_ASSINATURA,
   type Modulo,
   NOME_PLANO,
   type PlanoPronto,
@@ -339,7 +339,7 @@ export function Assinar() {
             <div>
               <h2 className="assinar__titulo">Módulos</h2>
               <div className="assinar__modulos">
-                {LISTA_MODULOS.map((m) => {
+                {MODULOS_NA_ASSINATURA.map((m) => {
                   const incluso = linha.modulosInclusos.includes(m);
                   return (
                     <label key={m} className="assinar__modulo">

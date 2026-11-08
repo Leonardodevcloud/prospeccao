@@ -16,7 +16,8 @@
       "!packages/ui/src/tokens.css",
       "!apps/site/css/componentes.css",
       "!apps/site/apresentacao/e",
-      "!apps/api/src/modulos/assistente/ajuda.gerada.ts"
+      "!apps/api/src/modulos/assistente/ajuda.gerada.ts",
+      "!packages/shared/src/carrosseisMetricas.gerada.ts"
     ]
   },
   "formatter": {

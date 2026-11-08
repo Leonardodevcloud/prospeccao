@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { cnpjDoTexto } from './importacao.js';
 import { normalizarTelefone } from './normalizar.js';
-import { LISTA_MODULOS, type Modulo, type PlanoDaConta, type PlanoPronto } from './planos.js';
+import { MODULOS_NA_ASSINATURA, type Modulo, type PlanoDaConta, type PlanoPronto } from './planos.js';
 
 /**
  * Teste grátis de 7 dias pelo site e a assinatura que a própria empresa contrata: cada mês é uma
@@ -184,8 +184,8 @@ export const assinarEntrada = z
     plano: planoParaAssinar,
     usuarios: z.number().int().min(1).max(200),
     modulos: z
-      .array(z.enum(LISTA_MODULOS as [Modulo, ...Modulo[]]))
-      .max(LISTA_MODULOS.length)
+      .array(z.enum(MODULOS_NA_ASSINATURA as [Modulo, ...Modulo[]]))
+      .max(MODULOS_NA_ASSINATURA.length)
       .default([]),
     numerosExtras: z.number().int().min(0).max(50).default(0),
     documento: z

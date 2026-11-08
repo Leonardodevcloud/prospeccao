@@ -1,0 +1,904 @@
+import {
+  avisosDoCarrossel,
+  type Carrossel,
+  type CarrosselEntrada,
+  ESTILO,
+  ESTILOS,
+  type EstiloCarrossel,
+  FUNDOS_SLIDE,
+  type IdentidadeCarrossel,
+  MAX_SLIDES,
+  MODELO,
+  MODELOS,
+  type ModeloSlide,
+  montarSlide,
+  ROTULO_FUNDO,
+  type SlideCarrossel,
+  slideNovo,
+} from '@prospeccao/shared/carrosseis';
+import { Button, Icon } from '@prospeccao/ui';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, Navigate, useParams } from 'react-router';
+import { api, ErroApi } from '../api';
+import {
+  type IdentidadeDaConta,
+  logosDaIdentidade,
+  urlFoto,
+  useCarrossel,
+  useIdentidade,
+} from '../carrossel/dados';
+import { SlideHtml } from '../carrossel/SlideHtml';
+import { LinkAjuda } from '../componentes/Ajuda';
+import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { useEhAdmin } from '../componentes/Sessao';
+import { FotosDaEmpresa } from './Carrosseis';
+
+/**
+ * Editor de um carrossel: os slides à esquerda, a imagem final no meio (desenhada pelo servidor, a
+ * mesma que vai para o Instagram) e a edição do slide à direita. Salva sozinho enquanto a pessoa
+ * edita; a miniatura da lateral e a prévia que aparece enquanto digita são desenhadas no navegador.
+ */
+
+type Rascunho = Pick<CarrosselEntrada, 'titulo' | 'estilo' | 'slides' | 'legenda' | 'situacao'>;
+
+const idNovo = () => `s${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+
+export function CarrosselEditor() {
+  const admin = useEhAdmin();
+  const id = Number(useParams().id);
+  const q = useCarrossel(id);
+  const identidade = useIdentidade();
+  if (!admin) return <Navigate to="/" replace />;
+  if (q.isPending || identidade.isPending) return <div className="esqueleto" style={{ height: 520 }} />;
+  if (q.error) return <ErroDaApi erro={q.error} />;
+  if (identidade.error) return <ErroDaApi erro={identidade.error} />;
+  return <Editor key={q.data.id} c={q.data} d={identidade.data} />;
+}
+
+function rascunhoDe(c: Carrossel): Rascunho {
+  return {
+    titulo: c.titulo,
+    estilo: c.estilo,
+    slides: c.conteudo,
+    legenda: c.legenda,
+    situacao: c.situacao === 'pronto' ? 'pronto' : 'rascunho',
+  };
+}
+
+/** Salva sozinho 1,2 s depois da última mudança (e na hora de baixar ou sair). */
+function useSalvarSozinho(c: Carrossel, r: Rascunho) {
+  const cliente = useQueryClient();
+  const [base, setBase] = useState(() => JSON.stringify(rascunhoDe(c)));
+  const versao = useRef(c.versao);
+  const [erro, setErro] = useState<unknown>(null);
+  const atual = JSON.stringify(r);
+  const sujo = atual !== base;
+  const travado = c.situacao === 'publicado' || c.situacao === 'agendado';
+  const salvar = useMutation({
+    mutationFn: (corpo: Rascunho) =>
+      api<Carrossel>(`/carrosseis/${c.id}`, { metodo: 'PUT', corpo: { ...corpo, versao: versao.current } }),
+    onSuccess: (salvo, corpo) => {
+      versao.current = salvo.versao;
+      setBase(JSON.stringify(corpo));
+      setErro(null);
+      cliente.setQueryData(['carrosseis', 'um', c.id], salvo);
+      void cliente.invalidateQueries({ queryKey: ['carrosseis', 'lista'] });
+    },
+    onError: setErro,
+  });
+  const conflito = erro instanceof ErroApi && erro.codigo === 'versao';
+  useEffect(() => {
+    if (!sujo || travado || conflito || salvar.isPending) return;
+    const t = setTimeout(() => salvar.mutate(JSON.parse(atual) as Rascunho), 1200);
+    return () => clearTimeout(t);
+  }, [atual, sujo, travado, conflito, salvar]);
+  const salvarAgora = useCallback(async () => {
+    if (sujo && !travado) await salvar.mutateAsync(JSON.parse(atual) as Rascunho);
+  }, [sujo, travado, salvar, atual]);
+  // Saindo com mudança não salva: o navegador pergunta.
+  useEffect(() => {
+    if (!sujo) return;
+    const aviso = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener('beforeunload', aviso);
+    return () => window.removeEventListener('beforeunload', aviso);
+  }, [sujo]);
+  return { sujo, salvando: salvar.isPending, erro, conflito, versao: versao.current, salvarAgora, travado };
+}
+
+/** A imagem final do slide, pedida ao servidor um pouco depois da última mudança. */
+function usePreviaDoServidor(p: {
+  slide: SlideCarrossel;
+  indice: number;
+  total: number;
+  estilo: EstiloCarrossel;
+  identidade: IdentidadeCarrossel;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [chaveDaImagem, setChaveDaImagem] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const chave = JSON.stringify(p);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a chave resume o pedido inteiro
+  useEffect(() => {
+    let cancelado = false;
+    const pedido = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch('/api/carrosseis/previa', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...p, largura: 900 }),
+          signal: pedido.signal,
+        });
+        if (!r.ok)
+          throw new Error(
+            (await r.json().catch(() => null))?.erro?.mensagem ?? 'Não deu para desenhar o slide.',
+          );
+        const blob = await r.blob();
+        if (cancelado) return;
+        setUrl((antigo) => {
+          if (antigo) URL.revokeObjectURL(antigo);
+          return URL.createObjectURL(blob);
+        });
+        setChaveDaImagem(chave);
+        setErro(null);
+      } catch (e) {
+        if (!cancelado && (e as Error).name !== 'AbortError') setErro((e as Error).message);
+      }
+    }, 350);
+    return () => {
+      cancelado = true;
+      clearTimeout(t);
+      pedido.abort();
+    };
+  }, [chave]);
+  useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
+  return { url, atualizada: chaveDaImagem === chave, erro };
+}
+
+function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
+  const { c, d } = props;
+  const [r, setR] = useState<Rascunho>(() => rascunhoDe(c));
+  const [atual, setAtual] = useState(0);
+  const [aba, setAba] = useState<'slide' | 'legenda' | 'carrossel'>('slide');
+  const [instagram, setInstagram] = useState(false);
+  const [baixando, setBaixando] = useState(false);
+  const s = useSalvarSozinho(c, r);
+  const identidade = d.identidade;
+  const logos = useMemo(() => logosDaIdentidade(d, identidade), [d, identidade]);
+  const slide = r.slides[Math.min(atual, r.slides.length - 1)]!;
+  const indice = Math.min(atual, r.slides.length - 1);
+
+  const montados = useMemo(
+    () =>
+      r.slides.map((x, i) =>
+        montarSlide({
+          slide: x,
+          indice: i,
+          total: r.slides.length,
+          identidade,
+          estilo: r.estilo,
+          foto: x.fotoId && MODELO[x.modelo].foto ? urlFoto(x.fotoId) : null,
+          ...logos,
+        }),
+      ),
+    [r.slides, r.estilo, identidade, logos],
+  );
+  const previa = usePreviaDoServidor({ slide, indice, total: r.slides.length, estilo: r.estilo, identidade });
+
+  const mudarSlide = (patch: Partial<SlideCarrossel>) =>
+    setR((x) => ({ ...x, slides: x.slides.map((y, i) => (i === indice ? { ...y, ...patch } : y)) }));
+  const trocarModelo = (modelo: ModeloSlide) =>
+    setR((x) => ({
+      ...x,
+      slides: x.slides.map((y, i) => {
+        if (i !== indice) return y;
+        const p = slideNovo(modelo, y.id);
+        return {
+          ...p,
+          sobretitulo: y.sobretitulo || p.sobretitulo,
+          titulo: y.titulo || p.titulo,
+          texto: y.texto || p.texto,
+          destaque: y.destaque || p.destaque,
+          botao: y.botao || p.botao,
+          itens: y.itens.length ? y.itens : p.itens,
+          colunas: y.colunas.length ? y.colunas : p.colunas,
+          fotoId: MODELO[modelo].foto ? y.fotoId : null,
+          fundo: y.fundo,
+        };
+      }),
+    }));
+  const adicionar = (modelo: ModeloSlide) => {
+    if (r.slides.length >= MAX_SLIDES) return;
+    setR((x) => {
+      const slides = [...x.slides];
+      slides.splice(indice + 1, 0, slideNovo(modelo, idNovo()));
+      return { ...x, slides };
+    });
+    setAtual(indice + 1);
+  };
+  const mover = (de: number, para: number) => {
+    if (para < 0 || para >= r.slides.length) return;
+    setR((x) => {
+      const slides = [...x.slides];
+      const [um] = slides.splice(de, 1);
+      slides.splice(para, 0, um!);
+      return { ...x, slides };
+    });
+    setAtual(para);
+  };
+  const duplicar = (i: number) => {
+    if (r.slides.length >= MAX_SLIDES) return;
+    setR((x) => {
+      const slides = [...x.slides];
+      slides.splice(i + 1, 0, { ...x.slides[i]!, id: idNovo() });
+      return { ...x, slides };
+    });
+    setAtual(i + 1);
+  };
+  const tirar = (i: number) => {
+    if (r.slides.length <= 1) return;
+    setR((x) => ({ ...x, slides: x.slides.filter((_, j) => j !== i) }));
+    setAtual(Math.max(0, i - 1));
+  };
+  const baixar = async () => {
+    setBaixando(true);
+    try {
+      await s.salvarAgora();
+      const a = document.createElement('a');
+      a.href = `/api/carrosseis/${c.id}/imagens.zip`;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      setTimeout(() => setBaixando(false), 1500);
+    }
+  };
+
+  const avisosGerais = avisosDoCarrossel(r.slides);
+  const avisosSlide = montados[indice]?.avisos ?? [];
+  const estado = s.travado
+    ? 'Publicado: só leitura'
+    : s.salvando
+      ? 'Salvando…'
+      : s.sujo
+        ? 'Alterações ainda não salvas'
+        : 'Tudo salvo';
+
+  return (
+    <div className="editor-carrossel">
+      <header className="editor-carrossel__topo">
+        <Link to="/carrosseis" className="link-botao editor-carrossel__voltar">
+          <Icon name="chevron-left" size={16} /> Carrosséis
+        </Link>
+        <label className="pp-sr" htmlFor="ec-titulo">
+          Nome do carrossel
+        </label>
+        <input
+          id="ec-titulo"
+          className="editor-carrossel__nome"
+          value={r.titulo}
+          maxLength={120}
+          onChange={(e) => setR({ ...r, titulo: e.target.value })}
+          disabled={s.travado}
+        />
+        <span className="quieto editor-carrossel__estado" aria-live="polite">
+          {estado}
+        </span>
+        <span className="editor-carrossel__espaco" />
+        <LinkAjuda artigo="carrosseis" />
+        <Button size="sm" variant="ghost" icon="camera" onClick={() => setInstagram(true)} disabled={s.sujo}>
+          Ver como no Instagram
+        </Button>
+        <Button size="sm" variant="secondary" icon="download" onClick={baixar} disabled={baixando}>
+          {baixando ? 'Preparando…' : 'Baixar as imagens'}
+        </Button>
+        <Button
+          size="sm"
+          variant={r.situacao === 'pronto' ? 'secondary' : 'primary'}
+          icon={r.situacao === 'pronto' ? 'rotate-ccw' : 'check'}
+          onClick={() => setR({ ...r, situacao: r.situacao === 'pronto' ? 'rascunho' : 'pronto' })}
+          disabled={s.travado}
+        >
+          {r.situacao === 'pronto' ? 'Voltar para rascunho' : 'Marcar como pronto'}
+        </Button>
+      </header>
+      {s.conflito ? (
+        <Mensagem tipo="erro">
+          Outra pessoa salvou este carrossel enquanto você editava.{' '}
+          <button type="button" className="link-botao" onClick={() => window.location.reload()}>
+            Abrir de novo
+          </button>
+        </Mensagem>
+      ) : s.erro ? (
+        <ErroDaApi erro={s.erro} />
+      ) : null}
+      {!!avisosGerais.length && (
+        <ul className="editor-carrossel__avisos" aria-label="Avisos do carrossel">
+          {avisosGerais.map((a) => (
+            <li key={a}>
+              <Icon name="circle-help" size={14} /> {a}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="editor-carrossel__corpo">
+        <nav className="editor-carrossel__tira" aria-label="Slides">
+          <ol className="editor-carrossel__lista">
+            {r.slides.map((x, i) => (
+              <li key={x.id} className="editor-carrossel__item" data-atual={i === indice || undefined}>
+                <button
+                  type="button"
+                  className="editor-carrossel__mini"
+                  aria-current={i === indice || undefined}
+                  aria-label={`Slide ${i + 1}: ${MODELO[x.modelo].nome}`}
+                  onClick={() => setAtual(i)}
+                >
+                  <span className="editor-carrossel__num">{i + 1}</span>
+                  <SlideHtml no={montados[i]!.no} largura={104} />
+                  {!!montados[i]!.avisos.length && (
+                    <span className="editor-carrossel__ponto" title="Tem aviso" />
+                  )}
+                </button>
+                {i === indice && !s.travado && (
+                  <span className="editor-carrossel__mini-acoes">
+                    <button
+                      type="button"
+                      className="botao-icone"
+                      aria-label="Subir"
+                      title="Subir"
+                      onClick={() => mover(i, i - 1)}
+                      disabled={i === 0}
+                    >
+                      <Icon name="arrow-up" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="botao-icone"
+                      aria-label="Descer"
+                      title="Descer"
+                      onClick={() => mover(i, i + 1)}
+                      disabled={i === r.slides.length - 1}
+                    >
+                      <Icon name="arrow-down" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="botao-icone"
+                      aria-label="Duplicar o slide"
+                      title="Duplicar"
+                      onClick={() => duplicar(i)}
+                      disabled={r.slides.length >= MAX_SLIDES}
+                    >
+                      <Icon name="copy" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="botao-icone"
+                      aria-label="Tirar o slide"
+                      title="Tirar"
+                      onClick={() => tirar(i)}
+                      disabled={r.slides.length <= 1}
+                    >
+                      <Icon name="trash-2" size={14} />
+                    </button>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+          {!s.travado && <NovoSlide cheio={r.slides.length >= MAX_SLIDES} aoEscolher={adicionar} />}
+        </nav>
+
+        <section className="editor-carrossel__palco" aria-label={`Slide ${indice + 1}`}>
+          <div className="editor-carrossel__imagem" data-carregando={!previa.atualizada || undefined}>
+            {/* Enquanto o servidor desenha, a prévia do navegador fica por baixo. */}
+            <SlideHtml no={montados[indice]!.no} largura={432} />
+            {previa.url && (
+              <img
+                src={previa.url}
+                alt={`Slide ${indice + 1} como vai para o Instagram`}
+                className="editor-carrossel__final"
+                data-velha={!previa.atualizada || undefined}
+              />
+            )}
+          </div>
+          <div className="editor-carrossel__nav">
+            <button
+              type="button"
+              className="botao-icone"
+              aria-label="Slide anterior"
+              onClick={() => setAtual(Math.max(0, indice - 1))}
+              disabled={indice === 0}
+            >
+              <Icon name="chevron-left" size={16} />
+            </button>
+            <span className="quieto">
+              Slide {indice + 1} de {r.slides.length} · 1080 × 1350
+            </span>
+            <button
+              type="button"
+              className="botao-icone"
+              aria-label="Próximo slide"
+              onClick={() => setAtual(Math.min(r.slides.length - 1, indice + 1))}
+              disabled={indice === r.slides.length - 1}
+            >
+              <Icon name="arrow-right" size={16} />
+            </button>
+          </div>
+          {previa.erro && <Mensagem tipo="erro">{previa.erro}</Mensagem>}
+        </section>
+
+        <aside className="editor-carrossel__painel" aria-label="Edição">
+          <div className="pipelines" role="tablist" aria-label="Edição">
+            {(
+              [
+                ['slide', 'Slide'],
+                ['legenda', 'Legenda'],
+                ['carrossel', 'Estilo'],
+              ] as const
+            ).map(([idAba, rotulo]) => (
+              <button
+                key={idAba}
+                type="button"
+                role="tab"
+                aria-selected={aba === idAba}
+                className="pipelines__aba"
+                onClick={() => setAba(idAba)}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+          <fieldset className="editor-carrossel__campos" disabled={s.travado}>
+            {aba === 'slide' ? (
+              <PainelSlide slide={slide} avisos={avisosSlide} aoMudar={mudarSlide} aoModelo={trocarModelo} />
+            ) : aba === 'legenda' ? (
+              <PainelLegenda legenda={r.legenda} aoMudar={(legenda) => setR({ ...r, legenda })} />
+            ) : (
+              <PainelEstilo estilo={r.estilo} aoMudar={(estilo) => setR({ ...r, estilo })} />
+            )}
+          </fieldset>
+        </aside>
+      </div>
+      {instagram && (
+        <ComoNoInstagram
+          c={c}
+          versao={s.versao}
+          rascunho={r}
+          identidade={identidade}
+          aoFechar={() => setInstagram(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function NovoSlide(props: { cheio: boolean; aoEscolher: (m: ModeloSlide) => void }) {
+  const [aberto, setAberto] = useState(false);
+  if (props.cheio)
+    return <p className="quieto editor-carrossel__cheio">Até 10 slides (limite do Instagram).</p>;
+  return (
+    <div className="editor-carrossel__novo">
+      <Button
+        size="sm"
+        variant="ghost"
+        icon="plus"
+        onClick={() => setAberto((x) => !x)}
+        aria-expanded={aberto}
+      >
+        Slide
+      </Button>
+      {aberto && (
+        <ul className="editor-carrossel__menu">
+          {MODELOS.map((m) => (
+            <li key={m}>
+              <button
+                type="button"
+                className="editor-carrossel__opcao"
+                onClick={() => {
+                  props.aoEscolher(m);
+                  setAberto(false);
+                }}
+              >
+                <b>{MODELO[m].nome}</b>
+                <span className="quieto">{MODELO[m].descricao}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Contador(props: { n: number; limite: number }) {
+  return (
+    <span className="campo__contador" data-passou={props.n > props.limite || undefined}>
+      {props.n} de {props.limite}
+    </span>
+  );
+}
+
+function PainelSlide(props: {
+  slide: SlideCarrossel;
+  avisos: string[];
+  aoMudar: (p: Partial<SlideCarrossel>) => void;
+  aoModelo: (m: ModeloSlide) => void;
+}) {
+  const { slide } = props;
+  const m = MODELO[slide.modelo];
+  const [fotos, setFotos] = useState(false);
+  return (
+    <div className="painel-slide">
+      <div className="campo">
+        <span className="campo__rotulo">Modelo do slide</span>
+        <div className="painel-slide__modelos" role="radiogroup" aria-label="Modelo do slide">
+          {MODELOS.map((x) => (
+            <label
+              key={x}
+              className="painel-slide__modelo"
+              data-ativo={slide.modelo === x || undefined}
+              title={MODELO[x].descricao}
+            >
+              <input
+                type="radio"
+                name="ps-modelo"
+                className="pp-sr"
+                checked={slide.modelo === x}
+                onChange={() => props.aoModelo(x)}
+              />
+              {MODELO[x].nome}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {m.campos.map((cp) => {
+        const valor = slide[cp.campo];
+        const longo = cp.limite > 60;
+        const idCampo = `ps-${cp.campo}`;
+        return (
+          <div key={cp.campo} className="campo">
+            <label htmlFor={idCampo}>
+              {cp.rotulo} <Contador n={valor.length} limite={cp.limite} />
+            </label>
+            {longo ? (
+              <textarea
+                id={idCampo}
+                rows={cp.limite > 150 ? 4 : 2}
+                value={valor}
+                maxLength={cp.campo === 'texto' ? 400 : 160}
+                placeholder={cp.dica}
+                onChange={(e) => props.aoMudar({ [cp.campo]: e.target.value })}
+              />
+            ) : (
+              <input
+                id={idCampo}
+                className="filtro"
+                value={valor}
+                maxLength={cp.campo === 'destaque' ? 24 : 40}
+                placeholder={cp.dica}
+                onChange={(e) => props.aoMudar({ [cp.campo]: e.target.value })}
+              />
+            )}
+          </div>
+        );
+      })}
+
+      {m.itens && (
+        <fieldset className="campo">
+          <legend>Itens (até {m.itens.max})</legend>
+          {slide.itens.map((it, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: os itens não têm id; a ordem é a identidade
+            <div key={i} className="painel-slide__item">
+              <span className="mono quieto">{i + 1}</span>
+              <input
+                className="filtro"
+                aria-label={`Item ${i + 1}`}
+                value={it}
+                maxLength={120}
+                onChange={(e) =>
+                  props.aoMudar({ itens: slide.itens.map((x, j) => (j === i ? e.target.value : x)) })
+                }
+              />
+              <Contador n={it.length} limite={m.itens!.limite} />
+              <button
+                type="button"
+                className="botao-icone"
+                aria-label={`Tirar o item ${i + 1}`}
+                onClick={() => props.aoMudar({ itens: slide.itens.filter((_, j) => j !== i) })}
+              >
+                <Icon name="x" size={14} />
+              </button>
+            </div>
+          ))}
+          {slide.itens.length < m.itens.max && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              icon="plus"
+              onClick={() => props.aoMudar({ itens: [...slide.itens, ''] })}
+            >
+              Item
+            </Button>
+          )}
+        </fieldset>
+      )}
+
+      {m.colunas &&
+        [0, 1].map((i) => {
+          const col = slide.colunas[i] ?? { rotulo: '', texto: '' };
+          const mudar = (p: Partial<typeof col>) => {
+            const colunas = [0, 1].map((j) => slide.colunas[j] ?? { rotulo: '', texto: '' });
+            colunas[i] = { ...col, ...p };
+            props.aoMudar({ colunas });
+          };
+          return (
+            <fieldset key={i} className="campo painel-slide__coluna">
+              <legend>{i === 0 ? 'Lado esquerdo (o comum)' : 'Lado direito (o certo)'}</legend>
+              <input
+                className="filtro"
+                aria-label="Rótulo"
+                placeholder={i === 0 ? 'Hoje' : 'O certo'}
+                value={col.rotulo}
+                maxLength={24}
+                onChange={(e) => mudar({ rotulo: e.target.value })}
+              />
+              <textarea
+                aria-label="Texto"
+                rows={3}
+                value={col.texto}
+                maxLength={160}
+                onChange={(e) => mudar({ texto: e.target.value })}
+              />
+              <Contador n={col.texto.length} limite={120} />
+            </fieldset>
+          );
+        })}
+
+      {m.foto && (
+        <div className="campo">
+          <span className="campo__rotulo">Foto</span>
+          <div className="painel-slide__foto">
+            {slide.fotoId ? (
+              <img className="painel-slide__foto-img" src={urlFoto(slide.fotoId, 240)} alt="Foto do slide" />
+            ) : (
+              <span className="quieto">Sem foto</span>
+            )}
+            <span className="acoes">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                icon="image"
+                onClick={() => setFotos((x) => !x)}
+              >
+                {fotos ? 'Fechar as fotos' : 'Escolher foto'}
+              </Button>
+              {slide.fotoId && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => props.aoMudar({ fotoId: null })}
+                >
+                  Tirar a foto
+                </Button>
+              )}
+            </span>
+          </div>
+          {fotos && (
+            <FotosDaEmpresa
+              escolhida={slide.fotoId}
+              escolher={(id) => {
+                props.aoMudar({ fotoId: id });
+                setFotos(false);
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      <fieldset className="campo">
+        <legend>Fundo</legend>
+        <div className="segmentos">
+          {FUNDOS_SLIDE.map((fd) => (
+            <label key={fd} className="segmento">
+              <input
+                type="radio"
+                name="ps-fundo"
+                className="pp-sr"
+                checked={slide.fundo === fd}
+                onChange={() => props.aoMudar({ fundo: fd })}
+              />
+              {ROTULO_FUNDO[fd]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {!!props.avisos.length && (
+        <ul className="editor-carrossel__avisos" aria-label="Avisos deste slide">
+          {props.avisos.map((a) => (
+            <li key={a}>
+              <Icon name="circle-help" size={14} /> {a}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function PainelLegenda(props: { legenda: string; aoMudar: (v: string) => void }) {
+  const [copiada, setCopiada] = useState(false);
+  return (
+    <div className="painel-slide">
+      <div className="campo">
+        <label htmlFor="pl-legenda">
+          Legenda do post <Contador n={props.legenda.length} limite={2200} />
+        </label>
+        <textarea
+          id="pl-legenda"
+          rows={12}
+          maxLength={2200}
+          value={props.legenda}
+          placeholder="A primeira frase é o gancho: só ela aparece antes do “mais”."
+          onChange={(e) => props.aoMudar(e.target.value)}
+        />
+        <span className="campo__dica">
+          Antes do “mais” aparece: <i>{props.legenda.slice(0, 125) || '—'}</i>
+          {props.legenda.length > 125 ? '…' : ''}
+        </span>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        icon="copy"
+        disabled={!props.legenda.trim()}
+        onClick={() => {
+          void navigator.clipboard.writeText(props.legenda).then(() => {
+            setCopiada(true);
+            setTimeout(() => setCopiada(false), 1600);
+          });
+        }}
+      >
+        {copiada ? 'Copiada' : 'Copiar a legenda'}
+      </Button>
+    </div>
+  );
+}
+
+function PainelEstilo(props: { estilo: EstiloCarrossel; aoMudar: (e: EstiloCarrossel) => void }) {
+  return (
+    <div className="painel-slide">
+      <p className="quieto">
+        O estilo vale para o carrossel inteiro. Cores, fontes e logo vêm da identidade visual.
+      </p>
+      <div className="painel-slide__estilos" role="radiogroup" aria-label="Estilo do carrossel">
+        {ESTILOS.map((e) => (
+          <label key={e} className="painel-slide__estilo" data-ativo={props.estilo === e || undefined}>
+            <input
+              type="radio"
+              name="pe-estilo"
+              className="pp-sr"
+              checked={props.estilo === e}
+              onChange={() => props.aoMudar(e)}
+            />
+            <b>{ESTILO[e].nome}</b>
+            <span className="quieto">{ESTILO[e].descricao}</span>
+          </label>
+        ))}
+      </div>
+      <Link to="/carrosseis?aba=identidade" className="link-botao">
+        Mudar a identidade visual
+      </Link>
+    </div>
+  );
+}
+
+/** Como o post aparece no feed: as imagens salvas, arrastando para o lado, e a legenda embaixo. */
+function ComoNoInstagram(props: {
+  c: Carrossel;
+  versao: number;
+  rascunho: Rascunho;
+  identidade: IdentidadeCarrossel;
+  aoFechar: () => void;
+}) {
+  const [i, setI] = useState(0);
+  const trilho = useRef<HTMLDivElement>(null);
+  const total = props.rascunho.slides.length;
+  const legenda = props.rascunho.legenda;
+  const [mais, setMais] = useState(false);
+  const ir = (n: number) => {
+    const alvo = Math.max(0, Math.min(total - 1, n));
+    trilho.current?.scrollTo({ left: alvo * (trilho.current.clientWidth || 0), behavior: 'smooth' });
+  };
+  useEffect(() => {
+    const t = (e: KeyboardEvent) => e.key === 'Escape' && props.aoFechar();
+    document.addEventListener('keydown', t);
+    return () => document.removeEventListener('keydown', t);
+  }, [props]);
+  return (
+    <>
+      <div className="scrim" onClick={props.aoFechar} aria-hidden="true" />
+      <div className="como-instagram" role="dialog" aria-modal="true" aria-label="Como fica no Instagram">
+        <div className="como-instagram__celular">
+          <div className="como-instagram__topo">
+            <span className="como-instagram__avatar" aria-hidden="true">
+              {(props.identidade.marcaTexto || props.identidade.assinatura || 'A')
+                .replace('@', '')
+                .slice(0, 1)
+                .toUpperCase()}
+            </span>
+            <b>{props.identidade.assinatura || props.identidade.marcaTexto || 'sua empresa'}</b>
+            <span className="quieto">
+              {i + 1}/{total}
+            </span>
+          </div>
+          <div
+            className="como-instagram__trilho"
+            ref={trilho}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              setI(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
+            }}
+          >
+            {props.rascunho.slides.map((x, n) => (
+              <img
+                key={x.id}
+                className="como-instagram__img"
+                src={`/api/carrosseis/${props.c.id}/slides/${n}?largura=720&v=${props.versao}`}
+                alt={`Slide ${n + 1}`}
+                loading={n < 2 ? 'eager' : 'lazy'}
+              />
+            ))}
+          </div>
+          <div className="como-instagram__pontos" aria-hidden="true">
+            {props.rascunho.slides.map((x, n) => (
+              <span key={x.id} className="como-instagram__ponto" data-atual={n === i || undefined} />
+            ))}
+          </div>
+          <p className="como-instagram__legenda">
+            <b>{props.identidade.assinatura || 'sua empresa'}</b>{' '}
+            {mais || legenda.length <= 125 ? legenda : `${legenda.slice(0, 125)}… `}
+            {!mais && legenda.length > 125 && (
+              <button type="button" className="link-botao" onClick={() => setMais(true)}>
+                mais
+              </button>
+            )}
+          </p>
+        </div>
+        <div className="como-instagram__acoes">
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="chevron-left"
+            onClick={() => ir(i - 1)}
+            disabled={i === 0}
+          >
+            Anterior
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            iconRight="arrow-right"
+            onClick={() => ir(i + 1)}
+            disabled={i >= total - 1}
+          >
+            Próximo
+          </Button>
+          <Button size="sm" variant="ghost" icon="x" onClick={props.aoFechar}>
+            Fechar
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}

@@ -1495,6 +1495,7 @@ export interface PlanoConta {
   limiteHorasReuniaoProprio: number | null;
   limiteConversasIaProprio: number | null;
   limiteMinutosLigacaoProprio: number | null;
+  limiteCarrosseisMesProprio: number | null;
   /** Uso somado da organização (o contrato vale para todas as unidades). */
   uso: { usuarios: number; leadsMes: number; leadsEsperando: number };
   organizacao: { id: number; nome: string; unidades: number };

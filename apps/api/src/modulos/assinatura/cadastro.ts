@@ -214,6 +214,7 @@ export async function confirmar(
       horasReuniao: null,
       conversasIa: null,
       minutosLigacao: null,
+      carrosseisMes: null,
     });
     const { rows: p } = await tx.query<{ id: string }>(
       `INSERT INTO cadastro.pedidos_site (nome, empresa, whatsapp, email, plano, canal, etapa, conta_id, nota)

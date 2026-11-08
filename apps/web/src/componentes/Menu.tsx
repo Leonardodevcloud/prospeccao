@@ -95,6 +95,14 @@ export const MENU_CRM: EntradaMenu[] = [
         modulosEquipe: ['agente_ia'],
       },
       { para: '/instagram', rotulo: 'Instagram', icone: 'camera', recurso: 'instagram' },
+      // Carrosséis com IA: módulo à parte, só o administrador (conteúdo e identidade da marca).
+      {
+        para: '/carrosseis',
+        rotulo: 'Carrosséis',
+        icone: 'gallery-horizontal-end',
+        admin: true,
+        modulos: ['carrosseis'],
+      },
     ],
   },
   {

@@ -11,6 +11,20 @@ var F = React.Fragment;
 
 /* Ícones: Lucide 1.49.0 (ISC). Nós copiados do pacote lucide-static. */
 var ICONS = {
+  /* Carrosséis do Instagram (Lucide gallery-horizontal-end). */
+  'gallery-horizontal-end': [
+    ['path', { d: 'M2 7v10' }],
+    ['path', { d: 'M6 5v14' }],
+    ['rect', { width: '12', height: '18', x: '10', y: '3', rx: '2' }],
+  ],
+  /* Cores da identidade visual (Lucide palette). */
+  palette: [
+    ['path', { d: 'M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z' }],
+    ['circle', { cx: '13.5', cy: '6.5', r: '.5', fill: 'currentColor' }],
+    ['circle', { cx: '17.5', cy: '10.5', r: '.5', fill: 'currentColor' }],
+    ['circle', { cx: '6.5', cy: '12.5', r: '.5', fill: 'currentColor' }],
+    ['circle', { cx: '8.5', cy: '7.5', r: '.5', fill: 'currentColor' }],
+  ],
   /* Mostrar e esconder a senha (Lucide). */
   'eye': [
     ['path', { d: 'M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0' }],

@@ -246,6 +246,8 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
       horas: props.p.limiteHorasReuniaoProprio != null ? String(props.p.limiteHorasReuniaoProprio) : '',
       conversas: props.p.limiteConversasIaProprio != null ? String(props.p.limiteConversasIaProprio) : '',
       minutos: props.p.limiteMinutosLigacaoProprio != null ? String(props.p.limiteMinutosLigacaoProprio) : '',
+      carrosseis:
+        props.p.limiteCarrosseisMesProprio != null ? String(props.p.limiteCarrosseisMesProprio) : '',
     };
   };
   const [f, setF] = useState(inicial);
@@ -271,6 +273,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
           horasReuniao: inteiroOuNulo(f.horas),
           conversasIa: inteiroOuNulo(f.conversas),
           minutosLigacao: inteiroOuNulo(f.minutos),
+          carrosseisMes: inteiroOuNulo(f.carrosseis),
         },
       }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['master'] }),
@@ -287,6 +290,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
       horasReuniao: inteiroOuNulo(f.horas),
       conversasIa: inteiroOuNulo(f.conversas),
       minutosLigacao: inteiroOuNulo(f.minutos),
+      carrosseisMes: inteiroOuNulo(f.carrosseis),
     },
     tabela,
   );
@@ -477,6 +481,20 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
                 <span className="campo__dica">
                   Passou da franquia: {fmtReais(tabela.minutoExtra)} por minuto, cobrado à parte.
                 </span>
+              </div>
+            )}
+            {f.modulos.includes('carrosseis') && (
+              <div className="campo">
+                <label htmlFor="pl-carrosseis">Carrosséis do time de IA por mês</label>
+                <input
+                  id="pl-carrosseis"
+                  className="filtro mono"
+                  inputMode="numeric"
+                  placeholder={`Padrão: ${fmtNumero(tabela.carrosseisMes)}`}
+                  value={f.carrosseis}
+                  onChange={(e) => setF({ ...f, carrosseis: e.target.value.replace(/\D/g, '') })}
+                />
+                <span className="campo__dica">Carrosséis montados à mão no editor não contam.</span>
               </div>
             )}
           </div>
@@ -722,6 +740,13 @@ export function TabelaDePrecos() {
           )}
           {campo('tp-pacote-preco', 'Preço do pacote de minutos (R$)', t.pacotePreco, (v) =>
             setT({ ...t, pacotePreco: v }),
+          )}
+          {campo(
+            'tp-carrosseis',
+            'Carrosséis do time de IA por mês (no módulo Carrosséis com IA)',
+            t.carrosseisMes,
+            (v) => setT({ ...t, carrosseisMes: Math.round(v) }),
+            false,
           )}
           {campoLimite('tp-conversas', 'Conversas do Agente de IA por mês', t.conversasIaMes, (v) =>
             setT({ ...t, conversasIaMes: v }),

@@ -1190,6 +1190,94 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'carrosseis',
+    area: 'WhatsApp e IA',
+    titulo: 'Carrosséis: identidade visual, fotos, editor e imagens para o Instagram',
+    resumo: 'Monte carrosséis com as cores, fontes e logo da empresa e baixe as imagens prontas para postar.',
+    onde: { rotulo: 'Carrosséis', para: '/carrosseis' },
+    termos:
+      'carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda baixar zip arte publicação feed conteúdo',
+    corpo: (
+      <>
+        <p>
+          Em <b>Carrosséis</b> você monta carrosséis para o Instagram com a cara da empresa: cada slide sai
+          com as mesmas cores, fontes, logo e margens, em 1080 × 1350 (o formato em pé do feed). O texto é
+          desenhado pelo sistema, então fica sempre nítido, sem letra torta nem erro de digitação na imagem.
+        </p>
+        <p>
+          É um <b>módulo à parte</b> e só o <b>administrador</b> da conta entra. Sem o módulo, a tela explica
+          o que ele faz; para liberar, fale com a gente.
+        </p>
+        <h3>1. Identidade visual (uma vez)</h3>
+        <Passos>
+          <li>
+            Na aba <b>Identidade visual</b>, escolha as quatro cores: <b>principal</b> (o fundo escuro),{' '}
+            <b>destaque</b> (números, setas, palavras em evidência), <b>fundo claro</b> e <b>texto</b>. Se a
+            empresa já tem cores em Marca e domínio, clique em <b>Usar as cores de Marca e domínio</b>.
+          </li>
+          <li>
+            Escolha o <b>estilo</b> (Editorial, Impacto, Clean ou Foto) e o <b>par de fontes</b>. A prévia ao
+            lado mostra como ficam a capa, um texto, uma lista e o fechamento.
+          </li>
+          <li>
+            Envie a <b>logo</b> para fundo claro e, se tiver, a versão para fundo escuro (PNG com fundo
+            transparente fica melhor). Sem logo própria, o sistema usa a de Marca e domínio.
+          </li>
+          <li>
+            Preencha a <b>assinatura</b> (o @ da empresa, que aparece no rodapé) e, em{' '}
+            <b>Como a empresa fala</b>, o que a empresa vende, para quem, o tom e as palavras que nunca devem
+            aparecer.
+          </li>
+        </Passos>
+        <Nota>
+          Se uma combinação de cores ficar difícil de ler, o sistema escurece ou clareia o tom só o bastante
+          para dar leitura e avisa o que ajustou. As suas cores salvas não mudam.
+        </Nota>
+        <h3>2. Fotos da empresa</h3>
+        <p>
+          Guarde ali as fotos da loja, dos produtos e da equipe (até 60). Elas entram nos slides de capa e de
+          foto. Use fotos com pelo menos 500 px no lado menor; as do celular servem, e o sistema tira os dados
+          do aparelho (como a localização) antes de guardar.
+        </p>
+        <h3>3. Montar o carrossel</h3>
+        <Passos>
+          <li>
+            Clique em <b>Novo carrossel</b>, dê um título e escolha começar por um <b>roteiro pronto</b>{' '}
+            (capa, conteúdo e fechamento) ou só pela capa.
+          </li>
+          <li>
+            No editor, cada slide tem um <b>modelo</b>: capa, item, texto, lista, número, citação, comparação,
+            foto e chamada. Os campos mostram quantas letras cabem; passando disso, o texto diminui para caber
+            e aparece um aviso.
+          </li>
+          <li>
+            Na faixa de slides, suba, desça, duplique ou tire cada slide (até 10 por carrossel). A aba{' '}
+            <b>Legenda</b> conta os 2.200 caracteres do Instagram e mostra o trecho que aparece antes do
+            “mais”.
+          </li>
+          <li>
+            Tudo é salvo sozinho. Se o mesmo carrossel estiver aberto em outra aba, o sistema avisa em vez de
+            apagar o que a outra salvou.
+          </li>
+        </Passos>
+        <h3>4. Conferir e postar</h3>
+        <ul>
+          <li>
+            <b>Ver como no Instagram</b> mostra o carrossel num celular, deslizando como no feed.
+          </li>
+          <li>
+            <b>Baixar as imagens</b> traz um .zip com os slides na ordem e a legenda num arquivo de texto. No
+            Instagram, crie o post, escolha várias imagens na ordem e cole a legenda.
+          </li>
+          <li>
+            <b>Marcar como pronto</b> separa na lista o que já pode ir ao ar.
+          </li>
+        </ul>
+        <Nota>Emojis não entram nos slides (as fontes não têm); use-os à vontade na legenda.</Nota>
+      </>
+    ),
+  },
+  {
     id: 'email',
     area: 'Vendas',
     titulo: 'Sequências de e-mail',
@@ -1541,6 +1629,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             <b>Usuário adicional</b>: cada pessoa a mais que o plano inclui.
+          </li>
+          <li>
+            <b>Carrosséis com IA</b>: carrosséis para o Instagram com a identidade visual da empresa, feitos
+            pelo administrador. Por enquanto é liberado pelo nosso time (fale com a gente).
           </li>
         </ul>
         <h3>Quando algo não está no plano</h3>

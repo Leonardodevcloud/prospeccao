@@ -98,6 +98,15 @@ const roteador = createBrowserRouter([
       { path: 'instagram/post/:midiaId', element: <InstagramPost /> },
       { path: 'funil', element: <Funil /> },
       { path: 'quadros', lazy: async () => ({ Component: (await import('./paginas/Quadros')).Quadros }) },
+      // Carrosséis com IA (as fontes dos slides só carregam aqui).
+      {
+        path: 'carrosseis',
+        lazy: async () => ({ Component: (await import('./paginas/Carrosseis')).Carrosseis }),
+      },
+      {
+        path: 'carrosseis/:id',
+        lazy: async () => ({ Component: (await import('./paginas/CarrosselEditor')).CarrosselEditor }),
+      },
       { path: 'relatorios', element: <Relatorios /> },
       { path: 'reunioes', element: <Reunioes /> },
       { path: 'ligacoes', lazy: async () => ({ Component: (await import('./paginas/Ligacoes')).Ligacoes }) },
