@@ -6,6 +6,7 @@ import { visivel } from '../../visibilidade.js';
 import { chipParaEquipe, emUso as chipsEmUso } from '../agente/chips.js';
 import * as agente from '../agente/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
+import { puxarSeSemDono } from '../equipe/repositorio.js';
 import { dadosDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
 import { janelaDoDirect } from '../instagram/canal.js';
@@ -64,7 +65,11 @@ const naoLidasSql = (C: string, empresa: string) => `
 
 export async function listar(
   db: Executor,
-  f: { filtro: 'todas' | 'nao_lidas' | 'minhas'; busca?: string; canal?: 'whatsapp' | 'instagram' | 'email' },
+  f: {
+    filtro: 'todas' | 'nao_lidas' | 'minhas' | 'sem_dono';
+    busca?: string;
+    canal?: 'whatsapp' | 'instagram' | 'email';
+  },
   usuarioId: number,
 ) {
   const C = contaSql();
@@ -76,6 +81,9 @@ export async function listar(
   };
   if (f.filtro === 'nao_lidas') where.push('nl.n > 0');
   if (f.filtro === 'minhas') where.push(`o.responsavel_id = ${p(usuarioId)}`);
+  // Fila da carteira: o que ainda não é de ninguém (quem atende puxa para si).
+  if (f.filtro === 'sem_dono')
+    where.push(`o.responsavel_id IS NULL AND o.etapa NOT IN ('ganho', 'perdido', 'descartado')`);
   // Só as conversas que passaram por um canal (WhatsApp, Instagram ou e-mail).
   if (f.canal)
     where.push(
@@ -246,6 +254,7 @@ export async function enviarTexto(deps: Deps, empresaId: number, texto: string):
     quem?.nome ?? 'sistema',
   );
   await assumir(deps.pool, empresaId);
+  await puxarSeSemDono(deps.pool, empresaId);
   await marcarLidas(deps.pool, empresaId);
 }
 
@@ -312,6 +321,7 @@ export async function enviarMidia(deps: Deps, empresaId: number, m: MidiaEntrada
     quem?.nome ?? 'sistema',
   );
   await assumir(deps.pool, empresaId);
+  await puxarSeSemDono(deps.pool, empresaId);
   await marcarLidas(deps.pool, empresaId);
 }
 

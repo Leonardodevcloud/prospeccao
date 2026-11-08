@@ -1538,7 +1538,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
     titulo: 'Equipe e o que cada um vê',
     resumo: 'Convites, papéis, unidade toda ou só a própria base.',
     onde: { rotulo: 'Equipe', para: '/equipe' },
-    termos: 'convidar usuário papel admin sdr closer unidade alcance própria base rodízio',
+    termos:
+      'convidar usuário papel admin sdr closer unidade alcance própria base rodízio carteira fila sem dono puxar grupo loja departamento atendimento',
     corpo: (
       <>
         <p>
@@ -1556,6 +1557,32 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
         </ul>
         <p>O administrador sempre vê a unidade toda.</p>
+        <h3>Carteira de clientes (fila de sem dono)</h3>
+        <p>
+          Em <b>Como os leads são divididos</b>, escolha <b>Carteira: fica numa fila que todo o time vê</b>. O
+          lead novo (inclusive quem escreve pela primeira vez no WhatsApp) fica sem dono e aparece em{' '}
+          <b>Conversas › Sem dono</b> para todo o time.
+        </p>
+        <ul>
+          <li>
+            <b>Puxar para minha carteira</b> (na conversa) ou responder primeiro: o lead passa a ser seu. Quem
+            chegar depois já não o vê.
+          </li>
+          <li>
+            Mensagem de lead da carteira de alguém avisa só essa pessoa; a de lead sem dono avisa o time todo.
+          </li>
+          <li>
+            Para cada vendedor ver só a própria carteira (e a fila), marque <b>Só a própria base</b> no
+            cadastro dele. O administrador passa um lead para outra pessoa na ficha.
+          </li>
+        </ul>
+        <h3>Grupos de atendimento</h3>
+        <p>
+          Em <b>Equipe › Grupos de atendimento</b>, crie as lojas ou departamentos e marque quem atende cada
+          um (uma pessoa pode estar em mais de um). Eles são a base do menu da central telefônica (“aperte 1
+          para a loja A”), que toca para todos do grupo escolhido ao mesmo tempo: o menu chega na próxima
+          versão.
+        </p>
       </>
     ),
   },

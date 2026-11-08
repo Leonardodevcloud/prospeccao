@@ -940,6 +940,8 @@ export interface Sessao {
   papelOrganizacao: 'gestor' | 'leitura' | null;
   /** Vê só a própria base: as negociações em que é a responsável (o gestor escolhe na Equipe). */
   soPropriaBase: boolean;
+  /** Carteira com fila: o time vê os leads sem dono e puxa para a própria carteira. */
+  filaSemDono?: boolean;
   /** O cliente (organização) e quantas unidades ativas ele tem. */
   organizacao: { id: number; nome: string; unidades: number } | null;
   /** Master (ou gestor) dentro de outra conta/unidade. */
@@ -973,7 +975,7 @@ export interface UsuarioEquipe {
 
 export interface Equipe {
   usuarios: UsuarioEquipe[];
-  distribuicao: { sdr: 'rodizio' | 'manual'; closer: 'rodizio' | 'mesmo' | 'manual' };
+  distribuicao: { sdr: 'rodizio' | 'manual' | 'fila'; closer: 'rodizio' | 'mesmo' | 'manual' };
   semDono: number;
 }
 
@@ -1831,4 +1833,11 @@ export interface Organizacao {
   plano: PlanoConta;
   unidades: UnidadeOrganizacao[];
   pessoas: PessoaOrganizacao[];
+}
+
+/** Grupo de atendimento (loja, departamento): a central toca para quem está nele. */
+export interface GrupoAtendimento {
+  id: number;
+  nome: string;
+  membros: { id: number; nome: string }[];
 }

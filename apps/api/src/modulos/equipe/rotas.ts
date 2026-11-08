@@ -1,4 +1,10 @@
-import { distribuicaoEntrada, usuarioAtualizar, usuarioNovo } from '@prospeccao/shared';
+import { comTransacao } from '@prospeccao/db';
+import {
+  distribuicaoEntrada,
+  grupoAtendimentoEntrada,
+  usuarioAtualizar,
+  usuarioNovo,
+} from '@prospeccao/shared';
 import { type Request, Router } from 'express';
 import { z } from 'zod';
 import { conta } from '../../contexto.js';
@@ -89,6 +95,24 @@ export function rotasEquipe({ pool, origens }: DepsApi): Router {
     await exigirRecurso(pool, 'equipe');
     await repo.salvarDistribuicao(pool, corpo(req, distribuicaoEntrada));
     res.json({ ok: true });
+  });
+
+  /* Grupos de atendimento (lojas, departamentos): a central telefônica toca para o grupo escolhido. */
+  r.get('/grupos', async (_req, res) => {
+    res.json(await repo.listarGrupos(pool));
+  });
+  r.post('/grupos', exigirAdmin, async (req, res) => {
+    const id = await comTransacao(pool, (tx) => repo.criarGrupo(tx, corpo(req, grupoAtendimentoEntrada)));
+    res.status(201).json({ id, grupos: await repo.listarGrupos(pool) });
+  });
+  r.put('/grupos/:id', exigirAdmin, async (req, res) => {
+    const d = corpo(req, grupoAtendimentoEntrada);
+    await comTransacao(pool, (tx) => repo.atualizarGrupo(tx, idDaRota(req), d));
+    res.json(await repo.listarGrupos(pool));
+  });
+  r.delete('/grupos/:id', exigirAdmin, async (req, res) => {
+    await repo.apagarGrupo(pool, idDaRota(req));
+    res.json(await repo.listarGrupos(pool));
   });
 
   r.post('/distribuir', exigirAdmin, async (_req, res) => {

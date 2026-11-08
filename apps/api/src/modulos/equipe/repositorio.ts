@@ -2,6 +2,7 @@ import type { Executor } from '@prospeccao/db';
 import {
   AppError,
   type DistribuicaoEntrada,
+  type GrupoAtendimentoEntrada,
   type PapelUsuario,
   type UsuarioAtualizar,
   type UsuarioNovo,
@@ -346,4 +347,139 @@ export async function desempenho(db: Executor, dias: number) {
       ORDER BY coalesce(et.ganhos, 0) DESC, coalesce(et.reunioes, 0) DESC, coalesce(c.periodo, 0) DESC, u.nome`,
   );
   return rows;
+}
+
+/* ───────────────────────────── Carteira ───────────────────────────── */
+
+/**
+ * Puxa o lead sem dono para a carteira de quem está logado. Dois puxando ao mesmo tempo: fica com
+ * quem chegou primeiro, e o outro recebe o nome de quem ficou.
+ */
+export async function puxarParaMim(db: Executor, empresaId: number): Promise<void> {
+  const quem = usuarioAtual();
+  const eu = usuarioDaConta();
+  if (!quem || !eu) throw AppError.proibido('Só quem é da equipe desta conta puxa leads para a carteira.');
+  const C = contaSql();
+  const { rowCount } = await db.query(
+    `UPDATE comercial.oportunidades SET responsavel_id = $2
+      WHERE conta_id = ${C} AND empresa_id = $1 AND responsavel_id IS NULL`,
+    [empresaId, eu],
+  );
+  if (!rowCount) {
+    const { rows } = await db.query<{ dono: number | null; nome: string | null }>(
+      `SELECT o.responsavel_id AS dono, u.nome FROM comercial.oportunidades o
+         LEFT JOIN cadastro.usuarios u ON u.id = o.responsavel_id
+        WHERE o.conta_id = ${C} AND o.empresa_id = $1`,
+      [empresaId],
+    );
+    if (!rows[0]) throw AppError.naoEncontrado('Lead no funil');
+    if (rows[0].dono === eu) return;
+    throw AppError.conflito(`Este lead já está na carteira de ${rows[0].nome ?? 'outra pessoa'}.`);
+  }
+  await db.query(
+    `INSERT INTO comercial.atividades (conta_id, empresa_id, tipo, texto, autor, usuario_id)
+     VALUES (${C}, $1, 'nota', $2, $3, $4)`,
+    [empresaId, `Responsável: ${quem.nome} (puxou para a carteira)`, quem.nome, eu],
+  );
+}
+
+/** Na carteira com fila, quem responde um lead sem dono fica com ele. */
+export async function puxarSeSemDono(db: Executor, empresaId: number): Promise<void> {
+  const quem = usuarioAtual();
+  const eu = usuarioDaConta();
+  if (!quem || !eu) return;
+  const C = contaSql();
+  const { rowCount } = await db.query(
+    `UPDATE comercial.oportunidades SET responsavel_id = $2
+      WHERE conta_id = ${C} AND empresa_id = $1 AND responsavel_id IS NULL
+        AND EXISTS (SELECT 1 FROM comercial.config_equipe ce WHERE ce.conta_id = ${C} AND ce.distribuicao_sdr = 'fila')`,
+    [empresaId, eu],
+  );
+  if (rowCount)
+    await db.query(
+      `INSERT INTO comercial.atividades (conta_id, empresa_id, tipo, texto, autor, usuario_id)
+       VALUES (${C}, $1, 'nota', $2, $3, $4)`,
+      [empresaId, `Responsável: ${quem.nome} (respondeu o lead sem dono)`, quem.nome, eu],
+    );
+}
+
+/* ───────────────────────────── Grupos de atendimento ───────────────────────────── */
+
+export interface GrupoAtendimento {
+  id: number;
+  nome: string;
+  membros: { id: number; nome: string }[];
+}
+
+export async function listarGrupos(db: Executor): Promise<GrupoAtendimento[]> {
+  const { rows } = await db.query<GrupoAtendimento>(
+    `SELECT g.id, g.nome,
+            coalesce((SELECT json_agg(json_build_object('id', u.id, 'nome', u.nome) ORDER BY u.nome)
+                        FROM cadastro.grupo_membros gm JOIN cadastro.usuarios u ON u.id = gm.usuario_id
+                       WHERE gm.grupo_id = g.id AND u.ativo), '[]') AS membros
+       FROM cadastro.grupos_atendimento g
+      WHERE g.conta_id = ${contaSql()}
+      ORDER BY g.ordem, g.nome`,
+  );
+  return rows;
+}
+
+/** Membros: só pessoas ativas desta conta que atendem (administrador, SDR, closer). */
+async function gravarMembros(db: Executor, grupoId: number, membros: number[]) {
+  const C = contaSql();
+  await db.query('DELETE FROM cadastro.grupo_membros WHERE grupo_id = $1', [grupoId]);
+  if (!membros.length) return;
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM cadastro.usuarios
+      WHERE conta_id = ${C} AND ativo AND papel IN ('admin', 'sdr', 'closer') AND id = ANY($1::int[])`,
+    [[...new Set(membros)]],
+  );
+  if (rows.length !== new Set(membros).size)
+    throw AppError.invalido('Alguém escolhido não é da equipe desta conta.');
+  await db.query(`INSERT INTO cadastro.grupo_membros (grupo_id, usuario_id) SELECT $1, unnest($2::int[])`, [
+    grupoId,
+    rows.map((r) => r.id),
+  ]);
+}
+
+const nomeRepetido = (erro: unknown) =>
+  (erro as { code?: string }).code === '23505'
+    ? AppError.conflito('Já existe um grupo com esse nome.')
+    : erro;
+
+export async function criarGrupo(db: Executor, d: GrupoAtendimentoEntrada): Promise<number> {
+  const C = contaSql();
+  try {
+    const { rows } = await db.query<{ id: number }>(
+      `INSERT INTO cadastro.grupos_atendimento (conta_id, nome, ordem)
+       VALUES (${C}, $1, coalesce((SELECT max(ordem) + 1 FROM cadastro.grupos_atendimento WHERE conta_id = ${C}), 0))
+       RETURNING id`,
+      [d.nome],
+    );
+    await gravarMembros(db, rows[0]!.id, d.membros);
+    return rows[0]!.id;
+  } catch (erro) {
+    throw nomeRepetido(erro);
+  }
+}
+
+export async function atualizarGrupo(db: Executor, id: number, d: GrupoAtendimentoEntrada): Promise<void> {
+  try {
+    const { rowCount } = await db.query(
+      `UPDATE cadastro.grupos_atendimento SET nome = $2 WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [id, d.nome],
+    );
+    if (!rowCount) throw AppError.naoEncontrado('Grupo');
+    await gravarMembros(db, id, d.membros);
+  } catch (erro) {
+    throw nomeRepetido(erro);
+  }
+}
+
+export async function apagarGrupo(db: Executor, id: number): Promise<void> {
+  const { rowCount } = await db.query(
+    `DELETE FROM cadastro.grupos_atendimento WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [id],
+  );
+  if (!rowCount) throw AppError.naoEncontrado('Grupo');
 }

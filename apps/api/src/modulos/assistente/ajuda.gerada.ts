@@ -229,9 +229,9 @@ export const ARTIGOS_AJUDA: ArtigoDoArgos[] = [
     "titulo": "Equipe e o que cada um vê",
     "resumo": "Convites, papéis, unidade toda ou só a própria base.",
     "onde": "Equipe (/equipe)",
-    "termos": "convidar usuário papel admin sdr closer unidade alcance própria base rodízio",
+    "termos": "convidar usuário papel admin sdr closer unidade alcance própria base rodízio carteira fila sem dono puxar grupo loja departamento atendimento",
     "soMaster": false,
-    "texto": "Em Equipe, convide as pessoas e escolha o papel de cada uma. Os leads novos se dividem entre quem estiver no rodízio.\n\n## O que cada pessoa vê\n\n- A unidade toda: todos os leads, conversas e números da unidade.\n- Só a própria base: só os leads em que ela é a responsável, em todas as telas (funil, conversas, agenda, relatórios e Argos).\nO administrador sempre vê a unidade toda."
+    "texto": "Em Equipe, convide as pessoas e escolha o papel de cada uma. Os leads novos se dividem entre quem estiver no rodízio.\n\n## O que cada pessoa vê\n\n- A unidade toda: todos os leads, conversas e números da unidade.\n- Só a própria base: só os leads em que ela é a responsável, em todas as telas (funil, conversas, agenda, relatórios e Argos).\nO administrador sempre vê a unidade toda.\n\n## Carteira de clientes (fila de sem dono)\nEm Como os leads são divididos, escolha Carteira: fica numa fila que todo o time vê. O lead novo (inclusive quem escreve pela primeira vez no WhatsApp) fica sem dono e aparece em Conversas › Sem dono para todo o time.\n\n- Puxar para minha carteira (na conversa) ou responder primeiro: o lead passa a ser seu. Quem chegar depois já não o vê.\n- Mensagem de lead da carteira de alguém avisa só essa pessoa; a de lead sem dono avisa o time todo.\n- Para cada vendedor ver só a própria carteira (e a fila), marque Só a própria base no cadastro dele. O administrador passa um lead para outra pessoa na ficha.\n\n## Grupos de atendimento\nEm Equipe › Grupos de atendimento, crie as lojas ou departamentos e marque quem atende cada um (uma pessoa pode estar em mais de um). Eles são a base do menu da central telefônica (“aperte 1 para a loja A”), que toca para todos do grupo escolhido ao mesmo tempo: o menu chega na próxima versão."
   },
   {
     "id": "relatorios",

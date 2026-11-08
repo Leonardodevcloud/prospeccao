@@ -32,6 +32,11 @@ export interface UsuarioSessao {
    * no funil, nos leads, nas conversas, no Argos e no mapa. Administrador sempre vê a unidade toda.
    */
   soPropriaBase: boolean;
+  /**
+   * Carteira com fila (Equipe › divisão "fila"): quem vê só a própria base vê também os leads sem
+   * dono, para puxar para a carteira.
+   */
+  filaSemDono?: boolean;
   /** O teste (ou a assinatura) venceu: a conta está só para leitura até assinar. */
   contaSoLeitura?: boolean;
 }
@@ -76,7 +81,10 @@ export function donoDaBase(): number | null {
 /** Filtro SQL: a negociação (alias de comercial.oportunidades) está na base de quem está logado. */
 export function naBase(alias = 'o'): string {
   const d = donoDaBase();
-  return d ? `${alias}.responsavel_id = ${d}` : 'true';
+  if (!d) return 'true';
+  return usuarioAtual()?.filaSemDono
+    ? `(${alias}.responsavel_id = ${d} OR ${alias}.responsavel_id IS NULL)`
+    : `${alias}.responsavel_id = ${d}`;
 }
 
 /**
@@ -89,7 +97,7 @@ export function empresaVisivel(coluna: string): string {
   return d
     ? `NOT EXISTS (SELECT 1 FROM comercial.oportunidades rb
                     WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna} AND rb.etapa <> 'descartado'
-                      AND rb.responsavel_id IS DISTINCT FROM ${d})`
+                      AND ${usuarioAtual()?.filaSemDono ? `rb.responsavel_id <> ${d}` : `rb.responsavel_id IS DISTINCT FROM ${d}`})`
     : 'true';
 }
 
@@ -98,7 +106,8 @@ export function empresaNaBase(coluna: string): string {
   const d = donoDaBase();
   return d
     ? `EXISTS (SELECT 1 FROM comercial.oportunidades rb
-                WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna} AND rb.responsavel_id = ${d})`
+                WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna}
+                  AND ${usuarioAtual()?.filaSemDono ? `(rb.responsavel_id = ${d} OR rb.responsavel_id IS NULL)` : `rb.responsavel_id = ${d}`})`
     : 'true';
 }
 

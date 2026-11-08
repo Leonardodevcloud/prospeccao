@@ -70,7 +70,11 @@ export async function notificarDono(db: Executor, empresaId: number, a: Aviso): 
       WHERE o.conta_id = ${C} AND o.empresa_id = $1 AND u.ativo
      UNION ALL
      SELECT u.id FROM cadastro.usuarios u
-      WHERE u.conta_id = ${C} AND u.papel = 'admin' AND u.ativo
+      WHERE u.conta_id = ${C} AND u.ativo
+        -- Sem dono: os administradores; na carteira com fila, o time todo (quem puxar fica com ele).
+        AND (u.papel = 'admin'
+             OR (u.papel IN ('sdr', 'closer')
+                 AND EXISTS (SELECT 1 FROM comercial.config_equipe ce WHERE ce.conta_id = ${C} AND ce.distribuicao_sdr = 'fila')))
         AND NOT EXISTS (SELECT 1 FROM comercial.oportunidades o JOIN cadastro.usuarios d ON d.id = o.responsavel_id
                          WHERE o.conta_id = ${C} AND o.empresa_id = $1 AND d.ativo)`,
     [empresaId],

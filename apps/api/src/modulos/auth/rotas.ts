@@ -513,6 +513,8 @@ export function rotasAuth(deps: DepsApi): Router {
       papelOrganizacao: u.papelOrganizacao,
       // Vê só a própria base (as negociações em que é a responsável).
       soPropriaBase: u.soPropriaBase,
+      // Carteira com fila: o time vê os leads sem dono e puxa para a própria carteira.
+      filaSemDono: !!u.filaSemDono,
       duasEtapas: { ativo: !!rows[0]?.totpAtivo, exigido: !!c[0]?.exigir_2fa },
       termos: { versao: TERMOS_VERSAO, aceitos: rows[0]?.termosVersao === TERMOS_VERSAO },
       // Tour do sistema: o convite aparece até a pessoa assistir, pular ou fechar.

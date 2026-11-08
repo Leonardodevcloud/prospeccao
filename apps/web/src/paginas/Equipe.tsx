@@ -5,6 +5,7 @@ import {
   type Alcance,
   api,
   type DesempenhoUsuario,
+  type GrupoAtendimento,
   type PapelUsuario,
   ROTULO_PAPEL_USUARIO,
   type Equipe as TEquipe,
@@ -623,6 +624,18 @@ function Distribuicao(props: { equipe: TEquipe }) {
             />
             Fica com quem mandou para o funil
           </label>
+          <label className="opcao">
+            <input
+              type="radio"
+              name="dist-sdr"
+              checked={d.sdr === 'fila'}
+              onChange={() => mudar({ ...d, sdr: 'fila' })}
+            />
+            <span>
+              Carteira: fica numa fila que todo o time vê{' '}
+              <span className="quieto">(quem puxar ou responder primeiro fica com o lead)</span>
+            </span>
+          </label>
         </fieldset>
         <fieldset className="opcoes">
           <legend>Reunião marcada</legend>
@@ -657,6 +670,13 @@ function Distribuicao(props: { equipe: TEquipe }) {
           </label>
         </fieldset>
       </div>
+      {d.sdr === 'fila' && (
+        <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
+          Cada pessoa vê os próprios leads e a fila <b>Sem dono</b> em Conversas. Mensagem de lead da carteira
+          de alguém avisa só essa pessoa; a de lead sem dono avisa o time todo. Para cada pessoa ver só a
+          própria carteira, marque <b>Só a própria base</b> no cadastro dela.
+        </p>
+      )}
       {d.sdr === 'rodizio' && sdrs === 0 && (
         <Mensagem tipo="aviso">
           Ninguém com papel SDR está recebendo leads: o lead novo fica com quem mandou para o funil.
@@ -685,6 +705,164 @@ function Distribuicao(props: { equipe: TEquipe }) {
         <Mensagem tipo="ok">{fmtNumero(distribuir.data.distribuidos)} leads distribuídos.</Mensagem>
       )}
       <ErroDaApi erro={salvar.error ?? distribuir.error} />
+    </section>
+  );
+}
+
+/**
+ * Grupos de atendimento (lojas, departamentos): na central telefônica, o menu ("aperte 1 para a
+ * loja A") toca para todo mundo do grupo escolhido.
+ */
+function GruposAtendimento(props: { equipe: TEquipe }) {
+  const cliente = useQueryClient();
+  const q = useQuery({
+    queryKey: ['grupos-atendimento'],
+    queryFn: () => api<GrupoAtendimento[]>('/equipe/grupos'),
+  });
+  const [editando, setEditando] = useState<{ id: number | null; nome: string; membros: number[] } | null>(
+    null,
+  );
+  const pronto = (lista: GrupoAtendimento[] | { grupos: GrupoAtendimento[] }) => {
+    cliente.setQueryData(['grupos-atendimento'], Array.isArray(lista) ? lista : lista.grupos);
+    setEditando(null);
+  };
+  const salvar = useMutation({
+    mutationFn: (g: { id: number | null; nome: string; membros: number[] }) =>
+      g.id
+        ? api<GrupoAtendimento[]>(`/equipe/grupos/${g.id}`, {
+            metodo: 'PUT',
+            corpo: { nome: g.nome, membros: g.membros },
+          })
+        : api<{ grupos: GrupoAtendimento[] }>('/equipe/grupos', {
+            metodo: 'POST',
+            corpo: { nome: g.nome, membros: g.membros },
+          }),
+    onSuccess: pronto,
+  });
+  const apagar = useMutation({
+    mutationFn: (id: number) => api<GrupoAtendimento[]>(`/equipe/grupos/${id}`, { metodo: 'DELETE' }),
+    onSuccess: pronto,
+  });
+  const pessoas = props.equipe.usuarios.filter((u) => u.ativo);
+  const marcar = (id: number) =>
+    setEditando((e) =>
+      e
+        ? { ...e, membros: e.membros.includes(id) ? e.membros.filter((x) => x !== id) : [...e.membros, id] }
+        : e,
+    );
+  return (
+    <section className="pilha" style={{ gap: 12 }} aria-labelledby="grupos-atendimento">
+      <div className="assinatura-plano__topo">
+        <div>
+          <h2 id="grupos-atendimento" className="subtitulo" style={{ margin: 0 }}>
+            Grupos de atendimento
+          </h2>
+          <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
+            Lojas ou departamentos e quem atende cada um (uma pessoa pode estar em mais de um). São a base do
+            menu da central telefônica, que toca para todos do grupo escolhido: o menu chega na próxima
+            versão.
+          </p>
+        </div>
+        {!editando && (
+          <Button
+            variant="secondary"
+            icon="plus"
+            onClick={() => setEditando({ id: null, nome: '', membros: [] })}
+          >
+            Novo grupo
+          </Button>
+        )}
+      </div>
+      {q.isPending && <div className="esqueleto" />}
+      <ErroDaApi erro={q.error ?? apagar.error} />
+      {q.data && q.data.length === 0 && !editando && (
+        <p className="quieto" style={{ margin: 0 }}>
+          Nenhum grupo ainda. Crie um para cada loja ou departamento que atende ligações.
+        </p>
+      )}
+      {q.data && q.data.length > 0 && (
+        <ul className="lista-simples">
+          {q.data.map((g, i) => (
+            <li key={g.id} className="grupo-atendimento">
+              <span className="grupo-atendimento__numero mono" title="Tecla no menu da central">
+                {i + 1}
+              </span>
+              <div className="grupo-atendimento__corpo">
+                <b>{g.nome}</b>
+                <span className="quieto" style={{ fontSize: 13 }}>
+                  {g.membros.length
+                    ? g.membros.map((m) => m.nome).join(', ')
+                    : 'Ninguém neste grupo ainda: as ligações dele não tocam para ninguém.'}
+                </span>
+              </div>
+              <div className="acoes">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEditando({ id: g.id, nome: g.nome, membros: g.membros.map((m) => m.id) })}
+                >
+                  Editar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={apagar.isPending}
+                  onClick={() => {
+                    if (window.confirm(`Apagar o grupo ${g.nome}?`)) apagar.mutate(g.id);
+                  }}
+                >
+                  Apagar
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {editando && (
+        <form
+          className="form"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            salvar.mutate(editando);
+          }}
+        >
+          <div className="campo">
+            <label htmlFor="grupo-nome">Nome do grupo</label>
+            <input
+              id="grupo-nome"
+              className="filtro"
+              maxLength={60}
+              placeholder="Ex.: Loja Centro"
+              value={editando.nome}
+              onChange={(e) => setEditando({ ...editando, nome: e.target.value })}
+            />
+          </div>
+          <fieldset className="opcoes">
+            <legend>Quem atende</legend>
+            <div className="grupo-atendimento__pessoas">
+              {pessoas.map((u) => (
+                <label key={u.id} className="opcao">
+                  <input
+                    type="checkbox"
+                    checked={editando.membros.includes(u.id)}
+                    onChange={() => marcar(u.id)}
+                  />
+                  {u.nome}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <ErroDaApi erro={salvar.error} />
+          <div className="acoes">
+            <Button variant="ghost" onClick={() => setEditando(null)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary" disabled={!editando.nome.trim() || salvar.isPending}>
+              {salvar.isPending ? 'Salvando…' : editando.id ? 'Salvar o grupo' : 'Criar o grupo'}
+            </Button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
@@ -771,6 +949,7 @@ export function Equipe() {
         {admin &&
           q.data &&
           (emEquipe ? <Distribuicao equipe={q.data} /> : <ForaDoPlano recurso="equipe" compacto />)}
+        {admin && q.data && emEquipe && <GruposAtendimento equipe={q.data} />}
       </div>
 
       {convidando && <Convidar aoFechar={() => setConvidando(false)} />}

@@ -17,6 +17,7 @@ import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { exigirRecurso } from '../../recursos.js';
+import { puxarParaMim } from '../equipe/repositorio.js';
 import * as cadencia from './cadencia.js';
 import { criarLeadManual } from './novoLead.js';
 import * as pipelines from './pipelines.js';
@@ -135,6 +136,13 @@ export function rotasFunil(deps: DepsApi): Router {
     const d = corpo(req, funilAtualizar);
     if (d.responsavelId !== undefined) exigirPodeAtribuir(d.responsavelId);
     await repo.atualizar(pool, id, d, autor(req));
+    res.json(await repo.detalhe(pool, id));
+  });
+
+  /** Carteira: puxa o lead sem dono para quem está logado. */
+  r.post('/:empresaId/puxar', async (req, res) => {
+    const id = idDaRota(req, 'empresaId');
+    await puxarParaMim(pool, id);
     res.json(await repo.detalhe(pool, id));
   });
 

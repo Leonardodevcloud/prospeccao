@@ -39,6 +39,12 @@ export function useSoPropriaBase(): boolean {
   return !!useSessao().data?.soPropriaBase;
 }
 
+/** Vê a fila de leads sem dono (administrador, ou o time na carteira com fila). */
+export function useVeFilaSemDono(): boolean {
+  const s = useSessao().data;
+  return !!s && (s.papel === 'admin' || !!s.filaSemDono);
+}
+
 /** Telas que a leitura abre; as outras são de trabalho (prospectar, mandar mensagem, configurar). */
 export const TELAS_DA_LEITURA = [
   '/',

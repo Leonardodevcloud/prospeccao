@@ -19,7 +19,7 @@ import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { IconeInstagram } from '../componentes/IconeInstagram';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
-import { Dono, useSoLeitura, useSoPropriaBase } from '../componentes/Sessao';
+import { Dono, useSoLeitura, useSoPropriaBase, useVeFilaSemDono } from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
 import { fmtCidade, fmtCompromisso, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
 import { ListaNaoIdentificados, PainelNaoIdentificado, useNaoIdentificados } from './NaoIdentificados';
@@ -809,6 +809,15 @@ function Conversa(props: {
     mutationFn: () => api(`/funil/${props.empresaId}`, { metodo: 'PATCH', corpo: { devolverParaIa: true } }),
     onSuccess: () => q.refetch(),
   });
+  // Carteira: o lead sem dono vai para quem puxar (ou para quem responder primeiro).
+  const puxar = useMutation({
+    mutationFn: () => api(`/funil/${props.empresaId}/puxar`, { metodo: 'POST', corpo: {} }),
+    onSuccess: () => {
+      q.refetch();
+      cliente.invalidateQueries({ queryKey: ['conversas'] });
+      cliente.invalidateQueries({ queryKey: ['quadro'] });
+    },
+  });
 
   if (q.isPending)
     return (
@@ -896,6 +905,21 @@ function Conversa(props: {
           )}
         </div>
       </header>
+      {c.responsavelId == null && !soLeitura && (
+        <div className="chat__aviso-carteira" role="status">
+          <span>Este lead ainda não é de ninguém. Quem puxar (ou responder primeiro) fica com ele.</span>
+          <Button
+            size="sm"
+            variant="primary"
+            icon="user-plus"
+            disabled={puxar.isPending}
+            onClick={() => puxar.mutate()}
+          >
+            {puxar.isPending ? 'Puxando…' : 'Puxar para minha carteira'}
+          </Button>
+          <ErroDaApi erro={puxar.error} />
+        </div>
+      )}
       {c.origemInstagram && <OrigemDoLead o={c.origemInstagram} />}
       {c.agente && (
         <div className="chat__ia">
@@ -982,9 +1006,11 @@ function Conversa(props: {
 
 export function Conversas() {
   const soPropriaBase = useSoPropriaBase();
+  const veFila = useVeFilaSemDono();
   const [params, setParams] = useSearchParams();
   const filtro =
-    (params.get('filtro') as 'todas' | 'nao_lidas' | 'minhas' | 'nao_identificados' | null) ?? 'todas';
+    (params.get('filtro') as 'todas' | 'nao_lidas' | 'minhas' | 'sem_dono' | 'nao_identificados' | null) ??
+    'todas';
   const soltos = filtro === 'nao_identificados';
   const canal = (params.get('canal') as 'whatsapp' | 'instagram' | 'email' | null) ?? null;
   const lead = Number(params.get('lead')) || null;
@@ -1017,6 +1043,7 @@ export function Conversas() {
     { id: 'todas', rotulo: 'Todas' },
     { id: 'nao_lidas', rotulo: 'Não lidas' },
     ...(soPropriaBase ? [] : [{ id: 'minhas' as const, rotulo: 'Meus leads' }]),
+    ...(veFila ? [{ id: 'sem_dono' as const, rotulo: 'Sem dono' }] : []),
     ...(totalSoltos || soltos
       ? [{ id: 'nao_identificados' as const, rotulo: `Sem lead${totalSoltos ? ` (${totalSoltos})` : ''}` }]
       : []),

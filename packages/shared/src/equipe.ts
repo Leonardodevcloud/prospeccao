@@ -66,10 +66,18 @@ export const usuarioAtualizar = z
 export type UsuarioAtualizar = z.infer<typeof usuarioAtualizar>;
 
 export const distribuicaoEntrada = z.object({
-  sdr: z.enum(['rodizio', 'manual']),
+  /** fila: o lead sem dono fica numa fila que todo o time vê e puxa para a própria carteira. */
+  sdr: z.enum(['rodizio', 'manual', 'fila']),
   closer: z.enum(['rodizio', 'mesmo', 'manual']),
 });
 export type DistribuicaoEntrada = z.infer<typeof distribuicaoEntrada>;
+
+/** Grupo de atendimento (loja, departamento): nome e quem atende. */
+export const grupoAtendimentoEntrada = z.object({
+  nome: z.string().trim().min(1, 'Dê um nome ao grupo.').max(60),
+  membros: z.array(z.number().int().positive()).max(200).default([]),
+});
+export type GrupoAtendimentoEntrada = z.infer<typeof grupoAtendimentoEntrada>;
 
 export const senhaForte = z
   .string()
@@ -122,7 +130,7 @@ export const respostaRapidaEntrada = z.object({
 });
 
 export const filtrosConversas = z.object({
-  filtro: z.enum(['todas', 'nao_lidas', 'minhas']).default('todas'),
+  filtro: z.enum(['todas', 'nao_lidas', 'minhas', 'sem_dono']).default('todas'),
   busca: z.string().trim().max(120).optional(),
   /** Só as conversas de um canal. */
   canal: z.enum(['whatsapp', 'instagram', 'email']).optional(),
