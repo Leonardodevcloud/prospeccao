@@ -341,7 +341,7 @@ function RespostaDoTime(props: {
   if (m.situacao === 'pensando')
     return (
       <p className="conversa-time__pensando">
-        <Icon name="loader" size={14} spin /> O redator está escrevendo; o diretor de arte e o revisor
+        <Icon name="loader" size={14} spin /> A redatora está escrevendo; o diretor de arte e a revisora
         conferem em seguida.
       </p>
     );

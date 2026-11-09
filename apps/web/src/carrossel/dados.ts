@@ -15,6 +15,8 @@ export interface SituacaoCarrosseis {
   modulo: boolean;
   armazenamento: boolean;
   franquia: { usados: number; limite: number | null };
+  /** Já viu a apresentação do time de IA. */
+  timeVisto: boolean;
   /** O time de IA: a chave da plataforma ligada e o cérebro da marca conferido. */
   ia: { ligada: boolean; cerebroConferido: boolean };
 }

@@ -283,14 +283,46 @@ export const PEDIDO_RAPIDO: Record<PedidoRapido, { rotulo: string; instrucao: st
 
 export const ETAPAS_TIME = ['estrategista', 'redator', 'diretor', 'revisor'] as const;
 export type EtapaTime = (typeof ETAPAS_TIME)[number];
-export const ETAPA_TIME: Record<EtapaTime, { nome: string; faz: string }> = {
-  estrategista: { nome: 'Estrategista', faz: 'Escolhe o ângulo, o gancho e a ordem dos slides.' },
-  redator: { nome: 'Redator', faz: 'Escreve os slides, a legenda e as hashtags.' },
+/**
+ * O time como a pessoa conhece (a apresentação na primeira entrada, o andamento do pedido, a
+ * Conversa): nome, a função em poucas palavras, o que faz e a foto (em /carrosseis/time/).
+ */
+export const ETAPA_TIME: Record<
+  EtapaTime,
+  { nome: string; funcao: string; faz: string; apresentacao: string; foto: string }
+> = {
+  estrategista: {
+    nome: 'Estrategista',
+    funcao: 'Planeja o carrossel',
+    faz: 'Escolhe o ângulo, o gancho e a ordem dos slides.',
+    apresentacao:
+      'Lê o cérebro da marca, o que você quer divulgar e os posts que mais funcionaram. Escolhe o ângulo, cria três ganchos para a capa e monta o roteiro.',
+    foto: '/carrosseis/time/estrategista.jpg',
+  },
+  redator: {
+    nome: 'Redatora',
+    funcao: 'Escreve os textos',
+    faz: 'Escreve os slides, a legenda e as hashtags.',
+    apresentacao:
+      'Escreve cada slide no tamanho certo para ler no celular, a legenda e as hashtags, sempre no tom da sua empresa.',
+    foto: '/carrosseis/time/redatora.jpg',
+  },
   diretor: {
     nome: 'Diretor de arte',
+    funcao: 'Cuida do visual',
     faz: 'Escolhe o modelo e a foto de cada slide e confere se o texto cabe.',
+    apresentacao:
+      'Escolhe o modelo e a foto de cada slide, aplica suas cores, fontes e logo e confere se todo o texto cabe. Preço e prazo saem exatamente como você digitou.',
+    foto: '/carrosseis/time/diretor-de-arte.jpg',
   },
-  revisor: { nome: 'Revisor', faz: 'Ortografia, tamanho do texto, promessa sem fonte e o tom da marca.' },
+  revisor: {
+    nome: 'Revisora',
+    funcao: 'Garante a qualidade',
+    faz: 'Ortografia, tamanho do texto, promessa sem fonte e o tom da marca.',
+    apresentacao:
+      'Dá nota de 1 a 5 em oito pontos, devolve para reescrever o que não está bom e confere se cada fato tem fonte. O que sobrar vira sugestão para você decidir.',
+    foto: '/carrosseis/time/revisora.jpg',
+  },
 };
 
 export const SITUACOES_PEDIDO = ['fila', 'trabalhando', 'pronto', 'falhou', 'cancelado'] as const;
@@ -351,7 +383,7 @@ export const ROTULO_AVISO_TIME: Record<TipoAvisoTime, string> = {
   tamanho: 'Tamanho do texto',
   tom: 'Tom da marca',
   portugues: 'Português',
-  outro: 'Revisor',
+  outro: 'Revisora',
 };
 
 export const CAMPOS_SUGESTAO = ['sobretitulo', 'titulo', 'texto', 'destaque', 'botao', 'legenda'] as const;

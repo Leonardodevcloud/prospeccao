@@ -785,7 +785,7 @@ export async function trabalharNoCarrossel(
     voltas++;
     await aoAvancar(
       'revisor',
-      `Nota ${media}: devolveu ${rev.ajustes.length} ajuste(s) ao redator (volta ${voltas})`,
+      `Nota ${media}: devolveu ${rev.ajustes.length} ajuste(s) à redatora (volta ${voltas})`,
     );
     await aoAvancar('redator');
     red = lerRedacao(
@@ -799,7 +799,7 @@ export async function trabalharNoCarrossel(
       est.roteiro,
       e,
     );
-    await aoAvancar('redator', `Reescreveu com os ajustes do revisor (volta ${voltas})`);
+    await aoAvancar('redator', `Reescreveu com os ajustes da revisora (volta ${voltas})`);
   }
 
   const legenda = [red.legenda, red.hashtags.length ? red.hashtags.map((h) => `#${h}`).join(' ') : '']

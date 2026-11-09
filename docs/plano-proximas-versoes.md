@@ -134,7 +134,8 @@ Plano completo em `docs/plano-carrosseis.md` (e no doc `claude/plano-carrosseis.
 1. **v121 — fundação visual** (feito): identidade visual, motor de slides (4 estilos × 9 modelos), fotos da empresa, editor à mão, prévia como no Instagram, baixar as imagens, módulo na cobrança (fora do Assinar e do site por enquanto).
 2. **v122 — cérebro da marca e o time de IA escrevendo** (feito): dossiê montado pela IA e conferido pelo administrador, o que divulgar (promoção exata), perguntas reais dos clientes sem dado pessoal, Claude Sonnet 5.5, estrategista → redator → diretor de arte (código) → revisor com até 2 voltas, fatos conferidos com o trecho da fonte, legenda e hashtags, pedido ao redator por slide, avisos do revisor no editor, franquia e custo medido.
 3. **v123 — preço e a conversa com o time** (feito): **R$ 200 por mês, sem limite de carrosséis**, no Assinar e no site; aba **Conversa** no editor (este slide, o carrossel inteiro ou a legenda; o time propõe, o diretor de arte e o revisor conferem, a pessoa aplica, descarta ou desfaz); o campo da criação virou **Instruções para o time**. Sem comandos com barra (decisão do Leonardo).
-4. **v124 — imagens**: foto do produto em cenários, imagem de referência, imagens sem texto na paleta da marca, revisor visual, custo por imagem em Saúde e consumo.
-5. **v125 — publicar e agendar** (depende de `instagram_content_publish` aprovado na Meta).
-6. **v126 — aprender**: ideias com a fonte, aprendizados com evidência, 2 em 10 testam algo novo, as edições do administrador ensinam.
+4. **v124 — a apresentação do time** (feito): na primeira entrada no módulo, uma janela apresenta Estrategista, Redatora, Diretor de arte e Revisora com foto, função e o que fazem; depois o time fica numa faixa no topo da lista.
+5. **v125 — imagens**: foto do produto em cenários, imagem de referência, imagens sem texto na paleta da marca, revisor visual, custo por imagem em Saúde e consumo.
+6. **v126 — publicar e agendar** (depende de `instagram_content_publish` aprovado na Meta).
+7. **v127 — aprender**: ideias com a fonte, aprendizados com evidência, 2 em 10 testam algo novo, as edições do administrador ensinam.
 Preço decidido em 08/11: R$ 200 sem limite (acompanhar o custo do Claude por conta em Saúde e consumo).

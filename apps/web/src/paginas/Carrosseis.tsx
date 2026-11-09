@@ -32,6 +32,7 @@ import {
 } from '../carrossel/dados';
 import { SlideHtml } from '../carrossel/SlideHtml';
 import { CartaoPedido, NovoComTime } from '../carrossel/Time';
+import { ApresentacaoDoTime, FaixaDoTime } from '../carrossel/TimeDeIa';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
@@ -58,6 +59,29 @@ export function Carrosseis() {
   const pedida = params.get('aba');
   const aba: Aba = pedida === 'identidade' || pedida === 'cerebro' ? pedida : 'carrosseis';
   const [novo, setNovo] = useState(false);
+  // A apresentação do time: abre sozinha na primeira entrada (uma vez por pessoa) e pela faixa.
+  const [apresentar, setApresentar] = useState<'primeira' | 'de-novo' | null>(null);
+  const cliente = useQueryClient();
+  const d = situacao.data;
+  const mostrarTime = !!d?.modulo && !!d.ia.ligada;
+  const jaApresentou = useRef(false);
+  useEffect(() => {
+    if (mostrarTime && d && !d.timeVisto && !jaApresentou.current) {
+      jaApresentou.current = true;
+      setApresentar('primeira');
+    }
+  }, [mostrarTime, d]);
+  const marcarVisto = useMutation({
+    mutationFn: () => api('/carrosseis/time-visto', { metodo: 'POST' }),
+    onSuccess: () =>
+      cliente.setQueryData<SituacaoCarrosseis>(['carrosseis', 'situacao'], (x) =>
+        x ? { ...x, timeVisto: true } : x,
+      ),
+  });
+  const fecharApresentacao = () => {
+    if (apresentar === 'primeira') marcarVisto.mutate();
+    setApresentar(null);
+  };
 
   if (!admin) return <Navigate to="/" replace />;
   if (situacao.isPending) return <div className="esqueleto" style={{ height: 320 }} />;
@@ -84,6 +108,9 @@ export function Carrosseis() {
           as logos próprias não podem ser enviadas. Fale com a gente.
         </Mensagem>
       )}
+      {mostrarTime && aba === 'carrosseis' && apresentar !== 'primeira' && (
+        <FaixaDoTime aoConhecer={() => setApresentar('de-novo')} />
+      )}
       <div className="pipelines" role="tablist" aria-label="Seções dos carrosséis">
         {ABAS.map((a) => (
           <button
@@ -109,6 +136,16 @@ export function Carrosseis() {
         <AbaCerebro />
       ) : (
         <AbaIdentidade />
+      )}
+      {apresentar && (
+        <ApresentacaoDoTime
+          primeiraVez={apresentar === 'primeira'}
+          aoFechar={fecharApresentacao}
+          aoCriar={() => {
+            fecharApresentacao();
+            setNovo(true);
+          }}
+        />
       )}
       {novo && (
         <NovoCarrossel
@@ -302,7 +339,7 @@ function CartaoCarrossel(props: { c: ResumoCarrossel; aoDuplicar: () => void; ao
           )}
           {c.avisosAbertos > 0 && (
             <Badge tone="warning">
-              {c.avisosAbertos} {c.avisosAbertos === 1 ? 'ponto' : 'pontos'} do revisor
+              {c.avisosAbertos} {c.avisosAbertos === 1 ? 'ponto' : 'pontos'} da revisora
             </Badge>
           )}
           <span className="quieto">

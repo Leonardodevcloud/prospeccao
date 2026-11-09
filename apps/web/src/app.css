@@ -15882,7 +15882,7 @@ fieldset.assinar__formas {
 }
 .time-trabalhando__etapa {
   display: grid;
-  grid-template-columns: 24px 1fr;
+  grid-template-columns: 24px 36px 1fr;
   gap: var(--space-3);
   align-items: start;
   padding: var(--space-3);
@@ -15899,6 +15899,7 @@ fieldset.assinar__formas {
   opacity: 0.6;
 }
 .time-trabalhando__marca {
+  align-self: center;
   display: inline-grid;
   place-items: center;
   width: 22px;
@@ -16394,4 +16395,119 @@ fieldset.assinar__formas {
   align-items: center;
   gap: var(--space-2);
   font-size: 12px;
+}
+
+/* ── v124 · Carrosséis: a apresentação do time de IA ── */
+.foto-time {
+  display: block;
+  flex: none;
+  object-fit: cover;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+}
+.time-ia {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.time-ia__membro {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.foto-time.time-ia__foto {
+  width: 112px;
+  height: 112px;
+  border-radius: var(--radius-md);
+}
+.time-ia__texto {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.time-ia__nome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.time-ia__nome h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.time-ia__selo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+.time-ia__funcao {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+.time-ia__texto p {
+  margin: var(--space-1) 0 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+@media (max-width: 760px) {
+  .time-ia {
+    grid-template-columns: 1fr;
+  }
+  .foto-time.time-ia__foto {
+    width: 80px;
+    height: 80px;
+  }
+}
+.faixa-time {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.faixa-time__fotos {
+  display: flex;
+  flex: none;
+}
+.faixa-time__fotos .foto-time {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--surface);
+}
+.faixa-time__fotos .foto-time + .foto-time {
+  margin-left: -10px;
+}
+.faixa-time__texto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+.faixa-time__texto .quieto {
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .faixa-time {
+    flex-wrap: wrap;
+  }
 }

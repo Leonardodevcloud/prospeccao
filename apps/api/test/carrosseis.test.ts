@@ -158,7 +158,10 @@ describe.skipIf(!URL_TESTE)('carrosséis (com Postgres)', () => {
   it('com o módulo: franquia do plano, e só o administrador entra', async () => {
     await liberar(rui.contaId, ['carrosseis']);
     const s = await ler('/carrosseis/situacao', rui.cookie);
-    expect(s.body).toMatchObject({ modulo: true, franquia: { usados: 0, limite: null } });
+    expect(s.body).toMatchObject({ modulo: true, franquia: { usados: 0, limite: null }, timeVisto: false });
+    // A apresentação do time aparece uma vez por pessoa.
+    expect((await mandar('post', '/carrosseis/time-visto', {}, rui.cookie)).status).toBe(200);
+    expect((await ler('/carrosseis/situacao', rui.cookie)).body.timeVisto).toBe(true);
 
     const conv = await mandar(
       'post',

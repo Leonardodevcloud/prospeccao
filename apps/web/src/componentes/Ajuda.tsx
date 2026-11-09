@@ -1202,11 +1202,15 @@ export const ARTIGOS: ArtigoAjuda[] = [
       <>
         <p>
           Em <b>Carrosséis</b> um time de IA cria carrosséis para o Instagram com a cara da empresa: o{' '}
-          <b>estrategista</b> escolhe o ângulo e o gancho da capa, o <b>redator</b> escreve cada slide, a
+          <b>estrategista</b> escolhe o ângulo e o gancho da capa, a <b>redatora</b> escreve cada slide, a
           legenda e as hashtags, o <b>diretor de arte</b> escolhe o modelo e a foto de cada slide e confere se
-          o texto cabe, e o <b>revisor</b> dá nota e devolve para reescrever o que não está bom. Cada slide
+          o texto cabe, e a <b>revisora</b> dá nota e devolve para reescrever o que não está bom. Cada slide
           sai em 1080 × 1350 (o formato em pé do feed), com as cores, fontes e logo da empresa. O texto é
           desenhado pelo sistema: fica sempre nítido, sem letra torta.
+        </p>
+        <p>
+          Na primeira vez que você entra, a tela apresenta o time. Depois, ele fica numa faixa no topo da
+          lista; <b>Conhecer o time</b> abre a apresentação de novo.
         </p>
         <p>
           É um <b>módulo à parte</b> (sem limite de carrosséis) e só o <b>administrador</b> da conta entra.
@@ -1260,7 +1264,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
         </Passos>
         <Nota>
           O time não inventa fato da empresa: número, preço, prazo, garantia ou resultado só entram se
-          estiverem no cérebro da marca, no que divulgar ou no seu pedido. O revisor confere cada afirmação
+          estiverem no cérebro da marca, no que divulgar ou no seu pedido. A revisora confere cada afirmação
           contra essas fontes.
         </Nota>
         <h3>3. O que divulgar</h3>
@@ -1292,21 +1296,21 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Se o time não conseguir terminar, o pedido aparece na lista com o motivo; peça de novo. Para montar
           à mão, use <b>Começar em branco</b>.
         </p>
-        <h3>5. O que o revisor deixou para você</h3>
+        <h3>5. O que a revisora deixou para você</h3>
         <ul>
           <li>
-            O revisor dá nota de 1 a 5 em gancho, uma ideia por slide, clareza, se é específico, tamanho do
+            A revisora dá nota de 1 a 5 em gancho, uma ideia por slide, clareza, se é específico, tamanho do
             texto, chamada final, tom da marca e português. Abaixo de 4 de média (ou com afirmação sem fonte,
-            preço errado ou texto que não cabe), o carrossel volta ao redator, até duas vezes.
+            preço errado ou texto que não cabe), o carrossel volta à redatora, até duas vezes.
           </li>
           <li>
-            O que ainda ficou aparece no slide como <b>Revisor · slide N</b>, com a sugestão pronta: clique em{' '}
-            <b>Usar a sugestão</b> ou <b>Manter como está</b>. Na lista, o cartão mostra quantos pontos
+            O que ainda ficou aparece no slide como <b>Revisora · slide N</b>, com a sugestão pronta: clique
+            em <b>Usar a sugestão</b> ou <b>Manter como está</b>. Na lista, o cartão mostra quantos pontos
             esperam você.
           </li>
           <li>
             A aba <b>Time de IA</b> do editor mostra o ângulo, de onde veio a ideia, os outros ganchos que o
-            estrategista pensou (dá para trocar a capa com um clique), as notas do revisor e as hashtags.
+            estrategista pensou (dá para trocar a capa com um clique), as notas da revisora e as hashtags.
           </li>
         </ul>
         <h3>6. Pedir ajustes ao time (Conversa)</h3>
@@ -1324,7 +1328,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
           <li>
             Em alguns segundos o time responde com a <b>proposta</b>: o que mudou, a miniatura de cada slide
             novo ou alterado e, se for o caso, a legenda nova. O diretor de arte já conferiu se o texto cabe e
-            o revisor conferiu o que mudou; o que ele ainda achou aparece em amarelo.
+            a revisora conferiu o que mudou; o que ela ainda achou aparece em amarelo.
           </li>
           <li>
             Nada muda até você clicar em <b>Aplicar</b>. Não gostou? <b>Descartar</b>. Depois de aplicar, dá

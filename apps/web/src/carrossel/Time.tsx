@@ -25,6 +25,7 @@ import { api } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, usePedidoDoTime } from './dados';
+import { FotoDoTime } from './TimeDeIa';
 
 /**
  * As telas do time de IA: o pedido de um carrossel (o que o time precisa saber), o time
@@ -323,6 +324,7 @@ export function TimeTrabalhando(props: { id: number; aoFechar: () => void }) {
                   <Icon name="loader" size={14} />
                 ) : null}
               </span>
+              <FotoDoTime etapa={e} tamanho={36} />
               <span>
                 <b>{ETAPA_TIME[e].nome}</b>
                 <span className="quieto time-trabalhando__faz">{p.detalhes[e] ?? ETAPA_TIME[e].faz}</span>
@@ -401,7 +403,7 @@ export function AvisosDoRevisor(props: {
       {abertos.map((a) => (
         <li key={a.id} className="avisos-revisor__item" data-tipo={a.tipo}>
           <span className="avisos-revisor__quem">
-            Revisor · {props.rotulo} · {ROTULO_AVISO_TIME[a.tipo]}
+            Revisora · {props.rotulo} · {ROTULO_AVISO_TIME[a.tipo]}
           </span>
           <p className="avisos-revisor__texto">{a.texto}</p>
           {a.sugestao && <p className="avisos-revisor__sugestao">Sugestão: “{a.sugestao.valor}”</p>}
@@ -479,10 +481,10 @@ export function PainelTime(props: { r: RelatorioTime; aoUsarGancho: (g: string) 
       </section>
       <section>
         <h3 className="painel-time__titulo">
-          Revisor{' '}
+          Revisora{' '}
           <span className="quieto">
             · nota {media.toFixed(1)}
-            {r.voltas ? ` · ${r.voltas} volta${r.voltas > 1 ? 's' : ''} ao redator` : ''}
+            {r.voltas ? ` · ${r.voltas} volta${r.voltas > 1 ? 's' : ''} à redatora` : ''}
           </span>
         </h3>
         <ul className="painel-time__notas">

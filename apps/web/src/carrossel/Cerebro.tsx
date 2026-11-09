@@ -256,7 +256,7 @@ function FormDossie(props: { c: CerebroDaConta }) {
             Provas
           </h3>
           <p className="quieto">
-            Números, prazos e garantias que podem aparecer num post. O revisor confere cada afirmação contra
+            Números, prazos e garantias que podem aparecer num post. A revisora confere cada afirmação contra
             esta lista.
           </p>
           <ul className="cerebro__lista">
@@ -702,7 +702,7 @@ function EditarDivulgar(props: { item: DivulgarItem | null; aoFechar: () => void
           </div>
           {promo && (
             <p className="quieto">
-              Preço, validade e condições saem nos slides exatamente como você escreveu. O revisor confere.
+              Preço, validade e condições saem nos slides exatamente como você escreveu. A revisora confere.
             </p>
           )}
           {salvar.error && <ErroDaApi erro={salvar.error} />}

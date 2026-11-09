@@ -70,10 +70,16 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   const franquia = () => time.franquia(pool);
   const ia = () => deps.carrosseisIa ?? null;
 
-  r.get('/situacao', async (_req, res) => {
+  r.get('/situacao', async (req, res) => {
     const modulo = await temModulo(pool, 'carrosseis');
+    const visto = await pool.query<{ visto: boolean }>(
+      'SELECT time_carrosseis_visto_em IS NOT NULL AS visto FROM cadastro.usuarios WHERE id = $1',
+      [req.usuario!.id],
+    );
     res.json({
       modulo,
+      /** A pessoa já viu a apresentação do time de IA (aparece uma vez, na primeira entrada). */
+      timeVisto: visto.rows[0]?.visto ?? true,
       armazenamento: !!arm(),
       franquia: await franquia(),
       ia: {
@@ -81,6 +87,13 @@ export function rotasCarrosseis(deps: DepsApi): Router {
         cerebroConferido: modulo ? !!(await cerebro.cerebro(pool)).conferidoEm : false,
       },
     });
+  });
+
+  r.post('/time-visto', async (req, res) => {
+    await pool.query('UPDATE cadastro.usuarios SET time_carrosseis_visto_em = now() WHERE id = $1', [
+      req.usuario!.id,
+    ]);
+    res.json({ ok: true });
   });
 
   /* ── Cérebro da marca ── */

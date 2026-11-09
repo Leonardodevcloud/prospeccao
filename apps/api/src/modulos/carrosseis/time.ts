@@ -313,7 +313,7 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
     await notificar(db, l.criado_por, {
       tipo: 'sistema',
       titulo: 'Seu carrossel ficou pronto',
-      texto: `${r.titulo}${r.relatorio.avisos.length ? ` · ${r.relatorio.avisos.length} ponto(s) do revisor para você decidir` : ''}`,
+      texto: `${r.titulo}${r.relatorio.avisos.length ? ` · ${r.relatorio.avisos.length} ponto(s) da revisora para você decidir` : ''}`,
       link: `/carrosseis/${carrosselId}`,
     }).catch(() => undefined);
 }
