@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { api, type ConfigAgenda, type FollowupDoDia, type Tarefa, type MeuDia as TMeuDia } from '../api';
+import { MeuAtendimento } from '../atendimento/Atendimento';
 import { EnvioRapido } from '../componentes/Cadencia';
 import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
@@ -288,6 +289,7 @@ export function MeuDia() {
         </div>
       </div>
       <PrimeirosPassos />
+      {quem === 'eu' && <MeuAtendimento />}
 
       <ErroDaApi erro={q.error} />
       {q.isPending ? (

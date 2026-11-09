@@ -108,6 +108,11 @@ const roteador = createBrowserRouter([
         lazy: async () => ({ Component: (await import('./paginas/CarrosselEditor')).CarrosselEditor }),
       },
       { path: 'relatorios', element: <Relatorios /> },
+      // Qualidade do atendimento: o painel do gestor (e o resumo de cada pessoa).
+      {
+        path: 'qualidade',
+        lazy: async () => ({ Component: (await import('./paginas/Qualidade')).Qualidade }),
+      },
       { path: 'reunioes', element: <Reunioes /> },
       { path: 'ligacoes', lazy: async () => ({ Component: (await import('./paginas/Ligacoes')).Ligacoes }) },
       {

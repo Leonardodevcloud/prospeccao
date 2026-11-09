@@ -1955,6 +1955,90 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'atendimento',
+    area: 'Gestão',
+    titulo: 'Qualidade do atendimento: a nota de cada conversa e ligação',
+    resumo:
+      'A IA dá nota aos atendimentos da equipe com a mesma régua; o gestor vê onde cada um vai bem e o que treinar.',
+    onde: { rotulo: 'Qualidade do atendimento', para: '/qualidade' },
+    termos:
+      'qualidade do atendimento nota avaliação vendedor treinar treino régua tempo de resposta próximo passo coaching gestor resumo semanal desempenho atendimento whatsapp ligação',
+    corpo: (
+      <>
+        <p>
+          A IA lê os atendimentos da equipe e dá uma nota de 0 a 10, sempre com a mesma régua. Vem nos planos{' '}
+          <b>Time</b> e <b>Escala</b>.
+        </p>
+        <h3>Quando a nota sai</h3>
+        <ul>
+          <li>
+            <b>Conversas:</b> quando a conversa fica parada por <b>2 horas</b>. Precisa ter pelo menos 3
+            mensagens da equipe; quem mais escreveu é quem é avaliado. As mensagens do Agente de IA e dos
+            envios automáticos (sequências, cadência) não contam para ninguém.
+          </li>
+          <li>
+            <b>Ligações:</b> depois que a ligação gravada é transcrita, com pelo menos 3 falas de quem ligou.
+          </li>
+          <li>Só entram os atendimentos a partir do dia em que o recurso está no plano.</li>
+        </ul>
+        <h3>A régua</h3>
+        <ul>
+          <li>
+            <b>Tempo de resposta</b> (só nas conversas): medido pelo sistema, pelos horários das mensagens.
+            Conta quanto o cliente esperou, nas mensagens que chegaram de segunda a sábado, das 7h às 19h.
+          </li>
+          <li>
+            <b>Respondeu o que foi perguntado</b>: preço, prazo, disponibilidade, se serve para o caso do
+            cliente.
+          </li>
+          <li>
+            <b>Conduziu a conversa</b>: fez perguntas, ofereceu opções, levou a conversa adiante.
+          </li>
+          <li>
+            <b>Próximo passo combinado</b>: pedido separado, entrega marcada, retorno com dia ou hora,
+            reunião.
+          </li>
+          <li>
+            <b>Tom e clareza</b>: cordial, direto, sem erro e sem prometer o que não pode.
+          </li>
+        </ul>
+        <p>
+          A nota geral é a média dos pontos. Em cada ponto a IA explica a nota e cita o trecho que mostra
+          isso; o sistema confere que o trecho está mesmo no atendimento. Onde faltou, aparece{' '}
+          <b>Poderia ter sido</b>, com uma sugestão de frase.
+        </p>
+        <h3>Onde ver</h3>
+        <ul>
+          <li>
+            Em <b>Conversas</b>, a lista mostra a nota do último atendimento e o botão{' '}
+            <b>Nota do atendimento</b> abre os pontos de cada um.
+          </li>
+          <li>
+            Em <b>Gestão › Qualidade do atendimento</b>, o administrador vê a semana da equipe: a nota média,
+            os atendimentos avaliados, a primeira resposta, quantos saíram com próximo passo, o que mais pesou
+            e cada pessoa. Filtre pela semana e pela loja (os grupos de atendimento da Equipe).
+          </li>
+          <li>
+            <b>Ver resumo</b> mostra a semana de uma pessoa: a nota por ponto, o ponto forte e o que treinar
+            com um exemplo real e as últimas 4 semanas. <b>Enviar para</b> manda um aviso para ela com o link;{' '}
+            <b>Copiar resumo</b> leva o texto para onde você quiser.
+          </li>
+          <li>
+            Cada pessoa vê só as próprias notas: no <b>Meu dia</b> e em Qualidade do atendimento.
+          </li>
+        </ul>
+        <h3>Discordar da nota</h3>
+        <p>
+          O administrador abre a nota e clica em <b>Discordar da nota</b>: põe a nota que daria e o motivo.
+          Passa a valer a dele no painel; a da IA continua guardada e a correção mostra quem fez e por quê.
+        </p>
+        <Nota>
+          A nota usa a IA da conta (a mesma das outras funções de IA) e entra no consumo de IA da conta.
+        </Nota>
+      </>
+    ),
+  },
+  {
     id: 'relatorios',
     area: 'Gestão',
     titulo: 'Relatórios',

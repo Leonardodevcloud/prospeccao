@@ -21,6 +21,7 @@ import { rotasAgente, rotasWebhook } from './modulos/agente/rotas.js';
 import { rotasAlertas } from './modulos/alertas/rotas.js';
 import { rotasAssinatura, rotasTesteGratis, rotasWebhookAsaas } from './modulos/assinatura/rotas.js';
 import { rotasAssistente } from './modulos/assistente/rotas.js';
+import { rotasAtendimento } from './modulos/atendimento/rotas.js';
 import { rotasAtividade } from './modulos/atividade/rotas.js';
 import { auditar } from './modulos/auditoria/middleware.js';
 import { rotasAuditoria } from './modulos/auditoria/rotas.js';
@@ -175,6 +176,7 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/agenda', rotasAgenda(deps));
   // Carrosséis com IA (módulo à parte): só o administrador da conta.
   protegidas.use('/carrosseis', rotasCarrosseis(deps));
+  protegidas.use('/atendimento', rotasAtendimento(deps));
   // Meu plano › Assinar (cobrança recorrente no Asaas).
   protegidas.use('/assinatura', rotasAssinatura(deps));
   // API e integrações: do plano Time em diante (o resumo vale sempre: a tela mostra o cadeado).

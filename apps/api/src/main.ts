@@ -11,6 +11,7 @@ import { iniciarAgente } from './modulos/agente/motor.js';
 import { iniciarAlertas } from './modulos/alertas/rotina.js';
 import { iniciarAssinaturas } from './modulos/assinatura/servico.js';
 import { prepararAssistente } from './modulos/assistente/preparar.js';
+import { iniciarAtendimento } from './modulos/atendimento/avaliacao.js';
 import { iniciarTimeCarrosseis, prepararCarrosseisIa } from './modulos/carrosseis/time.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
@@ -142,6 +143,8 @@ const pararConversoes = iniciarConversoes({ pool, log });
 const pararLigacoes = iniciarLigacoes({ pool, log, servicos, telefonia });
 // Quadros: a IA lê as conversas que pararam e põe os leads nas colunas pelos gatilhos.
 const pararQuadros = iniciarQuadros({ pool, log, servicos });
+// Qualidade do atendimento: a nota das conversas paradas e das ligações transcritas.
+const pararAtendimento = iniciarAtendimento({ pool, log, servicos });
 // Carrosséis: a fila do time de IA (até 2 pedidos ao mesmo tempo).
 const pararCarrosseis = iniciarTimeCarrosseis({ pool, log, ia: carrosseisIa });
 // Porteiro do WhatsApp: sinais de risco do número (pedidos para parar, ninguém respondendo).
@@ -172,6 +175,7 @@ encerrarAoReceberSinal(log, async () => {
   pararConversoes();
   pararLigacoes();
   pararQuadros();
+  pararAtendimento();
   pararCarrosseis();
   pararPorteiro();
   pararListaDominios();

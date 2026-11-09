@@ -72,6 +72,8 @@ export async function listar(
     canal?: 'whatsapp' | 'instagram' | 'email';
   },
   usuarioId: number,
+  /** A nota do último atendimento (recurso Qualidade do atendimento): de todos ou só as da pessoa. */
+  notas: 'todas' | 'minhas' | null = null,
 ) {
   const C = contaSql();
   const where = [naBase('o')];
@@ -96,6 +98,12 @@ export async function listar(
         OR EXISTS (SELECT 1 FROM comercial.contatos_lead cl WHERE cl.conta_id = o.conta_id AND cl.empresa_id = o.empresa_id
                     AND (cl.nome ILIKE ${p(`%${f.busca}%`)} OR cl.telefone LIKE ${p(`%${f.busca.replace(/\D/g, '') || '§'}%`)})))`,
     );
+  const colunaNota = notas
+    ? `(SELECT coalesce(n.gestor_nota, n.nota_ia)::float FROM comercial.atendimento_notas n
+         WHERE n.conta_id = ${C} AND n.empresa_id = ult.empresa_id AND n.tipo = 'conversa'
+           ${notas === 'minhas' ? `AND n.usuario_id = ${p(usuarioId)}` : ''}
+         ORDER BY n.fim_em DESC LIMIT 1)`
+    : 'NULL::float';
   const { rows } = await db.query(
     `WITH c AS (${conversa()}),
      ult AS (
@@ -112,7 +120,8 @@ export async function listar(
                 AND o.whatsapp_destino IS NOT NULL AND left(cl.telefone, 2) = left(o.whatsapp_destino, 2)
                 AND right(cl.telefone, 8) = right(o.whatsapp_destino, 8) LIMIT 1) AS "falandoCom",
             (SELECT count(*)::int FROM comercial.contatos_lead cl
-              WHERE cl.conta_id = o.conta_id AND cl.empresa_id = o.empresa_id AND cl.status = 'sugerido') AS "sugestoes"
+              WHERE cl.conta_id = o.conta_id AND cl.empresa_id = o.empresa_id AND cl.status = 'sugerido') AS "sugestoes",
+            ${colunaNota} AS "nota"
        FROM ult
        JOIN comercial.oportunidades o ON o.conta_id = ${C} AND o.empresa_id = ult.empresa_id
        JOIN descoberta.empresas e ON e.id = ult.empresa_id

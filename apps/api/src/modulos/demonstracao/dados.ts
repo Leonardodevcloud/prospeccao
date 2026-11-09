@@ -300,6 +300,153 @@ const hojeSp = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_P
 
 const CODIGO = 'abcdefghjkmnpqrstuvwxyz23456789';
 
+/* ───────────── Qualidade do atendimento (notas fictícias) ───────────── */
+
+type Criterio = { nota: number; comentario: string; trecho: string | null; sugestao: string | null };
+const c = (
+  nota: number,
+  comentario: string,
+  trecho: string | null = null,
+  sugestao: string | null = null,
+): Criterio => ({
+  nota,
+  comentario,
+  trecho,
+  sugestao,
+});
+
+/** Atendimentos de exemplo: o bom, o que não fechou o próximo passo, a pergunta sem resposta e o tom. */
+const MODELOS_ATENDIMENTO: Record<string, Criterio>[] = [
+  {
+    respondeu: c(
+      9,
+      'Deu o valor e o que está incluso.',
+      'O plano para 3 usuários fica R$ 390 por mês, com a implantação inclusa.',
+    ),
+    conduziu: c(
+      8,
+      'Perguntou como a empresa trabalha hoje.',
+      'Hoje vocês controlam a agenda em planilha ou em algum sistema?',
+    ),
+    proximo_passo: c(
+      9,
+      'Saiu com a demonstração marcada.',
+      'Fechado: quinta às 15h te mostro a agenda funcionando.',
+    ),
+    tom: c(9, 'Cordial e direto.'),
+  },
+  {
+    respondeu: c(8, 'Respondeu o preço e o prazo de implantação.', 'A implantação leva uma semana.'),
+    conduziu: c(
+      7,
+      'Respondeu bem, mas não perguntou o tamanho da operação.',
+      null,
+      'Quantos profissionais atendem por dia aí na clínica?',
+    ),
+    proximo_passo: c(
+      3,
+      'O cliente disse que ia pensar e a conversa terminou sem nada combinado.',
+      'Qualquer coisa, estou à disposição!',
+      'Posso te mostrar em 15 minutos amanhã, às 10h ou às 16h?',
+    ),
+    tom: c(9, 'Cordial.'),
+  },
+  {
+    respondeu: c(
+      4,
+      'O cliente perguntou se integra com o laboratório e ficou sem resposta.',
+      'Vou verificar e te retorno.',
+      'Integra, sim: o resultado do exame cai direto no prontuário. Quer ver funcionando?',
+    ),
+    conduziu: c(6, 'Ficou só respondendo, sem levar a conversa adiante.'),
+    proximo_passo: c(
+      5,
+      'Ficou de retornar, sem dia combinado.',
+      'Vou verificar e te retorno.',
+      'Te respondo até amanhã às 11h, combinado?',
+    ),
+    tom: c(8, 'Educado.'),
+  },
+  {
+    respondeu: c(8, 'Mandou o valor pedido.'),
+    conduziu: c(7, 'Perguntou pouco sobre a necessidade.'),
+    proximo_passo: c(6, 'Deixou a decisão solta com o cliente.'),
+    tom: c(
+      5,
+      'Escrita informal demais para quem está decidindo a compra.',
+      'vc ve ai e me fala blz',
+      'Fico no aguardo. Se preferir, te ligo amanhã às 10h para tirar as dúvidas.',
+    ),
+  },
+];
+
+/** Cada pessoa tem um jeito (o modelo que mais aparece) e um tempo de resposta típico. */
+async function notasDeAtendimento(
+  q: (sql: string, p?: unknown[]) => Promise<unknown>,
+  s: ReturnType<typeof sorteio>,
+  contaId: number,
+  pessoas: number[],
+  leads: number[],
+): Promise<void> {
+  if (!leads.length) return;
+  const perfis: { modelos: number[]; espera: [number, number] }[] = [
+    { modelos: [0, 0, 0, 1], espera: [2, 6] },
+    { modelos: [0, 1, 1, 0], espera: [3, 9] },
+    { modelos: [0, 2, 1, 0], espera: [6, 14] },
+    { modelos: [0, 0, 1, 2], espera: [4, 12] },
+    { modelos: [3, 1, 0, 3], espera: [15, 40] },
+  ];
+  const segunda = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    weekday: 'short',
+  }).format(new Date());
+  const diasDesdeSegunda = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(segunda);
+  for (const [i, usuarioId] of pessoas.entries()) {
+    const perfil = perfis[i % perfis.length]!;
+    for (let semana = 0; semana < 4; semana++) {
+      const quantas = s.int(5, 9);
+      for (let n = 0; n < quantas; n++) {
+        // Melhora um pouco a cada semana (a mais antiga puxa para o modelo mais fraco do perfil).
+        const modelo = MODELOS_ATENDIMENTO[s.um(semana >= 2 ? [...perfil.modelos, 1, 2] : perfil.modelos)]!;
+        const ligacao = s.int(1, 7) === 1;
+        const criterios: Record<string, Criterio> = { ...modelo };
+        const media = s.int(perfil.espera[0], perfil.espera[1]) + semana * 2;
+        const primeira = Math.max(1, media - s.int(0, 3));
+        if (!ligacao)
+          criterios.tempo = c(
+            media <= 5 ? 10 : media <= 10 ? 9 : media <= 15 ? 8 : media <= 30 ? 6 : media <= 60 ? 4 : 2,
+            `Primeira resposta em ${primeira} min; média de ${media} min.`,
+          );
+        const notas = Object.values(criterios).map((x) => x.nota);
+        const nota = Math.round((notas.reduce((t, x) => t + x, 0) / notas.length) * 10) / 10;
+        const diasAtras =
+          semana === 0
+            ? s.int(0, Math.max(0, diasDesdeSegunda))
+            : diasDesdeSegunda + 1 + (semana - 1) * 7 + s.int(0, 6);
+        const minutos = diasAtras * 24 * 60 + s.int(60, 9 * 60);
+        await q(
+          `INSERT INTO comercial.atendimento_notas
+             (conta_id, tipo, empresa_id, usuario_id, inicio_em, fim_em, nota_ia, criterios, primeira_resposta_min,
+              media_resposta_min, modelo)
+           VALUES ($1, $2, $3, $4, now() - make_interval(mins => $5 + 25), now() - make_interval(mins => $5), $6, $7, $8, $9,
+                   'Demonstração')`,
+          [
+            contaId,
+            ligacao ? 'ligacao' : 'conversa',
+            leads[(i * 7 + semana * 3 + n) % leads.length],
+            usuarioId,
+            minutos,
+            nota,
+            JSON.stringify(criterios),
+            ligacao ? null : primeira,
+            ligacao ? null : media,
+          ],
+        );
+      }
+    }
+  }
+}
+
 export async function gerarDados(tx: Executor, contaId: number): Promise<void> {
   const s = sorteio(20261030);
   const q = (sql: string, p: unknown[] = []) => tx.query(sql, p);
@@ -665,6 +812,15 @@ export async function gerarDados(tx: Executor, contaId: number): Promise<void> {
       );
     }
   }
+
+  /* Qualidade do atendimento: notas das últimas 4 semanas, para o painel do gestor. */
+  await notasDeAtendimento(
+    q,
+    s,
+    contaId,
+    [paula, lucia, ana, diego, rafael],
+    conversasCom.map((c) => c.empresaId),
+  );
 
   /* Meu dia: tarefas de hoje para cada pessoa. */
   const tarefasHoje: [number, string, string, number, number][] = [

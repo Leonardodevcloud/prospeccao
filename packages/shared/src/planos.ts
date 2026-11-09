@@ -73,6 +73,11 @@ export const RECURSOS = {
     nome: 'Relatórios completos',
     descricao: 'Desempenho de cada pessoa, Radar de negócios em risco e Atividade.',
   },
+  atendimento: {
+    nome: 'Qualidade do atendimento',
+    descricao:
+      'A IA dá nota a cada conversa e ligação da equipe com a mesma régua, e o gestor vê onde cada um vai bem e o que treinar.',
+  },
   reunioes: {
     nome: 'Reuniões por vídeo',
     descricao: 'Sala própria com link para o lead, gravação, transcrição e resumo da IA.',
@@ -154,6 +159,7 @@ const RECURSOS_TIME: Recurso[] = [
   'funis',
   'cadencia',
   'relatorios',
+  'atendimento',
   'reunioes',
   'rua',
   'instagram',

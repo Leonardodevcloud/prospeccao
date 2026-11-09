@@ -27,6 +27,11 @@ import {
   sugerirPerfil,
 } from '@prospeccao/integrations/agente';
 import {
+  type AvaliacaoAtendimento,
+  avaliarAtendimento,
+  type EntradaAtendimento,
+} from '@prospeccao/integrations/atendimento';
+import {
   buscarRecebido,
   type EmailParaEnviar,
   type EmailRecebido,
@@ -162,6 +167,8 @@ export interface ServicosConta {
   ligacao?: { resumir(e: EntradaResumoLigacao): Promise<ResumoLigacao | null> } | null;
   /** IA que lê as conversas paradas e põe os leads nas colunas dos quadros (gatilhos). */
   quadros?: { ler(e: EntradaGatilhos): Promise<MovimentoConferido[]> } | null;
+  /** IA que dá a nota do atendimento (conversas paradas e ligações transcritas). */
+  atendimento?: { avaliar(e: EntradaAtendimento): Promise<AvaliacaoAtendimento | null> } | null;
   /** IA que reescreve a mensagem repetida (porteiro do WhatsApp). */
   porteiro?: { variar(e: EntradaVariar): Promise<string | null> } | null;
   /** Endereço → coordenadas (bases de operação). */
@@ -272,6 +279,7 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
     ligacao: iaCfg ? { resumir: (e) => resumirLigacao(iaCfg, e) } : null,
     quadros: iaCfg ? { ler: (e) => lerGatilhos(iaCfg, e) } : null,
     porteiro: iaCfg ? { variar: (e) => variarTexto(iaCfg, e) } : null,
+    atendimento: iaCfg ? { avaliar: (e) => avaliarAtendimento(iaCfg, e) } : null,
     geocodificar: c.ors
       ? async (endereco) => {
           const r = await ors.geocodificar({ apiKey: c.ors!.apiKey }, endereco);

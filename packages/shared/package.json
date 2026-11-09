@@ -30,7 +30,8 @@
     "./consumo": "./src/consumo.ts",
     "./tour": "./src/tour.ts",
     "./carrosseis": "./src/carrosseis.ts",
-    "./carrosseis-time": "./src/carrosseisTime.ts"
+    "./carrosseis-time": "./src/carrosseisTime.ts",
+    "./atendimento": "./src/atendimento.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

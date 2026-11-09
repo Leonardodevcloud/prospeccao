@@ -1036,6 +1036,8 @@ export interface ConversaResumo {
   falandoCom: string | null;
   /** Contatos sugeridos esperando confirmação. */
   sugestoes: number;
+  /** Nota do último atendimento (Qualidade do atendimento), quando a pessoa pode ver. */
+  nota?: number | null;
 }
 
 export interface MensagemConversa {

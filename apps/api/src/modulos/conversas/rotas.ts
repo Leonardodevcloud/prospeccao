@@ -18,7 +18,7 @@ import { exigirVisivel, travaDaBase } from '../../base.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
-import { exigirRecurso } from '../../recursos.js';
+import { exigirRecurso, temRecurso } from '../../recursos.js';
 import * as agenteRepo from '../agente/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
 import * as motorEmail from '../email/motor.js';
@@ -41,7 +41,12 @@ export function rotasConversas(deps: DepsApi): Router {
   r.param('empresaId', travaDaBase(pool));
 
   r.get('/', async (req, res) => {
-    res.json(await repo.listar(pool, consulta(req, filtrosConversas), req.usuario!.id));
+    const notas = (await temRecurso(pool, 'atendimento'))
+      ? req.usuario!.papel === 'admin'
+        ? 'todas'
+        : 'minhas'
+      : null;
+    res.json(await repo.listar(pool, consulta(req, filtrosConversas), req.usuario!.id, notas));
   });
 
   r.get('/resumo', async (req, res) => {

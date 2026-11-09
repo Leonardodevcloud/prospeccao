@@ -16511,3 +16511,391 @@ fieldset.assinar__formas {
     flex-wrap: wrap;
   }
 }
+
+/* ── v125 · Qualidade do atendimento ── */
+.selo-nota {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.selo-nota[data-situacao="atencao"] {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.selo-nota[data-situacao="faltou"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.conversa-item__linha .selo-nota {
+  flex: none;
+}
+.notas-lead {
+  display: grid;
+  gap: var(--space-3);
+}
+.cartao-nota {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.cartao-nota__topo {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+}
+.cartao-nota__topo:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-md);
+}
+.cartao-nota__topo .selo-nota {
+  font-size: 15px;
+  line-height: 26px;
+  min-width: 48px;
+}
+.cartao-nota__topo[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+.cartao-nota__titulo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+.cartao-nota__titulo .quieto {
+  font-size: 13px;
+}
+.cartao-nota__corpo {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+.cartao-nota__rodape {
+  margin: 0;
+  font-size: 12px;
+}
+.criterios-nota {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.criterio-nota {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 20px;
+}
+.criterio-nota[data-situacao="faltou"],
+.criterio-nota[data-situacao="atencao"] {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+.criterio-nota__cabeca {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.criterio-nota__situacao {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--brand);
+}
+.criterio-nota[data-situacao="atencao"] .criterio-nota__situacao,
+.criterio-nota[data-situacao="faltou"] .criterio-nota__situacao {
+  color: var(--warning);
+}
+.criterio-nota__texto {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.criterio-nota[data-situacao="faltou"] .criterio-nota__texto,
+.criterio-nota[data-situacao="atencao"] .criterio-nota__texto {
+  color: var(--ink);
+}
+.criterio-nota__fonte {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: var(--radius-xs, 4px);
+  background: var(--surface-sunken);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+.criterio-nota__trecho {
+  font-size: 13px;
+}
+.criterio-nota__sugestao {
+  font-size: 13px;
+}
+.corrigir-nota {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.qualidade {
+  display: grid;
+  gap: var(--space-6);
+}
+.qualidade__filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.qualidade__filtros .campo {
+  min-width: 200px;
+}
+.qualidade__pesou {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.qualidade__pesou h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.qualidade__pesou ol {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+  font-size: 14px;
+}
+.qualidade__nota {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+[data-sinal="1"] {
+  color: var(--brand);
+}
+[data-sinal="-1"] {
+  color: var(--danger);
+}
+.qualidade__meu {
+  max-width: 640px;
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.qualidade__enviar {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+.qualidade__enviar > .quieto {
+  font-size: 13px;
+}
+.resumo-atendimento {
+  display: grid;
+  gap: var(--space-6);
+}
+.resumo-atendimento h4 {
+  margin: 0 0 var(--space-2);
+  font-size: 15px;
+}
+.resumo-atendimento__topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.resumo-atendimento__topo h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+}
+.resumo-atendimento__topo .quieto {
+  font-size: 13px;
+}
+.resumo-atendimento__nota {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 13px;
+}
+.resumo-atendimento__nota .num {
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 500;
+}
+.barras-nota {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.barras-nota__linha {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: var(--space-3);
+  align-items: center;
+  font-size: 14px;
+}
+.barras-nota__linha dt {
+  margin: 0;
+}
+.barras-nota__linha dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.barras-nota__linha dd .num {
+  width: 32px;
+  text-align: right;
+}
+.barras-nota__barra {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--neutral-soft);
+  overflow: hidden;
+}
+.barras-nota__barra > span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+.barras-nota__linha[data-fraco] dt,
+.barras-nota__linha[data-fraco] .num {
+  font-weight: 600;
+  color: var(--warning);
+}
+.barras-nota__linha[data-fraco] .barras-nota__barra > span {
+  background: var(--warning);
+}
+.bloco-nota {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 20px;
+}
+.bloco-nota h4 {
+  margin: 0;
+}
+.bloco-nota p {
+  margin: 0;
+}
+.bloco-nota[data-tipo="treinar"] {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+.bloco-nota__rotulo {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--brand);
+}
+.bloco-nota[data-tipo="treinar"] .bloco-nota__rotulo {
+  color: var(--warning);
+}
+.bloco-nota blockquote {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+}
+.bloco-nota[data-tipo="treinar"] blockquote {
+  background: var(--surface);
+}
+.bloco-nota cite {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-style: normal;
+  color: var(--ink-muted);
+}
+.semanas-nota {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.semanas-nota li {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+}
+.semanas-nota li .num {
+  font-size: 18px;
+  font-weight: 500;
+}
+.semanas-nota li[data-atual] {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.meu-atendimento {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.meu-atendimento .selo-nota {
+  font-size: 15px;
+  line-height: 28px;
+  min-width: 48px;
+}
+.meu-atendimento__texto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+.meu-atendimento__texto .quieto {
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .barras-nota__linha {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .semanas-nota {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .meu-atendimento {
+    flex-wrap: wrap;
+  }
+}

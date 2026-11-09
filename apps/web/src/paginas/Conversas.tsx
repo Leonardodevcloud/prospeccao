@@ -13,6 +13,7 @@ import {
   type RespostaRapida,
   type TipoMidia,
 } from '../api';
+import { NotasDoLead, SeloNota } from '../atendimento/Atendimento';
 import { EnviarPara, FaixaIndicacoes, PainelContatos } from '../componentes/ContatosNegociacao';
 import { Drawer } from '../componentes/Drawer';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
@@ -20,7 +21,14 @@ import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { IconeInstagram } from '../componentes/IconeInstagram';
 import { AvisoPorteiro, doPorteiro } from '../componentes/Porteiro';
 import { ResumoPassagem } from '../componentes/ResumoPassagem';
-import { Dono, useSoLeitura, useSoPropriaBase, useVeFilaSemDono } from '../componentes/Sessao';
+import {
+  Dono,
+  useEhAdmin,
+  useRecurso,
+  useSoLeitura,
+  useSoPropriaBase,
+  useVeFilaSemDono,
+} from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
 import { fmtCidade, fmtCompromisso, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
 import { ListaNaoIdentificados, PainelNaoIdentificado, useNaoIdentificados } from './NaoIdentificados';
@@ -104,6 +112,9 @@ function ItemLista(props: { c: ConversaResumo; ativo: boolean; aoAbrir: () => vo
             {c.ultimaMidia && <Icon name={ICONE_MIDIA[c.ultimaMidia]} size={12} />} {c.ultima ?? ''}
           </span>
           {c.naoLidas > 0 && <span className="conversa-item__conta">{c.naoLidas}</span>}
+          {c.naoLidas === 0 && c.nota != null && (
+            <SeloNota nota={c.nota} titulo="Nota do último atendimento" />
+          )}
         </span>
         {(c.falandoCom || c.sugestoes > 0) && (
           <span className="conversa-item__quem">
@@ -821,6 +832,9 @@ function Conversa(props: {
   const soLeitura = useSoLeitura();
   const [marcando, setMarcando] = useState(false);
   const [respostas, setRespostas] = useState(false);
+  const [notas, setNotas] = useState(false);
+  const temNotas = useRecurso('atendimento');
+  const gestor = useEhAdmin();
   const [pessoas, setPessoas] = useState<{ editar: ContatoLead | null } | null>(
     props.abrirPessoas ? { editar: null } : null,
   );
@@ -931,6 +945,11 @@ function Conversa(props: {
           <Button size="sm" variant="ghost" icon="id-card" onClick={props.aoAbrirFicha}>
             Ficha
           </Button>
+          {temNotas && (
+            <Button size="sm" variant="ghost" icon="badge-check" onClick={() => setNotas(true)}>
+              Nota do atendimento
+            </Button>
+          )}
           {!soLeitura && (
             <Button size="sm" variant="ghost" icon="sticky-note" onClick={() => setRespostas(true)}>
               Respostas rápidas
@@ -1025,6 +1044,17 @@ function Conversa(props: {
         />
       )}
       {respostas && <RespostasRapidas aoFechar={() => setRespostas(false)} />}
+      {notas && (
+        <Drawer
+          titulo="Nota do atendimento"
+          barra={`Nota do atendimento · ${fmtNome(c.nome)}`}
+          aoFechar={() => setNotas(false)}
+        >
+          <div className="drawer__corpo">
+            <NotasDoLead empresaId={c.empresaId} gestor={gestor} />
+          </div>
+        </Drawer>
+      )}
       {pessoas && (
         <PainelContatos
           conversa={c}

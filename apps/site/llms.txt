@@ -6,6 +6,7 @@
 - Campanhas por nicho (CNAE e termos de busca) e cidade: as empresas chegam com nota A, B ou C e o motivo.
 - Possíveis decisores pelo quadro de sócios, com telefone, WhatsApp, e-mail, site e redes quando a empresa publica; cada contato mostra a origem.
 - Funil de vendas, Meu dia, tarefas, cadência automática de follow-up, metas e relatórios.
+- Qualidade do atendimento (planos Time e Escala): a IA dá nota a cada conversa e ligação da equipe com a mesma régua (tempo de resposta, respondeu o que foi perguntado, conduziu, próximo passo, tom) e o gestor vê o que cada um precisa treinar.
 - WhatsApp integrado com agente de IA que aborda, responde, tira dúvidas e marca reunião (modo revisar disponível).
 - Ligações pelo navegador com o número da empresa, gravação, transcrição e resumo da IA; lista de ligação que disca em até 3 linhas.
 - Instagram: comente e receba, direct e cadastros dos anúncios da Meta caindo no funil; as vendas voltam para a Meta.

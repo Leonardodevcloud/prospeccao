@@ -120,6 +120,12 @@ export const MENU_CRM: EntradaMenu[] = [
     icone: 'trending-up',
     itens: [
       { para: '/relatorios', rotulo: 'Relatórios', icone: 'trending-up' },
+      {
+        para: '/qualidade',
+        rotulo: 'Qualidade do atendimento',
+        icone: 'badge-check',
+        recurso: 'atendimento',
+      },
       { para: '/equipe', rotulo: 'Equipe', icone: 'id-card' },
       { para: '/telefonia', rotulo: 'Telefonia', icone: 'phone', admin: true, modulos: ['ligacoes'] },
       { para: '/integracoes', rotulo: 'Integrações', icone: 'plug', admin: true, recurso: 'api' },
