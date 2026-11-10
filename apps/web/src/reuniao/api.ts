@@ -164,6 +164,8 @@ export interface DetalheReuniao extends Omit<SessaoResumo, 'resumo'> {
   gravou: boolean;
   /** Por que o resumo da IA não saiu (null: saiu, ou ainda não foi tentado). */
   resumoFalha: string | null;
+  /** Por que a transcrição falhou na última tentativa (null: não falhou). */
+  transcricaoErro: string | null;
   etapa: string | null;
   etapaNome: string | null;
   falas: FalaReuniao[];

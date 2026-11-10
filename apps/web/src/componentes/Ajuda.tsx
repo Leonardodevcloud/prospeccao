@@ -699,6 +699,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Se a IA sugerir mudar o lead de etapa, o botão aparece no resumo. A reunião também entra no
           histórico do lead e o Argos passa a saber o que foi conversado.
         </p>
+        <p>
+          Reunião longa (mais de 20 minutos de fala de uma pessoa) é transcrita em partes de 20 minutos. Se o
+          serviço de transcrição pedir para esperar (ele tem um limite de horas de áudio por hora), a tela
+          avisa e a transcrição continua sozinha de onde parou. Se mesmo assim falhar, a caixa da transcrição
+          mostra o motivo e o botão <b>Transcrever de novo</b> (para quem conduziu ou um administrador): a
+          gravação continua guardada.
+        </p>
         <Nota>
           Só um administrador pode apagar a gravação e a transcrição de uma reunião. O resumo e o histórico
           ficam. Ao usar “Esquecer este contato” (LGPD), as reuniões dele também são apagadas.

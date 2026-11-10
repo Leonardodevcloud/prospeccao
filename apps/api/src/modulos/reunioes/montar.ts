@@ -45,7 +45,7 @@ export function formatoFinal(mime: string | null, tipo: 'sala' | 'audio'): Forma
   return { extensao: 'webm', tipo: 'video/webm', argumentos: ['-c', 'copy'] };
 }
 
-function rodar(programa: string, argumentos: string[]): Promise<string> {
+export function rodar(programa: string, argumentos: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const p = spawn(programa, argumentos, { stdio: ['ignore', 'pipe', 'pipe'] });
     let saida = '';
@@ -63,9 +63,9 @@ function rodar(programa: string, argumentos: string[]): Promise<string> {
   });
 }
 
-const semPrograma = (erro: unknown) => (erro as NodeJS.ErrnoException)?.code === 'ENOENT';
+export const semPrograma = (erro: unknown) => (erro as NodeJS.ErrnoException)?.code === 'ENOENT';
 
-async function duracao(arquivo: string): Promise<number | null> {
+export async function duracao(arquivo: string): Promise<number | null> {
   try {
     const s = await rodar('ffprobe', [
       '-v',

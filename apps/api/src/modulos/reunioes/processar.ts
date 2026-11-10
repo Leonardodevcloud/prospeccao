@@ -1,5 +1,5 @@
 import type { Pool } from '@prospeccao/db';
-import { juntarFalas, transcreverAudio } from '@prospeccao/integrations/reuniao';
+import { juntarFalas, LimiteDaTranscricao } from '@prospeccao/integrations/reuniao';
 import type { Logger, ResumoReuniao } from '@prospeccao/shared';
 import { comConta } from '../../contexto.js';
 import type { ResolverServicos } from '../../servicos.js';
@@ -8,6 +8,7 @@ import { notificar } from '../notificacoes/repositorio.js';
 import { chaveDoPedaco, montarArquivo } from './montar.js';
 import * as repo from './repositorio.js';
 import { type AoEncerrar, acompanharSessoes, conferirSessoesAbertas, type DepsReunioes } from './servico.js';
+import { transcreverTrilha } from './transcrever.js';
 
 /**
  * Depois da reunião (uma por vez, em segundo plano): espera os arquivos do LiveKit, transcreve o
@@ -49,6 +50,12 @@ interface SessaoParaProcessar {
   /** Pedido de gerar só o resumo (a transcrição já está pronta). */
   soResumo: boolean;
 }
+
+/**
+ * O serviço de transcrição pediu para esperar (limite de minutos de áudio por hora ou por dia do
+ * plano): espera o que ele pediu, sem contar como tentativa, até 3 dias depois da reunião.
+ */
+const LIMITE_ESPERA_MAX_MS = 3 * 86_400_000;
 
 /** Espera crescente entre as tentativas (5 min, 15 min, 1 h). */
 const ESPERAS_MIN = [5, 15, 60, 180];
@@ -158,14 +165,22 @@ export async function processarSessao(
   const audios = gravacoes.filter((g) => g.tipo === 'audio' && g.situacao === 'pronta' && g.chave);
   const cfgVoz = d.reunioes.transcricao;
   let transcricao: 'pronta' | 'sem_audio' | 'desligada' | 'erro' = 'desligada';
+  let motivo: string | null = null;
   if (s.transcrever && cfgVoz && arm) {
     if (!audios.length) transcricao = 'sem_audio';
     else {
       try {
         const trilhas = [];
         for (const g of audios) {
-          const url = await arm.urlAssinada(g.chave!, { segundos: 2 * 3600 });
-          const trechos = await transcreverAudio(cfgVoz, url);
+          // Áudio longo vai em partes de 20 min (cada parte pronta fica guardada).
+          const trechos = await transcreverTrilha(
+            d.pool,
+            cfgVoz,
+            arm,
+            s.id,
+            { gravacaoId: g.gravacaoId, chave: g.chave!, bytes: g.bytes, segundos: g.segundos },
+            d.log,
+          );
           const inicio = g.iniciadaEm ? new Date(g.iniciadaEm).getTime() : new Date(s.iniciadaEm).getTime();
           trilhas.push({
             identidade: g.identidade ?? 'desconhecido',
@@ -179,15 +194,28 @@ export async function processarSessao(
         transcricao = falas.length ? 'pronta' : 'sem_audio';
       } catch (erro) {
         const msg = (erro as Error).message;
+        // Limite do plano do serviço: espera o que ele pediu e continua de onde parou.
+        if (erro instanceof LimiteDaTranscricao && desdeOFim < LIMITE_ESPERA_MAX_MS) {
+          const espera = Math.min(Math.max(erro.esperaS + 30, 60), 6 * 3600);
+          d.log.info({ sessao: s.id, espera }, 'reuniões: limite da transcrição, esperando para continuar');
+          await adiar(d.pool, s.id, espera);
+          await d.pool.query('UPDATE comercial.sala_sessoes SET erro = $2 WHERE id = $1', [
+            s.id,
+            `Transcrição esperando o limite do serviço (continua sozinha em ${Math.ceil(espera / 60)} min).`,
+          ]);
+          return 'adiada';
+        }
         d.log.warn({ err: erro, sessao: s.id }, 'reuniões: transcrição falhou');
         if (s.tentativas + 1 < MAX_TENTATIVAS) {
           await adiar(d.pool, s.id, (ESPERAS_MIN[s.tentativas] ?? 60) * 60, `Transcrição: ${msg}`);
           return 'adiada';
         }
         transcricao = 'erro';
+        motivo = msg.slice(0, 500);
       }
     }
   }
+  await d.pool.query('UPDATE comercial.sala_sessoes SET transcricao_erro = $2 WHERE id = $1', [s.id, motivo]);
 
   return terminar(d, s, transcricao);
 }

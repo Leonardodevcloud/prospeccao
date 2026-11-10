@@ -61,30 +61,42 @@ const VOCABULARIO =
   'Reunião comercial em português do Brasil. Proposta, contrato, prazo, orçamento, valores, condições de pagamento, WhatsApp, Prospect Team.';
 
 /**
- * Transcreve um arquivo de áudio pelo link (a Groq baixa direto do armazenamento, até 100 MB; não
- * passa pela memória da api). Serviço que não aceita link: baixa e manda o arquivo (até 25 MB).
+ * A Groq recusou por limite (HTTP 429: minutos de áudio por hora ou por dia do plano). Não é erro do
+ * áudio: é esperar `esperaS` segundos e mandar de novo.
  */
-export async function transcreverAudio(
-  cfg: ConfigTranscricao,
-  url: string,
-  opcoes: { vocabulario?: string } = {},
-): Promise<TrechoTranscrito[]> {
-  const base = cfg.baseUrl.replace(/\/+$/, '');
-  const formulario = new FormData();
-  if (/groq\.com/i.test(base)) formulario.append('url', url);
-  else {
-    const audio = await fetch(url, { signal: AbortSignal.timeout(120_000) });
-    if (!audio.ok) throw new Error(`Transcrição: não baixou o áudio (HTTP ${audio.status})`);
-    const bytes = new Uint8Array(await audio.arrayBuffer());
-    if (bytes.length > 25 * 1024 * 1024) throw new Error('Transcrição: áudio maior que 25 MB');
-    formulario.append('file', new Blob([bytes], { type: 'audio/ogg' }), 'fala.ogg');
+export class LimiteDaTranscricao extends Error {
+  constructor(
+    mensagem: string,
+    readonly esperaS: number,
+  ) {
+    super(mensagem);
+    this.name = 'LimiteDaTranscricao';
   }
+}
+
+/** "Please try again in 1h2m3.5s" / retry-after: quantos segundos esperar (padrão 10 min). */
+export function esperaDoLimite(retryAfter: string | null, corpo: string): number {
+  const n = Number(retryAfter);
+  if (retryAfter && Number.isFinite(n) && n > 0) return Math.ceil(n);
+  const m = /try again in\s+(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i.exec(corpo);
+  if (m && (m[1] || m[2] || m[3]))
+    return Math.ceil(Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0)) || 600;
+  return 600;
+}
+
+function formularioBase(cfg: ConfigTranscricao, opcoes: { vocabulario?: string }): FormData {
+  const formulario = new FormData();
   formulario.append('model', cfg.modelo);
   formulario.append('language', 'pt');
   formulario.append('response_format', 'verbose_json');
   formulario.append('timestamp_granularities[]', 'segment');
   formulario.append('temperature', '0');
   formulario.append('prompt', (opcoes.vocabulario ?? VOCABULARIO).slice(0, 600));
+  return formulario;
+}
+
+async function pedirTranscricao(cfg: ConfigTranscricao, formulario: FormData): Promise<TrechoTranscrito[]> {
+  const base = cfg.baseUrl.replace(/\/+$/, '');
   const resposta = await fetch(`${base}/audio/transcriptions`, {
     method: 'POST',
     headers: { authorization: `Bearer ${cfg.chave}` },
@@ -93,12 +105,58 @@ export async function transcreverAudio(
   });
   if (!resposta.ok) {
     const corpo = await resposta.text().catch(() => '');
+    if (resposta.status === 429)
+      throw new LimiteDaTranscricao(
+        `Transcrição: limite do serviço de transcrição (HTTP 429): ${corpo.slice(0, 200)}`,
+        esperaDoLimite(resposta.headers.get('retry-after'), corpo),
+      );
     throw new Error(`Transcrição falhou (HTTP ${resposta.status}): ${corpo.slice(0, 300)}`);
   }
   const j = (await resposta.json()) as { text?: string; segments?: SegmentoWhisper[] };
   if (j.segments?.length) return lerSegmentos(j.segments);
   const texto = (j.text ?? '').trim();
   return texto && !ALUCINACOES.test(texto) ? [{ inicioMs: 0, fimMs: 0, texto }] : [];
+}
+
+/** Maior arquivo que vai inteiro (o plano grátis da Groq aceita até 25 MB por envio). */
+export const MAX_BYTES_TRANSCRICAO = 24 * 1024 * 1024;
+
+/**
+ * Transcreve um arquivo de áudio pelo link (a Groq baixa direto do armazenamento; não passa pela
+ * memória da api). Serviço que não aceita link: baixa e manda o arquivo (até 24 MB). Áudio longo
+ * (reunião de horas) vai em partes: ver `transcreverArquivo`.
+ */
+export async function transcreverAudio(
+  cfg: ConfigTranscricao,
+  url: string,
+  opcoes: { vocabulario?: string } = {},
+): Promise<TrechoTranscrito[]> {
+  const formulario = formularioBase(cfg, opcoes);
+  if (/groq\.com/i.test(cfg.baseUrl)) formulario.append('url', url);
+  else {
+    const audio = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+    if (!audio.ok) throw new Error(`Transcrição: não baixou o áudio (HTTP ${audio.status})`);
+    const bytes = new Uint8Array(await audio.arrayBuffer());
+    if (bytes.length > MAX_BYTES_TRANSCRICAO) throw new Error('Transcrição: áudio maior que 24 MB');
+    formulario.append('file', new Blob([bytes], { type: 'audio/ogg' }), 'fala.ogg');
+  }
+  return pedirTranscricao(cfg, formulario);
+}
+
+/** Transcreve um arquivo que já está na memória (uma parte de um áudio longo). */
+export async function transcreverArquivo(
+  cfg: ConfigTranscricao,
+  bytes: Uint8Array<ArrayBuffer>,
+  opcoes: { vocabulario?: string; nome?: string; tipo?: string } = {},
+): Promise<TrechoTranscrito[]> {
+  if (bytes.length > MAX_BYTES_TRANSCRICAO) throw new Error('Transcrição: parte do áudio maior que 24 MB');
+  const formulario = formularioBase(cfg, opcoes);
+  formulario.append(
+    'file',
+    new Blob([bytes], { type: opcoes.tipo ?? 'audio/ogg' }),
+    opcoes.nome ?? 'parte.ogg',
+  );
+  return pedirTranscricao(cfg, formulario);
 }
 
 /**

@@ -241,7 +241,13 @@ export function ReuniaoDetalhe() {
             />
           )}
 
-          <Transcricao d={d} pular={pular} podePular={podePular} />
+          <Transcricao
+            d={d}
+            pular={pular}
+            podePular={podePular}
+            tentar={!soLeitura && (admin || anfitriao) ? () => reprocessar.mutate() : null}
+            tentando={reprocessar.isPending}
+          />
 
           {admin && !soLeitura && (d.videoUrl || d.falas.length > 0) && (
             <section className="secao">
@@ -387,7 +393,14 @@ function PainelResumo(props: {
   );
 }
 
-function Transcricao(props: { d: DetalheReuniao; pular: (s: number) => void; podePular: boolean }) {
+function Transcricao(props: {
+  d: DetalheReuniao;
+  pular: (s: number) => void;
+  podePular: boolean;
+  /** Pedir a transcrição de novo (quem conduziu ou um administrador; null: não pode). */
+  tentar: (() => void) | null;
+  tentando: boolean;
+}) {
   const { d } = props;
   const [busca, setBusca] = useState('');
   const [tudo, setTudo] = useState(false);
@@ -430,6 +443,27 @@ function Transcricao(props: { d: DetalheReuniao; pular: (s: number) => void; pod
               : d.transcricao === 'erro'
                 ? 'A transcrição falhou.'
                 : 'Esta reunião não foi transcrita.'}
+          {d.situacao === 'processando' && d.erro ? ` ${d.erro}` : ''}
+          {d.situacao !== 'processando' && d.transcricao === 'erro' && (
+            <>
+              {d.transcricaoErro && (
+                <span style={{ display: 'block', marginTop: 4 }}>Motivo: {d.transcricaoErro}</span>
+              )}
+              {props.tentar && (
+                <span style={{ display: 'block', marginTop: 8 }}>
+                  A gravação continua guardada.{' '}
+                  <button
+                    type="button"
+                    className="link-botao"
+                    onClick={props.tentar}
+                    disabled={props.tentando}
+                  >
+                    {props.tentando ? 'Pedindo…' : 'Transcrever de novo'}
+                  </button>
+                </span>
+              )}
+            </>
+          )}
         </p>
       ) : (
         <>

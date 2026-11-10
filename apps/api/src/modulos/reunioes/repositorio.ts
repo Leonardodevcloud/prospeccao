@@ -924,7 +924,7 @@ export async function detalhe(db: Executor, sessaoId: number) {
   >(
     `SELECT ${CAMPOS_SESSAO_LISTA}, ${CAMPOS_LISTA}, ss.resumo AS "resumoCompleto",
             ss.tarefas_criadas_em AS "tarefasCriadasEm", ss.transcrever, ss.gravar AS "gravou",
-            ss.resumo_falha AS "resumoFalha",
+            ss.resumo_falha AS "resumoFalha", ss.transcricao_erro AS "transcricaoErro",
             o.etapa, et.nome AS "etapaNome"
        FROM comercial.sala_sessoes ss
        JOIN comercial.salas s ON s.id = ss.sala_id
@@ -993,6 +993,7 @@ export async function apagarGravacao(db: Executor, sessaoId: number): Promise<vo
   );
   await db.query(`UPDATE comercial.sala_gravacoes SET chave = NULL WHERE sessao_id = $1`, [sessaoId]);
   await db.query(`DELETE FROM comercial.sala_falas WHERE sessao_id = $1`, [sessaoId]);
+  await db.query(`DELETE FROM comercial.sala_transcricao_partes WHERE sessao_id = $1`, [sessaoId]);
 }
 
 export async function marcarTarefasCriadas(db: Executor, sessaoId: number): Promise<void> {
