@@ -5,11 +5,13 @@ import {
   type MedidorClaude,
   montarDossie,
   resumoDasFontes,
+  somarUso,
   testarClaude,
   trabalharNoCarrossel,
   type UsoClaude,
 } from '@prospeccao/integrations/carrosseis';
 import { AppError, type Logger } from '@prospeccao/shared';
+import { directPadrao } from '@prospeccao/shared/carrosseis-publicacao';
 import {
   type EtapaTime,
   type PedidoDoTime,
@@ -21,6 +23,7 @@ import { comConta, contaSql, usuarioAtual } from '../../contexto.js';
 import { contratoDaConta } from '../../recursos.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as cerebro from './cerebro.js';
+import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -308,7 +311,35 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
     divulgarId: divulgar?.id ?? null,
     criadoPor: l.criado_por,
   });
-  await concluir(db, l.id, { carrosselId, uso: r.uso, custoUsd: r.custoUsd });
+  // "Comente a palavra": a regra do Comente e receba nasce junto, com o direct da redatora.
+  let uso = r.uso;
+  let custo = r.custoUsd;
+  if (p.chamada === 'comentar' && p.palavra) {
+    const partida = await publicacao.entregaDePartida(db, divulgar?.id ?? null);
+    const direct = await publicacao
+      .directDoCarrossel(db, ia.cliente(db, l.conta_id), {
+        carrosselId,
+        palavra: p.palavra.toUpperCase(),
+        entrega: partida.entrega,
+        divulgarId: partida.divulgarId,
+        material: '',
+      })
+      .catch(() => null);
+    if (direct) {
+      uso = somarUso(uso, direct.uso);
+      custo += direct.custoUsd;
+    }
+    await publicacao.criarRegra(db, carrosselId, {
+      palavra: p.palavra,
+      entrega: partida.entrega,
+      mensagem: direct?.mensagem ?? directPadrao(partida.entrega, r.titulo),
+      botao: direct?.botao ?? '',
+      divulgarId: partida.divulgarId,
+      whatsapp: partida.whatsapp,
+      criadoPor: l.criado_por,
+    });
+  }
+  await concluir(db, l.id, { carrosselId, uso, custoUsd: custo });
   if (l.criado_por)
     await notificar(db, l.criado_por, {
       tipo: 'sistema',

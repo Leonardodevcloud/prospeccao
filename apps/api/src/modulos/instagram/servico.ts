@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { cifrar, decifrar, type Executor, type Pool } from '@prospeccao/db';
 import {
   AppError,
@@ -11,6 +12,7 @@ import {
   type PerguntaFormulario,
   PRAZO_RESPOSTA_PRIVADA_DIAS,
 } from '@prospeccao/shared';
+import { legendaBate, linkWhatsapp, pedidoDaPromocao } from '@prospeccao/shared/carrosseis-publicacao';
 import { comConta, conta, contaSql, usuarioAtual } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { temRecurso } from '../../recursos.js';
@@ -42,6 +44,12 @@ export function definirMeta(meta: ClienteMeta | null, chave: string | null): voi
 
 export function meta(): ClienteMeta | null {
   return metaAtual;
+}
+
+let baseDosLinks = '';
+/** Onde ficam os links contados dos botões do direct (<api pública>/l/<código>). */
+export function definirBaseDosLinks(url: string): void {
+  baseDosLinks = url.replace(/\/+$/, '');
 }
 
 /** A chave que cifra os tokens (CHAVE_CREDENCIAIS). */
@@ -579,14 +587,32 @@ function paraData(t: unknown): Date {
 
 interface LinhaRegra {
   id: number;
-  alvo: 'publicacao' | 'proxima' | 'todas';
+  alvo: 'publicacao' | 'proxima' | 'todas' | 'carrossel';
   midia_id: string | null;
   palavras: string[];
   respostas: string[];
   mensagem: string;
   botao_texto: string | null;
   botao_link: string | null;
+  entrega: 'link' | 'arquivo' | 'promocao' | 'conversa' | null;
   criado_em: Date;
+  carrossel_id: number | null;
+  carrossel_legenda: string | null;
+  carrossel_em: Date | null;
+  midias_recusadas: string[];
+}
+
+const COLUNAS_LINHA_REGRA = `r.id::int, r.alvo, r.midia_id, r.palavras, r.respostas, r.mensagem, r.botao_texto, r.botao_link,
+  r.entrega, r.criado_em, r.carrossel_id, c.legenda AS carrossel_legenda, c.criado_em AS carrossel_em, r.midias_recusadas`;
+
+/** O comentário que a regra vai atender (do aviso da Meta ou guardado antes do post ser reconhecido). */
+interface Comentario {
+  comentarioId: string;
+  midiaId: string;
+  pessoaId: string;
+  usuario: string | null;
+  texto: string;
+  quando: Date;
 }
 
 async function receberComentario(deps: DepsLead, igId: string, v: Record<string, unknown>, quando: Date) {
@@ -612,97 +638,332 @@ async function receberComentario(deps: DepsLead, igId: string, v: Record<string,
       em: quando,
     });
     const { rows: regras } = await deps.pool.query<LinhaRegra>(
-      `SELECT id::int, alvo, midia_id, palavras, respostas, mensagem, botao_texto, botao_link, criado_em
-         FROM comercial.instagram_regras
-        WHERE conta_id = ${contaSql()} AND ligada
-          AND ((alvo = 'publicacao' AND midia_id = $1) OR (alvo = 'proxima' AND midia_id IS NULL) OR alvo = 'todas')
-        ORDER BY CASE alvo WHEN 'publicacao' THEN 0 WHEN 'proxima' THEN 1 ELSE 2 END, id`,
+      `SELECT ${COLUNAS_LINHA_REGRA}
+         FROM comercial.instagram_regras r LEFT JOIN comercial.carrosseis c ON c.id = r.carrossel_id
+        WHERE r.conta_id = ${contaSql()} AND r.ligada
+          AND ((r.alvo = 'publicacao' AND r.midia_id = $1) OR (r.alvo IN ('proxima', 'carrossel') AND r.midia_id IS NULL)
+               OR r.alvo = 'todas')
+        ORDER BY CASE r.alvo WHEN 'publicacao' THEN 0 WHEN 'carrossel' THEN 1 WHEN 'proxima' THEN 2 ELSE 3 END, r.id`,
       [midiaId],
     );
     if (!regras.length) return;
-    // "A próxima que eu postar": a primeira publicação depois da regra fica sendo a dela.
-    const proximas = regras.filter((r) => r.alvo === 'proxima');
-    if (proximas.length) {
+    const esperando = regras.filter((r) => r.alvo === 'proxima' || r.alvo === 'carrossel');
+    if (esperando.length) {
       const pub = await m.publicacao(midiaId, c.token).catch(() => null);
-      for (const r of proximas)
-        if (pub?.em && new Date(pub.em) > r.criado_em) {
+      for (const r of esperando) {
+        if (!pub?.em) continue;
+        const em = new Date(pub.em);
+        // "A próxima que eu postar": a primeira publicação depois da regra fica sendo a dela.
+        if (r.alvo === 'proxima' && em > r.criado_em) {
           await guardarPublicacao(deps.pool, r.id, pub, 'publicacao');
           r.alvo = 'publicacao';
           r.midia_id = midiaId;
         }
-    }
-    const regra = regras.find(
-      (r) => (r.alvo !== 'proxima' || r.midia_id === midiaId) && comentarioBate(texto, r.palavras),
-    );
-    if (!regra) return;
-    // A mesma pessoa já recebeu o direct desta regra: não manda de novo.
-    const { rows: ja } = await deps.pool.query(
-      `SELECT 1 FROM comercial.instagram_interacoes
-        WHERE conta_id = ${contaSql()} AND regra_id = $1 AND pessoa_id = $2 AND direct = 'enviado' LIMIT 1`,
-      [regra.id, de.id],
-    );
-    const foraDoPrazo = Date.now() - quando.getTime() > PRAZO_RESPOSTA_PRIVADA_DIAS * 86_400_000;
-    const { rows: nova } = await deps.pool.query<{ id: number }>(
-      `INSERT INTO comercial.instagram_interacoes
-         (conta_id, regra_id, midia_id, comentario_id, pessoa_id, usuario, comentario, comentado_em, direct)
-       VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (conta_id, comentario_id) DO NOTHING RETURNING id::int`,
-      [
-        regra.id,
-        midiaId,
-        comentarioId,
-        de.id,
-        de.username ?? null,
-        texto.slice(0, 2000),
-        quando,
-        ja.length ? 'repetido' : foraDoPrazo ? 'fora_do_prazo' : 'enviado',
-      ],
-    );
-    const interacaoId = nova[0]?.id;
-    if (!interacaoId || ja.length || foraDoPrazo) return;
-    // O nome de quem comentou (se a Meta deixar ver antes da conversa), para o {nome}.
-    const perfil = await m.perfil(de.id as string, c.token).catch(() => null);
-    const nome = perfil?.nome ?? null;
-    if (nome)
-      await deps.pool.query('UPDATE comercial.instagram_interacoes SET nome = $2 WHERE id = $1', [
-        interacaoId,
-        nome,
-      ]);
-    try {
-      await m.respostaPrivada(
-        c.paginaId,
-        comentarioId,
-        {
-          texto: comNome(regra.mensagem, nome),
-          botao:
-            regra.botao_texto && regra.botao_link
-              ? { texto: regra.botao_texto, link: regra.botao_link }
-              : null,
-        },
-        c.token,
-      );
-    } catch (e) {
-      await registrarErroDaMeta(deps.pool, e);
-      await deps.pool.query(
-        `UPDATE comercial.instagram_interacoes SET direct = 'erro', direct_erro = $2 WHERE id = $1`,
-        [interacaoId, (e as Error).message.slice(0, 300)],
-      );
-      deps.log.warn({ err: e, regra: regra.id }, 'instagram: o direct do comentário não foi');
-      return;
-    }
-    if (regra.respostas.length) {
-      const frase = regra.respostas[Math.floor(Math.random() * regra.respostas.length)]!;
-      try {
-        await m.responderComentario(comentarioId, comNome(frase, nome), c.token);
-        await deps.pool.query(
-          'UPDATE comercial.instagram_interacoes SET resposta_publica = true WHERE id = $1',
-          [interacaoId],
-        );
-      } catch (e) {
-        deps.log.warn({ err: e, regra: regra.id }, 'instagram: a resposta no comentário não foi');
+        // A regra de um carrossel: o post com a legenda do carrossel (postado depois dele).
+        if (r.alvo === 'carrossel' && postDoCarrossel(r, pub)) {
+          await ligarRegraNoPost(deps, c, r.id, pub, { avisar: true });
+          r.alvo = 'publicacao';
+          r.midia_id = midiaId;
+        }
       }
     }
+    const regra = regras.find(
+      (r) =>
+        (r.alvo === 'publicacao' || r.alvo === 'todas') &&
+        (r.alvo === 'todas' || r.midia_id === midiaId) &&
+        comentarioBate(texto, r.palavras),
+    );
+    if (!regra) return;
+    await atenderComentario(deps, c, regra, {
+      comentarioId,
+      midiaId,
+      pessoaId: de.id as string,
+      usuario: de.username ?? null,
+      texto,
+      quando,
+    });
   });
+}
+
+/** O post é o do carrossel: postado depois do carrossel, não recusado e com a legenda dele. */
+function postDoCarrossel(
+  r: Pick<LinhaRegra, 'carrossel_legenda' | 'carrossel_em' | 'midias_recusadas'>,
+  pub: PublicacaoMeta,
+): boolean {
+  if (!r.carrossel_legenda || r.midias_recusadas.includes(pub.id)) return false;
+  if (pub.em && r.carrossel_em && new Date(pub.em) < r.carrossel_em) return false;
+  return legendaBate(r.carrossel_legenda, pub.legenda);
+}
+
+/** Código do link contado (base62, 12 letras). */
+function novoCodigo(): string {
+  const letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  return [...randomBytes(12)].map((b) => letras[b % letras.length]).join('');
+}
+
+/** A regra tem botão no direct (um link, um arquivo ou o WhatsApp da promoção). */
+const temBotao = (r: Pick<LinhaRegra, 'entrega' | 'botao_texto' | 'botao_link'>) =>
+  !!r.botao_texto && (r.entrega === 'arquivo' || r.entrega === 'promocao' || !!r.botao_link);
+
+/** Manda o direct (e a resposta no comentário) para quem comentou a palavra. */
+async function atenderComentario(
+  deps: DepsLead,
+  c: Conexao,
+  regra: Pick<LinhaRegra, 'id' | 'mensagem' | 'botao_texto' | 'botao_link' | 'entrega' | 'respostas'>,
+  co: Comentario,
+): Promise<void> {
+  const m = metaAtual;
+  if (!m) return;
+  // A mesma pessoa já recebeu o direct desta regra: não manda de novo.
+  const { rows: ja } = await deps.pool.query(
+    `SELECT 1 FROM comercial.instagram_interacoes
+      WHERE conta_id = ${contaSql()} AND regra_id = $1 AND pessoa_id = $2 AND direct = 'enviado' LIMIT 1`,
+    [regra.id, co.pessoaId],
+  );
+  const foraDoPrazo = Date.now() - co.quando.getTime() > PRAZO_RESPOSTA_PRIVADA_DIAS * 86_400_000;
+  const botao = temBotao(regra);
+  // O botão passa pelo CRM (conta quem abriu); sem o endereço público, vai o link direto.
+  const codigo = botao && baseDosLinks ? novoCodigo() : null;
+  const { rows: nova } = await deps.pool.query<{ id: number }>(
+    `INSERT INTO comercial.instagram_interacoes
+       (conta_id, regra_id, midia_id, comentario_id, pessoa_id, usuario, comentario, comentado_em, direct, codigo)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (conta_id, comentario_id) DO NOTHING RETURNING id::int`,
+    [
+      regra.id,
+      co.midiaId,
+      co.comentarioId,
+      co.pessoaId,
+      co.usuario,
+      co.texto.slice(0, 2000),
+      co.quando,
+      ja.length ? 'repetido' : foraDoPrazo ? 'fora_do_prazo' : 'enviado',
+      ja.length || foraDoPrazo ? null : codigo,
+    ],
+  );
+  const interacaoId = nova[0]?.id;
+  if (!interacaoId || ja.length || foraDoPrazo) return;
+  // O nome de quem comentou (se a Meta deixar ver antes da conversa), para o {nome}.
+  const perfil = await m.perfil(co.pessoaId, c.token).catch(() => null);
+  const nome = perfil?.nome ?? null;
+  if (nome)
+    await deps.pool.query('UPDATE comercial.instagram_interacoes SET nome = $2 WHERE id = $1', [
+      interacaoId,
+      nome,
+    ]);
+  const destino = codigo ? `${baseDosLinks}/l/${codigo}` : regra.botao_link;
+  try {
+    await m.respostaPrivada(
+      c.paginaId,
+      co.comentarioId,
+      {
+        texto: comNome(regra.mensagem, nome),
+        botao: botao && regra.botao_texto && destino ? { texto: regra.botao_texto, link: destino } : null,
+      },
+      c.token,
+    );
+  } catch (e) {
+    await registrarErroDaMeta(deps.pool, e);
+    await deps.pool.query(
+      `UPDATE comercial.instagram_interacoes SET direct = 'erro', direct_erro = $2 WHERE id = $1`,
+      [interacaoId, (e as Error).message.slice(0, 300)],
+    );
+    deps.log.warn({ err: e, regra: regra.id }, 'instagram: o direct do comentário não foi');
+    return;
+  }
+  if (regra.respostas.length) {
+    const frase = regra.respostas[Math.floor(Math.random() * regra.respostas.length)]!;
+    try {
+      await m.responderComentario(co.comentarioId, comNome(frase, nome), c.token);
+      await deps.pool.query(
+        'UPDATE comercial.instagram_interacoes SET resposta_publica = true WHERE id = $1',
+        [interacaoId],
+      );
+    } catch (e) {
+      deps.log.warn({ err: e, regra: regra.id }, 'instagram: a resposta no comentário não foi');
+    }
+  }
+}
+
+/* ───── A regra de um carrossel: reconhecer o post ───── */
+
+/**
+ * Liga a regra do carrossel no post: a regra passa a valer para a publicação, o carrossel fica
+ * Publicado e quem já comentou a palavra no post (dentro do prazo da Meta) recebe o direct.
+ */
+export async function ligarRegraNoPost(
+  deps: DepsLead,
+  c: Conexao,
+  regraId: number,
+  pub: PublicacaoMeta,
+  opcoes: { avisar: boolean },
+): Promise<void> {
+  await guardarPublicacao(deps.pool, regraId, pub, 'publicacao');
+  const { rows } = await deps.pool.query<{
+    carrossel_id: number | null;
+    titulo: string | null;
+    criado_por: number | null;
+    palavra: string;
+  }>(
+    `WITH r AS (SELECT carrossel_id, palavras[1] AS palavra FROM comercial.instagram_regras
+                 WHERE id = $1 AND conta_id = ${contaSql()}),
+          c AS (UPDATE comercial.carrosseis SET situacao = 'publicado', midia_id = $2, midia_link = $3,
+                       publicado_em = coalesce($4::timestamptz, now())
+                 WHERE id = (SELECT carrossel_id FROM r) AND conta_id = ${contaSql()}
+                RETURNING id, titulo, criado_por)
+     SELECT c.id::int AS carrossel_id, c.titulo, c.criado_por, r.palavra FROM r LEFT JOIN c ON true`,
+    [regraId, pub.id, pub.link, pub.em],
+  );
+  const l = rows[0];
+  if (opcoes.avisar && l?.carrossel_id) {
+    const aviso = {
+      tipo: 'sistema' as const,
+      titulo: 'O carrossel está no Instagram',
+      texto: `“${l.titulo}” foi reconhecido. A regra do ${l.palavra} está ligada.`,
+      link: `/carrosseis/${l.carrossel_id}?aba=publicacao`,
+    };
+    if (l.criado_por) await notificar(deps.pool, l.criado_por, aviso).catch(() => undefined);
+    else for (const u of await admins(deps.pool)) await notificar(deps.pool, u, aviso).catch(() => undefined);
+  }
+  await atenderComentariosGuardados(deps, c, regraId, pub.id);
+}
+
+async function admins(db: Executor): Promise<number[]> {
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM cadastro.usuarios WHERE conta_id = ${conta()} AND papel = 'admin' AND ativo AND NOT master`,
+  );
+  return rows.map((r) => r.id);
+}
+
+/** Quem comentou a palavra no post antes de a regra ligar (até o prazo da Meta) recebe o direct. */
+async function atenderComentariosGuardados(deps: DepsLead, c: Conexao, regraId: number, midiaId: string) {
+  const { rows: rs } = await deps.pool.query<LinhaRegra>(
+    `SELECT ${COLUNAS_LINHA_REGRA} FROM comercial.instagram_regras r
+       LEFT JOIN comercial.carrosseis c ON c.id = r.carrossel_id
+      WHERE r.id = $1 AND r.conta_id = ${contaSql()} AND r.ligada`,
+    [regraId],
+  );
+  const regra = rs[0];
+  if (!regra) return;
+  const { rows } = await deps.pool.query<{
+    comentario_id: string;
+    pessoa_id: string;
+    usuario: string | null;
+    texto: string;
+    comentado_em: Date;
+  }>(
+    `SELECT k.comentario_id, k.pessoa_id, k.usuario, k.texto, k.comentado_em
+       FROM comercial.instagram_comentarios k
+      WHERE k.conta_id = ${contaSql()} AND k.midia_id = $1 AND k.pessoa_id IS NOT NULL AND k.pessoa_id <> $2
+        AND k.comentado_em > now() - interval '${PRAZO_RESPOSTA_PRIVADA_DIAS} days'
+        AND NOT EXISTS (SELECT 1 FROM comercial.instagram_interacoes i
+                         WHERE i.conta_id = k.conta_id AND i.comentario_id = k.comentario_id)
+      ORDER BY k.comentado_em
+      LIMIT 200`,
+    [midiaId, c.igId],
+  );
+  for (const k of rows) {
+    if (!comentarioBate(k.texto, regra.palavras)) continue;
+    await atenderComentario(deps, c, regra, {
+      comentarioId: k.comentario_id,
+      midiaId,
+      pessoaId: k.pessoa_id,
+      usuario: k.usuario,
+      texto: k.texto,
+      quando: k.comentado_em,
+    }).catch((e) =>
+      deps.log.warn({ err: e, regra: regraId }, 'instagram: comentário guardado não foi atendido'),
+    );
+  }
+}
+
+/**
+ * A rotina (a cada 10 minutos): procura nas últimas publicações o post de cada carrossel que está
+ * esperando e avisa uma vez quando o post não apareceu em 3 dias depois de pronto.
+ */
+export async function reconhecerPostsDosCarrosseis(deps: DepsLead): Promise<number> {
+  const { rows: contas } = await deps.pool.query<{ conta_id: number }>(
+    `SELECT DISTINCT conta_id FROM comercial.instagram_regras WHERE alvo = 'carrossel' AND midia_id IS NULL AND ligada
+        AND carrossel_id IS NOT NULL`,
+  );
+  let ligadas = 0;
+  for (const { conta_id } of contas)
+    await comConta(conta_id, async () => {
+      if (!(await temRecurso(deps.pool, 'instagram'))) return;
+      const c = await conexaoDaConta(deps.pool);
+      const m = metaAtual;
+      const { rows: regras } = await deps.pool.query<
+        LinhaRegra & {
+          situacao: string;
+          pronto_em: Date | null;
+          titulo: string;
+          criado_por: number | null;
+          aviso: Date | null;
+        }
+      >(
+        `SELECT ${COLUNAS_LINHA_REGRA}, c.situacao, c.pronto_em, c.titulo, c.criado_por, r.esperando_aviso_em AS aviso
+           FROM comercial.instagram_regras r JOIN comercial.carrosseis c ON c.id = r.carrossel_id
+          WHERE r.conta_id = ${contaSql()} AND r.alvo = 'carrossel' AND r.midia_id IS NULL AND r.ligada`,
+      );
+      if (c && m && regras.some((r) => r.carrossel_legenda)) {
+        const pubs = await m.publicacoes(c.igId, c.token, 12).catch(async (e) => {
+          await registrarErroDaMeta(deps.pool, e);
+          return [] as PublicacaoMeta[];
+        });
+        for (const r of regras) {
+          const pub = pubs.find((p) => postDoCarrossel(r, p));
+          if (!pub) continue;
+          await ligarRegraNoPost(deps, c, r.id, pub, { avisar: true });
+          r.alvo = 'publicacao';
+          ligadas++;
+        }
+      }
+      // Pronto há 3 dias e o post não apareceu: avisa uma vez.
+      for (const r of regras) {
+        if (r.alvo !== 'carrossel' || r.aviso || r.situacao !== 'pronto') continue;
+        const desde = Math.max(r.criado_em.getTime(), r.pronto_em?.getTime() ?? 0);
+        if (Date.now() - desde < 3 * 86_400_000) continue;
+        await deps.pool.query(
+          'UPDATE comercial.instagram_regras SET esperando_aviso_em = now() WHERE id = $1',
+          [r.id],
+        );
+        const aviso = {
+          tipo: 'sistema' as const,
+          titulo: 'Ainda não vimos o post do carrossel',
+          texto: `“${r.titulo}” está pronto há 3 dias. Se já postou com outra legenda, escolha o post.`,
+          link: `/carrosseis/${r.carrossel_id}?aba=publicacao`,
+        };
+        if (r.criado_por) await notificar(deps.pool, r.criado_por, aviso).catch(() => undefined);
+        else
+          for (const u of await admins(deps.pool))
+            await notificar(deps.pool, u, aviso).catch(() => undefined);
+      }
+    }).catch((e) =>
+      deps.log.warn({ err: e, conta: conta_id }, 'instagram: reconhecer os posts dos carrosséis falhou'),
+    );
+  return ligadas;
+}
+
+export function iniciarReconhecimento(deps: DepsLead): () => void {
+  const rodar = async () => {
+    const cliente = await deps.pool.connect();
+    try {
+      const { rows } = await cliente.query<{ ok: boolean }>('SELECT pg_try_advisory_lock(860126) AS ok');
+      if (!rows[0]?.ok) return;
+      try {
+        await reconhecerPostsDosCarrosseis(deps);
+      } finally {
+        await cliente.query('SELECT pg_advisory_unlock(860126)');
+      }
+    } catch (e) {
+      deps.log.warn({ err: e }, 'instagram: rotina dos carrosséis falhou');
+    } finally {
+      cliente.release();
+    }
+  };
+  const t = setInterval(() => void rodar(), 10 * 60_000);
+  t.unref?.();
+  return () => clearInterval(t);
 }
 
 /** Guarda o comentário (o que já existe fica como está). */
@@ -1246,4 +1507,45 @@ export async function avisarAdmins(db: Executor, titulo: string, texto: string):
   );
   for (const u of rows)
     await notificar(db, u.id, { tipo: 'sistema', titulo, texto, link: '/instagram?aba=conexao' });
+}
+
+/* ───── Link contado dos botões do direct ───── */
+
+export type DestinoDoLink =
+  | { tipo: 'url'; url: string }
+  | { tipo: 'arquivo'; chave: string; nome: string | null }
+  | null;
+
+/**
+ * Quem tocou no botão do direct: marca a primeira vez (o "Abriram o link") e devolve para onde ir
+ * (o link da regra, o arquivo guardado ou o WhatsApp da promoção). Código que não existe: null.
+ */
+export async function abrirLink(pool: Pool, codigo: string): Promise<DestinoDoLink> {
+  if (!/^[A-Za-z0-9]{8,32}$/.test(codigo)) return null;
+  const { rows } = await pool.query<{
+    conta_id: number;
+    entrega: string | null;
+    botao_link: string | null;
+    arquivo_chave: string | null;
+    arquivo_nome: string | null;
+    whatsapp: string | null;
+    promocao: string | null;
+  }>(
+    `UPDATE comercial.instagram_interacoes i SET abriu_em = coalesce(i.abriu_em, now())
+       FROM comercial.instagram_regras r
+       LEFT JOIN comercial.carrossel_divulgar d ON d.id = r.divulgar_id
+      WHERE i.codigo = $1 AND r.id = i.regra_id
+      RETURNING i.conta_id, r.entrega, r.botao_link, r.arquivo_chave, r.arquivo_nome, r.whatsapp, d.titulo AS promocao`,
+    [codigo],
+  );
+  const l = rows[0];
+  if (!l) return null;
+  if (l.entrega === 'arquivo' && l.arquivo_chave)
+    return { tipo: 'arquivo', chave: l.arquivo_chave, nome: l.arquivo_nome };
+  if (l.entrega === 'promocao' && l.whatsapp)
+    return {
+      tipo: 'url',
+      url: linkWhatsapp(l.whatsapp, pedidoDaPromocao(l.promocao ?? 'a promoção do Instagram')),
+    };
+  return l.botao_link ? { tipo: 'url', url: l.botao_link } : null;
 }

@@ -261,6 +261,14 @@ async function salvarRegra(
   id?: number,
 ): Promise<number> {
   const { pool } = deps;
+  if (id) {
+    const { rows } = await pool.query<{ carrossel_id: number | null }>(
+      `SELECT carrossel_id FROM comercial.instagram_regras WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [id],
+    );
+    if (rows[0]?.carrossel_id)
+      throw AppError.conflito('Esta regra é de um carrossel: mude pela aba Publicação do carrossel.');
+  }
   await conferirDestino(deps, d.etapaId ?? null, d.responsavelId ?? null);
   const valores = [
     d.alvo,
@@ -319,12 +327,14 @@ const COLUNAS_REGRA = `r.id::int, r.alvo, r.midia_id AS "midiaId", r.midia_legen
   r.midia_tipo AS "midiaTipo", r.midia_link AS "midiaLink", r.midia_imagem AS "midiaImagem", r.midia_em AS "midiaEm",
   r.palavras, r.respostas, r.mensagem, r.botao_texto AS "botaoTexto", r.botao_link AS "botaoLink",
   r.ia_continua AS "iaContinua", r.avisar, r.etapa_id AS "etapaId", r.responsavel_id AS "responsavelId",
-  r.etiquetas, r.ligada, r.criado_em AS "criadoEm"`;
+  r.etiquetas, r.ligada, r.criado_em AS "criadoEm", r.entrega, r.carrossel_id AS "carrosselId",
+  (SELECT c.titulo FROM comercial.carrosseis c WHERE c.id = r.carrossel_id) AS "carrosselTitulo"`;
 
 /** Números de um conjunto de interações (comentaram → direct → responderam → leads → reuniões). */
 const numerosSql = (filtro: string) => `
   SELECT count(*)::int AS comentaram,
          count(*) FILTER (WHERE i.direct = 'enviado')::int AS receberam,
+         count(*) FILTER (WHERE i.abriu_em IS NOT NULL)::int AS abriram,
          count(*) FILTER (WHERE i.direct = 'fora_do_prazo')::int AS "foraDoPrazo",
          count(*) FILTER (WHERE i.direct = 'erro')::int AS erros,
          count(*) FILTER (WHERE i.respondeu_em IS NOT NULL)::int AS responderam,
@@ -501,5 +511,31 @@ export function rotasMeta(deps: DepsApi): Router {
     }
   });
 
+  return r;
+}
+
+/* ───────────────────────── Link contado do botão do direct (sem login) ───────────────────────── */
+
+const PAGINA_SEM_LINK = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Link indisponível</title></head><body style="font-family:system-ui,sans-serif;max-width:420px;margin:64px auto;padding:0 20px;color:#18181b"><h1 style="font-size:20px">Este link não está mais disponível</h1><p style="color:#5b5b56">Responda a mensagem no direct que a empresa te ajuda por lá.</p></body></html>`;
+
+export function rotasLinkContado(deps: DepsApi): Router {
+  const r = Router();
+  r.get('/:codigo', async (req: Request, res: Response) => {
+    res.set('Cache-Control', 'no-store');
+    const destino = await servico.abrirLink(deps.pool, String(req.params.codigo ?? '')).catch((e) => {
+      deps.log.warn({ err: e }, 'instagram: link do direct falhou');
+      return null;
+    });
+    if (destino?.tipo === 'url') {
+      res.redirect(302, destino.url);
+      return;
+    }
+    const arm = deps.reunioes?.armazenamento ?? null;
+    if (destino?.tipo === 'arquivo' && arm) {
+      res.redirect(302, await arm.urlAssinada(destino.chave, { segundos: 900 }));
+      return;
+    }
+    res.status(404).type('html').send(PAGINA_SEM_LINK);
+  });
   return r;
 }

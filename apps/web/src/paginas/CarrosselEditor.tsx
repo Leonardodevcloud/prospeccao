@@ -20,8 +20,9 @@ import { type AvisoTime, aplicarSugestao, type RelatorioTime } from '@prospeccao
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router';
+import { Link, Navigate, useParams, useSearchParams } from 'react-router';
 import { api, ErroApi } from '../api';
+import { VerNoCelular } from '../carrossel/Celular';
 import { ConversaComOTime, PedirAoTime, useConversaComOTime } from '../carrossel/Conversa';
 import {
   type IdentidadeDaConta,
@@ -31,6 +32,7 @@ import {
   useIdentidade,
   useSituacaoCarrosseis,
 } from '../carrossel/dados';
+import { PainelPublicacao, usePublicacao } from '../carrossel/Publicacao';
 import { SlideHtml } from '../carrossel/SlideHtml';
 import { AvisosDoRevisor, PainelTime } from '../carrossel/Time';
 import { LinkAjuda } from '../componentes/Ajuda';
@@ -45,6 +47,7 @@ import { FotosDaEmpresa } from './Carrosseis';
  */
 
 type Rascunho = Pick<CarrosselEntrada, 'titulo' | 'estilo' | 'slides' | 'legenda' | 'situacao'>;
+type Aba = 'slide' | 'legenda' | 'carrossel' | 'time' | 'conversa' | 'publicacao';
 
 const idNovo = () => `s${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
 
@@ -57,7 +60,8 @@ export function CarrosselEditor() {
   if (q.isPending || identidade.isPending) return <div className="esqueleto" style={{ height: 520 }} />;
   if (q.error) return <ErroDaApi erro={q.error} />;
   if (identidade.error) return <ErroDaApi erro={identidade.error} />;
-  return <Editor key={q.data.id} c={q.data} d={identidade.data} />;
+  // Publicado (o post foi reconhecido) ou de volta: o editor abre de novo, no modo certo.
+  return <Editor key={`${q.data.id}:${q.data.situacao === 'publicado'}`} c={q.data} d={identidade.data} />;
 }
 
 function rascunhoDe(c: Carrossel): Rascunho {
@@ -165,7 +169,21 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
   const { c, d } = props;
   const [r, setR] = useState<Rascunho>(() => rascunhoDe(c));
   const [atual, setAtual] = useState(0);
-  const [aba, setAba] = useState<'slide' | 'legenda' | 'carrossel' | 'time' | 'conversa'>('slide');
+  const [busca, setBusca] = useSearchParams();
+  const [aba, setAbaAgora] = useState<Aba>(() =>
+    busca.get('aba') === 'publicacao' ? 'publicacao' : 'slide',
+  );
+  const setAba = (a: Aba) => {
+    setAbaAgora(a);
+    // A aba Publicação fica no endereço (o aviso do sino abre direto nela).
+    const n = new URLSearchParams(busca);
+    if (a === 'publicacao') n.set('aba', 'publicacao');
+    else n.delete('aba');
+    setBusca(n, { replace: true });
+  };
+  const pub = usePublicacao(c.id);
+  const pedeAtencao = pub.data?.situacao === 'nao_achado' || pub.data?.situacao === 'sem_instagram';
+  const cliente = useQueryClient();
   const situacao = useSituacaoCarrosseis();
   const iaLigada = !!situacao.data?.ia.ligada;
   const conversa = useConversaComOTime(c.id, iaLigada);
@@ -352,8 +370,14 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
         </span>
         <span className="editor-carrossel__espaco" />
         <LinkAjuda artigo="carrosseis" />
-        <Button size="sm" variant="ghost" icon="camera" onClick={() => setInstagram(true)} disabled={s.sujo}>
-          Ver como no Instagram
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="smartphone"
+          onClick={() => setInstagram(true)}
+          disabled={s.sujo}
+        >
+          Ver no celular
         </Button>
         <Button size="sm" variant="secondary" icon="download" onClick={baixar} disabled={baixando}>
           {baixando ? 'Preparando…' : 'Baixar as imagens'}
@@ -504,6 +528,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                 ['carrossel', 'Estilo'],
                 ...(relatorio ? ([['time', 'Time de IA']] as const) : []),
                 ...(iaLigada && !s.travado ? ([['conversa', 'Conversa']] as const) : []),
+                ['publicacao', 'Publicação'],
               ] as const
             ).map(([idAba, rotulo]) => (
               <button
@@ -515,6 +540,12 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                 onClick={() => setAba(idAba)}
               >
                 {rotulo}
+                {idAba === 'publicacao' && pedeAtencao && (
+                  <>
+                    <span className="pipelines__ponto" aria-hidden="true" />
+                    <span className="pp-sr">(precisa de você)</span>
+                  </>
+                )}
                 {idAba === 'conversa' && (conversa.aberta || conversa.pensando) && (
                   <>
                     <span className="pipelines__ponto" aria-hidden="true" />
@@ -526,72 +557,94 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
               </button>
             ))}
           </div>
-          <fieldset className="editor-carrossel__campos" disabled={s.travado}>
-            {aba === 'slide' ? (
-              <>
-                <AvisosDoRevisor
-                  avisos={avisosDoSlide(slide.id)}
-                  rotulo={`slide ${indice + 1}`}
-                  aoDecidir={aoDecidir}
-                  decidindo={decidir.isPending}
-                />
-                <PainelSlide
-                  slide={slide}
-                  avisos={avisosSlide}
-                  aoMudar={mudarSlide}
-                  aoModelo={trocarModelo}
-                />
-                {iaLigada && !s.travado && (
-                  <PedirAoTime
-                    key={slide.id}
-                    conversa={conversa}
-                    indice={indice}
-                    aoPedir={(p) => {
-                      conversa.pedir.mutate({
-                        alcance: 'slide',
-                        slideId: slide.id,
-                        ...p,
-                        estado: { slides: r.slides, legenda: r.legenda, estilo: r.estilo },
-                      });
-                      setAba('conversa');
-                    }}
-                  />
-                )}
-              </>
-            ) : aba === 'legenda' ? (
-              <>
-                <AvisosDoRevisor
-                  avisos={avisosDaLegenda}
-                  rotulo="legenda"
-                  aoDecidir={aoDecidir}
-                  decidindo={decidir.isPending}
-                />
-                <PainelLegenda legenda={r.legenda} aoMudar={(legenda) => setR({ ...r, legenda })} />
-              </>
-            ) : aba === 'conversa' && iaLigada && !s.travado ? (
-              <ConversaComOTime
-                conversa={conversa}
-                estado={{ slides: r.slides, legenda: r.legenda, estilo: r.estilo }}
-                slideAtual={{ id: slide.id, indice }}
-                desenhar={desenhar}
-                aoAplicar={aplicarDoTime}
-                aoVerSlide={verSlide}
+          {aba === 'publicacao' ? (
+            <div className="editor-carrossel__campos">
+              <PainelPublicacao
+                carrosselId={c.id}
+                legenda={r.legenda}
+                salvarAntes={s.salvarAgora}
+                aoMudarSituacao={() => cliente.invalidateQueries({ queryKey: ['carrosseis', 'um', c.id] })}
+                aoBaixar={baixar}
               />
-            ) : aba === 'time' && relatorio ? (
-              <PainelTime r={relatorio} aoUsarGancho={usarGancho} travado={s.travado} />
-            ) : (
-              <PainelEstilo estilo={r.estilo} aoMudar={(estilo) => setR({ ...r, estilo })} />
-            )}
-            {decidir.error && <ErroDaApi erro={decidir.error} />}
-          </fieldset>
+            </div>
+          ) : (
+            <fieldset className="editor-carrossel__campos" disabled={s.travado}>
+              {aba === 'slide' ? (
+                <>
+                  <AvisosDoRevisor
+                    avisos={avisosDoSlide(slide.id)}
+                    rotulo={`slide ${indice + 1}`}
+                    aoDecidir={aoDecidir}
+                    decidindo={decidir.isPending}
+                  />
+                  <PainelSlide
+                    slide={slide}
+                    avisos={avisosSlide}
+                    aoMudar={mudarSlide}
+                    aoModelo={trocarModelo}
+                  />
+                  {iaLigada && !s.travado && (
+                    <PedirAoTime
+                      key={slide.id}
+                      conversa={conversa}
+                      indice={indice}
+                      aoPedir={(p) => {
+                        conversa.pedir.mutate({
+                          alcance: 'slide',
+                          slideId: slide.id,
+                          ...p,
+                          estado: { slides: r.slides, legenda: r.legenda, estilo: r.estilo },
+                        });
+                        setAba('conversa');
+                      }}
+                    />
+                  )}
+                </>
+              ) : aba === 'legenda' ? (
+                <>
+                  <AvisosDoRevisor
+                    avisos={avisosDaLegenda}
+                    rotulo="legenda"
+                    aoDecidir={aoDecidir}
+                    decidindo={decidir.isPending}
+                  />
+                  <PainelLegenda legenda={r.legenda} aoMudar={(legenda) => setR({ ...r, legenda })} />
+                </>
+              ) : aba === 'conversa' && iaLigada && !s.travado ? (
+                <ConversaComOTime
+                  conversa={conversa}
+                  estado={{ slides: r.slides, legenda: r.legenda, estilo: r.estilo }}
+                  slideAtual={{ id: slide.id, indice }}
+                  desenhar={desenhar}
+                  aoAplicar={aplicarDoTime}
+                  aoVerSlide={verSlide}
+                />
+              ) : aba === 'time' && relatorio ? (
+                <PainelTime r={relatorio} aoUsarGancho={usarGancho} travado={s.travado} />
+              ) : (
+                <PainelEstilo estilo={r.estilo} aoMudar={(estilo) => setR({ ...r, estilo })} />
+              )}
+              {decidir.error && <ErroDaApi erro={decidir.error} />}
+            </fieldset>
+          )}
         </aside>
       </div>
       {instagram && (
-        <ComoNoInstagram
-          c={c}
+        <VerNoCelular
+          carrosselId={c.id}
           versao={s.versao}
-          rascunho={r}
-          identidade={identidade}
+          slides={r.slides}
+          legenda={r.legenda}
+          empresa={pub.data?.instagram.nome || identidade.marcaTexto || 'Sua empresa'}
+          usuario={
+            pub.data?.instagram.usuario ||
+            (identidade.assinatura || identidade.marcaTexto || 'suaempresa')
+              .replace(/^@/, '')
+              .replace(/\s+/g, '')
+              .toLowerCase()
+          }
+          foto={pub.data?.instagram.foto ?? null}
+          publicacao={pub.data ?? null}
           aoFechar={() => setInstagram(false)}
         />
       )}
@@ -922,105 +975,5 @@ function PainelEstilo(props: { estilo: EstiloCarrossel; aoMudar: (e: EstiloCarro
         Mudar a identidade visual
       </Link>
     </div>
-  );
-}
-
-/** Como o post aparece no feed: as imagens salvas, arrastando para o lado, e a legenda embaixo. */
-function ComoNoInstagram(props: {
-  c: Carrossel;
-  versao: number;
-  rascunho: Rascunho;
-  identidade: IdentidadeCarrossel;
-  aoFechar: () => void;
-}) {
-  const [i, setI] = useState(0);
-  const trilho = useRef<HTMLDivElement>(null);
-  const total = props.rascunho.slides.length;
-  const legenda = props.rascunho.legenda;
-  const [mais, setMais] = useState(false);
-  const ir = (n: number) => {
-    const alvo = Math.max(0, Math.min(total - 1, n));
-    trilho.current?.scrollTo({ left: alvo * (trilho.current.clientWidth || 0), behavior: 'smooth' });
-  };
-  useEffect(() => {
-    const t = (e: KeyboardEvent) => e.key === 'Escape' && props.aoFechar();
-    document.addEventListener('keydown', t);
-    return () => document.removeEventListener('keydown', t);
-  }, [props]);
-  return (
-    <>
-      <div className="scrim" onClick={props.aoFechar} aria-hidden="true" />
-      <div className="como-instagram" role="dialog" aria-modal="true" aria-label="Como fica no Instagram">
-        <div className="como-instagram__celular">
-          <div className="como-instagram__topo">
-            <span className="como-instagram__avatar" aria-hidden="true">
-              {(props.identidade.marcaTexto || props.identidade.assinatura || 'A')
-                .replace('@', '')
-                .slice(0, 1)
-                .toUpperCase()}
-            </span>
-            <b>{props.identidade.assinatura || props.identidade.marcaTexto || 'sua empresa'}</b>
-            <span className="quieto">
-              {i + 1}/{total}
-            </span>
-          </div>
-          <div
-            className="como-instagram__trilho"
-            ref={trilho}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              setI(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
-            }}
-          >
-            {props.rascunho.slides.map((x, n) => (
-              <img
-                key={x.id}
-                className="como-instagram__img"
-                src={`/api/carrosseis/${props.c.id}/slides/${n}?largura=720&v=${props.versao}`}
-                alt={`Slide ${n + 1}`}
-                loading={n < 2 ? 'eager' : 'lazy'}
-              />
-            ))}
-          </div>
-          <div className="como-instagram__pontos" aria-hidden="true">
-            {props.rascunho.slides.map((x, n) => (
-              <span key={x.id} className="como-instagram__ponto" data-atual={n === i || undefined} />
-            ))}
-          </div>
-          <p className="como-instagram__legenda">
-            <b>{props.identidade.assinatura || 'sua empresa'}</b>{' '}
-            {mais || legenda.length <= 125 ? legenda : `${legenda.slice(0, 125)}… `}
-            {!mais && legenda.length > 125 && (
-              <button type="button" className="link-botao" onClick={() => setMais(true)}>
-                mais
-              </button>
-            )}
-          </p>
-        </div>
-        <div className="como-instagram__acoes">
-          <Button
-            size="sm"
-            variant="secondary"
-            icon="chevron-left"
-            onClick={() => ir(i - 1)}
-            disabled={i === 0}
-          >
-            Anterior
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            iconRight="arrow-right"
-            onClick={() => ir(i + 1)}
-            disabled={i >= total - 1}
-          >
-            Próximo
-          </Button>
-          <Button size="sm" variant="ghost" icon="x" onClick={props.aoFechar}>
-            Fechar
-          </Button>
-        </div>
-      </div>
-    </>
   );
 }

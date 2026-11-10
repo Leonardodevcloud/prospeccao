@@ -18,6 +18,7 @@ import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
 import { iniciarConteudo } from './modulos/instagram/conteudo.js';
 import { iniciarConversoes } from './modulos/instagram/conversoes.js';
+import { iniciarReconhecimento } from './modulos/instagram/servico.js';
 import { iniciarAvisos } from './modulos/integracoes/avisos.js';
 import { prepararTelefonia } from './modulos/ligacoes/preparar.js';
 import { iniciarLigacoes } from './modulos/ligacoes/processar.js';
@@ -137,6 +138,8 @@ const pararSinal = manterSinalDeVida(pool, 'api');
 const pararMedidor = iniciarMedidor(pool);
 // Instagram: números das publicações de cada conta conectada, de 6 em 6 horas.
 const pararConteudo = iniciarConteudo({ pool, log });
+// O post de cada carrossel que espera ser publicado: reconhecido pela legenda a cada 10 minutos.
+const pararReconhecimento = iniciarReconhecimento({ pool, log, filas });
 // Devolver as vendas para a Meta: as etapas dos leads de anúncio, a cada minuto.
 const pararConversoes = iniciarConversoes({ pool, log });
 // Ligações: transcrição e resumo depois de cada uma; fecha as esquecidas abertas.
@@ -172,6 +175,7 @@ encerrarAoReceberSinal(log, async () => {
   pararSinal();
   await pararMedidor();
   pararConteudo();
+  pararReconhecimento();
   pararConversoes();
   pararLigacoes();
   pararQuadros();

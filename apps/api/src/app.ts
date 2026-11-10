@@ -3,6 +3,7 @@ import express, { type Express, Router } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import type { DepsApi } from './dependencias.js';
+import { urlPublicaApi } from './endereco.js';
 import { corpoGrande, lerCorpoGrande } from './middlewares/corpo.js';
 import { rotaNaoEncontrada, tratarErros } from './middlewares/erros.js';
 import { PROXIES_CONFIAVEIS } from './middlewares/limites.js';
@@ -41,8 +42,8 @@ import { rotasImportacaoLeads } from './modulos/importacao-leads/rotas.js';
 import { rotasImportacoes } from './modulos/importacoes/rotas.js';
 import { rotasInicio } from './modulos/inicio/rotas.js';
 import { metaDoAmbiente } from './modulos/instagram/meta.js';
-import { rotasInstagram, rotasMeta } from './modulos/instagram/rotas.js';
-import { definirMeta } from './modulos/instagram/servico.js';
+import { rotasInstagram, rotasLinkContado, rotasMeta } from './modulos/instagram/rotas.js';
+import { definirBaseDosLinks, definirMeta } from './modulos/instagram/servico.js';
 import { rotasIntegracoes } from './modulos/integracoes/rotas.js';
 import { rotasApiV1 } from './modulos/integracoes/v1.js';
 import { rotasLgpd } from './modulos/lgpd/rotas.js';
@@ -82,8 +83,11 @@ export function criarApp(deps: DepsApi): Express {
     deps.meta !== undefined ? deps.meta : metaDoAmbiente(deps.credenciais.ambiente),
     deps.credenciais.chave,
   );
+  // Os botões do direct passam pelo CRM (<api pública>/l/<código>), que conta quem abriu.
+  definirBaseDosLinks(urlPublicaApi(deps.origens));
   // O que a Meta chama sem login: o webhook (corpo cru, assinado) e a volta do login.
   app.use('/meta', rotasMeta(deps));
+  app.use('/l', rotasLinkContado(deps));
   // Webhook do WhatsApp: vem da Z-API (sem origem do navegador, sem sessão); protegido por token
   // (conferido antes de ler o corpo, que pode ser grande).
   app.use('/webhooks', rotasWebhook(deps));

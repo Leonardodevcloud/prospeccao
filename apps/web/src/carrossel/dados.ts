@@ -14,6 +14,8 @@ import { api, ErroApi } from '../api';
 export interface SituacaoCarrosseis {
   modulo: boolean;
   armazenamento: boolean;
+  /** O Comente e receba: o Instagram no plano e conectado. */
+  instagram?: { noPlano: boolean; conectado: boolean };
   franquia: { usados: number; limite: number | null };
   /** Já viu a apresentação do time de IA. */
   timeVisto: boolean;

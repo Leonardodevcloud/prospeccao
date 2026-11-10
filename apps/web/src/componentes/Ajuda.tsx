@@ -1101,7 +1101,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
             mais de uma variação, o sistema sorteia.
           </li>
           <li>
-            <b>Botão com link</b> (opcional): o material que você prometeu no post.
+            <b>Botão com link</b> (opcional): o material que você prometeu no post. O toque no botão passa
+            pelo CRM, que conta quem abriu (a coluna “abriram o link”).
           </li>
           <li>
             <b>{'{nome}'}</b> na mensagem vira o primeiro nome de quem comentou, quando o Instagram mostra.
@@ -1119,9 +1120,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
           IA).
         </p>
         <p>
-          Na lista, cada publicação mostra quantos comentaram, receberam o direct, responderam, viraram lead e
-          marcaram reunião. Clique na publicação para ver cada pessoa; quem não respondeu dá para virar lead à
-          mão com <b>Criar lead</b>.
+          A regra que nasceu de um carrossel aparece marcada “do carrossel do CRM” (e, até o post aparecer,
+          como “Esperando o post de…”): ela muda pela aba Publicação do carrossel, em{' '}
+          <b>Editar no carrossel</b>. Na lista, cada publicação mostra quantos comentaram, receberam o direct,
+          responderam, viraram lead e marcaram reunião. Clique na publicação para ver cada pessoa; quem não
+          respondeu dá para virar lead à mão com <b>Criar lead</b>.
         </p>
         <h3>4. Direct em Conversas</h3>
         <p>
@@ -1197,7 +1200,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'O time de IA escreve carrosséis com a identidade e o jeito de falar da empresa; você confere, ajusta e baixa as imagens.',
     onde: { rotulo: 'Carrosséis', para: '/carrosseis' },
     termos:
-      'carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer',
+      'carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
     corpo: (
       <>
         <p>
@@ -1284,8 +1287,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
           <li>
             Escolha o <b>objetivo</b> (ensinar, vender, mostrar resultado ou bastidores), quantos slides (ou
             deixe o time decidir, de 5 a 10), o estilo e a <b>chamada do último slide</b>. Em “Comentar uma
-            palavra”, o botão sai como “Comente PALAVRA”; para responder quem comentar, crie a regra em
-            Instagram › Comente e receba.
+            palavra”, o botão sai como “Comente PALAVRA”, a redatora também escreve o direct para quem
+            comentar e a regra do Comente e receba já sai pronta (veja o passo 9). Se o Instagram da empresa
+            não estiver conectado, a tela avisa.
           </li>
           <li>
             Clique em <b>Criar com o time de IA</b>. A tela mostra cada etapa; leva de 1 a 2 minutos. Pode
@@ -1370,13 +1374,59 @@ export const ARTIGOS: ArtigoAjuda[] = [
             apagar o que a outra salvou.
           </li>
           <li>
-            <b>Ver como no Instagram</b> mostra o carrossel num celular, deslizando como no feed.{' '}
+            <b>Ver no celular</b> mostra o que o cliente vai ver, com o nome, o @ e a foto da empresa: o{' '}
+            <b>post</b> deslizando como no feed (com a legenda cortada no “mais”), os <b>comentários</b> com a
+            sua resposta e o <b>direct</b> com o botão. Tem o modo escuro também. A moldura e os ícones são da
+            prévia, e não aparece número de curtida.
+          </li>
+          <li>
             <b>Baixar as imagens</b> traz um .zip com os slides na ordem e a legenda num arquivo de texto: no
             Instagram, crie o post, escolha as imagens na ordem e cole a legenda. <b>Marcar como pronto</b>{' '}
             separa na lista o que já pode ir ao ar.
           </li>
         </Passos>
         <Nota>Emojis não entram nos slides (as fontes não têm); use-os à vontade na legenda.</Nota>
+        <h3>9. Publicação: do carrossel ao direct</h3>
+        <p>
+          Quando o último slide pede para comentar uma palavra (“Comente FREIO”), a regra do{' '}
+          <b>Comente e receba</b> nasce junto com o carrossel. Ela fica na aba <b>Publicação</b> do editor e
+          também em Instagram › Comente e receba, marcada com o nome do carrossel.
+        </p>
+        <Passos>
+          <li>
+            Na aba Publicação, confira a <b>palavra</b> (a mesma do botão do último slide; “Também vale”
+            aceita outras) e escolha <b>o que a pessoa recebe</b> no direct: <b>um link</b> (site, catálogo),{' '}
+            <b>um arquivo</b> (PDF, JPG ou PNG até 10 MB, que o CRM guarda), <b>uma promoção</b> (a do O que
+            divulgar, com preço e prazo como foram digitados e um botão que abre o WhatsApp da empresa com o
+            pedido já escrito) ou <b>só a conversa</b> (uma pergunta, sem botão).
+          </li>
+          <li>
+            O <b>direct</b> já vem escrito; com o time de IA ligado, <b>Pedir à redatora para escrever</b>{' '}
+            refaz o texto para a entrega escolhida. Escolha também a resposta no comentário, a etapa do funil
+            e quem atende, e clique em <b>Salvar a regra</b>.
+          </li>
+          <li>
+            Marque o carrossel como pronto, baixe as imagens e poste no Instagram com a legenda do carrossel (
+            <b>Copiar a legenda</b> ajuda). O CRM reconhece o post pela legenda, liga a regra sozinho e avisa
+            no sino; pode trocar uma palavra ou outra ao postar.
+          </li>
+          <li>
+            Postou com outra legenda? Clique em <b>Já postei: escolher o post</b> e toque em <b>É este</b>.
+            Quem já tinha comentado a palavra no post (até 7 dias antes) também recebe o direct.
+          </li>
+        </Passos>
+        <p>
+          Depois de reconhecido, o carrossel fica <b>Publicado</b> (só para leitura; para fazer outro
+          parecido, use Duplicar) e a aba mostra quantos comentaram, receberam o direct, <b>abriram o link</b>
+          , responderam e viraram lead. Ligou no post errado? <b>Não é este post</b> volta a regra a esperar.
+          Se o post não aparecer em 3 dias depois de pronto, o sino avisa.
+        </p>
+        <Nota>
+          Antes de a pessoa responder, o Instagram só deixa mandar uma mensagem para quem comentou: texto com
+          um botão. Por isso o arquivo vai como um botão que abre o arquivo, e não anexado. Até o post ser
+          reconhecido, quem comentar a palavra em outra publicação não recebe nada. Sem o Instagram conectado,
+          a regra fica parada.
+        </Nota>
       </>
     ),
   },

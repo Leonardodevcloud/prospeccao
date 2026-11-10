@@ -331,7 +331,11 @@ function CartaoCarrossel(props: { c: ResumoCarrossel; aoDuplicar: () => void; ao
           {c.titulo}
         </Link>
         <div className="carrossel-cartao__meta">
-          <Badge tone={TOM_SITUACAO[c.situacao]}>{ROTULO_SITUACAO_CARROSSEL[c.situacao]}</Badge>
+          {c.situacao === 'pronto' && c.publicacao?.esperando ? (
+            <Badge tone="warning">Esperando postar</Badge>
+          ) : (
+            <Badge tone={TOM_SITUACAO[c.situacao]}>{ROTULO_SITUACAO_CARROSSEL[c.situacao]}</Badge>
+          )}
           {c.origem === 'ia' && (
             <Badge tone="neutral">
               <Icon name="sparkles" size={11} /> Time de IA
@@ -346,6 +350,17 @@ function CartaoCarrossel(props: { c: ResumoCarrossel; aoDuplicar: () => void; ao
             {c.slides} slides · {ESTILO[c.estilo].nome} · {fmtQuando(c.atualizadoEm)}
           </span>
         </div>
+        {c.publicacao?.palavra && (
+          <Link to={`/carrosseis/${c.id}?aba=publicacao`} className="carrossel-cartao__pub">
+            Comente {c.publicacao.palavra}
+            {' · '}
+            {!c.publicacao.ligada
+              ? 'regra desligada'
+              : c.publicacao.esperando
+                ? 'regra pronta, liga quando o post aparecer'
+                : `${fmtNumero(c.publicacao.comentaram)} comentaram · ${fmtNumero(c.publicacao.leads)} ${c.publicacao.leads === 1 ? 'lead' : 'leads'}`}
+          </Link>
+        )}
         <div className="carrossel-cartao__acoes">
           <Button size="sm" variant="ghost" icon="copy" onClick={props.aoDuplicar}>
             Duplicar

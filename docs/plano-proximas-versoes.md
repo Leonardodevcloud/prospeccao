@@ -135,9 +135,10 @@ Plano completo em `docs/plano-carrosseis.md` (e no doc `claude/plano-carrosseis.
 2. **v122 — cérebro da marca e o time de IA escrevendo** (feito): dossiê montado pela IA e conferido pelo administrador, o que divulgar (promoção exata), perguntas reais dos clientes sem dado pessoal, Claude Sonnet 5.5, estrategista → redator → diretor de arte (código) → revisor com até 2 voltas, fatos conferidos com o trecho da fonte, legenda e hashtags, pedido ao redator por slide, avisos do revisor no editor, franquia e custo medido.
 3. **v123 — preço e a conversa com o time** (feito): **R$ 200 por mês, sem limite de carrosséis**, no Assinar e no site; aba **Conversa** no editor (este slide, o carrossel inteiro ou a legenda; o time propõe, o diretor de arte e o revisor conferem, a pessoa aplica, descarta ou desfaz); o campo da criação virou **Instruções para o time**. Sem comandos com barra (decisão do Leonardo).
 4. **v124 — a apresentação do time** (feito): na primeira entrada no módulo, uma janela apresenta Estrategista, Redatora, Diretor de arte e Revisora com foto, função e o que fazem; depois o time fica numa faixa no topo da lista.
-5. **v126 — imagens**: foto do produto em cenários, imagem de referência, imagens sem texto na paleta da marca, revisor visual, custo por imagem em Saúde e consumo.
-6. **v127 — publicar e agendar** (depende de `instagram_content_publish` aprovado na Meta).
-7. **v128 — aprender**: ideias com a fonte, aprendizados com evidência, 2 em 10 testam algo novo, as edições do administrador ensinam.
+5. **v126 — do carrossel ao direct** (feito): a regra do Comente e receba nasce com o carrossel (a redatora escreve o direct), espera o post e liga sozinha quando o CRM reconhece o post pela legenda (ou a pessoa escolhe); o direct entrega um link, um arquivo, uma promoção (botão para o WhatsApp) ou só a conversa, e o botão conta quem abriu; aba Publicação no editor e "Ver no celular" (post, comentários e direct).
+6. **v127 — imagens**: foto do produto em cenários, imagem de referência, imagens sem texto na paleta da marca, revisor visual, custo por imagem em Saúde e consumo.
+7. **v128 — publicar e agendar** (depende de `instagram_content_publish` aprovado na Meta; a regra liga direto no post publicado).
+8. **v129 — aprender**: ideias com a fonte, aprendizados com evidência, 2 em 10 testam algo novo, as edições do administrador ensinam.
 Preço decidido em 08/11: R$ 200 sem limite (acompanhar o custo do Claude por conta em Saúde e consumo).
 
 ## Qualidade do atendimento e outras ideias de IA (08/11/2026)

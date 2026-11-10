@@ -373,6 +373,15 @@ export interface ResumoCarrossel {
   criadoEm: string;
   atualizadoEm: string;
   criadoPor: string | null;
+  /** A regra do Comente e receba (null: o carrossel não tem). */
+  publicacao: {
+    palavra: string | null;
+    esperando: boolean;
+    ligada: boolean;
+    comentaram: number;
+    leads: number;
+    publicadoEm: string | null;
+  } | null;
 }
 export interface Carrossel extends ResumoCarrossel {
   conteudo: SlideCarrossel[];

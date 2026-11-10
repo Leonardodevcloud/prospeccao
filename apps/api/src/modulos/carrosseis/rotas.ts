@@ -16,6 +16,13 @@ import {
   slideNovo,
 } from '@prospeccao/shared/carrosseis';
 import {
+  ENTREGAS,
+  escolherPostEntrada,
+  LIMITE_ARQUIVO_DIRECT,
+  publicacaoEntrada,
+  TIPOS_ARQUIVO_DIRECT,
+} from '@prospeccao/shared/carrosseis-publicacao';
+import {
   avisoResolverEntrada,
   conversaEntrada,
   decisaoConversaEntrada,
@@ -35,6 +42,7 @@ import { organizacaoDaConta } from '../plano/repositorio.js';
 import * as cerebro from './cerebro.js';
 import * as conversa from './conversa.js';
 import { desenhar, materialDaConta } from './desenho.js';
+import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 import * as time from './time.js';
 
@@ -81,6 +89,8 @@ export function rotasCarrosseis(deps: DepsApi): Router {
       /** A pessoa já viu a apresentação do time de IA (aparece uma vez, na primeira entrada). */
       timeVisto: visto.rows[0]?.visto ?? true,
       armazenamento: !!arm(),
+      /** O Comente e receba: o Instagram no plano e conectado (o pedido ao time avisa quando não). */
+      instagram: await publicacao.instagramDaConta(pool),
       franquia: await franquia(),
       ia: {
         ligada: !!ia(),
@@ -406,8 +416,76 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   });
 
   r.delete('/:id', async (req, res) => {
-    await repo.apagar(pool, idDaRota(req));
+    const arquivos = await repo.apagar(pool, idDaRota(req));
+    if (arquivos.length)
+      await arm()
+        ?.apagar(arquivos)
+        .catch(() => undefined);
     res.json({ ok: true });
+  });
+
+  /* ── Publicação: a regra do Comente e receba e o post ── */
+
+  const aba = (req: Request) => publicacao.publicacao(pool, idDaRota(req), !!ia());
+
+  r.get('/:id/publicacao', async (req, res) => {
+    res.json(await aba(req));
+  });
+
+  r.put('/:id/publicacao', async (req, res) => {
+    await publicacao.salvar(pool, idDaRota(req), corpo(req, publicacaoEntrada));
+    res.json(await aba(req));
+  });
+
+  r.post(
+    '/:id/publicacao/arquivo',
+    express.raw({ type: [...TIPOS_ARQUIVO_DIRECT], limit: LIMITE_ARQUIVO_DIRECT }),
+    async (req, res) => {
+      const nome = decodeURIComponent(String(req.get('x-nome-arquivo') ?? '')).slice(0, 200);
+      await publicacao.guardarArquivo(pool, exigirArmazenamento(), idDaRota(req), {
+        corpo: Buffer.isBuffer(req.body) ? new Uint8Array(req.body) : new Uint8Array(),
+        tipo: String(req.get('content-type') ?? '')
+          .split(';')[0]!
+          .trim(),
+        nome,
+      });
+      res.json(await aba(req));
+    },
+  );
+
+  r.get('/:id/publicacao/arquivo', async (req, res) => {
+    res.redirect(302, await publicacao.linkDoArquivo(pool, exigirArmazenamento(), idDaRota(req)));
+  });
+
+  /** A redatora (re)escreve o direct para a entrega escolhida (não salva: a pessoa confere antes). */
+  r.post('/:id/publicacao/direct', async (req, res) => {
+    const d = corpo(
+      req,
+      z.object({
+        entrega: z.enum(ENTREGAS),
+        palavra: z.string().trim().min(2).max(40),
+        divulgarId: z.number().int().positive().nullable().default(null),
+        material: z.string().trim().max(300).default(''),
+      }),
+    );
+    const claude = ia()?.cliente(pool, conta()) ?? null;
+    const r2 = await publicacao.directDoCarrossel(pool, claude, { carrosselId: idDaRota(req), ...d });
+    res.json({ mensagem: r2.mensagem, botao: r2.botao, daRedatora: r2.daRedatora });
+  });
+
+  r.get('/publicacao/posts', async (_req, res) => {
+    res.json({ posts: await publicacao.ultimasPublicacoes(pool) });
+  });
+
+  r.post('/:id/publicacao/post', async (req, res) => {
+    const { midiaId } = corpo(req, escolherPostEntrada);
+    await publicacao.escolherPost(deps, idDaRota(req), midiaId);
+    res.json(await aba(req));
+  });
+
+  r.delete('/:id/publicacao/post', async (req, res) => {
+    await publicacao.naoEOPost(pool, idDaRota(req));
+    res.json(await aba(req));
   });
 
   /** Um slide do carrossel salvo (miniatura na lista e no editor). */
@@ -448,6 +526,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
       arquivos[`${String(i + 1).padStart(2, '0')}-${slide.modelo}.jpg`] = new Uint8Array(img.jpeg);
     }
     if (c.legenda.trim()) arquivos['legenda.txt'] = strToU8(c.legenda);
+    await repo.marcarBaixado(pool, c.id);
     // JPEG já vem comprimido: guarda sem comprimir de novo (mais rápido, mesmo tamanho).
     const zip = zipSync(arquivos, { level: 0 });
     const nome =

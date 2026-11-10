@@ -50,6 +50,8 @@ interface Situacao {
 interface Numeros {
   comentaram: number;
   receberam: number;
+  /** Tocaram no botão do direct (o link passa pelo CRM). */
+  abriram: number;
   foraDoPrazo: number;
   erros: number;
   responderam: number;
@@ -62,7 +64,10 @@ interface Numeros {
 
 interface Regra extends Partial<Numeros> {
   id: number;
-  alvo: 'publicacao' | 'proxima' | 'todas';
+  alvo: 'publicacao' | 'proxima' | 'todas' | 'carrossel';
+  /** A regra nasceu de um carrossel (muda pela aba Publicação dele). */
+  carrosselId: number | null;
+  carrosselTitulo: string | null;
   midiaId: string | null;
   midiaLegenda: string | null;
   midiaTipo: string | null;
@@ -324,6 +329,7 @@ function AbaRegras(props: { admin: boolean; aoNova: () => void }) {
           <b>{fmtNumero(t.receberam)}</b>
           <span>
             {t.comentaram ? fmtPct(t.receberam, t.comentaram) : '—'}
+            {t.abriram ? ` · ${fmtNumero(t.abriram)} abriram o link` : ''}
             {t.foraDoPrazo ? ` · ${fmtNumero(t.foraDoPrazo)} fora do prazo` : ''}
             {t.erros ? ` · ${fmtNumero(t.erros)} com erro` : ''}
           </span>
@@ -443,16 +449,19 @@ const ROTULO_TIPO: Record<string, string> = {
 
 function tituloDaRegra(r: Regra): string {
   if (r.alvo === 'todas') return 'Qualquer publicação';
+  if (r.alvo === 'carrossel') return `Esperando o post de “${r.carrosselTitulo ?? 'um carrossel'}”`;
   if (r.alvo === 'proxima' && !r.midiaId) return 'A próxima que você postar';
   return r.midiaLegenda?.split('\n')[0]?.slice(0, 70) || 'Publicação sem legenda';
 }
 
 function subtituloDaRegra(r: Regra): string {
   if (r.alvo === 'todas') return 'Vale para tudo o que você publicar';
+  if (r.alvo === 'carrossel') return 'Liga sozinha quando o CRM reconhecer o post · do carrossel do CRM';
   if (r.alvo === 'proxima' && !r.midiaId) return 'Liga sozinha na primeira publicação nova';
   return [
     r.midiaTipo && (ROTULO_TIPO[r.midiaTipo] ?? r.midiaTipo),
     r.midiaEm && `publicado ${fmtQuando(r.midiaEm)}`,
+    r.carrosselId && 'do carrossel do CRM',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -472,7 +481,13 @@ function Capa(props: {
         <img src={r.midiaImagem} alt="" loading="lazy" referrerPolicy="no-referrer" />
       ) : (
         <Icon
-          name={r.alvo === 'todas' ? 'layout-grid' : r.alvo === 'proxima' ? 'clock' : 'image'}
+          name={
+            r.alvo === 'todas'
+              ? 'layout-grid'
+              : r.alvo === 'proxima' || r.alvo === 'carrossel'
+                ? 'clock'
+                : 'image'
+          }
           size={props.grande ? 22 : 16}
         />
       )}
@@ -975,11 +990,15 @@ export function InstagramRegra() {
               <Icon name="external-link" size={16} /> Abrir no Instagram
             </a>
           )}
-          {admin && (
+          {admin && r.carrosselId ? (
+            <Link className="pp-btn" to={`/carrosseis/${r.carrosselId}?aba=publicacao`}>
+              <Icon name="settings" size={16} /> Editar no carrossel
+            </Link>
+          ) : admin ? (
             <Button variant="secondary" icon="settings" onClick={() => setEditar(true)}>
               Editar regra
             </Button>
-          )}
+          ) : null}
         </div>
       </div>
       <div className="ig-funil ig-funil--pequeno">
@@ -991,6 +1010,12 @@ export function InstagramRegra() {
           <small>Receberam o direct</small>
           <b>{fmtNumero(r.receberam)}</b>
         </div>
+        {(r.botaoTexto || (r.abriram ?? 0) > 0) && (
+          <div>
+            <small>Abriram o link</small>
+            <b>{fmtNumero(r.abriram ?? 0)}</b>
+          </div>
+        )}
         <div>
           <small>Responderam</small>
           <b>{fmtNumero(r.responderam)}</b>

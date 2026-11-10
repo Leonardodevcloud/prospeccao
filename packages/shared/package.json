@@ -31,6 +31,7 @@
     "./tour": "./src/tour.ts",
     "./carrosseis": "./src/carrosseis.ts",
     "./carrosseis-time": "./src/carrosseisTime.ts",
+    "./carrosseis-publicacao": "./src/carrosseisPublicacao.ts",
     "./atendimento": "./src/atendimento.ts"
   },
   "scripts": {

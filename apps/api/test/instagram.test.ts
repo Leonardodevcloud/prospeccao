@@ -320,14 +320,21 @@ describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e for
     });
 
     expect((await comentario('C1', 'Prospecção 🙋‍♀️', 'P1')).status).toBe(200);
-    expect(chamadas).toContainEqual({
-      tipo: 'privada',
-      dados: {
-        comentarioId: 'C1',
-        texto: 'Oi, Marina! Aqui está o checklist. Me passa seu WhatsApp?',
-        botao: { texto: 'Baixar o checklist', link: 'https://nexo.com.br/checklist' },
-      },
+    const privada = chamadas.find((c) => c.tipo === 'privada')?.dados as {
+      comentarioId: string;
+      texto: string;
+      botao: { texto: string; link: string };
+    };
+    expect(privada).toMatchObject({
+      comentarioId: 'C1',
+      texto: 'Oi, Marina! Aqui está o checklist. Me passa seu WhatsApp?',
+      botao: { texto: 'Baixar o checklist' },
     });
+    // O botão passa pelo CRM (conta quem abriu) e leva ao link da regra.
+    expect(privada.botao.link).toMatch(/^http:\/\/localhost:5173\/api\/l\/[A-Za-z0-9]{12}$/);
+    const abre = await request(app).get(`/l/${privada.botao.link.split('/l/')[1]}`);
+    expect(abre.status).toBe(302);
+    expect(abre.headers.location).toBe('https://nexo.com.br/checklist');
     expect(chamadas).toContainEqual({
       tipo: 'comentario',
       dados: { comentarioId: 'C1', texto: 'Te mandei no direct, Marina! 📩' },

@@ -65,6 +65,8 @@ export function NovoComTime(props: {
     },
   });
   const { ia, franquia } = props.situacao;
+  const ig = props.situacao.instagram;
+  const semInstagram = !!ig && !(ig.noPlano && ig.conectado);
   const nFotos = fotos.data?.fotos.length ?? 0;
   const itens = divulgar.data?.itens ?? [];
   const escolhido = itens.find((i) => i.id === divulgarId) ?? null;
@@ -221,7 +223,30 @@ export function NovoComTime(props: {
           </label>
         ))}
         {chamada === 'comentar' && (
-          <div className="campo novo-time__palavra">
+          <div
+            className={
+              semInstagram ? 'campo novo-time__palavra novo-time__palavra--aviso' : 'campo novo-time__palavra'
+            }
+          >
+            {semInstagram && (
+              <div className="novo-time__ig" role="note">
+                <Icon name="circle-help" size={16} />
+                <span>
+                  {ig?.noPlano ? (
+                    <>
+                      <b>O Instagram da empresa não está conectado.</b> Sem ele, quem comentar a palavra não
+                      recebe o direct. Conecte antes de postar, ou escolha outra chamada.{' '}
+                      <Link to="/instagram?aba=conexao">Conectar o Instagram</Link>
+                    </>
+                  ) : (
+                    <>
+                      <b>O Comente e receba não está no seu plano.</b> O botão sai no slide, mas o CRM não
+                      responde quem comentar. <Link to="/meu-plano">Ver o plano</Link>
+                    </>
+                  )}
+                </span>
+              </div>
+            )}
             <label htmlFor="nt-palavra">Palavra que a pessoa comenta</label>
             <input
               id="nt-palavra"
@@ -233,8 +258,9 @@ export function NovoComTime(props: {
               aria-invalid={!palavraOk || undefined}
             />
             <span className="campo__dica">
-              Uma palavra só. O botão do último slide sai como “Comente {palavra || 'QUERO'}”. Para responder
-              quem comentar, crie a regra em Instagram › Comente e receba.
+              Uma palavra só. O botão do último slide sai como “Comente {palavra || 'QUERO'}”. A redatora
+              também escreve o direct que vai para quem comentar, e a regra fica pronta na aba Publicação do
+              editor: é só postar.
             </span>
           </div>
         )}

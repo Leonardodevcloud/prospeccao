@@ -13,7 +13,7 @@
 - Prospecção por e-mail com proposta em PDF e a marca da empresa; reuniões por vídeo com gravação e resumo; vendas na rua com roteiro e check-in.
 - Argos: assistente por texto e voz que conhece o comercial da empresa.
 - API e webhooks para ERP, loja virtual, Make e Zapier.
-- Carrosséis do Instagram escritos por um time de IA (estrategista, redator, diretor de arte e revisor) com a identidade visual e o jeito de falar da empresa; ajustes conversando com o time e imagens prontas para baixar e postar.
+- Carrosséis do Instagram escritos por um time de IA (estrategista, redator, diretor de arte e revisor) com a identidade visual e o jeito de falar da empresa; ajustes conversando com o time e imagens prontas para baixar e postar; com o Instagram conectado, o comente e receba do carrossel já sai pronto (link, arquivo ou promoção no direct, com quem abriu contado) e se liga sozinho quando o CRM reconhece o post.
 
 ## Planos (por mês, sem fidelidade nem taxa de implantação)
 - Start: a partir de R$ 497 (2 usuários, 2.000 leads enriquecidos por mês).

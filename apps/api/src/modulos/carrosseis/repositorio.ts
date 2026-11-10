@@ -159,12 +159,22 @@ export async function apagarFoto(db: Executor, id: number): Promise<string> {
 
 const COLUNAS_RESUMO = `c.id, c.titulo, c.estilo, c.situacao, jsonb_array_length(c.slides)::int AS slides, c.versao,
   c.origem, c.criado_em AS "criadoEm", c.atualizado_em AS "atualizadoEm", u.nome AS "criadoPor",
-  coalesce((SELECT count(*) FROM jsonb_array_elements(c.relatorio->'avisos') a WHERE a->>'resolvido' IS NULL), 0)::int AS "avisosAbertos"`;
+  coalesce((SELECT count(*) FROM jsonb_array_elements(c.relatorio->'avisos') a WHERE a->>'resolvido' IS NULL), 0)::int AS "avisosAbertos",
+  CASE WHEN pr.id IS NULL THEN NULL ELSE jsonb_build_object(
+    'palavra', pr.palavras[1], 'esperando', pr.alvo = 'carrossel', 'ligada', pr.ligada,
+    'comentaram', pr.comentaram, 'leads', pr.leads, 'publicadoEm', c.publicado_em) END AS publicacao`;
+
+/** A regra do Comente e receba do carrossel, com os números (para o cartão da lista). */
+const JUNTA_PUBLICACAO = `LEFT JOIN LATERAL (
+    SELECT r.id, r.palavras, r.alvo, r.ligada,
+           (SELECT count(*)::int FROM comercial.instagram_interacoes i WHERE i.regra_id = r.id) AS comentaram,
+           (SELECT count(DISTINCT i.empresa_id)::int FROM comercial.instagram_interacoes i WHERE i.regra_id = r.id) AS leads
+      FROM comercial.instagram_regras r WHERE r.carrossel_id = c.id AND r.conta_id = c.conta_id) pr ON true`;
 
 export async function listar(db: Executor): Promise<ResumoCarrossel[]> {
   const { rows } = await db.query<ResumoCarrossel>(
     `SELECT ${COLUNAS_RESUMO}
-       FROM comercial.carrosseis c LEFT JOIN cadastro.usuarios u ON u.id = c.criado_por
+       FROM comercial.carrosseis c LEFT JOIN cadastro.usuarios u ON u.id = c.criado_por ${JUNTA_PUBLICACAO}
       WHERE c.conta_id = ${contaSql()}
       ORDER BY c.atualizado_em DESC LIMIT ${MAX_CARROSSEIS_CONTA}`,
   );
@@ -186,7 +196,7 @@ export async function carrossel(db: Executor, id: number): Promise<Carrossel> {
     ResumoCarrossel & { conteudo: unknown; legenda: string; relatorio: RelatorioTime | null }
   >(
     `SELECT ${COLUNAS_RESUMO}, c.slides AS conteudo, c.legenda, c.relatorio
-       FROM comercial.carrosseis c LEFT JOIN cadastro.usuarios u ON u.id = c.criado_por
+       FROM comercial.carrosseis c LEFT JOIN cadastro.usuarios u ON u.id = c.criado_por ${JUNTA_PUBLICACAO}
       WHERE c.id = $1 AND c.conta_id = ${contaSql()}`,
     [id],
   );
@@ -261,7 +271,8 @@ export async function atualizar(db: Executor, id: number, d: CarrosselEntrada): 
     );
   const { rowCount } = await db.query(
     `UPDATE comercial.carrosseis
-        SET titulo = $2, estilo = $3, slides = $4, legenda = $5, situacao = $6, versao = versao + 1, atualizado_em = now()
+        SET titulo = $2, estilo = $3, slides = $4, legenda = $5, situacao = $6, versao = versao + 1, atualizado_em = now(),
+            pronto_em = CASE WHEN $6 <> 'pronto' THEN NULL WHEN situacao = 'pronto' THEN pronto_em ELSE now() END
       WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id, d.titulo, d.estilo, JSON.stringify(d.slides), d.legenda, d.situacao],
   );
@@ -269,12 +280,27 @@ export async function atualizar(db: Executor, id: number, d: CarrosselEntrada): 
   return carrossel(db, id);
 }
 
-export async function apagar(db: Executor, id: number): Promise<void> {
+/** As imagens foram baixadas (o passo a passo da aba Publicação mostra quando). */
+export async function marcarBaixado(db: Executor, id: number): Promise<void> {
+  await db.query(
+    `UPDATE comercial.carrosseis SET baixado_em = now() WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [id],
+  );
+}
+
+export async function apagar(db: Executor, id: number): Promise<string[]> {
+  // A regra que ainda esperava o post sai junto (a que já está valendo fica, sem o carrossel).
+  const { rows: regras } = await db.query<{ arquivo_chave: string | null }>(
+    `DELETE FROM comercial.instagram_regras WHERE carrossel_id = $1 AND conta_id = ${contaSql()} AND alvo = 'carrossel'
+     RETURNING arquivo_chave`,
+    [id],
+  );
   const { rowCount } = await db.query(
     `DELETE FROM comercial.carrosseis WHERE id = $1 AND conta_id = ${contaSql()}`,
     [id],
   );
   if (!rowCount) throw AppError.naoEncontrado('Carrossel');
+  return regras.flatMap((r) => (r.arquivo_chave ? [r.arquivo_chave] : []));
 }
 
 /**
