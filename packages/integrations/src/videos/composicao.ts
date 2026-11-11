@@ -20,6 +20,11 @@ export interface MarcaDoVideo {
 
 export interface EntradaComposicao {
   diagrama: Diagrama;
+  /**
+   * v138: em cada plano, a câmera vai chegando devagar (até 4%), com o queixo parado: o vídeo não
+   * fica estático e a legenda (embaixo do queixo) não se mexe.
+   */
+  empurroes?: { ini: number; fim: number; ox: number; oy: number }[];
   estilo: EstiloLegenda;
   marca: MarcaDoVideo;
   /** Duração do vídeo editado (s). */
@@ -143,6 +148,7 @@ export function montarComposicao(e: EntradaComposicao): string {
     })),
     imagens: (e.imagens ?? []).map((i) => ({ id: i.id, ini: i.ini, fim: i.fim, encaixe: i.encaixe })),
     deslizar: e.transicao === 'deslizar',
+    empurroes: e.empurroes ?? [],
   };
   const medir = e.medir ?? estimar;
   const graficos = (e.momentos ?? [])
@@ -194,9 +200,10 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 .e-balao .pal { font-weight: 800; color: #18181b; line-height: 1.25; }
 .e-balao .pal.forte { color: ${primaria}; }
 #abertura { position: absolute; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 18px; transform-origin: 50% 0; }
-.titulo { font-weight: 900; line-height: .95; color: #fff; text-align: center; letter-spacing: -.02em; text-shadow: 0 6px 30px rgba(0,0,0,.45); }
-.titulo span { display: block; }
-.titulo span:last-child { color: ${destaque}; }
+.titulo { display: flex; flex-direction: column; align-items: center; gap: .12em; font-weight: 900; line-height: .95; color: #fff; text-align: center; letter-spacing: -.02em; }
+/* v138: cada linha numa placa (lê em qualquer fundo: azulejo branco, céu, loja clara). */
+.titulo span { display: inline-block; padding: .1em .3em .14em; border-radius: .2em; background: rgba(12,10,20,.9); box-shadow: 0 12px 34px rgba(0,0,0,.35); }
+.titulo span:last-child { background: ${primaria}; }
 .traco { width: 0; height: 12px; border-radius: 6px; background: ${destaque}; }
 #fim { position: absolute; inset: 0; opacity: 0; }
 #fim .fundo-img { position: absolute; inset: -40px; background: url("${esc(a.ultimoQuadro)}") center/cover; filter: blur(28px) brightness(.55) saturate(1.2); }
@@ -275,6 +282,12 @@ for (const c of DADOS.cartoes) {
   else tl.to('#camada-video', { ...alvo, duration: T, ease: 'power3.inOut' }, c.ini);
   if (c.fim < DADOS.D - 0.05)
     tl.to('#camada-video', { x: 0, y: 0, scale: 1, borderRadius: 0, boxShadow: '0 0 0 rgba(0,0,0,0)', duration: T, ease: 'power3.inOut' }, c.fim - T);
+}
+
+// A câmera chegando devagar em cada plano (o queixo fica parado; nada encosta no rosto).
+for (const p of DADOS.empurroes) {
+  tl.set('#camada-video', { transformOrigin: p.ox + 'px ' + p.oy + 'px', scale: 1 }, p.ini);
+  tl.to('#camada-video', { scale: 1.04, duration: Math.max(0.1, p.fim - p.ini), ease: 'none' }, p.ini);
 }
 
 // Legenda.

@@ -23,7 +23,9 @@ import {
   montarComposicao,
   montarCortes,
   type Plano,
+  palavrasEsticadas,
   palavrasNoEditado,
+  partirPalavraEsticada,
   planosDoVideo,
   recorteDoPlano,
   rostosNoEditado,
@@ -45,6 +47,7 @@ import {
   momentosDe,
   type OpcoesVideo,
   type PalavraVideo,
+  SEGUNDOS_PREVIA,
   type SomVideo,
   TAMANHO_PARTE_ENVIO,
   type TrechoSemImagem,
@@ -116,8 +119,6 @@ export interface DepsEdicao extends DepsEnfeites {
 interface Custos extends CustosEnfeites {
   transcricaoSeg: number;
 }
-
-const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
 /* ───────────────────────────── Arquivos ───────────────────────────── */
 
@@ -373,6 +374,10 @@ export async function editarVideo(
       await fazerPrevia(arm, base, tPrevia, `videos/${v.conta_id}/${videoId}/previa.jpg`, pasta)
         .then((chave) => repo.guardarPrevia(db, videoId, chave))
         .catch((erro) => log.warn({ err: erro, videoId }, 'a prévia da edição não saiu'));
+    if (!v.previa_video_chave)
+      await fazerPreviaVideo(arm, base, `videos/${v.conta_id}/${videoId}/previa.mp4`, pasta)
+        .then((chave) => repo.guardarPreviaVideo(db, videoId, chave))
+        .catch((erro) => log.warn({ err: erro, videoId }, 'a prévia em loop não saiu'));
     const anotar = (parte: Parameters<typeof repo.anotar>[2]) =>
       repo.anotar(db, videoId, parte).catch(() => undefined);
 
@@ -405,8 +410,44 @@ export async function editarVideo(
       custos.transcricaoSeg += duracao;
       if (palavras.length < 2)
         throw new ErroDoVideo('Não deu para ouvir fala no vídeo: a edição corta e legenda pela fala.');
-      const sil = silencios(await lerAudioCru(base));
-      await anotar({ ouvindo: { palavras: palavras.length } });
+      const pcm = await lerAudioCru(base);
+      const sil = silencios(pcm);
+      // v138: a embolação escondida dentro de uma palavra esticada volta a ser um vão (e é cortada).
+      palavras = await ajustarEsticadas(palavras, pcm, {
+        reouvir: deps.ouvir
+          ? async (a, b) => {
+              const trecho = join(pasta, `trecho-${Math.round(a * 1000)}.flac`);
+              await rodar(
+                'ffmpeg',
+                [
+                  '-v',
+                  'error',
+                  '-y',
+                  '-ss',
+                  a.toFixed(3),
+                  '-to',
+                  b.toFixed(3),
+                  '-i',
+                  fala,
+                  '-c:a',
+                  'flac',
+                  trecho,
+                ],
+                { timeoutMs: 60_000 },
+              );
+              custos.transcricaoSeg += b - a;
+              return deps.ouvir!(new Uint8Array(await readFile(trecho)) as Uint8Array<ArrayBuffer>, {
+                vocabulario,
+                assunto: v.opcoes.assunto,
+              });
+            }
+          : null,
+        log: (msg) => log.info({ videoId }, msg),
+      });
+      await anotar({
+        ouvindo: { palavras: palavras.length },
+        fala: { palavras: palavras.slice(0, MAX_PALAVRAS_TELA).map((p) => p.t) },
+      });
 
       // 3. Os cortes.
       await etapa('cortando', 30);
@@ -423,7 +464,13 @@ export async function editarVideo(
       } else decisao = decisaoPelasRegras(palavras);
       cortes = montarCortes(palavras, sil, decisao, v.opcoes.ritmo, duracao);
       palavras = marcarFortes(palavras, decisao.fortes);
-      await anotar({ cortando: resumoDosCortes(cortes, duracao) });
+      await anotar({
+        cortando: resumoDosCortes(cortes, duracao),
+        fala: {
+          palavras: palavras.slice(0, MAX_PALAVRAS_TELA).map((p) => p.t),
+          ...cortesNaFala(palavras, cortes),
+        },
+      });
       const titulo = decisao.titulo || v.opcoes.assunto.toUpperCase().split(/\s+/).slice(0, 5).join(' ');
       animacoes = {
         titulo: { usar: !!titulo, texto: titulo },
@@ -442,7 +489,7 @@ export async function editarVideo(
         }),
       );
       analise = { duracao, silencios: sil, rostos, fps: FPS_ROSTO, recorteX };
-      await anotar({ rosto: { caixa: rostoEm(rostos, tPrevia), t: tPrevia } });
+      await anotar({ rosto: { caixa: rostoEm(rostos, tPrevia), t: tPrevia }, trilha: trilhaDoRosto(rostos) });
       await repo.salvarAnalise(db, videoId, { duracao, analise, cortes, palavras, animacoes });
 
       // 5. O plano dos enfeites, sobre a fala que ficou.
@@ -596,6 +643,12 @@ export async function editarVideo(
     som = { ...som, efeitos: { ...som.efeitos, lista: listaEfeitos } };
     const html = montarComposicao({
       diagrama,
+      empurroes:
+        v.opcoes.transicao === 'seco'
+          ? []
+          : planos
+              .filter((p) => p.editadoFim - p.editadoIni >= 1.2)
+              .map((p) => ({ ini: p.editadoIni, fim: p.editadoFim, ox: p.ax, oy: p.ay })),
       estilo: v.opcoes.estilo,
       marca,
       duracao: duracaoEditado,
@@ -848,4 +901,115 @@ async function fazerPrevia(arm: Armazenamento, base: string, t: number, chave: s
   );
   await arm.enviar(chave, new Uint8Array(await readFile(arquivo)), 'image/jpeg');
   return chave;
+}
+
+/* ───────────────────────────── v138: a tela da edição viva ───────────────────────────── */
+
+/** Quantas palavras do começo da fala a tela mostra. */
+export const MAX_PALAVRAS_TELA = 60;
+
+/** O rosto a cada 0,25 s nos primeiros segundos (o mapa acompanha a prévia tocando). */
+export function trilhaDoRosto(
+  rostos: { t: number; caixas: { x0: number; y0: number; x1: number; y1: number }[] }[],
+) {
+  const out: { t: number; caixa: ReturnType<typeof rostoEm> }[] = [];
+  for (let t = 0; t <= SEGUNDOS_PREVIA + 1e-6; t += 0.25)
+    out.push({ t: Math.round(t * 100) / 100, caixa: rostoEm(rostos, t) });
+  return out;
+}
+
+/** Quais palavras do começo saíram e onde entrou um corte de fala embolada (antes de qual palavra). */
+export function cortesNaFala(palavras: PalavraVideo[], cortes: CorteVideo[]) {
+  const valem = cortes.filter((c) => c.decisao !== 'devolver' && c.tipo !== 'pausa');
+  const n = Math.min(palavras.length, MAX_PALAVRAS_TELA);
+  const cortadas: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const p = palavras[k]!;
+    const meio = (p.i + p.f) / 2;
+    if (valem.some((c) => meio >= c.inicio && meio <= c.fim)) cortadas.push(k);
+  }
+  const emboladas = valem
+    .filter((c) => c.tipo === 'outro' && !c.trecho)
+    .map((c) => palavras.findIndex((p) => p.i >= c.fim - 0.01))
+    .filter((k) => k >= 0 && k < n);
+  return { cortadas, emboladas };
+}
+
+/** Os primeiros segundos do vídeo em pé, sem som (540 × 960, leve), para a prévia em loop. */
+async function fazerPreviaVideo(arm: Armazenamento, base: string, chave: string, pasta: string) {
+  const arquivo = join(pasta, 'previa.mp4');
+  await rodar(
+    'ffmpeg',
+    [
+      '-v',
+      'error',
+      '-y',
+      '-t',
+      String(SEGUNDOS_PREVIA),
+      '-i',
+      base,
+      '-an',
+      '-vf',
+      'scale=540:960,fps=24',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '30',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+      arquivo,
+    ],
+    { timeoutMs: 120_000 },
+  );
+  await arm.enviar(chave, new Uint8Array(await readFile(arquivo)), 'video/mp4');
+  return chave;
+}
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/* ───────────────────────────── v138: a palavra esticada ───────────────────────────── */
+
+const semAcento = (t: string) =>
+  t
+    .normalize('NFD')
+    .replace(/[^\p{L}\p{N}]/gu, '')
+    .toLowerCase();
+
+/**
+ * O Whisper estica uma palavra por cima da fala embolada ("deseja" com 2 s). Aqui a palavra volta
+ * para o lugar dela pelo som (o que sobra vira um vão com som, que o corte de fala embolada pega).
+ * Se a palavra ficou no fim, o trecho é ouvido de novo: quando ele começa repetindo a palavra
+ * anterior ("Se você… blelelé… você deseja"), a primeira tentativa também vai para o vão.
+ */
+export async function ajustarEsticadas(
+  palavras: PalavraVideo[],
+  pcm: Int16Array,
+  o: {
+    reouvir: ((a: number, b: number) => Promise<PalavraVideo[]>) | null;
+    log?: (msg: string) => void;
+  },
+): Promise<PalavraVideo[]> {
+  const out = palavras.map((p) => ({ ...p }));
+  for (const k of palavrasEsticadas(palavras)) {
+    const p = out[k]!;
+    const lugar = partirPalavraEsticada(pcm, p);
+    if (!lugar) continue;
+    o.log?.(`palavra esticada "${p.t}" (${(p.f - p.i).toFixed(2)} s): fica de ${lugar.i} a ${lugar.f}`);
+    out[k] = { ...p, i: lugar.i, f: lugar.f };
+    const antes = out[k - 1];
+    if (!o.reouvir || !antes || lugar.i <= p.i + 0.01 || p.i - antes.f > 0.3) continue;
+    const ouvidas = await o.reouvir(Math.max(0, lugar.i - 0.05), lugar.f + 0.05).catch(() => []);
+    const primeira = ouvidas[0];
+    if (!primeira || semAcento(primeira.t) !== semAcento(antes.t) || ouvidas.length < 2) continue;
+    // "você … você deseja": a primeira tentativa sai junto com a embolação.
+    const desloca = lugar.i - 0.05;
+    out[k - 1] = { ...antes, i: r3(desloca + primeira.i), f: r3(desloca + primeira.f) };
+    out[k] = { ...out[k]!, i: Math.max(out[k]!.i, r3(desloca + primeira.f)) };
+    o.log?.(`recomeço "${antes.t}" dentro da embolação: a primeira tentativa sai`);
+  }
+  return out;
 }

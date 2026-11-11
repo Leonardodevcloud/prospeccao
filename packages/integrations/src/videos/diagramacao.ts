@@ -20,6 +20,8 @@ export const BASE = 1700;
 export const LARGURA_LEGENDA = 860;
 /** Distância mínima entre texto e rosto. */
 export const FOLGA = 34;
+/** O menor tamanho em que um gráfico ainda fica legível (abaixo disso, outro lugar ou fora). */
+export const ESCALA_MINIMA = 0.6;
 /** Sem rosto (ou rosto alto), a legenda não sobe acima disto. */
 export const LEGENDA_MAIS_ALTA = 1180;
 
@@ -253,26 +255,18 @@ export function diagramar(entrada: {
       };
     const livre = u.y0 - FOLGA - TOPO;
     const base = { id: g.id, ini: g.ini, fim: g.fim, s: 1, tx: 0, ty: 0, altura: g.altura };
-    // Decisão de 11/11: o vídeo nunca encolhe para abrir espaço (o "cartão" ficava feio).
-    // 1. Acima da cabeça, diminuindo o gráfico até a metade.
-    if (livre >= g.altura * 0.5)
-      return {
-        ...base,
-        topo: TOPO,
-        escala: Math.round(Math.min(1, livre / g.altura) * 1000) / 1000,
-        lugar: 'acima' as const,
-      };
-    // 2. Abaixo do queixo, no lugar da legenda (ela espera o gráfico sair).
+    // Decisão de 11/11: o vídeo nunca encolhe para abrir espaço (o "cartão" ficava feio). O gráfico
+    // vai onde fica MAIOR: acima da cabeça se couber quase inteiro (85%+); senão, o maior entre
+    // acima e abaixo do queixo (no lugar da legenda, que espera ele sair); nunca menor que 60%.
+    const escAcima = Math.min(1, livre / g.altura);
     const embaixo = Math.max(LEGENDA_MAIS_ALTA, u.y1 + FOLGA);
-    const livreEmbaixo = BASE - embaixo;
-    if (livreEmbaixo >= g.altura * 0.5)
-      return {
-        ...base,
-        topo: Math.round(embaixo),
-        escala: Math.round(Math.min(1, livreEmbaixo / g.altura) * 1000) / 1000,
-        lugar: 'abaixo' as const,
-      };
-    // 3. Sem espaço nenhum (o rosto ocupa a tela): o gráfico não aparece.
+    const escAbaixo = Math.min(1, (BASE - embaixo) / g.altura);
+    const r3e = (n: number) => Math.round(n * 1000) / 1000;
+    if (escAcima >= 0.85 || (escAcima >= ESCALA_MINIMA && escAcima >= escAbaixo))
+      return { ...base, topo: TOPO, escala: r3e(escAcima), lugar: 'acima' as const };
+    if (escAbaixo >= ESCALA_MINIMA)
+      return { ...base, topo: Math.round(embaixo), escala: r3e(escAbaixo), lugar: 'abaixo' as const };
+    // Sem espaço bom em lugar nenhum (o rosto ocupa a tela): o gráfico não aparece.
     return { ...base, topo: TOPO, escala: 0, lugar: 'fora' as const };
   });
 
@@ -320,7 +314,9 @@ export function diagramar(entrada: {
     }
     return null;
   };
-  for (const [, inteiros] of [...porPlano.entries()].sort((a, b) => a[0] - b[0])) {
+  const minimoBom = TAMANHOS[estilo][2]!;
+  /** Uma altura e um tamanho para o grupo (o plano inteiro ou um bloco só). */
+  const posicionar = (inteiros: BlocoLegenda[]) => {
     const a = Math.min(...inteiros.map((b) => b.ini));
     const z = Math.max(...inteiros.map((b) => b.fim));
     let topo = Math.max(LEGENDA_MAIS_ALTA, queixoEm(a, z) + FOLGA);
@@ -328,7 +324,6 @@ export function diagramar(entrada: {
     let blocos = inteiros;
     let tam = cabe(blocos, BASE - topo);
     // Faixa apertada: blocos menores (metade das palavras) deixam a letra maior numa linha só.
-    const minimoBom = TAMANHOS[estilo][2]!;
     if (tam == null || tam < minimoBom) {
       const partidos = partirBlocos(inteiros);
       const tamPartido = cabe(partidos, BASE - topo);
@@ -345,19 +340,30 @@ export function diagramar(entrada: {
         lugar = 'acima';
       }
     }
-    for (const b of blocos) {
+    const postas: LegendaPosta[] = blocos.map((b) => {
       const t = tam ?? TAMANHOS[estilo].at(-1)!;
       const linhas = quebrarLinhas(medir, b.palavras, t, estilo);
       const altura = alturaDoBloco(linhas.length, t, estilo);
-      legendas.push({
+      return {
         ...b,
         tam: t,
         linhas,
         altura,
         topo: Math.round(tam == null ? BASE - altura : topo),
         lugar: tam == null ? 'apertado' : lugar,
-      });
-    }
+      };
+    });
+    return { postas, tam };
+  };
+  for (const [, inteiros] of [...porPlano.entries()].sort((a, b) => a[0] - b[0])) {
+    const r = posicionar(inteiros);
+    // v138: o pior momento do plano (a pessoa chegou perto da câmera) não pode encolher a legenda
+    // do plano inteiro: aí cada bloco acha o próprio lugar e tamanho.
+    if ((r.tam == null || r.tam < minimoBom) && inteiros.length > 1) {
+      const sozinhos = inteiros.flatMap((b) => posicionar([b]).postas);
+      const menor = (l: LegendaPosta[]) => Math.min(...l.map((x) => x.tam));
+      legendas.push(...(menor(sozinhos) >= menor(r.postas) ? sozinhos : r.postas));
+    } else legendas.push(...r.postas);
   }
   legendas.sort((x, y) => x.ini - y.ini);
   // A legenda espera o gráfico que foi para baixo do queixo sair (os dois no mesmo lugar não dá).

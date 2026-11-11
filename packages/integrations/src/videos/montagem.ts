@@ -137,4 +137,5 @@ export function tituloEmLinhas(texto: string, medir: Medir): { linhas: string[];
 
 /** Altura do bloco do título (para a diagramação abrir espaço). */
 export const alturaDoTitulo = (t: { linhas: string[]; tam: number }) =>
-  Math.round(t.linhas.length * t.tam * 0.95 + 18 + 12);
+  // Cada linha numa placa (v138): a altura da letra, o respiro da placa e o espaço entre as placas.
+  Math.round(t.linhas.length * t.tam * 1.19 + Math.max(0, t.linhas.length - 1) * t.tam * 0.12 + 18 + 12);

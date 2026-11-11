@@ -1524,8 +1524,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>1. Enviar o vídeo</h3>
         <Passos>
           <li>
-            Arraste o vídeo para <b>Novo vídeo</b> ou clique para escolher. MP4 e MOV, como o celular grava,
-            até 1 GB.
+            Em Vídeos fica a sua biblioteca. Clique em <b>Novo vídeo</b>, no alto: abre uma janela grande.
+            Arraste o vídeo ou clique para escolher. MP4 e MOV, como o celular grava, até 1 GB.
           </li>
           <li>
             Em <b>Sobre o que é o vídeo</b>, escreva o assunto em uma frase (opcional). A IA usa para o título
@@ -1561,8 +1561,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <p>
           Enquanto a IA edita, a tela mostra cada etapa com o que ela achou (quantas palavras ouviu, o que
           cortou e quanto o vídeo diminuiu, as imagens e a música) e quanto falta. Ao lado, a{' '}
-          <b>prévia do mapa</b>: um quadro do seu vídeo já em pé com o rosto, a faixa da legenda e o espaço
-          dos gráficos marcados. No vídeo pronto, a legenda e os gráficos acompanham o rosto a cada momento.
+          <b>prévia do mapa</b>: os primeiros segundos do seu vídeo já em pé, tocando sem som, com o rosto, a
+          faixa da legenda e o espaço dos gráficos marcados acompanhando você. Embaixo das etapas aparece a
+          fala que a IA ouviu: o que ela cortou fica riscado, e a fala embolada aparece marcada. Quando você
+          embola ou esquece a fala ("blé blé" para alinhar o pensamento), a IA corta o trecho e deixa como
+          dúvida na aba Cortes, para você ouvir e decidir. O título de abertura vai onde fica maior (acima da
+          cabeça ou abaixo do queixo), numa placa que se lê em qualquer fundo, e o vídeo nunca encolhe.
         </p>
         <h3>2. O que a IA faz</h3>
         <Passos>

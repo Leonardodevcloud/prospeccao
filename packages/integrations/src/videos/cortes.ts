@@ -408,6 +408,71 @@ export function cortesDeFalaSemPalavra(palavras: PalavraVideo[], sil: Silencio[]
   return out;
 }
 
+/* ───────────────────── v138: a palavra que o Whisper esticou ───────────────────── */
+
+const letrasDe = (t: string) => t.normalize('NFD').replace(/[^\p{L}\p{N}]/gu, '').length;
+/** Quanto uma palavra costuma durar falada (s). */
+export const duracaoEsperada = (t: string) => 0.12 + 0.075 * Math.max(1, letrasDe(t));
+
+/**
+ * Quando a pessoa embola ("blelelele" para alinhar o pensamento), o Whisper muitas vezes não cria
+ * palavra: estica a palavra seguinte por cima da embolação ("deseja" com 2 s). Esta é a lista
+ * dessas palavras (o dobro e meio do normal e pelo menos 1 s).
+ */
+export function palavrasEsticadas(palavras: PalavraVideo[]): number[] {
+  const out: number[] = [];
+  palavras.forEach((p, k) => {
+    const d = p.f - p.i;
+    if (d >= Math.max(1, duracaoEsperada(p.t) * 2.5)) out.push(k);
+  });
+  return out;
+}
+
+/**
+ * Onde a palavra esticada está de verdade, pelo som: as quedas de volume dentro dela separam os
+ * pedaços; a palavra é o último pedaço (a pessoa embola e depois fala) ou o primeiro (fala e depois
+ * embola), o que tiver o tamanho da palavra. null: não dá para saber.
+ */
+export function partirPalavraEsticada(
+  pcm: Int16Array,
+  p: Pick<PalavraVideo, 't' | 'i' | 'f'>,
+  taxa = 16_000,
+): { i: number; f: number } | null {
+  const janela = Math.round(taxa * 0.02);
+  const a = Math.floor(p.i * taxa);
+  const n = Math.floor((Math.floor(p.f * taxa) - a) / janela);
+  if (n < 10) return null;
+  const db: number[] = [];
+  for (let k = 0; k < n; k++) {
+    let soma = 0;
+    for (let j = 0; j < janela; j++) {
+      const x = pcm[a + k * janela + j] ?? 0;
+      soma += x * x;
+    }
+    db.push(20 * Math.log10(Math.sqrt(soma / janela) + 1));
+  }
+  const ref = [...db].sort((x, y) => x - y)[Math.floor(db.length * 0.9)]!;
+  const limite = ref - 14;
+  const quedas: { ini: number; fim: number }[] = [];
+  let st = -1;
+  for (let k = 0; k <= n; k++) {
+    const baixo = k < n && db[k]! < limite;
+    if (baixo && st < 0) st = k;
+    if (!baixo && st >= 0) {
+      if (k - st >= 3) quedas.push({ ini: p.i + st * 0.02, fim: p.i + k * 0.02 });
+      st = -1;
+    }
+  }
+  if (!quedas.length) return null;
+  const esperado = duracaoEsperada(p.t);
+  const serve = (d: number) => d >= esperado * 0.6 && d <= esperado * 1.9;
+  const ultima = quedas.at(-1)!;
+  if (serve(p.f - ultima.fim)) return { i: r3(ultima.fim), f: p.f };
+  const primeira = quedas[0]!;
+  if (serve(primeira.ini - p.i)) return { i: p.i, f: r3(primeira.ini) };
+  return null;
+}
+
 /** Marca as palavras destacadas (as da IA). */
 export function marcarFortes(palavras: PalavraVideo[], fortes: number[]): PalavraVideo[] {
   const s = new Set(fortes);

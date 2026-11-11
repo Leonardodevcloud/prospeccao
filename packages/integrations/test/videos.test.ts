@@ -305,7 +305,17 @@ describe('diagramação: nada em cima do rosto', () => {
     ).toBe(0);
   });
 
-  it('pouco espaço acima: o título diminui até a metade, acima da cabeça; sem espaço nenhum, fica de fora', () => {
+  it('o título vai onde fica maior: quase inteiro acima, senão embaixo; sem espaço bom, fica de fora', () => {
+    const quase = diagramar({
+      rostos: rostoParado(6, { x0: 260, x1: 860, y0: 480, y1: 1100 }),
+      planos: [{ inicio: 0, fim: 6 }],
+      blocos,
+      graficos: [{ id: 'abertura', ini: 0, fim: 2.3, altura: 240 }],
+      estilo: 'acesa',
+      medir,
+    }).cartoes[0]!;
+    expect(quase).toMatchObject({ s: 1, lugar: 'acima', topo: 210 });
+    expect(quase.escala).toBeCloseTo(236 / 240, 3);
     const acima = diagramar({
       rostos: rostoParado(6, { x0: 260, x1: 860, y0: 400, y1: 1100 }),
       planos: [{ inicio: 0, fim: 6 }],
@@ -314,8 +324,8 @@ describe('diagramação: nada em cima do rosto', () => {
       estilo: 'acesa',
       medir,
     }).cartoes[0]!;
-    expect(acima).toMatchObject({ s: 1, lugar: 'acima', topo: 210 });
-    expect(acima.escala).toBeCloseTo(156 / 240, 3);
+    // Acima ficaria com 65%; embaixo do queixo cabe inteiro: vai para baixo.
+    expect(acima).toMatchObject({ s: 1, lugar: 'abaixo', topo: 1180, escala: 1 });
     const fora = diagramar({
       rostos: rostoParado(6, { x0: 100, x1: 980, y0: 250, y1: 1650 }),
       planos: [{ inicio: 0, fim: 6 }],
@@ -400,5 +410,26 @@ describe('v137: fala embolada', async () => {
     const c = cortesDeFalaSemPalavra(palavras, [{ inicio: 3.1, fim: 4.3 }]);
     expect(c).toHaveLength(1);
     expect(c[0]).toMatchObject({ inicio: 1.05, fim: 2.45, tipo: 'outro', duvida: true, decisao: 'cortar' });
+  });
+});
+
+describe('v138: a palavra esticada por cima da embolação', async () => {
+  const { palavrasEsticadas, partirPalavraEsticada } = await import('../src/videos/cortes.js');
+  // Som: embolação de 9,2 a 9,76, queda, embolação até 10,4, queda, a palavra de 10,6 a 11,24.
+  const pcm = new Int16Array(16_000 * 12);
+  const som = (a: number, b: number) => {
+    for (let k = Math.floor(a * 16_000); k < b * 16_000; k++) pcm[k] = Math.round(6000 * Math.sin(k / 7));
+  };
+  som(9.2, 9.76);
+  som(10.04, 10.4);
+  som(10.6, 11.24);
+  const palavras = [
+    { t: 'você', i: 8.96, f: 9.2 },
+    { t: 'deseja', i: 9.2, f: 11.24 },
+    { t: 'saber', i: 11.24, f: 11.46 },
+  ];
+  it('acha a palavra esticada e o lugar dela de verdade (o último pedaço de som)', () => {
+    expect(palavrasEsticadas(palavras)).toEqual([1]);
+    expect(partirPalavraEsticada(pcm, palavras[1]!)).toEqual({ i: 10.6, f: 11.24 });
   });
 });

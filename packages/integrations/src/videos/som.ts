@@ -36,8 +36,30 @@ export function promptDaMusica(clima: ClimaMusica, descricao: string, estiloDaIa
   ].join(' ');
 }
 
-/** Compõe a música (MP3) com o tamanho pedido (entre 3 s e 10 min). */
+/** Esperas entre as tentativas quando a ElevenLabs está ocupada (429 "system_busy") ou fora (5xx). */
+export const ESPERAS_MUSICA_MS = [8_000, 25_000, 60_000];
+
+/**
+ * Compõe a música (MP3) com o tamanho pedido (entre 3 s e 10 min). Quando a ElevenLabs responde
+ * que está ocupada, espera e tenta de novo (até 4 vezes); pedido recusado ou sem plano não repete.
+ */
 export async function comporMusica(
+  cfg: ConfigMusica,
+  e: { clima: ClimaMusica; descricao: string; estilo: string; segundos: number },
+  esperas: readonly number[] = ESPERAS_MUSICA_MS,
+): Promise<Uint8Array> {
+  for (let k = 0; ; k++) {
+    try {
+      return await comporUmaVez(cfg, e);
+    } catch (erro) {
+      const repetivel = (erro as AppError).repetivel;
+      if (!repetivel || k >= esperas.length) throw erro;
+      await new Promise((r) => setTimeout(r, esperas[k]));
+    }
+  }
+}
+
+async function comporUmaVez(
   cfg: ConfigMusica,
   e: { clima: ClimaMusica; descricao: string; estilo: string; segundos: number },
 ): Promise<Uint8Array> {

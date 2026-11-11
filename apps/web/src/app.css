@@ -5108,7 +5108,7 @@ label.plano-opcao[data-ativo] {
   animation: modal-entrar 180ms ease;
 }
 .modal--larga {
-  width: min(920px, 100%);
+  width: min(1040px, 100%);
 }
 .modal:focus {
   outline: none;
@@ -17591,10 +17591,24 @@ fieldset.assinar__formas {
 .videos__novo {
   display: grid;
   gap: var(--space-4);
-  padding: var(--space-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
+}
+/* v138: o formulário do Novo vídeo na janela grande, em duas colunas (uma embaixo da outra no celular). */
+.videos__form--janela {
+  display: block;
+  column-count: 2;
+  column-gap: var(--space-6);
+}
+.videos__form--janela > * {
+  break-inside: avoid;
+  margin-bottom: var(--space-4);
+}
+.videos__form--janela > button[type="submit"] {
+  width: 100%;
+}
+@media (max-width: 760px) {
+  .videos__form--janela {
+    column-count: 1;
+  }
 }
 .videos__novo-titulo {
   margin: 0;
@@ -17784,14 +17798,15 @@ fieldset.assinar__formas {
 }
 .video__corpo {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 440px;
+  /* v138: o painel da revisão mais largo (as abas cabem sem rolar); o vídeo fica à esquerda. */
+  grid-template-columns: minmax(400px, 1fr) minmax(560px, 46%);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
   overflow: hidden;
   min-height: 640px;
 }
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .video__corpo {
     grid-template-columns: 1fr;
   }
@@ -17876,7 +17891,7 @@ fieldset.assinar__formas {
   min-width: 0;
   border-left: 1px solid var(--line);
 }
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .video__painel {
     border-left: 0;
     border-top: 1px solid var(--line);
@@ -18823,4 +18838,69 @@ fieldset.assinar__formas {
   font-size: 12px;
   line-height: 16px;
   text-align: center;
+}
+
+/* ── v138: a tela da edição viva ── */
+.video__previa-quadro > video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.video__previa-marca {
+  transition:
+    top 0.2s linear,
+    left 0.2s linear,
+    width 0.2s linear,
+    height 0.2s linear;
+}
+.video__fala {
+  display: grid;
+  gap: 6px;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.video__fala-titulo {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.video__fala-texto {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+}
+.video__fala-palavra {
+  animation: video-fala-entra 0.3s ease-out both;
+}
+.video__fala-palavra--sai {
+  color: var(--danger);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.video__fala-embolada {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: line-through;
+}
+@keyframes video-fala-entra {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .video__fala-palavra,
+  .video__previa-marca {
+    animation: none;
+    transition: none;
+  }
 }

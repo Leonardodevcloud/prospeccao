@@ -413,6 +413,26 @@ describe('som', () => {
       ),
     ).rejects.toMatchObject({ repetivel: false, detalhes: { pedidoRecusado: true } });
   });
+
+  it('ElevenLabs ocupada (429) espera e tenta de novo; sem plano pago (402) não repete', async () => {
+    let n = 0;
+    vi.stubGlobal('fetch', async () => {
+      n++;
+      return n < 3
+        ? new Response('{"detail":{"code":"system_busy"}}', { status: 429 })
+        : new Response(new Uint8Array([9]), { status: 200 });
+    });
+    const e = { clima: 'confiante' as const, descricao: '', estilo: '', segundos: 12 };
+    expect([...(await comporMusica({ chave: 'x' }, e, [1, 1, 1]))]).toEqual([9]);
+    expect(n).toBe(3);
+    n = 0;
+    vi.stubGlobal('fetch', async () => {
+      n++;
+      return new Response('{"detail":{"code":"paid_plan_required"}}', { status: 402 });
+    });
+    await expect(comporMusica({ chave: 'x' }, e, [1, 1, 1])).rejects.toMatchObject({ repetivel: false });
+    expect(n).toBe(1);
+  });
 });
 
 describe('imagens', () => {

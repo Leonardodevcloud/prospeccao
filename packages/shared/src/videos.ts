@@ -399,6 +399,8 @@ export interface DetalheVideo extends ResumoVideo {
   /** v136: o que cada etapa achou e se já há o quadro da prévia (tipo=previa em /arquivo). */
   andamento: AndamentoVideo | null;
   temPrevia: boolean;
+  /** v138: os primeiros segundos em loop (tipo=previa-video em /arquivo). */
+  temPreviaVideo: boolean;
 }
 
 /** O que a pessoa muda na revisão (salvo na hora; o vídeo só muda ao gerar de novo). */
@@ -637,6 +639,10 @@ export interface AndamentoVideo {
   cortando?: { pausas: number; muletas: number; recomecos: number; outros: number; de: number; para: number };
   /** O rosto no quadro da prévia (null: não apareceu rosto nesse quadro). */
   rosto?: { caixa: CaixaNoVideo | null; t: number };
+  /** v138: o rosto nos primeiros segundos (a cada 0,25 s), para o mapa acompanhar a prévia tocando. */
+  trilha?: { t: number; caixa: CaixaNoVideo | null }[];
+  /** v138: o começo da fala (até 60 palavras) e quais delas a edição cortou. */
+  fala?: { palavras: string[]; cortadas?: number[]; emboladas?: number[] };
   imagens?: { fotos: number; geradas: number; animacoes: number; musica: boolean };
 }
 
@@ -722,3 +728,17 @@ export function mapaDaPrevia(caixa: CaixaNoVideo | null) {
     fimGraficos - TELA.topo >= 120 ? f(margem, TELA.topo, TELA.largura - margem, fimGraficos) : null;
   return { rosto: caixa ? f(caixa.x0, caixa.y0, caixa.x1, caixa.y1) : null, legenda, graficos };
 }
+
+/** v138: a caixa do rosto no momento t da prévia tocando (o ponto da trilha mais perto). */
+export function caixaNaTrilha(
+  trilha: { t: number; caixa: CaixaNoVideo | null }[] | undefined,
+  t: number,
+): CaixaNoVideo | null {
+  if (!trilha?.length) return null;
+  let melhor = trilha[0]!;
+  for (const p of trilha) if (Math.abs(p.t - t) < Math.abs(melhor.t - t)) melhor = p;
+  return Math.abs(melhor.t - t) <= 0.6 ? melhor.caixa : null;
+}
+
+/** Quantos segundos do começo a prévia em loop mostra. */
+export const SEGUNDOS_PREVIA = 6;

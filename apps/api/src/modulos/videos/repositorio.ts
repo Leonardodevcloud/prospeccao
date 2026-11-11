@@ -38,6 +38,7 @@ interface Linha {
   id: number;
   andamento?: AndamentoVideo | null;
   previa_chave?: string | null;
+  previa_video_chave?: string | null;
   titulo: string;
   situacao: SituacaoVideo;
   etapa: EtapaVideo | null;
@@ -114,6 +115,7 @@ function detalhe(l: Linha): DetalheVideo {
     midiaLink: l.midia_link ?? null,
     andamento: l.andamento ?? null,
     temPrevia: !!l.previa_chave,
+    temPreviaVideo: !!l.previa_video_chave,
   };
 }
 
@@ -150,6 +152,7 @@ export async function arquivos(db: Executor, id: number) {
     imagens: (l.imagens ?? []).map((i) => ({ id: i.id, chave: i.chave })),
     musica: l.som?.musica.chave ?? null,
     previa: l.previa_chave ?? null,
+    previaVideo: l.previa_video_chave ?? null,
   };
 }
 
@@ -159,6 +162,7 @@ export function arquivosDoVideo(l: {
   final_chave: string | null;
   capa_chave: string | null;
   previa_chave?: string | null;
+  previa_video_chave?: string | null;
   imagens?: ImagemVideo[] | null;
   som?: SomVideo | null;
 }): string[] {
@@ -167,6 +171,7 @@ export function arquivosDoVideo(l: {
     l.final_chave,
     l.capa_chave,
     l.previa_chave ?? null,
+    l.previa_video_chave ?? null,
     ...(l.imagens ?? []).map((i) => i.chave),
     l.som?.musica.chave ?? null,
   ].filter((c): c is string => !!c && (c === l.original_chave || c.startsWith('videos/')));

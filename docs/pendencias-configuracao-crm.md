@@ -361,10 +361,10 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Teste: aba **Ideias** › Buscar ideias; conferir que cada ideia mostra a fonte com números que existem (as perguntas do cérebro da marca, os posts) e que Criar carrossel abre o pedido preenchido.
 
 ## 4x. Vídeos e carrosséis com o Claude 5.5 (v136 e v137)
-1. [ ] **Migration 102** roda sozinha. Redeploy da **api**, do **worker-videos** e do front.
+1. [ ] **Migrations 102 e 103** rodam sozinhas. Redeploy da **api** primeiro, depois do **worker-videos** e do front.
 2. [ ] **`OPENAI_CHAVE` no worker-videos** (a mesma da api): sem ela os vídeos não ganham imagens geradas, só as fotos da empresa.
 3. [ ] Conferir no log do worker-videos que não aparece mais "a IA não decidiu os cortes" nem "a IA não propôs os enfeites" (era o Claude 5.5 recusando o pedido antigo). Na api, sumir o "Claude: HTTP 400 … tool_choice".
-4. [ ] Música: se aparecer "a música não saiu", abrir a linha no log (o motivo da ElevenLabs vem junto) e mandar para o Claude.
+4. [ ] Música: a conta da ElevenLabs precisa de **plano pago** (no grátis a API de música responde 402). Se aparecer "a música não saiu", abrir a linha no log (o motivo vem junto). O 429 "system_busy" (ElevenLabs cheia) agora tenta de novo sozinho.
 
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.

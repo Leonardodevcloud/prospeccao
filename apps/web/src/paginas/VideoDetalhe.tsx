@@ -1,5 +1,6 @@
 import {
   type CorteVideo,
+  caixaNaTrilha,
   type DetalheVideo,
   ESTILOS_LEGENDA,
   type EstiloLegenda,
@@ -202,6 +203,7 @@ function Editando({ v }: { v: DetalheComFila }) {
             );
           })}
         </ol>
+        <FalaOuvida v={v} />
         {v.erro && v.situacao === 'na_fila' && (
           <Mensagem tipo="aviso">Na tentativa anterior: {v.erro} Vamos tentar de novo.</Mensagem>
         )}
@@ -214,13 +216,29 @@ function Editando({ v }: { v: DetalheComFila }) {
 }
 
 /**
- * A prévia do mapa (v136): um quadro do vídeo já em pé com o rosto, a faixa da legenda e o espaço
- * dos gráficos marcados. Antes do quadro, o lugar dele; antes do rosto, só o quadro.
+ * A prévia do mapa: os primeiros segundos do vídeo em pé tocando em loop, sem som (v138), com o
+ * rosto, a faixa da legenda e o espaço dos gráficos acompanhando a pessoa. Antes do vídeo, o quadro
+ * parado; antes do rosto, só a imagem.
  */
 function PreviaDoMapa({ v }: { v: DetalheComFila }) {
-  const q = useArquivo(v.id, 'previa', v.temPrevia, v.temPrevia ? 'sim' : 'nao');
+  const quadro = useArquivo(v.id, 'previa', v.temPrevia, v.temPrevia ? 'sim' : 'nao');
+  const filme = useArquivo(v.id, 'previa-video', v.temPreviaVideo, v.temPreviaVideo ? 'sim' : 'nao');
+  const [t, setT] = useState(0);
+  const tocador = useRef<HTMLVideoElement>(null);
+  const trilha = v.andamento?.trilha;
+  useEffect(() => {
+    if (!filme.data?.url || !trilha?.length) return;
+    let pedido = 0;
+    const andar = () => {
+      setT(tocador.current?.currentTime ?? 0);
+      pedido = requestAnimationFrame(andar);
+    };
+    pedido = requestAnimationFrame(andar);
+    return () => cancelAnimationFrame(pedido);
+  }, [filme.data?.url, trilha?.length]);
   const rosto = v.andamento?.rosto;
-  const mapa = rosto ? mapaDaPrevia(rosto.caixa) : null;
+  const caixa = filme.data?.url && trilha?.length ? caixaNaTrilha(trilha, t) : (rosto?.caixa ?? null);
+  const mapa = rosto ? mapaDaPrevia(caixa) : null;
   const pos = (r: { x: number; y: number; w: number; h: number }) => ({
     left: `${r.x * 100}%`,
     top: `${r.y * 100}%`,
@@ -230,8 +248,19 @@ function PreviaDoMapa({ v }: { v: DetalheComFila }) {
   return (
     <figure className="video__previa">
       <div className="video__previa-quadro">
-        {q.data?.url ? (
-          <img src={q.data.url} alt="Um quadro do seu vídeo, já em pé" />
+        {filme.data?.url ? (
+          <video
+            ref={tocador}
+            src={filme.data.url}
+            poster={quadro.data?.url}
+            autoPlay
+            muted
+            loop
+            playsInline
+            aria-label="O começo do seu vídeo, já em pé"
+          />
+        ) : quadro.data?.url ? (
+          <img src={quadro.data.url} alt="Um quadro do seu vídeo, já em pé" />
         ) : (
           <span className="video__previa-vazio">
             {v.situacao === 'na_fila' ? 'A prévia aparece quando a edição começar' : 'Preparando a prévia…'}
@@ -255,10 +284,42 @@ function PreviaDoMapa({ v }: { v: DetalheComFila }) {
       </div>
       <figcaption className="quieto">
         {mapa
-          ? 'Prévia do mapa: onde está o rosto e onde cabe cada texto. No vídeo pronto, isso acompanha você a cada momento.'
+          ? 'O mapa acompanha você: a legenda fica abaixo do queixo e os gráficos acima da cabeça.'
           : 'Quando a IA mapear o rosto, aparece aqui onde a legenda e os gráficos vão ficar.'}
       </figcaption>
     </figure>
+  );
+}
+
+/** A fala que a IA ouviu (o começo), com o que ela cortou riscado e onde tirou fala embolada (v138). */
+function FalaOuvida({ v }: { v: DetalheComFila }) {
+  const f = v.andamento?.fala;
+  if (!f?.palavras.length) return null;
+  const cortadas = new Set(f.cortadas ?? []);
+  const emboladas = new Set(f.emboladas ?? []);
+  return (
+    <section className="video__fala" aria-label="A fala que a IA ouviu">
+      <span className="video__fala-titulo">{f.cortadas ? 'O que fica e o que sai' : 'Ouvindo…'}</span>
+      <p className="video__fala-texto">
+        {f.palavras.map((p, k) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a posição da palavra na fala é a identidade dela
+          <span key={k}>
+            {emboladas.has(k) && <span className="video__fala-embolada">fala embolada</span>}
+            <span
+              className={
+                cortadas.has(k) ? 'video__fala-palavra video__fala-palavra--sai' : 'video__fala-palavra'
+              }
+              style={{ animationDelay: `${Math.min(k, 60) * 35}ms` }}
+            >
+              {p}
+            </span>{' '}
+          </span>
+        ))}
+        {v.andamento?.ouvindo && v.andamento.ouvindo.palavras > f.palavras.length && (
+          <span className="quieto">…</span>
+        )}
+      </p>
+    </section>
   );
 }
 

@@ -19,9 +19,10 @@ import {
 } from '@prospeccao/shared/videos';
 import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useId, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router';
 import { LinkAjuda } from '../componentes/Ajuda';
+import { Modal } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando } from '../formatar';
@@ -43,6 +44,13 @@ import { FotosDaEmpresa } from '../video/Enfeites';
 export function Videos() {
   const admin = useEhAdmin();
   const situacao = useSituacaoVideos();
+  // v138: a página é a biblioteca; o "Novo vídeo" abre numa janela grande no centro.
+  const [novo, setNovo] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const fecharNovo = () => {
+    if (enviando && !window.confirm('O vídeo ainda está sendo enviado. Fechar e cancelar o envio?')) return;
+    setNovo(false);
+  };
   if (!admin) return <Navigate to="/" replace />;
   if (situacao.isPending) return <div className="esqueleto" style={{ height: 320 }} />;
   if (situacao.error) return <ErroDaApi erro={situacao.error} />;
@@ -56,6 +64,9 @@ export function Videos() {
         </div>
         <div className="acoes">
           <LinkAjuda artigo="videos">Como funciona</LinkAjuda>
+          <Button variant="primary" icon="plus" onClick={() => setNovo(true)}>
+            Novo vídeo
+          </Button>
         </div>
       </div>
       {!situacao.data.armazenamento && (
@@ -69,10 +80,17 @@ export function Videos() {
           assim que ele voltar.
         </Mensagem>
       )}
-      <div className="videos__corpo">
-        <Lista />
-        <NovoVideo situacao={situacao.data} />
-      </div>
+      <Lista aoNovo={() => setNovo(true)} />
+      {novo && (
+        <Modal
+          titulo="Novo vídeo"
+          subtitulo="Suba o vídeo que você gravou falando: a IA corta, legenda, anima e fecha com a chamada."
+          largura="larga"
+          aoFechar={fecharNovo}
+        >
+          <NovoVideo situacao={situacao.data} aoEnviando={setEnviando} />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -111,7 +129,7 @@ const TOM: Record<ResumoVideo['situacao'], 'neutral' | 'brand' | 'warning' | 'da
   falhou: 'danger',
 };
 
-function Lista() {
+function Lista({ aoNovo }: { aoNovo: () => void }) {
   const q = useListaVideos();
   const [filtro, setFiltro] = useState<Filtro>('todos');
   if (q.isPending) return <div className="esqueleto videos__lista" style={{ height: 320 }} />;
@@ -152,7 +170,12 @@ function Lista() {
         <EmptyState
           icone="clapperboard"
           titulo="Nenhum vídeo ainda"
-          texto="Grave falando para a câmera, com o celular em pé, e suba aqui ao lado. Em poucos minutos o vídeo volta cortado, legendado e com a chamada no fim."
+          texto="Grave falando para a câmera, com o celular em pé, e clique em Novo vídeo. Em poucos minutos o vídeo volta cortado, legendado e com a chamada no fim."
+          acao={
+            <Button variant="primary" icon="plus" onClick={aoNovo}>
+              Novo vídeo
+            </Button>
+          }
         />
       ) : !lista.length ? (
         <p className="quieto">Nenhum vídeo nesta situação.</p>
@@ -233,7 +256,13 @@ const FORM_INICIAL: FormNovo = {
   efeitos: true,
 };
 
-function NovoVideo({ situacao }: { situacao: SituacaoVideos }) {
+function NovoVideo({
+  situacao,
+  aoEnviando,
+}: {
+  situacao: SituacaoVideos;
+  aoEnviando: (enviando: boolean) => void;
+}) {
   const id = useId();
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [duracao, setDuracao] = useState<number | null>(null);
@@ -245,6 +274,7 @@ function NovoVideo({ situacao }: { situacao: SituacaoVideos }) {
   const cliente = useQueryClient();
   const navegar = useNavigate();
   const set = <K extends keyof FormNovo>(k: K, v: FormNovo[K]) => setF((x) => ({ ...x, [k]: v }));
+  useEffect(() => aoEnviando(andamento != null), [andamento, aoEnviando]);
   const cheia = situacao.franquia.limite != null && situacao.franquia.usados >= situacao.franquia.limite;
 
   const escolher = async (a: File | null) => {
@@ -319,11 +349,8 @@ function NovoVideo({ situacao }: { situacao: SituacaoVideos }) {
   };
 
   return (
-    <aside className="videos__novo" aria-labelledby={`${id}-t`}>
-      <h2 id={`${id}-t`} className="videos__novo-titulo">
-        Novo vídeo
-      </h2>
-      <form className="videos__form" onSubmit={submeter}>
+    <div className="videos__novo">
+      <form className="videos__form videos__form--janela" onSubmit={submeter} aria-label="Novo vídeo">
         <label
           className="videos__soltar"
           data-arrastando={arrastando || undefined}
@@ -577,6 +604,6 @@ function NovoVideo({ situacao }: { situacao: SituacaoVideos }) {
           Fica pronto em poucos minutos. Depois de enviar, pode sair desta tela: o aviso chega no sino.
         </span>
       </form>
-    </aside>
+    </div>
   );
 }
