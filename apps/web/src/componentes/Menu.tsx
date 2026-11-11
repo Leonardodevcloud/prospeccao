@@ -136,7 +136,8 @@ export const MENU_CRM: EntradaMenu[] = [
       },
       { para: '/equipe', rotulo: 'Equipe', icone: 'id-card' },
       { para: '/telefonia', rotulo: 'Telefonia', icone: 'phone', admin: true, modulos: ['ligacoes'] },
-      { para: '/integracoes', rotulo: 'Integrações', icone: 'plug', admin: true, recurso: 'api' },
+      // Sem cadeado: o segundo cérebro vale para qualquer plano (as abas da API mostram o cadeado lá dentro).
+      { para: '/integracoes', rotulo: 'Integrações', icone: 'plug', admin: true },
       { para: '/marca', rotulo: 'Marca e domínio', icone: 'image', admin: true, recurso: 'marca' },
       { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', comPlano: true },
       { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', admin: true, recurso: 'seguranca' },

@@ -16,6 +16,7 @@ import { useSearchParams } from 'react-router';
 import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Drawer, Modal } from '../componentes/Drawer';
+import { ForaDoPlano } from '../componentes/ForaDoPlano';
 import { CampoEtiquetas, ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { usePipelines } from '../componentes/Pipelines';
 import { useEquipe } from '../componentes/Sessao';
@@ -162,8 +163,10 @@ function Codigo(props: { children: string }) {
 export function Integracoes() {
   const [busca, setBusca] = useSearchParams();
   const abaUrl = busca.get('aba') as Aba | null;
-  const aba: Aba = ABAS.some((a) => a.id === abaUrl) ? abaUrl! : 'chaves';
   const resumo = useQuery({ queryKey: ['integracoes'], queryFn: () => api<Resumo>('/integracoes') });
+  // Sem a API no plano, a tela abre no segundo cérebro (que vale para qualquer plano).
+  const semApi = resumo.data ? !resumo.data.plano : false;
+  const aba: Aba = ABAS.some((a) => a.id === abaUrl) ? abaUrl! : semApi ? 'cerebro' : 'chaves';
   const [novo, setNovo] = useState<Aba | null>(null);
 
   return (
@@ -180,7 +183,7 @@ export function Integracoes() {
             <LinkAjuda artigo="integracoes" />
           </p>
         </div>
-        {aba !== 'cerebro' && (
+        {aba !== 'cerebro' && !semApi && (
           <div className="acoes">
             <Button variant="primary" icon="plus" onClick={() => setNovo(aba)}>
               {aba === 'chaves' ? 'Nova chave' : aba === 'formularios' ? 'Novo formulário' : 'Novo aviso'}
@@ -208,6 +211,8 @@ export function Integracoes() {
         <div className="esqueleto" style={{ height: 320 }} />
       ) : !resumo.data ? (
         <ErroDaApi erro={resumo.error} />
+      ) : semApi ? (
+        <ForaDoPlano recurso="api" compacto />
       ) : aba === 'chaves' ? (
         <Chaves resumo={resumo.data} criar={novo === 'chaves'} aoFecharCriar={() => setNovo(null)} />
       ) : aba === 'formularios' ? (

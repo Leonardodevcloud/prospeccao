@@ -1984,8 +1984,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
     corpo: (
       <>
         <p>
-          Em <b>Gestão › Integrações</b> (só o administrador, a partir do plano Time) você liga o CRM aos
-          outros sistemas da empresa, sem depender de ninguém. São três caminhos:
+          Em <b>Gestão › Integrações</b> (só o administrador) você liga o CRM aos outros sistemas da empresa,
+          sem depender de ninguém. Os formulários, as chaves e os avisos são do plano Time em diante; o
+          segundo cérebro (no fim deste artigo) vale para qualquer plano. Os três caminhos da API:
         </p>
         <h3>Formulários do site (sem programar)</h3>
         <Passos>
