@@ -339,6 +339,27 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 2. [ ] Conferir nos primeiros vídeos depois do deploy: o vídeo começa já no assunto (sem "oi, gente, hoje vou falar"), o título diz o assunto com as palavras da pessoa, e as animações não poluem. Nos carrosséis: capa específica, nada de "Descubra" ou "No mundo de hoje", uma chamada só.
 3. [ ] Se um manual atrapalhar algo (ex.: a IA cortando a apresentação da empresa), o texto está em `packages/integrations/src/saber/`; mudar ali muda para todos os clientes.
 
+## 4t. Vídeos ligados ao CRM (v131)
+1. [ ] **Migration 098** roda sozinha no deploy da api. Redeploy da **api** e do **front**.
+2. [ ] Teste: num vídeo pronto, abrir a aba **Publicação**, conferir o texto do post da redatora, ligar o Comente e receba com a palavra que você falou no vídeo, baixar, postar pelo celular com o texto e comentar a palavra de outra conta: o direct tem que chegar.
+
+## 4u. Imagens nos carrosséis (v132)
+1. [ ] **Migration 099** roda sozinha. Redeploy da **api** primeiro (por causa da coluna `origem` das fotos) e depois do **`worker-videos`** e do **front**.
+2. [ ] Pôr a **`OPENAI_CHAVE`** na **api** (a mesma do `worker-videos`). Sem ela, o time usa só as fotos da empresa (a tela explica). Opcionais: `CARROSSEIS_IMAGEM_MODELO` (padrão `gpt-image-2`) e `CARROSSEIS_CUSTO_IMAGEM_USD` (0,05).
+3. [ ] Teste: pedir um carrossel com "o time pode fazer imagens" e a foto de um produto; conferir a capa com o produto num cenário, a imagem gerada sem texto nem marca e, no editor, "Cenários para este produto".
+
+## 4v. Publicar e agendar pelo CRM (v133)
+1. [ ] **Migration 100** roda sozinha. Redeploy da **api** e do **front**.
+2. [ ] **Pedir à Meta a permissão `instagram_content_publish`** (developers.facebook.com › o app › Análise do app › Permissões e recursos), com o vídeo mostrando o agendamento no CRM. Enquanto não sai, o cartão diz "em breve" e o caminho é baixar e postar pelo celular.
+3. [ ] **Só depois da aprovação:** `META_PUBLICAR=sim` na api e reconectar o Instagram uma vez (Instagram › Conexão), para a conexão ganhar a permissão.
+4. [ ] Teste: agendar um carrossel para daqui a 5 minutos com o Comente e receba ligado; conferir que saiu no Instagram, que o aviso chegou no sino e que o Calendário mostra o post.
+
+## 4w. O time aprende com os posts (v134)
+1. [ ] **Migration 101** roda sozinha. Redeploy da **api** e do **front**.
+2. [ ] Para os aprendizados aparecerem, o Instagram precisa estar conectado (os números dos posts vêm de lá) e precisa haver pelo menos 3 posts com a mesma característica. Até lá a caixa explica que ainda é cedo.
+3. [ ] **Contas de referência** usam o Business Discovery da Meta: precisa do Instagram conectado e o perfil de referência tem que ser profissional (empresa ou criador). Conferir com 1 perfil conhecido.
+4. [ ] Teste: aba **Ideias** › Buscar ideias; conferir que cada ideia mostra a fonte com números que existem (as perguntas do cérebro da marca, os posts) e que Criar carrossel abre o pedido preenchido.
+
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.
 - [ ] Aba "Plano e módulos": ajustar usuários e leads/mês se o combinado foi diferente, e a mensalidade combinada.

@@ -256,6 +256,14 @@ export const pedidoTimeEntrada = z
     chamada: z.enum(CHAMADAS_FINAIS).default('salvar'),
     palavra: z.string().trim().max(20).default(''),
     usarFotos: z.boolean().default(true),
+    /** v132: a IA pode gerar as imagens que faltarem (sem texto, na paleta da marca). */
+    gerarImagens: z.boolean().default(false),
+    /** v132: a foto do produto (das fotos da empresa): a capa usa o produto num cenário novo. */
+    fotoProdutoId: z.number().int().positive().nullable().default(null),
+    /** v132: um post de que a empresa gostou (inspira o clima e a composição; nunca é copiado). */
+    referenciaId: z.number().int().positive().nullable().default(null),
+    /** v134: a ideia de onde o carrossel saiu (a aba Ideias marca como usada). */
+    ideiaId: z.number().int().positive().nullable().default(null),
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga sobre o que é o carrossel (ou escolha o que divulgar).',
@@ -330,7 +338,7 @@ export type SituacaoPedido = (typeof SITUACOES_PEDIDO)[number];
 
 export interface PedidoDoTime {
   id: number;
-  tipo: 'carrossel' | 'dossie';
+  tipo: 'carrossel' | 'dossie' | 'ideias';
   situacao: SituacaoPedido;
   etapa: EtapaTime | null;
   /** O que cada etapa já disse (ex.: o gancho escolhido). */

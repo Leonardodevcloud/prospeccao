@@ -390,12 +390,19 @@ export interface Carrossel extends ResumoCarrossel {
   relatorio: RelatorioTime | null;
 }
 
+/** De onde a foto veio (v132): enviada pela empresa ou feita pela IA (cena nova ou o produto num cenário). */
+export type OrigemFoto = 'enviada' | 'gerada' | 'cenario' | 'referencia';
+
 export interface FotoCarrossel {
   id: number;
   nome: string;
   largura: number;
   altura: number;
   criadoEm: string;
+  /** v132 (fotos antigas: 'enviada'). */
+  origem?: OrigemFoto;
+  /** O cenário: a foto do produto de onde saiu. */
+  baseFotoId?: number | null;
 }
 
 /** Slide novo de um modelo, já com um texto de exemplo para a pessoa trocar. */

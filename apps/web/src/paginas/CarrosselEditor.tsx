@@ -29,9 +29,11 @@ import {
   logosDaIdentidade,
   urlFoto,
   useCarrossel,
+  useFotos,
   useIdentidade,
   useSituacaoCarrosseis,
 } from '../carrossel/dados';
+import { CenariosDoProduto } from '../carrossel/Imagens';
 import { PainelPublicacao, usePublicacao } from '../carrossel/Publicacao';
 import { SlideHtml } from '../carrossel/SlideHtml';
 import { AvisosDoRevisor, PainelTime } from '../carrossel/Time';
@@ -181,7 +183,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
     else n.delete('aba');
     setBusca(n, { replace: true });
   };
-  const pub = usePublicacao(c.id);
+  const pub = usePublicacao({ tipo: 'carrossel', id: c.id });
   const pedeAtencao = pub.data?.situacao === 'nao_achado' || pub.data?.situacao === 'sem_instagram';
   const cliente = useQueryClient();
   const situacao = useSituacaoCarrosseis();
@@ -560,7 +562,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
           {aba === 'publicacao' ? (
             <div className="editor-carrossel__campos">
               <PainelPublicacao
-                carrosselId={c.id}
+                peca={{ tipo: 'carrossel', id: c.id }}
                 legenda={r.legenda}
                 salvarAntes={s.salvarAgora}
                 aoMudarSituacao={() => cliente.invalidateQueries({ queryKey: ['carrosseis', 'um', c.id] })}
@@ -582,6 +584,8 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                     avisos={avisosSlide}
                     aoMudar={mudarSlide}
                     aoModelo={trocarModelo}
+                    imagens={!!situacao.data?.ia.imagens}
+                    carrosselId={c.id}
                   />
                   {iaLigada && !s.travado && (
                     <PedirAoTime
@@ -703,10 +707,21 @@ function PainelSlide(props: {
   avisos: string[];
   aoMudar: (p: Partial<SlideCarrossel>) => void;
   aoModelo: (m: ModeloSlide) => void;
+  /** v132: o time pode fazer imagens (cenários para o produto). */
+  imagens: boolean;
+  carrosselId: number;
 }) {
   const { slide } = props;
   const m = MODELO[slide.modelo];
   const [fotos, setFotos] = useState(false);
+  const todas = useFotos(props.imagens).data?.fotos ?? [];
+  // O produto de onde saem os cenários: a própria foto enviada ou a foto de onde o cenário saiu.
+  const produtoDe = (id: number): number | null => {
+    const f = todas.find((x) => x.id === id);
+    if (!f) return null;
+    if ((f.origem ?? 'enviada') === 'enviada') return f.id;
+    return f.origem === 'cenario' ? (f.baseFotoId ?? null) : null;
+  };
   return (
     <div className="painel-slide">
       <div className="campo">
@@ -874,6 +889,14 @@ function PainelSlide(props: {
                 props.aoMudar({ fotoId: id });
                 setFotos(false);
               }}
+            />
+          )}
+          {props.imagens && slide.fotoId && produtoDe(slide.fotoId) && (
+            <CenariosDoProduto
+              fotoId={produtoDe(slide.fotoId)!}
+              carrosselId={props.carrosselId}
+              escolhida={slide.fotoId}
+              aoUsar={(id) => props.aoMudar({ fotoId: id })}
             />
           )}
         </div>

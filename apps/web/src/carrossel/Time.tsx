@@ -25,6 +25,8 @@ import { api } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, usePedidoDoTime } from './dados';
+import type { IdeiaInicial } from './Ideias';
+import { CamposDeImagens, IMAGENS_VAZIAS, type ImagensDoPedido } from './Imagens';
 import { FotoDoTime } from './TimeDeIa';
 
 /**
@@ -37,6 +39,8 @@ import { FotoDoTime } from './TimeDeIa';
 export function NovoComTime(props: {
   situacao: SituacaoCarrosseis;
   estiloDaIdentidade: EstiloCarrossel;
+  /** v134: a ideia escolhida na aba Ideias (já vem preenchido). */
+  inicial?: IdeiaInicial | null;
   aoEmBranco: () => void;
   aoFechar: () => void;
   aoCerebro: () => void;
@@ -44,24 +48,38 @@ export function NovoComTime(props: {
   const divulgar = useDivulgar();
   const fotos = useFotos();
   const cliente = useQueryClient();
-  const [assunto, setAssunto] = useState('');
+  const ini = props.inicial ?? null;
+  const [assunto, setAssunto] = useState(ini?.assunto ?? '');
   const [divulgarId, setDivulgarId] = useState<number | null>(null);
-  const [objetivo, setObjetivo] = useState<ObjetivoCarrossel>('ensinar');
-  const [slides, setSlides] = useState<number | null>(null);
+  const [objetivo, setObjetivo] = useState<ObjetivoCarrossel>(ini?.objetivo ?? 'ensinar');
+  const [slides, setSlides] = useState<number | null>(ini?.slides ?? null);
   const [estilo, setEstilo] = useState<EstiloCarrossel>(props.estiloDaIdentidade);
-  const [chamada, setChamada] = useState<ChamadaFinal>('salvar');
+  const [chamada, setChamada] = useState<ChamadaFinal>(ini?.chamada ?? 'salvar');
   const [palavra, setPalavra] = useState('');
   const [usarFotos, setUsarFotos] = useState(true);
+  const [imagens, setImagens] = useState<ImagensDoPedido>(IMAGENS_VAZIAS);
   const [pedidoId, setPedidoId] = useState<number | null>(null);
   const pedir = useMutation({
     mutationFn: () =>
       api<PedidoDoTime>('/carrosseis/time', {
         metodo: 'POST',
-        corpo: { assunto, divulgarId, objetivo, slides, estilo, chamada, palavra, usarFotos },
+        corpo: {
+          assunto,
+          divulgarId,
+          objetivo,
+          slides,
+          estilo,
+          chamada,
+          palavra,
+          usarFotos,
+          ...imagens,
+          ideiaId: ini?.ideiaId ?? null,
+        },
       }),
     onSuccess: (p) => {
       setPedidoId(p.id);
       void cliente.invalidateQueries({ queryKey: ['carrosseis', 'lista'] });
+      if (ini) void cliente.invalidateQueries({ queryKey: ['carrosseis', 'ideias'] });
     },
   });
   const { ia, franquia } = props.situacao;
@@ -283,6 +301,13 @@ export function NovoComTime(props: {
           </span>
         </span>
       </label>
+
+      <CamposDeImagens
+        ligadas={!!ia.imagens}
+        fotos={fotos.data?.fotos ?? []}
+        valor={imagens}
+        mudar={setImagens}
+      />
 
       <p className="quieto novo-time__sabe">
         <Icon name="sparkles" size={14} /> O time lê o cérebro da marca, a identidade visual, o que divulgar e

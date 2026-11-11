@@ -17,6 +17,7 @@ export interface ConfigImagem {
   modelo: string;
   /** Para os testes (padrão: a API da OpenAI). */
   url?: string;
+  urlEdicao?: string;
 }
 
 /** Tamanho pedido ao modelo (lados múltiplos de 16, como o GPT Image 2 pede). */
@@ -51,22 +52,53 @@ export async function gerarImagem(
   e: { descricao: string; formato: 'cheia' | 'acima' },
 ): Promise<Uint8Array> {
   const t = TAMANHO_IMAGEM[e.formato];
+  return pedirImagem(cfg, { prompt: promptDaImagem(e.descricao, e.formato), ...t });
+}
+
+export const URL_EDICAO_OPENAI = 'https://api.openai.com/v1/images/edits';
+
+/**
+ * O pedido ao modelo de imagem, com o prompt pronto (vídeos e carrosséis). Com `referencia`, é uma
+ * edição: a foto vai junto e o modelo mantém o que o prompt manda manter (o produto igual).
+ */
+export async function pedirImagem(
+  cfg: ConfigImagem,
+  e: { prompt: string; largura: number; altura: number; referencia?: Uint8Array },
+): Promise<Uint8Array> {
+  const size = `${e.largura}x${e.altura}`;
   let resposta: Response;
   try {
-    resposta = await fetch(cfg.url ?? URL_IMAGENS_OPENAI, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.chave}` },
-      body: JSON.stringify({
-        model: cfg.modelo,
-        prompt: promptDaImagem(e.descricao, e.formato),
-        size: `${t.largura}x${t.altura}`,
-        quality: 'medium',
-        output_format: 'jpeg',
-        output_compression: 90,
-        n: 1,
-      }),
-      signal: AbortSignal.timeout(240_000),
-    });
+    if (e.referencia) {
+      const form = new FormData();
+      form.append('model', cfg.modelo);
+      form.append('prompt', e.prompt);
+      form.append('size', size);
+      form.append('quality', 'medium');
+      form.append('output_format', 'jpeg');
+      form.append('input_fidelity', 'high');
+      form.append('n', '1');
+      form.append('image[]', new Blob([Buffer.from(e.referencia)], { type: 'image/jpeg' }), 'produto.jpg');
+      resposta = await fetch(cfg.urlEdicao ?? URL_EDICAO_OPENAI, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${cfg.chave}` },
+        body: form,
+        signal: AbortSignal.timeout(240_000),
+      });
+    } else
+      resposta = await fetch(cfg.url ?? URL_IMAGENS_OPENAI, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.chave}` },
+        body: JSON.stringify({
+          model: cfg.modelo,
+          prompt: e.prompt,
+          size,
+          quality: 'medium',
+          output_format: 'jpeg',
+          output_compression: 90,
+          n: 1,
+        }),
+        signal: AbortSignal.timeout(240_000),
+      });
   } catch (erro) {
     throw new AppError(502, 'falha_externa', `Imagem: sem resposta (${(erro as Error).name})`, {
       repetivel: true,

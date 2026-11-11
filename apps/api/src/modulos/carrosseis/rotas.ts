@@ -37,11 +37,15 @@ import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { rotaComModulo, temModulo } from '../../recursos.js';
+import * as publicar from '../instagram/publicar.js';
 import * as marca from '../marca/repositorio.js';
 import { organizacaoDaConta } from '../plano/repositorio.js';
+import * as aprender from './aprender.js';
 import * as cerebro from './cerebro.js';
 import * as conversa from './conversa.js';
 import { desenhar, materialDaConta } from './desenho.js';
+import * as imagens from './imagens.js';
+import { imagensLigadas } from './imagens.js';
 import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 import * as time from './time.js';
@@ -95,6 +99,8 @@ export function rotasCarrosseis(deps: DepsApi): Router {
       ia: {
         ligada: !!ia(),
         cerebroConferido: modulo ? !!(await cerebro.cerebro(pool)).conferidoEm : false,
+        /** v132: o time pode fazer imagens (a chave da OpenAI e o armazenamento ligados). */
+        imagens: imagensLigadas(ia()),
       },
     });
   });
@@ -153,6 +159,37 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   });
   r.post('/time/:id/cancelar', async (req, res) => {
     await time.cancelar(pool, idDaRota(req));
+    res.json({ ok: true });
+  });
+
+  /* ── v134: o que o time aprendeu, as ideias e as contas de referência ── */
+
+  r.get('/aprendizados', async (_req, res) => {
+    res.json(await aprender.oQueAprendeu(pool));
+  });
+  r.get('/ideias', async (_req, res) => {
+    res.json({
+      ideias: await aprender.ideias(pool),
+      buscando: await aprender.buscaEmAndamento(pool),
+      iaLigada: !!ia(),
+    });
+  });
+  r.post('/ideias/buscar', async (_req, res) => {
+    res.status(202).json(await aprender.pedirBuscaDeIdeias(pool, ia()));
+  });
+  r.post('/ideias/:id/descartar', async (req, res) => {
+    await aprender.descartarIdeia(pool, idDaRota(req));
+    res.json({ ok: true });
+  });
+  r.get('/referencias-contas', async (_req, res) => {
+    res.json({ contas: await aprender.referencias(pool), max: aprender.MAX_REFERENCIAS });
+  });
+  r.post('/referencias-contas', async (req, res) => {
+    const { usuario } = corpo(req, z.object({ usuario: z.string().min(1).max(120) }));
+    res.status(201).json({ contas: await aprender.adicionarReferencia(pool, usuario) });
+  });
+  r.delete('/referencias-contas/:id', async (req, res) => {
+    await aprender.apagarReferencia(pool, idDaRota(req));
     res.json({ ok: true });
   });
 
@@ -267,6 +304,32 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     res.status(201).json(f);
   });
 
+  /* ── v132: imagens feitas pela IA ── */
+
+  /** A referência de estilo (um post de que a empresa gostou): guarda e lê o estilo. */
+  r.post('/referencias', express.raw({ type: TIPOS_IMAGEM, limit: LIMITE_FOTO }), async (req, res) => {
+    const { nome } = consulta(req, z.object({ nome: z.string().trim().max(80).default('Referência') }));
+    if (!Buffer.isBuffer(req.body) || req.body.byteLength < 500) throw AppError.invalido('Envie a imagem.');
+    if (!ia()) throw AppError.invalido('O time de IA não está ligado: a referência não tem quem leia.');
+    res.status(201).json(await imagens.guardarReferencia(pool, ia(), new Uint8Array(req.body), nome));
+  });
+
+  /** "Cenários para o produto": três cenários conferidos a partir de uma foto enviada. */
+  r.post('/fotos/:id/cenarios', async (req, res) => {
+    const d = corpo(
+      req,
+      z.object({
+        carrosselId: z.number().int().positive().nullable().default(null),
+        referenciaId: z.number().int().positive().nullable().default(null),
+      }),
+    );
+    res.json(await imagens.cenarios(pool, ia(), idDaRota(req), d));
+  });
+
+  r.get('/fotos/:id/cenarios', async (req, res) => {
+    res.json({ cenarios: await repo.cenariosDaFoto(pool, idDaRota(req)) });
+  });
+
   r.get('/fotos/:id/imagem', async (req, res) => {
     const f = await repo.foto(pool, idDaRota(req));
     const a = arm();
@@ -343,6 +406,12 @@ export function rotasCarrosseis(deps: DepsApi): Router {
           : roteiroInicial().map((s, i) => (i === 0 ? { ...s, titulo: d.titulo } : s)),
     });
     res.status(201).json(await repo.carrossel(pool, id));
+  });
+
+  /** O calendário do mês (AAAA-MM): os carrosséis e vídeos agendados e publicados. */
+  r.get('/calendario', async (req, res) => {
+    const { mes } = consulta(req, z.object({ mes: z.string().regex(/^\d{4}-\d{2}$/) }));
+    res.json({ itens: await publicar.calendario(pool, mes), situacao: await publicar.situacao(pool) });
   });
 
   r.get('/:id', async (req, res) => {
@@ -426,14 +495,15 @@ export function rotasCarrosseis(deps: DepsApi): Router {
 
   /* ── Publicação: a regra do Comente e receba e o post ── */
 
-  const aba = (req: Request) => publicacao.publicacao(pool, idDaRota(req), !!ia());
+  const peca = (req: Request): publicacao.Peca => ({ tipo: 'carrossel', id: idDaRota(req) });
+  const aba = (req: Request) => publicacao.publicacao(pool, peca(req), !!ia());
 
   r.get('/:id/publicacao', async (req, res) => {
     res.json(await aba(req));
   });
 
   r.put('/:id/publicacao', async (req, res) => {
-    await publicacao.salvar(pool, idDaRota(req), corpo(req, publicacaoEntrada));
+    await publicacao.salvar(pool, peca(req), corpo(req, publicacaoEntrada));
     res.json(await aba(req));
   });
 
@@ -442,7 +512,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     express.raw({ type: [...TIPOS_ARQUIVO_DIRECT], limit: LIMITE_ARQUIVO_DIRECT }),
     async (req, res) => {
       const nome = decodeURIComponent(String(req.get('x-nome-arquivo') ?? '')).slice(0, 200);
-      await publicacao.guardarArquivo(pool, exigirArmazenamento(), idDaRota(req), {
+      await publicacao.guardarArquivo(pool, exigirArmazenamento(), peca(req), {
         corpo: Buffer.isBuffer(req.body) ? new Uint8Array(req.body) : new Uint8Array(),
         tipo: String(req.get('content-type') ?? '')
           .split(';')[0]!
@@ -454,7 +524,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   );
 
   r.get('/:id/publicacao/arquivo', async (req, res) => {
-    res.redirect(302, await publicacao.linkDoArquivo(pool, exigirArmazenamento(), idDaRota(req)));
+    res.redirect(302, await publicacao.linkDoArquivo(pool, exigirArmazenamento(), peca(req)));
   });
 
   /** A redatora (re)escreve o direct para a entrega escolhida (não salva: a pessoa confere antes). */
@@ -469,7 +539,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
       }),
     );
     const claude = ia()?.cliente(pool, conta()) ?? null;
-    const r2 = await publicacao.directDoCarrossel(pool, claude, { carrosselId: idDaRota(req), ...d });
+    const r2 = await publicacao.directDaPeca(pool, claude, { peca: peca(req), ...d });
     res.json({ mensagem: r2.mensagem, botao: r2.botao, daRedatora: r2.daRedatora });
   });
 
@@ -479,13 +549,52 @@ export function rotasCarrosseis(deps: DepsApi): Router {
 
   r.post('/:id/publicacao/post', async (req, res) => {
     const { midiaId } = corpo(req, escolherPostEntrada);
-    await publicacao.escolherPost(deps, idDaRota(req), midiaId);
+    await publicacao.escolherPost(deps, peca(req), midiaId);
     res.json(await aba(req));
   });
 
   r.delete('/:id/publicacao/post', async (req, res) => {
-    await publicacao.naoEOPost(pool, idDaRota(req));
+    await publicacao.naoEOPost(pool, peca(req));
     res.json(await aba(req));
+  });
+
+  /* ── v133: publicar e agendar pelo CRM ── */
+
+  const publicarEntrada = z.object({
+    /** null: agora. */
+    para: z.string().datetime({ offset: true }).nullable().default(null),
+    legenda: z.string().max(2200).nullable().default(null),
+    comente: z.boolean().default(true),
+  });
+
+  r.get('/:id/publicar', async (req, res) => {
+    const peca = { tipo: 'carrossel', id: idDaRota(req) } as const;
+    res.json({
+      situacao: await publicar.situacao(pool),
+      agendamento: await publicar.agendamentoDa(pool, peca),
+    });
+  });
+
+  r.post('/:id/publicar', async (req, res) => {
+    const d = corpo(req, publicarEntrada);
+    const peca = { tipo: 'carrossel', id: idDaRota(req) } as const;
+    const a = await publicar.agendar(
+      pool,
+      peca,
+      { para: d.para ? new Date(d.para) : null, legenda: d.legenda, comente: d.comente },
+      req.usuario?.id ?? null,
+    );
+    // "Publicar agora": a rotina pega no próximo minuto; a tela acompanha.
+    res.status(201).json({ situacao: await publicar.situacao(pool), agendamento: a });
+  });
+
+  r.delete('/:id/publicar', async (req, res) => {
+    const peca = { tipo: 'carrossel', id: idDaRota(req) } as const;
+    await publicar.cancelar(pool, peca);
+    res.json({
+      situacao: await publicar.situacao(pool),
+      agendamento: await publicar.agendamentoDa(pool, peca),
+    });
   });
 
   /** Um slide do carrossel salvo (miniatura na lista e no editor). */

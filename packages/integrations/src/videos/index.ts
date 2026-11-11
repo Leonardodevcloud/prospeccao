@@ -6,4 +6,5 @@ export * from './enfeites.js';
 export * from './fala.js';
 export * from './imagens.js';
 export * from './montagem.js';
+export * from './post.js';
 export * from './som.js';

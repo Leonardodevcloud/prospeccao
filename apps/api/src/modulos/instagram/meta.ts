@@ -100,7 +100,42 @@ export interface ClienteMeta {
   ): Promise<number>;
   /** Comentários de uma publicação (os mais recentes primeiro, até o limite). */
   comentarios(midiaId: string, token: string, limite?: number): Promise<ComentarioMeta[]>;
+  /* ── v133: publicar pelo CRM (precisa da permissão instagram_content_publish) ── */
+  /** O CRM pode publicar (META_PUBLICAR=sim, depois da aprovação da Meta). */
+  publicarLigado?: boolean;
+  /** As permissões que a pessoa deu ao app (pelo token da conexão). */
+  escopos?(token: string): Promise<string[]>;
+  /** Cria o "contêiner" da publicação (a Meta baixa a imagem ou o vídeo do link). */
+  criarMidia?(igId: string, token: string, m: MidiaParaPublicar): Promise<string>;
+  /** FINISHED quando a Meta terminou de processar (o vídeo leva um tempo). */
+  situacaoMidia?(containerId: string, token: string): Promise<string>;
+  /** Publica o contêiner pronto e devolve o id da publicação. */
+  publicarMidia?(igId: string, containerId: string, token: string): Promise<string>;
+  /** Quantas publicações pela API nas últimas 24 h e o limite da conta. */
+  limitePublicacao?(igId: string, token: string): Promise<{ usadas: number; limite: number } | null>;
+  /** v134: números públicos de outro perfil profissional (Business Discovery), para referência. */
+  descobrir?(igId: string, token: string, usuario: string): Promise<PerfilDescoberto | null>;
 }
+
+export interface PerfilDescoberto {
+  usuario: string;
+  nome: string | null;
+  seguidores: number | null;
+  posts: {
+    legenda: string;
+    tipo: string | null;
+    curtidas: number | null;
+    comentarios: number | null;
+    em: string | null;
+  }[];
+}
+
+/** O que vai para a Meta ao publicar (v133). */
+export type MidiaParaPublicar =
+  | { tipo: 'item'; imagem: string }
+  | { tipo: 'imagem'; imagem: string; legenda: string }
+  | { tipo: 'carrossel'; filhos: string[]; legenda: string }
+  | { tipo: 'reels'; video: string; legenda: string; capa?: string | null };
 
 export interface EventoCrm {
   nome: string;
@@ -181,6 +216,8 @@ export const CAMPOS_DA_PAGINA = ['leadgen', 'messages'];
 interface ConfigMeta {
   appId: string;
   appSecret: string;
+  /** v133: pedir e usar a permissão de publicar (só depois da aprovação da Meta). */
+  publicar?: boolean;
   tokenVerificacao?: string | null;
   configId?: string | null;
   versao?: string;
@@ -273,6 +310,104 @@ export function clienteMeta(cfg: ConfigMeta): ClienteMeta {
 
   return {
     tokenVerificacao: cfg.tokenVerificacao ?? null,
+    publicarLigado: !!cfg.publicar,
+
+    async escopos(token) {
+      const r = await chamar<{ data?: { scopes?: string[]; is_valid?: boolean } }>('/debug_token', {
+        params: { input_token: token, access_token: `${cfg.appId}|${cfg.appSecret}` },
+      });
+      return r.data?.is_valid === false ? [] : (r.data?.scopes ?? []);
+    },
+
+    async criarMidia(igId, token, m) {
+      const params: Record<string, string> =
+        m.tipo === 'item'
+          ? { image_url: m.imagem, is_carousel_item: 'true' }
+          : m.tipo === 'imagem'
+            ? { image_url: m.imagem, caption: m.legenda }
+            : m.tipo === 'carrossel'
+              ? { media_type: 'CAROUSEL', children: m.filhos.join(','), caption: m.legenda }
+              : {
+                  media_type: 'REELS',
+                  video_url: m.video,
+                  caption: m.legenda,
+                  share_to_feed: 'true',
+                  ...(m.capa ? { cover_url: m.capa } : {}),
+                };
+      const r = await chamar<{ id: string }>(`/${igId}/media`, { token, metodo: 'POST', params });
+      return r.id;
+    },
+
+    async situacaoMidia(containerId, token) {
+      const r = await chamar<{ status_code?: string }>(`/${containerId}`, {
+        token,
+        params: { fields: 'status_code' },
+      });
+      return r.status_code ?? 'IN_PROGRESS';
+    },
+
+    async publicarMidia(igId, containerId, token) {
+      const r = await chamar<{ id: string }>(`/${igId}/media_publish`, {
+        token,
+        metodo: 'POST',
+        params: { creation_id: containerId },
+      });
+      return r.id;
+    },
+
+    async descobrir(igId, token, usuario) {
+      try {
+        const r = await chamar<{
+          business_discovery?: {
+            username?: string;
+            name?: string;
+            followers_count?: number;
+            media?: {
+              data?: {
+                caption?: string;
+                like_count?: number;
+                comments_count?: number;
+                media_type?: string;
+                media_product_type?: string;
+                timestamp?: string;
+              }[];
+            };
+          };
+        }>(`/${igId}`, {
+          token,
+          params: {
+            fields: `business_discovery.username(${usuario}){username,name,followers_count,media.limit(18){caption,like_count,comments_count,media_type,media_product_type,timestamp}}`,
+          },
+        });
+        const b = r.business_discovery;
+        if (!b) return null;
+        return {
+          usuario: b.username ?? usuario,
+          nome: b.name ?? null,
+          seguidores: b.followers_count ?? null,
+          posts: (b.media?.data ?? []).map((m) => ({
+            legenda: (m.caption ?? '').slice(0, 400),
+            tipo: m.media_product_type === 'REELS' ? 'REELS' : (m.media_type ?? null),
+            curtidas: m.like_count ?? null,
+            comentarios: m.comments_count ?? null,
+            em: m.timestamp ?? null,
+          })),
+        };
+      } catch (erro) {
+        // Perfil pessoal, inexistente ou privado: a Meta responde 400.
+        if (erro instanceof ErroMeta && erro.status === 400 && !erro.tokenInvalido) return null;
+        throw erro;
+      }
+    },
+
+    async limitePublicacao(igId, token) {
+      const r = await chamar<{ data?: { quota_usage?: number; config?: { quota_total?: number } }[] }>(
+        `/${igId}/content_publishing_limit`,
+        { token, params: { fields: 'quota_usage,config' } },
+      );
+      const d = r.data?.[0];
+      return d ? { usadas: d.quota_usage ?? 0, limite: d.config?.quota_total ?? 0 } : null;
+    },
 
     urlDeLogin(redirect, estado) {
       const u = new URL(`https://www.facebook.com/${versao}/dialog/oauth`);
@@ -281,7 +416,11 @@ export function clienteMeta(cfg: ConfigMeta): ClienteMeta {
       u.searchParams.set('state', estado);
       u.searchParams.set('response_type', 'code');
       if (cfg.configId) u.searchParams.set('config_id', cfg.configId);
-      else u.searchParams.set('scope', PERMISSOES_META.join(','));
+      else
+        u.searchParams.set(
+          'scope',
+          (cfg.publicar ? [...PERMISSOES_META, 'instagram_content_publish'] : PERMISSOES_META).join(','),
+        );
       return u.toString();
     },
 
@@ -583,6 +722,7 @@ export function metaDoAmbiente(amb: {
   metaTokenVerificacao?: string | null;
   metaConfigId?: string | null;
   metaVersao?: string | null;
+  metaPublicar?: boolean | null;
 }): ClienteMeta | null {
   if (!amb.metaAppId || !amb.metaAppSecret) return null;
   return clienteMeta({
@@ -591,5 +731,6 @@ export function metaDoAmbiente(amb: {
     tokenVerificacao: amb.metaTokenVerificacao ?? null,
     configId: amb.metaConfigId ?? null,
     versao: amb.metaVersao ?? undefined,
+    publicar: !!amb.metaPublicar,
   });
 }

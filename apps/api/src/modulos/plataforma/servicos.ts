@@ -173,7 +173,7 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
   const { rows: cl } = await pool.query<{ carrosseis: number; usd: number; contas: number }>(
     `SELECT (SELECT count(*)::int FROM comercial.carrossel_pedidos
               WHERE tipo = 'carrossel' AND situacao = 'pronto' AND criado_em > now() - interval '30 days') AS carrosseis,
-            (SELECT coalesce(sum(custo_usd), 0)::float8 FROM cadastro.consumo_carrosseis WHERE dia > current_date - 30) AS usd,
+            (SELECT coalesce(sum(custo_usd + imagens_usd), 0)::float8 FROM cadastro.consumo_carrosseis WHERE dia > current_date - 30) AS usd,
             (SELECT count(DISTINCT conta_id)::int FROM cadastro.consumo_carrosseis WHERE dia > current_date - 30) AS contas`,
   );
   const ci = deps.carrosseisIa;

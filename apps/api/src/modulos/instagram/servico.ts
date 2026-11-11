@@ -587,7 +587,7 @@ function paraData(t: unknown): Date {
 
 interface LinhaRegra {
   id: number;
-  alvo: 'publicacao' | 'proxima' | 'todas' | 'carrossel';
+  alvo: 'publicacao' | 'proxima' | 'todas' | 'carrossel' | 'video';
   midia_id: string | null;
   palavras: string[];
   respostas: string[];
@@ -597,13 +597,23 @@ interface LinhaRegra {
   entrega: 'link' | 'arquivo' | 'promocao' | 'conversa' | null;
   criado_em: Date;
   carrossel_id: number | null;
+  video_id: number | null;
+  /** O texto da peça (legenda do carrossel ou texto do Reels): reconhece o post. */
   carrossel_legenda: string | null;
   carrossel_em: Date | null;
   midias_recusadas: string[];
 }
 
 const COLUNAS_LINHA_REGRA = `r.id::int, r.alvo, r.midia_id, r.palavras, r.respostas, r.mensagem, r.botao_texto, r.botao_link,
-  r.entrega, r.criado_em, r.carrossel_id, c.legenda AS carrossel_legenda, c.criado_em AS carrossel_em, r.midias_recusadas`;
+  r.entrega, r.criado_em, r.carrossel_id, r.video_id, coalesce(c.legenda, v.texto_post) AS carrossel_legenda,
+  coalesce(c.criado_em, v.criado_em) AS carrossel_em, r.midias_recusadas`;
+
+/** As peças de onde a regra pode ter nascido (o carrossel ou o vídeo). */
+const JUNTA_PECAS = `LEFT JOIN comercial.carrosseis c ON c.id = r.carrossel_id
+  LEFT JOIN comercial.videos v ON v.id = r.video_id`;
+
+/** A regra espera o post da peça (carrossel ou vídeo). */
+const esperaPeca = (alvo: LinhaRegra['alvo']) => alvo === 'carrossel' || alvo === 'video';
 
 /** O comentário que a regra vai atender (do aviso da Meta ou guardado antes do post ser reconhecido). */
 interface Comentario {
@@ -639,15 +649,17 @@ async function receberComentario(deps: DepsLead, igId: string, v: Record<string,
     });
     const { rows: regras } = await deps.pool.query<LinhaRegra>(
       `SELECT ${COLUNAS_LINHA_REGRA}
-         FROM comercial.instagram_regras r LEFT JOIN comercial.carrosseis c ON c.id = r.carrossel_id
+         FROM comercial.instagram_regras r ${JUNTA_PECAS}
         WHERE r.conta_id = ${contaSql()} AND r.ligada
-          AND ((r.alvo = 'publicacao' AND r.midia_id = $1) OR (r.alvo IN ('proxima', 'carrossel') AND r.midia_id IS NULL)
+          AND ((r.alvo = 'publicacao' AND r.midia_id = $1)
+               OR (r.alvo IN ('proxima', 'carrossel', 'video') AND r.midia_id IS NULL)
                OR r.alvo = 'todas')
-        ORDER BY CASE r.alvo WHEN 'publicacao' THEN 0 WHEN 'carrossel' THEN 1 WHEN 'proxima' THEN 2 ELSE 3 END, r.id`,
+        ORDER BY CASE r.alvo WHEN 'publicacao' THEN 0 WHEN 'carrossel' THEN 1 WHEN 'video' THEN 1
+                 WHEN 'proxima' THEN 2 ELSE 3 END, r.id`,
       [midiaId],
     );
     if (!regras.length) return;
-    const esperando = regras.filter((r) => r.alvo === 'proxima' || r.alvo === 'carrossel');
+    const esperando = regras.filter((r) => r.alvo === 'proxima' || esperaPeca(r.alvo));
     if (esperando.length) {
       const pub = await m.publicacao(midiaId, c.token).catch(() => null);
       for (const r of esperando) {
@@ -659,8 +671,8 @@ async function receberComentario(deps: DepsLead, igId: string, v: Record<string,
           r.alvo = 'publicacao';
           r.midia_id = midiaId;
         }
-        // A regra de um carrossel: o post com a legenda do carrossel (postado depois dele).
-        if (r.alvo === 'carrossel' && postDoCarrossel(r, pub)) {
+        // A regra de um carrossel ou de um vídeo: o post com o texto da peça (postado depois dela).
+        if (esperaPeca(r.alvo) && postDoCarrossel(r, pub)) {
           await ligarRegraNoPost(deps, c, r.id, pub, { avisar: true });
           r.alvo = 'publicacao';
           r.midia_id = midiaId;
@@ -801,26 +813,34 @@ export async function ligarRegraNoPost(
   await guardarPublicacao(deps.pool, regraId, pub, 'publicacao');
   const { rows } = await deps.pool.query<{
     carrossel_id: number | null;
+    video_id: number | null;
     titulo: string | null;
     criado_por: number | null;
     palavra: string;
   }>(
-    `WITH r AS (SELECT carrossel_id, palavras[1] AS palavra FROM comercial.instagram_regras
+    `WITH r AS (SELECT carrossel_id, video_id, palavras[1] AS palavra FROM comercial.instagram_regras
                  WHERE id = $1 AND conta_id = ${contaSql()}),
           c AS (UPDATE comercial.carrosseis SET situacao = 'publicado', midia_id = $2, midia_link = $3,
                        publicado_em = coalesce($4::timestamptz, now())
                  WHERE id = (SELECT carrossel_id FROM r) AND conta_id = ${contaSql()}
+                RETURNING id, titulo, criado_por),
+          v AS (UPDATE comercial.videos SET midia_id = $2, midia_link = $3,
+                       publicado_em = coalesce($4::timestamptz, now())
+                 WHERE id = (SELECT video_id FROM r) AND conta_id = ${contaSql()}
                 RETURNING id, titulo, criado_por)
-     SELECT c.id::int AS carrossel_id, c.titulo, c.criado_por, r.palavra FROM r LEFT JOIN c ON true`,
+     SELECT c.id::int AS carrossel_id, v.id::int AS video_id, coalesce(c.titulo, v.titulo) AS titulo,
+            coalesce(c.criado_por, v.criado_por) AS criado_por, r.palavra
+       FROM r LEFT JOIN c ON true LEFT JOIN v ON true`,
     [regraId, pub.id, pub.link, pub.em],
   );
   const l = rows[0];
-  if (opcoes.avisar && l?.carrossel_id) {
+  if (opcoes.avisar && (l?.carrossel_id || l?.video_id)) {
+    const video = !!l.video_id;
     const aviso = {
       tipo: 'sistema' as const,
-      titulo: 'O carrossel está no Instagram',
+      titulo: video ? 'O vídeo está no Instagram' : 'O carrossel está no Instagram',
       texto: `“${l.titulo}” foi reconhecido. A regra do ${l.palavra} está ligada.`,
-      link: `/carrosseis/${l.carrossel_id}?aba=publicacao`,
+      link: video ? `/videos/${l.video_id}?aba=publicacao` : `/carrosseis/${l.carrossel_id}?aba=publicacao`,
     };
     if (l.criado_por) await notificar(deps.pool, l.criado_por, aviso).catch(() => undefined);
     else for (const u of await admins(deps.pool)) await notificar(deps.pool, u, aviso).catch(() => undefined);
@@ -838,8 +858,7 @@ async function admins(db: Executor): Promise<number[]> {
 /** Quem comentou a palavra no post antes de a regra ligar (até o prazo da Meta) recebe o direct. */
 async function atenderComentariosGuardados(deps: DepsLead, c: Conexao, regraId: number, midiaId: string) {
   const { rows: rs } = await deps.pool.query<LinhaRegra>(
-    `SELECT ${COLUNAS_LINHA_REGRA} FROM comercial.instagram_regras r
-       LEFT JOIN comercial.carrosseis c ON c.id = r.carrossel_id
+    `SELECT ${COLUNAS_LINHA_REGRA} FROM comercial.instagram_regras r ${JUNTA_PECAS}
       WHERE r.id = $1 AND r.conta_id = ${contaSql()} AND r.ligada`,
     [regraId],
   );
@@ -883,8 +902,9 @@ async function atenderComentariosGuardados(deps: DepsLead, c: Conexao, regraId: 
  */
 export async function reconhecerPostsDosCarrosseis(deps: DepsLead): Promise<number> {
   const { rows: contas } = await deps.pool.query<{ conta_id: number }>(
-    `SELECT DISTINCT conta_id FROM comercial.instagram_regras WHERE alvo = 'carrossel' AND midia_id IS NULL AND ligada
-        AND carrossel_id IS NOT NULL`,
+    `SELECT DISTINCT conta_id FROM comercial.instagram_regras
+      WHERE alvo IN ('carrossel', 'video') AND midia_id IS NULL AND ligada
+        AND (carrossel_id IS NOT NULL OR video_id IS NOT NULL)`,
   );
   let ligadas = 0;
   for (const { conta_id } of contas)
@@ -901,9 +921,13 @@ export async function reconhecerPostsDosCarrosseis(deps: DepsLead): Promise<numb
           aviso: Date | null;
         }
       >(
-        `SELECT ${COLUNAS_LINHA_REGRA}, c.situacao, c.pronto_em, c.titulo, c.criado_por, r.esperando_aviso_em AS aviso
-           FROM comercial.instagram_regras r JOIN comercial.carrosseis c ON c.id = r.carrossel_id
-          WHERE r.conta_id = ${contaSql()} AND r.alvo = 'carrossel' AND r.midia_id IS NULL AND r.ligada`,
+        `SELECT ${COLUNAS_LINHA_REGRA},
+                coalesce(c.situacao, CASE WHEN v.situacao IN ('revisar', 'pronto') THEN 'pronto' ELSE v.situacao END) AS situacao,
+                coalesce(c.pronto_em, v.pronto_em) AS pronto_em, coalesce(c.titulo, v.titulo) AS titulo,
+                coalesce(c.criado_por, v.criado_por) AS criado_por, r.esperando_aviso_em AS aviso
+           FROM comercial.instagram_regras r ${JUNTA_PECAS}
+          WHERE r.conta_id = ${contaSql()} AND r.alvo IN ('carrossel', 'video') AND r.midia_id IS NULL AND r.ligada
+            AND (c.id IS NOT NULL OR v.id IS NOT NULL)`,
       );
       if (c && m && regras.some((r) => r.carrossel_legenda)) {
         const pubs = await m.publicacoes(c.igId, c.token, 12).catch(async (e) => {
@@ -920,18 +944,21 @@ export async function reconhecerPostsDosCarrosseis(deps: DepsLead): Promise<numb
       }
       // Pronto há 3 dias e o post não apareceu: avisa uma vez.
       for (const r of regras) {
-        if (r.alvo !== 'carrossel' || r.aviso || r.situacao !== 'pronto') continue;
+        if (!esperaPeca(r.alvo) || r.aviso || r.situacao !== 'pronto') continue;
         const desde = Math.max(r.criado_em.getTime(), r.pronto_em?.getTime() ?? 0);
         if (Date.now() - desde < 3 * 86_400_000) continue;
         await deps.pool.query(
           'UPDATE comercial.instagram_regras SET esperando_aviso_em = now() WHERE id = $1',
           [r.id],
         );
+        const video = r.alvo === 'video';
         const aviso = {
           tipo: 'sistema' as const,
-          titulo: 'Ainda não vimos o post do carrossel',
-          texto: `“${r.titulo}” está pronto há 3 dias. Se já postou com outra legenda, escolha o post.`,
-          link: `/carrosseis/${r.carrossel_id}?aba=publicacao`,
+          titulo: video ? 'Ainda não vimos o Reels do vídeo' : 'Ainda não vimos o post do carrossel',
+          texto: `“${r.titulo}” está pronto há 3 dias. Se já postou com outro texto, escolha o post.`,
+          link: video
+            ? `/videos/${r.video_id}?aba=publicacao`
+            : `/carrosseis/${r.carrossel_id}?aba=publicacao`,
         };
         if (r.criado_por) await notificar(deps.pool, r.criado_por, aviso).catch(() => undefined);
         else

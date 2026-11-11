@@ -3,6 +3,13 @@ import { prepararImagem } from '@prospeccao/integrations/slides';
 import { AppError } from '@prospeccao/shared';
 import { MAX_FOTOS_CONTA } from '@prospeccao/shared/carrosseis';
 import {
+  ENTREGAS,
+  escolherPostEntrada,
+  LIMITE_ARQUIVO_DIRECT,
+  publicacaoEntrada,
+  TIPOS_ARQUIVO_DIRECT,
+} from '@prospeccao/shared/carrosseis-publicacao';
+import {
   LIMITE_BYTES_VIDEO,
   LIMITE_SEGUNDOS_VIDEO,
   MAX_FOTO_BYTES,
@@ -10,16 +17,20 @@ import {
   revisaoEntrada,
   TAMANHO_PARTE_ENVIO,
   TIPOS_FOTO,
+  textoPostEntrada,
   vocabularioEntrada,
 } from '@prospeccao/shared/videos';
-import express, { Router } from 'express';
+import express, { type Request, Router } from 'express';
 import { z } from 'zod';
 import { conta } from '../../contexto.js';
 import type { DepsApi } from '../../dependencias.js';
 import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { contratoDaConta, rotaComModulo, temModulo } from '../../recursos.js';
+import * as pub from '../carrosseis/publicacao.js';
 import * as fotos from '../carrosseis/repositorio.js';
+import * as publicar from '../instagram/publicar.js';
+import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -131,6 +142,129 @@ export function rotasVideos(deps: DepsApi): Router {
     res.json({ videos: await repo.listar(pool), franquia: await franquia() });
   });
 
+  /* ── v131: o vídeo no Instagram (a mesma regra e o mesmo reconhecimento dos carrosséis) ── */
+
+  const ia = () => deps.carrosseisIa ?? null;
+  const pecaDa = (req: Request) => publicacao.peca(idDaRota(req));
+  const aba = (req: Request) => pub.publicacao(pool, pecaDa(req), !!ia());
+
+  r.get('/publicacao/posts', async (_req, res) => {
+    res.json({ posts: await pub.ultimasPublicacoes(pool) });
+  });
+
+  r.get('/:id/publicacao', async (req, res) => {
+    res.json(await aba(req));
+  });
+
+  r.put('/:id/publicacao', async (req, res) => {
+    await pub.salvar(pool, pecaDa(req), corpo(req, publicacaoEntrada));
+    res.json(await aba(req));
+  });
+
+  r.post(
+    '/:id/publicacao/arquivo',
+    express.raw({ type: [...TIPOS_ARQUIVO_DIRECT], limit: LIMITE_ARQUIVO_DIRECT }),
+    async (req, res) => {
+      const nome = decodeURIComponent(String(req.get('x-nome-arquivo') ?? '')).slice(0, 200);
+      await pub.guardarArquivo(pool, exigirArmazenamento(), pecaDa(req), {
+        corpo: Buffer.isBuffer(req.body) ? new Uint8Array(req.body) : new Uint8Array(),
+        tipo: String(req.get('content-type') ?? '')
+          .split(';')[0]!
+          .trim(),
+        nome,
+      });
+      res.json(await aba(req));
+    },
+  );
+
+  r.get('/:id/publicacao/arquivo', async (req, res) => {
+    res.redirect(302, await pub.linkDoArquivo(pool, exigirArmazenamento(), pecaDa(req)));
+  });
+
+  /** A redatora (re)escreve o direct para a entrega escolhida (não salva: a pessoa confere antes). */
+  r.post('/:id/publicacao/direct', async (req, res) => {
+    const d = corpo(
+      req,
+      z.object({
+        entrega: z.enum(ENTREGAS),
+        palavra: z.string().trim().min(2).max(40),
+        divulgarId: z.number().int().positive().nullable().default(null),
+        material: z.string().trim().max(300).default(''),
+      }),
+    );
+    const claude = ia()?.cliente(pool, conta()) ?? null;
+    const x = await pub.directDaPeca(pool, claude, { peca: pecaDa(req), ...d });
+    res.json({ mensagem: x.mensagem, botao: x.botao, daRedatora: x.daRedatora });
+  });
+
+  r.post('/:id/publicacao/post', async (req, res) => {
+    const { midiaId } = corpo(req, escolherPostEntrada);
+    await pub.escolherPost(deps, pecaDa(req), midiaId);
+    res.json(await aba(req));
+  });
+
+  r.delete('/:id/publicacao/post', async (req, res) => {
+    await pub.naoEOPost(pool, pecaDa(req));
+    res.json(await aba(req));
+  });
+
+  /* ── v133: publicar e agendar pelo CRM ── */
+
+  const publicarEntrada = z.object({
+    /** null: agora. */
+    para: z.string().datetime({ offset: true }).nullable().default(null),
+    legenda: z.string().max(2200).nullable().default(null),
+    comente: z.boolean().default(true),
+  });
+
+  r.get('/:id/publicar', async (req, res) => {
+    const peca = { tipo: 'video', id: idDaRota(req) } as const;
+    res.json({
+      situacao: await publicar.situacao(pool),
+      agendamento: await publicar.agendamentoDa(pool, peca),
+    });
+  });
+
+  r.post('/:id/publicar', async (req, res) => {
+    const d = corpo(req, publicarEntrada);
+    const peca = { tipo: 'video', id: idDaRota(req) } as const;
+    const a = await publicar.agendar(
+      pool,
+      peca,
+      { para: d.para ? new Date(d.para) : null, legenda: d.legenda, comente: d.comente },
+      req.usuario?.id ?? null,
+    );
+    // "Publicar agora": a rotina pega no próximo minuto; a tela acompanha.
+    res.status(201).json({ situacao: await publicar.situacao(pool), agendamento: a });
+  });
+
+  r.delete('/:id/publicar', async (req, res) => {
+    const peca = { tipo: 'video', id: idDaRota(req) } as const;
+    await publicar.cancelar(pool, peca);
+    res.json({
+      situacao: await publicar.situacao(pool),
+      agendamento: await publicar.agendamentoDa(pool, peca),
+    });
+  });
+
+  /** O texto do post do Reels que a pessoa editou. */
+  r.put('/:id/publicacao/texto', async (req, res) => {
+    const d = corpo(req, textoPostEntrada);
+    await repo.salvarTextoPost(pool, idDaRota(req), {
+      texto: d.texto,
+      hashtags: d.hashtags,
+      daRedatora: false,
+    });
+    res.json(await repo.buscar(pool, idDaRota(req)));
+  });
+
+  /** A redatora escreve (ou reescreve) o texto do post; sem ela, entra o texto padrão. */
+  r.post('/:id/publicacao/texto', async (req, res) => {
+    const claude = ia()?.cliente(pool, conta()) ?? null;
+    const x = await publicacao.escreverTexto(pool, claude, idDaRota(req));
+    res.json({ ...(await repo.buscar(pool, idDaRota(req))), daRedatora: x.daRedatora });
+  });
+
   /* ── Envio em partes ── */
 
   r.post('/', async (req, res) => {
@@ -219,6 +353,7 @@ export function rotasVideos(deps: DepsApi): Router {
                 ? null
                 : f.original;
     if (!chave) throw AppError.naoEncontrado('Arquivo');
+    if (tipo === 'final' && baixar === 'sim') await repo.marcarBaixado(pool, id);
     const nome = `${f.titulo.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'video'}.mp4`;
     const url = await a.urlAssinada(chave, {
       segundos: 3600,
@@ -286,7 +421,7 @@ export function rotasVideos(deps: DepsApi): Router {
     const a = arm();
     if (a) {
       if (l.envio_id) await a.cancelarEmPartes(l.original_chave, l.envio_id).catch(() => undefined);
-      await a.apagar(repo.arquivosDoVideo(l)).catch(() => undefined);
+      await a.apagar([...repo.arquivosDoVideo(l), ...l.arquivosDaRegra]).catch(() => undefined);
     }
     res.json({ ok: true });
   });

@@ -30,6 +30,8 @@ import {
   useListaCarrosseis,
   useSituacaoCarrosseis,
 } from '../carrossel/dados';
+import { AbaIdeias, type IdeiaInicial } from '../carrossel/Ideias';
+import { CalendarioDePosts } from '../carrossel/Publicar';
 import { SlideHtml } from '../carrossel/SlideHtml';
 import { CartaoPedido, NovoComTime } from '../carrossel/Time';
 import { ApresentacaoDoTime, FaixaDoTime } from '../carrossel/TimeDeIa';
@@ -45,9 +47,11 @@ import { fmtNumero, fmtQuando } from '../formatar';
  * seguem (cores, fontes, estilo, logo e as fotos da empresa). O editor fica em CarrosselEditor.
  */
 
-type Aba = 'carrosseis' | 'cerebro' | 'identidade';
+type Aba = 'carrosseis' | 'ideias' | 'calendario' | 'cerebro' | 'identidade';
 const ABAS: { id: Aba; rotulo: string }[] = [
   { id: 'carrosseis', rotulo: 'Carrosséis' },
+  { id: 'ideias', rotulo: 'Ideias' },
+  { id: 'calendario', rotulo: 'Calendário' },
   { id: 'cerebro', rotulo: 'Cérebro da marca' },
   { id: 'identidade', rotulo: 'Identidade visual' },
 ];
@@ -57,8 +61,13 @@ export function Carrosseis() {
   const [params, setParams] = useSearchParams();
   const situacao = useSituacaoCarrosseis();
   const pedida = params.get('aba');
-  const aba: Aba = pedida === 'identidade' || pedida === 'cerebro' ? pedida : 'carrosseis';
+  const aba: Aba =
+    pedida === 'identidade' || pedida === 'cerebro' || pedida === 'calendario' || pedida === 'ideias'
+      ? pedida
+      : 'carrosseis';
   const [novo, setNovo] = useState(false);
+  // v134: a ideia escolhida na aba Ideias preenche o pedido ao time.
+  const [daIdeia, setDaIdeia] = useState<IdeiaInicial | null>(null);
   // A apresentação do time: abre sozinha na primeira entrada (uma vez por pessoa) e pela faixa.
   const [apresentar, setApresentar] = useState<'primeira' | 'de-novo' | null>(null);
   const cliente = useQueryClient();
@@ -132,6 +141,17 @@ export function Carrosseis() {
           aoIdentidade={() => setParams({ aba: 'identidade' })}
           aoCerebro={() => setParams({ aba: 'cerebro' })}
         />
+      ) : aba === 'ideias' ? (
+        <AbaIdeias
+          situacao={situacao.data}
+          aoCerebro={() => setParams({ aba: 'cerebro' })}
+          aoCriar={(i) => {
+            setDaIdeia(i);
+            setNovo(true);
+          }}
+        />
+      ) : aba === 'calendario' ? (
+        <CalendarioDePosts />
       ) : aba === 'cerebro' ? (
         <AbaCerebro />
       ) : (
@@ -150,9 +170,14 @@ export function Carrosseis() {
       {novo && (
         <NovoCarrossel
           situacao={situacao.data}
-          aoFechar={() => setNovo(false)}
+          inicial={daIdeia}
+          aoFechar={() => {
+            setNovo(false);
+            setDaIdeia(null);
+          }}
           aoCerebro={() => {
             setNovo(false);
+            setDaIdeia(null);
             setParams({ aba: 'cerebro' });
           }}
         />
@@ -374,7 +399,12 @@ function CartaoCarrossel(props: { c: ResumoCarrossel; aoDuplicar: () => void; ao
   );
 }
 
-function NovoCarrossel(props: { situacao: SituacaoCarrosseis; aoFechar: () => void; aoCerebro: () => void }) {
+function NovoCarrossel(props: {
+  situacao: SituacaoCarrosseis;
+  inicial?: IdeiaInicial | null;
+  aoFechar: () => void;
+  aoCerebro: () => void;
+}) {
   const identidade = useIdentidade();
   const [modo, setModo] = useState<'time' | 'branco'>(props.situacao.ia.ligada ? 'time' : 'branco');
   const [titulo, setTitulo] = useState('');
@@ -405,6 +435,7 @@ function NovoCarrossel(props: { situacao: SituacaoCarrosseis; aoFechar: () => vo
           <NovoComTime
             situacao={props.situacao}
             estiloDaIdentidade={identidade.data?.identidade.estilo ?? 'editorial'}
+            inicial={props.inicial ?? null}
             aoEmBranco={() => setModo('branco')}
             aoFechar={props.aoFechar}
             aoCerebro={props.aoCerebro}
@@ -922,7 +953,10 @@ export function FotosDaEmpresa(props: { escolher?: (id: number) => void; escolhi
           variant="secondary"
           icon="upload"
           onClick={() => entrada.current?.click()}
-          disabled={!!enviando || (q.data ? fotos.length >= q.data.max : false)}
+          disabled={
+            !!enviando ||
+            (q.data ? fotos.filter((f) => (f.origem ?? 'enviada') === 'enviada').length >= q.data.max : false)
+          }
         >
           {enviando ? `Enviando ${enviando.feito + 1} de ${enviando.total}…` : 'Enviar fotos'}
         </Button>
@@ -969,6 +1003,11 @@ export function FotosDaEmpresa(props: { escolher?: (id: number) => void; escolhi
                 </button>
               ) : (
                 <img className="fotos-empresa__img" src={urlFoto(f.id, 320)} alt={f.nome} loading="lazy" />
+              )}
+              {f.origem && f.origem !== 'enviada' && (
+                <span className="fotos-empresa__ia" title={f.nome}>
+                  {f.origem === 'cenario' ? 'cenário IA' : 'gerada IA'}
+                </span>
               )}
               {!props.escolher && (
                 <button

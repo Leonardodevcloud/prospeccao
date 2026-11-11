@@ -28,7 +28,13 @@ export interface EntradaDirect {
   /** O que o link ou o arquivo é (o endereço ou o nome do arquivo), para dizer o que a pessoa recebe. */
   material: string;
   promocao: DivulgarEntrada | null;
+  /** Direct de um vídeo (v131): o que a pessoa fala no vídeo, no lugar dos slides. */
+  fala?: string;
 }
+
+/** O conteúdo da peça (os slides do carrossel ou a fala do vídeo) para a redatora e a conferência. */
+const conteudoDaPeca = (e: Pick<EntradaDirect, 'slides' | 'fala'>) =>
+  e.fala != null ? e.fala : textoDosSlides(e.slides);
 
 export interface ResultadoDirect {
   mensagem: string;
@@ -64,18 +70,20 @@ const O_QUE_ENTREGA: Record<Entrega, string> = {
 export function mensagemDoDirect(e: EntradaDirect): string {
   const promo = e.promocao;
   return [
-    'Você é a REDATORA. Escreva o direct que vai, sozinho, para quem comentou a palavra no carrossel abaixo.',
+    `Você é a REDATORA. Escreva o direct que vai, sozinho, para quem comentou a palavra ${e.fala != null ? 'no vídeo' : 'no carrossel'} abaixo.`,
     `A pessoa comentou "${e.palavra}". Ela vai receber: ${O_QUE_ENTREGA[e.entrega]}`,
     e.material ? `O MATERIAL: ${e.material}` : '',
     promo
       ? `A PROMOÇÃO (copie preço e prazo exatamente assim): ${[promo.produto || promo.titulo, frasePromocao(promo), promo.condicoes].filter(Boolean).join(' · ')}`
       : '',
-    `O CARROSSEL: ${e.titulo}\n${textoDosSlides(e.slides).slice(0, 1500)}`,
-    `A LEGENDA: ${e.legenda.slice(0, 600)}`,
+    e.fala != null
+      ? `O VÍDEO: ${e.titulo}\nO QUE A PESSOA FALA NO VÍDEO: ${e.fala.slice(0, 1500)}`
+      : `O CARROSSEL: ${e.titulo}\n${textoDosSlides(e.slides).slice(0, 1500)}`,
+    `${e.fala != null ? 'O TEXTO DO POST' : 'A LEGENDA'}: ${e.legenda.slice(0, 600)}`,
     'REGRAS:',
     '- Até 500 letras, 2 ou 3 frases curtas, no tom da empresa. Sem hashtag. No máximo um emoji.',
     '- Comece com "Oi, {nome}!". Fale como a empresa ("a gente", "nós").',
-    '- Nada de preço, prazo, garantia ou número que não esteja no carrossel, na promoção ou no cérebro da marca.',
+    '- Nada de preço, prazo, garantia ou número que não esteja no conteúdo, na promoção ou no cérebro da marca.',
     '- Não diga que vai ligar, mandar e-mail ou fazer algo que o direct não faz.',
     e.entrega === 'conversa'
       ? '- Sem botão: devolva "botao" vazio.'
@@ -124,7 +132,7 @@ export async function escreverDirect(
       : String(r.dados.botao ?? '')
           .trim()
           .slice(0, 20) || ENTREGA[e.entrega].botao;
-  const fontes = `${textoDosSlides(e.slides)}\n${e.legenda}\n${e.dossieTexto}`;
+  const fontes = `${conteudoDaPeca(e)}\n${e.legenda}\n${e.dossieTexto}`;
   const precoInventado = precosDoTexto(mensagem).some(
     (p) =>
       !fontes.replace(/\s/g, '').includes(p.replace(/\s/g, '')) &&

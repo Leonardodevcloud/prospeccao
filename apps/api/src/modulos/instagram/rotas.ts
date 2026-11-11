@@ -262,12 +262,14 @@ async function salvarRegra(
 ): Promise<number> {
   const { pool } = deps;
   if (id) {
-    const { rows } = await pool.query<{ carrossel_id: number | null }>(
-      `SELECT carrossel_id FROM comercial.instagram_regras WHERE id = $1 AND conta_id = ${contaSql()}`,
+    const { rows } = await pool.query<{ carrossel_id: number | null; video_id: number | null }>(
+      `SELECT carrossel_id, video_id FROM comercial.instagram_regras WHERE id = $1 AND conta_id = ${contaSql()}`,
       [id],
     );
     if (rows[0]?.carrossel_id)
       throw AppError.conflito('Esta regra é de um carrossel: mude pela aba Publicação do carrossel.');
+    if (rows[0]?.video_id)
+      throw AppError.conflito('Esta regra é de um vídeo: mude pela aba Publicação do vídeo.');
   }
   await conferirDestino(deps, d.etapaId ?? null, d.responsavelId ?? null);
   const valores = [
@@ -328,7 +330,8 @@ const COLUNAS_REGRA = `r.id::int, r.alvo, r.midia_id AS "midiaId", r.midia_legen
   r.palavras, r.respostas, r.mensagem, r.botao_texto AS "botaoTexto", r.botao_link AS "botaoLink",
   r.ia_continua AS "iaContinua", r.avisar, r.etapa_id AS "etapaId", r.responsavel_id AS "responsavelId",
   r.etiquetas, r.ligada, r.criado_em AS "criadoEm", r.entrega, r.carrossel_id AS "carrosselId",
-  (SELECT c.titulo FROM comercial.carrosseis c WHERE c.id = r.carrossel_id) AS "carrosselTitulo"`;
+  (SELECT c.titulo FROM comercial.carrosseis c WHERE c.id = r.carrossel_id) AS "carrosselTitulo",
+  r.video_id AS "videoId", (SELECT v.titulo FROM comercial.videos v WHERE v.id = r.video_id) AS "videoTitulo"`;
 
 /** Números de um conjunto de interações (comentaram → direct → responderam → leads → reuniões). */
 const numerosSql = (filtro: string) => `

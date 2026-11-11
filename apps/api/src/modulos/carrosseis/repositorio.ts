@@ -102,18 +102,21 @@ export async function definirLogo(
 
 /* ───────────────────────────── Fotos da empresa ───────────────────────────── */
 
-const COLUNAS_FOTO = `id, nome, largura, altura, criado_em AS "criadoEm"`;
+const COLUNAS_FOTO = `id, nome, largura, altura, criado_em AS "criadoEm", origem, base_foto_id AS "baseFotoId"`;
 
 export async function fotos(db: Executor): Promise<FotoCarrossel[]> {
   const { rows } = await db.query<FotoCarrossel>(
-    `SELECT ${COLUNAS_FOTO} FROM comercial.carrossel_fotos WHERE conta_id = ${contaSql()} ORDER BY id DESC`,
+    // A referência de estilo não é foto para usar: fica fora da biblioteca.
+    `SELECT ${COLUNAS_FOTO} FROM comercial.carrossel_fotos
+      WHERE conta_id = ${contaSql()} AND origem <> 'referencia' ORDER BY id DESC`,
   );
   return rows;
 }
 
 export async function contarFotos(db: Executor): Promise<number> {
   const { rows } = await db.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM comercial.carrossel_fotos WHERE conta_id = ${contaSql()}`,
+    // O limite é das fotos enviadas: as que a IA faz não tiram vaga.
+    `SELECT count(*)::int AS n FROM comercial.carrossel_fotos WHERE conta_id = ${contaSql()} AND origem = 'enviada'`,
   );
   return rows[0]!.n;
 }
@@ -136,6 +139,67 @@ export async function adicionarFoto(
     [d.nome, d.chave, d.largura, d.altura, d.bytes, usuarioAtual()?.id ?? null],
   );
   return rows[0]!;
+}
+
+/** Uma imagem feita pela IA (v132) ou a referência de estilo, guardada como foto da empresa. */
+export async function adicionarFotoDaIa(
+  db: Executor,
+  d: {
+    nome: string;
+    chave: string;
+    largura: number;
+    altura: number;
+    bytes: number;
+    origem: 'gerada' | 'cenario' | 'referencia';
+    baseFotoId?: number | null;
+    pedido?: string | null;
+    carrosselId?: number | null;
+    estilo?: string | null;
+    criadoPor?: number | null;
+  },
+): Promise<FotoCarrossel> {
+  const { rows } = await db.query<FotoCarrossel>(
+    `INSERT INTO comercial.carrossel_fotos
+       (conta_id, nome, chave, largura, altura, bytes, criado_por, origem, base_foto_id, pedido, carrossel_id, estilo)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING ${COLUNAS_FOTO}`,
+    [
+      d.nome,
+      d.chave,
+      d.largura,
+      d.altura,
+      d.bytes,
+      d.criadoPor !== undefined ? d.criadoPor : (usuarioAtual()?.id ?? null),
+      d.origem,
+      d.baseFotoId ?? null,
+      d.pedido ?? null,
+      d.carrosselId ?? null,
+      d.estilo ?? null,
+    ],
+  );
+  return rows[0]!;
+}
+
+/** O estilo lido da referência (null: ainda não lido ou não é uma referência). */
+export async function referencia(
+  db: Executor,
+  id: number,
+): Promise<{ id: number; chave: string; estilo: string | null } | null> {
+  const { rows } = await db.query<{ id: number; chave: string; estilo: string | null }>(
+    `SELECT id, chave, estilo FROM comercial.carrossel_fotos
+      WHERE id = $1 AND conta_id = ${contaSql()} AND origem = 'referencia'`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+/** Os cenários já feitos a partir de uma foto do produto. */
+export async function cenariosDaFoto(db: Executor, fotoId: number): Promise<FotoCarrossel[]> {
+  const { rows } = await db.query<FotoCarrossel>(
+    `SELECT ${COLUNAS_FOTO} FROM comercial.carrossel_fotos
+      WHERE conta_id = ${contaSql()} AND base_foto_id = $1 AND origem = 'cenario' ORDER BY id DESC LIMIT 12`,
+    [fotoId],
+  );
+  return rows;
 }
 
 /** Apaga a foto (e tira dos slides que usavam). Devolve a chave para apagar do armazenamento. */
@@ -226,9 +290,10 @@ export async function criar(
     criadoPor?: number | null;
   },
 ): Promise<number> {
+  // v134: os slides como o time entregou ficam guardados (o time aprende com o que quem publica muda).
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO comercial.carrosseis (conta_id, titulo, estilo, slides, legenda, origem, criado_por, relatorio, divulgar_id)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    `INSERT INTO comercial.carrosseis (conta_id, titulo, estilo, slides, legenda, origem, criado_por, relatorio, divulgar_id, slides_do_time)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'ia' THEN $3::jsonb END) RETURNING id`,
     [
       d.titulo,
       d.estilo,

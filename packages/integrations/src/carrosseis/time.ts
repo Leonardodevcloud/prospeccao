@@ -38,6 +38,7 @@ import {
 import { trechoNaFonte } from '../agente/perfil.js';
 import { MANUAL_REDACAO, MANUAL_REVISAO } from '../saber/index.js';
 import { type BlocoSistema, type ClienteClaude, somarUso, USO_ZERO, type UsoClaude } from './claude.js';
+import { CENAS_PRODUTO } from './imagens.js';
 
 /**
  * O time de IA de um carrossel. Cada agente é um pedido ao Claude com um papel e uma régua:
@@ -79,7 +80,34 @@ export interface EntradaTime {
   anteriores: string[];
   fotos: { id: number; nome: string }[];
   hoje: string;
+  /** v132: as imagens que o time pode pôr (sem isto, só as fotos da empresa). */
+  imagens?: ImagensDoTime | null;
+  /** v134: o que o time aprendeu com os números dos posts (uma linha cada, com a evidência). */
+  aprendizados?: string[];
+  /** v134: o que quem publica sempre muda no editor (vira preferência do redator). */
+  preferencias?: string[];
+  /** v134: este carrossel é um teste (2 de cada 10): o formato a testar. */
+  teste?: string | null;
 }
+
+/** As imagens do time (v132): quem faz a imagem é a api (gera, confere e guarda nas fotos). */
+export interface ImagensDoTime {
+  /** O estrategista pode pedir uma imagem gerada quando nenhuma foto combina. */
+  gerar: boolean;
+  /** A foto do produto: a capa usa o produto num cenário novo. */
+  produto: { fotoId: number; nome: string } | null;
+  /** O estilo do post de referência (composição, luz, clima), para inspirar. */
+  estiloReferencia: string | null;
+  /** Faz a imagem e devolve o id da foto guardada (null: não deu ou o revisor visual reprovou). */
+  fazer: (p: {
+    tipo: 'gerar' | 'cenario';
+    descricao: string;
+    fotoId: number | null;
+  }) => Promise<number | null>;
+}
+
+/** Até quantas imagens geradas num carrossel (custo e tempo). */
+export const MAX_IMAGENS_GERADAS = 3;
 
 export interface ResultadoTime {
   titulo: string;
@@ -167,6 +195,13 @@ function blocoDoPedido(
   return linhas.filter(Boolean).join('\n');
 }
 
+/** O começo do prompt do time (o manual, o saber e a marca), em cache; também o das ideias (v134). */
+export function sistemaDoTime(
+  e: Pick<EntradaTime, 'dossieTexto' | 'postsQueFuncionaram' | 'anteriores'>,
+): BlocoSistema[] {
+  return sistema(e as EntradaTime);
+}
+
 function sistema(e: EntradaTime): BlocoSistema[] {
   // O manual e a marca são iguais em todos os agentes do carrossel: vão para o cache.
   // O saber de redação e revisão vem antes da marca: o time inteiro escreve e confere pelo mesmo manual.
@@ -206,6 +241,11 @@ const ESQUEMA_ESTRATEGIA = {
           modelo: { type: 'string', enum: [...MODELOS] },
           ideia: { type: 'string', description: 'O que este slide diz, em uma frase.' },
           fotoId: { type: ['integer', 'null'], description: 'Foto da empresa (só capa e foto), ou null.' },
+          gerar: {
+            type: 'string',
+            description:
+              'Só capa e foto, quando nenhuma foto da empresa combina e a IA de imagem está liberada: a cena para gerar (o que aparece, onde, a luz), sem texto. Vazio se não precisa.',
+          },
         },
         required: ['modelo', 'ideia'],
       },
@@ -221,7 +261,7 @@ interface Estrategia {
   gancho: string;
   porque: string;
   fontes: string[];
-  roteiro: { modelo: ModeloSlide; ideia: string; fotoId: number | null }[];
+  roteiro: { modelo: ModeloSlide; ideia: string; fotoId: number | null; gerar?: string }[];
 }
 
 const OPCOES_FONTES = [
@@ -250,10 +290,18 @@ function lerEstrategia(d: Record<string, unknown>, e: EntradaTime): Estrategia {
     .map((s) => {
       const modelo = s.modelo as ModeloSlide;
       const fotoId = Number(s.fotoId);
+      const foto = e.pedido.usarFotos && MODELO[modelo].foto && fotos.has(fotoId) ? fotoId : null;
+      const gerar =
+        e.imagens?.gerar && MODELO[modelo].foto && !foto
+          ? String(s.gerar ?? '')
+              .trim()
+              .slice(0, 300)
+          : '';
       return {
         modelo,
         ideia: String(s.ideia ?? '').slice(0, 300),
-        fotoId: e.pedido.usarFotos && MODELO[modelo].foto && fotos.has(fotoId) ? fotoId : null,
+        fotoId: foto,
+        ...(gerar.length >= 8 ? { gerar } : {}),
       };
     });
   // O roteiro sempre começa na capa e termina na chamada, no número de slides pedido.
@@ -271,8 +319,19 @@ function lerEstrategia(d: Record<string, unknown>, e: EntradaTime): Estrategia {
   while (roteiro.length > max) roteiro.splice(roteiro.length - 2, 1);
   while (roteiro.length < min)
     roteiro.splice(roteiro.length - 1, 0, { modelo: 'texto', ideia: 'Mais um ponto', fotoId: null });
-  // "Foto" sem foto não funciona: vira texto.
-  roteiro = roteiro.map((s) => (s.modelo === 'foto' && !s.fotoId ? { ...s, modelo: 'texto' as const } : s));
+  // Só as primeiras imagens pedidas são geradas (custo e tempo).
+  let pedidas = 0;
+  roteiro = roteiro.map((s) => {
+    if (!s.gerar) return s;
+    pedidas++;
+    if (pedidas <= MAX_IMAGENS_GERADAS) return s;
+    const { gerar: _fora, ...resto } = s;
+    return resto;
+  });
+  // "Foto" sem foto (nem imagem para gerar) não funciona: vira texto.
+  roteiro = roteiro.map((s) =>
+    s.modelo === 'foto' && !s.fotoId && !s.gerar ? { ...s, modelo: 'texto' as const } : s,
+  );
   return {
     titulo:
       String(d.titulo ?? '')
@@ -311,8 +370,25 @@ function mensagemEstrategista(e: EntradaTime): string {
     '',
     e.pedido.usarFotos && e.fotos.length
       ? `FOTOS DA EMPRESA (use só quando a foto combina com o slide; só nos modelos capa e foto):\n${e.fotos.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
-      : 'FOTOS: não use fotos (fotoId sempre null). Não use o modelo "foto".',
+      : e.imagens?.gerar
+        ? 'FOTOS DA EMPRESA: nenhuma para usar (fotoId sempre null).'
+        : 'FOTOS: não use fotos (fotoId sempre null). Não use o modelo "foto".',
+    e.imagens?.gerar
+      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou um slide "foto", descreva em "gerar" a cena para a IA de imagem (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_GERADAS} no carrossel, só onde a imagem ajuda a entender. Nunca o produto que a empresa vende como se fosse real, nunca texto, marca ou rosto em destaque.`
+      : '',
+    e.imagens?.produto
+      ? `A CAPA usa a foto do produto (${e.imagens.produto.nome}) num cenário novo, feito pela IA: na capa, fotoId null e "gerar" vazio.`
+      : '',
+    e.imagens?.estiloReferencia
+      ? `ESTILO DE REFERÊNCIA (um post de que a empresa gostou; inspire o clima, não copie): ${e.imagens.estiloReferencia}`
+      : '',
     '',
+    e.aprendizados?.length
+      ? `O QUE O TIME APRENDEU COM OS POSTS DESTA CONTA (use para escolher o formato; o que o time evita, evite):\n${e.aprendizados.map((a) => `- ${a}`).join('\n')}`
+      : '',
+    e.teste
+      ? `ESTE CARROSSEL É UM TESTE (2 de cada 10 testam algo novo, para o time não ficar preso no que já sabe): ${e.teste}`
+      : '',
     `FONTES USADAS (escolha das opções): ${OPCOES_FONTES.join(', ')}.`,
     'Se o pedido é para vender, a promoção é o centro e o preço aparece em "numero" ou "comparacao". Se é para ensinar, o conteúdo útil vem antes de qualquer oferta.',
     'Ligue o carrossel ao que os clientes perguntam e ao que funcionou nos posts, quando fizer sentido.',
@@ -435,6 +511,9 @@ function mensagemRedator(e: EntradaTime, est: Estrategia): string {
     '- "texto" pode ter quebra de linha para separar duas frases curtas.',
     '- Na chamada final, o "botao" é a ação em poucas palavras (ex.: "Chame no WhatsApp", "Salve este post").',
     '- A legenda conversa com quem leu os slides: não repita os slides inteiros; termine com a chamada.',
+    ...(e.preferencias?.length
+      ? ['', 'O QUE QUEM PUBLICA SEMPRE MUDA NO EDITOR (siga):', ...e.preferencias.map((p) => `- ${p}`)]
+      : []),
   ].join('\n');
 }
 
@@ -689,6 +768,53 @@ function avisosParaPessoa(slides: SlideCarrossel[], rev: Revisao): AvisoTime[] {
   });
 }
 
+/**
+ * As imagens do roteiro (v132): a capa com o produto num cenário novo e as cenas que o estrategista
+ * pediu. O que não deu (ou o revisor visual reprovou) fica sem: o slide "foto" vira texto.
+ */
+async function fazerImagens(im: ImagensDoTime, est: Estrategia, aoAvancar: AoAvancar): Promise<void> {
+  const capa = est.roteiro[0];
+  const tarefas: Promise<void>[] = [];
+  let feitas = 0;
+  if (im.produto && capa?.modelo === 'capa') {
+    capa.fotoId = null;
+    delete capa.gerar;
+    tarefas.push(
+      im
+        .fazer({ tipo: 'cenario', descricao: CENAS_PRODUTO[0], fotoId: im.produto.fotoId })
+        .catch(() => null)
+        .then((id) => {
+          // O cenário não passou: a capa usa a foto do produto como foi enviada.
+          capa.fotoId = id ?? im.produto!.fotoId;
+          if (id) feitas++;
+        }),
+    );
+  }
+  for (const s of est.roteiro) {
+    if (!s.gerar) continue;
+    const descricao = s.gerar;
+    tarefas.push(
+      im
+        .fazer({ tipo: 'gerar', descricao, fotoId: null })
+        .catch(() => null)
+        .then((id) => {
+          delete s.gerar;
+          if (id) {
+            s.fotoId = id;
+            feitas++;
+          } else if (s.modelo === 'foto') s.modelo = 'texto';
+        }),
+    );
+  }
+  if (!tarefas.length) return;
+  await aoAvancar('estrategista', 'Fazendo as imagens');
+  await Promise.all(tarefas);
+  await aoAvancar(
+    'estrategista',
+    `${feitas} ${feitas === 1 ? 'imagem conferida' : 'imagens conferidas'} pelo revisor visual`,
+  );
+}
+
 export async function trabalharNoCarrossel(
   claude: ClienteClaude,
   e: EntradaTime,
@@ -732,6 +858,7 @@ export async function trabalharNoCarrossel(
     e,
   );
   await aoAvancar('estrategista', `Gancho escolhido: “${est.gancho}”`);
+  if (e.imagens) await fazerImagens(e.imagens, est, aoAvancar);
 
   await aoAvancar('redator');
   let red = lerRedacao(
@@ -755,7 +882,7 @@ export async function trabalharNoCarrossel(
     const comFoto = red.slides.filter((s) => s.fotoId).length;
     await aoAvancar(
       'diretor',
-      `${red.slides.length} modelos escolhidos${comFoto ? `, ${comFoto} com foto da empresa` : ''}${problemas.length ? ` · ${problemas.length} ponto(s) para ajustar` : ' · todo o texto cabe'}`,
+      `${red.slides.length} modelos escolhidos${comFoto ? `, ${comFoto} com foto` : ''}${problemas.length ? ` · ${problemas.length} ponto(s) para ajustar` : ' · todo o texto cabe'}`,
     );
     await aoAvancar('revisor');
     rev = lerRevisao(
@@ -945,7 +1072,17 @@ function mensagemEditor(e: EntradaConversa, base: EstadoCarrossel, naoCoube: str
     '',
     blocoDoPedido({
       ...e,
-      pedido: { ...e.pedido, divulgarId: null, slides: null, estilo: null, usarFotos: true },
+      pedido: {
+        ...e.pedido,
+        divulgarId: null,
+        slides: null,
+        estilo: null,
+        usarFotos: true,
+        gerarImagens: false,
+        fotoProdutoId: null,
+        referenciaId: null,
+        ideiaId: null,
+      },
     }),
     '',
     REGRAS_ALCANCE[e.alcance],
@@ -1054,7 +1191,17 @@ export async function conversarComOTime(
 ): Promise<ResultadoConversa> {
   const entradaTime: EntradaTime = {
     ...e,
-    pedido: { ...e.pedido, divulgarId: e.divulgar?.id ?? null, slides: null, estilo: null, usarFotos: true },
+    pedido: {
+      ...e.pedido,
+      divulgarId: e.divulgar?.id ?? null,
+      slides: null,
+      estilo: null,
+      usarFotos: true,
+      gerarImagens: false,
+      fotoProdutoId: null,
+      referenciaId: null,
+      ideiaId: null,
+    },
     postsQueFuncionaram: [],
     anteriores: [],
   };

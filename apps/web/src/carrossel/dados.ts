@@ -20,7 +20,7 @@ export interface SituacaoCarrosseis {
   /** Já viu a apresentação do time de IA. */
   timeVisto: boolean;
   /** O time de IA: a chave da plataforma ligada e o cérebro da marca conferido. */
-  ia: { ligada: boolean; cerebroConferido: boolean };
+  ia: { ligada: boolean; cerebroConferido: boolean; imagens?: boolean };
 }
 
 export interface CerebroDaConta {

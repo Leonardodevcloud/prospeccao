@@ -29,6 +29,10 @@ export const DESCRICAO_TABELA: Record<string, string> = {
     'base de conhecimento da unidade (respostas, objeções, informações da empresa usadas pelo agente)',
   mercado:
     'base pública da Receita Federal: todas as empresas do Brasil importadas (CNAE, porte, capital social, cidade, data de abertura). Use para tamanho de mercado; é grande, sempre filtre por uf/cidade/cnae',
+  videos:
+    'vídeos com IA (Reels editados pela IA): título, assunto, duração gravada e editada, situação (revisar, pronto, publicado), a chamada do fim e a palavra do "comente", o texto do post, quando foi publicado e o resultado do Comente e receba (comentaram, receberam o direct, abriram o link, viraram lead)',
+  carrosseis:
+    'carrosséis do Instagram (feitos à mão ou pelo time de IA): título, situação (rascunho, pronto, agendado, publicado), estilo, número de slides, objetivo e ângulo do time, legenda, quando foi agendado e publicado, os números do post (alcance, curtidas, comentários, salvos, compartilhamentos) e o Comente e receba (comentaram a palavra, viraram lead)',
   plataforma_organizacoes: 'clientes da plataforma (organizações): plano, limites, módulos, mensalidade',
   plataforma_pedidos_site: 'pedidos de demonstração que chegaram pelo site e a etapa da venda',
 };

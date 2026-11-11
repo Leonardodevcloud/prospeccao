@@ -373,6 +373,8 @@ export interface ResumoVideo {
   temCapa: boolean;
   criadoEm: string;
   prontoEm: string | null;
+  /** Quando o Reels foi reconhecido no Instagram (v131). */
+  publicadoEm: string | null;
 }
 
 export interface DetalheVideo extends ResumoVideo {
@@ -387,6 +389,13 @@ export interface DetalheVideo extends ResumoVideo {
   /** Mudanças da revisão ainda não geradas (o botão "Gerar de novo" acende). */
   mudancasPendentes: boolean;
   versao: number;
+  /** O texto do post do Reels e as hashtags (v131). */
+  textoPost: string;
+  hashtags: string[];
+  /** O texto ainda é o que a redatora escreveu. */
+  textoDaRedatora: boolean;
+  /** O Reels no Instagram, depois de reconhecido. */
+  midiaLink: string | null;
 }
 
 /** O que a pessoa muda na revisão (salvo na hora; o vídeo só muda ao gerar de novo). */
@@ -554,4 +563,55 @@ export function fmtDuracao(segundos: number | null | undefined): string {
   if (segundos == null || !Number.isFinite(segundos)) return '—';
   const s = Math.max(0, Math.round(segundos));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/* ───────────────────────────── v131: o vídeo no Instagram ───────────────────────────── */
+
+/** A fala que ficou no vídeo editado (as palavras fora dos cortes), em texto corrido. */
+export function falaQueFica(
+  palavras: readonly Pick<PalavraVideo, 't' | 'i' | 'f'>[],
+  ficam: readonly { inicio: number; fim: number }[],
+): string {
+  return palavras
+    .filter((p) => {
+      const meio = (p.i + p.f) / 2;
+      return ficam.some((t) => meio >= t.inicio && meio <= t.fim);
+    })
+    .map((p) => p.t)
+    .join(' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .trim();
+}
+
+/** O vídeo para a aba Publicação: ainda editando, pronto para postar ou já no Instagram. */
+export function situacaoParaPublicar(
+  situacao: SituacaoVideo,
+  midiaId: string | null,
+): 'rascunho' | 'pronto' | 'publicado' {
+  if (midiaId) return 'publicado';
+  return situacao === 'pronto' || situacao === 'revisar' ? 'pronto' : 'rascunho';
+}
+
+/** O texto do post do Reels (o Instagram aceita até 2.200 letras com as hashtags). */
+export const LIMITE_TEXTO_POST = 2200;
+
+export const textoPostEntrada = z.object({
+  texto: z.string().max(LIMITE_TEXTO_POST),
+  hashtags: z
+    .array(
+      z
+        .string()
+        .trim()
+        .transform((h) => h.replace(/^#+/, '').replace(/[^\p{L}\p{N}_]/gu, ''))
+        .pipe(z.string().min(1).max(60)),
+    )
+    .max(30)
+    .default([]),
+});
+export type TextoPostEntrada = z.infer<typeof textoPostEntrada>;
+
+/** O texto do post com as hashtags no fim, como vai para o Instagram. */
+export function textoComHashtags(texto: string, hashtags: readonly string[]): string {
+  const tags = hashtags.map((h) => `#${h}`).join(' ');
+  return [texto.trim(), tags].filter(Boolean).join('\n\n');
 }

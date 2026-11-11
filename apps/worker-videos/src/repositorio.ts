@@ -268,8 +268,9 @@ export async function fotosDaConta(
   contaId: number,
 ): Promise<(FotoParaIa & { chave: string; descrita: boolean })[]> {
   const { rows } = await db.query<{ id: number; nome: string; chave: string; descricao_ia: string | null }>(
+    // As cenas geradas para os carrosséis e as referências de estilo não são fotos reais da empresa.
     `SELECT id, nome, chave, descricao_ia FROM comercial.carrossel_fotos
-      WHERE conta_id = $1 ORDER BY id DESC LIMIT 60`,
+      WHERE conta_id = $1 AND origem IN ('enviada', 'cenario') ORDER BY id DESC LIMIT 60`,
     [contaId],
   );
   return rows.map((r) => ({

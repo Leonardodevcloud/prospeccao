@@ -17,6 +17,7 @@ import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { usePipelines } from '../componentes/Pipelines';
 import { useEquipe, useSessao } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando, formatarTelefone } from '../formatar';
+import { AgendarPublicacao } from './Publicar';
 
 /**
  * A aba Publicação do editor: o passo a passo para postar, a regra do Comente e receba que nasceu
@@ -34,10 +35,67 @@ export interface PostRecente {
   comentarios: number | null;
 }
 
-export const usePublicacao = (id: number) =>
+/** A peça publicada: um carrossel ou (v131) um vídeo. As rotas e os textos mudam com ela. */
+export interface Peca {
+  tipo: 'carrossel' | 'video';
+  id: number;
+}
+
+const BASE: Record<Peca['tipo'], string> = { carrossel: 'carrosseis', video: 'videos' };
+const caminho = (p: Peca) => `/${BASE[p.tipo]}/${p.id}/publicacao`;
+const chave = (p: Peca) => [BASE[p.tipo], p.id, 'publicacao'];
+
+/** O que muda no texto da aba entre carrossel e vídeo. */
+const TEXTO = {
+  carrossel: {
+    baixar: 'Baixar as imagens',
+    baixado: 'Imagens baixadas',
+    postar: 'Postar no Instagram com a legenda deste carrossel',
+    reconhece: 'O CRM reconhece o post pela legenda e liga a regra sozinho',
+    copiar: 'Copiar a legenda',
+    copiado: 'Legenda copiada',
+    pronto: 'Marcar o carrossel como pronto (botão lá em cima)',
+    rascunho: 'Rascunho: a regra espera você terminar',
+    naoAchado: 'nenhum post do Instagram tem essa legenda',
+    chamada: 'O último slide pede para comentar',
+    trocarChamada: 'Para trocar a chamada do último slide, peça na Conversa ou edite o slide.',
+    semRegra:
+      'Para o CRM responder quem comentar, o botão do último slide precisa ser “Comente PALAVRA” (ex.: Comente QUERO).',
+    curta:
+      'A legenda está curta demais para o CRM reconhecer o post sozinho: depois de postar, toque em “Já postei: escolher o post”.',
+    publicado:
+      'O carrossel ficou como Publicado e só para leitura. Para fazer outro parecido, use Duplicar na lista.',
+    palavraDiferente: (x: string) => `O botão do último slide diz “Comente ${x}”: use a mesma palavra.`,
+    mesmaPalavra: 'A mesma do botão do último slide. Sem acento e sem diferença de maiúscula.',
+    nota: 'A regra também aparece em Instagram › Comente e receba, marcada com o nome deste carrossel.',
+  },
+  video: {
+    baixar: 'Baixar o vídeo',
+    baixado: 'Vídeo baixado',
+    postar: 'Postar como Reels com o texto do post acima',
+    reconhece: 'O CRM reconhece o Reels pelo texto e liga a regra sozinho',
+    copiar: 'Copiar o texto',
+    copiado: 'Texto copiado',
+    pronto: 'Esperar o vídeo ficar pronto',
+    rascunho: 'O vídeo ainda está sendo editado',
+    naoAchado: 'nenhum Reels do Instagram tem esse texto',
+    chamada: 'O fim do vídeo pede para comentar',
+    trocarChamada: 'Para trocar a chamada do fim do vídeo, mude na aba Legenda › Chamada e gere de novo.',
+    semRegra:
+      'Para o CRM responder quem comentar, a chamada do fim do vídeo precisa ser “Comente a palavra”.',
+    curta:
+      'O texto do post está curto demais para o CRM reconhecer o Reels sozinho: depois de postar, toque em “Já postei: escolher o post”.',
+    publicado: 'O vídeo está no Instagram. Gerar de novo não muda o Reels que já foi postado.',
+    palavraDiferente: (x: string) => `O fim do vídeo diz “Comente ${x}”: use a mesma palavra.`,
+    mesmaPalavra: 'A mesma da chamada do fim do vídeo. Sem acento e sem diferença de maiúscula.',
+    nota: 'A regra também aparece em Instagram › Comente e receba, marcada com o nome deste vídeo.',
+  },
+} as const;
+
+export const usePublicacao = (peca: Peca) =>
   useQuery({
-    queryKey: ['carrosseis', id, 'publicacao'],
-    queryFn: () => api<PublicacaoCarrossel>(`/carrosseis/${id}/publicacao`),
+    queryKey: chave(peca),
+    queryFn: () => api<PublicacaoCarrossel>(caminho(peca)),
     // Esperando o post: confere de tempos em tempos (a rotina liga a regra quando o post aparece).
     refetchInterval: (q) => (q.state.data?.situacao === 'esperando' ? 60_000 : false),
   });
@@ -64,26 +122,28 @@ const fmtBytes = (n: number) =>
     : `${Math.max(1, Math.round(n / 1024))} KB`;
 
 export function PainelPublicacao(props: {
-  carrosselId: number;
+  peca: Peca;
+  /** O texto que vai no post (a legenda do carrossel, o texto do Reels com as hashtags). */
   legenda: string;
   /** Salva o que está na tela antes de mexer no post (o carrossel muda de situação). */
   salvarAntes: () => Promise<void>;
   aoMudarSituacao: () => void;
   aoBaixar: () => void;
 }) {
-  const q = usePublicacao(props.carrosselId);
+  const q = usePublicacao(props.peca);
+  const t = TEXTO[props.peca.tipo];
   const cliente = useQueryClient();
   const [escolher, setEscolher] = useState(false);
   const [copiado, setCopiado] = useState(false);
   // A troca de situação (publicado ou de volta) é vista pelo efeito abaixo.
   const atualizar = (p: PublicacaoCarrossel) => {
-    cliente.setQueryData(['carrosseis', props.carrosselId, 'publicacao'], p);
-    cliente.invalidateQueries({ queryKey: ['carrosseis', 'lista'] });
+    cliente.setQueryData(chave(props.peca), p);
+    cliente.invalidateQueries({ queryKey: [BASE[props.peca.tipo], 'lista'] });
   };
   const post = useMutation({
     mutationFn: async (midiaId: string | null) => {
       await props.salvarAntes();
-      return api<PublicacaoCarrossel>(`/carrosseis/${props.carrosselId}/publicacao/post`, {
+      return api<PublicacaoCarrossel>(`${caminho(props.peca)}/post`, {
         metodo: midiaId ? 'POST' : 'DELETE',
         corpo: midiaId ? { midiaId } : undefined,
       });
@@ -119,10 +179,10 @@ export function PainelPublicacao(props: {
   const acoesDePostar = (
     <div className="pub__acoes">
       <Button size="sm" variant="primary" icon="copy" onClick={copiar} disabled={!props.legenda.trim()}>
-        {copiado ? 'Legenda copiada' : 'Copiar a legenda'}
+        {copiado ? t.copiado : t.copiar}
       </Button>
       <Button size="sm" variant="secondary" icon="download" onClick={props.aoBaixar}>
-        Baixar as imagens
+        {t.baixar}
       </Button>
     </div>
   );
@@ -203,10 +263,7 @@ export function PainelPublicacao(props: {
             </Button>
           )}
         </div>
-        <span className="campo__dica">
-          O carrossel ficou como Publicado e só para leitura. Para fazer outro parecido, use Duplicar na
-          lista.
-        </span>
+        <span className="campo__dica">{t.publicado}</span>
       </div>
     );
   } else if (p.situacao === 'sem_instagram') {
@@ -218,8 +275,8 @@ export function PainelPublicacao(props: {
         </div>
         <p className="pub__texto">
           {p.instagram.noPlano
-            ? `O último slide pede para comentar ${palavra}, mas sem o Instagram conectado ninguém recebe o direct. A regra fica salva e começa a esperar o post assim que você conectar.`
-            : `O último slide pede para comentar ${palavra}. Para o CRM responder quem comentar, o plano precisa ter o Instagram.`}
+            ? `${t.chamada} ${palavra}, mas sem o Instagram conectado ninguém recebe o direct. A regra fica salva e começa a esperar o post assim que você conectar.`
+            : `${t.chamada} ${palavra}. Para o CRM responder quem comentar, o plano precisa ter o Instagram.`}
         </p>
         <div className="pub__acoes">
           {p.instagram.noPlano ? (
@@ -232,9 +289,7 @@ export function PainelPublicacao(props: {
             </Link>
           )}
         </div>
-        <span className="campo__dica">
-          Para trocar a chamada do último slide, peça na Conversa ou edite o slide.
-        </span>
+        <span className="campo__dica">{t.trocarChamada}</span>
       </div>
     );
   } else if (p.situacao === 'sem_regra') {
@@ -245,15 +300,12 @@ export function PainelPublicacao(props: {
         </div>
         <ol className="pub__passos">
           <Passo ok={!!p.baixadoEm}>
-            Baixar as imagens{p.baixadoEm ? ` · baixadas ${fmtQuando(p.baixadoEm)}` : ''}
+            {p.baixadoEm ? `${t.baixado} ${fmtQuando(p.baixadoEm)}` : t.baixar}
           </Passo>
-          <Passo ok={false}>Postar no Instagram com a legenda deste carrossel</Passo>
+          <Passo ok={false}>{t.postar}</Passo>
         </ol>
         {acoesDePostar}
-        <span className="campo__dica">
-          Para o CRM responder quem comentar, o botão do último slide precisa ser “Comente PALAVRA” (ex.:
-          Comente QUERO).
-        </span>
+        <span className="campo__dica">{t.semRegra}</span>
       </div>
     );
   } else {
@@ -263,7 +315,7 @@ export function PainelPublicacao(props: {
         <div className="pub__titulo">
           <b>
             {p.situacao === 'rascunho'
-              ? 'Rascunho: a regra espera você terminar'
+              ? t.rascunho
               : p.situacao === 'nao_achado'
                 ? 'Ainda não vimos o post'
                 : 'Esperando você postar'}
@@ -272,9 +324,9 @@ export function PainelPublicacao(props: {
         </div>
         {p.situacao === 'nao_achado' ? (
           <p className="pub__texto">
-            O carrossel está pronto desde {p.esperandoDesde ? fmtQuando(p.esperandoDesde) : 'alguns dias'} e
-            nenhum post do Instagram tem essa legenda. Se você já postou com outro texto, escolha o post
-            abaixo. Se ainda vai postar, a regra continua esperando.
+            Pronto desde {p.esperandoDesde ? fmtQuando(p.esperandoDesde) : 'alguns dias'} e {t.naoAchado}. Se
+            você já postou com outro texto, escolha o post abaixo. Se ainda vai postar, a regra continua
+            esperando.
           </p>
         ) : (
           <ol className="pub__passos">
@@ -282,19 +334,17 @@ export function PainelPublicacao(props: {
               Regra do <b>{palavra}</b> criada com o direct abaixo
             </Passo>
             <Passo ok={!!p.baixadoEm}>
-              {p.baixadoEm ? `Imagens baixadas ${fmtQuando(p.baixadoEm)}` : 'Baixar as imagens'}
+              {p.baixadoEm ? `${t.baixado} ${fmtQuando(p.baixadoEm)}` : t.baixar}
             </Passo>
-            {p.situacao === 'rascunho' && (
-              <Passo ok={false}>Marcar o carrossel como pronto (botão lá em cima)</Passo>
-            )}
-            <Passo ok={false}>Postar no Instagram com a legenda deste carrossel</Passo>
-            <Passo ok={false}>O CRM reconhece o post pela legenda e liga a regra sozinho</Passo>
+            {p.situacao === 'rascunho' && <Passo ok={false}>{t.pronto}</Passo>}
+            <Passo ok={false}>{t.postar}</Passo>
+            <Passo ok={false}>{t.reconhece}</Passo>
           </ol>
         )}
         {!escolher && p.situacao !== 'nao_achado' && (
           <div className="pub__acoes">
             <Button size="sm" variant="primary" icon="copy" onClick={copiar} disabled={!props.legenda.trim()}>
-              {copiado ? 'Legenda copiada' : 'Copiar a legenda'}
+              {copiado ? t.copiado : t.copiar}
             </Button>
             {esperando || p.situacao === 'rascunho' ? (
               <Button
@@ -310,6 +360,7 @@ export function PainelPublicacao(props: {
         )}
         {(escolher || p.situacao === 'nao_achado') && (
           <EscolherPost
+            peca={props.peca}
             palavra={palavra ?? ''}
             ocupado={post.isPending}
             aoEscolher={(id) => post.mutate(id)}
@@ -318,8 +369,8 @@ export function PainelPublicacao(props: {
         )}
         <span className="campo__dica">
           {p.podeReconhecer
-            ? `Pode trocar uma palavra ou outra na legenda ao postar: o CRM reconhece mesmo assim. Até o post aparecer, quem comentar ${palavra} em outra publicação não recebe nada.`
-            : 'A legenda está curta demais para o CRM reconhecer o post sozinho: depois de postar, toque em “Já postei: escolher o post”.'}
+            ? `Pode trocar uma palavra ou outra no texto ao postar: o CRM reconhece mesmo assim. Até o post aparecer, quem comentar ${palavra} em outra publicação não recebe nada.`
+            : t.curta}
         </span>
       </div>
     );
@@ -327,16 +378,22 @@ export function PainelPublicacao(props: {
 
   return (
     <div className="pub">
+      {p.situacao !== 'publicado' && p.situacao !== 'rascunho' && p.instagram.noPlano && (
+        <AgendarPublicacao
+          peca={props.peca}
+          legenda={props.legenda}
+          palavra={p.regra?.palavras[0] ?? null}
+          salvarAntes={props.salvarAntes}
+          aoMudar={() => {
+            void cliente.invalidateQueries({ queryKey: chave(props.peca) });
+            props.aoMudarSituacao();
+          }}
+        />
+      )}
       {topo}
       {post.error && <ErroDaApi erro={post.error} />}
       {p.regra && p.instagram.noPlano && (
-        <FormRegra
-          key={p.regra.id}
-          p={p}
-          regra={p.regra}
-          carrosselId={props.carrosselId}
-          aoSalvar={atualizar}
-        />
+        <FormRegra key={p.regra.id} p={p} regra={p.regra} peca={props.peca} aoSalvar={atualizar} />
       )}
     </div>
   );
@@ -355,14 +412,15 @@ function Passo(props: { ok: boolean; children: ReactNode }) {
 }
 
 function EscolherPost(props: {
+  peca: Peca;
   palavra: string;
   ocupado: boolean;
   aoEscolher: (midiaId: string) => void;
   aoFechar?: () => void;
 }) {
   const q = useQuery({
-    queryKey: ['carrosseis', 'publicacao', 'posts'],
-    queryFn: () => api<{ posts: PostRecente[] }>('/carrosseis/publicacao/posts'),
+    queryKey: [BASE[props.peca.tipo], 'publicacao', 'posts'],
+    queryFn: () => api<{ posts: PostRecente[] }>(`/${BASE[props.peca.tipo]}/publicacao/posts`),
     staleTime: 30_000,
   });
   return (
@@ -461,10 +519,12 @@ const camposDe = (r: RegraDoCarrossel, p: PublicacaoCarrossel): Campos => ({
 function FormRegra(props: {
   p: PublicacaoCarrossel;
   regra: RegraDoCarrossel;
-  carrosselId: number;
+  peca: Peca;
   aoSalvar: (p: PublicacaoCarrossel) => void;
 }) {
   const { p, regra } = props;
+  const t = TEXTO[props.peca.tipo];
+  const base = caminho(props.peca);
   const [f, setF] = useState<Campos>(() => camposDe(regra, p));
   const [salvo, setSalvo] = useState(true);
   const [daRedatora, setDaRedatora] = useState(false);
@@ -481,7 +541,7 @@ function FormRegra(props: {
 
   const salvar = useMutation({
     mutationFn: () =>
-      api<PublicacaoCarrossel>(`/carrosseis/${props.carrosselId}/publicacao`, {
+      api<PublicacaoCarrossel>(base, {
         metodo: 'PUT',
         corpo: {
           palavras: [f.palavra, ...f.outras.split(/[,;\s]+/)].map((x) => x.trim()).filter(Boolean),
@@ -505,19 +565,16 @@ function FormRegra(props: {
   });
   const redatora = useMutation({
     mutationFn: () =>
-      api<{ mensagem: string; botao: string; daRedatora: boolean }>(
-        `/carrosseis/${props.carrosselId}/publicacao/direct`,
-        {
-          metodo: 'POST',
-          corpo: {
-            entrega: f.entrega,
-            palavra: f.palavra || 'QUERO',
-            divulgarId: f.entrega === 'promocao' && f.divulgarId ? Number(f.divulgarId) : null,
-            material:
-              f.entrega === 'link' ? f.link : f.entrega === 'arquivo' ? (regra.arquivo?.nome ?? '') : '',
-          },
+      api<{ mensagem: string; botao: string; daRedatora: boolean }>(`${base}/direct`, {
+        metodo: 'POST',
+        corpo: {
+          entrega: f.entrega,
+          palavra: f.palavra || 'QUERO',
+          divulgarId: f.entrega === 'promocao' && f.divulgarId ? Number(f.divulgarId) : null,
+          material:
+            f.entrega === 'link' ? f.link : f.entrega === 'arquivo' ? (regra.arquivo?.nome ?? '') : '',
         },
-      ),
+      }),
     onSuccess: (x) => {
       setF((y) => ({ ...y, mensagem: x.mensagem, botaoTexto: x.botao || y.botaoTexto }));
       setDaRedatora(x.daRedatora);
@@ -529,7 +586,7 @@ function FormRegra(props: {
       if (!(TIPOS_ARQUIVO_DIRECT as readonly string[]).includes(a.type))
         throw new ErroApi(422, 'tipo', 'Envie um PDF, JPG ou PNG.');
       if (a.size > LIMITE_ARQUIVO_DIRECT) throw new ErroApi(422, 'tamanho', 'O arquivo pode ter até 10 MB.');
-      const r = await fetch(`/api/carrosseis/${props.carrosselId}/publicacao/arquivo`, {
+      const r = await fetch(`/api${base}/arquivo`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': a.type, 'x-nome-arquivo': encodeURIComponent(a.name) },
@@ -591,8 +648,8 @@ function FormRegra(props: {
       </div>
       <span className="campo__dica pub__dica-palavra">
         {p.palavraDoSlide && p.palavraDoSlide !== f.palavra
-          ? `O botão do último slide diz “Comente ${p.palavraDoSlide}”: use a mesma palavra.`
-          : 'A mesma do botão do último slide. Sem acento e sem diferença de maiúscula.'}
+          ? t.palavraDiferente(p.palavraDoSlide)
+          : t.mesmaPalavra}
       </span>
 
       <fieldset className="campo">
@@ -634,11 +691,7 @@ function FormRegra(props: {
             <div className="pub__arquivo">
               <Icon name="file-text" size={18} />
               <span className="pub__post-info">
-                <a
-                  href={`/api/carrosseis/${props.carrosselId}/publicacao/arquivo`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <a href={`/api${base}/arquivo`} target="_blank" rel="noreferrer">
                   {regra.arquivo.nome}
                 </a>
                 <small>
@@ -859,7 +912,7 @@ function FormRegra(props: {
         </Button>
       </div>
       <span className="campo__dica pub__nota">
-        A regra também aparece em Instagram › Comente e receba, marcada com o nome deste carrossel.
+        {t.nota}
         {p.instagram.usuario ? ` Responde pelo @${p.instagram.usuario}.` : ''}
       </span>
       {p.situacao === 'publicado' && regra.criadoEm && (

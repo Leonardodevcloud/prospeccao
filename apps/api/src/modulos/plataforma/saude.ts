@@ -224,6 +224,8 @@ export interface UsoDoMes {
   /** Carrosséis com IA (Claude): chamadas e o custo em dólar do mês. */
   carrosseisChamadas: number;
   carrosseisUsd: number;
+  /** v132: imagens do GPT Image 2 pedidas para os carrosséis (o custo já está em carrosseisUsd). */
+  carrosseisImagens: number;
   videosQtd: number;
   videosUsd: number;
   videosSegundos: number;
@@ -284,8 +286,10 @@ export async function usoDoMes(db: Executor): Promise<UsoDoMes> {
          AS "iaSaida",
        coalesce((SELECT sum(chamadas) FROM cadastro.consumo_carrosseis WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::int
          AS "carrosseisChamadas",
-       coalesce((SELECT sum(custo_usd) FROM cadastro.consumo_carrosseis WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
+       coalesce((SELECT sum(custo_usd + imagens_usd) FROM cadastro.consumo_carrosseis WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
          AS "carrosseisUsd",
+       coalesce((SELECT sum(imagens) FROM cadastro.consumo_carrosseis WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::int
+         AS "carrosseisImagens",
        coalesce((SELECT sum(videos) FROM cadastro.consumo_videos WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::int
          AS "videosQtd",
        coalesce((SELECT sum(custo_usd) FROM cadastro.consumo_videos WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
@@ -485,12 +489,12 @@ export function calcularMes(
     ate: r2(iaAte),
     previsao: r2(iaPrev),
   });
-  // Carrosséis com IA (Claude, cobrado em dólar por token; o custo já vem calculado por chamada).
-  if (u.carrosseisChamadas > 0) {
+  // Carrosséis com IA (Claude por token e, desde a v132, as imagens do GPT Image 2 por imagem).
+  if (u.carrosseisChamadas > 0 || u.carrosseisImagens > 0) {
     const clAte = u.carrosseisUsd * c.dolar;
     variaveis.push({
-      nome: 'Carrosséis com IA · Claude',
-      detalhe: `${fmt(u.carrosseisChamadas)} chamadas · US$ ${fmt(u.carrosseisUsd, 2)}`,
+      nome: u.carrosseisImagens ? 'Carrosséis com IA · Claude e imagens' : 'Carrosséis com IA · Claude',
+      detalhe: `${fmt(u.carrosseisChamadas)} chamadas${u.carrosseisImagens ? ` · ${fmt(u.carrosseisImagens)} imagens geradas` : ''} · US$ ${fmt(u.carrosseisUsd, 2)}`,
       ate: r2(clAte),
       previsao: r2(prev(clAte)),
     });

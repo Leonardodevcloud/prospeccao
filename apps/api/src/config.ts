@@ -67,6 +67,14 @@ export const esquemaEnvApi = envBase.extend({
     .string()
     .regex(/^v\d+\.\d+$/)
     .default('v23.0'),
+  /**
+   * v133: publicar e agendar pelo CRM. Ligue (sim) só depois que a Meta aprovar a permissão
+   * instagram_content_publish: aí o login passa a pedir a permissão e a tela de publicar aparece.
+   */
+  META_PUBLICAR: z
+    .enum(['sim', 'nao'])
+    .default('nao')
+    .transform((v) => v === 'sim'),
   VOZ_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
   VOZ_MODELO: z.string().default('whisper-large-v3-turbo'),
   OPENAI_CHAVE: opcional(z.string().min(10)),
@@ -81,6 +89,9 @@ export const esquemaEnvApi = envBase.extend({
     .string()
     .regex(/^claude-[\w.-]+$/, 'CARROSSEIS_MODELO começa com claude-')
     .default('claude-sonnet-5-5'),
+  /** v132: imagens dos carrosséis pelo GPT Image 2 (a mesma OPENAI_CHAVE) e o custo de cada uma. */
+  CARROSSEIS_IMAGEM_MODELO: z.string().min(3).default('gpt-image-2'),
+  CARROSSEIS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).max(5).default(0.05),
   FALA_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   FALA_MODELO: z.string().default('gpt-4o-mini-tts'),
   /**
@@ -183,6 +194,7 @@ export function credenciaisDoAmbiente(env: EnvApi) {
     metaTokenVerificacao: env.META_TOKEN_WEBHOOK ?? null,
     metaConfigId: env.META_CONFIG_ID ?? null,
     metaVersao: env.META_VERSAO,
+    metaPublicar: env.META_PUBLICAR,
   };
 }
 

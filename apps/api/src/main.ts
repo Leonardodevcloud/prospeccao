@@ -18,6 +18,7 @@ import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
 import { iniciarConteudo } from './modulos/instagram/conteudo.js';
 import { iniciarConversoes } from './modulos/instagram/conversoes.js';
+import { iniciarPublicacoes } from './modulos/instagram/publicar.js';
 import { iniciarReconhecimento } from './modulos/instagram/servico.js';
 import { iniciarAvisos } from './modulos/integracoes/avisos.js';
 import { prepararTelefonia } from './modulos/ligacoes/preparar.js';
@@ -89,7 +90,7 @@ const captcha =
     : null;
 
 // Carrosséis com IA: o time escreve com o Claude (chave da plataforma); sem ela, só à mão.
-const carrosseisIa = prepararCarrosseisIa(env);
+const carrosseisIa = prepararCarrosseisIa(env, reunioes.armazenamento ?? null);
 if (!carrosseisIa) log.info('ANTHROPIC_CHAVE não configurada: o time de IA dos carrosséis fica desligado.');
 
 const app = criarApp({
@@ -154,6 +155,13 @@ const pararMedidor = iniciarMedidor(pool);
 const pararConteudo = iniciarConteudo({ pool, log });
 // O post de cada carrossel que espera ser publicado: reconhecido pela legenda a cada 10 minutos.
 const pararReconhecimento = iniciarReconhecimento({ pool, log, filas });
+// Publicar e agendar pelo CRM (v133): a cada minuto, publica o que chegou a hora.
+const pararPublicacoes = iniciarPublicacoes({
+  pool,
+  log,
+  filas,
+  armazenamento: reunioes.armazenamento ?? null,
+});
 // Devolver as vendas para a Meta: as etapas dos leads de anúncio, a cada minuto.
 const pararConversoes = iniciarConversoes({ pool, log });
 // Ligações: transcrição e resumo depois de cada uma; fecha as esquecidas abertas.
@@ -190,6 +198,7 @@ encerrarAoReceberSinal(log, async () => {
   await pararMedidor();
   pararConteudo();
   pararReconhecimento();
+  pararPublicacoes();
   pararConversoes();
   pararLigacoes();
   pararQuadros();

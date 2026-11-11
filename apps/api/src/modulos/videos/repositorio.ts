@@ -9,6 +9,7 @@ import {
   type DetalheVideo,
   duracaoDosTrechos,
   type EtapaVideo,
+  falaQueFica,
   IMAGEM_SEM_NO_COMECO,
   IMAGENS_FRACAO_MAXIMA,
   type ImagemVideo,
@@ -59,6 +60,13 @@ interface Linha {
   versao: number;
   criado_em: string;
   pronto_em: string | null;
+  publicado_em: string | null;
+  texto_post: string;
+  hashtags: string[];
+  texto_da_redatora: boolean;
+  midia_link: string | null;
+  midia_id: string | null;
+  baixado_em: string | null;
 }
 
 const num = (v: string | null) => (v == null ? null : Number(v));
@@ -79,6 +87,7 @@ function resumo(l: Linha): ResumoVideo {
     temCapa: !!l.capa_chave,
     criadoEm: l.criado_em,
     prontoEm: l.pronto_em,
+    publicadoEm: l.publicado_em ?? null,
   };
 }
 
@@ -96,6 +105,10 @@ function detalhe(l: Linha): DetalheVideo {
     conferencia: l.conferencia,
     mudancasPendentes: l.mudancas_pendentes,
     versao: l.versao,
+    textoPost: l.texto_post ?? '',
+    hashtags: l.hashtags ?? [],
+    textoDaRedatora: !!l.texto_da_redatora,
+    midiaLink: l.midia_link ?? null,
   };
 }
 
@@ -111,7 +124,7 @@ async function linha(db: Executor, id: number): Promise<Linha> {
 export async function listar(db: Executor): Promise<ResumoVideo[]> {
   const { rows } = await db.query<Linha>(
     `SELECT id, titulo, situacao, etapa, progresso, opcoes, duracao_original, duracao_final, cortes, erro,
-            capa_chave, criado_em, pronto_em
+            capa_chave, criado_em, pronto_em, publicado_em
        FROM comercial.videos WHERE conta_id = ${contaSql()} ORDER BY id DESC LIMIT 200`,
   );
   return rows.map(resumo);
@@ -156,8 +169,9 @@ export async function fotosDaEmpresa(
   db: Executor,
 ): Promise<{ id: number; nome: string; chave: string; descricao: string | null }[]> {
   const { rows } = await db.query<{ id: number; nome: string; chave: string; descricao_ia: string | null }>(
+    // As cenas geradas para os carrosséis e as referências de estilo não são fotos reais da empresa.
     `SELECT id, nome, chave, descricao_ia FROM comercial.carrossel_fotos
-      WHERE conta_id = ${contaSql()} ORDER BY id DESC LIMIT 60`,
+      WHERE conta_id = ${contaSql()} AND origem IN ('enviada', 'cenario') ORDER BY id DESC LIMIT 60`,
   );
   return rows.map((r) => ({ id: r.id, nome: r.nome, chave: r.chave, descricao: r.descricao_ia }));
 }
@@ -346,10 +360,72 @@ function novaImagemNoMomento(
   };
 }
 
-export async function apagar(db: Executor, id: number): Promise<Linha> {
+export async function apagar(db: Executor, id: number): Promise<Linha & { arquivosDaRegra: string[] }> {
   const l = await linha(db, id);
+  // A regra que ainda esperava o Reels sai junto (a que já está valendo fica, sem o vídeo).
+  const { rows: regras } = await db.query<{ arquivo_chave: string | null }>(
+    `DELETE FROM comercial.instagram_regras WHERE video_id = $1 AND conta_id = ${contaSql()} AND alvo = 'video'
+     RETURNING arquivo_chave`,
+    [id],
+  );
   await db.query(`DELETE FROM comercial.videos WHERE id = $1 AND conta_id = ${contaSql()}`, [id]);
-  return l;
+  return { ...l, arquivosDaRegra: regras.flatMap((r) => (r.arquivo_chave ? [r.arquivo_chave] : [])) };
+}
+
+/* ───────────────────────────── v131: o texto do post ───────────────────────────── */
+
+/** A palavra do "Comente X" do fim do vídeo (a chamada revisada vale mais que a da criação). */
+function palavraDoVideo(a: AnimacoesVideo | null, o: OpcoesVideo): string | null {
+  const c = a?.chamada ?? { usar: true, ...o.chamada };
+  return c.usar && c.tipo === 'comente' && c.palavra ? c.palavra.toUpperCase() : null;
+}
+
+/** O que a aba Publicação e a redatora precisam do vídeo. */
+export async function paraPublicar(db: Executor, id: number) {
+  const l = await linha(db, id);
+  const o = opcoesVideoEntrada.safeParse(l.opcoes ?? {});
+  const opcoes = o.success ? o.data : opcoesVideoEntrada.parse({});
+  const duracao = l.analise?.duracao ?? num(l.duracao_original) ?? 0;
+  const ficam = trechosQueFicam(duracao, l.cortes ?? []);
+  const oferta = momentosDe(l.animacoes).find((m) => m.tipo === 'oferta' && m.usar !== false);
+  return {
+    id: l.id,
+    titulo: l.titulo,
+    situacao: l.situacao,
+    opcoes,
+    fala: falaQueFica(l.palavras ?? [], ficam),
+    textoPost: l.texto_post ?? '',
+    hashtags: l.hashtags ?? [],
+    textoDaRedatora: !!l.texto_da_redatora,
+    divulgarId: oferta?.divulgarId ?? null,
+    palavra: palavraDoVideo(l.animacoes, opcoes),
+    midiaId: l.midia_id ?? null,
+    midiaLink: l.midia_link ?? null,
+    publicadoEm: l.publicado_em ?? null,
+    prontoEm: l.pronto_em,
+    baixadoEm: l.baixado_em ?? null,
+    criadoEm: l.criado_em,
+  };
+}
+
+export async function salvarTextoPost(
+  db: Executor,
+  id: number,
+  d: { texto: string; hashtags: string[]; daRedatora: boolean },
+): Promise<void> {
+  const { rowCount } = await db.query(
+    `UPDATE comercial.videos SET texto_post = $2, hashtags = $3, texto_da_redatora = $4, atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [id, d.texto, d.hashtags, d.daRedatora],
+  );
+  if (!rowCount) throw AppError.naoEncontrado('Vídeo');
+}
+
+export async function marcarBaixado(db: Executor, id: number): Promise<void> {
+  await db.query(
+    `UPDATE comercial.videos SET baixado_em = now() WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [id],
+  );
 }
 
 /**

@@ -1207,7 +1207,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'O time de IA escreve carrosséis com a identidade e o jeito de falar da empresa; você confere, ajusta e baixa as imagens.',
     onde: { rotulo: 'Carrosséis', para: '/carrosseis' },
     termos:
-      'carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
+      'ideias buscar ideias aprendeu aprendizado aprendizados mediana teste contas de referência concorrente melhor horário agendar agendamento calendário publicar agora imagem gerada cenário produto referência de estilo revisor visual carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
     corpo: (
       <>
         <p>
@@ -1370,6 +1370,17 @@ export const ARTIGOS: ArtigoAjuda[] = [
           pelo menos 500 px no lado menor; as do celular servem, e o sistema tira os dados do aparelho (como a
           localização) antes de guardar.
         </p>
+        <p>
+          <b>Imagens feitas pela IA</b> (no pedido ao time, em <b>Imagens</b>): ligue{' '}
+          <b>A IA pode gerar as imagens que faltarem</b> para o time pôr, onde nenhuma foto combina, até 3
+          imagens sem texto e nas cores da marca. Em <b>Foto do produto para a capa</b>, escolha a foto do
+          produto: ele fica igual e a IA troca só o fundo e a luz. Em <b>Referência de estilo</b>, envie um
+          post de que você gostou: o time usa a composição e o clima, com as suas cores e fontes, sem copiar a
+          arte de ninguém. Cada imagem passa pelo <b>revisor visual</b> (produto igual, sem texto nem marca
+          estranha); a reprovada não entra. No editor, no slide com a foto de um produto,{' '}
+          <b>Cenários para o produto</b> faz mais três para você escolher. As imagens da IA ficam nas Fotos da
+          empresa com a marca “gerada IA” ou “cenário IA” e não contam no limite de 60.
+        </p>
         <h3>8. Editar, conferir e postar</h3>
         <Passos>
           <li>
@@ -1440,6 +1451,45 @@ export const ARTIGOS: ArtigoAjuda[] = [
           reconhecido, quem comentar a palavra em outra publicação não recebe nada. Sem o Instagram conectado,
           a regra fica parada.
         </Nota>
+        <h3>10. Publicar e agendar pelo CRM</h3>
+        <p>
+          Quando a Meta liberar a permissão de publicar para o Prospect Team, a aba <b>Publicação</b> do
+          carrossel e do vídeo ganha <b>Publicar e agendar pelo CRM</b>: escolha o dia e a hora (ou{' '}
+          <b>Publicar agora</b>), ajuste a legenda e deixe <b>Ligar o Comente e receba neste post</b>. O CRM
+          posta sozinho no horário, liga a regra direto no post (sem precisar reconhecer pela legenda) e avisa
+          no sino. Se a Meta recusar, chega um aviso e o carrossel ou o vídeo volta para Pronto. Agendado, o
+          carrossel fica só para leitura: para mudar, cancele o agendamento. Enquanto a permissão não sai, o
+          cartão diz “em breve” e o caminho é baixar e postar pelo celular. Depois da liberação, reconecte o
+          Instagram uma vez (aba Conexão) para a conexão ganhar a permissão.
+        </p>
+        <p>
+          A aba <b>Calendário</b> mostra o mês com os carrosséis e vídeos agendados e publicados (pelo CRM ou
+          reconhecidos depois de postar pelo celular). Toque num post para abrir a Publicação dele.
+        </p>
+        <h3>11. Ideias e o que o time aprendeu</h3>
+        <p>
+          Na aba <b>Ideias</b>, toque em <b>Buscar ideias</b>: o estrategista propõe 10 ideias para as
+          próximas 2 semanas. Cada ideia mostra <b>de onde veio</b>: CAMPANHA (o que você quer divulgar),
+          CONVERSAS (o que os clientes perguntam, com o número de vezes), OBJEÇÕES, INSTAGRAM (os posts que
+          funcionaram), APRENDIDO, REFERÊNCIAS e TESTE. Número que não está na fonte não entra: a ideia que
+          citar um número inventado é descartada. <b>Criar carrossel</b> abre o pedido ao time já preenchido
+          com a ideia.
+        </p>
+        <p>
+          Ao lado, <b>O que o time aprendeu</b>: cada característica dos seus posts (lista, “comente a
+          palavra”, foto real, imagem da IA, número de slides, Reels) comparada com a{' '}
+          <b>mediana da sua própria conta</b>, com peso maior para leads. Só aparece com pelo menos 3 posts
+          com a característica, e diz a confiança (ainda testando, média, alta). O que rendeu menos, o time
+          evita. Com 8 posts ou mais, aparece o melhor horário. O time também aprende com o que você muda no
+          editor: se você sempre encurta os títulos, o redator passa a escrever mais curto.
+        </p>
+        <p>
+          2 de cada 10 carrosséis do time são <b>teste</b>: um formato que você ainda usou pouco, para o time
+          não ficar preso no que já sabe. Em <b>Contas de referência</b>, adicione até 5 perfis profissionais
+          (empresa ou criador) que você admira ou concorrentes: o time lê os números públicos dos posts para
+          ver o que funciona no nicho e nunca copia. Para ler esses números, o Instagram da empresa precisa
+          estar conectado.
+        </p>
       </>
     ),
   },
@@ -1451,7 +1501,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
     onde: { rotulo: 'Vídeos', para: '/videos' },
     termos:
-      'vídeo vídeos reels tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+      'vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
     corpo: (
       <>
         <p>
@@ -1596,6 +1646,33 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             Clique em <b>Baixar o vídeo</b> e poste pelo celular ou pelo computador.
+          </li>
+        </Passos>
+        <h3>4. Publicar e o Comente e receba</h3>
+        <p>
+          Na aba <b>Publicação</b>, a redatora escreve o <b>texto do post</b> do Reels a partir do que você
+          fala, com a mesma chamada do fim do vídeo (preço e prazo só os da promoção cadastrada). Ajuste se
+          quiser, salve e use <b>Copiar o texto</b> na hora de postar. <b>Pedir outro à redatora</b> escreve
+          de novo.
+        </p>
+        <Passos>
+          <li>
+            Se o fim do vídeo pede para <b>comentar uma palavra</b>, a regra do <b>Comente e receba</b> nasce
+            sozinha, igual nos carrosséis: escolha o que a pessoa recebe no direct (um link, um arquivo, a
+            promoção com o botão do WhatsApp ou só a conversa), a etapa do funil e quem atende.
+          </li>
+          <li>
+            Poste o Reels com o texto do post. O CRM reconhece o Reels pelo texto (pode trocar uma palavra ou
+            outra), liga a regra e avisa no sino. Se postou com outro texto, toque em{' '}
+            <b>Já postei: escolher o post</b>. Quem já tinha comentado a palavra nos últimos 7 dias também
+            recebe o direct.
+          </li>
+          <li>
+            Depois, a aba mostra quantos comentaram, receberam o direct, abriram o link e viraram lead. A
+            regra também aparece em Instagram › Comente e receba, marcada com o nome do vídeo.
+          </li>
+          <li>
+            O Argos também sabe dos vídeos: pergunte, por exemplo, quantos leads vieram dos vídeos este mês.
           </li>
         </Passos>
         <Nota>

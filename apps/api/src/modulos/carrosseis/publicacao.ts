@@ -19,10 +19,12 @@ import {
   TIPOS_ARQUIVO_DIRECT,
 } from '@prospeccao/shared/carrosseis-publicacao';
 import { type DivulgarEntrada, textoDoDossie } from '@prospeccao/shared/carrosseis-time';
+import { situacaoParaPublicar } from '@prospeccao/shared/videos';
 import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import { temRecurso } from '../../recursos.js';
 import type { DepsLead } from '../instagram/servico.js';
 import * as instagram from '../instagram/servico.js';
+import * as videos from '../videos/repositorio.js';
 import * as cerebro from './cerebro.js';
 import * as repo from './repositorio.js';
 
@@ -30,7 +32,82 @@ import * as repo from './repositorio.js';
  * A aba Publicação do editor: a regra do "comente e receba" que nasce com o carrossel, o que vai no
  * direct e o post (reconhecido pela legenda ou escolhido). A regra é a mesma de Instagram ›
  * Comente e receba (marcada com o carrossel): mudar aqui ou lá muda a mesma regra.
+ * Desde a v131 vale também para os vídeos (a peça é um carrossel ou um vídeo; o Reels é
+ * reconhecido pelo texto do post).
  */
+
+export type TipoPeca = 'carrossel' | 'video';
+export interface Peca {
+  tipo: TipoPeca;
+  id: number;
+}
+
+/** A coluna da regra que guarda a peça (constante, nunca vem de fora). */
+const COLUNA: Record<TipoPeca, 'carrossel_id' | 'video_id'> = {
+  carrossel: 'carrossel_id',
+  video: 'video_id',
+};
+
+/** O que a aba precisa da peça, seja carrossel ou vídeo. */
+interface DadosDaPeca {
+  titulo: string;
+  /** A palavra que a peça pede para comentar (botão do último slide ou chamada do vídeo). */
+  palavra: string | null;
+  /** O texto que vai no post (a legenda do carrossel, o texto do Reels): reconhece o post. */
+  texto: string;
+  situacao: 'rascunho' | 'pronto' | 'publicado';
+  prontoEm: string | null;
+  baixadoEm: string | null;
+  midiaLink: string | null;
+  publicadoEm: string | null;
+  divulgarId: number | null;
+}
+
+async function dadosDaPeca(db: Executor, p: Peca): Promise<DadosDaPeca> {
+  if (p.tipo === 'video') {
+    const v = await videos.paraPublicar(db, p.id);
+    return {
+      titulo: v.titulo,
+      palavra: v.palavra,
+      texto: v.textoPost,
+      situacao: situacaoParaPublicar(v.situacao, v.midiaId),
+      prontoEm: v.prontoEm,
+      baixadoEm: v.baixadoEm,
+      midiaLink: v.midiaLink,
+      publicadoEm: v.publicadoEm,
+      divulgarId: v.divulgarId,
+    };
+  }
+  const c = await repo.carrossel(db, p.id);
+  const { rows } = await db.query<{
+    pronto_em: string | null;
+    baixado_em: string | null;
+    midia_link: string | null;
+    publicado_em: string | null;
+    divulgar_id: number | null;
+  }>(
+    `SELECT pronto_em, baixado_em, midia_link, publicado_em, divulgar_id
+       FROM comercial.carrosseis WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [p.id],
+  );
+  const x = rows[0];
+  return {
+    titulo: c.titulo,
+    palavra: palavraDaChamada(c.conteudo),
+    texto: c.legenda,
+    situacao:
+      c.situacao === 'publicado'
+        ? 'publicado'
+        : c.situacao === 'pronto' || c.situacao === 'agendado'
+          ? 'pronto'
+          : 'rascunho',
+    prontoEm: x?.pronto_em ?? null,
+    baixadoEm: x?.baixado_em ?? null,
+    midiaLink: x?.midia_link ?? null,
+    publicadoEm: x?.publicado_em ?? null,
+    divulgarId: x?.divulgar_id ?? null,
+  };
+}
 
 interface LinhaRegra {
   id: number;
@@ -60,13 +137,13 @@ interface LinhaRegra {
   criado_em: string;
 }
 
-async function linhaDaRegra(db: Executor, carrosselId: number): Promise<LinhaRegra | null> {
+async function linhaDaRegra(db: Executor, peca: Peca): Promise<LinhaRegra | null> {
   const { rows } = await db.query<LinhaRegra>(
     `SELECT id::int, alvo, midia_id, midia_link, midia_imagem, midia_tipo, midia_legenda, midia_em, palavras, respostas,
             entrega, mensagem, botao_texto, botao_link, arquivo_nome, arquivo_tipo, arquivo_bytes, arquivo_chave,
             divulgar_id, whatsapp, ia_continua, etapa_id, responsavel_id, ligada, criado_em
-       FROM comercial.instagram_regras WHERE conta_id = ${contaSql()} AND carrossel_id = $1`,
-    [carrosselId],
+       FROM comercial.instagram_regras WHERE conta_id = ${contaSql()} AND ${COLUNA[peca.tipo]} = $1`,
+    [peca.id],
   );
   return rows[0] ?? null;
 }
@@ -123,12 +200,12 @@ async function promocaoDoDirect(
 /* ───────────────────────────── Criar a regra ───────────────────────────── */
 
 /**
- * Cria a regra do carrossel (quando a chamada é "comente" e ainda não tem): a palavra do último
- * slide, o direct (o da redatora ou o padrão) e a entrega. Sem o Instagram no plano, não cria.
+ * Cria a regra da peça (quando ela pede para comentar e ainda não tem): a palavra, o direct (o da
+ * redatora ou o padrão) e a entrega. Sem o Instagram no plano, não cria.
  */
 export async function criarRegra(
   db: Executor,
-  carrosselId: number,
+  peca: Peca,
   d: {
     palavra: string;
     entrega: Entrega;
@@ -140,15 +217,16 @@ export async function criarRegra(
   },
 ): Promise<number | null> {
   if (!(await temRecurso(db, 'instagram'))) return null;
+  const coluna = COLUNA[peca.tipo];
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO comercial.instagram_regras
-       (conta_id, alvo, carrossel_id, palavras, respostas, mensagem, botao_texto, entrega, divulgar_id, whatsapp,
+       (conta_id, alvo, ${coluna}, palavras, respostas, mensagem, botao_texto, entrega, divulgar_id, whatsapp,
         etiquetas, criado_por)
-     VALUES (${contaSql()}, 'carrossel', $1, $2, $3, $4, $5, $6, $7, $8, '{instagram,carrossel}', $9)
-     ON CONFLICT (carrossel_id) WHERE carrossel_id IS NOT NULL DO NOTHING
+     VALUES (${contaSql()}, '${peca.tipo}', $1, $2, $3, $4, $5, $6, $7, $8, $10, $9)
+     ON CONFLICT (${coluna}) WHERE ${coluna} IS NOT NULL DO NOTHING
      RETURNING id::int`,
     [
-      carrosselId,
+      peca.id,
       [d.palavra.toUpperCase()],
       ['Te mandei no direct, {nome}!'],
       d.mensagem,
@@ -157,6 +235,7 @@ export async function criarRegra(
       d.divulgarId ?? null,
       d.whatsapp ?? null,
       d.criadoPor !== undefined ? d.criadoPor : (usuarioAtual()?.id ?? null),
+      ['instagram', peca.tipo],
     ],
   );
   return rows[0]?.id ?? null;
@@ -175,48 +254,56 @@ export async function entregaDePartida(
 }
 
 /** O direct escrito pela redatora (com o time ligado) ou o padrão. */
-export async function directDoCarrossel(
+export async function directDaPeca(
   db: Executor,
   claude: ClienteClaude | null,
-  e: { carrosselId: number; palavra: string; entrega: Entrega; divulgarId: number | null; material: string },
+  e: { peca: Peca; palavra: string; entrega: Entrega; divulgarId: number | null; material: string },
 ) {
-  const c = await repo.carrossel(db, e.carrosselId);
   const promocao = await promocaoDoDirect(db, e.divulgarId);
   const empresa = await cerebro.nomeDaEmpresa(db);
   const dossie = (await cerebro.cerebro(db)).dossie;
-  return escreverDirect(claude, {
+  const base = {
     empresa,
     dossieTexto: textoDoDossie(dossie, empresa),
-    titulo: c.titulo,
-    slides: c.conteudo,
-    legenda: c.legenda,
     palavra: e.palavra,
     entrega: e.entrega,
     material: e.material,
     promocao,
-  });
+  };
+  if (e.peca.tipo === 'video') {
+    const v = await videos.paraPublicar(db, e.peca.id);
+    return escreverDirect(claude, {
+      ...base,
+      titulo: v.titulo,
+      slides: [],
+      legenda: v.textoPost,
+      fala: v.fala,
+    });
+  }
+  const c = await repo.carrossel(db, e.peca.id);
+  return escreverDirect(claude, { ...base, titulo: c.titulo, slides: c.conteudo, legenda: c.legenda });
 }
 
 /* ───────────────────────────── A aba ───────────────────────────── */
 
-export async function publicacao(
-  db: Executor,
-  carrosselId: number,
-  redatora: boolean,
-): Promise<PublicacaoCarrossel> {
-  const c = await repo.carrossel(db, carrosselId);
+export async function publicacao(db: Executor, peca: Peca, redatora: boolean): Promise<PublicacaoCarrossel> {
+  const d = await dadosDaPeca(db, peca);
   const noPlano = await temRecurso(db, 'instagram');
-  const palavraDoSlide = palavraDaChamada(c.conteudo);
-  let l = await linhaDaRegra(db, carrosselId);
-  // Carrossel feito à mão que pede para comentar: a regra nasce com o direct padrão.
-  if (!l && noPlano && palavraDoSlide && c.situacao !== 'publicado') {
-    await criarRegra(db, carrosselId, {
-      palavra: palavraDoSlide,
-      entrega: 'conversa',
-      mensagem: directPadrao('conversa', c.titulo),
+  let l = await linhaDaRegra(db, peca);
+  // Peça que pede para comentar e ainda não tem regra (feita à mão, ou vídeo pronto): a regra
+  // nasce com o direct padrão (a redatora pode reescrever na aba).
+  if (!l && noPlano && d.palavra && d.situacao !== 'publicado') {
+    const partida = await entregaDePartida(db, d.divulgarId);
+    const promo = await promocaoDoDirect(db, partida.divulgarId);
+    await criarRegra(db, peca, {
+      palavra: d.palavra,
+      entrega: partida.entrega,
+      mensagem: directPadrao(partida.entrega, d.titulo, promo),
       botao: '',
+      divulgarId: partida.divulgarId,
+      whatsapp: partida.whatsapp,
     });
-    l = await linhaDaRegra(db, carrosselId);
+    l = await linhaDaRegra(db, peca);
   }
   const { rows: ig } = await db.query<{
     usuario: string | null;
@@ -228,19 +315,9 @@ export async function publicacao(
        FROM comercial.instagram_contas WHERE conta_id = ${contaSql()}`,
   );
   const conectado = noPlano && !!ig[0]?.ok && !!instagram.meta();
-  const { rows: pronto } = await db.query<{
-    pronto_em: string | null;
-    baixado_em: string | null;
-    midia_link: string | null;
-    publicado_em: string | null;
-  }>(
-    `SELECT pronto_em, baixado_em, midia_link, publicado_em FROM comercial.carrosseis WHERE id = $1 AND conta_id = ${contaSql()}`,
-    [carrosselId],
-  );
-  const p = pronto[0];
   const esperandoDesde =
-    l && p?.pronto_em
-      ? new Date(Math.max(new Date(l.criado_em).getTime(), new Date(p.pronto_em).getTime())).toISOString()
+    l && d.prontoEm
+      ? new Date(Math.max(new Date(l.criado_em).getTime(), new Date(d.prontoEm).getTime())).toISOString()
       : null;
   const postLigado = !!l?.midia_id && l.alvo === 'publicacao';
   let numeros: PublicacaoCarrossel['numeros'] = null;
@@ -255,12 +332,12 @@ export async function publicacao(
     );
     numeros = rows[0] ?? null;
   }
-  const promocoes = (await cerebro.listarDivulgar(db)).filter((d) => d.tipo === 'promocao');
+  const promocoes = (await cerebro.listarDivulgar(db)).filter((x) => x.tipo === 'promocao');
   return {
     situacao: situacaoDaPublicacao({
       temRegra: !!l,
       instagram: conectado,
-      carrossel: c.situacao,
+      carrossel: d.situacao,
       postLigado,
       esperandoDesde,
     }),
@@ -276,26 +353,26 @@ export async function publicacao(
       postLigado && l?.midia_id
         ? {
             midiaId: l.midia_id,
-            link: l.midia_link ?? p?.midia_link ?? null,
+            link: l.midia_link ?? d.midiaLink ?? null,
             imagem: l.midia_imagem,
             tipo: l.midia_tipo,
             legenda: l.midia_legenda,
-            em: l.midia_em ?? p?.publicado_em ?? null,
+            em: l.midia_em ?? d.publicadoEm ?? null,
           }
         : null,
     numeros,
-    palavraDoSlide,
-    podeReconhecer: podeReconhecer(c.legenda),
+    palavraDoSlide: d.palavra,
+    podeReconhecer: podeReconhecer(d.texto),
     esperandoDesde,
-    baixadoEm: p?.baixado_em ?? null,
-    promocoes: promocoes.map((d) => ({
-      id: d.id,
-      titulo: d.titulo,
-      produto: d.produto,
-      precoDe: d.precoDe,
-      precoPor: d.precoPor,
-      validade: d.validade,
-      ate: d.ate,
+    baixadoEm: d.baixadoEm,
+    promocoes: promocoes.map((x) => ({
+      id: x.id,
+      titulo: x.titulo,
+      produto: x.produto,
+      precoDe: x.precoDe,
+      precoPor: x.precoPor,
+      validade: x.validade,
+      ate: x.ate,
     })),
     whatsappDaEmpresa: await whatsappDaEmpresa(db),
     redatora,
@@ -321,14 +398,14 @@ async function conferirDestino(db: Executor, etapaId: number | null, responsavel
   }
 }
 
-export async function salvar(db: Executor, carrosselId: number, d: PublicacaoEntrada): Promise<void> {
-  await repo.carrossel(db, carrosselId);
+export async function salvar(db: Executor, peca: Peca, d: PublicacaoEntrada): Promise<void> {
+  await dadosDaPeca(db, peca);
   if (!(await temRecurso(db, 'instagram')))
     throw AppError.invalido('O Comente e receba faz parte do Instagram, que não está no seu plano.');
   await conferirDestino(db, d.etapaId, d.responsavelId);
   if (d.entrega === 'promocao' && !(await promocaoDoDirect(db, d.divulgarId)))
     throw AppError.invalido('Escolha uma promoção cadastrada em O que divulgar.');
-  const atual = await linhaDaRegra(db, carrosselId);
+  const atual = await linhaDaRegra(db, peca);
   if (d.entrega === 'arquivo' && !atual?.arquivo_chave)
     throw AppError.invalido('Envie o arquivo que vai no direct.');
   const valores = [
@@ -356,10 +433,10 @@ export async function salvar(db: Executor, carrosselId: number, d: PublicacaoEnt
   else
     await db.query(
       `INSERT INTO comercial.instagram_regras
-         (conta_id, alvo, carrossel_id, palavras, respostas, mensagem, botao_texto, botao_link, entrega, divulgar_id,
+         (conta_id, alvo, ${COLUNA[peca.tipo]}, palavras, respostas, mensagem, botao_texto, botao_link, entrega, divulgar_id,
           whatsapp, ia_continua, etapa_id, responsavel_id, ligada, etiquetas, criado_por)
-       VALUES (${contaSql()}, 'carrossel', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, '{instagram,carrossel}', $14)`,
-      [carrosselId, ...valores, usuarioAtual()?.id ?? null],
+       VALUES (${contaSql()}, '${peca.tipo}', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $15, $14)`,
+      [peca.id, ...valores, usuarioAtual()?.id ?? null, ['instagram', peca.tipo]],
     );
 }
 
@@ -367,14 +444,14 @@ export async function salvar(db: Executor, carrosselId: number, d: PublicacaoEnt
 export async function guardarArquivo(
   db: Executor,
   arm: Armazenamento,
-  carrosselId: number,
+  peca: Peca,
   a: { corpo: Uint8Array; tipo: string; nome: string },
 ): Promise<void> {
   if (!(TIPOS_ARQUIVO_DIRECT as readonly string[]).includes(a.tipo))
     throw AppError.invalido('Envie um PDF, JPG ou PNG.');
   if (!a.corpo.byteLength) throw AppError.invalido('O arquivo veio vazio.');
   if (a.corpo.byteLength > LIMITE_ARQUIVO_DIRECT) throw AppError.invalido('O arquivo pode ter até 10 MB.');
-  const regra = await linhaDaRegra(db, carrosselId);
+  const regra = await linhaDaRegra(db, peca);
   if (!regra) throw AppError.conflito('Salve a regra antes de enviar o arquivo.');
   const ext = EXTENSAO_ARQUIVO[a.tipo as keyof typeof EXTENSAO_ARQUIVO];
   const chave = `instagram/${conta()}/arquivos/${randomUUID()}.${ext}`;
@@ -395,8 +472,8 @@ export async function guardarArquivo(
 }
 
 /** O arquivo para a pessoa conferir (link temporário). */
-export async function linkDoArquivo(db: Executor, arm: Armazenamento, carrosselId: number): Promise<string> {
-  const regra = await linhaDaRegra(db, carrosselId);
+export async function linkDoArquivo(db: Executor, arm: Armazenamento, peca: Peca): Promise<string> {
+  const regra = await linhaDaRegra(db, peca);
   if (!regra?.arquivo_chave) throw AppError.naoEncontrado('Arquivo');
   return arm.urlAssinada(regra.arquivo_chave, { segundos: 600 });
 }
@@ -404,9 +481,12 @@ export async function linkDoArquivo(db: Executor, arm: Armazenamento, carrosselI
 /* ───────────────────────────── O post ───────────────────────────── */
 
 /** "Já postei: escolher o post" (ou "É este"): liga a regra no post escolhido. */
-export async function escolherPost(deps: DepsLead, carrosselId: number, midiaId: string): Promise<void> {
-  const regra = await linhaDaRegra(deps.pool, carrosselId);
-  if (!regra) throw AppError.conflito('Este carrossel não tem regra de Comente e receba.');
+export async function escolherPost(deps: DepsLead, peca: Peca, midiaId: string): Promise<void> {
+  const regra = await linhaDaRegra(deps.pool, peca);
+  if (!regra)
+    throw AppError.conflito(
+      `${peca.tipo === 'video' ? 'Este vídeo' : 'Este carrossel'} não tem regra de Comente e receba.`,
+    );
   const c = await instagram.conexaoDaConta(deps.pool);
   const m = instagram.meta();
   if (!c || !m) throw AppError.invalido('Conecte o Instagram da empresa primeiro.');
@@ -424,23 +504,33 @@ export async function escolherPost(deps: DepsLead, carrosselId: number, midiaId:
 }
 
 /** "Não é este post": a regra volta a esperar (e não liga mais nesse post). */
-export async function naoEOPost(db: Executor, carrosselId: number): Promise<void> {
-  const regra = await linhaDaRegra(db, carrosselId);
-  if (!regra?.midia_id) throw AppError.conflito('Este carrossel ainda não está ligado a um post.');
+export async function naoEOPost(db: Executor, peca: Peca): Promise<void> {
+  const regra = await linhaDaRegra(db, peca);
+  if (!regra?.midia_id)
+    throw AppError.conflito(
+      `${peca.tipo === 'video' ? 'Este vídeo' : 'Este carrossel'} ainda não está ligado a um post.`,
+    );
   await db.query(
     `UPDATE comercial.instagram_regras
-        SET alvo = 'carrossel', midias_recusadas = array_append(midias_recusadas, midia_id), midia_id = NULL,
+        SET alvo = '${peca.tipo}', midias_recusadas = array_append(midias_recusadas, midia_id), midia_id = NULL,
             midia_legenda = NULL, midia_tipo = NULL, midia_link = NULL, midia_imagem = NULL, midia_em = NULL,
             esperando_aviso_em = NULL
       WHERE id = $1 AND conta_id = ${contaSql()}`,
     [regra.id],
   );
-  await db.query(
-    `UPDATE comercial.carrosseis SET situacao = 'pronto', midia_id = NULL, midia_link = NULL, publicado_em = NULL,
-            pronto_em = now()
-      WHERE id = $1 AND conta_id = ${contaSql()}`,
-    [carrosselId],
-  );
+  if (peca.tipo === 'video')
+    await db.query(
+      `UPDATE comercial.videos SET midia_id = NULL, midia_link = NULL, publicado_em = NULL, pronto_em = now()
+        WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [peca.id],
+    );
+  else
+    await db.query(
+      `UPDATE comercial.carrosseis SET situacao = 'pronto', midia_id = NULL, midia_link = NULL, publicado_em = NULL,
+              pronto_em = now()
+        WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [peca.id],
+    );
 }
 
 /** As últimas publicações (para escolher o post). */

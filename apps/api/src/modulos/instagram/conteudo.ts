@@ -112,7 +112,7 @@ export async function atualizarConteudo(
 }
 
 /** Leads de cada publicação: quem veio de um comentário, de uma regra ou de um direct dela. */
-const leadsDosPosts = () => `
+export const leadsDosPosts = () => `
   SELECT DISTINCT x.midia_id, x.empresa_id FROM (
     SELECT midia_id, empresa_id FROM comercial.instagram_interacoes WHERE conta_id = ${contaSql()} AND empresa_id IS NOT NULL
     UNION

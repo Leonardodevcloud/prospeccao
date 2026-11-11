@@ -192,7 +192,7 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
               AS "armazenamentoBytes",
             coalesce(lg.celular, 0)::float8 AS "ligacaoCelularSeg", coalesce(lg.fixo, 0)::float8 AS "ligacaoFixoSeg",
             coalesce(lg.minutos, 0)::float8 AS "ligacaoMinutos",
-            coalesce((SELECT sum(cc.custo_usd) FROM cadastro.consumo_carrosseis cc
+            coalesce((SELECT sum(cc.custo_usd + cc.imagens_usd) FROM cadastro.consumo_carrosseis cc
                        WHERE cc.conta_id = c.id AND cc.dia >= ${INICIO_MES_SP}), 0)::float8 AS "carrosseisUsd",
             coalesce((SELECT sum(cv.custo_usd) FROM cadastro.consumo_videos cv
                        WHERE cv.conta_id = c.id AND cv.dia >= ${INICIO_MES_SP}), 0)::float8 AS "videosUsd",

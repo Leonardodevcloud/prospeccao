@@ -2,6 +2,7 @@ import type { Executor, Pool } from '@prospeccao/db';
 import {
   type ClienteClaude,
   criarClaude,
+  type ImagensDoTime,
   type MedidorClaude,
   montarDossie,
   resumoDasFontes,
@@ -10,6 +11,8 @@ import {
   trabalharNoCarrossel,
   type UsoClaude,
 } from '@prospeccao/integrations/carrosseis';
+import type { Armazenamento } from '@prospeccao/integrations/reuniao';
+import type { ConfigImagem } from '@prospeccao/integrations/videos';
 import { AppError, type Logger } from '@prospeccao/shared';
 import { directPadrao } from '@prospeccao/shared/carrosseis-publicacao';
 import {
@@ -22,7 +25,9 @@ import {
 import { comConta, contaSql, usuarioAtual } from '../../contexto.js';
 import { contratoDaConta } from '../../recursos.js';
 import { notificar } from '../notificacoes/repositorio.js';
+import * as aprender from './aprender.js';
 import * as cerebro from './cerebro.js';
+import { estiloDaConta, fazerImagem, imagensLigadas } from './imagens.js';
 import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 
@@ -39,6 +44,10 @@ export const MODELO_ENV = 'CARROSSEIS_MODELO';
 export interface CarrosseisIa {
   modelo: string;
   cliente(db: Executor, contaId: number): ClienteClaude;
+  /** v132: o GPT Image 2 (com a OPENAI_CHAVE) para as imagens dos carrosséis; null: só fotos da empresa. */
+  imagem?: { config: ConfigImagem; custoUsd: number } | null;
+  /** Onde as imagens feitas ficam guardadas (o mesmo armazenamento das fotos). */
+  armazenamento?: Armazenamento | null;
   /** O botão "Testar" das Configurações da plataforma. */
   testar(): Promise<string>;
 }
@@ -66,15 +75,29 @@ export function medidorClaude(db: Executor, contaId: number): MedidorClaude {
 }
 
 /** Pela variável ANTHROPIC_CHAVE (sem ela, o time de IA fica desligado e a tela explica). */
-export function prepararCarrosseisIa(env: {
-  ANTHROPIC_CHAVE?: string | null;
-  CARROSSEIS_MODELO?: string;
-}): CarrosseisIa | null {
+export function prepararCarrosseisIa(
+  env: {
+    ANTHROPIC_CHAVE?: string | null;
+    CARROSSEIS_MODELO?: string;
+    OPENAI_CHAVE?: string | null;
+    CARROSSEIS_IMAGEM_MODELO?: string;
+    CARROSSEIS_CUSTO_IMAGEM_USD?: number;
+  },
+  armazenamento: Armazenamento | null = null,
+): CarrosseisIa | null {
   if (!env.ANTHROPIC_CHAVE) return null;
   const chave = env.ANTHROPIC_CHAVE;
   const modelo = env.CARROSSEIS_MODELO || 'claude-sonnet-5-5';
   return {
     modelo,
+    imagem:
+      env.OPENAI_CHAVE && armazenamento
+        ? {
+            config: { chave: env.OPENAI_CHAVE, modelo: env.CARROSSEIS_IMAGEM_MODELO || 'gpt-image-2' },
+            custoUsd: env.CARROSSEIS_CUSTO_IMAGEM_USD ?? 0.05,
+          }
+        : null,
+    armazenamento,
     cliente: (db, contaId) => criarClaude({ chave, modelo, medidor: medidorClaude(db, contaId) }),
     testar: () => testarClaude({ chave, modelo }),
   };
@@ -85,7 +108,7 @@ export function prepararCarrosseisIa(env: {
 interface LinhaPedido {
   id: number;
   conta_id: number;
-  tipo: 'carrossel' | 'dossie';
+  tipo: 'carrossel' | 'dossie' | 'ideias';
   entrada: Record<string, unknown>;
   situacao: PedidoDoTime['situacao'];
   etapa: EtapaTime | null;
@@ -270,8 +293,38 @@ async function concluir(
 const hojeSp = () =>
   new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full' }).format(new Date());
 
+/**
+ * As imagens que o time pode pôr neste pedido (v132): geradas (se a pessoa liberou) e o produto num
+ * cenário (se escolheu a foto do produto). Sem a chave da OpenAI, null: só as fotos da empresa.
+ */
+async function imagensDoPedido(
+  db: Executor,
+  ia: CarrosseisIa,
+  l: LinhaPedido,
+  p: PedidoTime,
+  feitas: number[],
+): Promise<ImagensDoTime | null> {
+  if (!imagensLigadas(ia) || !(p.gerarImagens || p.fotoProdutoId)) return null;
+  const produto = p.fotoProdutoId ? await repo.foto(db, p.fotoProdutoId) : null;
+  const estilo = await estiloDaConta(db, p.referenciaId);
+  return {
+    gerar: p.gerarImagens,
+    produto:
+      produto && (produto.origem ?? 'enviada') === 'enviada'
+        ? { fotoId: produto.id, nome: produto.nome }
+        : null,
+    estiloReferencia: estilo.referencia ?? null,
+    fazer: async (x) => {
+      const f = await fazerImagem(db, ia, l.conta_id, x, estilo, { criadoPor: l.criado_por });
+      if (f) feitas.push(f.id);
+      return f?.id ?? null;
+    },
+  };
+}
+
 async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido): Promise<void> {
   const p: PedidoTime = pedidoTimeEntrada.parse(l.entrada);
+  const feitas: number[] = [];
   const empresa = await cerebro.nomeDaEmpresa(db);
   const c = await cerebro.cerebro(db);
   const { identidade } = await repo.identidade(db);
@@ -283,6 +336,10 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
     repo.titulosRecentes(db, 15),
     cerebro.fontesParaOsFatos(db, { dossie: c.dossie, empresa, divulgar, assunto: p.assunto }),
   ]);
+  // v134: o que o time aprendeu com os posts da conta (e, de 10 em 10, 2 carrosséis são teste).
+  const aprendido = await aprender
+    .paraOTime(db)
+    .catch(() => ({ aprendizados: [], preferencias: [], teste: null }));
   const r = await trabalharNoCarrossel(
     ia.cliente(db, l.conta_id),
     {
@@ -297,6 +354,10 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
       anteriores,
       fotos: fotos.map((f) => ({ id: f.id, nome: f.nome })),
       hoje: hojeSp(),
+      imagens: await imagensDoPedido(db, ia, l, p, feitas),
+      aprendizados: aprendido.aprendizados,
+      preferencias: aprendido.preferencias,
+      teste: aprendido.teste,
     },
     (etapa, detalhe) => avancar(db, l.id, etapa, detalhe),
   );
@@ -311,14 +372,21 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
     divulgarId: divulgar?.id ?? null,
     criadoPor: l.criado_por,
   });
+  if (p.ideiaId) await aprender.marcarIdeiaUsada(db, p.ideiaId, carrosselId).catch(() => undefined);
+  if (feitas.length)
+    await db.query(
+      `UPDATE comercial.carrossel_fotos SET carrossel_id = $1
+        WHERE conta_id = ${contaSql()} AND id = ANY($2::int[]) AND carrossel_id IS NULL`,
+      [carrosselId, feitas],
+    );
   // "Comente a palavra": a regra do Comente e receba nasce junto, com o direct da redatora.
   let uso = r.uso;
   let custo = r.custoUsd;
   if (p.chamada === 'comentar' && p.palavra) {
     const partida = await publicacao.entregaDePartida(db, divulgar?.id ?? null);
     const direct = await publicacao
-      .directDoCarrossel(db, ia.cliente(db, l.conta_id), {
-        carrosselId,
+      .directDaPeca(db, ia.cliente(db, l.conta_id), {
+        peca: { tipo: 'carrossel', id: carrosselId },
         palavra: p.palavra.toUpperCase(),
         entrega: partida.entrega,
         divulgarId: partida.divulgarId,
@@ -329,15 +397,19 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
       uso = somarUso(uso, direct.uso);
       custo += direct.custoUsd;
     }
-    await publicacao.criarRegra(db, carrosselId, {
-      palavra: p.palavra,
-      entrega: partida.entrega,
-      mensagem: direct?.mensagem ?? directPadrao(partida.entrega, r.titulo),
-      botao: direct?.botao ?? '',
-      divulgarId: partida.divulgarId,
-      whatsapp: partida.whatsapp,
-      criadoPor: l.criado_por,
-    });
+    await publicacao.criarRegra(
+      db,
+      { tipo: 'carrossel', id: carrosselId },
+      {
+        palavra: p.palavra,
+        entrega: partida.entrega,
+        mensagem: direct?.mensagem ?? directPadrao(partida.entrega, r.titulo),
+        botao: direct?.botao ?? '',
+        divulgarId: partida.divulgarId,
+        whatsapp: partida.whatsapp,
+        criadoPor: l.criado_por,
+      },
+    );
   }
   await concluir(db, l.id, { carrosselId, uso, custoUsd: custo });
   if (l.criado_por)
@@ -347,6 +419,11 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
       texto: `${r.titulo}${r.relatorio.avisos.length ? ` · ${r.relatorio.avisos.length} ponto(s) da revisora para você decidir` : ''}`,
       link: `/carrosseis/${carrosselId}`,
     }).catch(() => undefined);
+}
+
+async function trabalharBuscaDeIdeias(db: Executor, ia: CarrosseisIa, l: LinhaPedido): Promise<void> {
+  const r = await aprender.trabalharIdeias(db, ia, l);
+  await concluir(db, l.id, { uso: r.uso, custoUsd: r.custoUsd });
 }
 
 async function trabalharDossie(db: Executor, ia: CarrosseisIa, l: LinhaPedido): Promise<void> {
@@ -382,6 +459,7 @@ export async function trabalhar(pool: Pool, ia: CarrosseisIa, l: LinhaPedido, lo
   await comConta(l.conta_id, async () => {
     try {
       if (l.tipo === 'dossie') await trabalharDossie(pool, ia, l);
+      else if (l.tipo === 'ideias') await trabalharBuscaDeIdeias(pool, ia, l);
       else await trabalharCarrossel(pool, ia, l);
       log.info({ conta: l.conta_id, pedido: l.id, tipo: l.tipo }, 'carrosséis: pedido pronto');
     } catch (erro) {

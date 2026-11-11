@@ -64,10 +64,13 @@ interface Numeros {
 
 interface Regra extends Partial<Numeros> {
   id: number;
-  alvo: 'publicacao' | 'proxima' | 'todas' | 'carrossel';
+  alvo: 'publicacao' | 'proxima' | 'todas' | 'carrossel' | 'video';
   /** A regra nasceu de um carrossel (muda pela aba Publicação dele). */
   carrosselId: number | null;
   carrosselTitulo: string | null;
+  /** A regra nasceu de um vídeo (v131; muda pela aba Publicação dele). */
+  videoId: number | null;
+  videoTitulo: string | null;
   midiaId: string | null;
   midiaLegenda: string | null;
   midiaTipo: string | null;
@@ -450,6 +453,7 @@ const ROTULO_TIPO: Record<string, string> = {
 function tituloDaRegra(r: Regra): string {
   if (r.alvo === 'todas') return 'Qualquer publicação';
   if (r.alvo === 'carrossel') return `Esperando o post de “${r.carrosselTitulo ?? 'um carrossel'}”`;
+  if (r.alvo === 'video') return `Esperando o Reels de “${r.videoTitulo ?? 'um vídeo'}”`;
   if (r.alvo === 'proxima' && !r.midiaId) return 'A próxima que você postar';
   return r.midiaLegenda?.split('\n')[0]?.slice(0, 70) || 'Publicação sem legenda';
 }
@@ -457,11 +461,13 @@ function tituloDaRegra(r: Regra): string {
 function subtituloDaRegra(r: Regra): string {
   if (r.alvo === 'todas') return 'Vale para tudo o que você publicar';
   if (r.alvo === 'carrossel') return 'Liga sozinha quando o CRM reconhecer o post · do carrossel do CRM';
+  if (r.alvo === 'video') return 'Liga sozinha quando o CRM reconhecer o Reels · do vídeo do CRM';
   if (r.alvo === 'proxima' && !r.midiaId) return 'Liga sozinha na primeira publicação nova';
   return [
     r.midiaTipo && (ROTULO_TIPO[r.midiaTipo] ?? r.midiaTipo),
     r.midiaEm && `publicado ${fmtQuando(r.midiaEm)}`,
     r.carrosselId && 'do carrossel do CRM',
+    r.videoId && 'do vídeo do CRM',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -484,7 +490,7 @@ function Capa(props: {
           name={
             r.alvo === 'todas'
               ? 'layout-grid'
-              : r.alvo === 'proxima' || r.alvo === 'carrossel'
+              : r.alvo === 'proxima' || r.alvo === 'carrossel' || r.alvo === 'video'
                 ? 'clock'
                 : 'image'
           }
@@ -993,6 +999,10 @@ export function InstagramRegra() {
           {admin && r.carrosselId ? (
             <Link className="pp-btn" to={`/carrosseis/${r.carrosselId}?aba=publicacao`}>
               <Icon name="settings" size={16} /> Editar no carrossel
+            </Link>
+          ) : admin && r.videoId ? (
+            <Link className="pp-btn" to={`/videos/${r.videoId}?aba=publicacao`}>
+              <Icon name="settings" size={16} /> Editar no vídeo
             </Link>
           ) : admin ? (
             <Button variant="secondary" icon="settings" onClick={() => setEditar(true)}>

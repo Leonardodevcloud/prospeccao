@@ -19,13 +19,14 @@ import {
 import { Badge, Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
 import { type DetalheComFila, useArquivo, useRevisao, useSituacaoVideos, useVideo } from '../video/dados';
 import { AbaImagens, AbaSomCompleta, MomentosDaFala } from '../video/Enfeites';
+import { AbaPublicacao, SeloPublicacao } from '../video/Publicacao';
 
 /**
  * Um vídeo: enquanto a IA edita, as etapas; depois, a revisão (o vídeo pronto, o que foi cortado e
@@ -101,6 +102,7 @@ function Topo({ v }: { v: DetalheComFila }) {
             ? `${v.duvidas} ${v.duvidas === 1 ? 'corte' : 'cortes'} para você decidir`
             : ROTULO_SITUACAO_VIDEO[v.situacao]}
         </Badge>
+        <SeloPublicacao videoId={v.id} ligado={pronto} />
         <span className="video__espaco" />
         <LinkAjuda artigo="videos">Como funciona</LinkAjuda>
         {pronto && (
@@ -207,10 +209,25 @@ function Falhou({ v }: { v: DetalheComFila }) {
 
 /* ───────────────────────────── Revisão ───────────────────────────── */
 
-type Aba = 'cortes' | 'legenda' | 'imagens' | 'animacoes' | 'som';
+type Aba = 'cortes' | 'legenda' | 'imagens' | 'animacoes' | 'som' | 'publicacao';
 
 function Revisao({ v }: { v: DetalheComFila }) {
-  const [aba, setAba] = useState<Aba>(v.duvidas ? 'cortes' : 'cortes');
+  // O aviso de "o vídeo está no Instagram" abre direto na aba Publicação (?aba=publicacao).
+  const [busca, setBusca] = useSearchParams();
+  const [aba, setAbaLocal] = useState<Aba>(busca.get('aba') === 'publicacao' ? 'publicacao' : 'cortes');
+  const setAba = (a: Aba) => {
+    setAbaLocal(a);
+    const n = new URLSearchParams(busca);
+    if (a === 'publicacao') n.set('aba', 'publicacao');
+    else n.delete('aba');
+    setBusca(n, { replace: true });
+  };
+  const baixar = useMutation({
+    mutationFn: () => api<{ url: string }>(`/videos/${v.id}/arquivo?tipo=final&baixar=sim`),
+    onSuccess: ({ url }) => {
+      window.location.href = url;
+    },
+  });
   const final = useArquivo(v.id, 'final', true, v.prontoEm ?? undefined);
   const original = useArquivo(v.id, 'original', true);
   const ouvinte = useRef<HTMLVideoElement>(null);
@@ -243,6 +260,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
     },
     { id: 'animacoes', rotulo: 'Animações' },
     { id: 'som', rotulo: 'Som' },
+    { id: 'publicacao', rotulo: 'Publicação' },
   ];
   return (
     <div className="video__corpo">
@@ -304,6 +322,8 @@ function Revisao({ v }: { v: DetalheComFila }) {
           {aba === 'imagens' && <AbaImagens v={v} situacao={situacao.data} />}
           {aba === 'animacoes' && <AbaAnimacoes v={v} />}
           {aba === 'som' && <AbaSomCompleta v={v} situacao={situacao.data} />}
+          {aba === 'publicacao' && <AbaPublicacao v={v} aoBaixar={() => baixar.mutate()} />}
+          {aba === 'publicacao' && <ErroDaApi erro={baixar.error} />}
         </div>
       </aside>
     </div>
