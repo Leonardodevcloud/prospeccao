@@ -64,6 +64,7 @@ import { definirEnderecoDasSalas } from './modulos/reunioes/repositorio.js';
 import { rotasAvisoVideo, rotasReunioes, rotasSalaPublica } from './modulos/reunioes/rotas.js';
 import { rotasRua } from './modulos/rua/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
+import { rotasSegundoCerebro } from './modulos/segundo-cerebro/rotas.js';
 import { rotasSiteMaster, rotasSitePublico } from './modulos/site/rotas.js';
 import { rotasTour } from './modulos/tour/rotas.js';
 import { rotasVideos } from './modulos/videos/rotas.js';
@@ -186,6 +187,8 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/atendimento', rotasAtendimento(deps));
   // Meu plano › Assinar (cobrança recorrente no Asaas).
   protegidas.use('/assinatura', rotasAssinatura(deps));
+  // Segundo cérebro (v147): ligar o Cérebro da empresa vale para qualquer conta (fica em Integrações).
+  protegidas.use('/segundo-cerebro', rotasSegundoCerebro(deps));
   // API e integrações: do plano Time em diante (o resumo vale sempre: a tela mostra o cadeado).
   protegidas.use(
     '/integracoes',

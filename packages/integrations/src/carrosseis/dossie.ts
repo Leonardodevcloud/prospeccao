@@ -25,6 +25,8 @@ export interface FontesDoDossie {
   quadros: { quadro: string; coluna: string; leads: number }[];
   ligacoes: string[];
   reunioes: string[];
+  /** O Cérebro da empresa (outro sistema), quando a conta ligou: o que está valendo lá. */
+  segundoCerebro?: { titulo: string; texto: string }[];
 }
 
 /** Telefone, e-mail, CPF/CNPJ e endereços de site saem antes de qualquer texto de cliente ir para a IA. */
@@ -50,6 +52,7 @@ export function resumoDasFontes(f: FontesDoDossie): { rotulo: string; quantos: n
     { rotulo: 'Quadros', quantos: f.quadros.length },
     { rotulo: 'Resumos de ligações', quantos: f.ligacoes.length },
     { rotulo: 'Resumos de reuniões', quantos: f.reunioes.length },
+    ...(f.segundoCerebro?.length ? [{ rotulo: 'Segundo cérebro', quantos: f.segundoCerebro.length }] : []),
   ];
 }
 
@@ -114,7 +117,7 @@ function mensagem(f: FontesDoDossie): string {
     '',
     'COMO FAZER',
     '- Use só o que está nas fontes abaixo. Não invente diferencial, número, prazo ou garantia.',
-    '- "provas": só fatos escritos nas fontes, com o rótulo da fonte entre os colchetes dela (ex.: "Configuração da IA", "Site", "Base de conhecimento").',
+    '- "provas": só fatos escritos nas fontes, com o rótulo da fonte entre os colchetes dela (ex.: "Configuração da IA", "Site", "Base de conhecimento", "Segundo cérebro").',
     '- "perguntas": agrupe o que os clientes perguntam de verdade nas mensagens, comentários, ligações e reuniões; conte quantas vezes cada grupo aparece nas amostras. Escreva a pergunta como o cliente falaria, sem dado de nenhuma pessoa.',
     '- "dores", "desejos" e "objeções": tire das conversas, dos quadros e das objeções já cadastradas.',
     '- "tom": como a empresa fala (pelas mensagens do time, pelo site e pela configuração).',
@@ -131,6 +134,11 @@ function mensagem(f: FontesDoDossie): string {
       25,
     ),
     f.site ? `[Site] (${f.site.url}):\n${f.site.texto.slice(0, 10_000)}` : '',
+    bloco(
+      '[Segundo cérebro] (regras, decisões e fichas que a própria empresa escreveu e aprovou; vale como fonte das provas)',
+      (f.segundoCerebro ?? []).map((k) => `${k.titulo}: ${k.texto.replace(/\s+/g, ' ').slice(0, 900)}`),
+      15,
+    ),
     f.nichos.length ? `NICHOS QUE A EMPRESA PROSPECTA: ${f.nichos.join(', ')}` : '',
     bloco(
       '[Posts do Instagram] (com os números)',

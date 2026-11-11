@@ -16,6 +16,7 @@ import {
 import { contaSql, usuarioAtual } from '../../contexto.js';
 import { lerPerfil } from '../agente/perfil.js';
 import { listarConteudo } from '../instagram/conteudo.js';
+import * as segundoCerebro from '../segundo-cerebro/servico.js';
 
 /**
  * O cérebro da marca (o dossiê que o time de IA lê) e o que divulgar no mês. O dossiê nasce de um
@@ -261,6 +262,10 @@ export async function fontesDoDossie(db: Executor, comSite = true): Promise<Font
       ),
     ]);
   const url = sitio.rows[0]?.site_url ?? null;
+  // O Cérebro da empresa (quando ligado): o que ela já escreveu sobre si, valendo e sem restritos.
+  const doCerebro = await segundoCerebro
+    .trechosParaOTime(db, segundoCerebro.PERGUNTAS_DO_DOSSIE, { max: 15 })
+    .catch(() => []);
   const site =
     comSite && url
       ? await lerSite(url, { timeoutMs: 12_000 })
@@ -280,6 +285,7 @@ export async function fontesDoDossie(db: Executor, comSite = true): Promise<Font
     quadros: quadros.rows.filter((q) => q.leads > 0),
     ligacoes: ligacoes.rows.map((l) => l.texto).filter(Boolean),
     reunioes: reunioes.rows.map((r) => r.texto).filter(Boolean),
+    segundoCerebro: doCerebro.map((t) => ({ titulo: `${t.codigo} ${t.titulo}`, texto: t.trecho })),
   };
 }
 
@@ -305,5 +311,11 @@ export async function fontesParaOsFatos(
   if (d.assunto.trim()) f.push({ rotulo: 'Pedido de quem criou', texto: d.assunto });
   const { perfil, conferidas } = await lerPerfil(db);
   if (Object.keys(conferidas).length) f.push(...fontesDoPerfil(perfil, d.empresa));
+  // O Cérebro da empresa (quando ligado): o assunto do pedido e o que divulgar viram perguntas.
+  const perguntas = [
+    d.assunto,
+    d.divulgar ? [d.divulgar.titulo, d.divulgar.produto].filter(Boolean).join(' ') : '',
+  ];
+  f.push(...(await segundoCerebro.fontesParaOTime(db, perguntas, { max: 6 }).catch(() => [])));
   return f;
 }

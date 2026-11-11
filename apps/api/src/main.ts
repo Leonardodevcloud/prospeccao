@@ -12,6 +12,7 @@ import { iniciarAlertas } from './modulos/alertas/rotina.js';
 import { iniciarAssinaturas } from './modulos/assinatura/servico.js';
 import { prepararAssistente } from './modulos/assistente/preparar.js';
 import { iniciarAtendimento } from './modulos/atendimento/avaliacao.js';
+import { oQueAprendeu } from './modulos/carrosseis/aprender.js';
 import { iniciarTimeCarrosseis, prepararCarrosseisIa } from './modulos/carrosseis/time.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
@@ -31,6 +32,7 @@ import { iniciarPush } from './modulos/push/servico.js';
 import { iniciarQuadros } from './modulos/quadros/leitura.js';
 import { prepararReunioes } from './modulos/reunioes/preparar.js';
 import { iniciarProcessamento } from './modulos/reunioes/processar.js';
+import { iniciarSegundoCerebro } from './modulos/segundo-cerebro/servico.js';
 import { criarServicos } from './servicos.js';
 
 const env = carregarEnvApi();
@@ -160,6 +162,8 @@ const pararLigacoes = iniciarLigacoes({ pool, log, servicos, telefonia });
 const pararQuadros = iniciarQuadros({ pool, log, servicos });
 // Qualidade do atendimento: a nota das conversas paradas e das ligações transcritas.
 const pararAtendimento = iniciarAtendimento({ pool, log, servicos });
+// Segundo cérebro: o que o time aprendeu no Instagram volta para o Cérebro da empresa, 1 vez por semana.
+const pararSegundoCerebro = iniciarSegundoCerebro({ pool, log, aprendido: (db) => oQueAprendeu(db) });
 // Carrosséis: a fila do time de IA (até 2 pedidos ao mesmo tempo).
 const pararCarrosseis = iniciarTimeCarrosseis({ pool, log, ia: carrosseisIa });
 // Porteiro do WhatsApp: sinais de risco do número (pedidos para parar, ninguém respondendo).
@@ -194,6 +198,7 @@ encerrarAoReceberSinal(log, async () => {
   pararQuadros();
   pararAtendimento();
   pararCarrosseis();
+  pararSegundoCerebro();
   pararPorteiro();
   pararListaDominios();
   pararDominios();

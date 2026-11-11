@@ -373,6 +373,15 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 3. [ ] **Melhorar a foto** e **cenário** precisam da `OPENAI_CHAVE` na **api** (é ela que faz as imagens dos carrosséis); sem a chave, as fotos do pedido entram como foram enviadas.
 4. [ ] Franquia: o pedido de cards conta 1 no mês (como um carrossel). Se preferir contar por card, me avise.
 
+## 4z. Segundo cérebro (v147)
+1. [ ] **Cérebro primeiro**: aplicar o `brain-externo.zip` no repositório `brain`, commit e push. No Railway do Cérebro, redeploy da **api** (roda a migration 008), do **mcp** (o token agora tem uso) e da **web**. O worker não muda.
+2. [ ] **Prospect Team depois**: migration 105 roda sozinha no redeploy da **api**; o front publica sozinho. Precisa da **CHAVE_CREDENCIAIS** na api (já usada pelo Instagram e pelos avisos).
+3. [ ] No Cérebro: Integrações › **Outros sistemas (Prospect Team)** › Gerar token. Gere **um token por conta** do Prospect Team que vai ligar (Tutts, Fiix…), com o nome da conta, para revogar uma sem parar as outras. O token age em nome de quem gerou: gere com o seu usuário (ou um usuário próprio, tipo "Prospect Team", papel membro).
+4. [ ] No Prospect Team: Integrações › **Segundo cérebro** › cole o endereço e o token › Conectar e testar. Depois, em "Ver o que os agentes vão ler", procure um assunto que você sabe que está no Cérebro.
+5. [ ] Conferir que o que é **restrito** no Cérebro não aparece na busca e que os registros de clientes não mostram dado pessoal (o Cérebro mascara e-mail, CPF, telefone…; **nomes de pessoas não são mascarados**: se uma ficha de cliente tiver nome de pessoa que não pode ir para um post, marque como restrito).
+6. [ ] Em até 6 horas depois de ligar (e depois 1 vez por semana), ver em **Revisar** no Cérebro a nota "Aprendizados do Instagram — <conta> — semana …" (ou clicar em Enviar aprendizados agora). Aprove se fizer sentido para a equipe. Conta sem números do Instagram não manda nada.
+7. [ ] Os tokens do Claude que já existiam continuam valendo só no conector do Claude (a migration marca todos como `claude`).
+
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.
 - [ ] Aba "Plano e módulos": ajustar usuários e leads/mês se o combinado foi diferente, e a mensalidade combinada.

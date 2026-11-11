@@ -19405,3 +19405,84 @@ form.janela-pedido > button[type="submit"] {
 .cortar__marcar {
   margin-left: auto;
 }
+
+/* Integrações › Segundo cérebro (v147) */
+.cerebro-ext {
+  display: grid;
+  gap: var(--space-4);
+}
+.cerebro-ext .lig-totais {
+  margin-bottom: 0;
+}
+.cerebro-ext__nome {
+  overflow: hidden;
+  font-size: 18px !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cerebro-ext__grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.cerebro-ext__titulo {
+  margin: 0 0 var(--space-3);
+  font-size: 15px;
+}
+.cerebro-ext__opcoes {
+  display: grid;
+  gap: var(--space-3);
+}
+.cerebro-ext__opcoes .interruptor {
+  align-items: flex-start;
+}
+.cerebro-ext__opcoes .interruptor span {
+  display: grid;
+  gap: 2px;
+}
+.cerebro-ext__opcoes .interruptor small {
+  color: var(--ink-muted);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.cerebro-ext__acoes {
+  flex-wrap: wrap;
+  margin: var(--space-4) 0 var(--space-2);
+}
+.cerebro-ext__passos {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding-left: 20px;
+}
+.cerebro-ext__busca {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.cerebro-ext__busca input {
+  flex: 1;
+  min-width: 0;
+}
+.cerebro-ext__trechos {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cerebro-ext__trechos li {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.cerebro-ext__trechos p {
+  margin: 6px 0 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}

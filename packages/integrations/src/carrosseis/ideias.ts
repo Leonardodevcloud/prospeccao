@@ -24,6 +24,7 @@ export const FONTES_DAS_IDEIAS = [
   'LIGAÇÕES',
   'REFERÊNCIAS',
   'APRENDIDO',
+  'SEGUNDO CÉREBRO',
   'TESTE',
 ] as const;
 export type FonteDaIdeia = (typeof FONTES_DAS_IDEIAS)[number];
@@ -108,6 +109,7 @@ export function mensagemDasIdeias(e: EntradaIdeias): string {
     '- Ligue as ideias ao que os clientes perguntam e às objeções, com o número de vezes quando a fonte tem.',
     '- Use o que o time aprendeu (APRENDIDO) para escolher o formato; o que o time evita, evite.',
     '- REFERÊNCIAS servem para ver o que funciona no nicho: nunca copie o post de outra conta.',
+    '- SEGUNDO CÉREBRO é o que a própria empresa escreveu e aprovou (regras, decisões, clientes): use para ideias com autoridade, sem expor nada interno nem prometer o que não está lá.',
     '- Não repita o ângulo dos carrosséis que o time já fez.',
     '- O gancho segue o manual de redação (específico, sem frase pronta).',
   ].join('\n');

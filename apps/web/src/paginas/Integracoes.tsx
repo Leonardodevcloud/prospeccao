@@ -122,6 +122,7 @@ const ABAS = [
   { id: 'chaves', rotulo: 'Chaves da API' },
   { id: 'formularios', rotulo: 'Formulários do site' },
   { id: 'avisos', rotulo: 'Avisos (webhooks)' },
+  { id: 'cerebro', rotulo: 'Segundo cérebro' },
 ] as const;
 type Aba = (typeof ABAS)[number]['id'];
 
@@ -179,11 +180,13 @@ export function Integracoes() {
             <LinkAjuda artigo="integracoes" />
           </p>
         </div>
-        <div className="acoes">
-          <Button variant="primary" icon="plus" onClick={() => setNovo(aba)}>
-            {aba === 'chaves' ? 'Nova chave' : aba === 'formularios' ? 'Novo formulário' : 'Novo aviso'}
-          </Button>
-        </div>
+        {aba !== 'cerebro' && (
+          <div className="acoes">
+            <Button variant="primary" icon="plus" onClick={() => setNovo(aba)}>
+              {aba === 'chaves' ? 'Nova chave' : aba === 'formularios' ? 'Novo formulário' : 'Novo aviso'}
+            </Button>
+          </div>
+        )}
       </div>
       <div className="pipelines int-abas" role="tablist" aria-label="Seções de integrações">
         {ABAS.map((a) => (
@@ -199,7 +202,9 @@ export function Integracoes() {
           </button>
         ))}
       </div>
-      {resumo.isPending ? (
+      {aba === 'cerebro' ? (
+        <SegundoCerebro />
+      ) : resumo.isPending ? (
         <div className="esqueleto" style={{ height: 320 }} />
       ) : !resumo.data ? (
         <ErroDaApi erro={resumo.error} />
@@ -1435,5 +1440,401 @@ function EditarAviso(props: { a: Aviso | null; aoFechar: () => void }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+/* ───────────────────────────── Segundo cérebro ───────────────────────────── */
+
+interface EstadoCerebro {
+  conectado: boolean;
+  url: string | null;
+  tokenFinal: string | null;
+  usuarioNoCerebro: string | null;
+  ligado: boolean;
+  enviarAprendizados: boolean;
+  testadoEm: string | null;
+  erro: string | null;
+  erroEm: string | null;
+  ultimaLeituraEm: string | null;
+  leituras: number;
+  ultimoEnvio: { em: string; codigo: string | null; link: string | null } | null;
+}
+
+interface TrechoCerebro {
+  codigo: string;
+  titulo: string;
+  tipoNome: string;
+  emRevisao: boolean;
+  trecho: string;
+  link: string;
+}
+
+/**
+ * Liga o Prospect Team ao Cérebro da empresa (v147): os agentes de carrosséis, cards, ideias e vídeos
+ * leem o que está valendo lá, e o que o Instagram ensina volta para lá como rascunho. Qualquer conta.
+ */
+function SegundoCerebro() {
+  const cliente = useQueryClient();
+  const chave = ['segundo-cerebro'];
+  const estado = useQuery({ queryKey: chave, queryFn: () => api<EstadoCerebro>('/segundo-cerebro') });
+  const guardar = (e: EstadoCerebro) => cliente.setQueryData(chave, e);
+  const [trocando, setTrocando] = useState(false);
+  const [tirar, setTirar] = useState(false);
+  const testar = useMutation({
+    mutationFn: () => api<EstadoCerebro>('/segundo-cerebro/testar', { metodo: 'POST' }),
+    onSuccess: guardar,
+    onSettled: () => cliente.invalidateQueries({ queryKey: chave }),
+  });
+  const ajustar = useMutation({
+    mutationFn: (d: { ligado?: boolean; enviarAprendizados?: boolean }) =>
+      api<EstadoCerebro>('/segundo-cerebro', { metodo: 'PATCH', corpo: d }),
+    onSuccess: guardar,
+  });
+  const enviar = useMutation({
+    mutationFn: () =>
+      api<{
+        enviado: boolean;
+        motivo?: string;
+        codigo?: string;
+        link?: string;
+        jaExistia?: boolean;
+        estado: EstadoCerebro;
+      }>('/segundo-cerebro/enviar-agora', { metodo: 'POST' }),
+    onSuccess: (r) => guardar(r.estado),
+  });
+  const desligar = useMutation({
+    mutationFn: () => api('/segundo-cerebro', { metodo: 'DELETE' }),
+    onSuccess: () => {
+      setTirar(false);
+      void cliente.invalidateQueries({ queryKey: chave });
+    },
+  });
+
+  if (estado.isPending) return <div className="esqueleto" style={{ height: 320 }} />;
+  if (!estado.data) return <ErroDaApi erro={estado.error} />;
+  const e = estado.data;
+  if (!e.conectado || trocando)
+    return (
+      <ConectarCerebro
+        trocando={trocando}
+        urlAtual={e.url}
+        aoConectar={(n) => {
+          guardar(n);
+          setTrocando(false);
+        }}
+        aoCancelar={trocando ? () => setTrocando(false) : undefined}
+      />
+    );
+
+  const situacao = !e.ligado ? 'Desligado' : e.erro ? 'Com erro' : 'Ligado';
+  return (
+    <div className="cerebro-ext">
+      <div className="lig-totais">
+        <div>
+          <small>Situação</small>
+          <b>{situacao}</b>
+          <span>{e.testadoEm ? `testado ${fmtQuando(e.testadoEm)}` : 'ainda não testado'}</span>
+        </div>
+        <div>
+          <small>Conta no Cérebro</small>
+          <b className="cerebro-ext__nome">{e.usuarioNoCerebro ?? '—'}</b>
+          <span className="mono">token …{e.tokenFinal}</span>
+        </div>
+        <div>
+          <small>Leituras dos agentes</small>
+          <b>{fmtNumero(e.leituras)}</b>
+          <span>{e.ultimaLeituraEm ? `a última ${fmtQuando(e.ultimaLeituraEm)}` : 'nenhuma ainda'}</span>
+        </div>
+        <div>
+          <small>Aprendizados enviados</small>
+          <b>{e.ultimoEnvio?.codigo ?? '—'}</b>
+          <span>{e.ultimoEnvio ? fmtQuando(e.ultimoEnvio.em) : 'nenhum ainda'}</span>
+        </div>
+      </div>
+
+      {e.erro && (
+        <Mensagem tipo="erro">
+          {e.erro}
+          {e.erroEm ? ` (${fmtQuando(e.erroEm)})` : ''}. Os agentes seguem trabalhando sem o Cérebro até
+          voltar.
+        </Mensagem>
+      )}
+
+      <div className="cerebro-ext__grade">
+        <Panel>
+          <h2 className="cerebro-ext__titulo">O que entra e o que sai</h2>
+          <div className="cerebro-ext__opcoes">
+            <label className="interruptor">
+              <input
+                type="checkbox"
+                checked={e.ligado}
+                disabled={ajustar.isPending}
+                onChange={(x) => ajustar.mutate({ ligado: x.target.checked })}
+              />
+              <span>
+                <b>Os agentes leem o Cérebro</b>
+                <small>
+                  Carrosséis, cards, ideias, o texto dos vídeos e o rascunho do cérebro da marca usam o que
+                  está valendo lá. Restritos e rascunhos não saem do Cérebro; e-mail, CPF e telefone chegam
+                  mascarados.
+                </small>
+              </span>
+            </label>
+            <label className="interruptor">
+              <input
+                type="checkbox"
+                checked={e.enviarAprendizados}
+                disabled={ajustar.isPending || !e.ligado}
+                onChange={(x) => ajustar.mutate({ enviarAprendizados: x.target.checked })}
+              />
+              <span>
+                <b>Mandar o que o Instagram ensinou, toda semana</b>
+                <small>
+                  Uma nota com o que funcionou, o melhor horário e os posts que mais trouxeram leads. Entra
+                  como rascunho em Revisar, no Cérebro: alguém aprova antes de valer.
+                </small>
+              </span>
+            </label>
+          </div>
+          <div className="acoes cerebro-ext__acoes">
+            <Button
+              variant="secondary"
+              icon="refresh-cw"
+              disabled={testar.isPending}
+              onClick={() => testar.mutate()}
+            >
+              {testar.isPending ? 'Testando…' : 'Testar'}
+            </Button>
+            <Button
+              variant="secondary"
+              icon="send"
+              disabled={enviar.isPending || !e.ligado}
+              onClick={() => enviar.mutate()}
+            >
+              {enviar.isPending ? 'Enviando…' : 'Enviar aprendizados agora'}
+            </Button>
+            <Button variant="ghost" onClick={() => setTrocando(true)}>
+              Trocar endereço ou token
+            </Button>
+            <Button variant="ghost" onClick={() => setTirar(true)}>
+              Desconectar
+            </Button>
+          </div>
+          {testar.isSuccess && !testar.data.erro && (
+            <Mensagem tipo="ok">O Cérebro respondeu. Tudo certo.</Mensagem>
+          )}
+          <ErroDaApi erro={testar.error ?? ajustar.error} />
+          {enviar.data &&
+            (enviar.data.enviado ? (
+              <Mensagem tipo="ok">
+                {enviar.data.jaExistia ? 'A nota desta semana já estava no Cérebro' : 'Nota enviada'}:{' '}
+                {enviar.data.link ? (
+                  <a href={enviar.data.link} target="_blank" rel="noopener">
+                    {enviar.data.codigo}
+                  </a>
+                ) : (
+                  enviar.data.codigo
+                )}
+                . Ela espera aprovação em Revisar.
+              </Mensagem>
+            ) : (
+              <Mensagem tipo="aviso">{enviar.data.motivo}</Mensagem>
+            ))}
+          <ErroDaApi erro={enviar.error} />
+        </Panel>
+        <ExperimentarCerebro ligado={e.ligado} />
+      </div>
+
+      {tirar && (
+        <Modal
+          titulo="Desconectar o Cérebro?"
+          aoFechar={() => setTirar(false)}
+          rodape={
+            <>
+              <Button variant="ghost" onClick={() => setTirar(false)}>
+                Cancelar
+              </Button>
+              <Button variant="danger" disabled={desligar.isPending} onClick={() => desligar.mutate()}>
+                Desconectar o Cérebro
+              </Button>
+            </>
+          }
+        >
+          <p>
+            Os agentes param de ler o Cérebro e os aprendizados param de ir para lá. O que já foi enviado
+            continua no Cérebro. Para revogar o token de vez, apague também lá, em Integrações › Outros
+            sistemas.
+          </p>
+          <ErroDaApi erro={desligar.error} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function ConectarCerebro(props: {
+  trocando: boolean;
+  urlAtual: string | null;
+  aoConectar: (e: EstadoCerebro) => void;
+  aoCancelar?: () => void;
+}) {
+  const [url, setUrl] = useState(props.urlAtual ?? '');
+  const [token, setToken] = useState('');
+  const conectar = useMutation({
+    mutationFn: () =>
+      api<EstadoCerebro>('/segundo-cerebro', {
+        metodo: 'PUT',
+        corpo: { url: url.trim(), token: token.trim() },
+      }),
+    onSuccess: props.aoConectar,
+  });
+  return (
+    <div className="cerebro-ext__grade">
+      <Panel>
+        <h2 className="cerebro-ext__titulo">
+          {props.trocando ? 'Trocar o endereço ou o token' : 'Ligue o Prospect Team ao Cérebro da empresa'}
+        </h2>
+        <form
+          className="form"
+          onSubmit={(x) => {
+            x.preventDefault();
+            conectar.mutate();
+          }}
+        >
+          <div className="campo">
+            <label htmlFor="cb-url">Endereço do Cérebro</label>
+            <input
+              id="cb-url"
+              className="filtro"
+              inputMode="url"
+              autoComplete="off"
+              placeholder="https://cerebro.suaempresa.com.br/api/externo"
+              value={url}
+              onChange={(x) => setUrl(x.target.value)}
+            />
+          </div>
+          <div className="campo">
+            <label htmlFor="cb-token">Token</label>
+            <input
+              id="cb-token"
+              className="filtro mono"
+              type="password"
+              autoComplete="off"
+              placeholder="cbr_…"
+              value={token}
+              onChange={(x) => setToken(x.target.value)}
+            />
+            <small className="quieto">
+              Fica guardado cifrado. Depois de salvo, só os 4 últimos aparecem aqui.
+            </small>
+          </div>
+          <ErroDaApi erro={conectar.error} />
+          <div className="acoes">
+            {props.aoCancelar && (
+              <Button type="button" variant="ghost" onClick={props.aoCancelar}>
+                Cancelar
+              </Button>
+            )}
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={conectar.isPending || url.trim().length < 4 || !token.trim().startsWith('cbr_')}
+            >
+              {conectar.isPending ? 'Testando…' : 'Conectar e testar'}
+            </Button>
+          </div>
+        </form>
+      </Panel>
+      <Panel>
+        <h2 className="cerebro-ext__titulo">Como pegar o endereço e o token</h2>
+        <ol className="cerebro-ext__passos">
+          <li>
+            No Cérebro, abra <b>Integrações › Outros sistemas (Prospect Team)</b>.
+          </li>
+          <li>
+            Clique em <b>Gerar token</b>. Aparecem o endereço e o token (só dessa vez).
+          </li>
+          <li>Cole os dois aqui e clique em Conectar e testar.</li>
+        </ol>
+        <p className="quieto">
+          O token age em nome de quem o gerou no Cérebro. Ele só lê o que está valendo e não é restrito (dados
+          pessoais chegam mascarados) e só cria rascunhos, que alguém aprova lá. Não abre o conector do Claude
+          nem os dados da operação.
+        </p>
+      </Panel>
+    </div>
+  );
+}
+
+/** Uma busca de mentira para ver o que os agentes vão ler. */
+function ExperimentarCerebro(props: { ligado: boolean }) {
+  const cliente = useQueryClient();
+  const [pergunta, setPergunta] = useState('');
+  const buscar = useMutation({
+    // A busca conta como leitura (e mostra o erro, se o Cérebro não respondeu): o resumo se atualiza.
+    onSuccess: (r) => cliente.setQueryData(['segundo-cerebro'], r.estado),
+    mutationFn: () =>
+      api<{ itens: TrechoCerebro[]; estado: EstadoCerebro }>('/segundo-cerebro/experimentar', {
+        metodo: 'POST',
+        corpo: { pergunta: pergunta.trim() },
+      }),
+  });
+  return (
+    <Panel>
+      <h2 className="cerebro-ext__titulo">Ver o que os agentes vão ler</h2>
+      <form
+        className="cerebro-ext__busca"
+        onSubmit={(x) => {
+          x.preventDefault();
+          buscar.mutate();
+        }}
+      >
+        <label htmlFor="cb-pergunta" className="pp-sr">
+          Assunto
+        </label>
+        <input
+          id="cb-pergunta"
+          className="filtro"
+          placeholder="Ex.: prazo de entrega, garantia, tom de voz"
+          value={pergunta}
+          onChange={(x) => setPergunta(x.target.value)}
+        />
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={!props.ligado || buscar.isPending || pergunta.trim().length < 3}
+        >
+          {buscar.isPending ? 'Buscando…' : 'Buscar'}
+        </Button>
+      </form>
+      <ErroDaApi erro={buscar.error} />
+      {buscar.data &&
+        (buscar.data.itens.length ? (
+          <ul className="cerebro-ext__trechos">
+            {buscar.data.itens.map((t) => (
+              <li key={t.codigo}>
+                <div>
+                  <a href={t.link} target="_blank" rel="noopener" className="mono">
+                    {t.codigo}
+                  </a>{' '}
+                  <b>{t.titulo}</b> <Badge>{t.tipoNome}</Badge>
+                  {t.emRevisao && <Badge tone="warning">em revisão</Badge>}
+                </div>
+                <p>{t.trecho}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="quieto">
+            Nada no Cérebro sobre isso (ou ele não respondeu). A pergunta fica anotada lá como lacuna.
+          </p>
+        ))}
+      {!buscar.data && (
+        <p className="quieto">
+          É o mesmo que o redator e o revisor recebem quando o pedido fala desse assunto. O que aparece aqui
+          pode ser citado nos slides; o revisor confere cada fato contra o trecho.
+        </p>
+      )}
+    </Panel>
   );
 }

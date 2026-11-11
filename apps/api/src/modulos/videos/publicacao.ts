@@ -6,6 +6,7 @@ import { textoDoDossie } from '@prospeccao/shared/carrosseis-time';
 import { contaSql } from '../../contexto.js';
 import * as cerebro from '../carrosseis/cerebro.js';
 import * as publicacao from '../carrosseis/publicacao.js';
+import * as segundoCerebro from '../segundo-cerebro/servico.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -28,9 +29,13 @@ export async function escreverTexto(
   const promo = v.divulgarId ? await cerebro.divulgar(db, v.divulgarId).catch(() => null) : null;
   const promocao = promo && promo.tipo === 'promocao' ? promo : null;
   const chamada = v.palavra ? { tipo: 'comente' as const, palavra: v.palavra, texto: '' } : v.opcoes.chamada;
+  // O Cérebro da empresa (quando ligado): o que está valendo lá sobre o assunto do vídeo.
+  const doCerebro = await segundoCerebro
+    .textoParaOTime(db, [v.titulo, v.opcoes.assunto ?? ''], 5)
+    .catch(() => '');
   const r = await escreverTextoDoPost(claude, {
     empresa,
-    dossieTexto: textoDoDossie(dossie, empresa),
+    dossieTexto: `${textoDoDossie(dossie, empresa)}${doCerebro ? `\n\nDO SEGUNDO CÉREBRO DA EMPRESA (regras e fatos aprovados por ela; não exponha nada interno):\n${doCerebro}` : ''}`,
     titulo: v.titulo,
     assunto: v.opcoes.assunto ?? '',
     fala: v.fala,

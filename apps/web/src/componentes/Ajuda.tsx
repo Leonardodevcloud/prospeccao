@@ -1975,12 +1975,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
   {
     id: 'integracoes',
     area: 'Gestão',
-    titulo: 'Integrações: API, formulários do site e avisos',
+    titulo: 'Integrações: API, formulários do site, avisos e segundo cérebro',
     resumo:
-      'Ligue o CRM ao site, ao ERP, à loja virtual e ao Make/Zapier: chaves da API, formulários direto no funil e avisos (webhooks).',
+      'Ligue o CRM ao site, ao ERP, à loja virtual e ao Make/Zapier (chaves da API, formulários e avisos) e ao Cérebro da empresa (segundo cérebro).',
     onde: { rotulo: 'Integrações', para: '/integracoes' },
     termos:
-      'api integração integracao chave token webhook aviso formulário formulario site elementor wordpress contact form rd station typeform google forms make zapier erp bling loja virtual n8n openapi postman desenvolvedor',
+      'api integração integracao chave token webhook aviso formulário formulario site elementor wordpress contact form rd station typeform google forms make zapier erp bling loja virtual n8n openapi postman desenvolvedor segundo cérebro cerebro brain second brain base de conhecimento cbr aprendizados',
     corpo: (
       <>
         <p>
@@ -2054,6 +2054,50 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Make e Zapier: use uma chave com a permissão “Gerenciar avisos”; eles se inscrevem sozinhos nos
           eventos.
         </Nota>
+        <h3>Segundo cérebro (o Cérebro da empresa)</h3>
+        <p>
+          Se a empresa usa o <b>Cérebro</b> (o segundo cérebro com as regras, decisões, fichas de clientes e
+          POPs), ligue os dois na aba <b>Segundo cérebro</b>. Vale para qualquer plano; só o administrador
+          mexe.
+        </p>
+        <Passos>
+          <li>
+            No Cérebro, abra <b>Integrações › Outros sistemas (Prospect Team)</b> e clique em{' '}
+            <b>Gerar token</b>. Aparecem o endereço e o token (o token só dessa vez).
+          </li>
+          <li>
+            Aqui, cole os dois e clique em <b>Conectar e testar</b>. O token fica guardado cifrado; depois só
+            os 4 últimos aparecem.
+          </li>
+          <li>
+            Em <b>Ver o que os agentes vão ler</b>, escreva um assunto (prazo, garantia, tom de voz) e veja o
+            que volta.
+          </li>
+        </Passos>
+        <ul>
+          <li>
+            <b>O que o time lê</b>: o redator e o revisor dos carrosséis e dos cards recebem o que o Cérebro
+            tem sobre o assunto do pedido (e sobre o que divulgar) e podem citar nos slides; o revisor confere
+            cada fato contra o trecho. O estrategista usa nas ideias (fonte SEGUNDO CÉREBRO), a redatora usa
+            no texto do post dos vídeos, e o rascunho do cérebro da marca passa a ler o que a empresa já
+            escreveu lá.
+          </li>
+          <li>
+            <b>O que nunca sai do Cérebro</b>: o que é restrito, os rascunhos e o que saiu de uso. E-mail,
+            CPF, CNPJ, telefone, placa, conta e PIX chegam mascarados. O token só lê e cria rascunhos; não
+            abre o conector do Claude nem os dados da operação.
+          </li>
+          <li>
+            <b>O que volta</b>: uma vez por semana (ou no botão <b>Enviar aprendizados agora</b>), uma nota
+            com o que o Instagram ensinou: o que funcionou, o melhor horário, o que você sempre muda nos
+            textos e os posts que mais trouxeram resultado. Entra como <b>rascunho</b> em Revisar, no Cérebro;
+            alguém aprova antes de valer. Na mesma semana, não duplica.
+          </li>
+          <li>
+            Cérebro fora do ar ou token revogado: os agentes seguem trabalhando sem ele e o erro aparece na
+            aba. Para parar, desligue “Os agentes leem o Cérebro” ou clique em <b>Desconectar</b>.
+          </li>
+        </ul>
       </>
     ),
   },

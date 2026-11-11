@@ -25,7 +25,8 @@
     "./carrosseis": "./src/carrosseis/index.ts",
     "./atendimento": "./src/atendimento/index.ts",
     "./videos": "./src/videos/index.ts",
-    "./saber": "./src/saber/index.ts"
+    "./saber": "./src/saber/index.ts",
+    "./segundo-cerebro": "./src/segundo-cerebro/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

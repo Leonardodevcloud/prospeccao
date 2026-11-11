@@ -20,6 +20,7 @@ import { ROTULO_DIVULGAR, textoDoDossie } from '@prospeccao/shared/carrosseis-ti
 import { contaSql, usuarioAtual } from '../../contexto.js';
 import { leadsDosPosts } from '../instagram/conteudo.js';
 import * as instagram from '../instagram/servico.js';
+import * as segundoCerebro from '../segundo-cerebro/servico.js';
 import * as cerebro from './cerebro.js';
 import * as repo from './repositorio.js';
 import type { CarrosseisIa } from './time.js';
@@ -294,11 +295,15 @@ export async function buscaEmAndamento(db: Executor): Promise<boolean> {
 /** As fontes das ideias, em texto: o que o estrategista pode citar (e o que a evidência confere). */
 async function fontesDasIdeias(db: Executor): Promise<Partial<Record<FonteDaIdeia, string>>> {
   const c = await cerebro.cerebro(db);
-  const [divulgar, posts, apr, refs] = await Promise.all([
+  const [divulgar, posts, apr, refs, doCerebro] = await Promise.all([
     cerebro.listarDivulgar(db),
     cerebro.postsQueFuncionaram(db, 8),
     oQueAprendeu(db).catch(() => null),
     referencias(db),
+    // O Cérebro da empresa (quando ligado), pelos pilares do dossiê.
+    segundoCerebro
+      .textoParaOTime(db, [...c.dossie.pilares.slice(0, 4), 'novidades, lançamentos e decisões recentes'], 8)
+      .catch(() => ''),
   ]);
   const linhas = (l: string[]) => l.filter(Boolean).join('\n');
   return {
@@ -337,6 +342,7 @@ async function fontesDasIdeias(db: Executor): Promise<Partial<Record<FonteDaIdei
             .join(' | ')}`;
         }),
     ),
+    'SEGUNDO CÉREBRO': doCerebro,
   };
 }
 
