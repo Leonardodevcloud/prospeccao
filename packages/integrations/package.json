@@ -24,7 +24,8 @@
     "./slides": "./src/slides/index.ts",
     "./carrosseis": "./src/carrosseis/index.ts",
     "./atendimento": "./src/atendimento/index.ts",
-    "./videos": "./src/videos/index.ts"
+    "./videos": "./src/videos/index.ts",
+    "./saber": "./src/saber/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

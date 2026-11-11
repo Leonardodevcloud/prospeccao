@@ -18,7 +18,8 @@ import {
   tempoNoEditado,
   tempoNoOriginal,
 } from '@prospeccao/shared/videos';
-import type { ClienteClaude } from '../carrosseis/claude.js';
+import type { BlocoSistema, ClienteClaude } from '../carrosseis/claude.js';
+import { MANUAL_MOTION } from '../saber/index.js';
 
 /**
  * Os enfeites do vídeo (v129): as animações que acompanham a fala, as imagens e o clima da música.
@@ -188,6 +189,12 @@ Imagens:
 
 Música: o clima pelo assunto (promoção → animada ou confiante; explicação → calma; institucional → corporativa) e o estilo em inglês, sempre instrumental, sem citar artista.`;
 
+/** O manual do editor de motion e as regras da tarefa: iguais em todo vídeo, vão para o cache. */
+export const SISTEMA_DO_MOTION: BlocoSistema[] = [
+  { texto: MANUAL_MOTION },
+  { texto: SISTEMA_ENFEITES, cache: true },
+];
+
 export interface EntradaEnfeites {
   palavras: PalavraVideo[];
   ficam: Trecho[];
@@ -309,7 +316,7 @@ export async function pedirEnfeites(claude: ClienteClaude, e: EntradaEnfeites): 
     .join('\n\n');
   const r = await claude.pedir({
     agente: 'editor de motion',
-    sistema: [{ texto: SISTEMA_ENFEITES }],
+    sistema: SISTEMA_DO_MOTION,
     mensagem,
     ferramenta: {
       nome: 'propor_enfeites',
@@ -551,7 +558,7 @@ export async function pedirImagemPara(
 ): Promise<{ fotoId: number | null; gerar: string; encaixe: EncaixeImagem; motivo: string }> {
   const r = await claude.pedir({
     agente: 'editor de motion',
-    sistema: [{ texto: SISTEMA_ENFEITES }],
+    sistema: SISTEMA_DO_MOTION,
     mensagem: [
       e.assunto ? `Assunto do vídeo: ${e.assunto}` : '',
       e.modo === 'fotos' ? 'Use só uma foto da empresa (não gere).' : '',

@@ -334,6 +334,11 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 13. [ ] Teste: um vídeo de 30 a 60 s falando de um produto que tem foto cadastrada e de uma promoção do O que divulgar. Conferir a aba Imagens (foto da empresa e uma gerada conferida), a oferta com o preço exato, a música baixando quando você fala e os efeitos (Ouvir na aba Som).
 
 
+## 4s. O saber dos agentes (v130)
+1. [ ] Sem migration e sem variável nova. Redeploy da **api** (carrosséis e direct) e do **`worker-videos`** (cortes, animações e imagens).
+2. [ ] Conferir nos primeiros vídeos depois do deploy: o vídeo começa já no assunto (sem "oi, gente, hoje vou falar"), o título diz o assunto com as palavras da pessoa, e as animações não poluem. Nos carrosséis: capa específica, nada de "Descubra" ou "No mundo de hoje", uma chamada só.
+3. [ ] Se um manual atrapalhar algo (ex.: a IA cortando a apresentação da empresa), o texto está em `packages/integrations/src/saber/`; mudar ali muda para todos os clientes.
+
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.
 - [ ] Aba "Plano e módulos": ajustar usuários e leads/mês se o combinado foi diferente, e a mensalidade combinada.

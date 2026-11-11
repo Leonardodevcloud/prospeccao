@@ -7,6 +7,7 @@ import {
   frasePromocao,
 } from '@prospeccao/shared/carrosseis-publicacao';
 import { type DivulgarEntrada, precosDoTexto, textoDosSlides } from '@prospeccao/shared/carrosseis-time';
+import { MANUAL_REDACAO } from '../saber/index.js';
 import { type ClienteClaude, USO_ZERO, type UsoClaude } from './claude.js';
 
 /**
@@ -102,7 +103,10 @@ export async function escreverDirect(
   const r = await claude.pedir({
     agente: 'redator',
     sistema: [
-      { texto: `${MANUAL_DIRECT}\n\nO CÉREBRO DA MARCA (${e.empresa}):\n${e.dossieTexto}`, cache: true },
+      {
+        texto: `${MANUAL_DIRECT}\n\n${MANUAL_REDACAO}\n\nO CÉREBRO DA MARCA (${e.empresa}):\n${e.dossieTexto}`,
+        cache: true,
+      },
     ],
     mensagem: mensagemDoDirect(e),
     ferramenta: { nome: 'direct', descricao: 'O direct para quem comentou.', esquema: ESQUEMA_DIRECT },

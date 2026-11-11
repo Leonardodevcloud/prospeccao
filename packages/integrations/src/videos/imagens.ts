@@ -30,6 +30,10 @@ export function promptDaImagem(descricao: string, formato: 'cheia' | 'acima'): s
   return [
     `Fotografia realista, profissional, luz natural, ${formato === 'cheia' ? 'vertical (formato de celular em pé)' : 'horizontal'}.`,
     `Cena: ${descricao.trim()}.`,
+    formato === 'cheia'
+      ? 'Composição: um assunto principal nítido no centro, fundo simples e um pouco desfocado, como foto de campanha publicitária.'
+      : 'Composição: o assunto ocupa a maior parte do quadro, de perto, fundo limpo e desfocado, como foto de catálogo bem-feita.',
+    'Cenário brasileiro quando houver lugar, rua ou carro (carros, ruas, lojas e oficinas como são no Brasil).',
     'Proibido: qualquer texto, letra, número, placa legível, logotipo, marca, embalagem de marca, marca d’água e moldura.',
     'Sem rosto de pessoa em destaque (pessoas só de costas, de longe ou só as mãos).',
     'Cores naturais, nitidez boa, sem aparência de ilustração.',

@@ -36,6 +36,7 @@ import {
   type TipoAvisoTime,
 } from '@prospeccao/shared/carrosseis-time';
 import { trechoNaFonte } from '../agente/perfil.js';
+import { MANUAL_REDACAO, MANUAL_REVISAO } from '../saber/index.js';
 import { type BlocoSistema, type ClienteClaude, somarUso, USO_ZERO, type UsoClaude } from './claude.js';
 
 /**
@@ -168,7 +169,10 @@ function blocoDoPedido(
 
 function sistema(e: EntradaTime): BlocoSistema[] {
   // O manual e a marca são iguais em todos os agentes do carrossel: vão para o cache.
-  return [{ texto: `${MANUAL}\n\n${blocoDaMarca(e)}`, cache: true }];
+  // O saber de redação e revisão vem antes da marca: o time inteiro escreve e confere pelo mesmo manual.
+  return [
+    { texto: `${MANUAL}\n\n${MANUAL_REDACAO}\n\n${MANUAL_REVISAO}\n\n${blocoDaMarca(e)}`, cache: true },
+  ];
 }
 
 /* ───────────────────────────── 1. Estrategista ───────────────────────────── */

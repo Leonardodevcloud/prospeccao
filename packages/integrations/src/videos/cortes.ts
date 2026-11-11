@@ -7,7 +7,8 @@ import {
   type RitmoCortes,
   type TipoCorte,
 } from '@prospeccao/shared/videos';
-import type { ClienteClaude } from '../carrosseis/claude.js';
+import type { BlocoSistema, ClienteClaude } from '../carrosseis/claude.js';
+import { MANUAL_EDITOR_VIDEO } from '../saber/index.js';
 
 /**
  * O que sai do vídeo. Duas fontes: os silêncios (medidos no áudio, não no tempo que o Whisper dá
@@ -155,6 +156,12 @@ Decida o que sai para o vídeo ficar ágil e profissional, sem mudar o que a pes
 Destaques (fortes): as palavras que carregam a mensagem (preço, produto, benefício, número), no máximo uma a cada 6 palavras, nunca artigos ou preposições.
 Título: 2 a 5 palavras em maiúsculas, com as palavras da própria pessoa, que digam do que o vídeo trata.`;
 
+/** O manual do editor e as regras da tarefa: iguais em todo vídeo, vão para o cache. */
+export const SISTEMA_DO_EDITOR: BlocoSistema[] = [
+  { texto: MANUAL_EDITOR_VIDEO },
+  { texto: SISTEMA_CORTES, cache: true },
+];
+
 /** A fala numerada para a IA, com as pausas longas marcadas no meio. */
 export function falaNumerada(palavras: PalavraVideo[], sil: Silencio[]): string {
   const linhas: string[] = [];
@@ -231,7 +238,7 @@ export async function pedirDecisao(
     .join('\n\n');
   const r = await claude.pedir({
     agente: 'editor de vídeo',
-    sistema: [{ texto: SISTEMA_CORTES }],
+    sistema: SISTEMA_DO_EDITOR,
     mensagem,
     ferramenta: {
       nome: 'decidir_cortes',

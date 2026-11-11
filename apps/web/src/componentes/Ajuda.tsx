@@ -1223,6 +1223,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
           lista; <b>Conhecer o time</b> abre a apresentação de novo.
         </p>
         <p>
+          O time escreve e revisa por um <b>manual de redação e revisão</b> de agência: capa específica (o
+          sintoma, o erro, o número que a empresa pode provar), uma ideia por slide, nada de frase pronta como
+          "Descubra" ou "No mundo de hoje", uma chamada só no fim e nenhum preço, prazo ou urgência que não
+          esteja no cérebro da marca ou na promoção.
+        </p>
+        <p>
           É um <b>módulo à parte</b> (sem limite de carrosséis) e só o <b>administrador</b> da conta entra.
           Sem o módulo, a tela explica o que ele faz; para liberar, assine em <b>Meu plano › Assinar</b>.
         </p>
@@ -1457,6 +1463,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
           É um <b>módulo à parte</b>, com uma franquia de vídeos por mês, e só o <b>administrador</b> da conta
           entra. Cada vídeo pode ter até <b>3 minutos</b>. Vídeo que não deu certo não conta na franquia, e
           gerar de novo depois da revisão também não.
+        </p>
+        <p>
+          A IA edita seguindo um <b>manual de editor profissional</b> de vídeos curtos: o vídeo começa já no
+          assunto (o "oi, gente, hoje eu vou falar sobre" costuma sair), o meio não fica parado, o fim termina
+          na chamada, e as animações e imagens só entram onde explicam o que você está dizendo. Ela nunca muda
+          a ordem da sua fala e, quando um corte pode mudar o sentido ou tirar a apresentação da empresa,
+          deixa para você decidir.
         </p>
         <h3>1. Enviar o vídeo</h3>
         <Passos>
