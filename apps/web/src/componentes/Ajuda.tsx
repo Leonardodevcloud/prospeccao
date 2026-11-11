@@ -1545,7 +1545,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
             Escolha a <b>música de fundo</b> pelo clima (ou deixe a IA escolher pelo assunto) e se quer{' '}
             <b>efeitos sonoros</b> nas animações. A música é feita para o vídeo e baixa sozinha quando você
             fala. A música vem com o módulo Vídeos com IA, para todos os vídeos da franquia. Se o campo
-            aparecer desligado, a música ainda não foi ligada na plataforma.
+            aparecer desligado, a música ainda não foi ligada na plataforma. Os efeitos são sutis, de edição
+            profissional (um sopro macio no título e nas imagens, um toque leve na lista, um pop suave no
+            selo), bem mais baixos que a sua voz.
           </li>
           <li>
             Escolha a <b>chamada no fim</b>: "Comente" com a palavra (use a mesma de uma regra do Comente e

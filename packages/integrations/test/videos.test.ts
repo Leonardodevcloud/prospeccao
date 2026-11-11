@@ -433,3 +433,46 @@ describe('v138: a palavra esticada por cima da embolação', async () => {
     expect(partirPalavraEsticada(pcm, palavras[1]!)).toEqual({ i: 10.6, f: 11.24 });
   });
 });
+
+describe('v138: frase repetida depois da embolação', async () => {
+  const { cortesDeRepeticao, montarCortes } = await import('../src/videos/cortes.js');
+  const p = (t: string, i: number, f: number) => ({ t, i, f });
+  const palavras = [
+    p('Se', 8.8, 8.95),
+    p('você', 8.96, 9.2),
+    p('saiba', 9.2, 9.5),
+    p('mais', 9.5, 9.8),
+    // embolação de 9,85 a 11,0 (sem palavra)
+    p('Saiba', 11.05, 11.35),
+    p('mais,', 11.35, 11.7),
+    p('clique', 11.8, 12.1),
+    p('aqui', 12.1, 12.4),
+  ];
+  it('a primeira tentativa sai junto com a embolação, num corte só', () => {
+    expect(cortesDeRepeticao(palavras, [{ inicio: 9.85, fim: 11.0, decisao: 'cortar' }])[0]).toMatchObject({
+      inicio: 9.15,
+      fim: 9.85,
+      tipo: 'recomeco',
+    });
+    const pcmVazio: { inicio: number; fim: number }[] = [];
+    const cortes = montarCortes(
+      palavras,
+      pcmVazio,
+      {
+        inicio: 0,
+        fim: palavras.length - 1,
+        cortes: [],
+        fortes: [],
+        titulo: '',
+        motivoInicio: '',
+        motivoFim: '',
+      } as never,
+      'natural',
+      13,
+    );
+    const embolada = cortes.find((c) => c.tipo === 'outro')!;
+    expect(embolada.inicio).toBeCloseTo(9.15, 2);
+    expect(embolada.fim).toBeCloseTo(11.0, 2);
+    expect(cortes.filter((c) => c.tipo === 'recomeco')).toHaveLength(0);
+  });
+});

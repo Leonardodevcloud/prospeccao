@@ -187,6 +187,8 @@ Imagens:
 - encaixe "cheia" para cenas (tela cheia por pouco tempo, a voz continua); "acima" para produto e detalhe.
 - Animações e imagens não se sobrepõem.
 
+Ritmo (v138): o vídeo não pode ficar só com a legenda. Ponha um elemento (selo, número, lista, destaque ou imagem) a cada 4 a 6 segundos do vídeo editado, começando depois dos 2 primeiros segundos: num vídeo de 15 s, 2 a 3 elementos; num de 60 s, 8 a 12. Sem lista nem número na fala, use selo com as palavras-chave da própria fala ("GESTÃO COMERCIAL", "TUDO NUM LUGAR SÓ") e um destaque na frase mais forte. O pedido da empresa sobre elementos gráficos manda: se ela pedir mais ou menos, siga.
+
 Música: o clima pelo assunto (promoção → animada ou confiante; explicação → calma; institucional → corporativa) e o estilo em inglês, sempre instrumental, sem citar artista.`;
 
 /** O manual do editor de motion e as regras da tarefa: iguais em todo vídeo, vão para o cache. */

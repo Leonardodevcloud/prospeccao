@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Executor } from '@prospeccao/db';
@@ -6,6 +7,7 @@ import type { ClienteClaude } from '@prospeccao/integrations/carrosseis';
 import type { Armazenamento } from '@prospeccao/integrations/reuniao';
 import {
   aplicarRegras,
+  BIBLIOTECA_EFEITOS,
   conferirImagem,
   type DecisaoEnfeites,
   descreverFotos,
@@ -15,6 +17,7 @@ import {
   type PromocaoParaIa,
   pedirEnfeites,
   pedirImagemPara,
+  VERSAO_EFEITOS,
 } from '@prospeccao/integrations/videos';
 import type { Logger } from '@prospeccao/shared';
 import {
@@ -30,6 +33,7 @@ import {
   type TrechoSemImagem,
   VOLUME_MUSICA_PADRAO,
 } from '@prospeccao/shared/videos';
+import { rodar } from './ferramentas.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -57,6 +61,8 @@ export interface DepsEnfeites {
     | null;
   /** A música só sai para as contas liberadas (contrato da ElevenLabs). */
   musicaLiberada: (contaId: number) => boolean;
+  /** v138: os efeitos sonoros da biblioteca (ElevenLabs Sound Effects; null: só os de reserva). */
+  gerarEfeito?: ((e: { texto: string; segundos: number }) => Promise<Uint8Array>) | null;
   custoImagemUsd: number;
   custoMusicaMinutoUsd: number;
 }
@@ -71,7 +77,67 @@ export interface CustosEnfeites {
 
 /** A pasta dos efeitos sonoros (no pacote: sons/, ao lado de dist/ e de src/). */
 export const PASTA_SONS = join(dirname(fileURLToPath(import.meta.url)), '..', 'sons');
-export const arquivoDoEfeito = (t: TipoEfeito) => join(PASTA_SONS, `${t}.wav`);
+/** Os efeitos da biblioteca já no disco (o resto usa os de reserva, mais simples, em sons/). */
+const daBiblioteca = new Map<TipoEfeito, string>();
+export const arquivoDoEfeito = (t: TipoEfeito) => daBiblioteca.get(t) ?? join(PASTA_SONS, `${t}.wav`);
+
+/**
+ * v138: a biblioteca de efeitos sutis. Na primeira vez a ElevenLabs faz cada som; ele é nivelado
+ * (−20 LUFS) e guardado no armazenamento (sons/<versão>/). Daí em diante, só é baixado.
+ */
+export async function prepararBiblioteca(
+  d: Pick<DepsEnfeites, 'arm' | 'log' | 'gerarEfeito'>,
+  pasta = join(tmpdir(), 'sons-biblioteca', VERSAO_EFEITOS),
+): Promise<void> {
+  await mkdir(pasta, { recursive: true });
+  for (const t of Object.keys(BIBLIOTECA_EFEITOS) as TipoEfeito[]) {
+    if (daBiblioteca.has(t)) continue;
+    const local = join(pasta, `${t}.wav`);
+    try {
+      await readFile(local);
+      daBiblioteca.set(t, local);
+      continue;
+    } catch {
+      // ainda não está no disco
+    }
+    const chave = `sons/${VERSAO_EFEITOS}/${t}.wav`;
+    try {
+      await writeFile(local, await baixarBytes(d.arm, chave));
+      daBiblioteca.set(t, local);
+      continue;
+    } catch {
+      // ainda não está no armazenamento
+    }
+    if (!d.gerarEfeito) continue;
+    try {
+      const mp3 = join(pasta, `${t}.mp3`);
+      await writeFile(mp3, await d.gerarEfeito(BIBLIOTECA_EFEITOS[t]));
+      await rodar(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-y',
+          '-i',
+          mp3,
+          '-af',
+          'loudnorm=I=-20:TP=-3:LRA=7',
+          '-ar',
+          '48000',
+          '-ac',
+          '2',
+          local,
+        ],
+        { timeoutMs: 60_000 },
+      );
+      await d.arm.enviar(chave, new Uint8Array(await readFile(local)), 'audio/wav');
+      daBiblioteca.set(t, local);
+      d.log.info({ efeito: t }, 'efeito da biblioteca feito pela ElevenLabs');
+    } catch (erro) {
+      d.log.warn({ err: erro, efeito: t }, 'o efeito da biblioteca não saiu; fica o de reserva');
+    }
+  }
+}
 
 const climaDasOpcoes = (o: OpcoesVideo): ClimaMusica | null =>
   CLIMAS_MUSICA.some((c) => c.id === o.musica) ? (o.musica as ClimaMusica) : null;

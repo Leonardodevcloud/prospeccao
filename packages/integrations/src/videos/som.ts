@@ -11,6 +11,7 @@ import type { ClimaMusica, EfeitoVideo, ImagemPosta, TipoEfeito } from '@prospec
  */
 
 export const URL_MUSICA_ELEVENLABS = 'https://api.elevenlabs.io/v1/music';
+export const URL_EFEITOS_ELEVENLABS = 'https://api.elevenlabs.io/v1/sound-generation';
 
 export interface ConfigMusica {
   chave: string;
@@ -99,13 +100,86 @@ async function comporUmaVez(
 
 /* ───────────────────────────── Efeitos ───────────────────────────── */
 
-/** Volume de cada efeito na mistura (a voz fica em 1). */
+/**
+ * Volume de cada efeito na mistura (a voz fica em 1). v138: bem mais baixo que antes, para o efeito
+ * acompanhar a animação e nunca aparecer por cima da fala (os arquivos chegam nivelados em −20 LUFS).
+ */
 export const GANHO_EFEITO: Record<TipoEfeito, number> = {
-  tique: 0.32,
-  sopro: 0.22,
-  estalo: 0.3,
-  subida: 0.22,
+  tique: 0.16,
+  sopro: 0.12,
+  estalo: 0.14,
+  subida: 0.1,
 };
+
+/**
+ * v138: a biblioteca de efeitos, feita uma vez pela ElevenLabs (Sound Effects) e guardada no
+ * armazenamento: sons curtos e sutis, de edição profissional de Reels. Mudou o pedido, muda a
+ * versão (`VERSAO_EFEITOS`) e a biblioteca é feita de novo.
+ */
+export const VERSAO_EFEITOS = 'v1';
+export const BIBLIOTECA_EFEITOS: Record<TipoEfeito, { texto: string; segundos: number }> = {
+  tique: {
+    texto:
+      'Very soft short UI tick, gentle muted click, clean and minimal, premium app interface sound, no reverb, no music',
+    segundos: 0.5,
+  },
+  sopro: {
+    texto:
+      'Soft subtle airy whoosh, short smooth swish transition for a social media video edit, gentle and quiet, no music',
+    segundos: 0.8,
+  },
+  estalo: {
+    texto:
+      'Soft subtle pop, gentle rounded bubble pop accent, clean and short, premium interface sound, no music',
+    segundos: 0.5,
+  },
+  subida: {
+    texto: 'Gentle soft swell, subtle airy rise that fades in smoothly, short and quiet, no impact, no music',
+    segundos: 1,
+  },
+};
+
+/** Gera um efeito sonoro pela ElevenLabs (MP3). Ocupada (429/5xx): tenta de novo. */
+export async function gerarEfeito(
+  cfg: { chave: string; url?: string },
+  e: { texto: string; segundos: number },
+  esperas: readonly number[] = ESPERAS_MUSICA_MS,
+): Promise<Uint8Array> {
+  for (let k = 0; ; k++) {
+    let resposta: Response;
+    try {
+      resposta = await fetch(`${cfg.url ?? URL_EFEITOS_ELEVENLABS}?output_format=mp3_44100_128`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'audio/mpeg', 'xi-api-key': cfg.chave },
+        body: JSON.stringify({
+          text: e.texto,
+          duration_seconds: Math.min(30, Math.max(0.5, e.segundos)),
+          prompt_influence: 0.6,
+          model_id: 'eleven_text_to_sound_v2',
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch (erro) {
+      if (k < esperas.length) {
+        await new Promise((r) => setTimeout(r, esperas[k]));
+        continue;
+      }
+      throw new AppError(502, 'falha_externa', `Efeito: sem resposta (${(erro as Error).name})`);
+    }
+    if (resposta.ok) return new Uint8Array(await resposta.arrayBuffer());
+    const repetivel = resposta.status === 429 || resposta.status >= 500;
+    if (repetivel && k < esperas.length) {
+      await new Promise((r) => setTimeout(r, esperas[k]));
+      continue;
+    }
+    const texto = (await resposta.text().catch(() => ''))
+      .slice(0, 300)
+      .replace(/[A-Za-z0-9_\-+/=.]{24,}/g, '…');
+    throw new AppError(502, 'falha_externa', `Efeito: HTTP ${resposta.status} ${texto}`.trim(), {
+      detalhes: { status: resposta.status },
+    });
+  }
+}
 
 /** Os efeitos que as animações pedem (tempos do vídeo editado). */
 export function efeitosDoVideo(e: {
@@ -115,7 +189,8 @@ export function efeitosDoVideo(e: {
   chamadaEm: number | null;
 }): EfeitoVideo[] {
   const lista: EfeitoVideo[] = [];
-  if (e.titulo) lista.push({ id: 'titulo', tipo: 'subida', em: 0.1, onde: 'Título de abertura' });
+  // v138: o título entra com um sopro suave (a "subida" chamava atenção demais).
+  if (e.titulo) lista.push({ id: 'titulo', tipo: 'sopro', em: 0.1, onde: 'Título de abertura' });
   for (const m of e.momentos) {
     if (m.tipo === 'lista')
       for (const [n, i] of m.itens.entries())
@@ -153,12 +228,14 @@ export function argumentosDaMistura(e: {
   mistura.push('[voz]');
   if (e.musica) {
     entradas.push('-i', e.musica.arquivo);
-    // Volume de 0 a 100 → 0 a 0,5 (a 35, padrão, fica bem abaixo da voz); some em 1,2 s no fim.
-    const v = (Math.max(0, Math.min(100, e.musica.volume)) / 100) * 0.5;
+    // v139: a música é nivelada (−16 LUFS) e o volume de 0 a 100 vira 0 a 1,15: no padrão (35) ela
+    // fica uns 13 dB abaixo da voz, como nos Reels com fala. Antes ficava 23 dB abaixo (muda).
+    const v = (Math.max(0, Math.min(100, e.musica.volume)) / 100) * 1.15;
     const fade = Math.max(0, e.total - 1.2).toFixed(3);
     filtros.push(
-      `[${n}:a]aresample=48000,apad,atrim=0:${total},volume=${v.toFixed(3)},afade=t=in:d=0.4,afade=t=out:st=${fade}:d=1.2[mus]`,
-      '[mus][guia]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=450:makeup=1[musd]',
+      `[${n}:a]loudnorm=I=-16:TP=-2,aresample=48000,apad,atrim=0:${total},volume=${v.toFixed(3)},afade=t=in:d=0.4,afade=t=out:st=${fade}:d=1.2[mus]`,
+      // Quando a pessoa fala, a música abaixa um pouco (3:1), não some.
+      '[mus][guia]sidechaincompress=threshold=0.05:ratio=3:attack=30:release=600:makeup=1[musd]',
     );
     mistura.push('[musd]');
     n++;

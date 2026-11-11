@@ -495,7 +495,9 @@ function NovoVideo({
           <input type="checkbox" checked={f.efeitos} onChange={(e) => set('efeitos', e.target.checked)} />
           <span>
             <b>Efeitos sonoros nas animações</b>
-            <span className="campo__dica">Discretos: um toque ao marcar a lista, um sopro no número.</span>
+            <span className="campo__dica">
+              Sutis e baixos: um sopro macio no título, um toque leve na lista.
+            </span>
           </span>
         </label>
 

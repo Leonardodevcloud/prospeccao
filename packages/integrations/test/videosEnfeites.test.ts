@@ -362,7 +362,7 @@ describe('som', () => {
       chamadaEm: 12.4,
     });
     expect(e.map((x) => x.id)).toEqual(['titulo', 'm1:0', 'm1:1', 'm2', 'img:i1', 'chamada']);
-    expect(e.map((x) => x.tipo)).toEqual(['subida', 'tique', 'tique', 'sopro', 'sopro', 'estalo']);
+    expect(e.map((x) => x.tipo)).toEqual(['sopro', 'tique', 'tique', 'sopro', 'sopro', 'estalo']);
   });
 
   it('a mistura baixa a música pela voz e põe cada efeito no instante certo', () => {
@@ -375,7 +375,10 @@ describe('som', () => {
     });
     const filtro = a[a.indexOf('-filter_complex') + 1]!;
     expect(filtro).toContain('sidechaincompress');
-    expect(filtro).toContain('volume=0.200');
+    // Nivelada e uns 13 dB abaixo da voz no padrão; abaixa um pouco quando a pessoa fala.
+    expect(filtro).toContain('loudnorm=I=-16');
+    expect(filtro).toContain('volume=0.460');
+    expect(filtro).toContain('ratio=3');
     expect(filtro).toContain('adelay=3250:all=1');
     expect(filtro).toContain('amix=inputs=3');
     expect(a).toContain('copy');
@@ -514,5 +517,22 @@ describe('opções', () => {
   it('vídeo antigo ganha os padrões novos sem quebrar', () => {
     const o = opcoesVideoEntrada.parse({ estilo: 'simples', transicao: 'seco' });
     expect(o).toMatchObject({ imagens: 'ia', musica: 'ia', efeitos: true, transicao: 'seco' });
+  });
+});
+
+describe('v138: biblioteca de efeitos (ElevenLabs Sound Effects)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('pede cada efeito curto e sutil, com o modelo v2; o título entra com sopro, não subida', async () => {
+    const { gerarEfeito, BIBLIOTECA_EFEITOS, GANHO_EFEITO } = await import('../src/videos/som.js');
+    const corpos: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      expect(url).toContain('/v1/sound-generation');
+      corpos.push(JSON.parse(String(init.body)));
+      return new Response(new Uint8Array([7]), { status: 200 });
+    });
+    expect([...(await gerarEfeito({ chave: 'x' }, BIBLIOTECA_EFEITOS.sopro))]).toEqual([7]);
+    expect(corpos[0]).toMatchObject({ model_id: 'eleven_text_to_sound_v2', duration_seconds: 0.8 });
+    expect(String(corpos[0]!.text)).toMatch(/subtle/i);
+    expect(Math.max(...Object.values(GANHO_EFEITO))).toBeLessThanOrEqual(0.16);
   });
 });

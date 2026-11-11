@@ -6,6 +6,7 @@ import { criarClaude } from '@prospeccao/integrations/carrosseis';
 import { criarArmazenamento } from '@prospeccao/integrations/reuniao';
 import {
   comporMusica,
+  gerarEfeito,
   gerarImagem,
   MODELO_IMAGEM_PADRAO,
   pedirDecisao,
@@ -15,7 +16,7 @@ import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
 import { criarLogger } from '@prospeccao/shared';
 import { z } from 'zod';
 import { type DepsEdicao, editarVideo } from './editar.js';
-import { sonsPresentes } from './enfeitar.js';
+import { prepararBiblioteca, sonsPresentes } from './enfeitar.js';
 
 const env = carregarEnv(
   envBase.extend({
@@ -120,6 +121,7 @@ const deps: DepsEdicao = {
     ? (e) => gerarImagem({ chave: env.OPENAI_CHAVE!, modelo: env.VIDEOS_IMAGEM_MODELO }, e)
     : null,
   comporMusica: env.ELEVENLABS_CHAVE ? (e) => comporMusica({ chave: env.ELEVENLABS_CHAVE! }, e) : null,
+  gerarEfeito: env.ELEVENLABS_CHAVE ? (e) => gerarEfeito({ chave: env.ELEVENLABS_CHAVE! }, e) : null,
   musicaLiberada,
   custoImagemUsd: env.VIDEOS_CUSTO_IMAGEM_USD,
   custoMusicaMinutoUsd: env.VIDEOS_CUSTO_MUSICA_USD_MINUTO,
@@ -155,6 +157,10 @@ log.info(
     workers: env.VIDEOS_WORKERS_RENDER,
   },
   'worker-videos no ar',
+);
+// v138: a biblioteca de efeitos sutis fica pronta logo ao subir (na primeira vez, a ElevenLabs faz).
+void prepararBiblioteca(deps).catch((erro) =>
+  log.warn({ err: erro }, 'a biblioteca de efeitos não carregou'),
 );
 
 encerrarAoReceberSinal(log, async () => {

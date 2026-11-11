@@ -75,3 +75,42 @@ describe('v136: o andamento', async () => {
     expect(rostoEm([{ t: 8, caixas: [{ x0: 1, y0: 1, x1: 2, y1: 2 }] }], 1.5)).toBeNull();
   });
 });
+
+describe('v138: a biblioteca de efeitos', async () => {
+  const { prepararBiblioteca, arquivoDoEfeito } = await import('../src/enfeitar.js');
+  const { execFileSync } = await import('node:child_process');
+  const { readFileSync } = await import('node:fs');
+  it('faz cada efeito uma vez pela ElevenLabs, nivela, guarda no armazenamento e usa', async () => {
+    const mp3 = '/tmp/efeito-teste.mp3';
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=f=880:d=0.5', mp3]);
+    const guardados = new Map<string, Uint8Array>();
+    let pedidos = 0;
+    const arm = {
+      async urlAssinada() {
+        return 'http://127.0.0.1:9/nada';
+      },
+      async enviar(chave: string, corpo: Uint8Array) {
+        guardados.set(chave, corpo);
+      },
+    } as never;
+    await prepararBiblioteca(
+      {
+        arm,
+        log: { info() {}, warn() {} } as never,
+        gerarEfeito: async () => {
+          pedidos++;
+          return new Uint8Array(readFileSync(mp3));
+        },
+      },
+      `/tmp/sons-teste-${Date.now()}`,
+    );
+    expect(pedidos).toBe(4);
+    expect([...guardados.keys()].sort()).toEqual([
+      'sons/v1/estalo.wav',
+      'sons/v1/sopro.wav',
+      'sons/v1/subida.wav',
+      'sons/v1/tique.wav',
+    ]);
+    expect(arquivoDoEfeito('sopro')).toContain('sons-teste');
+  });
+});

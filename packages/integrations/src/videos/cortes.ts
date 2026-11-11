@@ -368,6 +368,19 @@ export function montarCortes(
   if (palavras.length && ritmo !== 'pausas')
     for (const c of cortesDeFalaSemPalavra(palavras, sil))
       if (!lista.some((x) => c.inicio < x.fim && x.inicio < c.fim)) lista.push(c);
+  // v138: depois de uma embolação ou de uma pausa, a pessoa repete a frase ("saiba mais… [embolado]
+  // saiba mais, clique"): a primeira tentativa sai, para não ficar duplicado.
+  if (palavras.length && ritmo !== 'pausas')
+    for (const c of cortesDeRepeticao(palavras, [...lista, ...cortesDePausa(sil, ritmo, duracao)]))
+      if (!lista.some((x) => c.inicio < x.fim - 0.02 && x.inicio < c.fim - 0.02 && x.tipo !== 'outro')) {
+        // A tentativa vai junto com a embolação logo depois dela (um corte só, sem emenda no meio).
+        const colado = lista.find((x) => x.tipo === 'outro' && Math.abs(x.inicio - c.fim) < 0.15);
+        if (colado) {
+          colado.inicio = c.inicio;
+          colado.motivo = 'Fala embolada e a frase que foi repetida depois';
+          colado.trecho = c.trecho;
+        } else lista.push(c);
+      }
   const palavrasCortadas = lista.filter((c) => c.tipo !== 'pausa');
   for (const p of cortesDePausa(sil, ritmo, duracao))
     if (!palavrasCortadas.some((c) => p.inicio >= c.inicio - 0.05 && p.fim <= c.fim + 0.05)) lista.push(p);
@@ -471,6 +484,57 @@ export function partirPalavraEsticada(
   const primeira = quedas[0]!;
   if (serve(primeira.ini - p.i)) return { i: p.i, f: r3(primeira.ini) };
   return null;
+}
+
+/** As palavras sem acento, maiúscula e pontuação (para comparar a repetição). */
+const comparavel = (t: string) =>
+  t
+    .normalize('NFD')
+    .replace(/[^\p{L}\p{N}]/gu, '')
+    .toLowerCase();
+
+/**
+ * A frase repetida depois de um corte (embolação ou pausa): as últimas palavras antes do corte são
+ * as mesmas que vêm logo depois ("saiba mais | [corte] | saiba mais, clique aqui"). Sai a primeira
+ * tentativa, até o começo do corte. Pelo menos 2 palavras iguais, até 10.
+ */
+export function cortesDeRepeticao(
+  palavras: PalavraVideo[],
+  cortes: Pick<CorteVideo, 'inicio' | 'fim' | 'decisao'>[],
+): Omit<CorteVideo, 'id'>[] {
+  const out: Omit<CorteVideo, 'id'>[] = [];
+  for (const c of cortes) {
+    if (c.decisao === 'devolver') continue;
+    const antes = palavras.filter((p) => p.f <= c.inicio + 0.05);
+    const depois = palavras.filter((p) => p.i >= c.fim - 0.05);
+    let melhor = 0;
+    for (let k = Math.min(10, antes.length, depois.length); k >= 2; k--) {
+      const a = antes.slice(-k).map((p) => comparavel(p.t));
+      const b = depois.slice(0, k).map((p) => comparavel(p.t));
+      if (a.every((x, n) => x && x === b[n])) {
+        melhor = k;
+        break;
+      }
+    }
+    if (!melhor) continue;
+    const primeira = antes[antes.length - melhor]!;
+    // A repetição tem que estar perto do corte (a pessoa recomeçou ali, não falou de novo depois).
+    if (c.inicio - primeira.i > 6) continue;
+    out.push({
+      decisao: 'cortar',
+      inicio: r3(Math.max(0, primeira.i - 0.05)),
+      fim: r3(c.inicio),
+      tipo: 'recomeco',
+      motivo: 'Frase repetida depois do corte: fica a segunda vez',
+      trecho: antes
+        .slice(-melhor)
+        .map((p) => p.t)
+        .join(' '),
+      duvida: false,
+      conferido: true,
+    });
+  }
+  return out;
 }
 
 /** Marca as palavras destacadas (as da IA). */

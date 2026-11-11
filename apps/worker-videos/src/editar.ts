@@ -59,6 +59,7 @@ import {
   efeitosParaMisturar,
   fotosDescritas,
   planejar,
+  prepararBiblioteca,
   prepararImagens,
   prepararMusica,
   somPadrao,
@@ -685,6 +686,9 @@ export async function editarVideo(
     await etapa('som', 87);
     const musica = await musicaPronta;
     som = musica.som;
+    await prepararBiblioteca(deps).catch((erro) =>
+      log.warn({ err: erro }, 'a biblioteca de efeitos não carregou'),
+    );
     const efeitos = (await sonsPresentes()) ? efeitosParaMisturar(som, listaEfeitos) : [];
     const pronto = join(pasta, 'pronto.mp4');
     if (musica.arquivo || efeitos.length)
