@@ -28,6 +28,7 @@ import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
+import { CortarNoVideo } from '../video/CortarNoVideo';
 import { type DetalheComFila, useArquivo, useRevisao, useSituacaoVideos, useVideo } from '../video/dados';
 import { AbaImagens, AbaSomCompleta, MomentosDaFala } from '../video/Enfeites';
 import { AbaPublicacao, SeloPublicacao } from '../video/Publicacao';
@@ -378,6 +379,13 @@ function Revisao({ v }: { v: DetalheComFila }) {
   };
   const revisao = useRevisao(v.id);
   const situacao = useSituacaoVideos();
+  // v145: o palco mostra o vídeo pronto ou o editor de cortes no original (com a prévia dos cortes).
+  const [palco, setPalco] = useState<'pronto' | 'cortar'>('pronto');
+  const [pedidoCorte, setPedidoCorte] = useState<{ inicio: number; fim: number; vez: number } | null>(null);
+  const ajustarCorte = (c: { inicio: number; fim: number }) => {
+    setPalco('cortar');
+    setPedidoCorte({ inicio: c.inicio, fim: c.fim, vez: Date.now() });
+  };
   const abas: { id: Aba; rotulo: string; aviso?: boolean }[] = [
     { id: 'cortes', rotulo: 'Cortes', aviso: v.duvidas > 0 },
     { id: 'legenda', rotulo: 'Legenda', aviso: v.palavras.some((p) => p.conferir) },
@@ -393,7 +401,30 @@ function Revisao({ v }: { v: DetalheComFila }) {
   return (
     <div className="video__corpo">
       <section className="video__palco" aria-label="Vídeo">
-        {final.data ? (
+        {original.data && (
+          <div className="segmentos video__modo-palco" role="radiogroup" aria-label="O que mostrar">
+            {(
+              [
+                ['pronto', 'Vídeo pronto'],
+                ['cortar', 'Cortar no vídeo'],
+              ] as const
+            ).map(([id, rotulo]) => (
+              <label key={id} className="segmento">
+                <input
+                  type="radio"
+                  name={`palco-${v.id}`}
+                  className="pp-sr"
+                  checked={palco === id}
+                  onChange={() => setPalco(id)}
+                />
+                {rotulo}
+              </label>
+            ))}
+          </div>
+        )}
+        {palco === 'cortar' && original.data ? (
+          <CortarNoVideo v={v} url={original.data.url} pedido={pedidoCorte} />
+        ) : final.data ? (
           // biome-ignore lint/a11y/useMediaCaption: a legenda já vai dentro do vídeo (é o que a IA fez)
           <video className="video__player" src={final.data.url} controls playsInline preload="metadata" />
         ) : (
@@ -405,7 +436,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
           // biome-ignore lint/a11y/useMediaCaption: só toca o áudio do trecho cortado para conferir
           <video ref={ouvinte} className="pp-sr" src={original.data.url} preload="auto" playsInline />
         )}
-        <LinhaDoTempo v={v} />
+        {palco === 'pronto' && <LinhaDoTempo v={v} />}
         {v.conferencia && (
           <p className="campo__dica video__conferido">
             <Icon name="badge-check" size={14} />{' '}
@@ -444,7 +475,13 @@ function Revisao({ v }: { v: DetalheComFila }) {
             </Mensagem>
           )}
           {aba === 'cortes' && (
-            <AbaCortes v={v} ouvir={ouvir} ouvindo={ouvindo} podeOuvir={!!original.data} />
+            <AbaCortes
+              v={v}
+              ouvir={ouvir}
+              ouvindo={ouvindo}
+              podeOuvir={!!original.data}
+              aoAjustar={original.data ? ajustarCorte : null}
+            />
           )}
           {aba === 'legenda' && <AbaLegenda v={v} />}
           {aba === 'imagens' && <AbaImagens v={v} situacao={situacao.data} />}
@@ -523,6 +560,8 @@ function AbaCortes(props: {
   ouvir: (c: CorteVideo) => void;
   ouvindo: string | null;
   podeOuvir: boolean;
+  /** v145: "Ajustar" abre o corte na linha do tempo do vídeo (Cortar no vídeo). */
+  aoAjustar: ((c: CorteVideo) => void) | null;
 }) {
   const { v } = props;
   const revisao = useRevisao(v.id);
@@ -538,8 +577,9 @@ function AbaCortes(props: {
   };
   const botaoAjustar = (c: CorteVideo, link = false) => {
     const faixa = palavrasDoCorte(c);
-    if (!faixa) return null;
-    const ir = () => setAjustar({ ...faixa, vez: Date.now() });
+    if (!faixa && !props.aoAjustar) return null;
+    const ir = () =>
+      props.aoAjustar ? props.aoAjustar(c) : faixa ? setAjustar({ ...faixa, vez: Date.now() }) : undefined;
     return link ? (
       <button type="button" className="link-botao" onClick={ir}>
         Ajustar
@@ -573,6 +613,24 @@ function AbaCortes(props: {
         A IA tirou {seg(tirado)}. "Ouvir" toca o trecho com um pouco antes e depois; "Devolver" põe de volta
         no vídeo.
       </p>
+      {props.aoAjustar && (
+        <div className="video__cortar-aviso" role="note">
+          <Icon name="scissors" size={16} />
+          <span>
+            <b>Quer cortar outro ponto?</b> Em <b>Cortar no vídeo</b> você marca o trecho na linha do tempo,
+            do jeito que quiser, e a prévia já toca com o corte. "Ajustar" abre cada corte lá.
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              props.aoAjustar!({ ...(v.cortes[0] ?? { inicio: 0, fim: 0 }), inicio: 0, fim: 0 } as CorteVideo)
+            }
+          >
+            Cortar no vídeo
+          </Button>
+        </div>
+      )}
       {duvidas.map((c) => (
         <div key={c.id} className="video__duvida">
           <span className="video__corte-cabeca">
@@ -775,8 +833,11 @@ function TextoDoVideo(props: {
     <section className="video__texto" aria-label="Texto do vídeo" ref={caixa}>
       <span className="video__secao">Texto do vídeo · ajuste os cortes aqui</span>
       <p className="video__texto-dica">
-        <Icon name="scissors" size={14} /> Riscado sai do vídeo. <b>Clique numa palavra</b> e depois em outra
-        (ou arraste) para escolher o trecho; aparecem Cortar e Devolver.
+        <Icon name="scissors" size={14} />
+        <span>
+          Riscado sai do vídeo. <b>Clique numa palavra</b> e depois em outra (ou arraste) para escolher o
+          trecho; aparecem Cortar e Devolver. Para cortar num ponto exato, use <b>Cortar no vídeo</b>.
+        </span>
       </p>
       <div className="video__texto-palavras">
         {palavras.map((p, i) => (

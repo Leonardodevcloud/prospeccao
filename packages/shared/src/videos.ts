@@ -389,6 +389,8 @@ export interface DetalheVideo extends ResumoVideo {
   conferencia: ConferenciaVideo | null;
   /** Mudanças da revisão ainda não geradas (o botão "Gerar de novo" acende). */
   mudancasPendentes: boolean;
+  /** v145: os silêncios do original (a linha do tempo de corte mostra onde tem fala). */
+  silencios: { inicio: number; fim: number }[];
   versao: number;
   /** O texto do post do Reels e as hashtags (v131). */
   textoPost: string;

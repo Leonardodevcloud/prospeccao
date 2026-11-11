@@ -19202,3 +19202,196 @@ fieldset.assinar__formas {
   gap: 8px;
   margin-top: 6px;
 }
+
+/* v145: cortar direto no vídeo */
+.video__modo-palco {
+  align-self: center;
+  margin-bottom: 4px;
+}
+.video__cortar-aviso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+  font-size: 13px;
+}
+.video__cortar-aviso > span {
+  flex: 1;
+}
+.cortar {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  outline: none;
+}
+.cortar__video {
+  display: flex;
+  justify-content: center;
+}
+.cortar__video video {
+  max-width: 100%;
+  max-height: 46vh;
+  border-radius: var(--radius-md);
+  background: #000;
+  cursor: pointer;
+}
+.cortar__controles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cortar__controles .botao-icone {
+  min-width: 44px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cortar__tempo {
+  font-size: 13px;
+}
+.cortar__previa {
+  margin-left: auto;
+}
+.cortar__zoom {
+  display: flex;
+  gap: 4px;
+}
+.cortar__trilha {
+  position: relative;
+  height: 76px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+}
+.cortar__trilha:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.cortar__fica,
+.cortar__sai {
+  position: absolute;
+  top: 0;
+  height: 28px;
+}
+.cortar__fica {
+  background: color-mix(in srgb, var(--brand) 70%, transparent);
+}
+.cortar__sai {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ink-muted) 40%, transparent) 0 4px,
+    transparent 4px 8px
+  );
+}
+.cortar__silencio {
+  position: absolute;
+  top: 30px;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink-muted) 35%, transparent);
+}
+.cortar__palavra {
+  position: absolute;
+  top: 40px;
+  height: 30px;
+  overflow: hidden;
+  padding: 0 2px;
+  border-left: 1px solid var(--line-strong);
+  font-size: 11px;
+  line-height: 30px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.cortar__sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 2px solid #2563eb;
+  border-radius: 4px;
+  background: color-mix(in srgb, #2563eb 18%, transparent);
+  pointer-events: none;
+}
+.cortar__agulha {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--danger);
+  pointer-events: none;
+}
+.cortar__escala {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -6px;
+  font-size: 11px;
+}
+.cortar__legenda {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+  font-size: 12px;
+}
+.cortar__amostra {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  margin-left: 8px;
+  border-radius: 2px;
+}
+.cortar__amostra--fica {
+  margin-left: 0;
+  background: color-mix(in srgb, var(--brand) 70%, transparent);
+}
+.cortar__amostra--sai {
+  background: repeating-linear-gradient(135deg, var(--ink-muted) 0 3px, transparent 3px 6px);
+}
+.cortar__amostra--silencio {
+  background: color-mix(in srgb, var(--ink-muted) 35%, transparent);
+}
+.cortar__amostra--sel {
+  border: 2px solid #2563eb;
+}
+.cortar__barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: 13px;
+}
+.cortar__trecho {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cortar__ponta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.cortar__ponta .botao-icone {
+  min-width: 22px;
+  height: 22px;
+}
+.cortar__acoes,
+.cortar__marcar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cortar__marcar {
+  margin-left: auto;
+}

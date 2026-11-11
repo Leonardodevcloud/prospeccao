@@ -109,6 +109,7 @@ function detalhe(l: Linha): DetalheVideo {
     som: l.som,
     conferencia: l.conferencia,
     mudancasPendentes: l.mudancas_pendentes,
+    silencios: (l.analise?.silencios ?? []).map((x) => ({ inicio: x.inicio, fim: x.fim })),
     versao: l.versao,
     textoPost: l.texto_post ?? '',
     hashtags: l.hashtags ?? [],

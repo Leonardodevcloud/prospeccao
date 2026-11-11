@@ -1536,7 +1536,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
     onde: { rotulo: 'Vídeos', para: '/videos' },
     termos:
-      'vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+      'cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
     corpo: (
       <>
         <p>
@@ -1663,6 +1663,15 @@ export const ARTIGOS: ArtigoAjuda[] = [
             depois), <b>Devolver</b> (o trecho volta para o vídeo) e <b>Está certo</b>. Os outros cortes ficam
             na lista, cada um com o motivo; as pausas encurtadas aparecem juntas em <b>Ver</b>. A linha do
             tempo mostra em verde o que ficou.
+          </li>
+          <li>
+            Para cortar exatamente onde você quer, use <b>Cortar no vídeo</b> (em cima do vídeo, ou o{' '}
+            <b>Ajustar</b> de cada corte): o vídeo original toca com a <b>prévia dos cortes</b> (o que sai é
+            pulado na hora) e a linha do tempo mostra o que fica, o que sai, os silêncios e as palavras.
+            Arraste na linha para escolher o trecho (ou toque e use <b>Marcar início</b> e <b>Marcar fim</b>,
+            teclas I e O), acerte as pontas de 0,05 em 0,05 s, ouça e clique em <b>Cortar este trecho</b> ou{' '}
+            <b>Devolver este trecho</b>. O zoom de 8 s ajuda no corte fino; espaço toca e pausa, ← e → andam
+            0,1 s. Não depende da transcrição: vale o tempo que você marcou.
           </li>
           <li>
             Ainda na aba <b>Cortes</b>, o <b>Texto do vídeo</b> mostra tudo o que você falou, palavra por
