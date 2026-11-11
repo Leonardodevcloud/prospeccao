@@ -16,6 +16,7 @@ import {
   efeitosDoVideo,
   enfeitesNaTela,
   falaDoEditado,
+  ganhoDaMusica,
   gerarImagem,
   htmlDoMomento,
   lerEnfeites,
@@ -375,10 +376,13 @@ describe('som', () => {
     });
     const filtro = a[a.indexOf('-filter_complex') + 1]!;
     expect(filtro).toContain('sidechaincompress');
-    // Nivelada e uns 13 dB abaixo da voz no padrão; abaixa um pouco quando a pessoa fala.
+    // Nivelada e uns 10 dB abaixo da voz no padrão, já contando o abaixa-música (leve, 2:1).
     expect(filtro).toContain('loudnorm=I=-16');
-    expect(filtro).toContain('volume=0.460');
-    expect(filtro).toContain('ratio=3');
+    expect(filtro).toContain('volume=0.720');
+    expect(filtro).toContain('ratio=2');
+    expect(ganhoDaMusica(35)).toBeCloseTo(0.63, 3);
+    expect(ganhoDaMusica(0)).toBe(0);
+    expect(ganhoDaMusica(100)).toBe(1.4);
     expect(filtro).toContain('adelay=3250:all=1');
     expect(filtro).toContain('amix=inputs=3');
     expect(a).toContain('copy');

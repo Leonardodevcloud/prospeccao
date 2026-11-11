@@ -208,6 +208,19 @@ export function efeitosDoVideo(e: {
     .sort((a, b) => a.em - b.em);
 }
 
+/** O abaixa-música guiado pela voz: leve (uns 4 dB com a voz a −14 LUFS). */
+export const ABAIXA_MUSICA = 'threshold=0.12:ratio=2:attack=40:release=500:makeup=1';
+
+/**
+ * O volume da tela (0 a 100) vira o ganho da música já nivelada em −16 LUFS: no padrão (35)
+ * ela entra a −20 LUFS e, com o abaixa-música, fica uns 10 a 11 dB abaixo da voz. No máximo,
+ * fica quase no nível da voz (o limitador do fim segura o pico).
+ */
+export function ganhoDaMusica(volume: number): number {
+  const vol = Math.max(0, Math.min(100, volume));
+  return Math.min(1.4, (vol / 35) * 0.63);
+}
+
 /**
  * Os argumentos do ffmpeg que misturam o som: a voz (entrada 0, o vídeo pronto), a música
  * (opcional) e os efeitos (um arquivo por tipo). A imagem é copiada sem recodificar.
@@ -228,14 +241,16 @@ export function argumentosDaMistura(e: {
   mistura.push('[voz]');
   if (e.musica) {
     entradas.push('-i', e.musica.arquivo);
-    // v139: a música é nivelada (−16 LUFS) e o volume de 0 a 100 vira 0 a 1,15: no padrão (35) ela
-    // fica uns 13 dB abaixo da voz, como nos Reels com fala. Antes ficava 23 dB abaixo (muda).
-    const v = (Math.max(0, Math.min(100, e.musica.volume)) / 100) * 1.15;
+    // v140: medido com a voz no nível final do vídeo (−14 LUFS). A v139 deixava a música 10 dB
+    // abaixo antes do abaixa-música, e ele tirava mais 9 dB com a pessoa falando o tempo todo:
+    // ficava 21 dB abaixo (muda no celular). Agora, no padrão, ela fica uns 10 a 11 dB abaixo
+    // enquanto a pessoa fala, e sobe nas pausas e na tela final.
+    const v = ganhoDaMusica(e.musica.volume);
     const fade = Math.max(0, e.total - 1.2).toFixed(3);
     filtros.push(
       `[${n}:a]loudnorm=I=-16:TP=-2,aresample=48000,apad,atrim=0:${total},volume=${v.toFixed(3)},afade=t=in:d=0.4,afade=t=out:st=${fade}:d=1.2[mus]`,
-      // Quando a pessoa fala, a música abaixa um pouco (3:1), não some.
-      '[mus][guia]sidechaincompress=threshold=0.05:ratio=3:attack=30:release=600:makeup=1[musd]',
+      // Quando a pessoa fala, a música abaixa uns 4 dB (2:1), não some.
+      `[mus][guia]sidechaincompress=${ABAIXA_MUSICA}[musd]`,
     );
     mistura.push('[musd]');
     n++;

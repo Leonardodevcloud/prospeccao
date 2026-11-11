@@ -365,6 +365,7 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 2. [ ] **`OPENAI_CHAVE` no worker-videos** (a mesma da api): sem ela os vídeos não ganham imagens geradas, só as fotos da empresa.
 3. [ ] Conferir no log do worker-videos que não aparece mais "a IA não decidiu os cortes" nem "a IA não propôs os enfeites" (era o Claude 5.5 recusando o pedido antigo). Na api, sumir o "Claude: HTTP 400 … tool_choice".
 4. [ ] Música: a conta da ElevenLabs precisa de **plano pago** (no grátis a API de música responde 402). Se aparecer "a música não saiu", abrir a linha no log (o motivo vem junto). O 429 "system_busy" (ElevenLabs cheia) agora tenta de novo sozinho.
+5. [ ] **v140**: depois do redeploy do worker-videos, gerar um vídeo com música e ouvir **no celular**. A música tem que aparecer por baixo da fala o vídeo todo, mais alta nas pausas e na tela final. Se ficar alta ou baixa demais, mexer no volume da música na tela do vídeo (35 é o padrão) e me dizer qual número ficou bom.
 
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.
