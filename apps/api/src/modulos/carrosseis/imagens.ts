@@ -8,12 +8,14 @@ import {
   conferirImagemDoSlide,
   descreverReferencia,
   desenharArte,
+  dirigirArte,
   type EstiloDaImagem,
   gerarCenario,
   gerarImagemDoSlide,
   type JeitoDePostar,
   lerJeitoDePostar,
   melhorarFoto,
+  porLogo,
   textoDaArte,
 } from '@prospeccao/integrations/carrosseis';
 import { buscarNaInternet } from '@prospeccao/integrations/rede';
@@ -315,7 +317,8 @@ export async function fazerArte(
       .query<{ nome: string }>(`SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`)
       .then((r) => r.rows[0]?.nome ?? ''),
   ]);
-  const logo = daDataUrl(material.logoEscuro ?? material.logoClaro);
+  // v151: a logo não vai para a IA desenhar: ela deixa um canto livre e o código põe o arquivo.
+  const logos = { claro: daDataUrl(material.logoClaro), escuro: daDataUrl(material.logoEscuro) };
   const fotos = (
     await Promise.all(
       [...new Set(d.fotoIds)].slice(0, 2).map((id, k) => fotoComoReferencia(db, ia, id, k + 1)),
@@ -324,27 +327,30 @@ export async function fazerArte(
   const posts = await postsDaConta(db, 2);
   const claude = ia.cliente(db, contaId);
   const esperado = textoDaArte(d.slide);
+  const entrada = {
+    empresa,
+    identidade: material.identidade,
+    formato: d.formato,
+    slide: d.slide,
+    objetivo: d.objetivo,
+    fotos: fotos.length,
+    posts: posts.length,
+    referencias: [...fotos, ...posts],
+  };
+  // O diretor de arte planeja a peça olhando as fotos e os posts; se falhar, vai a direção simples.
+  const direcao = await dirigirArte(claude, entrada).catch(() => null);
+  const canto = direcao?.cantoDaLogo ?? 'topo-direita';
   let corrigir: string[] = [];
   for (let k = 0; k < TENTATIVAS; k++) {
-    const jpeg = await desenharArte(ia.imagem!.config, {
-      empresa,
-      identidade: material.identidade,
-      formato: d.formato,
-      slide: d.slide,
-      objetivo: d.objetivo,
-      temLogo: !!logo,
-      fotos: fotos.length,
-      posts: posts.length,
-      corrigir,
-      referencias: [...(logo ? [logo] : []), ...fotos, ...posts],
-    });
+    const jpeg = await desenharArte(ia.imagem!.config, { ...entrada, direcao, corrigir });
     await contarImagem(db, ia.imagem!.custoUsd);
-    const c = await conferirArte(claude, { jpeg, logo, esperado, empresa });
+    const c = await conferirArte(claude, { jpeg, canto, esperado, empresa });
     if (!c.aprovada) {
       corrigir = c.problemas.slice(0, 5);
       continue;
     }
-    return guardar(db, ia, jpeg, {
+    const pronta = await porLogo(jpeg, logos, canto, d.formato).catch(() => jpeg);
+    return guardar(db, ia, pronta, {
       origem: 'arte',
       nome: `Arte da IA: ${esperado.titulo}`,
       pedido: [esperado.selo, esperado.destaque, esperado.titulo, esperado.texto, esperado.botao]

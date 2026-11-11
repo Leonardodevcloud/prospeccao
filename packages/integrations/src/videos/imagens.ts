@@ -72,6 +72,9 @@ export interface ReferenciaImagem {
   nome: string;
 }
 
+/** Só os modelos de imagem antigos (gpt-image-1, 1-mini e 1.5) aceitam o input_fidelity. */
+export const aceitaFidelidade = (modelo: string) => /^gpt-image-1(?:$|[.-])/.test(modelo);
+
 export async function pedirImagem(
   cfg: ConfigImagem,
   e: {
@@ -99,7 +102,9 @@ export async function pedirImagem(
       form.append('size', size);
       form.append('quality', cfg.qualidade ?? 'medium');
       form.append('output_format', 'jpeg');
-      form.append('input_fidelity', e.fidelidade ?? 'high');
+      // v151: o GPT Image 2 já lê as referências em alta fidelidade e RECUSA o campo input_fidelity
+      // (erro 400): mandar só para os modelos antigos (gpt-image-1 e 1.5), que ainda pedem.
+      if (aceitaFidelidade(cfg.modelo)) form.append('input_fidelity', e.fidelidade ?? 'high');
       form.append('n', '1');
       for (const r of refs)
         form.append('image[]', new Blob([Buffer.from(r.dados)], { type: r.tipo }), r.nome);

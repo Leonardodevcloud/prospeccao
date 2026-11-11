@@ -112,6 +112,16 @@ const CARDS = {
     },
   ],
 };
+const DIRECAO = {
+  ideia: 'Brake pad floating over a burst of brand color',
+  cena: 'Deep brand-color gradient with a soft glow',
+  assunto: 'A 3D brake pad, large on the right',
+  composicao: 'Price huge top-left, headline under it, button bottom-left, pad on the right',
+  elementos: ['speed lines'],
+  tipografia: 'Extra-bold sans',
+  luz_e_cor: 'Studio light',
+  canto_da_logo: 'base-direita',
+};
 let arteErrada = false;
 const ARTE_LIDA = () => ({
   textos: arteErrada
@@ -134,7 +144,7 @@ const ARTE_LIDA = () => ({
 
 let reprovar = false;
 const pedidos: { agente: string; ferramenta: string; imagens: number }[] = [];
-const chamadasImagem: { url: string; edicao: boolean }[] = [];
+const chamadasImagem: { url: string; edicao: boolean; prompt: string }[] = [];
 
 function iaComImagens(): CarrosseisIa {
   return {
@@ -164,33 +174,35 @@ function iaComImagens(): CarrosseisIa {
                 ? CARDS
                 : p.ferramenta.nome === 'conferir_arte'
                   ? ARTE_LIDA()
-                  : p.ferramenta.nome === 'estilo_da_referencia'
-                    ? { estilo: 'Foto de produto centralizada, fundo escuro, luz lateral, texto embaixo.' }
-                    : p.ferramenta.nome === 'conferir_cenario'
-                      ? {
-                          produto_igual: !reprovar,
-                          texto_novo: false,
-                          marca_estranha: false,
-                          defeito: false,
-                          combina: true,
-                          problemas: [],
-                        }
-                      : p.ferramenta.nome === 'conferir_imagem'
+                  : p.ferramenta.nome === 'direcao_de_arte'
+                    ? DIRECAO
+                    : p.ferramenta.nome === 'estilo_da_referencia'
+                      ? { estilo: 'Foto de produto centralizada, fundo escuro, luz lateral, texto embaixo.' }
+                      : p.ferramenta.nome === 'conferir_cenario'
                         ? {
-                            tem_texto: false,
-                            tem_marca: false,
-                            rosto_em_destaque: false,
+                            produto_igual: !reprovar,
+                            texto_novo: false,
+                            marca_estranha: false,
                             defeito: false,
                             combina: true,
                             problemas: [],
                           }
-                        : p.agente === 'estrategista'
-                          ? ESTRATEGIA
-                          : p.agente === 'redator'
-                            ? REDACAO
-                            : p.agente === 'revisor'
-                              ? { notas: notas(5), ajustes: [], fatos: [] }
-                              : {};
+                        : p.ferramenta.nome === 'conferir_imagem'
+                          ? {
+                              tem_texto: false,
+                              tem_marca: false,
+                              rosto_em_destaque: false,
+                              defeito: false,
+                              combina: true,
+                              problemas: [],
+                            }
+                          : p.agente === 'estrategista'
+                            ? ESTRATEGIA
+                            : p.agente === 'redator'
+                              ? REDACAO
+                              : p.agente === 'revisor'
+                                ? { notas: notas(5), ajustes: [], fatos: [] }
+                                : {};
           return { dados, uso: USO_ZERO, custoUsd: 0.001 };
         },
       };
@@ -311,7 +323,15 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
     ).toString('base64');
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
       if (!String(url).startsWith('https://img.test/')) throw new Error(`fetch inesperado: ${url}`);
-      chamadasImagem.push({ url: String(url), edicao: init.body instanceof FormData });
+      const corpo = init.body;
+      chamadasImagem.push({
+        url: String(url),
+        edicao: corpo instanceof FormData,
+        prompt:
+          corpo instanceof FormData
+            ? String(corpo.get('prompt'))
+            : String(JSON.parse(String(corpo)).prompt ?? ''),
+      });
       return new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), { status: 200 });
     });
     const f = await request(app)
@@ -420,8 +440,12 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
     expect(vs.map((v) => v.slide.modelo)).toEqual(['numero', 'capa', 'arte']);
     const arte = vs[2]!;
     expect(arte.slide.titulo).toBe('Pastilha *com instalação*');
-    // Uma imagem só (aprovada na 1ª), sem foto nem logo de referência: o pedido vai para a geração.
+    // Uma imagem só (aprovada na 1ª), sem foto de referência: o pedido vai para a geração, com a
+    // direção de arte planejada antes e o canto livre para a logo (que o código põe depois).
     expect(chamadasImagem).toHaveLength(1);
+    expect(chamadasImagem[0]!.prompt).toContain('BIG IDEA: Brake pad floating');
+    expect(chamadasImagem[0]!.prompt).toContain('bottom-right corner');
+    expect(chamadasImagem[0]!.prompt).toContain('"R$ 139,90"');
     const { rows } = await pool.query<{ origem: string; carrossel_id: number }>(
       'SELECT origem, carrossel_id FROM comercial.carrossel_fotos WHERE id = $1',
       [arte.slide.fotoId],

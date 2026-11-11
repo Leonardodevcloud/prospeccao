@@ -32,6 +32,11 @@ describe('v132: as imagens dos carrosséis', () => {
     expect(p).toMatch(/logotipo/);
     expect(p).toContain('luz lateral');
     expect(p).toMatch(/não copie/);
+    // v151: formato da OpenAI, foto de verdade e cor da marca viva na cena.
+    expect(p).toContain('USE CASE: photorealistic');
+    expect(p).toContain('SCENE: oficina limpa.');
+    expect(p).toContain('vivid');
+    expect(p).not.toContain('sem saturar');
   });
 
   it('o cenário manda manter o produto exatamente igual', () => {
@@ -55,8 +60,20 @@ describe('v132: as imagens dos carrosséis', () => {
     await gerarCenario(cfg, new Uint8Array([1, 2, 3]), CENAS_PRODUTO[1], { paleta: [] });
     expect(corpos[1]!.url).toBe('https://img.test/edit');
     const form = corpos[1]!.body as FormData;
-    expect(form.get('input_fidelity')).toBe('high');
+    // v151: o GPT Image 2 recusa o input_fidelity (erro 400): não vai.
+    expect(form.get('input_fidelity')).toBeNull();
     expect(form.get('image[]')).toBeInstanceOf(Blob);
     expect(String(form.get('prompt'))).toMatch(/EXATAMENTE igual/);
+  });
+});
+
+describe('v151: input_fidelity só nos modelos antigos', () => {
+  it('o GPT Image 2 não recebe; o 1 e o 1.5 recebem', async () => {
+    const { aceitaFidelidade } = await import('../src/videos/imagens.js');
+    expect(aceitaFidelidade('gpt-image-2')).toBe(false);
+    expect(aceitaFidelidade('gpt-image-2.5')).toBe(false);
+    expect(aceitaFidelidade('gpt-image-1')).toBe(true);
+    expect(aceitaFidelidade('gpt-image-1.5')).toBe(true);
+    expect(aceitaFidelidade('gpt-image-1-mini')).toBe(true);
   });
 });

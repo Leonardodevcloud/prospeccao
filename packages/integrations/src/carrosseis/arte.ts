@@ -5,6 +5,7 @@ import {
   type SlideCarrossel,
   semMarcas,
 } from '@prospeccao/shared/carrosseis';
+import sharp from 'sharp';
 import { type ConfigImagem, pedirImagem, type ReferenciaImagem } from '../videos/imagens.js';
 import type { ClienteClaude } from './claude.js';
 import { CARTAO_POSTAL, tamanhoDaImagem } from './imagens.js';
@@ -19,6 +20,12 @@ import { CARTAO_POSTAL, tamanhoDaImagem } from './imagens.js';
  * de visão lê tudo o que está escrito na imagem e o código compara, palavra por palavra, com o texto
  * aprovado (acentos contam). Faltou palavra, sobrou número ou preço, apareceu marca estranha: reprova e
  * desenha de novo; reprovou duas vezes, a peça fica só nos modelos montados por código.
+ *
+ * v151 (do jeito das ferramentas profissionais): (1) o diretor de arte (Claude, com visão) planeja a peça
+ * antes de desenhar, olhando as fotos e os posts da marca; (2) o pedido ao GPT Image vai no formato que a
+ * OpenAI recomenda (uso, ideia, cena, herói, layout, elementos, tipografia, texto literal entre aspas,
+ * papel de cada imagem de referência, restrições); (3) a logo NÃO é desenhada pela IA: ela deixa o canto
+ * livre e o código põe o arquivo da logo por cima, pixel por pixel.
  */
 
 export interface TextoDaArte {
@@ -40,6 +47,30 @@ export const textoDaArte = (s: SlideCarrossel): TextoDaArte => ({
 /** As palavras marcadas no título (as que ganham a cor de destaque), para a arte destacar igual. */
 const marcadas = (titulo: string) => [...titulo.matchAll(/\*([^*]+)\*/g)].map((m) => m[1]!.trim());
 
+export type CantoDaLogo = 'topo-esquerda' | 'topo-direita' | 'base-esquerda' | 'base-direita';
+export const CANTOS_DA_LOGO: CantoDaLogo[] = [
+  'topo-esquerda',
+  'topo-direita',
+  'base-esquerda',
+  'base-direita',
+];
+
+/**
+ * v151: a direção de arte de cada peça, decidida ANTES de desenhar (como fazem as ferramentas de design
+ * com IA: primeiro o plano da composição, depois a imagem). O Claude olha as fotos e os posts da marca e
+ * escreve fatos visuais concretos (onde fica cada coisa, que elemento, que luz), em vez de adjetivos.
+ */
+export interface DirecaoDeArte {
+  ideia: string;
+  cena: string;
+  assunto: string;
+  composicao: string;
+  elementos: string[];
+  tipografia: string;
+  luzECor: string;
+  cantoDaLogo: CantoDaLogo;
+}
+
 export interface EntradaArte {
   empresa: string;
   identidade: IdentidadeCarrossel;
@@ -47,67 +78,213 @@ export interface EntradaArte {
   slide: SlideCarrossel;
   /** O que o card quer (o objetivo do pedido), para o clima da peça. */
   objetivo: string;
-  temLogo: boolean;
-  /** Quantas fotos da empresa vão como referência (depois da logo). */
+  /** Quantas fotos da empresa vão como referência (as primeiras imagens). */
   fotos: number;
   /** Quantos posts do Instagram da conta vão como referência de estilo (depois das fotos). */
   posts: number;
+  /** A direção de arte (sem ela, o pedido vai com uma direção simples, tirada só do texto). */
+  direcao?: DirecaoDeArte | null;
   /** A segunda tentativa leva o que deu errado na primeira. */
   corrigir?: string[];
 }
 
-const linhaTexto = (rotulo: string, t: string) => (t ? `- ${rotulo}: "${t}"` : '');
+const NOME_DO_CANTO: Record<CantoDaLogo, string> = {
+  'topo-esquerda': 'top-left',
+  'topo-direita': 'top-right',
+  'base-esquerda': 'bottom-left',
+  'base-direita': 'bottom-right',
+};
+
+const direcaoSimples = (e: EntradaArte): DirecaoDeArte => ({
+  ideia: `A bold promotional post that sells: ${textoDaArte(e.slide).titulo}`,
+  cena: `A solid, saturated brand-color background (${e.identidade.cores.principal}) with subtle depth (soft gradient or light glow).`,
+  assunto: e.fotos
+    ? 'The company photo (image 1) as the hero, cut out cleanly and placed large on one side.'
+    : 'One strong 3D object or scene that shows the benefit, large and well lit.',
+  composicao:
+    'Headline block on one side, hero subject on the other; big number or price as the strongest element; button below the text.',
+  elementos: [
+    'one accent shape in the highlight color behind the number',
+    'subtle 3D icons related to the offer',
+  ],
+  tipografia: 'Heavy geometric sans-serif headline, tight leading; clean regular sans-serif support line.',
+  luzECor: 'High contrast, vivid, clean studio light.',
+  cantoDaLogo: 'topo-direita',
+});
 
 export function promptDaArte(e: EntradaArte): string {
   const t = textoDaArte(e.slide);
   const c = e.identidade.cores;
   const par = FONTES_DO_PAR[e.identidade.fontes];
   const realce = marcadas(e.slide.titulo);
-  let n = 0;
-  const imgLogo = e.temLogo ? ++n : 0;
-  const imgFotos = Array.from({ length: e.fotos }, () => ++n);
-  const imgPosts = Array.from({ length: e.posts }, () => ++n);
+  const d = e.direcao ?? direcaoSimples(e);
   const story = e.formato === 'story';
+  const fotos = Array.from({ length: e.fotos }, (_, i) => i + 1);
+  const posts = Array.from({ length: e.posts }, (_, i) => e.fotos + i + 1);
+  const linha = (rotulo: string, x: string) => (x ? `- ${rotulo}: "${x}"` : '');
   return [
-    `Crie um post para o Instagram da ${e.empresa}, ${story ? 'story em pé 9:16 (tela cheia do celular)' : 'feed em pé 4:5'}, com qualidade de agência de publicidade brasileira: peça promocional pronta para publicar, que faz parar de rolar o feed.`,
-    `Objetivo da peça: ${e.objetivo}. Ela é um post sozinho: quem vê só ela entende a oferta inteira.`,
-    '',
-    'TEXTO DA PEÇA (escreva EXATAMENTE assim, em português do Brasil, com todos os acentos, sem trocar, tirar ou acrescentar nenhuma palavra; nenhum outro texto na imagem):',
-    linhaTexto('Selo pequeno no topo (etiqueta ou pílula)', t.selo),
-    linhaTexto('Número ou preço em destaque, bem grande', t.destaque),
-    linhaTexto('Título (o maior texto depois do número)', t.titulo),
-    realce.length
-      ? `  No título, destaque com a cor ${c.destaque}: ${realce.map((r) => `"${r}"`).join(', ')}.`
-      : '',
-    linhaTexto('Texto de apoio (menor, curto)', t.texto),
-    linhaTexto('Botão (um botão arredondado, sólido, com este texto)', t.botao),
-    '',
-    'IDENTIDADE DA MARCA:',
-    `- Cores: principal ${c.principal} (fundo e massas grandes), destaque ${c.destaque} (o número, as palavras destacadas, o botão), claro ${c.claro}. Use essas cores de verdade, cheias e vivas; nada de tons apagados.`,
-    `- Tipografia: títulos na linha de "${par.titulo.familia}"${par.titulo.caixaAlta ? ', em caixa alta' : ''}, pesados e muito legíveis; texto de apoio limpo, sem serifa. Hierarquia forte: no celular, de longe, lê-se o número e o título num segundo.`,
+    `USE CASE: ${story ? 'Instagram story, vertical 9:16 full screen' : 'Instagram feed post, vertical 4:5'} for the Brazilian company ${e.empresa}. A finished, ready-to-publish promotional ad made by a top Brazilian advertising agency (${e.objetivo}). It must stop the scroll and look like a real brand campaign, not a template.`,
+    `BIG IDEA: ${d.ideia}`,
+    `SCENE / BACKGROUND: ${d.cena}`,
+    `SUBJECT: ${d.assunto}`,
+    `LAYOUT: ${d.composicao}`,
+    d.elementos.length ? `GRAPHIC ELEMENTS:\n${d.elementos.map((x) => `- ${x}`).join('\n')}` : '',
+    `TYPOGRAPHY: ${d.tipografia} Brand fonts for reference: headlines like "${par.titulo.familia}"${par.titulo.caixaAlta ? ' in uppercase' : ''}, body like "${par.corpo}". Strong hierarchy: the number and the headline read in one second on a phone.`,
+    `LIGHT & COLOR: ${d.luzECor} Brand palette (use these exact colors, saturated): dominant ${c.principal}, accent ${c.destaque} (number, highlighted words, button), light ${c.claro}.`,
     e.identidade.jeitoDePostar
-      ? `- O jeito de postar da marca (siga): ${e.identidade.jeitoDePostar.replace(/\s+/g, ' ').slice(0, 900)}`
+      ? `HOW THIS BRAND POSTS (follow it): ${e.identidade.jeitoDePostar.replace(/\s+/g, ' ').slice(0, 700)}`
       : '',
-    imgLogo
-      ? `- A imagem ${imgLogo} é a LOGO da empresa: coloque-a exatamente como é (mesmas letras, formas e cores; sem redesenhar, sem distorcer, sem inventar símbolo), grande e visível, no topo ou num canto, com área de respiro em volta. É a única marca da peça.`
-      : `- Escreva o nome "${e.empresa}" pequeno, no topo, como assinatura.`,
-    imgFotos.length
-      ? `- ${imgFotos.length === 1 ? `A imagem ${imgFotos[0]} é uma foto` : `As imagens ${imgFotos.join(', ')} são fotos`} da própria empresa: use como o assunto da peça (pode recortar a pessoa ou o produto e compor sobre a cor da marca, como fazem as boas marcas). O produto e as pessoas ficam iguais, sem deformar.`
+    'TEXT (render EXACTLY as written, in Brazilian Portuguese with every accent, each text once, nothing else):',
+    linha('Small badge / pill', t.selo),
+    linha('Big number or price, the largest element', t.destaque),
+    linha('Headline', t.titulo),
+    realce.length
+      ? `  In the headline, color only these words with ${c.destaque}: ${realce.map((r) => `"${r}"`).join(', ')}.`
       : '',
-    imgPosts.length
-      ? `- ${imgPosts.length === 1 ? `A imagem ${imgPosts[0]} é um post` : `As imagens ${imgPosts.join(', ')} são posts`} que a própria marca já publicou: siga o estilo visual deles (composição, elementos gráficos, ícones, uso das cores e das fotos). Não copie o texto nem o layout exato deles.`
+    linha('Support line (smaller)', t.texto),
+    linha('Rounded solid button', t.botao),
+    fotos.length || posts.length ? 'REFERENCE IMAGES:' : '',
+    fotos.length
+      ? `- Image${fotos.length > 1 ? 's' : ''} ${fotos.join(', ')}: real photo${fotos.length > 1 ? 's' : ''} of the company. Use as the subject described above; keep the person or product identical (face, shape, colors, labels); you may cut it out and place it over the brand color.`
       : '',
-    '',
-    'DIREÇÃO DE ARTE:',
-    '- Uma ideia visual forte e uma mensagem só. Composição ousada e equilibrada, com elementos gráficos que servem à mensagem (formas, ícones 3D ou flat, setas, brilho leve), sem poluir.',
-    '- Todo texto sobre área lisa ou com contraste garantido; nunca letra em cima de detalhe da foto.',
-    `- Margens seguras: nada encostado na borda${story ? '; deixe livres os 13% de cima e os 16% de baixo (a interface do story cobre)' : ''}.`,
-    '- Cenário e pessoas do Brasil quando aparecerem. ' + CARTAO_POSTAL,
-    '- Proibido: texto além do pedido, número, preço, telefone, site ou @ que não esteja no texto acima, outras marcas e logotipos, marca d’água, moldura, aparência de template genérico de banco de imagens.',
-    e.corrigir?.length ? `\nNA TENTATIVA ANTERIOR DEU ERRADO (corrija): ${e.corrigir.join(' ')}` : '',
+    posts.length
+      ? `- Image${posts.length > 1 ? 's' : ''} ${posts.join(', ')}: posts this brand already published. Borrow their visual language (composition, graphic elements, 3D icons, how they use color and photos). Ignore their text, logo and exact layout.`
+      : '',
+    `LOGO AREA: keep the ${NOME_DO_CANTO[d.cantoDaLogo]} corner (about 30% of the width and 12% of the height${story ? ', below the top 13%' : ''}) clean and flat: plain background, no text, no objects. The real logo is placed there afterwards. Do NOT draw any logo, wordmark or brand name anywhere.`,
+    `CONSTRAINTS: no text besides TEXT; no numbers, prices, phone numbers, websites or @ handles besides TEXT; no logos or brand names; no watermark; no frame or border; no generic stock-template look; people and places look Brazilian. ${CARTAO_POSTAL} Safe margins: nothing touches the edges${story ? '; keep the top 13% and bottom 16% free of text (the story UI covers them)' : ''}.`,
+    e.corrigir?.length ? `FIX FROM THE LAST ATTEMPT: ${e.corrigir.join(' ')}` : '',
   ]
     .filter((x) => x !== '')
     .join('\n');
+}
+
+/* ───────────────────────────── A direção de arte ───────────────────────────── */
+
+const ESQUEMA_DIRECAO = {
+  type: 'object',
+  properties: {
+    ideia: { type: 'string', description: 'A ideia visual da peça em uma frase (em inglês).' },
+    cena: {
+      type: 'string',
+      description:
+        'O fundo e o ambiente, com fatos visuais concretos: cor, textura, profundidade, lugar (em inglês).',
+    },
+    assunto: {
+      type: 'string',
+      description:
+        'O que é o herói da imagem e como aparece: a foto da empresa (recortada, tamanho, lado) ou o objeto/cena a criar (em inglês).',
+    },
+    composicao: {
+      type: 'string',
+      description:
+        'Onde fica cada coisa: herói, número/preço, título, texto, botão, selo; o que domina; o caminho do olho (em inglês).',
+    },
+    elementos: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'Até 5 elementos gráficos concretos que servem à mensagem (forma, ícone 3D, seta, brilho) (em inglês).',
+    },
+    tipografia: {
+      type: 'string',
+      description: 'Peso, caixa, cor e tamanho relativo de cada texto (em inglês).',
+    },
+    luz_e_cor: { type: 'string', description: 'Luz e uso das cores da marca (em inglês).' },
+    canto_da_logo: {
+      type: 'string',
+      enum: CANTOS_DA_LOGO,
+      description: 'O canto que fica livre para a logo de verdade, onde não atrapalha a composição.',
+    },
+  },
+  required: [
+    'ideia',
+    'cena',
+    'assunto',
+    'composicao',
+    'elementos',
+    'tipografia',
+    'luz_e_cor',
+    'canto_da_logo',
+  ],
+} as const;
+
+const curto = (x: unknown, max: number) =>
+  String(x ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+
+export function lerDirecao(d: Record<string, unknown>): DirecaoDeArte | null {
+  const ideia = curto(d.ideia, 300);
+  const composicao = curto(d.composicao, 700);
+  if (ideia.length < 10 || composicao.length < 20) return null;
+  const canto = String(d.canto_da_logo) as CantoDaLogo;
+  return {
+    ideia,
+    cena: curto(d.cena, 500),
+    assunto: curto(d.assunto, 500),
+    composicao,
+    elementos: (Array.isArray(d.elementos) ? d.elementos : [])
+      .map((x) => curto(x, 160))
+      .filter(Boolean)
+      .slice(0, 5),
+    tipografia: curto(d.tipografia, 400),
+    luzECor: curto(d.luz_e_cor, 300),
+    cantoDaLogo: CANTOS_DA_LOGO.includes(canto) ? canto : 'topo-direita',
+  };
+}
+
+/**
+ * O diretor de arte (Claude, com visão) planeja a peça olhando as fotos da empresa e os posts da marca.
+ * Não escreve texto da peça (o texto é o aprovado): decide só a composição, o herói, os elementos e a luz.
+ */
+export async function dirigirArte(
+  claude: ClienteClaude,
+  e: EntradaArte & { referencias: ReferenciaImagem[] },
+): Promise<DirecaoDeArte | null> {
+  const t = textoDaArte(e.slide);
+  const c = e.identidade.cores;
+  const r = await claude.pedir({
+    agente: 'diretor de arte',
+    sistema: [
+      {
+        texto:
+          'Você é o diretor de arte sênior de uma agência brasileira que faz posts de Instagram para marcas de varejo e serviços. Planeja cada peça como um designer: uma ideia visual forte, um herói claro, hierarquia que se lê em um segundo no celular, as cores da marca cheias, elementos gráficos com função. Descreve fatos visuais concretos para a IA de imagem, nunca adjetivos vagos ("bonito", "moderno", "premium").',
+      },
+    ],
+    imagens: e.referencias.map((x, i) => ({
+      tipo: x.tipo,
+      base64: Buffer.from(x.dados).toString('base64'),
+      legenda:
+        i < e.fotos
+          ? `Imagem ${i + 1}: foto real da empresa (pode ser o herói da peça).`
+          : `Imagem ${i + 1}: post que a marca já publicou (o jeito de postar dela).`,
+    })),
+    mensagem: [
+      `Planeje a arte de ${e.formato === 'story' ? 'um story 9:16' : 'um post de feed 4:5'} da ${e.empresa}. Objetivo: ${e.objetivo}.`,
+      'O texto da peça já está aprovado (não mude, não acrescente; só decida onde e como ele aparece):',
+      t.selo && `- Selo: "${t.selo}"`,
+      t.destaque && `- Número/preço: "${t.destaque}"`,
+      `- Título: "${t.titulo}"`,
+      t.texto && `- Texto: "${t.texto}"`,
+      t.botao && `- Botão: "${t.botao}"`,
+      `Cores da marca: principal ${c.principal}, destaque ${c.destaque}, claro ${c.claro}.`,
+      e.identidade.jeitoDePostar
+        ? `O jeito de postar da marca: ${e.identidade.jeitoDePostar.slice(0, 900)}`
+        : '',
+      e.fotos
+        ? 'Use a foto da empresa como herói sempre que ela servir à mensagem (pessoa ou produto recortado sobre a cor da marca é o que mais funciona).'
+        : 'Não há foto da empresa: o herói é um objeto ou cena criada que mostre o benefício (3D, bem iluminado), nunca um banco de imagens genérico.',
+      'Escolha o canto livre para a logo de verdade (ela é posta depois, por cima).',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    ferramenta: { nome: 'direcao_de_arte', descricao: 'O plano visual da peça.', esquema: ESQUEMA_DIRECAO },
+    maxTokens: 1200,
+    temperatura: 0.6,
+    timeoutMs: 60_000,
+  });
+  return lerDirecao(r.dados);
 }
 
 export async function desenharArte(
@@ -122,6 +299,56 @@ export async function desenharArte(
   });
 }
 
+/* ───────────────────────────── A logo de verdade ───────────────────────────── */
+
+export interface LogosDaArte {
+  /** A logo para fundo claro. */
+  claro: ReferenciaImagem | null;
+  /** A logo para fundo escuro. */
+  escuro: ReferenciaImagem | null;
+}
+
+/**
+ * Põe a logo de verdade (o arquivo da conta, pixel por pixel) no canto que a direção de arte deixou
+ * livre. Escolhe a versão da logo pelo fundo daquele canto (escuro → a logo para fundo escuro).
+ */
+export async function porLogo(
+  jpeg: Uint8Array,
+  logos: LogosDaArte,
+  canto: CantoDaLogo,
+  formato: FormatoPeca,
+): Promise<Uint8Array> {
+  if (!logos.claro && !logos.escuro) return jpeg;
+  const base = sharp(Buffer.from(jpeg));
+  const { width: W = 1088, height: H = 1360 } = await base.metadata();
+  const margem = Math.round(W * 0.06);
+  const caixaL = Math.round(W * 0.26);
+  const caixaA = Math.round(H * (formato === 'story' ? 0.06 : 0.08));
+  const topo = formato === 'story' ? Math.round(H * 0.14) : margem;
+  const baixo = H - caixaA - (formato === 'story' ? Math.round(H * 0.17) : margem);
+  const x = canto.endsWith('esquerda') ? margem : W - margem - caixaL;
+  const y = canto.startsWith('topo') ? topo : baixo;
+  // O stats() do sharp mede a imagem de entrada: o recorte vira imagem antes de medir.
+  const recorte = await sharp(Buffer.from(jpeg))
+    .extract({ left: x, top: y, width: caixaL, height: caixaA })
+    .toBuffer();
+  const media = await sharp(recorte).stats();
+  const [r, g, b] = media.channels.map((ch) => ch.mean);
+  const escuro = 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0) < 140;
+  const logo = (escuro ? logos.escuro : logos.claro) ?? logos.escuro ?? logos.claro!;
+  const pronta = await sharp(Buffer.from(logo.dados))
+    .resize({ width: caixaL, height: caixaA, fit: 'inside' })
+    .png()
+    .toBuffer({ resolveWithObject: true });
+  const lx = canto.endsWith('esquerda') ? x : x + caixaL - pronta.info.width;
+  const ly = y + Math.round((caixaA - pronta.info.height) / 2);
+  const saida = await base
+    .composite([{ input: pronta.data, left: lx, top: ly }])
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toBuffer();
+  return new Uint8Array(saida);
+}
+
 /* ───────────────────────────── A conferência ───────────────────────────── */
 
 const ESQUEMA_ARTE = {
@@ -133,11 +360,14 @@ const ESQUEMA_ARTE = {
         'TUDO o que está escrito na imagem, um item por linha de texto, copiado letra por letra como aparece (com os acentos e os erros, se houver). Inclua o que está no botão, no selo e na logo.',
       items: { type: 'string' },
     },
-    logo_da_marca: {
+    canto_livre: {
       type: 'boolean',
-      description: 'A logo da primeira imagem aparece na arte, igual e legível.',
+      description: 'O canto indicado está liso (sem texto, sem objeto, sem parte importante da imagem).',
     },
-    outra_marca: { type: 'boolean', description: 'Aparece logotipo ou marca que não é a da empresa.' },
+    outra_marca: {
+      type: 'boolean',
+      description: 'Aparece algum logotipo, marca ou nome de empresa desenhado.',
+    },
     defeito: {
       type: 'boolean',
       description:
@@ -153,7 +383,7 @@ const ESQUEMA_ARTE = {
     },
     problemas: { type: 'array', items: { type: 'string' }, description: 'Cada problema em uma frase curta.' },
   },
-  required: ['textos', 'logo_da_marca', 'outra_marca', 'defeito', 'legivel', 'nota', 'problemas'],
+  required: ['textos', 'canto_livre', 'outra_marca', 'defeito', 'legivel', 'nota', 'problemas'],
 } as const;
 
 /** Compara sem ligar para maiúsculas, quebras de linha e pontuação solta; os acentos contam. */
@@ -181,7 +411,7 @@ export interface ConferenciaArte {
 export function avaliarArte(
   esperado: TextoDaArte,
   d: Record<string, unknown>,
-  o: { temLogo: boolean; empresa: string },
+  o: { empresa: string },
 ): ConferenciaArte {
   const lidos = (Array.isArray(d.textos) ? d.textos : []).map((x) => String(x).slice(0, 300));
   const tudo = ` ${normalizarTexto(lidos.join(' '))} `;
@@ -207,7 +437,8 @@ export function avaliarArte(
     .filter((n) => !permitidos.has(n));
   if (inventados.length)
     problemas.push(`Apareceu número que não estava no texto: ${[...new Set(inventados)].join(', ')}.`);
-  if (o.temLogo && d.logo_da_marca === false) problemas.push('A logo da empresa não apareceu igual.');
+  if (d.canto_livre === false)
+    problemas.push('O canto da logo não ficou livre: deixe aquele canto liso, sem nada.');
   if (d.outra_marca === true) problemas.push('Apareceu outra marca na arte.');
   if (d.defeito === true) problemas.push('A arte tem defeito de imagem gerada.');
   if (d.legivel === false) problemas.push('O título ou o número não se lê bem.');
@@ -218,7 +449,7 @@ export function avaliarArte(
   const reprovou =
     campos.some(([, v]) => normalizarTexto(v) && !tudo.includes(` ${normalizarTexto(v)} `)) ||
     inventados.length > 0 ||
-    (o.temLogo && d.logo_da_marca === false) ||
+    d.canto_livre === false ||
     d.outra_marca === true ||
     d.defeito === true ||
     d.legivel === false ||
@@ -228,7 +459,7 @@ export function avaliarArte(
 
 export async function conferirArte(
   claude: ClienteClaude,
-  e: { jpeg: Uint8Array; logo: ReferenciaImagem | null; esperado: TextoDaArte; empresa: string },
+  e: { jpeg: Uint8Array; canto: CantoDaLogo; esperado: TextoDaArte; empresa: string },
 ): Promise<ConferenciaArte> {
   const r = await claude.pedir({
     agente: 'revisor de arte',
@@ -239,22 +470,13 @@ export async function conferirArte(
       },
     ],
     imagens: [
-      ...(e.logo
-        ? [
-            {
-              tipo: e.logo.tipo,
-              base64: Buffer.from(e.logo.dados).toString('base64'),
-              legenda: 'Primeira imagem: a logo da empresa (referência).',
-            },
-          ]
-        : []),
       {
         tipo: 'image/jpeg' as const,
         base64: Buffer.from(e.jpeg).toString('base64'),
         legenda: 'A arte para conferir:',
       },
     ],
-    mensagem: 'Leia todo o texto da arte e confira a peça.',
+    mensagem: `Leia todo o texto da arte e confira a peça. O canto que precisa estar livre para a logo: ${e.canto.replace('-', ' ')}.`,
     ferramenta: {
       nome: 'conferir_arte',
       descricao: 'O que a arte tem escrito e a conferência.',
@@ -264,5 +486,5 @@ export async function conferirArte(
     temperatura: 0,
     timeoutMs: 90_000,
   });
-  return avaliarArte(e.esperado, r.dados, { temLogo: !!e.logo, empresa: e.empresa });
+  return avaliarArte(e.esperado, r.dados, { empresa: e.empresa });
 }

@@ -43,14 +43,14 @@ export interface EstiloDaImagem {
   referencia?: string | null;
 }
 
+// v151: a cor da marca entra na cena (objetos, luz, roupa, parede), cheia e viva, e não "sem saturar":
+// era isso que deixava as fotos apagadas, de banco de imagens.
 const linhaPaleta = (e: EstiloDaImagem) =>
   e.paleta.length
-    ? `Paleta: use tons que combinem com estas cores da marca (${e.paleta.join(', ')}), sem saturar.`
+    ? `BRAND COLOR: bring these brand colors into the scene itself (props, light, wardrobe, walls), vivid and intentional: ${e.paleta.join(', ')}.`
     : '';
 const linhaReferencia = (e: EstiloDaImagem) =>
-  e.referencia
-    ? `Inspire-se só no clima e na composição desta referência (não copie nada): ${e.referencia}`
-    : '';
+  e.referencia ? `STYLE REFERENCE (não copie nada, só o clima e a composição): ${e.referencia}` : '';
 
 /** v148: peça que fala de uma cidade: a imagem é o cartão-postal dela, pelo nome (dá para reconhecer o lugar). */
 export const CARTAO_POSTAL =
@@ -59,21 +59,25 @@ export const CARTAO_POSTAL =
 const PROIBIDO =
   'Proibido: qualquer texto, letra, número, placa legível, logotipo, marca, marca d’água e moldura. Sem rosto de pessoa em destaque (pessoas só de costas, de longe ou só as mãos).';
 
-/** A imagem de um slide: a cena, a paleta e o espaço livre para o texto que o sistema escreve. */
+/**
+ * A imagem de um slide: a cena, a paleta e o espaço livre para o texto que o sistema escreve. v151: no
+ * formato que a OpenAI recomenda para o GPT Image (uso, cena, assunto, detalhes de câmera e luz,
+ * restrições), com "photorealistic" e fatos de fotografia em vez de adjetivos.
+ */
 export function promptDaImagemDoSlide(
   descricao: string,
   e: EstiloDaImagem,
   formato: FormatoPeca = 'feed',
 ): string {
   return [
-    `Fotografia realista e profissional para um post do Instagram ${proporcao(formato)}, como foto de campanha.`,
-    `Cena: ${descricao.trim()}.`,
-    'Composição: o assunto principal nítido, com uma área calma e sem detalhes (em cima ou embaixo) onde vai entrar o texto.',
+    `USE CASE: photorealistic advertising photograph for a Brazilian brand's Instagram post, vertical ${formato === 'story' ? '9:16' : '4:5'}. It must look like a real campaign shoot by a professional photographer, not stock.`,
+    `SCENE: ${descricao.trim()}.`,
+    'SUBJECT AND FRAMING: one clear hero, sharp, filling the frame with intent; leave one calm, low-detail area (top or bottom third) where the text will be placed afterwards.',
+    'CAMERA AND LIGHT: real photograph, professional photography, 35–50mm lens look, shallow depth of field, directional key light with soft fill, rich contrast, clean color grading.',
     linhaPaleta(e),
     linhaReferencia(e),
-    'Cenário brasileiro quando houver lugar, rua, carro ou loja.',
-    PROIBIDO,
-    'Cores naturais, nitidez boa, sem aparência de ilustração.',
+    `PLACE: people, streets, cars and shops look Brazilian. ${CARTAO_POSTAL}`,
+    `CONSTRAINTS: ${PROIBIDO} No illustration look, no plastic CGI look, no generic stock-photo look.`,
   ]
     .filter(Boolean)
     .join('\n');

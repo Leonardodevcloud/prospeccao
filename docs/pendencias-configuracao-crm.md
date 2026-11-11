@@ -389,6 +389,11 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ad. Imagens profissionais (v151)
+1. [ ] Redeploy da **api** e do **worker-videos** (o conserto do erro das imagens com referência vale para os dois).
+2. [ ] Conferir as **logos** em Identidade visual: uma para fundo claro e outra para fundo escuro, de preferência PNG com fundo transparente (a arte cola o arquivo como está).
+3. [ ] Pedir 2 cards de novo e mandar a Arte da IA para avaliação. Testar também "Melhorar a foto" e "Cenários para este produto" (estavam falhando sem aviso).
+
 ## 4ac. Arte da IA nos cards (v150)
 1. [ ] **Migration 107** roda sozinha no redeploy da **api**.
 2. [ ] Conferir que a **logo** está salva (Identidade visual ou Marca e domínio) e o Instagram conectado com posts: a arte usa os dois como referência.

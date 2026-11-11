@@ -1538,14 +1538,15 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             Com <b>Uma arte desenhada pela IA em cada card</b> ligado, cada card ganha mais uma variação,
-            marcada <b>Arte da IA</b>: a peça inteira desenhada como um designer faria, com a sua logo, as
-            fotos e o jeito de postar do seu Instagram, a partir do texto da 1ª variação. Uma IA com visão lê
-            o que saiu escrito e confere com o texto aprovado, palavra por palavra (acentos e preços contam);
-            se errar duas vezes, o card fica só nos modelos. Num card pronto, <b>Arte da IA</b> desenha a arte
-            a partir da variação escolhida e <b>Desenhar de novo</b> refaz a arte. Na arte, o texto está
-            desenhado na imagem: mudou o texto no editor, clique em <b>Desenhar de novo com este texto</b> (ou
-            troque para um modelo, que monta a peça com o texto novo na hora). Cada arte custa cerca de US$
-            0,25 a 0,50.
+            marcada <b>Arte da IA</b>: a peça inteira desenhada como um designer faria, a partir do texto da
+            1ª variação. Antes de desenhar, o diretor de arte olha as suas fotos e os posts do seu Instagram e
+            planeja a composição; a IA desenha deixando um canto livre e o sistema põe ali a sua logo de
+            verdade (o arquivo salvo, sem a IA redesenhar). Uma IA com visão lê o que saiu escrito e confere
+            com o texto aprovado, palavra por palavra (acentos e preços contam); se errar duas vezes, o card
+            fica só nos modelos. Num card pronto, <b>Arte da IA</b> desenha a arte a partir da variação
+            escolhida e <b>Desenhar de novo</b> refaz a arte. Na arte, o texto está desenhado na imagem: mudou
+            o texto no editor, clique em <b>Desenhar de novo com este texto</b> (ou troque para um modelo, que
+            monta a peça com o texto novo na hora). Cada arte custa cerca de US$ 0,25 a 0,50.
           </li>
           <li>
             Pronto, clique numa variação para vê-la grande, como sai no Instagram, com as setas para passar
