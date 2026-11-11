@@ -106,8 +106,36 @@ interface RespostaApi {
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Como cada geração de modelo aceita o pedido. Do Claude 5 em diante (Sonnet 5.5, Opus 5.5, Fable,
+ * Mythos): sem `temperature` (dá erro), sem forçar a ferramenta (`tool_choice` "tool" dá erro: vai
+ * "auto" com a instrução no prompt) e com o pensamento no mínimo, para o custo e o tempo ficarem
+ * como antes. Os modelos 3 e 4 seguem o jeito antigo (ferramenta forçada e temperatura).
+ */
+export type EstiloDoModelo = 'antigo' | 'novo';
+export function estiloDoModelo(modelo: string): EstiloDoModelo {
+  return /^claude-(3|instant|(opus|sonnet|haiku)-[34])/.test(modelo) ? 'antigo' : 'novo';
+}
+
+/** O pensamento no mínimo: o Sonnet 5.5 aceita "between_tools"; o Sonnet 5, "disabled"; os outros, o padrão. */
+function pensamentoDo(modelo: string): Record<string, unknown> {
+  if (/sonnet-5-5/.test(modelo))
+    return { thinking: { type: 'between_tools' }, output_config: { effort: 'medium' } };
+  if (/sonnet-5($|-\d{8})/.test(modelo)) return { thinking: { type: 'disabled' } };
+  return { output_config: { effort: 'low' } };
+}
+
+/** A instrução que substitui a ferramenta forçada (vai no fim do prompt do sistema). */
+export const instrucaoDaFerramenta = (nome: string) =>
+  `Responda SEMPRE chamando a ferramenta \`${nome}\` uma única vez, com todos os campos pedidos. Não escreva texto fora da ferramenta.`;
+
 /** Um pedido à API (sem novas tentativas). Erro da API vira AppError com o status. */
-async function chamar(cfg: ConfigClaude, p: PedidoClaude): Promise<RespostaApi> {
+async function chamar(cfg: ConfigClaude, p: PedidoClaude, lembrete = false): Promise<RespostaApi> {
+  const novo = estiloDoModelo(cfg.modelo) === 'novo';
+  const sistema = p.sistema.filter((b) => b.texto.trim());
+  const mensagem = lembrete
+    ? `${p.mensagem}\n\n(${instrucaoDaFerramenta(p.ferramenta.nome)} Na tentativa anterior a resposta veio sem a ferramenta.)`
+    : p.mensagem;
   let resposta: Response;
   try {
     resposta = await fetch(URL_ANTHROPIC, {
@@ -120,15 +148,18 @@ async function chamar(cfg: ConfigClaude, p: PedidoClaude): Promise<RespostaApi> 
       },
       body: JSON.stringify({
         model: cfg.modelo,
-        max_tokens: p.maxTokens ?? 4000,
-        temperature: p.temperatura ?? 0.6,
-        system: p.sistema
-          .filter((b) => b.texto.trim())
-          .map((b) => ({
+        // Nos modelos novos o pensamento curto entre ferramentas também conta no máximo: uma folga.
+        max_tokens: (p.maxTokens ?? 4000) + (novo ? 2000 : 0),
+        ...(novo ? pensamentoDo(cfg.modelo) : { temperature: p.temperatura ?? 0.6 }),
+        system: [
+          ...sistema.map((b) => ({
             type: 'text',
             text: b.texto,
             ...(b.cache ? { cache_control: { type: 'ephemeral' } } : {}),
           })),
+          // Depois dos blocos em cache, para não mexer no cache.
+          ...(novo ? [{ type: 'text', text: instrucaoDaFerramenta(p.ferramenta.nome) }] : []),
+        ],
         messages: [
           {
             role: 'user',
@@ -138,9 +169,9 @@ async function chamar(cfg: ConfigClaude, p: PedidoClaude): Promise<RespostaApi> 
                     ...(im.legenda ? [{ type: 'text', text: im.legenda }] : []),
                     { type: 'image', source: { type: 'base64', media_type: im.tipo, data: im.base64 } },
                   ]),
-                  { type: 'text', text: p.mensagem },
+                  { type: 'text', text: mensagem },
                 ]
-              : p.mensagem,
+              : mensagem,
           },
         ],
         tools: [
@@ -150,7 +181,7 @@ async function chamar(cfg: ConfigClaude, p: PedidoClaude): Promise<RespostaApi> 
             input_schema: p.ferramenta.esquema,
           },
         ],
-        tool_choice: { type: 'tool', name: p.ferramenta.nome },
+        tool_choice: novo ? { type: 'auto' } : { type: 'tool', name: p.ferramenta.nome },
       }),
       signal: AbortSignal.timeout(p.timeoutMs ?? 120_000),
     });
@@ -174,6 +205,23 @@ async function chamar(cfg: ConfigClaude, p: PedidoClaude): Promise<RespostaApi> 
   return (await resposta.json()) as RespostaApi;
 }
 
+/** Se o modelo respondeu em texto um JSON (sem a ferramenta), aproveita o objeto. */
+export function jsonDoTexto(content: { type: string; text?: string }[]): Record<string, unknown> | null {
+  const texto = content
+    .filter((c) => c.type === 'text' && c.text)
+    .map((c) => c.text)
+    .join('\n');
+  const i = texto.indexOf('{');
+  const j = texto.lastIndexOf('}');
+  if (i < 0 || j <= i) return null;
+  try {
+    const v = JSON.parse(texto.slice(i, j + 1));
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** O cliente de verdade: até 3 tentativas com espera nos erros passageiros. */
 export function criarClaude(cfg: ConfigClaude): ClienteClaude {
   return {
@@ -183,11 +231,12 @@ export function criarClaude(cfg: ConfigClaude): ClienteClaude {
       await cfg.medidor?.antes?.();
       let uso = USO_ZERO;
       let ok = false;
+      let lembrar = false;
       try {
         for (let tentativa = 0; ; tentativa++) {
           let r: RespostaApi;
           try {
-            r = await chamar(cfg, p);
+            r = await chamar(cfg, p, lembrar);
           } catch (erro) {
             const e = erro as AppError;
             if (e.repetivel && tentativa < 2) {
@@ -209,10 +258,18 @@ export function criarClaude(cfg: ConfigClaude): ClienteClaude {
               `${p.agente}: a resposta passou do tamanho máximo e veio cortada`,
             );
           const bloco = r.content?.find((c) => c.type === 'tool_use' && c.name === p.ferramenta.nome);
-          if (!bloco?.input || typeof bloco.input !== 'object')
+          const dados =
+            bloco?.input && typeof bloco.input === 'object' ? bloco.input : jsonDoTexto(r.content ?? []);
+          if (!dados) {
+            // Nos modelos novos a ferramenta não pode ser forçada: uma volta com o lembrete.
+            if (!lembrar && estiloDoModelo(cfg.modelo) === 'novo') {
+              lembrar = true;
+              continue;
+            }
             throw AppError.externo('Claude', `${p.agente}: a resposta veio sem o formato pedido`);
+          }
           ok = true;
-          return { dados: bloco.input, uso, custoUsd: custoUsd(cfg.modelo, uso) };
+          return { dados, uso, custoUsd: custoUsd(cfg.modelo, uso) };
         }
       } finally {
         // Medir nunca derruba o pedido.

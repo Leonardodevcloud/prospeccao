@@ -367,6 +367,14 @@ export async function editarVideo(
     const recorteX = await emPe(original, base, info, v.analise?.recorteX ?? null);
     await rm(original, { force: true });
     const duracao = (await duracaoDoVideo(base)) || info.duracao;
+    // v136: um quadro do vídeo já em pé, para a tela mostrar o mapa do rosto enquanto edita.
+    const tPrevia = Math.min(1.5, duracao / 3);
+    if (!v.previa_chave)
+      await fazerPrevia(arm, base, tPrevia, `videos/${v.conta_id}/${videoId}/previa.jpg`, pasta)
+        .then((chave) => repo.guardarPrevia(db, videoId, chave))
+        .catch((erro) => log.warn({ err: erro, videoId }, 'a prévia da edição não saiu'));
+    const anotar = (parte: Parameters<typeof repo.anotar>[2]) =>
+      repo.anotar(db, videoId, parte).catch(() => undefined);
 
     let palavras: PalavraVideo[];
     let cortes: CorteVideo[];
@@ -398,6 +406,7 @@ export async function editarVideo(
       if (palavras.length < 2)
         throw new ErroDoVideo('Não deu para ouvir fala no vídeo: a edição corta e legenda pela fala.');
       const sil = silencios(await lerAudioCru(base));
+      await anotar({ ouvindo: { palavras: palavras.length } });
 
       // 3. Os cortes.
       await etapa('cortando', 30);
@@ -414,6 +423,7 @@ export async function editarVideo(
       } else decisao = decisaoPelasRegras(palavras);
       cortes = montarCortes(palavras, sil, decisao, v.opcoes.ritmo, duracao);
       palavras = marcarFortes(palavras, decisao.fortes);
+      await anotar({ cortando: resumoDosCortes(cortes, duracao) });
       const titulo = decisao.titulo || v.opcoes.assunto.toUpperCase().split(/\s+/).slice(0, 5).join(' ');
       animacoes = {
         titulo: { usar: !!titulo, texto: titulo },
@@ -432,6 +442,7 @@ export async function editarVideo(
         }),
       );
       analise = { duracao, silencios: sil, rostos, fps: FPS_ROSTO, recorteX };
+      await anotar({ rosto: { caixa: rostoEm(rostos, tPrevia), t: tPrevia } });
       await repo.salvarAnalise(db, videoId, { duracao, analise, cortes, palavras, animacoes });
 
       // 5. O plano dos enfeites, sobre a fala que ficou.
@@ -457,6 +468,14 @@ export async function editarVideo(
       semImagem = plano.semImagem;
       som = plano.som;
       await repo.salvarEnfeites(db, videoId, { animacoes, imagens, semImagem, som });
+      await anotar({
+        imagens: {
+          fotos: imagens.filter((i) => i.origem !== 'gerada').length,
+          geradas: imagens.filter((i) => i.origem === 'gerada').length,
+          animacoes: (animacoes.momentos ?? []).filter((m) => m.usar !== false).length,
+          musica: !!som.musica.usar,
+        },
+      });
     } else {
       analise = { ...v.analise, recorteX: v.analise.recorteX ?? recorteX };
       palavras = v.palavras;
@@ -560,10 +579,10 @@ export async function editarVideo(
         : null;
     const marca = await repo.marcaDaConta(db, v.conta_id);
     const cartaoDe = (id: string) => diagrama.cartoes.find((c) => c.id === id);
-    const posta = new Map<string, ImagemPosta>(
+    const posta = new Map<string, ImagemPosta | null>(
       tela.imagens.map((i) => [
         i.id,
-        i.encaixe === 'cheia' ? 'cheia' : (cartaoDe(`img:${i.id}`)?.s ?? 1) < 1 ? 'cartao' : 'acima',
+        i.encaixe === 'cheia' ? 'cheia' : cartaoDe(`img:${i.id}`)?.lugar === 'fora' ? null : 'acima',
       ]),
     );
     imagens = imagens.map((im) => ({ ...im, posta: posta.get(im.id) ?? null }));
@@ -768,4 +787,65 @@ export async function editarVideo(
   } finally {
     await rm(pasta, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/* ───────────────────────────── v136: o andamento na tela ───────────────────────────── */
+
+/** O que saiu, por tipo, e o tempo antes e depois (para "14 pausas, 3 éé: 1:24 vira 1:02"). */
+export function resumoDosCortes(cortes: CorteVideo[], duracao: number) {
+  const valem = cortes.filter((c) => c.decisao !== 'devolver');
+  const n = (t: string) => valem.filter((c) => c.tipo === t).length;
+  return {
+    pausas: n('pausa'),
+    muletas: n('muleta'),
+    recomecos: n('recomeco'),
+    outros: valem.length - n('pausa') - n('muleta') - n('recomeco'),
+    de: Math.round(duracao * 10) / 10,
+    para: Math.round(duracaoDosTrechos(trechosQueFicam(duracao, cortes)) * 10) / 10,
+  };
+}
+
+/** O rosto no quadro mais perto de t (a união das caixas), ou null sem rosto ali. */
+export function rostoEm(
+  rostos: { t: number; caixas: { x0: number; y0: number; x1: number; y1: number }[] }[],
+  t: number,
+) {
+  let melhor: (typeof rostos)[number] | null = null;
+  for (const q of rostos)
+    if (q.caixas.length && (!melhor || Math.abs(q.t - t) < Math.abs(melhor.t - t))) melhor = q;
+  if (!melhor || Math.abs(melhor.t - t) > 2) return null;
+  const c = melhor.caixas;
+  return {
+    x0: Math.round(Math.min(...c.map((x) => x.x0))),
+    y0: Math.round(Math.min(...c.map((x) => x.y0))),
+    x1: Math.round(Math.max(...c.map((x) => x.x1))),
+    y1: Math.round(Math.max(...c.map((x) => x.y1))),
+  };
+}
+
+/** Um quadro do vídeo em pé (540 × 960, JPEG) guardado no armazenamento. */
+async function fazerPrevia(arm: Armazenamento, base: string, t: number, chave: string, pasta: string) {
+  const arquivo = join(pasta, 'previa.jpg');
+  await rodar(
+    'ffmpeg',
+    [
+      '-v',
+      'error',
+      '-y',
+      '-ss',
+      t.toFixed(2),
+      '-i',
+      base,
+      '-frames:v',
+      '1',
+      '-vf',
+      'scale=540:960',
+      '-q:v',
+      '4',
+      arquivo,
+    ],
+    { timeoutMs: 60_000 },
+  );
+  await arm.enviar(chave, new Uint8Array(await readFile(arquivo)), 'image/jpeg');
+  return chave;
 }

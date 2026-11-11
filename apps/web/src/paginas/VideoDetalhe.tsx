@@ -5,7 +5,10 @@ import {
   type EstiloLegenda,
   ETAPAS_VIDEO,
   fmtDuracao,
+  linhaDoAndamento,
+  mapaDaPrevia,
   type PalavraVideo,
+  quantoFalta,
   RITMOS,
   type RitmoCortes,
   ROTULO_CHAMADA,
@@ -148,50 +151,114 @@ function Topo({ v }: { v: DetalheComFila }) {
 
 function Editando({ v }: { v: DetalheComFila }) {
   const atual = ETAPAS_VIDEO.findIndex((e) => e.id === v.etapa);
+  const falta = v.situacao === 'editando' ? quantoFalta(v.andamento?.inicio, v.progresso) : null;
   return (
-    <section className="video__editando" aria-label="Etapas da edição">
-      <div className="video__editando-topo">
-        <span className="video__editando-titulo">
-          {v.situacao === 'na_fila' ? 'Na fila para editar' : 'A IA está editando o seu vídeo'}
-        </span>
-        <span className="quieto">
-          {v.situacao === 'na_fila'
-            ? v.naFrente
-              ? `${v.naFrente} ${v.naFrente === 1 ? 'vídeo' : 'vídeos'} antes do seu`
-              : 'Começa em instantes'
-            : `${v.duracaoOriginal != null ? `${fmtDuracao(v.duracaoOriginal)} de vídeo · ` : ''}${v.progresso}%`}
-        </span>
-        <span className="video__progresso" aria-hidden="true">
-          <span style={{ width: `${Math.max(3, v.progresso)}%` }} />
-        </span>
+    <div className="video__editando-corpo">
+      <PreviaDoMapa v={v} />
+      <section className="video__editando" aria-label="Etapas da edição">
+        <div className="video__editando-topo">
+          <span className="video__editando-titulo">
+            {v.situacao === 'na_fila' ? 'Na fila para editar' : 'A IA está editando o seu vídeo'}
+          </span>
+          <span className="quieto">
+            {v.situacao === 'na_fila'
+              ? v.naFrente
+                ? `${v.naFrente} ${v.naFrente === 1 ? 'vídeo' : 'vídeos'} antes do seu`
+                : 'Começa em instantes'
+              : [
+                  v.duracaoOriginal != null ? `${fmtDuracao(v.duracaoOriginal)} de vídeo` : '',
+                  falta ? `faltam ${falta}` : `${v.progresso}%`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+          </span>
+          <span className="video__progresso" aria-hidden="true">
+            <span style={{ width: `${Math.max(3, v.progresso)}%` }} />
+          </span>
+        </div>
+        <ol className="video__etapas">
+          {ETAPAS_VIDEO.map((e, k) => {
+            const feito = atual > k || v.progresso >= 100;
+            const agora = atual === k;
+            // O que a etapa achou de verdade (palavras, cortes, rosto, imagens), quando já passou.
+            const achou = feito ? linhaDoAndamento(e.id, v.andamento) : null;
+            return (
+              <li
+                key={e.id}
+                className="video__etapa"
+                data-agora={agora || undefined}
+                data-feito={feito || undefined}
+              >
+                <Icon
+                  name={feito ? 'check' : agora ? 'refresh-cw' : 'circle-dashed'}
+                  size={18}
+                  spin={agora}
+                />
+                <span>
+                  <b>{e.nome}</b>
+                  <span className="campo__dica">{achou ?? e.dica}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+        {v.erro && v.situacao === 'na_fila' && (
+          <Mensagem tipo="aviso">Na tentativa anterior: {v.erro} Vamos tentar de novo.</Mensagem>
+        )}
+        <p className="quieto video__editando-pe">
+          Pode fechar esta tela. Quando ficar pronto, chega um aviso no sino e o vídeo aparece em Vídeos.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * A prévia do mapa (v136): um quadro do vídeo já em pé com o rosto, a faixa da legenda e o espaço
+ * dos gráficos marcados. Antes do quadro, o lugar dele; antes do rosto, só o quadro.
+ */
+function PreviaDoMapa({ v }: { v: DetalheComFila }) {
+  const q = useArquivo(v.id, 'previa', v.temPrevia, v.temPrevia ? 'sim' : 'nao');
+  const rosto = v.andamento?.rosto;
+  const mapa = rosto ? mapaDaPrevia(rosto.caixa) : null;
+  const pos = (r: { x: number; y: number; w: number; h: number }) => ({
+    left: `${r.x * 100}%`,
+    top: `${r.y * 100}%`,
+    width: `${r.w * 100}%`,
+    height: `${r.h * 100}%`,
+  });
+  return (
+    <figure className="video__previa">
+      <div className="video__previa-quadro">
+        {q.data?.url ? (
+          <img src={q.data.url} alt="Um quadro do seu vídeo, já em pé" />
+        ) : (
+          <span className="video__previa-vazio">
+            {v.situacao === 'na_fila' ? 'A prévia aparece quando a edição começar' : 'Preparando a prévia…'}
+          </span>
+        )}
+        {mapa?.rosto && (
+          <span className="video__previa-marca video__previa-marca--rosto" style={pos(mapa.rosto)}>
+            <span>rosto</span>
+          </span>
+        )}
+        {mapa?.graficos && (
+          <span className="video__previa-marca video__previa-marca--graficos" style={pos(mapa.graficos)}>
+            <span>espaço dos gráficos</span>
+          </span>
+        )}
+        {mapa && (
+          <span className="video__previa-marca video__previa-marca--legenda" style={pos(mapa.legenda)}>
+            <span>faixa da legenda</span>
+          </span>
+        )}
       </div>
-      <ol className="video__etapas">
-        {ETAPAS_VIDEO.map((e, k) => {
-          const feito = atual > k || v.progresso >= 100;
-          const agora = atual === k;
-          return (
-            <li
-              key={e.id}
-              className="video__etapa"
-              data-agora={agora || undefined}
-              data-feito={feito || undefined}
-            >
-              <Icon name={feito ? 'check' : agora ? 'refresh-cw' : 'circle-dashed'} size={18} spin={agora} />
-              <span>
-                <b>{e.nome}</b>
-                <span className="campo__dica">{e.dica}</span>
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-      {v.erro && v.situacao === 'na_fila' && (
-        <Mensagem tipo="aviso">Na tentativa anterior: {v.erro} Vamos tentar de novo.</Mensagem>
-      )}
-      <p className="quieto video__editando-pe">
-        Pode fechar esta tela. Quando ficar pronto, chega um aviso no sino e o vídeo aparece em Vídeos.
-      </p>
-    </section>
+      <figcaption className="quieto">
+        {mapa
+          ? 'Prévia do mapa: onde está o rosto e onde cabe cada texto. No vídeo pronto, isso acompanha você a cada momento.'
+          : 'Quando a IA mapear o rosto, aparece aqui onde a legenda e os gráficos vão ficar.'}
+      </figcaption>
+    </figure>
   );
 }
 

@@ -241,6 +241,16 @@ describe.skipIf(!URL_TESTE)('v131: o vídeo no Instagram e no Comente e receba (
     expect((await ler('/videos/situacao')).body.recursos.musica).toBe(true);
   });
 
+  it('v136: o detalhe traz o andamento e a prévia do mapa', async () => {
+    const id = await novoVideo('Prévia', 'FREIO');
+    await pool.query(
+      `UPDATE comercial.videos SET andamento = '{"ouvindo": {"palavras": 12}}', previa_chave = 'videos/1/1/previa.jpg' WHERE id = $1`,
+      [id],
+    );
+    const d = (await ler(`/videos/${id}`)).body;
+    expect(d).toMatchObject({ andamento: { ouvindo: { palavras: 12 } }, temPrevia: true });
+  });
+
   it('conecta o Instagram', async () => {
     const r = await enviar('post', '/instagram/conexao');
     const estado = new URL(r.body.url).searchParams.get('state')!;

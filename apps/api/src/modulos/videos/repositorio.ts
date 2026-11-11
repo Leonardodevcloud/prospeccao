@@ -3,6 +3,7 @@ import { cortesDePausa, noEditado, type Silencio, tempoComImagens } from '@prosp
 import { AppError } from '@prospeccao/shared';
 import type { novoVideoEntrada } from '@prospeccao/shared/videos';
 import {
+  type AndamentoVideo,
   type AnimacoesVideo,
   type ConferenciaVideo,
   type CorteVideo,
@@ -35,6 +36,8 @@ import { contaSql, usuarioAtual } from '../../contexto.js';
 
 interface Linha {
   id: number;
+  andamento?: AndamentoVideo | null;
+  previa_chave?: string | null;
   titulo: string;
   situacao: SituacaoVideo;
   etapa: EtapaVideo | null;
@@ -109,6 +112,8 @@ function detalhe(l: Linha): DetalheVideo {
     hashtags: l.hashtags ?? [],
     textoDaRedatora: !!l.texto_da_redatora,
     midiaLink: l.midia_link ?? null,
+    andamento: l.andamento ?? null,
+    temPrevia: !!l.previa_chave,
   };
 }
 
@@ -144,6 +149,7 @@ export async function arquivos(db: Executor, id: number) {
     situacao: l.situacao,
     imagens: (l.imagens ?? []).map((i) => ({ id: i.id, chave: i.chave })),
     musica: l.som?.musica.chave ?? null,
+    previa: l.previa_chave ?? null,
   };
 }
 
@@ -152,6 +158,7 @@ export function arquivosDoVideo(l: {
   original_chave: string;
   final_chave: string | null;
   capa_chave: string | null;
+  previa_chave?: string | null;
   imagens?: ImagemVideo[] | null;
   som?: SomVideo | null;
 }): string[] {
@@ -159,6 +166,7 @@ export function arquivosDoVideo(l: {
     l.original_chave,
     l.final_chave,
     l.capa_chave,
+    l.previa_chave ?? null,
     ...(l.imagens ?? []).map((i) => i.chave),
     l.som?.musica.chave ?? null,
   ].filter((c): c is string => !!c && (c === l.original_chave || c.startsWith('videos/')));

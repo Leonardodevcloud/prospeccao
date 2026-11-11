@@ -148,6 +148,7 @@ Decida o que sai para o vídeo ficar ágil e profissional, sem mudar o que a pes
 - muleta: "é", "éé", "hã", "hum", "né" e "tipo" soltos, que não fazem parte da frase.
 - recomeco: a pessoa começou uma frase, parou e falou de novo. Tire a primeira tentativa e fique com a última, a mais completa. Se as duas versões dizem coisas diferentes, marque duvida.
 - fora: fala dirigida a quem está gravando ou a outra pessoa ("pode gravar?", "pera aí", "ficou bom?"), pedido para quem vai editar, ou algo fora do assunto do vídeo.
+- outro: fala embolada ou que não forma palavra (sílabas soltas, "blé blé", "ãhn ãhn", palavra que não existe em português, a pessoa "pensando alto" sem dizer nada). Corte; se não tiver certeza de que não é uma palavra da empresa (marca, produto), marque duvida.
 - inicio/fim: fala antes do vídeo começar de verdade (combinação, contagem, "tá gravando?") ou depois que terminou ("é isso", "corta", "faz aí").
 - Nunca corte no meio de uma ideia, número, preço, nome de produto ou chamada para a ação.
 - Na dúvida, não corte; se cortar com dúvida, marque duvida = true.
@@ -363,11 +364,48 @@ export function montarCortes(
         });
       }
   }
+  // v137: som sem palavra entre duas palavras (fala embolada que a transcrição pulou).
+  if (palavras.length && ritmo !== 'pausas')
+    for (const c of cortesDeFalaSemPalavra(palavras, sil))
+      if (!lista.some((x) => c.inicio < x.fim && x.inicio < c.fim)) lista.push(c);
   const palavrasCortadas = lista.filter((c) => c.tipo !== 'pausa');
   for (const p of cortesDePausa(sil, ritmo, duracao))
     if (!palavrasCortadas.some((c) => p.inicio >= c.inicio - 0.05 && p.fim <= c.fim + 0.05)) lista.push(p);
   lista.sort((a, b) => a.inicio - b.inicio);
   return lista.map((c, k) => ({ ...c, id: `c${k + 1}` }));
+}
+
+/** Intervalo mínimo entre duas palavras e o mínimo com som (não silêncio) para ser fala embolada. */
+export const VAO_EMBOLADO = 0.6;
+export const SOM_EMBOLADO = 0.45;
+
+/**
+ * A fala embolada ("blelelele" para alinhar o pensamento) muitas vezes não vira palavra na
+ * transcrição: fica um vão com som entre duas palavras. A IA dos cortes não enxerga esse vão (ela lê
+ * as palavras) e o corte de pausa não pega (tem som). Aqui o vão com som vira corte em dúvida: a
+ * pessoa ouve e decide na revisão.
+ */
+export function cortesDeFalaSemPalavra(palavras: PalavraVideo[], sil: Silencio[]): Omit<CorteVideo, 'id'>[] {
+  const out: Omit<CorteVideo, 'id'>[] = [];
+  for (let k = 0; k + 1 < palavras.length; k++) {
+    const a = palavras[k]!.f;
+    const b = palavras[k + 1]!.i;
+    const vao = b - a;
+    if (vao < VAO_EMBOLADO) continue;
+    const quieto = sil.reduce((n, s) => n + Math.max(0, Math.min(b, s.fim) - Math.max(a, s.inicio)), 0);
+    if (vao - quieto < SOM_EMBOLADO) continue;
+    out.push({
+      decisao: 'cortar',
+      inicio: r3(a + 0.05),
+      fim: r3(b - 0.05),
+      tipo: 'outro',
+      motivo: 'Fala embolada ou som sem palavra',
+      trecho: '',
+      duvida: true,
+      conferido: false,
+    });
+  }
+  return out;
 }
 
 /** Marca as palavras destacadas (as da IA). */

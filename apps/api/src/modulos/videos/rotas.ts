@@ -336,7 +336,7 @@ export function rotasVideos(deps: DepsApi): Router {
     const { tipo, baixar, imagem } = consulta(
       req,
       z.object({
-        tipo: z.enum(['final', 'capa', 'original', 'imagem', 'musica']).default('final'),
+        tipo: z.enum(['final', 'capa', 'original', 'imagem', 'musica', 'previa']).default('final'),
         baixar: z.enum(['sim', 'nao']).default('nao'),
         imagem: z.string().max(40).optional(),
       }),
@@ -352,9 +352,11 @@ export function rotasVideos(deps: DepsApi): Router {
             ? (f.imagens.find((i) => i.id === imagem)?.chave ?? null)
             : tipo === 'musica'
               ? f.musica
-              : f.situacao === 'enviando'
-                ? null
-                : f.original;
+              : tipo === 'previa'
+                ? f.previa
+                : f.situacao === 'enviando'
+                  ? null
+                  : f.original;
     if (!chave) throw AppError.naoEncontrado('Arquivo');
     if (tipo === 'final' && baixar === 'sim') await repo.marcarBaixado(pool, id);
     const nome = `${f.titulo.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'video'}.mp4`;

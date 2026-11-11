@@ -285,7 +285,7 @@ describe('diagramação: nada em cima do rosto', () => {
     expect(t.topo + t.altura * t.escala).toBeLessThanOrEqual(400 - 34);
   });
 
-  it('sem espaço acima da cabeça, o vídeo vira cartão e o título entra inteiro acima dele', () => {
+  it('sem espaço acima da cabeça, o vídeo não encolhe: o título vai para baixo do queixo e a legenda espera', () => {
     const d = diagramar({
       rostos: rostoParado(6, { x0: 260, x1: 860, y0: 300, y1: 1400 }),
       planos: [{ inicio: 0, fim: 6 }],
@@ -295,16 +295,36 @@ describe('diagramação: nada em cima do rosto', () => {
       medir,
     });
     const c = d.cartoes[0]!;
-    expect(c.s).toBeLessThan(1);
-    expect(c.topo + c.altura * c.escala).toBeLessThanOrEqual(c.ty);
-    // Com o vídeo encolhido, o queixo sobe: a legenda do começo fica abaixo do queixo do cartão.
-    const queixoNoCartao = c.ty + c.s * 1400;
-    expect(d.legendas.filter((l) => l.ini < 2.3).every((l) => l.topo >= queixoNoCartao)).toBe(true);
-    // E a conferência no vídeo pronto (o rosto no cartão) não acha sobreposição.
-    const pronto = rostoParado(6).map((q) =>
-      q.t <= 2.3 ? { t: q.t, caixas: [{ x0: 300, x1: 800, y0: c.ty + c.s * 300, y1: queixoNoCartao }] } : q,
-    );
-    expect(conferirSobreposicao(d, pronto, 6).sobreposicoes).toBe(0);
+    expect(c).toMatchObject({ s: 1, tx: 0, ty: 0, lugar: 'abaixo', topo: 1434 });
+    expect(c.topo + c.altura * c.escala).toBeLessThanOrEqual(1700);
+    // A legenda não aparece junto com o título (os dois embaixo não cabem).
+    expect(d.legendas.some((l) => l.ini < 2.3 && l.fim > 0)).toBe(false);
+    expect(d.legendas.length).toBeGreaterThan(0);
+    expect(
+      conferirSobreposicao(d, rostoParado(6, { x0: 260, x1: 860, y0: 300, y1: 1400 }), 6).sobreposicoes,
+    ).toBe(0);
+  });
+
+  it('pouco espaço acima: o título diminui até a metade, acima da cabeça; sem espaço nenhum, fica de fora', () => {
+    const acima = diagramar({
+      rostos: rostoParado(6, { x0: 260, x1: 860, y0: 400, y1: 1100 }),
+      planos: [{ inicio: 0, fim: 6 }],
+      blocos,
+      graficos: [{ id: 'abertura', ini: 0, fim: 2.3, altura: 240 }],
+      estilo: 'acesa',
+      medir,
+    }).cartoes[0]!;
+    expect(acima).toMatchObject({ s: 1, lugar: 'acima', topo: 210 });
+    expect(acima.escala).toBeCloseTo(156 / 240, 3);
+    const fora = diagramar({
+      rostos: rostoParado(6, { x0: 100, x1: 980, y0: 250, y1: 1650 }),
+      planos: [{ inicio: 0, fim: 6 }],
+      blocos,
+      graficos: [{ id: 'abertura', ini: 0, fim: 2.3, altura: 240 }],
+      estilo: 'acesa',
+      medir,
+    }).cartoes[0]!;
+    expect(fora).toMatchObject({ s: 1, lugar: 'fora', escala: 0 });
   });
 
   it('faixa apertada embaixo do queixo: os blocos se partem para a letra continuar grande', () => {
@@ -369,5 +389,16 @@ describe('composição do HyperFrames', () => {
     expect(html).not.toContain('<b>OI</b>');
     expect(html).toContain('\\u003cB\\u003eOI\\u003c/B\\u003e');
     expect(html).toContain("window.__timelines['main'] = tl");
+  });
+});
+
+describe('v137: fala embolada', async () => {
+  const { cortesDeFalaSemPalavra } = await import('../src/videos/cortes.js');
+  const p = (t: string, i: number, f: number) => ({ t, i, f });
+  it('vão com som entre duas palavras vira corte em dúvida; vão em silêncio fica para o corte de pausa', () => {
+    const palavras = [p('a', 0, 0.4), p('pastilha', 0.5, 1), p('chia', 2.5, 3), p('muito', 4.4, 4.8)];
+    const c = cortesDeFalaSemPalavra(palavras, [{ inicio: 3.1, fim: 4.3 }]);
+    expect(c).toHaveLength(1);
+    expect(c[0]).toMatchObject({ inicio: 1.05, fim: 2.45, tipo: 'outro', duvida: true, decisao: 'cortar' });
   });
 });

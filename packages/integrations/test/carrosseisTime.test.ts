@@ -486,13 +486,49 @@ describe('o cliente do Claude', () => {
     expect(h['x-api-key']).toBe('sk-ant-teste');
     expect(h['anthropic-version']).toBe('2023-06-01');
     const corpo = JSON.parse(String(chamadas[1]!.init.body));
-    expect(corpo.tool_choice).toEqual({ type: 'tool', name: 'resposta' });
+    // Claude 5.5: sem forçar a ferramenta (dá 400), sem temperatura e com o pensamento no mínimo.
+    expect(corpo.tool_choice).toEqual({ type: 'auto' });
+    expect(corpo.temperature).toBeUndefined();
+    expect(corpo.thinking).toEqual({ type: 'between_tools' });
     expect(corpo.system[0].cache_control).toEqual({ type: 'ephemeral' });
     expect(corpo.system[1].cache_control).toBeUndefined();
+    expect(corpo.system[2].text).toContain('chamando a ferramenta `resposta`');
     expect(r.uso).toEqual({ entrada: 100, saida: 20, cacheEscrita: 2000, cacheLeitura: 0 });
     // US$: (100 + 2000×1,25)/1e6 × 2 + 20/1e6 × 10
     expect(r.custoUsd).toBeCloseTo(0.0054, 6);
     expect(medidas).toEqual([{ custo: r.custoUsd, ok: true }]);
+  });
+
+  it('modelo 4 segue com a ferramenta forçada; modelo 5.5 sem a ferramenta ganha uma volta com o lembrete', async () => {
+    const corpos: Record<string, unknown>[] = [];
+    let respostas: unknown[] = [];
+    vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => {
+      corpos.push(JSON.parse(String(init.body)));
+      return Response.json(respostas.shift());
+    });
+    const ok = { content: [{ type: 'tool_use', name: 'f', input: { ok: 1 } }], stop_reason: 'tool_use' };
+    const pedido = {
+      agente: 'a',
+      sistema: [],
+      mensagem: 'x',
+      ferramenta: { nome: 'f', descricao: 'x', esquema: {} },
+    };
+    respostas = [ok];
+    await criarClaude({ chave: 'k'.repeat(30), modelo: 'claude-sonnet-4-5' }).pedir({
+      ...pedido,
+      temperatura: 0.3,
+    });
+    expect(corpos[0]).toMatchObject({ tool_choice: { type: 'tool', name: 'f' }, temperature: 0.3 });
+    respostas = [{ content: [{ type: 'text', text: 'Claro! Aqui está.' }], stop_reason: 'end_turn' }, ok];
+    const r = await criarClaude({ chave: 'k'.repeat(30), modelo: 'claude-sonnet-5-5' }).pedir(pedido);
+    expect(r.dados).toEqual({ ok: 1 });
+    expect(JSON.stringify(corpos[2]!.messages)).toContain('veio sem a ferramenta');
+    // JSON em texto (sem a ferramenta) também serve.
+    respostas = [{ content: [{ type: 'text', text: 'Resposta: {"ok": 2}' }], stop_reason: 'end_turn' }];
+    expect(
+      (await criarClaude({ chave: 'k'.repeat(30), modelo: 'claude-opus-5-5' }).pedir(pedido)).dados,
+    ).toEqual({ ok: 2 });
+    expect(corpos[3]).toMatchObject({ output_config: { effort: 'low' }, tool_choice: { type: 'auto' } });
   });
 
   it('resposta cortada no teto vira erro (o JSON pela metade não serve)', async () => {

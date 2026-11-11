@@ -56,7 +56,7 @@ export function useVideo(id: number) {
 /** Link temporário do vídeo pronto, da capa, do original, de uma imagem ou da música (vale 1 hora). */
 export function useArquivo(
   id: number,
-  tipo: 'final' | 'capa' | 'original' | 'imagem' | 'musica',
+  tipo: 'final' | 'capa' | 'original' | 'imagem' | 'musica' | 'previa',
   ligado: boolean,
   chave?: string,
   imagem?: string,

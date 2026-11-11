@@ -396,6 +396,9 @@ export interface DetalheVideo extends ResumoVideo {
   textoDaRedatora: boolean;
   /** O Reels no Instagram, depois de reconhecido. */
   midiaLink: string | null;
+  /** v136: o que cada etapa achou e se já há o quadro da prévia (tipo=previa em /arquivo). */
+  andamento: AndamentoVideo | null;
+  temPrevia: boolean;
 }
 
 /** O que a pessoa muda na revisão (salvo na hora; o vídeo só muda ao gerar de novo). */
@@ -614,4 +617,108 @@ export type TextoPostEntrada = z.infer<typeof textoPostEntrada>;
 export function textoComHashtags(texto: string, hashtags: readonly string[]): string {
   const tags = hashtags.map((h) => `#${h}`).join(' ');
   return [texto.trim(), tags].filter(Boolean).join('\n\n');
+}
+
+/* ───────────────────────────── v136: o andamento da edição ───────────────────────────── */
+
+/** Uma caixa em px no vídeo em pé (1080 × 1920). */
+export interface CaixaNoVideo {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** O que cada etapa achou, anotado pelo worker enquanto edita (a tela mostra no lugar da dica). */
+export interface AndamentoVideo {
+  /** Quando esta edição começou (ISO), para estimar quanto falta. */
+  inicio?: string;
+  ouvindo?: { palavras: number };
+  cortando?: { pausas: number; muletas: number; recomecos: number; outros: number; de: number; para: number };
+  /** O rosto no quadro da prévia (null: não apareceu rosto nesse quadro). */
+  rosto?: { caixa: CaixaNoVideo | null; t: number };
+  imagens?: { fotos: number; geradas: number; animacoes: number; musica: boolean };
+}
+
+const pl = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+/** A linha de cada etapa já feita, com os números de verdade (null: fica a dica de sempre). */
+export function linhaDoAndamento(etapa: EtapaVideo, a: AndamentoVideo | null | undefined): string | null {
+  if (!a) return null;
+  if (etapa === 'ouvindo' && a.ouvindo)
+    return `${pl(a.ouvindo.palavras, 'palavra', 'palavras')}, cada uma com o momento exato`;
+  if (etapa === 'cortando' && a.cortando) {
+    const c = a.cortando;
+    const partes = [
+      c.pausas ? pl(c.pausas, 'pausa', 'pausas') : '',
+      c.muletas ? pl(c.muletas, '"éé" ou "né"', '"éé" e "né"') : '',
+      c.recomecos ? pl(c.recomecos, 'frase recomeçada', 'frases recomeçadas') : '',
+      c.outros ? pl(c.outros, 'trecho a mais', 'trechos a mais') : '',
+    ].filter(Boolean);
+    const tempo = `${fmtDuracao(c.de)} vira ${fmtDuracao(c.para)}`;
+    return partes.length ? `${partes.join(', ')}: ${tempo}` : `Nada para cortar: ${fmtDuracao(c.de)}`;
+  }
+  if (etapa === 'rosto' && a.rosto)
+    return a.rosto.caixa
+      ? 'Rosto achado: a legenda fica abaixo do queixo e os gráficos acima da cabeça'
+      : 'Sem rosto no começo: a legenda fica na parte de baixo';
+  if (etapa === 'imagens' && a.imagens) {
+    const i = a.imagens;
+    const img = i.fotos + i.geradas;
+    return [
+      img
+        ? `${pl(img, 'imagem', 'imagens')}${i.geradas ? ` (${i.geradas} feita${i.geradas > 1 ? 's' : ''} pela IA)` : ''}`
+        : 'Sem imagens',
+      i.animacoes ? pl(i.animacoes, 'animação', 'animações') : '',
+      i.musica ? 'música' : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+  }
+  return null;
+}
+
+/**
+ * Quanto falta, pelo ritmo até agora (só depois de 15%, quando já dá para medir).
+ * Devolve o texto ("cerca de 2 minutos") ou null.
+ */
+export function quantoFalta(
+  inicio: string | undefined,
+  progresso: number,
+  agora = Date.now(),
+): string | null {
+  if (!inicio || progresso < 15 || progresso >= 100) return null;
+  const passou = (agora - new Date(inicio).getTime()) / 1000;
+  if (!(passou > 0)) return null;
+  const falta = (passou / progresso) * (100 - progresso);
+  if (falta < 45) return 'menos de 1 minuto';
+  const min = Math.round(falta / 60);
+  return min <= 1 ? 'cerca de 1 minuto' : `cerca de ${min} minutos`;
+}
+
+/** As medidas da diagramação (as mesmas do worker, em integrations/videos/diagramacao.ts). */
+const TELA = { largura: 1080, altura: 1920, topo: 210, base: 1700, folga: 34, legendaMaisAlta: 1180 };
+
+/**
+ * O mapa da prévia, em frações da tela (0 a 1): o rosto, a faixa da legenda (abaixo do queixo,
+ * nunca acima da linha de 1180 px nem abaixo dos ícones do Instagram) e o espaço dos gráficos
+ * (do cabeçalho do Instagram até a cabeça). É uma prévia: o vídeo pronto segue o rosto a cada momento.
+ */
+export function mapaDaPrevia(caixa: CaixaNoVideo | null) {
+  const f = (x0: number, y0: number, x1: number, y1: number) => ({
+    x: x0 / TELA.largura,
+    y: y0 / TELA.altura,
+    w: (x1 - x0) / TELA.largura,
+    h: (y1 - y0) / TELA.altura,
+  });
+  const margem = 110;
+  const topoLegenda = Math.min(
+    TELA.base - 200,
+    Math.max(TELA.legendaMaisAlta, caixa ? caixa.y1 + TELA.folga : TELA.legendaMaisAlta),
+  );
+  const legenda = f(margem, topoLegenda, TELA.largura - margem, Math.min(TELA.base, topoLegenda + 220));
+  const fimGraficos = caixa ? caixa.y0 - TELA.folga : TELA.topo + 420;
+  const graficos =
+    fimGraficos - TELA.topo >= 120 ? f(margem, TELA.topo, TELA.largura - margem, fimGraficos) : null;
+  return { rosto: caixa ? f(caixa.x0, caixa.y0, caixa.x1, caixa.y1) : null, legenda, graficos };
 }

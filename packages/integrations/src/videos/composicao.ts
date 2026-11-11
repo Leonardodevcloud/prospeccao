@@ -321,7 +321,8 @@ for (const L of DADOS.legendas) {
 // Título de abertura.
 if (DADOS.titulo) {
   const c = DADOS.cartoes.find((x) => x.id === 'abertura');
-  if (c) gsap.set('#abertura', { top: c.topo, scale: c.escala });
+  if (c && c.escala <= 0) gsap.set('#abertura', { display: 'none' });
+  else if (c) gsap.set('#abertura', { top: c.topo, scale: c.escala });
   tl.from('#abertura .titulo span', { opacity: 0, y: 36, duration: 0.45, ease: 'power3.out', stagger: 0.12 }, 0.1);
   tl.to('#abertura .traco', { width: 340, duration: 0.45, ease: 'power3.inOut' }, 0.45);
   // Sai antes do cartão voltar para a tela cheia, para nunca encostar na cabeça.
@@ -334,6 +335,11 @@ function porNoLugar(sel, id, ini, fim, deslizar) {
   const c = cartaoDe(id);
   const el = document.querySelector(sel);
   if (!el) return null;
+  // Sem espaço nenhum na tela (v137): o gráfico fica de fora.
+  if (c && c.escala <= 0) {
+    gsap.set(el, { display: 'none' });
+    return null;
+  }
   if (c) gsap.set(el, { top: c.topo, scale: c.escala });
   const entra = ini + (c && c.s < 1 ? T * 0.7 : 0);
   const sai = c && c.s < 1 ? Math.max(entra + 0.4, fim - T - 0.3) : Math.max(entra + 0.4, fim - 0.25);

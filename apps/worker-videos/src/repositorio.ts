@@ -1,6 +1,7 @@
 import type { Executor } from '@prospeccao/db';
 import type { FotoParaIa, PromocaoParaIa, QuadroRosto, Silencio } from '@prospeccao/integrations/videos';
 import {
+  type AndamentoVideo,
   type AnimacoesVideo,
   type ConferenciaVideo,
   type CorteVideo,
@@ -43,6 +44,7 @@ export interface LinhaVideo {
   som: SomVideo | null;
   final_chave: string | null;
   capa_chave: string | null;
+  previa_chave: string | null;
   contou_em: string | null;
   criado_por: number | null;
   versao: number;
@@ -52,7 +54,7 @@ export interface LinhaVideo {
 export async function carregar(db: Executor, id: number): Promise<LinhaVideo | null> {
   const { rows } = await db.query<LinhaVideo & { duracao_original: string | null }>(
     `SELECT id, conta_id, titulo, situacao, opcoes, original_chave, original_tipo, duracao_original, analise,
-            cortes, palavras, animacoes, imagens, sem_imagem, som, final_chave, capa_chave, contou_em, criado_por, versao, tentativas
+            cortes, palavras, animacoes, imagens, sem_imagem, som, final_chave, capa_chave, previa_chave, contou_em, criado_por, versao, tentativas
        FROM comercial.videos WHERE id = $1`,
     [id],
   );
@@ -79,10 +81,24 @@ export async function marcarEtapa(db: Executor, id: number, etapa: EtapaVideo, p
 export async function comecar(db: Executor, id: number) {
   await db.query(
     `UPDATE comercial.videos SET situacao = 'editando', etapa = 'preparando', progresso = 2, erro = NULL,
-            tentativas = tentativas + 1, atualizado_em = now()
+            tentativas = tentativas + 1, atualizado_em = now(),
+            andamento = coalesce(andamento, '{}'::jsonb) || jsonb_build_object('inicio', now())
       WHERE id = $1`,
     [id],
   );
+}
+
+/** v136: o que a etapa achou (a tela mostra no lugar da dica). */
+export async function anotar(db: Executor, id: number, parte: Partial<AndamentoVideo>) {
+  await db.query(
+    `UPDATE comercial.videos SET andamento = coalesce(andamento, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
+    [id, JSON.stringify(parte)],
+  );
+}
+
+/** v136: o quadro do vídeo já em pé, para a prévia do mapa na tela da edição. */
+export async function guardarPrevia(db: Executor, id: number, chave: string) {
+  await db.query('UPDATE comercial.videos SET previa_chave = $2 WHERE id = $1', [id, chave]);
 }
 
 export async function salvarAnalise(

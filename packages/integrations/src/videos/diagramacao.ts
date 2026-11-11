@@ -77,6 +77,11 @@ export interface Cartao {
   topo: number;
   escala: number;
   altura: number;
+  /**
+   * v137: onde o gráfico ficou. "acima" da cabeça (o normal), "abaixo" do queixo (sem espaço em
+   * cima: a legenda espera ele sair) ou "fora" (sem espaço nenhum: não aparece). O vídeo nunca encolhe.
+   */
+  lugar?: 'acima' | 'abaixo' | 'fora';
 }
 
 export interface Diagrama {
@@ -247,34 +252,28 @@ export function diagramar(entrada: {
         altura: g.altura,
       };
     const livre = u.y0 - FOLGA - TOPO;
-    if (livre >= g.altura * 0.72)
+    const base = { id: g.id, ini: g.ini, fim: g.fim, s: 1, tx: 0, ty: 0, altura: g.altura };
+    // Decisão de 11/11: o vídeo nunca encolhe para abrir espaço (o "cartão" ficava feio).
+    // 1. Acima da cabeça, diminuindo o gráfico até a metade.
+    if (livre >= g.altura * 0.5)
       return {
-        id: g.id,
-        ini: g.ini,
-        fim: g.fim,
-        s: 1,
-        tx: 0,
-        ty: 0,
+        ...base,
         topo: TOPO,
         escala: Math.round(Math.min(1, livre / g.altura) * 1000) / 1000,
-        altura: g.altura,
+        lugar: 'acima' as const,
       };
-    const queixoMax = BASE - 120 - FOLGA;
-    // O cartão diminui até 58% da tela: abaixo disso o rosto fica pequeno demais; acima, o gráfico.
-    const s = Math.max(0.58, Math.min(0.9, (queixoMax - (TOPO + g.altura + 24)) / u.y1));
-    const ty = queixoMax - s * u.y1;
-    const escala = Math.min(1, (ty - 24 - TOPO) / g.altura);
-    return {
-      id: g.id,
-      ini: g.ini,
-      fim: g.fim,
-      s: Math.round(s * 10_000) / 10_000,
-      tx: r1((LARGURA - LARGURA * s) / 2),
-      ty: r1(ty),
-      topo: Math.round(TOPO + Math.max(0, (ty - 24 - TOPO - g.altura * escala) / 2)),
-      escala: Math.round(Math.max(0.5, escala) * 1000) / 1000,
-      altura: g.altura,
-    };
+    // 2. Abaixo do queixo, no lugar da legenda (ela espera o gráfico sair).
+    const embaixo = Math.max(LEGENDA_MAIS_ALTA, u.y1 + FOLGA);
+    const livreEmbaixo = BASE - embaixo;
+    if (livreEmbaixo >= g.altura * 0.5)
+      return {
+        ...base,
+        topo: Math.round(embaixo),
+        escala: Math.round(Math.min(1, livreEmbaixo / g.altura) * 1000) / 1000,
+        lugar: 'abaixo' as const,
+      };
+    // 3. Sem espaço nenhum (o rosto ocupa a tela): o gráfico não aparece.
+    return { ...base, topo: TOPO, escala: 0, lugar: 'fora' as const };
   });
 
   const transformacao = (t: number) => {
@@ -361,7 +360,10 @@ export function diagramar(entrada: {
     }
   }
   legendas.sort((x, y) => x.ini - y.ini);
-  return { cartoes, legendas, transicao: TRANSICAO };
+  // A legenda espera o gráfico que foi para baixo do queixo sair (os dois no mesmo lugar não dá).
+  const embaixo = cartoes.filter((c) => c.lugar === 'abaixo');
+  const visiveis = legendas.filter((l) => !embaixo.some((c) => l.ini < c.fim && c.ini < l.fim));
+  return { cartoes, legendas: visiveis, transicao: TRANSICAO };
 }
 
 /* ───────────────────────────── Conferência ───────────────────────────── */

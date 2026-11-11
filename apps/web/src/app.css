@@ -18732,3 +18732,95 @@ fieldset.assinar__formas {
     flex-direction: column;
   }
 }
+
+/* ── v136: a prévia do mapa na tela da edição ── */
+.video__editando-corpo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 48px;
+  justify-content: center;
+  align-items: flex-start;
+}
+.video__editando-corpo > .video__editando {
+  justify-self: auto;
+  flex: 0 1 560px;
+}
+.video__previa {
+  margin: 0;
+  width: 300px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.video__previa-quadro {
+  position: relative;
+  width: 300px;
+  aspect-ratio: 9 / 16;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #2b2b30;
+}
+.video__previa-quadro > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.video__previa-vazio {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: #c8c8c2;
+}
+.video__previa-marca {
+  position: absolute;
+  border: 2px dashed;
+  border-radius: 10px;
+}
+.video__previa-marca > span {
+  position: absolute;
+  left: 4px;
+  top: -22px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.video__previa-marca--rosto {
+  border-color: #a78bfa;
+  border-radius: 12px;
+}
+.video__previa-marca--rosto > span {
+  background: #a78bfa;
+  color: #1e1036;
+}
+.video__previa-marca--graficos {
+  border-color: #5eead4;
+}
+.video__previa-marca--graficos > span {
+  top: auto;
+  bottom: -22px;
+  background: #5eead4;
+  color: #04302b;
+}
+.video__previa-marca--legenda {
+  border-color: #fbbf24;
+}
+.video__previa-marca--legenda > span {
+  top: auto;
+  bottom: -22px;
+  background: #fbbf24;
+  color: #3b2400;
+}
+.video__previa > figcaption {
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}

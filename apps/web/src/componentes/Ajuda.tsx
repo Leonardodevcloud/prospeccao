@@ -1558,6 +1558,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
             disso pode sair: o aviso chega no sino quando o vídeo ficar pronto.
           </li>
         </Passos>
+        <p>
+          Enquanto a IA edita, a tela mostra cada etapa com o que ela achou (quantas palavras ouviu, o que
+          cortou e quanto o vídeo diminuiu, as imagens e a música) e quanto falta. Ao lado, a{' '}
+          <b>prévia do mapa</b>: um quadro do seu vídeo já em pé com o rosto, a faixa da legenda e o espaço
+          dos gráficos marcados. No vídeo pronto, a legenda e os gráficos acompanham o rosto a cada momento.
+        </p>
         <h3>2. O que a IA faz</h3>
         <Passos>
           <li>
