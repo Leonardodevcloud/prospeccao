@@ -652,6 +652,7 @@ function AbaCortes(props: {
             ))}
         </ul>
       )}
+      <TextoDoVideo v={v} ouvir={props.ouvir} ouvindo={props.ouvindo} podeOuvir={props.podeOuvir} />
       <Seletor
         rotulo="Ritmo dos cortes"
         valor={v.opcoes.ritmo}
@@ -660,6 +661,158 @@ function AbaCortes(props: {
         dica={`${RITMOS.find((r) => r.id === v.opcoes.ritmo)?.dica}. Muda só as pausas; os cortes de palavras continuam como estão.`}
       />
     </div>
+  );
+}
+
+/**
+ * v142: o texto do vídeo palavra por palavra. Riscado sai do vídeo. Clique numa palavra e depois
+ * em outra (ou arraste) para escolher um trecho e cortar ou devolver só ele.
+ */
+function TextoDoVideo(props: {
+  v: DetalheVideo;
+  ouvir: (c: CorteVideo) => void;
+  ouvindo: string | null;
+  podeOuvir: boolean;
+}) {
+  const { v } = props;
+  const revisao = useRevisao(v.id);
+  const [sel, setSel] = useState<{ a: number; b: number } | null>(null);
+  const arrastando = useRef(false);
+  useEffect(() => {
+    const solta = () => {
+      arrastando.current = false;
+    };
+    window.addEventListener('pointerup', solta);
+    return () => window.removeEventListener('pointerup', solta);
+  }, []);
+  const palavras = v.palavras;
+  const total = v.duracaoOriginal ?? Math.max(1, ...v.cortes.map((c) => c.fim), ...palavras.map((p) => p.f));
+  const ficam = useMemo(() => trechosQueFicam(total, v.cortes), [total, v.cortes]);
+  const sai = (p: PalavraVideo) => {
+    const m = (p.i + p.f) / 2;
+    return !ficam.some((t) => m >= t.inicio && m <= t.fim);
+  };
+  if (!palavras.length) return null;
+  const ini = sel ? Math.min(sel.a, sel.b) : -1;
+  const fim = sel ? Math.max(sel.a, sel.b) : -1;
+  const escolhidas = sel ? palavras.slice(ini, fim + 1) : [];
+  const cortadas = escolhidas.filter(sai).length;
+  const anterior = palavras[ini - 1];
+  const seguinte = palavras[fim + 1];
+  const primeira = palavras[ini];
+  const ultima = palavras[fim];
+  // Cortar leva um respiro em volta (até a palavra vizinha); devolver guarda a palavra inteira.
+  const trecho = (folga: number) =>
+    primeira && ultima
+      ? {
+          inicio: Math.max(anterior ? anterior.f : 0, primeira.i - folga),
+          fim: Math.min(seguinte ? seguinte.i : total, ultima.f + folga),
+        }
+      : null;
+  const aplicar = (acao: 'cortar' | 'devolver') => {
+    const t = trecho(acao === 'cortar' ? 0.12 : 0.06);
+    if (!t) return;
+    revisao.mutate({ trechos: [{ acao, ...t }] }, { onSuccess: () => setSel(null) });
+  };
+  const tocar = (i: number) => {
+    if (sel && sel.a === sel.b && i !== sel.a) setSel({ a: sel.a, b: i });
+    else if (sel && sel.a === sel.b && i === sel.a) setSel(null);
+    else setSel({ a: i, b: i });
+  };
+  const ouvirTrecho = () => {
+    const t = trecho(0.06);
+    if (t)
+      props.ouvir({
+        id: 'trecho-escolhido',
+        ...t,
+        tipo: 'manual',
+        motivo: '',
+        trecho: '',
+        duvida: false,
+        decisao: 'cortar',
+        conferido: true,
+      });
+  };
+  return (
+    <section className="video__texto" aria-label="Texto do vídeo">
+      <span className="video__secao">Texto do vídeo</span>
+      <p className="quieto video__texto-dica">
+        Riscado sai do vídeo. Clique numa palavra e depois em outra (ou arraste) para escolher um trecho.
+      </p>
+      <div className="video__texto-palavras">
+        {palavras.map((p, i) => (
+          <button
+            // biome-ignore lint/suspicious/noArrayIndexKey: a posição é a identidade da palavra
+            key={i}
+            type="button"
+            className="video__palavra"
+            data-sai={sai(p) || undefined}
+            data-sel={(i >= ini && i <= fim) || undefined}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              arrastando.current = true;
+              tocar(i);
+            }}
+            onPointerEnter={() => {
+              if (arrastando.current) setSel((s) => (s ? { a: s.a, b: i } : s));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                tocar(i);
+              }
+            }}
+          >
+            {p.t}
+          </button>
+        ))}
+      </div>
+      <div className="video__texto-barra" aria-live="polite">
+        <span className="quieto">
+          {sel
+            ? `${escolhidas.length} ${escolhidas.length === 1 ? 'palavra' : 'palavras'}: "${escolhidas.map((p) => p.t).join(' ')}"`
+            : 'Nenhum trecho escolhido.'}
+        </span>
+        {sel && (
+          <span className="video__texto-acoes">
+            {props.podeOuvir && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={props.ouvindo === 'trecho-escolhido' ? 'volume-2' : 'play'}
+                onClick={ouvirTrecho}
+              >
+                Ouvir
+              </Button>
+            )}
+            {cortadas < escolhidas.length && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => aplicar('cortar')}
+                disabled={revisao.isPending}
+              >
+                Cortar
+              </Button>
+            )}
+            {cortadas > 0 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => aplicar('devolver')}
+                disabled={revisao.isPending}
+              >
+                Devolver
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => setSel(null)}>
+              Limpar
+            </Button>
+          </span>
+        )}
+      </div>
+      <ErroDaApi erro={revisao.error} />
+    </section>
   );
 }
 

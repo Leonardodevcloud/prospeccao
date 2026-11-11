@@ -101,13 +101,21 @@ export function useRevisao(id: number) {
   const cliente = useQueryClient();
   return useMutation({
     mutationFn: (
-      r: Omit<RevisaoVideo, 'versao' | 'cortes' | 'palavras' | 'momentos' | 'imagens'> &
-        Partial<Pick<RevisaoVideo, 'cortes' | 'palavras' | 'momentos' | 'imagens'>>,
+      r: Omit<RevisaoVideo, 'versao' | 'cortes' | 'palavras' | 'momentos' | 'imagens' | 'trechos'> &
+        Partial<Pick<RevisaoVideo, 'cortes' | 'palavras' | 'momentos' | 'imagens' | 'trechos'>>,
     ) => {
       const atual = cliente.getQueryData<DetalheComFila>(['videos', id]);
       return api<DetalheVideo>(`/videos/${id}/revisao`, {
         metodo: 'PUT',
-        corpo: { cortes: [], palavras: [], momentos: [], imagens: [], ...r, versao: atual?.versao ?? 1 },
+        corpo: {
+          cortes: [],
+          palavras: [],
+          momentos: [],
+          imagens: [],
+          trechos: [],
+          ...r,
+          versao: atual?.versao ?? 1,
+        },
       });
     },
     onSuccess: (d) => {

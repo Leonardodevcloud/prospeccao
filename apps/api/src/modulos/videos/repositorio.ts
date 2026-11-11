@@ -5,6 +5,7 @@ import type { novoVideoEntrada } from '@prospeccao/shared/videos';
 import {
   type AndamentoVideo,
   type AnimacoesVideo,
+  aplicarTrechos,
   type ConferenciaVideo,
   type CorteVideo,
   type DetalheVideo,
@@ -470,6 +471,11 @@ export async function revisar(
     return { ...c, decisao: m.decisao, conferido: m.conferido || c.conferido };
   });
   const palavras = [...(l.palavras ?? [])];
+  // v142: cortar ou devolver um trecho escolhido palavra por palavra.
+  if (r.trechos.length) {
+    cortes = aplicarTrechos(cortes, palavras, r.trechos);
+    mudou = true;
+  }
   for (const p of r.palavras) {
     const atual = palavras[p.indice];
     if (!atual || atual.t === p.texto) continue;

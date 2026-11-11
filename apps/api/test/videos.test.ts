@@ -289,6 +289,30 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
     expect(ritmo.body.cortes.filter((c: { tipo: string }) => c.tipo === 'pausa')).toHaveLength(1);
     expect(ritmo.body.opcoes.ritmo).toBe('pausas');
 
+    // v142: cortar um trecho escolhido palavra por palavra (vira corte "manual") e devolver de novo.
+    const manual = await enviar('put', `/videos/${videoId}/revisao`, {
+      versao: 3,
+      trechos: [{ acao: 'cortar', inicio: 1.45, fim: 1.85 }],
+    });
+    expect(manual.status).toBe(200);
+    const m = manual.body.cortes.find((c: { tipo: string }) => c.tipo === 'manual');
+    expect(m).toMatchObject({ decisao: 'cortar', trecho: 'óleo', conferido: true });
+    expect(manual.body.mudancasPendentes).toBe(true);
+    const volta = await enviar('put', `/videos/${videoId}/revisao`, {
+      versao: 4,
+      trechos: [{ acao: 'devolver', inicio: 1.4, fim: 1.9 }],
+    });
+    expect(volta.status).toBe(200);
+    expect(volta.body.cortes.find((c: { id: string }) => c.id === m.id).decisao).toBe('devolver');
+    expect(
+      (
+        await enviar('put', `/videos/${videoId}/revisao`, {
+          versao: 5,
+          trechos: [{ acao: 'cortar', inicio: 2, fim: 2 }],
+        })
+      ).status,
+    ).toBe(422);
+
     const link = await ler(`/videos/${videoId}/arquivo?tipo=final&baixar=sim`);
     expect(link.body.url).toContain('videos/1/x/editado.mp4');
     expect(link.body.url).toContain('como=Promo');
@@ -299,7 +323,7 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
     expect(g.body.situacao).toBe('na_fila');
     expect(publicados).toEqual([{ nome: 'video.editar', payload: { videoId, modo: 'refazer' } }]);
     // Na fila: não dá para revisar nem pedir de novo.
-    expect((await enviar('put', `/videos/${videoId}/revisao`, { versao: 3 })).status).toBeGreaterThanOrEqual(
+    expect((await enviar('put', `/videos/${videoId}/revisao`, { versao: 5 })).status).toBeGreaterThanOrEqual(
       400,
     );
     expect((await enviar('post', `/videos/${videoId}/gerar`)).status).toBeGreaterThanOrEqual(400);

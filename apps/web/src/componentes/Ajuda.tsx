@@ -1630,6 +1630,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
             tempo mostra em verde o que ficou.
           </li>
           <li>
+            Ainda na aba <b>Cortes</b>, o <b>Texto do vídeo</b> mostra tudo o que você falou, palavra por
+            palavra; o que está riscado sai do vídeo. Para escolher onde cortar, clique numa palavra e depois
+            em outra (ou arraste por cima delas): aparecem <b>Ouvir</b>, <b>Cortar</b> e <b>Devolver</b>.
+            Assim, se um corte pegou palavras demais, você devolve só as palavras que deviam ficar, e o resto
+            do corte continua.
+          </li>
+          <li>
             Na aba <b>Legenda</b>, corrija uma palavra que a IA ouviu errado, trocando palavra por palavra (o
             tempo de cada uma fica). As palavras em que a IA ficou insegura aparecem marcadas. Em{' '}
             <b>Palavras sempre escritas assim</b>, ponha o nome da empresa, dos produtos e as siglas: vale

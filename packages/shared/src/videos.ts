@@ -185,7 +185,7 @@ export const novoVideoEntrada = z.object({
   opcoes: opcoesVideoEntrada,
 });
 
-export type TipoCorte = 'pausa' | 'muleta' | 'recomeco' | 'fora' | 'inicio' | 'fim' | 'outro';
+export type TipoCorte = 'pausa' | 'muleta' | 'recomeco' | 'fora' | 'inicio' | 'fim' | 'outro' | 'manual';
 export const ROTULO_CORTE: Record<TipoCorte, string> = {
   pausa: 'Pausa',
   muleta: 'Muleta',
@@ -194,6 +194,7 @@ export const ROTULO_CORTE: Record<TipoCorte, string> = {
   inicio: 'Começo antes de falar',
   fim: 'Fim depois de falar',
   outro: 'Trecho cortado',
+  manual: 'Cortado por você',
 };
 
 export interface CorteVideo {
@@ -420,6 +421,25 @@ export const revisaoEntrada = z.object({
     .array(z.object({ indice: z.number().int().min(0).max(20_000), texto: z.string().trim().min(1).max(40) }))
     .max(2000)
     .default([]),
+  /** v142: trechos escolhidos palavra por palavra (tempo do original) para cortar ou devolver. */
+  trechos: z
+    .array(
+      z
+        .object({
+          acao: z.enum(['cortar', 'devolver']),
+          inicio: z
+            .number()
+            .min(0)
+            .max(LIMITE_SEGUNDOS_VIDEO + 5),
+          fim: z
+            .number()
+            .min(0)
+            .max(LIMITE_SEGUNDOS_VIDEO + 5),
+        })
+        .refine((t) => t.fim - t.inicio >= 0.05, 'Escolha pelo menos uma palavra.'),
+    )
+    .max(50)
+    .default([]),
   titulo: z.object({ usar: z.boolean(), texto: textoCurto(60) }).optional(),
   chamada: z.object({ usar: z.boolean() }).merge(chamadaEntrada).optional(),
   estilo: z.enum(['acesa', 'simples', 'balao']).optional(),
@@ -506,6 +526,70 @@ export function fraseDaChamada(c: ChamadaVideo): { frase: string; botao: string 
     default:
       return { frase: '', botao: '' };
   }
+}
+
+/** O menor pedaço de corte que vale a pena manter depois de devolver parte dele. */
+const MIN_PEDACO_CORTE = 0.05;
+
+/**
+ * v142: aplica os trechos que a pessoa escolheu palavra por palavra. "cortar" vira um corte
+ * "manual"; "devolver" tira o trecho de dentro dos cortes que o cobrem: o corte encolhe, se parte
+ * em dois ou volta inteiro para o vídeo. As palavras do trecho de cada corte são refeitas.
+ */
+export function aplicarTrechos(
+  cortes: CorteVideo[],
+  palavras: readonly Pick<PalavraVideo, 't' | 'i' | 'f'>[],
+  trechos: readonly { acao: 'cortar' | 'devolver'; inicio: number; fim: number }[],
+  marca = Date.now().toString(36),
+): CorteVideo[] {
+  const fala = (a: number, b: number) =>
+    palavras
+      .filter((p) => (p.i + p.f) / 2 > a && (p.i + p.f) / 2 < b)
+      .map((p) => p.t)
+      .join(' ');
+  let lista = [...cortes];
+  trechos.forEach((t, k) => {
+    const a = Math.round(t.inicio * 1000) / 1000;
+    const b = Math.round(t.fim * 1000) / 1000;
+    if (t.acao === 'cortar') {
+      lista.push({
+        id: `m${marca}${k}`,
+        inicio: a,
+        fim: b,
+        tipo: 'manual',
+        motivo: 'Você escolheu cortar',
+        trecho: fala(a, b),
+        duvida: false,
+        decisao: 'cortar',
+        conferido: true,
+      });
+      return;
+    }
+    const nova: CorteVideo[] = [];
+    for (const c of lista) {
+      if (c.decisao !== 'cortar' || c.fim <= a || c.inicio >= b) {
+        nova.push(c);
+        continue;
+      }
+      const antes = a - c.inicio >= MIN_PEDACO_CORTE ? { inicio: c.inicio, fim: a } : null;
+      const depois = c.fim - b >= MIN_PEDACO_CORTE ? { inicio: b, fim: c.fim } : null;
+      if (!antes && !depois) {
+        nova.push({ ...c, decisao: 'devolver', conferido: true });
+        continue;
+      }
+      if (antes) nova.push({ ...c, ...antes, trecho: fala(antes.inicio, antes.fim), conferido: true });
+      if (depois)
+        nova.push({
+          ...c,
+          ...depois,
+          id: antes ? `${c.id}-${marca}${k}`.slice(0, 40) : c.id,
+          trecho: fala(depois.inicio, depois.fim),
+          conferido: true,
+        });
+    }
+    lista = nova;
+  });
+  return lista.sort((x, y) => x.inicio - y.inicio);
 }
 
 /**

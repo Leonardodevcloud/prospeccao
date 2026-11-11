@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { planoEfetivo, TABELA_PADRAO, tabelaCompleta } from '../src/planos.js';
 import {
+  aplicarTrechos,
   duracaoDosTrechos,
   fmtDuracao,
   fraseDaChamada,
@@ -110,5 +111,79 @@ describe('vídeos: os trechos que ficam', () => {
     });
     expect(antiga.modulos.videos).toBe(200);
     expect(antiga.videosMes).toBe(60);
+  });
+});
+
+describe('v142: cortar e devolver um trecho palavra por palavra', () => {
+  const palavras = [
+    { t: 'se', i: 1, f: 1.2 },
+    { t: 'você', i: 1.25, f: 1.5 },
+    { t: 'deseja', i: 1.55, f: 2 },
+    { t: 'saber', i: 2.1, f: 2.4 },
+    { t: 'mais', i: 2.45, f: 2.8 },
+  ];
+  const corte = (inicio: number, fim: number, id = 'c1') => ({
+    id,
+    inicio,
+    fim,
+    tipo: 'outro' as const,
+    motivo: 'Fala embolada',
+    trecho: '',
+    duvida: true,
+    decisao: 'cortar' as const,
+    conferido: false,
+  });
+
+  it('cortar vira um corte manual com as palavras do trecho', () => {
+    const r = aplicarTrechos([], palavras, [{ acao: 'cortar', inicio: 1.5, fim: 2.05 }], 'x');
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({
+      id: 'mx0',
+      tipo: 'manual',
+      decisao: 'cortar',
+      trecho: 'deseja',
+      duvida: false,
+    });
+  });
+
+  it('devolver no meio de um corte parte ele em dois e a palavra volta', () => {
+    const r = aplicarTrechos([corte(1, 2.8)], palavras, [{ acao: 'devolver', inicio: 1.5, fim: 2.05 }], 'x');
+    expect(r.map((c) => [c.inicio, c.fim, c.decisao])).toEqual([
+      [1, 1.5, 'cortar'],
+      [2.05, 2.8, 'cortar'],
+    ]);
+    expect(r[0]!.id).toBe('c1');
+    expect(r[1]!.id).toBe('c1-x0');
+    expect(r.map((c) => c.trecho)).toEqual(['se você', 'saber mais']);
+    expect(r.every((c) => c.conferido)).toBe(true);
+  });
+
+  it('devolver na ponta encolhe o corte; cobrindo tudo, devolve o corte inteiro', () => {
+    const ponta = aplicarTrechos(
+      [corte(1, 2.8)],
+      palavras,
+      [{ acao: 'devolver', inicio: 2.05, fim: 2.9 }],
+      'x',
+    );
+    expect(ponta.map((c) => [c.inicio, c.fim, c.id])).toEqual([[1, 2.05, 'c1']]);
+    const tudo = aplicarTrechos(
+      [corte(1.5, 2.05)],
+      palavras,
+      [{ acao: 'devolver', inicio: 1.4, fim: 2.1 }],
+      'x',
+    );
+    expect(tudo.map((c) => c.decisao)).toEqual(['devolver']);
+  });
+
+  it('cortes já devolvidos e os que não encostam ficam como estão', () => {
+    const devolvido = { ...corte(1, 1.2, 'd'), decisao: 'devolver' as const };
+    const longe = corte(5, 6, 'l');
+    const r = aplicarTrechos(
+      [devolvido, longe],
+      palavras,
+      [{ acao: 'devolver', inicio: 0.9, fim: 1.3 }],
+      'x',
+    );
+    expect(r).toEqual([devolvido, longe]);
   });
 });

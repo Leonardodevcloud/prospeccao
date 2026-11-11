@@ -18904,3 +18904,65 @@ fieldset.assinar__formas {
     transition: none;
   }
 }
+
+/* v142: o texto do vídeo palavra por palavra (aba Cortes) */
+.video__texto {
+  display: grid;
+  gap: 8px;
+}
+.video__texto-dica {
+  margin: 0;
+  font-size: 12px;
+}
+.video__texto-palavras {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 26px;
+  user-select: none;
+  touch-action: pan-y;
+}
+.video__palavra {
+  display: inline;
+  margin: 0 1px;
+  padding: 1px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.video__palavra:hover {
+  background: var(--surface-sunken);
+}
+.video__palavra:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.video__palavra[data-sai] {
+  color: var(--danger);
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+.video__palavra[data-sel] {
+  background: var(--brand-soft);
+  color: var(--brand);
+  opacity: 1;
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+.video__texto-barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.video__texto-acoes {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
