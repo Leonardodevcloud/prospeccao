@@ -54,10 +54,18 @@ function problemaDaCor(campo: CampoCor, c: string): string | null {
     return 'Primária clara demais: o texto branco dos botões fica ilegível.';
   if (campo === 'corSecundaria' && contrasteComBranco(c) < 4.5)
     return 'Secundária clara demais: o texto branco do menu fica ilegível.';
-  if (campo === 'corDestaque' && contrasteComBranco(c) < 3)
-    return 'Destaque claro demais: os links somem no fundo branco.';
   if (campo === 'corClara' && contrasteComEscuro(c) < 9)
     return 'Clara escura demais: as etiquetas ficam difíceis de ler.';
+  return null;
+}
+
+/**
+ * Aviso que não impede salvar (v141): o destaque costuma ser a cor da marca (um laranja, um
+ * amarelo) e a empresa decide. Só avisa que os links ficam fracos no fundo branco.
+ */
+function avisoDaCor(campo: CampoCor, c: string): string | null {
+  if (campo === 'corDestaque' && hexValido(c) && contrasteComBranco(c) < 3)
+    return 'Destaque claro: os links e gráficos ficam mais fracos no fundo branco. Pode salvar assim mesmo.';
   return null;
 }
 
@@ -154,6 +162,9 @@ export function MarcaCompleta(props: { dados: MarcaDados; endereco: string }) {
     novos[a] !== undefined ? novos[a]! : d[a] ? `/api/marca/arquivo/${a}?v=${d.versao}` : null;
   const problemas = CORES.map((c) => ({ ...c, erro: problemaDaCor(c.campo, cores[c.campo]) })).filter(
     (c) => c.erro,
+  );
+  const avisos = CORES.map((c) => ({ ...c, aviso: avisoDaCor(c.campo, cores[c.campo]) })).filter(
+    (c) => c.aviso,
   );
   const salvar = useMutation({
     mutationFn: (corpo: Record<string, unknown>) => api('/marca', { metodo: 'PUT', corpo }),
@@ -334,6 +345,14 @@ export function MarcaCompleta(props: { dados: MarcaDados; endereco: string }) {
               {problemas.map((p) => (
                 <span key={p.campo} style={{ display: 'block' }}>
                   {p.erro}
+                </span>
+              ))}
+            </Mensagem>
+          ) : avisos.length ? (
+            <Mensagem tipo="aviso">
+              {avisos.map((p) => (
+                <span key={p.campo} style={{ display: 'block' }}>
+                  {p.aviso}
                 </span>
               ))}
             </Mensagem>

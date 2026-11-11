@@ -87,6 +87,8 @@ import { centroDoRosto, mapearRosto, remendarBuracos } from './rosto.js';
 
 const require = createRequire(import.meta.url);
 const FPS = 30;
+/** Cor e nitidez do vídeo editado (aplicadas em cada plano, para não recomprimir na junção). */
+const COR_E_NITIDEZ = 'eq=contrast=1.05:saturation=1.06:brightness=0.01,unsharp=5:5:0.35,format=yuv420p';
 const FPS_ROSTO = 6;
 
 export interface DepsEdicao extends DepsEnfeites {
@@ -187,8 +189,9 @@ async function emPe(
       'libx264',
       '-preset',
       'veryfast',
+      // v141: quase sem perda (o vídeo ainda passa por mais duas etapas até o arquivo final).
       '-crf',
-      '16',
+      '12',
       '-g',
       String(FPS),
       '-c:a',
@@ -226,7 +229,7 @@ async function montarEditado(base: string, planos: Plano[], pasta: string, saida
         '-t',
         d.toFixed(4),
         '-vf',
-        `crop=${c.w}:${c.h}:${c.x}:${c.y},scale=1080:1920:flags=lanczos,setsar=1`,
+        `crop=${c.w}:${c.h}:${c.x}:${c.y},scale=1080:1920:flags=lanczos,setsar=1,${COR_E_NITIDEZ}`,
         '-af',
         `afade=t=in:d=0.012,afade=t=out:st=${fadeOut}:d=0.015`,
         '-c:v',
@@ -234,7 +237,7 @@ async function montarEditado(base: string, planos: Plano[], pasta: string, saida
         '-preset',
         'veryfast',
         '-crf',
-        '15',
+        '12',
         '-c:a',
         'pcm_s16le',
         arq,
@@ -260,16 +263,11 @@ async function montarEditado(base: string, planos: Plano[], pasta: string, saida
       '0',
       '-i',
       arqLista,
-      '-vf',
-      'eq=contrast=1.05:saturation=1.06:brightness=0.01,unsharp=5:5:0.35,format=yuv420p',
       '-af',
       'highpass=f=80,afftdn=nf=-25,acompressor=threshold=-20dB:ratio=3:attack=5:release=80,loudnorm=I=-14:TP=-1.5:LRA=7,aresample=48000',
+      // v141: a imagem dos planos já vem tratada; juntar sem recomprimir.
       '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-crf',
-      '17',
+      'copy',
       '-c:a',
       'aac',
       '-b:a',
@@ -312,7 +310,21 @@ async function renderizar(
   const cli = join(dirname(require.resolve('hyperframes/package.json')), 'bin', 'hyperframes.mjs');
   await rodar(
     process.execPath,
-    [cli, 'render', '-o', saida, '-w', String(deps.workersRender), '--crf', '18', '--quiet', '--no-wait'],
+    [
+      cli,
+      'render',
+      '-o',
+      saida,
+      '-w',
+      String(deps.workersRender),
+      // v141: qualidade de entrega (uns 20 Mbps em 1080 × 1920, antes uns 12).
+      '-q',
+      'high',
+      '--crf',
+      '15',
+      '--quiet',
+      '--no-wait',
+    ],
     {
       cwd: projeto,
       timeoutMs: 40 * 60_000,

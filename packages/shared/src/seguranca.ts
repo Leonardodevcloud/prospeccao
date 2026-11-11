@@ -75,13 +75,11 @@ export const marcaEntrada = z.object({
       'Cor secundária clara demais: o texto branco do menu fica ilegível. Escolha um tom mais escuro.',
     )
     .nullish(),
-  /** Destaque: links, gráficos e a rota no mapa (em cima do branco). */
-  corDestaque: corHex
-    .refine(
-      (c) => contrasteComBranco(c) >= 3,
-      'Cor de destaque clara demais: os links somem no fundo branco. Escolha um tom mais forte.',
-    )
-    .nullish(),
+  /**
+   * Destaque: links, gráficos e a rota no mapa (em cima do branco). v141: qualquer cor vale (é a
+   * cor da marca; a tela só avisa quando fica fraca no branco).
+   */
+  corDestaque: corHex.nullish(),
   /** Clara: etiquetas e fundos de chips (texto escuro em cima). */
   corClara: corHex
     .refine(

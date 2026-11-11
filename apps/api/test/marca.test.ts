@@ -277,7 +277,8 @@ describe.skipIf(!URL_TESTE)('marca própria e domínio do cliente', () => {
   it('marca completa: duas logos, três ícones, quatro cores e o menu na secundária', async () => {
     expect((await mandar('put', '/marca', { corSecundaria: '#f3f4f6' })).status).toBe(422);
     expect((await mandar('put', '/marca', { corClara: '#1f2a44' })).status).toBe(422);
-    expect((await mandar('put', '/marca', { corDestaque: '#7dd3fc' })).status).toBe(422);
+    // v141: destaque claro (laranja da marca) é aceito; a tela só avisa.
+    expect((await mandar('put', '/marca', { corDestaque: '#f37600' })).status).toBe(200);
     const r = await mandar('put', '/marca', {
       corSecundaria: '#1f2a44',
       corDestaque: '#2563eb',
