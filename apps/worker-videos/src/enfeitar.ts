@@ -89,7 +89,7 @@ export function somPadrao(o: OpcoesVideo, e: { liberada: boolean; antigo: boolea
       chave: null,
       segundos: null,
       pedirOutra: false,
-      erro: e.liberada ? null : 'A música ainda não está liberada na sua conta.',
+      erro: e.liberada ? null : 'A música ainda não foi ligada na plataforma. Fale com a gente.',
     },
     efeitos: { ligados: !e.antigo && o.efeitos, desligados: [], lista: [] },
   };
@@ -293,7 +293,7 @@ export async function prepararMusica(
   const m = som.musica;
   if (!m.usar) return { som, arquivo: null };
   if (!deps.musicaLiberada(e.contaId) || !deps.comporMusica) {
-    m.erro = 'A música ainda não está liberada na sua conta.';
+    m.erro = 'A música ainda não foi ligada na plataforma. Fale com a gente.';
     return { som, arquivo: null };
   }
   const destino = join(e.pasta, 'musica.mp3');

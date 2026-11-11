@@ -600,7 +600,7 @@ export async function revisar(
     const m = { ...som.musica };
     if (r.musica) {
       if (r.musica.usar && !deps.musicaLiberada)
-        throw AppError.invalido('A música ainda não está liberada na sua conta.');
+        throw AppError.invalido('A música ainda não foi ligada na plataforma. Fale com a gente.');
       if (r.musica.usar != null) m.usar = r.musica.usar;
       if (r.musica.clima && r.musica.clima !== m.clima) {
         m.clima = r.musica.clima;
@@ -677,6 +677,14 @@ export async function salvarVocabulario(db: Executor, palavras: string[]): Promi
 }
 
 /** O worker-videos deu sinal de vida nos últimos 3 minutos? */
+/** A música está ligada quando o worker-videos tem a chave da ElevenLabs (o último sinal de vida diz). */
+export async function musicaNoWorker(db: Executor): Promise<boolean> {
+  const { rows } = await db.query<{ ok: boolean }>(
+    `SELECT coalesce((info->>'musica')::boolean, false) AS ok FROM cadastro.servicos_vivos WHERE nome = 'worker-videos'`,
+  );
+  return !!rows[0]?.ok;
+}
+
 export async function servicoNoAr(db: Executor): Promise<boolean> {
   const { rows } = await db.query<{ ok: boolean }>(
     `SELECT visto_em > now() - interval '3 minutes' AS ok FROM cadastro.servicos_vivos WHERE nome = 'worker-videos'`,

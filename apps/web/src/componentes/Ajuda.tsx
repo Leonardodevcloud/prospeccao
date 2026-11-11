@@ -1544,7 +1544,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
           <li>
             Escolha a <b>música de fundo</b> pelo clima (ou deixe a IA escolher pelo assunto) e se quer{' '}
             <b>efeitos sonoros</b> nas animações. A música é feita para o vídeo e baixa sozinha quando você
-            fala. Se a música ainda não estiver liberada na sua conta, o campo aparece desligado.
+            fala. A música vem com o módulo Vídeos com IA, para todos os vídeos da franquia. Se o campo
+            aparecer desligado, a música ainda não foi ligada na plataforma.
           </li>
           <li>
             Escolha a <b>chamada no fim</b>: "Comente" com a palavra (use a mesma de uma regra do Comente e

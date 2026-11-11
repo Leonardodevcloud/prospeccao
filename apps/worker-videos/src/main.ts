@@ -45,16 +45,19 @@ const env = carregarEnv(
     OPENAI_CHAVE: opcional(z.string().min(10)),
     VIDEOS_IMAGEM_MODELO: z.string().default(MODELO_IMAGEM_PADRAO),
     VIDEOS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).default(0.05),
-    /** Música (Eleven Music). Só sai para as contas em VIDEOS_MUSICA_CONTAS ("todas" ou ids: "1,7"). */
+    /** Música (Eleven Music): com a chave, vale para toda conta com o módulo Vídeos (o plano decide). */
     ELEVENLABS_CHAVE: opcional(z.string().min(10)),
-    VIDEOS_MUSICA_CONTAS: z.string().default(''),
     VIDEOS_CUSTO_MUSICA_USD_MINUTO: z.coerce.number().min(0).default(0.15),
   }),
 );
 
 const log = criarLogger('worker-videos', env.LOG_LEVEL);
 const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-videos', max: 4 });
-const pararSinal = manterSinalDeVida(pool, 'worker-videos');
+// O sinal de vida diz à api o que este worker sabe fazer (a tela mostra a música só com a chave).
+const pararSinal = manterSinalDeVida(pool, 'worker-videos', {
+  musica: !!env.ELEVENLABS_CHAVE,
+  imagens: !!env.OPENAI_CHAVE,
+});
 const filas = await conectarFilas({
   url: env.DATABASE_URL,
   aplicacao: 'worker-videos',
@@ -77,15 +80,8 @@ const claude = env.ANTHROPIC_CHAVE
   : null;
 const navegador = env.VIDEOS_NAVEGADOR ?? (existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : null);
 
-const contasDaMusica = env.VIDEOS_MUSICA_CONTAS.trim().toLowerCase();
-const idsDaMusica = new Set(
-  contasDaMusica
-    .split(/[\s,;]+/)
-    .map(Number)
-    .filter((n) => Number.isInteger(n) && n > 0),
-);
-const musicaLiberada = (contaId: number) =>
-  !!env.ELEVENLABS_CHAVE && (contasDaMusica === 'todas' || idsDaMusica.has(contaId));
+// O vídeo só chega aqui de conta com o módulo Vídeos: com a chave, a música vale para todas.
+const musicaLiberada = (_contaId: number) => !!env.ELEVENLABS_CHAVE;
 
 const deps: DepsEdicao = {
   db: pool,
@@ -153,7 +149,7 @@ log.info(
     transcricao: !!voz,
     ia: !!claude,
     imagens: !!env.OPENAI_CHAVE,
-    musica: env.ELEVENLABS_CHAVE ? contasDaMusica || 'nenhuma conta' : 'sem chave',
+    musica: env.ELEVENLABS_CHAVE ? 'ligada' : 'sem chave',
     efeitos: await sonsPresentes(),
     navegador: navegador ?? 'o do HyperFrames',
     workers: env.VIDEOS_WORKERS_RENDER,

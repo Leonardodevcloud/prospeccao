@@ -65,7 +65,8 @@ export interface DepsApi {
   carrosseisIa?: CarrosseisIa | null;
   /**
    * Vídeos com IA: o que a tela pode oferecer. As imagens geradas dependem da chave da OpenAI no
-   * worker-videos (a mesma da api); a música, das contas liberadas em VIDEOS_MUSICA_CONTAS.
+   * worker-videos (a mesma da api). A música vale para toda conta com o módulo Vídeos quando o
+   * worker-videos tem a chave da ElevenLabs (ele avisa no sinal de vida); os testes podem forçar.
    */
-  videos?: { imagensGeradas: boolean; musicaLiberada: (contaId: number) => boolean } | null;
+  videos?: { imagensGeradas: boolean; musicaLiberada?: (contaId: number) => boolean } | null;
 }

@@ -460,7 +460,7 @@ function NovoVideo({ situacao }: { situacao: SituacaoVideos }) {
           <span className="campo__dica">
             {situacao.recursos.musica
               ? 'Feita para este vídeo. O volume baixa sozinho quando você fala.'
-              : 'A música ainda não está liberada na sua conta.'}
+              : 'A música ainda não foi ligada na plataforma. Fale com a gente.'}
           </span>
         </div>
 

@@ -13,7 +13,7 @@ describe('o som de cada vídeo', () => {
     });
     expect(somPadrao(o, { liberada: false, antigo: false }).musica).toMatchObject({
       usar: false,
-      erro: expect.stringContaining('liberada'),
+      erro: expect.stringContaining('ligada na plataforma'),
     });
     expect(somPadrao(o, { liberada: true, antigo: true })).toMatchObject({
       musica: { usar: false },

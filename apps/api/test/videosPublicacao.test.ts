@@ -194,7 +194,7 @@ describe.skipIf(!URL_TESTE)('v131: o vídeo no Instagram e no Comente e receba (
       credenciais: { chave: 'c'.repeat(32), ambiente: {}, invalidar() {} },
       meta,
       reunioes: { armazenamento } as never,
-      videos: { imagensGeradas: false, musicaLiberada: () => false },
+      videos: { imagensGeradas: false },
     });
     const ok = await request(app)
       .post('/auth/login')
@@ -230,6 +230,16 @@ describe.skipIf(!URL_TESTE)('v131: o vídeo no Instagram e no Comente e receba (
     );
     return rows[0]!.id;
   };
+
+  it('a música segue o plano: toda conta com o módulo tem, quando o worker-videos tem a chave', async () => {
+    await pool.query("DELETE FROM cadastro.servicos_vivos WHERE nome = 'worker-videos'");
+    expect((await ler('/videos/situacao')).body.recursos.musica).toBe(false);
+    await pool.query(
+      `INSERT INTO cadastro.servicos_vivos (nome, visto_em, iniciado_em, info)
+       VALUES ('worker-videos', now(), now(), '{"musica": true}')`,
+    );
+    expect((await ler('/videos/situacao')).body.recursos.musica).toBe(true);
+  });
 
   it('conecta o Instagram', async () => {
     const r = await enviar('post', '/instagram/conexao');

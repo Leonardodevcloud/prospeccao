@@ -57,9 +57,12 @@ export function rotasVideos(deps: DepsApi): Router {
     return { usados: await repo.usadosNoMes(pool), limite: c ? c.videosMes : null };
   };
 
-  const recursos = () => ({
+  // A música segue o plano: toda conta com o módulo Vídeos (a rota já exige) tem, se o worker tiver a chave.
+  const recursos = async () => ({
     imagensGeradas: !!deps.videos?.imagensGeradas,
-    musica: !!deps.videos?.musicaLiberada(conta()),
+    musica: deps.videos?.musicaLiberada
+      ? deps.videos.musicaLiberada(conta())
+      : await repo.musicaNoWorker(pool).catch(() => false),
   });
 
   const r = Router();
@@ -76,7 +79,7 @@ export function rotasVideos(deps: DepsApi): Router {
       limiteSegundos: LIMITE_SEGUNDOS_VIDEO,
       limiteBytes: LIMITE_BYTES_VIDEO,
       tamanhoParte: TAMANHO_PARTE_ENVIO,
-      recursos: recursos(),
+      recursos: await recursos(),
       fotosDaEmpresa: modulo ? (await repo.fotosDaEmpresa(pool)).length : 0,
     });
   });
@@ -363,7 +366,7 @@ export function rotasVideos(deps: DepsApi): Router {
   });
 
   r.put('/:id/revisao', async (req, res) => {
-    const rc = recursos();
+    const rc = await recursos();
     res.json(
       await repo.revisar(pool, idDaRota(req), corpo(req, revisaoEntrada), {
         imagensGeradas: rc.imagensGeradas,

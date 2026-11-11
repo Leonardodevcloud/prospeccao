@@ -119,16 +119,6 @@ const app = criarApp({
   carrosseisIa,
   videos: {
     imagensGeradas: !!env.OPENAI_CHAVE,
-    musicaLiberada: (contaId: number) => {
-      const v = env.VIDEOS_MUSICA_CONTAS.trim().toLowerCase();
-      return (
-        v === 'todas' ||
-        v
-          .split(/[\s,;]+/)
-          .map(Number)
-          .includes(contaId)
-      );
-    },
   },
 });
 

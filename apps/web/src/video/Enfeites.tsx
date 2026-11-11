@@ -631,7 +631,7 @@ function Musica({ v, liberada }: { v: DetalheVideo; liberada: boolean }) {
     return (
       <div className="video__animacao">
         <b>Música</b>
-        <span className="quieto">A música ainda não está liberada na sua conta.</span>
+        <span className="quieto">A música ainda não foi ligada na plataforma. Fale com a gente.</span>
       </div>
     );
   const clima = CLIMAS_MUSICA.find((c) => c.id === m.clima);
