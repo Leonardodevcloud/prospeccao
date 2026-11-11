@@ -260,9 +260,13 @@ export const TRATAMENTO_FOTO: Record<TratamentoFoto, { nome: string; dica: strin
 };
 export const MAX_FOTOS_PEDIDO = 4;
 
-/* ── v148: as perguntas do time antes de criar ── */
+/* ── v148/v149: a conversa da estrategista antes de criar ── */
 
+/** Perguntas por rodada. */
 export const MAX_PERGUNTAS_TIME = 4;
+/** v149: a estrategista conversa em até 3 rodadas; ela para antes quando já tem o que precisa. */
+export const MAX_RODADAS_TIME = 3;
+export const MAX_RESPOSTAS_TIME = MAX_PERGUNTAS_TIME * MAX_RODADAS_TIME;
 /** Uma pergunta da estrategista, com as respostas prontas para tocar (a pessoa pode escrever outra). */
 export interface PerguntaDoTime {
   pergunta: string;
@@ -270,6 +274,19 @@ export interface PerguntaDoTime {
   porque: string;
   sugestoes: string[];
 }
+/**
+ * v149: uma rodada da conversa. `entendi` é o resumo do que a estrategista entendeu até aqui (o briefing
+ * da peça); `pronto` diz que ela já tem o que precisa (aí não vem pergunta e a pessoa confere o resumo).
+ */
+export interface RodadaDoTime {
+  pronto: boolean;
+  entendi: string;
+  perguntas: PerguntaDoTime[];
+  /** Quantas rodadas a pessoa já respondeu. */
+  rodada: number;
+}
+/** v149: o briefing que a pessoa conferiu (e pode ter corrigido) antes de criar: vale como fato. */
+export const briefingEntrada = z.string().trim().max(1500).default('');
 /** O que a pessoa respondeu: vira fonte do pedido (o card pode dizer o que foi confirmado aqui). */
 export const respostasEntrada = z
   .array(
@@ -278,7 +295,7 @@ export const respostasEntrada = z
       resposta: z.string().trim().min(1).max(400),
     }),
   )
-  .max(MAX_PERGUNTAS_TIME + 2)
+  .max(MAX_RESPOSTAS_TIME + 2)
   .default([]);
 export type RespostaDoTime = z.infer<typeof respostasEntrada>[number];
 
@@ -291,6 +308,18 @@ export const perguntasEntrada = z.object({
   chamada: z.string().trim().max(20).default(''),
   formato: z.string().trim().max(10).default('feed'),
   fotos: z.number().int().min(0).max(MAX_FOTOS_PEDIDO).default(0),
+  /** v149: o que já foi perguntado e respondido (resposta vazia: a pessoa não soube ou pulou). */
+  conversa: z
+    .array(
+      z.object({
+        pergunta: z.string().trim().min(3).max(200),
+        resposta: z.string().trim().max(400).default(''),
+      }),
+    )
+    .max(MAX_RESPOSTAS_TIME + 2)
+    .default([]),
+  /** v149: quantas rodadas a pessoa já respondeu (0 na primeira chamada). */
+  rodada: z.number().int().min(0).max(MAX_RODADAS_TIME).default(0),
 });
 export type PedidoDePerguntas = z.infer<typeof perguntasEntrada>;
 export const fotosDoPedidoEntrada = z
@@ -329,6 +358,8 @@ export const pedidoTimeEntrada = z
     fotos: fotosDoPedidoEntrada,
     /** v148: as respostas às perguntas do time (viram fonte do pedido). */
     respostas: respostasEntrada,
+    /** v149: o resumo da estrategista que a pessoa conferiu antes de criar (vira fonte do pedido). */
+    briefing: briefingEntrada,
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga sobre o que é o carrossel (ou escolha o que divulgar).',
@@ -796,6 +827,8 @@ export const pedidoCardsEntrada = z
     fotos: fotosDoPedidoEntrada,
     /** v148: as respostas às perguntas do time (viram fonte do pedido). */
     respostas: respostasEntrada,
+    /** v149: o resumo da estrategista que a pessoa conferiu antes de criar (vira fonte do pedido). */
+    briefing: briefingEntrada,
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga o que os cards precisam dizer (ou escolha o que divulgar).',

@@ -356,6 +356,7 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
       divulgar,
       assunto: p.assunto,
       respostas: p.respostas,
+      briefing: p.briefing,
     }),
   ]);
   // v134: o que o time aprendeu com os posts da conta (e, de 10 em 10, 2 carrosséis são teste).

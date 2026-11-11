@@ -78,7 +78,7 @@ describe.skipIf(!URL_TESTE)('v133: publicar e agendar pelo CRM (com Postgres)', 
       comentarios: 0,
     },
   };
-  let feed: string[] = ['OUTRO'];
+  const feed: string[] = ['OUTRO'];
 
   const assinatura = clienteMeta({ appId: '123456', appSecret: SEGREDO });
   const meta = {

@@ -9,6 +9,7 @@ import {
   lerJeitoDePostar,
   lerPerguntas,
   lerRedacaoCards,
+  lerRodada,
   mensagemDasPerguntas,
   perguntarAntes,
   USO_ZERO,
@@ -177,7 +178,7 @@ describe('v148: cards mais vivos', () => {
         divulgar: null,
         fotos: 0,
       }),
-    ).toContain('NÃO PERGUNTE');
+    ).toContain('Nunca repita uma pergunta');
   });
 
   it('o cartão-postal: a cena da cidade tem que ser reconhecível, pelo nome', () => {
@@ -211,5 +212,72 @@ describe('v148: cards mais vivos', () => {
     expect(r.fontes).toBe('moderno');
     expect(r.jeito).toContain('Fundo roxo');
     expect(pedidos[0]!.imagens).toHaveLength(2);
+  });
+});
+
+describe('v149: a conversa da estrategista em rodadas', () => {
+  const base = {
+    tipo: 'cards' as const,
+    empresa: 'Loja X',
+    dossieTexto: 'Vende pneus.',
+    assunto: 'Promoção de pneus',
+    objetivo: 'Promoção',
+    chamada: 'WhatsApp',
+    formato: 'Feed',
+    divulgar: null,
+    fotos: 0,
+  };
+
+  it('não repete pergunta já feita e para quando não sobra pergunta', () => {
+    const r = lerRodada(
+      {
+        pronto: false,
+        entendi: 'Promoção de pneus para quem roda muito.',
+        perguntas: [
+          { pergunta: 'Qual o desconto?', porque: 'O título vende o número.', sugestoes: ['10%'] },
+          { pergunta: 'Até quando vale?', porque: 'Urgência.', sugestoes: [] },
+        ],
+      },
+      { ...base, conversa: [{ pergunta: 'Qual o desconto?', resposta: '15%' }], rodada: 1 },
+    );
+    expect(r.perguntas.map((p) => p.pergunta)).toEqual(['Até quando vale?']);
+    expect(r.pronto).toBe(false);
+    expect(r.rodada).toBe(1);
+    const fim = lerRodada(
+      { pronto: false, entendi: 'x', perguntas: [{ pergunta: 'Qual o desconto?' }] },
+      {
+        ...base,
+        conversa: [{ pergunta: 'Qual o desconto?', resposta: '' }],
+        rodada: 1,
+      },
+    );
+    expect(fim).toMatchObject({ pronto: true, perguntas: [] });
+  });
+
+  it('na última rodada só resume', () => {
+    const r = lerRodada(
+      {
+        pronto: false,
+        entendi: 'Resumo.',
+        perguntas: [{ pergunta: 'Mais uma?', porque: '', sugestoes: [] }],
+      },
+      { ...base, rodada: 3 },
+    );
+    expect(r).toEqual({ pronto: true, entendi: 'Resumo.', perguntas: [], rodada: 3 });
+    expect(mensagemDasPerguntas({ ...base, rodada: 3 })).toContain('ÚLTIMA RODADA');
+  });
+
+  it('leva o que já foi respondido, e marca o que ficou em branco', () => {
+    const m = mensagemDasPerguntas({
+      ...base,
+      rodada: 1,
+      conversa: [
+        { pergunta: 'Qual o desconto?', resposta: '15%' },
+        { pergunta: 'Para qual cidade?', resposta: '' },
+      ],
+    });
+    expect(m).toContain('Qual o desconto? → 15%');
+    expect(m).toContain('Para qual cidade? → (não respondeu)');
+    expect(m).toContain('aprofundando');
   });
 });

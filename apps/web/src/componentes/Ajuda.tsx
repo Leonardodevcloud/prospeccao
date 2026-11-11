@@ -1514,11 +1514,20 @@ export const ARTIGOS: ArtigoAjuda[] = [
             feitas pela IA; a que não passa entra como foi enviada. O mesmo bloco está no pedido de carrossel.
           </li>
           <li>
-            Clique em <b>Continuar</b>. A <b>estrategista</b> lê o pedido e o cérebro da marca e, se faltar
-            algo para a peça vender (o que o cliente ganha, a condição da oferta, para quem é, a ação), faz
-            até 4 perguntas com respostas prontas para tocar. O que você responder entra como fato confirmado:
-            o card pode dizer “1ª semana grátis” se você confirmou ali. Dá para <b>Pular e criar</b>. As
-            perguntas valem também no pedido de carrossel.
+            Clique em <b>Continuar</b>. A <b>estrategista</b> conversa com você como num briefing de agência:
+            lê o pedido e o cérebro da marca e, se faltar algo para a peça vender (o que o cliente ganha, a
+            condição da oferta, para quem é, uma prova, a ação), pergunta. Toque numa sugestão ou escreva do
+            seu jeito e clique em <b>Responder</b>: ela lê as respostas e, se elas abrirem algo novo (disse
+            “1ª semana grátis”: vale para quantas entregas?), pergunta de novo. São até 3 rodadas; ela para
+            antes quando já tem o que precisa. Deixe em branco o que não souber: ela segue sem e não pergunta
+            aquilo de novo.
+          </li>
+          <li>
+            No fim, ela mostra <b>Entendi assim. Confere?</b>: o resumo do pedido. Corrija ou acrescente o que
+            quiser e crie. As respostas e o resumo conferido entram como fato confirmado: o card pode dizer
+            “1ª semana grátis” se você confirmou ali. Dá para criar a qualquer momento com{' '}
+            <b>Criar com o que já contei</b> (ou <b>Pular e criar</b>). A conversa vale também no pedido de
+            carrossel.
           </li>
           <li>
             Cada variação sai num fundo diferente da marca (a cor principal, a de destaque e a clara), com a

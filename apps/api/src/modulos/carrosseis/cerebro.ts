@@ -299,6 +299,8 @@ export async function fontesParaOsFatos(
     assunto: string;
     /** v148: as respostas às perguntas do time (fato confirmado por quem pediu). */
     respostas?: { pergunta: string; resposta: string }[];
+    /** v149: o briefing da estrategista que quem pediu conferiu. */
+    briefing?: string;
   },
 ): Promise<FonteDoTime[]> {
   const f: FonteDoTime[] = [{ rotulo: 'Cérebro da marca', texto: textoDoDossie(d.dossie, d.empresa) }];
@@ -321,6 +323,7 @@ export async function fontesParaOsFatos(
       rotulo: 'Respostas de quem pediu',
       texto: d.respostas.map((r) => `${r.pergunta}: ${r.resposta}`).join('\n'),
     });
+  if (d.briefing?.trim()) f.push({ rotulo: 'Briefing conferido por quem pediu', texto: d.briefing });
   const { perfil, conferidas } = await lerPerfil(db);
   if (Object.keys(conferidas).length) f.push(...fontesDoPerfil(perfil, d.empresa));
   // O Cérebro da empresa (quando ligado): o assunto do pedido e o que divulgar viram perguntas.

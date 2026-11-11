@@ -8,9 +8,9 @@ import {
   OBJETIVO_CARD,
   type ObjetivoCard,
   type ObjetivoCarrossel,
-  type PerguntaDoTime,
   perguntasEntrada,
   ROTULO_DIVULGAR,
+  type RodadaDoTime,
   textoDoDossie,
 } from '@prospeccao/shared/carrosseis-time';
 import { conta } from '../../contexto.js';
@@ -18,17 +18,19 @@ import * as cerebro from './cerebro.js';
 import type { CarrosseisIa } from './time.js';
 
 /**
- * v148: as perguntas da estrategista antes de criar (carrossel e cards). Sem a IA, ou se ela falhar,
- * volta a lista vazia: o pedido segue como antes, sem travar ninguém. Custa uma chamada curta, medida
- * no consumo da conta como as outras.
+ * v148/v149: a conversa da estrategista antes de criar (carrossel e cards), uma rodada por chamada. O
+ * navegador manda o que já foi respondido e quantas rodadas foram; volta a próxima rodada (perguntas
+ * novas) ou o resumo pronto para conferir. Sem a IA, ou se ela falhar, volta "pronto" sem resumo: o
+ * pedido segue como antes, sem travar ninguém. Cada rodada é uma chamada curta, medida no consumo.
  */
 export async function perguntas(
   db: Executor,
   ia: CarrosseisIa | null,
   bruto: unknown,
-): Promise<{ perguntas: PerguntaDoTime[] }> {
+): Promise<RodadaDoTime> {
   const p = perguntasEntrada.parse(bruto ?? {});
-  if (!ia) return { perguntas: [] };
+  const vazio: RodadaDoTime = { pronto: true, entendi: '', perguntas: [], rodada: p.rodada };
+  if (!ia) return vazio;
   const [empresa, c, d] = await Promise.all([
     cerebro.nomeDaEmpresa(db),
     cerebro.cerebro(db),
@@ -60,9 +62,11 @@ export async function perguntas(
             .join('\n')
         : null,
       fotos: p.fotos,
+      conversa: p.conversa,
+      rodada: p.rodada,
     });
-    return { perguntas: r.perguntas };
+    return { pronto: r.pronto, entendi: r.entendi, perguntas: r.perguntas, rodada: r.rodada };
   } catch {
-    return { perguntas: [] };
+    return vazio;
   }
 }

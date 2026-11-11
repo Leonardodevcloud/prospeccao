@@ -148,6 +148,9 @@ function blocoDoPedidoCards(e: EntradaCards): string {
     p.respostas?.length
       ? `O QUE QUEM PEDIU RESPONDEU ÀS PERGUNTAS DO TIME (vale como fato: pode usar no card):\n${p.respostas.map((r) => `- ${r.pergunta} → ${r.resposta}`).join('\n')}`
       : '',
+    p.briefing
+      ? `O BRIEFING QUE QUEM PEDIU CONFERIU (vale como fato e manda no rumo da peça):\n${p.briefing}`
+      : '',
     d
       ? [
           `O QUE DIVULGAR (${ROTULO_DIVULGAR[d.tipo]}): ${d.titulo}`,

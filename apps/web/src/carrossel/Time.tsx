@@ -14,11 +14,10 @@ import {
   type ObjetivoCarrossel,
   PALAVRA_COMENTAR,
   type PedidoDoTime,
-  type PerguntaDoTime,
   type RelatorioTime,
-  type RespostaDoTime,
   ROTULO_AVISO_TIME,
   ROTULO_DIVULGAR,
+  type RodadaDoTime,
 } from '@prospeccao/shared/carrosseis-time';
 import { Badge, Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -30,7 +29,13 @@ import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, usePedidoDoTime } from './dados';
 import type { IdeiaInicial } from './Ideias';
 import { CamposDeImagens, FotosDoPedido, IMAGENS_VAZIAS, type ImagensDoPedido } from './Imagens';
-import { PerguntasDoTime, usePerguntas } from './Perguntas';
+import {
+  type ConversaRespondida,
+  PerguntasDoTime,
+  type RascunhoDoPedido,
+  SEM_CONVERSA,
+  usePerguntas,
+} from './Perguntas';
 import { FotoDoTime } from './TimeDeIa';
 
 /**
@@ -64,11 +69,11 @@ export function NovoComTime(props: {
   const [imagens, setImagens] = useState<ImagensDoPedido>(IMAGENS_VAZIAS);
   const [fotosPedido, setFotosPedido] = useState<FotoDoPedido[]>([]);
   const [pedidoId, setPedidoId] = useState<number | null>(null);
-  // v148: antes de criar, a estrategista pode perguntar (sem perguntas, cria direto).
-  const [perguntas, setPerguntas] = useState<PerguntaDoTime[] | null>(null);
+  // v148/v149: antes de criar, a estrategista conversa em rodadas (sem perguntas, cria direto).
+  const [conversa, setConversa] = useState<RodadaDoTime | null>(null);
   const perguntar = usePerguntas();
   const pedir = useMutation({
-    mutationFn: (respostas: RespostaDoTime[]) =>
+    mutationFn: ({ respostas, briefing }: ConversaRespondida) =>
       api<PedidoDoTime>('/carrosseis/time', {
         metodo: 'POST',
         corpo: {
@@ -84,6 +89,7 @@ export function NovoComTime(props: {
           ideiaId: ini?.ideiaId ?? null,
           fotos: fotosPedido,
           respostas,
+          briefing,
         },
       }),
     onSuccess: (p) => {
@@ -105,27 +111,33 @@ export function NovoComTime(props: {
 
   if (pedidoId) return <TimeTrabalhando id={pedidoId} aoFechar={props.aoFechar} />;
 
+  const rascunho: RascunhoDoPedido = {
+    tipo: 'carrossel',
+    assunto,
+    divulgarId,
+    objetivo,
+    chamada,
+    fotos: fotosPedido.length,
+  };
   const enviar = (e: FormEvent) => {
     e.preventDefault();
     if (!pode) return;
-    perguntar.mutate(
-      { tipo: 'carrossel', assunto, divulgarId, objetivo, chamada, fotos: fotosPedido.length },
-      {
-        onSuccess: (r) => (r.perguntas.length ? setPerguntas(r.perguntas) : pedir.mutate([])),
-        // A pergunta é ajuda: se falhar, o pedido segue sem ela.
-        onError: () => pedir.mutate([]),
-      },
-    );
+    perguntar.mutate(rascunho, {
+      onSuccess: (r) => (r.perguntas.length ? setConversa(r) : pedir.mutate(SEM_CONVERSA)),
+      // A conversa é ajuda: se falhar, o pedido segue sem ela.
+      onError: () => pedir.mutate(SEM_CONVERSA),
+    });
   };
-  if (perguntas)
+  if (conversa)
     return (
       <PerguntasDoTime
-        perguntas={perguntas}
+        rascunho={rascunho}
+        inicial={conversa}
         criando={pedir.isPending}
         erro={pedir.error}
         textoCriar="Criar com o time de IA"
         aoCriar={(r) => pedir.mutate(r)}
-        aoVoltar={() => setPerguntas(null)}
+        aoVoltar={() => setConversa(null)}
       />
     );
 

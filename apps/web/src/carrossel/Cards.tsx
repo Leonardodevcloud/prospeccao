@@ -20,9 +20,8 @@ import {
   OBJETIVOS_CARD,
   type ObjetivoCard,
   PALAVRA_COMENTAR,
-  type PerguntaDoTime,
-  type RespostaDoTime,
   ROTULO_DIVULGAR,
+  type RodadaDoTime,
   type VariacaoCard,
 } from '@prospeccao/shared/carrosseis-time';
 import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
@@ -35,7 +34,13 @@ import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, useIdentidade } from './dados';
 import { FotosDoPedido } from './Imagens';
-import { PerguntasDoTime, usePerguntas } from './Perguntas';
+import {
+  type ConversaRespondida,
+  PerguntasDoTime,
+  type RascunhoDoPedido,
+  SEM_CONVERSA,
+  usePerguntas,
+} from './Perguntas';
 import { PreviaDoCard } from './PreviaDoCard';
 
 /**
@@ -183,11 +188,11 @@ function NovoPedidoDeCards(props: {
   const [usarFotos, setUsarFotos] = useState(true);
   const [gerarImagens, setGerarImagens] = useState(false);
   const [fotosPedido, setFotosPedido] = useState<FotoDoPedido[]>([]);
-  // v148: antes de criar, a estrategista pode perguntar (sem perguntas, cria direto).
-  const [perguntas, setPerguntas] = useState<PerguntaDoTime[] | null>(null);
+  // v148/v149: antes de criar, a estrategista conversa em rodadas (sem perguntas, cria direto).
+  const [conversa, setConversa] = useState<RodadaDoTime | null>(null);
   const perguntar = usePerguntas();
   const pedir = useMutation({
-    mutationFn: (respostas: RespostaDoTime[]) =>
+    mutationFn: ({ respostas, briefing }: ConversaRespondida) =>
       api('/carrosseis/cards', {
         metodo: 'POST',
         corpo: {
@@ -204,12 +209,13 @@ function NovoPedidoDeCards(props: {
           gerarImagens,
           fotos: fotosPedido,
           respostas,
+          briefing,
         },
       }),
     onSuccess: () => {
       setAssunto('');
       setFotosPedido([]);
-      setPerguntas(null);
+      setConversa(null);
       void cliente.invalidateQueries({ queryKey: ['carrosseis', 'cards'] });
       props.aoPedido();
     },
@@ -227,28 +233,35 @@ function NovoPedidoDeCards(props: {
     (assunto.trim().length >= 3 || divulgarId != null) &&
     palavraOk &&
     pecas <= MAX_PECAS_PEDIDO;
+  const rascunho: RascunhoDoPedido = {
+    tipo: 'cards',
+    assunto,
+    divulgarId,
+    objetivo,
+    chamada,
+    formato,
+    fotos: fotosPedido.length,
+  };
   const enviar = (e: FormEvent) => {
     e.preventDefault();
     if (!pode) return;
-    perguntar.mutate(
-      { tipo: 'cards', assunto, divulgarId, objetivo, chamada, formato, fotos: fotosPedido.length },
-      {
-        onSuccess: (r) => (r.perguntas.length ? setPerguntas(r.perguntas) : pedir.mutate([])),
-        // A pergunta é ajuda: se falhar, o pedido segue sem ela.
-        onError: () => pedir.mutate([]),
-      },
-    );
+    perguntar.mutate(rascunho, {
+      onSuccess: (r) => (r.perguntas.length ? setConversa(r) : pedir.mutate(SEM_CONVERSA)),
+      // A conversa é ajuda: se falhar, o pedido segue sem ela.
+      onError: () => pedir.mutate(SEM_CONVERSA),
+    });
   };
   const textoCriar = `Criar ${pecas} ${pecas === 1 ? 'peça' : 'peças'} com o time`;
-  if (perguntas)
+  if (conversa)
     return (
       <PerguntasDoTime
-        perguntas={perguntas}
+        rascunho={rascunho}
+        inicial={conversa}
         criando={pedir.isPending}
         erro={pedir.error}
         textoCriar={textoCriar}
         aoCriar={(r) => pedir.mutate(r)}
-        aoVoltar={() => setPerguntas(null)}
+        aoVoltar={() => setConversa(null)}
       />
     );
   const estiloDaIdentidade = identidade.data?.identidade.estilo;

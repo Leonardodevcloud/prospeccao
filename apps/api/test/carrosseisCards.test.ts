@@ -353,7 +353,7 @@ describe.skipIf(!URL_TESTE)('carrosséis: os cards avulsos (com Postgres)', () =
     expect(new TextDecoder().decode(arquivos['legendas.txt'])).toContain('CARD-01');
   });
 
-  it('v148: a estrategista pergunta antes, e a resposta vira fonte do pedido', async () => {
+  it('v148/v149: a estrategista conversa em rodadas, e as respostas e o briefing viram fonte', async () => {
     const q = await mandar('post', '/carrosseis/perguntas', {
       tipo: 'cards',
       assunto: 'Promoção da pastilha',
@@ -362,6 +362,8 @@ describe.skipIf(!URL_TESTE)('carrosséis: os cards avulsos (com Postgres)', () =
       formato: 'feed',
     });
     expect(q.status).toBe(200);
+    expect(q.body.pronto).toBe(false);
+    expect(q.body.rodada).toBe(0);
     expect(q.body.perguntas).toEqual([
       {
         pergunta: 'Tem alguma condição na promoção?',
@@ -371,6 +373,26 @@ describe.skipIf(!URL_TESTE)('carrosséis: os cards avulsos (com Postgres)', () =
     ]);
     expect(recebidos.at(-1)!.mensagem).toContain('Promoção da pastilha');
 
+    // v149: a segunda rodada leva o que já foi respondido; a pergunta já feita não volta.
+    const q2 = await mandar('post', '/carrosseis/perguntas', {
+      tipo: 'cards',
+      assunto: 'Promoção da pastilha',
+      conversa: [{ pergunta: 'Tem alguma condição na promoção?', resposta: 'Frete grátis no bairro' }],
+      rodada: 1,
+    });
+    expect(q2.status).toBe(200);
+    expect(q2.body.perguntas).toEqual([]);
+    expect(q2.body.pronto).toBe(true);
+    expect(recebidos.at(-1)!.mensagem).toContain('Tem alguma condição na promoção? → Frete grátis no bairro');
+    // Na última rodada ela só resume, mesmo que queira perguntar mais.
+    const q3 = await mandar('post', '/carrosseis/perguntas', {
+      tipo: 'cards',
+      assunto: 'Promoção',
+      rodada: 3,
+    });
+    expect(q3.body).toMatchObject({ pronto: true, perguntas: [], rodada: 3 });
+    expect(recebidos.at(-1)!.mensagem).toContain('ÚLTIMA RODADA');
+
     recebidos.length = 0;
     const p = await mandar('post', '/carrosseis/cards', {
       assunto: 'Promoção da pastilha',
@@ -378,14 +400,20 @@ describe.skipIf(!URL_TESTE)('carrosséis: os cards avulsos (com Postgres)', () =
       quantidade: 1,
       variacoes: 2,
       respostas: [{ pergunta: 'Tem alguma condição na promoção?', resposta: 'Frete grátis no bairro' }],
+      briefing: 'Card de lançamento da pastilha para oficinas do bairro, com entrega no mesmo dia.',
     });
     expect(p.status).toBe(201);
     expect(await rodarUmPedido(pool, ia, log)).toBe(true);
     const est = recebidos.find((r) => r.agente === 'estrategista')!.mensagem;
     expect(est).toContain('Frete grátis no bairro');
     expect(est).toContain('Lançamento');
+    expect(est).toContain('O BRIEFING QUE QUEM PEDIU CONFERIU');
+    expect(est).toContain('oficinas do bairro');
     const rev = recebidos.find((r) => r.agente === 'revisor' || r.agente === 'revisora');
-    if (rev) expect(rev.mensagem).toContain('Respostas de quem pediu');
+    if (rev) {
+      expect(rev.mensagem).toContain('Respostas de quem pediu');
+      expect(rev.mensagem).toContain('Briefing conferido por quem pediu');
+    }
     const l = (await ler('/carrosseis/cards')).body.lotes.find(
       (x: { pedidoId: number }) => x.pedidoId === p.body.id,
     );

@@ -389,6 +389,12 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ab. A conversa da estrategista (v149)
+1. [ ] Sem migration: redeploy da **api** e do **worker-videos** (o front publica sozinho).
+2. [ ] Pedir 1 card com um pedido curto (ex.: "lançamento em tal cidade"): conferir que a estrategista pergunta, que a 2ª rodada vai fundo no que foi respondido, e o **Entendi assim. Confere?** no fim. Corrigir algo no resumo e conferir que o card segue a correção.
+3. [ ] Onde ficam as variáveis: `CARROSSEIS_MODELO`, `CARROSSEIS_IMAGEM_QUALIDADE` e `CARROSSEIS_CUSTO_IMAGEM_USD` só na **api** (os carrosséis e cards rodam lá). `VIDEOS_MODELO`, `VIDEOS_IMAGEM_MODELO`, `VIDEOS_IMAGEM_QUALIDADE` (novo, padrão high) e `VIDEOS_CUSTO_IMAGEM_USD` só no **worker-videos**. `CHAVE_CREDENCIAIS` na api, no worker-descoberta e no worker-enriquecimento, o mesmo valor nos três. `ANTHROPIC_CHAVE` e `OPENAI_CHAVE` na api e no worker-videos.
+4. [ ] Vídeos em qualidade alta: cerca de US$ 0,25 por imagem em pé (contra US$ 0,06 da média). Para voltar: `VIDEOS_IMAGEM_QUALIDADE=medium` no worker-videos.
+
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.
 - [ ] Aba "Plano e módulos": ajustar usuários e leads/mês se o combinado foi diferente, e a mensalidade combinada.

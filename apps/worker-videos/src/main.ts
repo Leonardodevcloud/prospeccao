@@ -45,7 +45,10 @@ const env = carregarEnv(
     /** Imagens geradas (GPT Image 2): a mesma chave da OpenAI da api. Sem ela, só fotos da empresa. */
     OPENAI_CHAVE: opcional(z.string().min(10)),
     VIDEOS_IMAGEM_MODELO: z.string().default(MODELO_IMAGEM_PADRAO),
-    VIDEOS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).default(0.05),
+    /** v148: a qualidade das imagens geradas (high: a mais caprichada do GPT Image). */
+    VIDEOS_IMAGEM_QUALIDADE: z.enum(['low', 'medium', 'high']).default('high'),
+    /** Sem valor: o custo médio da qualidade (em pé, 9:16: high ≈ US$ 0,25; medium ≈ US$ 0,06). */
+    VIDEOS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).optional(),
     /** Música (Eleven Music): com a chave, vale para toda conta com o módulo Vídeos (o plano decide). */
     ELEVENLABS_CHAVE: opcional(z.string().min(10)),
     VIDEOS_CUSTO_MUSICA_USD_MINUTO: z.coerce.number().min(0).default(0.15),
@@ -118,12 +121,21 @@ const deps: DepsEdicao = {
         })
     : null,
   gerarImagem: env.OPENAI_CHAVE
-    ? (e) => gerarImagem({ chave: env.OPENAI_CHAVE!, modelo: env.VIDEOS_IMAGEM_MODELO }, e)
+    ? (e) =>
+        gerarImagem(
+          {
+            chave: env.OPENAI_CHAVE!,
+            modelo: env.VIDEOS_IMAGEM_MODELO,
+            qualidade: env.VIDEOS_IMAGEM_QUALIDADE,
+          },
+          e,
+        )
     : null,
   comporMusica: env.ELEVENLABS_CHAVE ? (e) => comporMusica({ chave: env.ELEVENLABS_CHAVE! }, e) : null,
   gerarEfeito: env.ELEVENLABS_CHAVE ? (e) => gerarEfeito({ chave: env.ELEVENLABS_CHAVE! }, e) : null,
   musicaLiberada,
-  custoImagemUsd: env.VIDEOS_CUSTO_IMAGEM_USD,
+  custoImagemUsd:
+    env.VIDEOS_CUSTO_IMAGEM_USD ?? { low: 0.02, medium: 0.06, high: 0.25 }[env.VIDEOS_IMAGEM_QUALIDADE],
   custoMusicaMinutoUsd: env.VIDEOS_CUSTO_MUSICA_USD_MINUTO,
   pasta: env.VIDEOS_PASTA,
   navegador,

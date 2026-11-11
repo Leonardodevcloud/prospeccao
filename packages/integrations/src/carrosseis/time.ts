@@ -182,6 +182,9 @@ function blocoDoPedido(
     p.respostas?.length
       ? `O QUE QUEM CRIOU RESPONDEU ÀS PERGUNTAS DO TIME (vale como fato: pode usar nos slides):\n${p.respostas.map((r) => `- ${r.pergunta} → ${r.resposta}`).join('\n')}`
       : '',
+    p.briefing
+      ? `O BRIEFING QUE QUEM CRIOU CONFERIU (vale como fato e manda no rumo do carrossel):\n${p.briefing}`
+      : '',
     d
       ? [
           `O QUE DIVULGAR (${ROTULO_DIVULGAR[d.tipo]}): ${d.titulo}`,
@@ -1118,6 +1121,7 @@ function mensagemEditor(e: EntradaConversa, base: EstadoCarrossel, naoCoube: str
         ideiaId: null,
         fotos: [],
         respostas: [],
+        briefing: '',
       },
     }),
     '',
@@ -1239,6 +1243,7 @@ export async function conversarComOTime(
       ideiaId: null,
       fotos: [],
       respostas: [],
+      briefing: '',
     },
     postsQueFuncionaram: [],
     anteriores: [],

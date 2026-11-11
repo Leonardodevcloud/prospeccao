@@ -219,6 +219,7 @@ export async function trabalharCards(
       divulgar,
       assunto: p.assunto,
       respostas: p.respostas,
+      briefing: p.briefing,
     }),
   ]);
   const aprendido = await aprender

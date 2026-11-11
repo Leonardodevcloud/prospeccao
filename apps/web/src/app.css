@@ -19604,7 +19604,9 @@ form.janela-pedido > button[type="submit"] {
   padding: 0;
   list-style: none;
 }
-.perguntas-time__item fieldset {
+.perguntas-time__item {
+  display: grid;
+  gap: 6px;
   margin: 0;
   padding: 12px 14px;
   border: 1px solid var(--line);
@@ -19615,13 +19617,87 @@ form.janela-pedido > button[type="submit"] {
   padding: 0;
   font-weight: 600;
 }
-.perguntas-time__porque {
-  margin: 2px 0 8px;
+.perguntas-time__porque,
+.perguntas-time__dica,
+.perguntas-time__ate-aqui {
+  margin: 0;
   font-size: 13px;
+}
+.perguntas-time__historico {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 14px;
+  list-style: none;
+  border-left: 3px solid var(--brand);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+}
+.perguntas-time__historico li {
+  display: grid;
+  gap: 1px;
+  font-size: 13px;
+}
+.perguntas-time__rodada {
+  display: grid;
+  gap: 6px;
+}
+.perguntas-time__selo {
+  justify-self: start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  border: 1px solid var(--brand);
+}
+.perguntas-time__pensando {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+}
+.perguntas-time__pontos {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: perguntas-time-pulso 1s ease-in-out infinite alternate;
+}
+@keyframes perguntas-time-pulso {
+  from {
+    opacity: 0.3;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .perguntas-time__pontos {
+    animation: none;
+  }
+}
+.perguntas-time__resumo {
+  display: grid;
+  gap: 8px;
+}
+.perguntas-time__briefing {
+  width: 100%;
+  height: auto;
+  min-height: 132px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  resize: vertical;
 }
 .perguntas-time__livre {
   width: 100%;
-  margin-top: 8px;
+  height: auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  resize: vertical;
 }
 .perguntas-time__acoes {
   display: flex;
