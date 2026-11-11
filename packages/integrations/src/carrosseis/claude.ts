@@ -73,6 +73,8 @@ export interface PedidoClaude {
   agente: string;
   sistema: BlocoSistema[];
   mensagem: string;
+  /** Imagens que o modelo olha antes do texto (JPEG, PNG ou WebP em base64). */
+  imagens?: { tipo: 'image/jpeg' | 'image/png' | 'image/webp'; base64: string; legenda?: string }[];
   ferramenta: { nome: string; descricao: string; esquema: Record<string, unknown> };
   maxTokens?: number;
   temperatura?: number;
@@ -127,7 +129,20 @@ async function chamar(cfg: ConfigClaude, p: PedidoClaude): Promise<RespostaApi> 
             text: b.texto,
             ...(b.cache ? { cache_control: { type: 'ephemeral' } } : {}),
           })),
-        messages: [{ role: 'user', content: p.mensagem }],
+        messages: [
+          {
+            role: 'user',
+            content: p.imagens?.length
+              ? [
+                  ...p.imagens.flatMap((im) => [
+                    ...(im.legenda ? [{ type: 'text', text: im.legenda }] : []),
+                    { type: 'image', source: { type: 'base64', media_type: im.tipo, data: im.base64 } },
+                  ]),
+                  { type: 'text', text: p.mensagem },
+                ]
+              : p.mensagem,
+          },
+        ],
         tools: [
           {
             name: p.ferramenta.nome,

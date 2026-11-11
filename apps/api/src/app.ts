@@ -66,6 +66,7 @@ import { rotasRua } from './modulos/rua/rotas.js';
 import { rotasSaudeDetalhes, rotasSaudePublica } from './modulos/saude/rotas.js';
 import { rotasSiteMaster, rotasSitePublico } from './modulos/site/rotas.js';
 import { rotasTour } from './modulos/tour/rotas.js';
+import { rotasVideos } from './modulos/videos/rotas.js';
 import { rotaComRecurso } from './recursos.js';
 
 /** Monta a aplicação a partir das dependências (os testes passam as suas). */
@@ -180,6 +181,8 @@ export function criarApp(deps: DepsApi): Express {
   protegidas.use('/agenda', rotasAgenda(deps));
   // Carrosséis com IA (módulo à parte): só o administrador da conta.
   protegidas.use('/carrosseis', rotasCarrosseis(deps));
+  // Vídeos com IA (módulo à parte): só o administrador; quem edita é o worker-videos.
+  protegidas.use('/videos', rotasVideos(deps));
   protegidas.use('/atendimento', rotasAtendimento(deps));
   // Meu plano › Assinar (cobrança recorrente no Asaas).
   protegidas.use('/assinatura', rotasAssinatura(deps));

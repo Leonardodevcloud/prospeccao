@@ -32,7 +32,8 @@
     "./carrosseis": "./src/carrosseis.ts",
     "./carrosseis-time": "./src/carrosseisTime.ts",
     "./carrosseis-publicacao": "./src/carrosseisPublicacao.ts",
-    "./atendimento": "./src/atendimento.ts"
+    "./atendimento": "./src/atendimento.ts",
+    "./videos": "./src/videos.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

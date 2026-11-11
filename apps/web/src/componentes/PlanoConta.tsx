@@ -248,6 +248,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
       minutos: props.p.limiteMinutosLigacaoProprio != null ? String(props.p.limiteMinutosLigacaoProprio) : '',
       carrosseis:
         props.p.limiteCarrosseisMesProprio != null ? String(props.p.limiteCarrosseisMesProprio) : '',
+      videos: props.p.limiteVideosMesProprio != null ? String(props.p.limiteVideosMesProprio) : '',
     };
   };
   const [f, setF] = useState(inicial);
@@ -274,6 +275,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
           conversasIa: inteiroOuNulo(f.conversas),
           minutosLigacao: inteiroOuNulo(f.minutos),
           carrosseisMes: inteiroOuNulo(f.carrosseis),
+          videosMes: inteiroOuNulo(f.videos),
         },
       }),
     onSuccess: () => cliente.invalidateQueries({ queryKey: ['master'] }),
@@ -291,6 +293,7 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
       conversasIa: inteiroOuNulo(f.conversas),
       minutosLigacao: inteiroOuNulo(f.minutos),
       carrosseisMes: inteiroOuNulo(f.carrosseis),
+      videosMes: inteiroOuNulo(f.videos),
     },
     tabela,
   );
@@ -495,6 +498,20 @@ export function FormPlano(props: { contaId: number; p: PlanoConta }) {
                   onChange={(e) => setF({ ...f, carrosseis: e.target.value.replace(/\D/g, '') })}
                 />
                 <span className="campo__dica">Carrosséis montados à mão no editor não contam.</span>
+              </div>
+            )}
+            {f.modulos.includes('videos') && (
+              <div className="campo">
+                <label htmlFor="pl-videos">Vídeos editados pela IA por mês</label>
+                <input
+                  id="pl-videos"
+                  className="filtro mono"
+                  inputMode="numeric"
+                  placeholder={`Padrão: ${tabela.videosMes == null ? 'sem limite' : fmtNumero(tabela.videosMes)}`}
+                  value={f.videos}
+                  onChange={(e) => setF({ ...f, videos: e.target.value.replace(/\D/g, '') })}
+                />
+                <span className="campo__dica">Gerar de novo com as mudanças da revisão não conta.</span>
               </div>
             )}
           </div>
@@ -746,6 +763,12 @@ export function TabelaDePrecos() {
             'Carrosséis do time de IA por mês (no módulo Carrosséis com IA)',
             t.carrosseisMes,
             (v) => setT({ ...t, carrosseisMes: v }),
+          )}
+          {campoLimite(
+            'tp-videos',
+            'Vídeos editados pela IA por mês (no módulo Vídeos com IA)',
+            t.videosMes,
+            (v) => setT({ ...t, videosMes: v }),
           )}
           {campoLimite('tp-conversas', 'Conversas do Agente de IA por mês', t.conversasIaMes, (v) =>
             setT({ ...t, conversasIaMes: v }),

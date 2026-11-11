@@ -43,6 +43,11 @@ export const MODULOS = {
     descricao:
       'Carrosséis do Instagram com a identidade visual e o jeito de falar da empresa: o time de IA escreve e monta, o administrador revisa e baixa as imagens prontas para postar (com franquia de carrosséis por mês).',
   },
+  videos: {
+    nome: 'Vídeos com IA',
+    descricao:
+      'A empresa sobe o vídeo falado (até 3 minutos) e a IA corta pausas e muletas, legenda palavra por palavra na identidade da marca, anima o que a pessoa fala, põe imagens (fotos da empresa primeiro), título e chamada no fim e trata o som, sem nada em cima do rosto (com franquia de vídeos por mês).',
+  },
 } as const;
 export type Modulo = keyof typeof MODULOS;
 export const LISTA_MODULOS = Object.keys(MODULOS) as Modulo[];
@@ -152,6 +157,8 @@ export interface TabelaPrecos {
   pacotePreco: number;
   /** Carrosséis do time de IA por mês no módulo Carrosséis com IA (null = sem limite). */
   carrosseisMes: number | null;
+  /** Vídeos editados pela IA por mês no módulo Vídeos com IA (null = sem limite). */
+  videosMes: number | null;
 }
 
 const RECURSOS_TIME: Recurso[] = [
@@ -187,7 +194,7 @@ export const TABELA_PADRAO: TabelaPrecos = {
       modulosInclusos: ['email'],
     },
   },
-  modulos: { whatsapp: 250, agente_ia: 297, email: 200, ligacoes: 499, carrosseis: 200 },
+  modulos: { whatsapp: 250, agente_ia: 297, email: 200, ligacoes: 499, carrosseis: 200, videos: 200 },
   comboWhatsappIa: 999,
   numerosInclusos: 3,
   numeroExtra: 110,
@@ -199,6 +206,7 @@ export const TABELA_PADRAO: TabelaPrecos = {
   pacoteMinutos: 500,
   pacotePreco: 149,
   carrosseisMes: null,
+  videosMes: 60,
 };
 
 const numero = (min: number, max: number) => z.number().min(min).max(max);
@@ -219,6 +227,7 @@ export const tabelaPrecosEntrada = z.object({
     email: numero(0, 100_000),
     ligacoes: numero(0, 100_000),
     carrosseis: numero(0, 100_000),
+    videos: numero(0, 100_000),
   }),
   comboWhatsappIa: numero(0, 100_000),
   numerosInclusos: inteiro(0, 100),
@@ -231,6 +240,7 @@ export const tabelaPrecosEntrada = z.object({
   pacoteMinutos: inteiro(1, 100_000),
   pacotePreco: numero(1, 100_000),
   carrosseisMes: inteiro(0, 10_000).nullable(),
+  videosMes: inteiro(0, 10_000).nullable(),
 });
 
 /**
@@ -269,6 +279,7 @@ export interface PlanoDaConta {
   conversasIa?: number | null;
   minutosLigacao?: number | null;
   carrosseisMes?: number | null;
+  videosMes?: number | null;
 }
 
 export interface PlanoEfetivo {
@@ -291,6 +302,8 @@ export interface PlanoEfetivo {
   minutosLigacao: number | null;
   /** Carrosséis do time de IA no mês (null: sem limite; 0: sem o módulo). */
   carrosseisMes: number | null;
+  /** Vídeos editados pela IA no mês (null: sem limite; 0: sem o módulo). */
+  videosMes: number | null;
   /** Quanto custa no mês, item a item (ajuste para menos entra negativo). */
   itens: { rotulo: string; valor: number }[];
   mensalidadeCalculada: number | null;
@@ -325,6 +338,7 @@ export function planoEfetivo(c: PlanoDaConta, tabela: TabelaPrecos = TABELA_PADR
       conversasIa: null,
       minutosLigacao: null,
       carrosseisMes: null,
+      videosMes: null,
       itens: [],
       mensalidadeCalculada: null,
       mensalidade: null,
@@ -412,6 +426,7 @@ export function planoEfetivo(c: PlanoDaConta, tabela: TabelaPrecos = TABELA_PADR
     conversasIa: modulos.includes('agente_ia') ? (c.conversasIa ?? tabela.conversasIaMes) : 0,
     minutosLigacao: modulos.includes('ligacoes') ? (c.minutosLigacao ?? tabela.minutosLigacao) : 0,
     carrosseisMes: modulos.includes('carrosseis') ? (c.carrosseisMes ?? tabela.carrosseisMes) : 0,
+    videosMes: modulos.includes('videos') ? (c.videosMes ?? tabela.videosMes) : 0,
     itens,
     mensalidadeCalculada,
     mensalidade: c.mensalidadeManual ?? mensalidadeCalculada,
@@ -441,6 +456,7 @@ export const planoContaEntrada = z
     conversasIa: z.number().int().min(0).max(1_000_000).nullable().default(null),
     minutosLigacao: z.number().int().min(0).max(1_000_000).nullable().default(null),
     carrosseisMes: z.number().int().min(0).max(10_000).nullable().default(null),
+    videosMes: z.number().int().min(0).max(10_000).nullable().default(null),
   })
   .refine((v) => v.plano !== 'personalizado' || (v.limiteUsuarios != null && v.limiteLeadsMes != null), {
     message: 'No plano personalizado, informe o número de usuários e de leads por mês.',

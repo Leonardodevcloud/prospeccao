@@ -1,0 +1,168 @@
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { carregarEnv, envBase, opcional } from '@prospeccao/config';
+import { criarPool, manterSinalDeVida } from '@prospeccao/db';
+import { criarClaude } from '@prospeccao/integrations/carrosseis';
+import { criarArmazenamento } from '@prospeccao/integrations/reuniao';
+import {
+  comporMusica,
+  gerarImagem,
+  MODELO_IMAGEM_PADRAO,
+  pedirDecisao,
+  transcreverPalavras,
+} from '@prospeccao/integrations/videos';
+import { conectarFilas, encerrarAoReceberSinal } from '@prospeccao/queue';
+import { criarLogger } from '@prospeccao/shared';
+import { z } from 'zod';
+import { type DepsEdicao, editarVideo } from './editar.js';
+import { sonsPresentes } from './enfeitar.js';
+
+const env = carregarEnv(
+  envBase.extend({
+    /** O mesmo armazenamento das gravações (o original e o vídeo pronto ficam em videos/<conta>/<id>/). */
+    GRAVACOES_S3_ENDPOINT: z.string().url(),
+    GRAVACOES_S3_REGIAO: z.string().default('auto'),
+    GRAVACOES_S3_BUCKET: z.string().min(3),
+    GRAVACOES_S3_CHAVE: z.string().min(3),
+    GRAVACOES_S3_SEGREDO: z.string().min(10),
+    /** Transcrição palavra por palavra (a mesma chave da Groq das reuniões). Sem ela, nada é editado. */
+    GROQ_CHAVE: opcional(z.string().min(10)),
+    VOZ_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
+    /** O modelo grande marca melhor o tempo de cada palavra que o turbo. */
+    VIDEOS_VOZ_MODELO: z.string().default('whisper-large-v3'),
+    /** A IA que decide os cortes (a mesma chave dos carrosséis). Sem ela, só as regras. */
+    ANTHROPIC_CHAVE: opcional(z.string().min(20)),
+    VIDEOS_MODELO: z.string().default('claude-sonnet-5-5'),
+    /** Chrome do render (a imagem traz o Chromium em /usr/bin/chromium). */
+    VIDEOS_NAVEGADOR: opcional(z.string().min(1)),
+    VIDEOS_WORKERS_RENDER: z.coerce.number().int().min(1).max(8).default(2),
+    VIDEOS_CONCORRENCIA: z.coerce.number().int().min(1).max(4).default(1),
+    VIDEOS_PASTA: z.string().default(tmpdir()),
+    /** Para a Saúde e consumo: hora do servidor que edita e hora de áudio transcrito (US$). */
+    VIDEOS_CUSTO_SERVIDOR_USD_HORA: z.coerce.number().min(0).default(0.06),
+    VIDEOS_CUSTO_TRANSCRICAO_USD_HORA: z.coerce.number().min(0).default(0.111),
+    /** Imagens geradas (GPT Image 2): a mesma chave da OpenAI da api. Sem ela, só fotos da empresa. */
+    OPENAI_CHAVE: opcional(z.string().min(10)),
+    VIDEOS_IMAGEM_MODELO: z.string().default(MODELO_IMAGEM_PADRAO),
+    VIDEOS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).default(0.05),
+    /** Música (Eleven Music). Só sai para as contas em VIDEOS_MUSICA_CONTAS ("todas" ou ids: "1,7"). */
+    ELEVENLABS_CHAVE: opcional(z.string().min(10)),
+    VIDEOS_MUSICA_CONTAS: z.string().default(''),
+    VIDEOS_CUSTO_MUSICA_USD_MINUTO: z.coerce.number().min(0).default(0.15),
+  }),
+);
+
+const log = criarLogger('worker-videos', env.LOG_LEVEL);
+const pool = criarPool({ url: env.DATABASE_URL, aplicacao: 'worker-videos', max: 4 });
+const pararSinal = manterSinalDeVida(pool, 'worker-videos');
+const filas = await conectarFilas({
+  url: env.DATABASE_URL,
+  aplicacao: 'worker-videos',
+  log,
+  filas: ['video.editar'],
+});
+
+const arm = criarArmazenamento({
+  endpoint: env.GRAVACOES_S3_ENDPOINT,
+  regiao: env.GRAVACOES_S3_REGIAO,
+  bucket: env.GRAVACOES_S3_BUCKET,
+  chave: env.GRAVACOES_S3_CHAVE,
+  segredo: env.GRAVACOES_S3_SEGREDO,
+});
+const voz = env.GROQ_CHAVE
+  ? { baseUrl: env.VOZ_BASE_URL, chave: env.GROQ_CHAVE, modelo: env.VIDEOS_VOZ_MODELO }
+  : null;
+const claude = env.ANTHROPIC_CHAVE
+  ? criarClaude({ chave: env.ANTHROPIC_CHAVE, modelo: env.VIDEOS_MODELO })
+  : null;
+const navegador = env.VIDEOS_NAVEGADOR ?? (existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : null);
+
+const contasDaMusica = env.VIDEOS_MUSICA_CONTAS.trim().toLowerCase();
+const idsDaMusica = new Set(
+  contasDaMusica
+    .split(/[\s,;]+/)
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0),
+);
+const musicaLiberada = (contaId: number) =>
+  !!env.ELEVENLABS_CHAVE && (contasDaMusica === 'todas' || idsDaMusica.has(contaId));
+
+const deps: DepsEdicao = {
+  db: pool,
+  arm,
+  log,
+  ouvir: voz ? (audio, o) => transcreverPalavras(voz, audio, o) : null,
+  decidir: claude
+    ? async (e) => {
+        let custo = 0;
+        const medido = criarClaude({
+          chave: env.ANTHROPIC_CHAVE!,
+          modelo: env.VIDEOS_MODELO,
+          medidor: {
+            async depois(_uso, custoUsd) {
+              custo += custoUsd;
+            },
+          },
+        });
+        const decisao = await pedirDecisao(medido, e);
+        return { decisao, custoUsd: custo };
+      }
+    : null,
+  claude: env.ANTHROPIC_CHAVE
+    ? (somar) =>
+        criarClaude({
+          chave: env.ANTHROPIC_CHAVE!,
+          modelo: env.VIDEOS_MODELO,
+          medidor: {
+            async depois(_uso, custoUsd) {
+              somar(custoUsd);
+            },
+          },
+        })
+    : null,
+  gerarImagem: env.OPENAI_CHAVE
+    ? (e) => gerarImagem({ chave: env.OPENAI_CHAVE!, modelo: env.VIDEOS_IMAGEM_MODELO }, e)
+    : null,
+  comporMusica: env.ELEVENLABS_CHAVE ? (e) => comporMusica({ chave: env.ELEVENLABS_CHAVE! }, e) : null,
+  musicaLiberada,
+  custoImagemUsd: env.VIDEOS_CUSTO_IMAGEM_USD,
+  custoMusicaMinutoUsd: env.VIDEOS_CUSTO_MUSICA_USD_MINUTO,
+  pasta: env.VIDEOS_PASTA,
+  navegador,
+  workersRender: env.VIDEOS_WORKERS_RENDER,
+  custoServidorHora: env.VIDEOS_CUSTO_SERVIDOR_USD_HORA,
+  custoTranscricaoHora: env.VIDEOS_CUSTO_TRANSCRICAO_USD_HORA,
+};
+
+// Sobras de um processo que morreu no meio (deploy): voltam para a fila do banco e do pg-boss.
+await pool.query(
+  `UPDATE comercial.videos SET situacao = 'na_fila', etapa = NULL, progresso = 0 WHERE situacao = 'editando'`,
+);
+await filas.liberarTravados('video.editar');
+
+await filas.consumir(
+  'video.editar',
+  async ({ videoId, modo }) => {
+    await editarVideo(deps, videoId, modo);
+  },
+  { concorrencia: env.VIDEOS_CONCORRENCIA, intervaloSegundos: 5 },
+);
+
+log.info(
+  {
+    transcricao: !!voz,
+    ia: !!claude,
+    imagens: !!env.OPENAI_CHAVE,
+    musica: env.ELEVENLABS_CHAVE ? contasDaMusica || 'nenhuma conta' : 'sem chave',
+    efeitos: await sonsPresentes(),
+    navegador: navegador ?? 'o do HyperFrames',
+    workers: env.VIDEOS_WORKERS_RENDER,
+  },
+  'worker-videos no ar',
+);
+
+encerrarAoReceberSinal(log, async () => {
+  pararSinal();
+  await filas.parar();
+  await pool.end();
+});

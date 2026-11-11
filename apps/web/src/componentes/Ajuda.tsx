@@ -1438,6 +1438,162 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'videos',
+    area: 'WhatsApp e IA',
+    titulo: 'Vídeos: a IA corta, legenda, anima e põe imagens no seu vídeo falado',
+    resumo:
+      'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
+    onde: { rotulo: 'Vídeos', para: '/videos' },
+    termos:
+      'vídeo vídeos reels tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+    corpo: (
+      <>
+        <p>
+          Em <b>Vídeos</b> você sobe o vídeo que gravou falando para a câmera (o celular em pé é o melhor, mas
+          deitado também serve) e a IA devolve pronto para o Reels e o TikTok: em pé, em 1080 × 1920, cortado,
+          legendado, com o título no começo, a chamada no fim e o som tratado.
+        </p>
+        <p>
+          É um <b>módulo à parte</b>, com uma franquia de vídeos por mês, e só o <b>administrador</b> da conta
+          entra. Cada vídeo pode ter até <b>3 minutos</b>. Vídeo que não deu certo não conta na franquia, e
+          gerar de novo depois da revisão também não.
+        </p>
+        <h3>1. Enviar o vídeo</h3>
+        <Passos>
+          <li>
+            Arraste o vídeo para <b>Novo vídeo</b> ou clique para escolher. MP4 e MOV, como o celular grava,
+            até 1 GB.
+          </li>
+          <li>
+            Em <b>Sobre o que é o vídeo</b>, escreva o assunto em uma frase (opcional). A IA usa para o título
+            e para entender o que é fala do vídeo e o que é conversa de bastidor.
+          </li>
+          <li>
+            Escolha o <b>estilo da legenda</b>: <b>Palavra acesa</b> (a palavra falada acende na cor da marca,
+            como nos Reels profissionais), <b>Simples</b> (a frase inteira) ou <b>Balão</b> (a frase num balão
+            branco). As cores vêm da identidade visual dos Carrosséis ou, sem ela, de Marca e domínio.
+          </li>
+          <li>
+            Escolha as <b>imagens no vídeo</b>: <b>A IA escolhe</b> (usa primeiro as fotos da empresa, as
+            mesmas de Carrosséis › Fotos da empresa, e gera só o que faltar), <b>Só fotos da empresa</b> (nada
+            gerado pela IA) ou <b>Sem imagens</b>.
+          </li>
+          <li>
+            Escolha a <b>música de fundo</b> pelo clima (ou deixe a IA escolher pelo assunto) e se quer{' '}
+            <b>efeitos sonoros</b> nas animações. A música é feita para o vídeo e baixa sozinha quando você
+            fala. Se a música ainda não estiver liberada na sua conta, o campo aparece desligado.
+          </li>
+          <li>
+            Escolha a <b>chamada no fim</b>: "Comente" com a palavra (use a mesma de uma regra do Comente e
+            receba para quem comentar receber no direct), "Chame no WhatsApp", "Siga o perfil", uma frase sua
+            ou nenhuma.
+          </li>
+          <li>
+            Se quiser, escreva <b>instruções para a IA</b> (ex.: "não corte a parte em que falo o endereço") e
+            clique em <b>Editar com a IA</b>. Espere o envio chegar a 100% antes de fechar a tela; depois
+            disso pode sair: o aviso chega no sino quando o vídeo ficar pronto.
+          </li>
+        </Passos>
+        <h3>2. O que a IA faz</h3>
+        <Passos>
+          <li>
+            <b>Ouve a fala</b> palavra por palavra, com o momento exato de cada uma, e mede as pausas no
+            próprio som (não no texto).
+          </li>
+          <li>
+            <b>Corta</b> as pausas longas (deixa uma respiração curta), os "éé", "né" e "hã" soltos, a frase
+            que você começou e recomeçou (fica a última, a mais completa) e o que foi dito para quem está
+            gravando ou antes e depois do vídeo de verdade. No ritmo <b>Natural</b> a IA deixa respirar mais;
+            em <b>Só pausas longas</b> nenhuma palavra sai.
+          </li>
+          <li>
+            <b>Mapeia o rosto</b> em cada momento do vídeo. A legenda fica embaixo do queixo, no maior tamanho
+            que cabe, e o título fica acima da cabeça. Quando não cabe, o vídeo vira um cartão na cor da marca
+            por alguns segundos para abrir espaço.
+          </li>
+          <li>
+            <b>Anima o que você fala</b>: uma <b>lista que se marca</b> quando você enumera ("três sinais…"),
+            um <b>número grande</b> ("dura o dobro" vira 2×), um <b>selo</b> num momento-chave, a{' '}
+            <b>aproximação</b> do rosto na frase mais forte e, quando você fala de uma promoção cadastrada em
+            Carrosséis › O que divulgar, a <b>oferta</b> com o produto e os preços exatamente como foram
+            digitados (a IA nunca escreve preço).
+          </li>
+          <li>
+            <b>Põe imagens</b> onde a fala cita algo concreto (um produto, um número, uma comparação, um
+            lugar), de 1,5 a 4 segundos cada, num cartão acima da cabeça ou em tela cheia (a sua voz e a
+            legenda continuam). As regras: nada nos 2 primeiros segundos (o começo é o seu rosto), no máximo
+            30% do vídeo com imagem, o produto que a empresa vende só pela foto real dele, e nenhuma imagem
+            gerada com texto, marca ou rosto em destaque. Cada imagem gerada é conferida por outra IA antes de
+            entrar.
+          </li>
+          <li>
+            Disfarça os cortes com uma <b>aproximação alternada</b> (um plano normal, o seguinte um pouco mais
+            perto), trata a voz (menos chiado, volume uniforme no padrão das redes), mistura a música (mais
+            baixa que a sua voz, sobe um pouco nas pausas e no fim) e os efeitos e junta tudo.
+          </li>
+          <li>
+            No fim, <b>confere</b> o vídeo pronto quadro a quadro: nenhum texto pode encostar no rosto. E ouve
+            de novo cada junção: se uma palavra parece ter sido cortada pela metade, o corte vira uma dúvida
+            para você ouvir.
+          </li>
+        </Passos>
+        <Nota>
+          A fala do vídeo é usada só para editar este vídeo. Ela não vira lead nem entra em outro lugar do
+          CRM.
+        </Nota>
+        <h3>3. Revisar</h3>
+        <p>
+          Quando a IA fica em dúvida (uma frase recomeçada com palavras diferentes, uma junção para ouvir), o
+          vídeo aparece como <b>Para revisar</b>. Abra o vídeo:
+        </p>
+        <Passos>
+          <li>
+            Na aba <b>Cortes</b>, cada dúvida tem <b>Ouvir</b> (toca o trecho do original com um pouco antes e
+            depois), <b>Devolver</b> (o trecho volta para o vídeo) e <b>Está certo</b>. Os outros cortes ficam
+            na lista, cada um com o motivo; as pausas encurtadas aparecem juntas em <b>Ver</b>. A linha do
+            tempo mostra em verde o que ficou.
+          </li>
+          <li>
+            Na aba <b>Legenda</b>, corrija uma palavra que a IA ouviu errado, trocando palavra por palavra (o
+            tempo de cada uma fica). As palavras em que a IA ficou insegura aparecem marcadas. Em{' '}
+            <b>Palavras sempre escritas assim</b>, ponha o nome da empresa, dos produtos e as siglas: vale
+            para os próximos vídeos.
+          </li>
+          <li>
+            Na aba <b>Imagens</b>, cada imagem aparece com o momento, o que você falou ali e de onde veio
+            (foto da empresa, sua ou gerada pela IA). Dá para <b>Trocar por foto da empresa</b>,{' '}
+            <b>Gerar outra</b> (nas geradas), <b>Usar foto minha</b>, mudar entre <b>acima da cabeça</b> e{' '}
+            <b>tela cheia</b> e <b>Tirar</b>. Embaixo, onde a IA preferiu não pôr imagem e por quê, e{' '}
+            <b>Pôr uma imagem num momento</b> (escreva o momento como no vídeo, por exemplo 0:12).
+          </li>
+          <li>
+            Na aba <b>Animações</b>, ligue ou desligue o título de abertura, a chamada do fim e cada animação
+            que a IA pôs, troque os textos (o título da lista e cada item, o número, o selo) e use{' '}
+            <b>Pôr uma animação num momento</b> para um selo, um número ou uma aproximação a mais. A transição
+            entre os cortes pode ser aproximação, corte seco ou deslizar (as imagens entram deslizando).
+          </li>
+          <li>
+            Na aba <b>Som</b>, ouça a música, troque o clima ou descreva o estilo (sem nome de artista: a
+            música é sempre original), mude o volume, peça <b>Fazer outra música</b> ou desligue. Os efeitos
+            aparecem um por um, com <b>Ouvir</b> e <b>Tirar</b>.
+          </li>
+          <li>
+            Tudo fica salvo na hora. Para o vídeo mudar, clique em <b>Gerar de novo com as mudanças</b>: leva
+            menos tempo que a primeira vez, porque a fala e o mapa do rosto já estão prontos.
+          </li>
+          <li>
+            Clique em <b>Baixar o vídeo</b> e poste pelo celular ou pelo computador.
+          </li>
+        </Passos>
+        <Nota>
+          Para sair melhor: grave com o celular em pé, o rosto inteiro na tela, com um pouco de espaço acima
+          da cabeça e abaixo do queixo, num lugar sem eco. Fale direto para a câmera; pode errar e repetir a
+          frase, que a IA tira a primeira tentativa.
+        </Nota>
+      </>
+    ),
+  },
+  {
     id: 'email',
     area: 'Vendas',
     titulo: 'Sequências de e-mail',

@@ -318,6 +318,22 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 2. [ ] **Recomendado: passar a Groq para o plano Developer** (console.groq.com › Settings › Billing). No grátis, cada envio vai até 25 MB e o limite é 7.200 s de áudio por hora e 28.800 s por dia (2 h e 8 h): uma reunião de 2 h espera o limite para terminar, e várias reuniões no mesmo dia podem passar do dia. No Developer o Whisper Turbo custa cerca de US$ 0,04 por hora de áudio. A v127 funciona nos dois (corta em partes e espera o limite sozinha).
 3. [ ] Depois do deploy, abrir a reunião que falhou (Reunião rápida · Icaro, 10/11) e clicar em **Transcrever de novo** na caixa da Transcrição. O motivo da falha antiga não ficou guardado (a versão anterior apagava); se quiser confirmar, nos logs da api no Railway procure "reuniões: transcrição falhou" em 10/11 à tarde.
 
+## 4r. Vídeos com IA (v128 e v129)
+1. [ ] **Migration 096** roda sozinha no deploy da api.
+2. [ ] **Serviço novo no Railway: `worker-videos`** (mesmo repositório e mesmo Dockerfile, como os outros workers): New › GitHub Repo › prospeccao › variável **`SERVICO=worker-videos`**. A imagem já leva ffmpeg e Chromium.
+3. [ ] Variáveis do `worker-videos`: `DATABASE_URL` (a mesma da api), as `GRAVACOES_S3_*` (o mesmo bucket R2 das reuniões: os vídeos ficam em `videos/<conta>/<id>/`), `GROQ_CHAVE` (transcrição) e `ANTHROPIC_CHAVE` (decisão dos cortes; sem ela, os cortes saem por regras mais simples). Opcionais: `VIDEOS_MODELO` (padrão Claude Sonnet 5.5), `VIDEOS_WORKERS_RENDER` (padrão 2), `VIDEOS_CONCORRENCIA` (padrão 1 vídeo por vez), `VIDEOS_CUSTO_SERVIDOR_USD_HORA` (0,06) e `VIDEOS_CUSTO_TRANSCRICAO_USD_HORA` (0,111) para a conta de custo.
+4. [ ] **Mais processador para o `worker-videos`**: Settings › Resources, 4 a 8 vCPU e 4 GB de memória. Com 2 núcleos, 33 s de vídeo levaram ~6 min para gerar; com `VIDEOS_WORKERS_RENDER` igual ao número de núcleos, fica bem mais rápido. Conferir o tempo real nos primeiros vídeos.
+5. [ ] Depois do deploy, em Automação › Vídeos não pode aparecer o aviso amarelo "O serviço que edita os vídeos está fora do ar" (ele some quando o worker manda o sinal de vida).
+6. [ ] Teste: subir um vídeo de 30 a 60 s falando de um produto, esperar o aviso no sino, conferir os cortes (Ouvir), corrigir uma palavra da legenda, Gerar de novo e Baixar.
+7. [ ] Clientes: ligar o módulo **Vídeos com IA** em Plataforma › Clientes e planos › Plano e módulos (R$ 200 com 60 vídeos por mês; a franquia muda por cliente ali).
+8. [ ] **Antes da música (v129): contrato Enterprise da ElevenLabs.** Os planos comuns não deixam entregar a música gerada para outra empresa usar; falar com o comercial deles (elevenlabs.io › Contact sales) e só liberar a música para clientes com o contrato assinado.
+9. [ ] **v129, migration 097** roda sozinha no deploy da api. Redeploy da api, do front, do site e do `worker-videos`.
+10. [ ] **Imagens geradas:** pôr no `worker-videos` a mesma `OPENAI_CHAVE` da api. Sem ela, os vídeos usam só as fotos da empresa (a tela explica). Conferir no painel da OpenAI (platform.openai.com › Settings › Organization) que a conta tem acesso ao **GPT Image 2**: algumas contas pedem a verificação da organização para liberar o modelo de imagem. Opcionais: `VIDEOS_IMAGEM_MODELO` (padrão `gpt-image-2`) e `VIDEOS_CUSTO_IMAGEM_USD` (0,05, para a conta do custo).
+11. [ ] **Fotos da empresa:** as imagens dos vídeos usam as fotos de Carrosséis › Fotos da empresa (a IA descreve cada uma uma vez). Para o cliente aproveitar, suba fotos dos produtos, da fachada e da equipe ali.
+12. [ ] **Música (Eleven Music):** `ELEVENLABS_CHAVE` no `worker-videos` e **`VIDEOS_MUSICA_CONTAS` na api e no `worker-videos`** (os ids das contas com a música liberada, ex.: `1`, ou `todas`). Até o contrato do item 8, ponha só a conta da própria empresa, para testar. Opcional: `VIDEOS_CUSTO_MUSICA_USD_MINUTO` (0,15).
+13. [ ] Teste: um vídeo de 30 a 60 s falando de um produto que tem foto cadastrada e de uma promoção do O que divulgar. Conferir a aba Imagens (foto da empresa e uma gerada conferida), a oferta com o preço exato, a música baixando quando você fala e os efeitos (Ouvir na aba Som).
+
+
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.
 - [ ] Aba "Plano e módulos": ajustar usuários e leads/mês se o combinado foi diferente, e a mensalidade combinada.

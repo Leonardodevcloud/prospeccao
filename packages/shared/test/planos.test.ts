@@ -70,7 +70,7 @@ describe('planos', () => {
     ).toMatchObject({
       usuarios: null,
       leadsMes: null,
-      modulos: ['whatsapp', 'agente_ia', 'email', 'ligacoes', 'carrosseis'],
+      modulos: ['whatsapp', 'agente_ia', 'email', 'ligacoes', 'carrosseis', 'videos'],
       mensalidade: null,
     });
   });

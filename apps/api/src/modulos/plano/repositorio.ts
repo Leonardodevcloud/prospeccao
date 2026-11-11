@@ -28,6 +28,7 @@ export interface PlanoComUso extends PlanoEfetivo {
   limiteConversasIaProprio: number | null;
   limiteMinutosLigacaoProprio: number | null;
   limiteCarrosseisMesProprio: number | null;
+  limiteVideosMesProprio: number | null;
   /** Uso somado da organização inteira (o contrato vale para todas as unidades). */
   uso: { usuarios: number; leadsMes: number; leadsEsperando: number };
   organizacao: { id: number; nome: string; unidades: number };
@@ -83,6 +84,7 @@ interface LinhaContrato {
   limite_conversas_ia: number | null;
   limite_minutos_ligacao: number | null;
   limite_carrosseis_mes: number | null;
+  limite_videos_mes: number | null;
   usuarios: number;
   leads: number;
   esperando: number;
@@ -93,7 +95,7 @@ const SQL_CONTRATO = (filtro: string) =>
   `SELECT o.id AS org_id, o.nome AS org_nome, o.plano, o.limite_usuarios, o.limite_leads_mes, o.modulos,
           o.mensalidade_manual, to_char(o.plano_desde, 'YYYY-MM-DD') AS plano_desde,
           o.numeros_extras, o.recursos_extras, o.limite_horas_reuniao, o.limite_conversas_ia, o.limite_minutos_ligacao,
-          o.limite_carrosseis_mes,
+          o.limite_carrosseis_mes, o.limite_videos_mes,
           ${sqlUsuariosAtivos('o.id')} AS usuarios, ${sqlLeadsDoMesDaOrganizacao('o.id')} AS leads,
           (SELECT count(*) FROM enriquecimento.leads l JOIN cadastro.campanhas ca ON ca.id = l.campanha_id
              JOIN cadastro.contas cc ON cc.id = ca.conta_id
@@ -118,6 +120,7 @@ async function montar(db: Executor, r: LinhaContrato): Promise<Omit<PlanoComUso,
         conversasIa: r.limite_conversas_ia,
         minutosLigacao: r.limite_minutos_ligacao,
         carrosseisMes: r.limite_carrosseis_mes,
+        videosMes: r.limite_videos_mes,
       },
       tabela,
     ),
@@ -130,6 +133,7 @@ async function montar(db: Executor, r: LinhaContrato): Promise<Omit<PlanoComUso,
     limiteConversasIaProprio: r.limite_conversas_ia,
     limiteMinutosLigacaoProprio: r.limite_minutos_ligacao,
     limiteCarrosseisMesProprio: r.limite_carrosseis_mes,
+    limiteVideosMesProprio: r.limite_videos_mes,
     uso: { usuarios: r.usuarios, leadsMes: r.leads, leadsEsperando: r.esperando },
     organizacao: { id: r.org_id, nome: r.org_nome, unidades: r.unidades },
   };
@@ -177,7 +181,7 @@ export async function salvarPlano(db: Executor, organizacaoId: number, d: PlanoC
     `UPDATE cadastro.organizacoes
         SET plano = $2, limite_usuarios = $3, limite_leads_mes = $4, modulos = $5, mensalidade_manual = $6,
             numeros_extras = $7, recursos_extras = $8, limite_horas_reuniao = $9, limite_conversas_ia = $10,
-            limite_minutos_ligacao = $11, limite_carrosseis_mes = $12,
+            limite_minutos_ligacao = $11, limite_carrosseis_mes = $12, limite_videos_mes = $13,
             plano_desde = CASE WHEN $2::text IS NULL THEN NULL
                                WHEN plano IS DISTINCT FROM $2 THEN current_date ELSE plano_desde END
       WHERE id = $1`,
@@ -194,6 +198,7 @@ export async function salvarPlano(db: Executor, organizacaoId: number, d: PlanoC
       d.plano ? d.conversasIa : null,
       d.plano && d.modulos.includes('ligacoes') ? d.minutosLigacao : null,
       d.plano && d.modulos.includes('carrosseis') ? d.carrosseisMes : null,
+      d.plano && d.modulos.includes('videos') ? d.videosMes : null,
     ],
   );
   if (!rowCount) throw AppError.naoEncontrado('Organização');

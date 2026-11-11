@@ -368,6 +368,16 @@ export function Assinar() {
                             do time de IA)
                           </span>
                         )}
+                        {m === 'videos' && !incluso && (
+                          <span className="quieto">
+                            {' '}
+                            (
+                            {tabela.videosMes == null
+                              ? 'vídeos sem limite'
+                              : `${fmtNumero(tabela.videosMes)} vídeos por mês`}
+                            , até 3 min cada)
+                          </span>
+                        )}
                         {m === 'agente_ia' && (
                           <span className="quieto">
                             {' '}

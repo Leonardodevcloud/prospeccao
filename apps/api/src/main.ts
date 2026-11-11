@@ -46,6 +46,7 @@ const filas = await conectarFilas({
     'enriquecimento.solicitar',
     'maps.importar_planilha',
     'leads.importar',
+    'video.editar',
   ],
 });
 
@@ -115,6 +116,19 @@ const app = criarApp({
   asaasTokenWebhook: env.ASAAS_TOKEN_WEBHOOK ?? null,
   captcha,
   carrosseisIa,
+  videos: {
+    imagensGeradas: !!env.OPENAI_CHAVE,
+    musicaLiberada: (contaId: number) => {
+      const v = env.VIDEOS_MUSICA_CONTAS.trim().toLowerCase();
+      return (
+        v === 'todas' ||
+        v
+          .split(/[\s,;]+/)
+          .map(Number)
+          .includes(contaId)
+      );
+    },
+  },
 });
 
 const servidor = createServer(app);

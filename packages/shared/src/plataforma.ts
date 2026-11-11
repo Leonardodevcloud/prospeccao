@@ -76,6 +76,8 @@ export interface UsoPago {
   ligacaoFixoMin?: number;
   /** Carrosséis com IA: o que o Claude cobrou no mês (US$, já calculado por chamada). */
   carrosseisUsd?: number;
+  /** Vídeos com IA: transcrição, Claude e o servidor que edita (US$, já calculado por vídeo). */
+  videosUsd?: number;
 }
 
 export interface CustoEstimado {
@@ -90,6 +92,8 @@ export interface CustoEstimado {
   ligacoes: number;
   /** Carrosséis com IA: o Claude do time de IA. */
   carrosseis: number;
+  /** Vídeos com IA: transcrição, Claude e o tempo do servidor que edita. */
+  videos: number;
   /** Custos fixos do mês (planos dos serviços e servidores), divididos entre os clientes pagantes. */
   infra: number;
   total: number;
@@ -117,6 +121,7 @@ export function custoEstimado(
     (u.ligacaoCelularMin ?? 0) * telefone.celularMin + (u.ligacaoFixoMin ?? 0) * telefone.fixoMin,
   );
   const carrosseis = r2((u.carrosseisUsd ?? 0) * c.dolar);
+  const videos = r2((u.videosUsd ?? 0) * c.dolar);
   const infra = r2(infraPorConta);
   return {
     buscas,
@@ -127,8 +132,9 @@ export function custoEstimado(
     reunioes,
     ligacoes,
     carrosseis,
+    videos,
     infra,
-    total: r2(buscas + ia + maps + email + whatsapp + reunioes + ligacoes + carrosseis + infra),
+    total: r2(buscas + ia + maps + email + whatsapp + reunioes + ligacoes + carrosseis + videos + infra),
   };
 }
 

@@ -224,6 +224,11 @@ export interface UsoDoMes {
   /** Carrosséis com IA (Claude): chamadas e o custo em dólar do mês. */
   carrosseisChamadas: number;
   carrosseisUsd: number;
+  videosQtd: number;
+  videosUsd: number;
+  videosSegundos: number;
+  videosImagens: number;
+  videosMusicaSeg: number;
   placesUsd: number;
   serper: number;
   emails: number;
@@ -281,6 +286,16 @@ export async function usoDoMes(db: Executor): Promise<UsoDoMes> {
          AS "carrosseisChamadas",
        coalesce((SELECT sum(custo_usd) FROM cadastro.consumo_carrosseis WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
          AS "carrosseisUsd",
+       coalesce((SELECT sum(videos) FROM cadastro.consumo_videos WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::int
+         AS "videosQtd",
+       coalesce((SELECT sum(custo_usd) FROM cadastro.consumo_videos WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
+         AS "videosUsd",
+       coalesce((SELECT sum(segundos_servidor) FROM cadastro.consumo_videos WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
+         AS "videosSegundos",
+       coalesce((SELECT sum(imagens) FROM cadastro.consumo_videos WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::int
+         AS "videosImagens",
+       coalesce((SELECT sum(musica_seg) FROM cadastro.consumo_videos WHERE dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
+         AS "videosMusicaSeg",
        coalesce((SELECT sum(gasto_usd) FROM descoberta.v_uso_places_mes WHERE mes = ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::float8
          AS "placesUsd",
        coalesce((SELECT sum(buscas) FROM cadastro.consumo_buscas WHERE servico = 'serper' AND dia >= ${INICIO_MES_SP} AND ${NAO_DEMO}), 0)::int
@@ -478,6 +493,16 @@ export function calcularMes(
       detalhe: `${fmt(u.carrosseisChamadas)} chamadas · US$ ${fmt(u.carrosseisUsd, 2)}`,
       ate: r2(clAte),
       previsao: r2(prev(clAte)),
+    });
+  }
+  // Vídeos com IA (transcrição, Claude e o servidor que edita; o custo já vem calculado por vídeo).
+  if (u.videosUsd > 0) {
+    const vAte = u.videosUsd * c.dolar;
+    variaveis.push({
+      nome: 'Vídeos com IA',
+      detalhe: `${fmt(u.videosQtd)} vídeos · ${fmt(u.videosSegundos / 3600, 1)} h de servidor${u.videosImagens ? ` · ${fmt(u.videosImagens)} imagens geradas` : ''}${u.videosMusicaSeg ? ` · ${fmt(u.videosMusicaSeg / 60, 1)} min de música` : ''} · US$ ${fmt(u.videosUsd, 2)}`,
+      ate: r2(vAte),
+      previsao: r2(prev(vAte)),
     });
   }
 

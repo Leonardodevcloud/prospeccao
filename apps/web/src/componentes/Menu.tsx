@@ -103,6 +103,14 @@ export const MENU_CRM: EntradaMenu[] = [
         admin: true,
         modulos: ['carrosseis'],
       },
+      // Vídeos com IA: módulo à parte, só o administrador (como os Carrosséis).
+      {
+        para: '/videos',
+        rotulo: 'Vídeos',
+        icone: 'clapperboard',
+        admin: true,
+        modulos: ['videos'],
+      },
     ],
   },
   {

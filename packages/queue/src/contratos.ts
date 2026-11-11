@@ -72,6 +72,15 @@ export const JOBS = {
     campanhaId: z.number().int().positive(),
     forcar: z.boolean().optional(),
   }),
+
+  /**
+   * api → worker-videos: editar um vídeo enviado (primeira vez) ou gerar de novo com as mudanças
+   * da revisão (reaproveita a fala, os cortes e o mapa do rosto da primeira edição).
+   */
+  'video.editar': z.object({
+    videoId: z.number().int().positive(),
+    modo: z.enum(['primeira', 'refazer']),
+  }),
 } as const;
 
 export type NomeJob = keyof typeof JOBS;
@@ -159,6 +168,15 @@ export const POLITICA_FILAS: Record<NomeJob, PoliticaFila> = {
     retryDelay: 120,
     retryBackoff: true,
     expireInSeconds: 900,
+    policy: 'short',
+    heartbeatSeconds: 60,
+  },
+  'video.editar': {
+    // Um vídeo de 3 min leva poucos minutos; o heartbeat devolve para a fila se o serviço cair.
+    retryLimit: 2,
+    retryDelay: 60,
+    retryBackoff: false,
+    expireInSeconds: 3600,
     policy: 'short',
     heartbeatSeconds: 60,
   },

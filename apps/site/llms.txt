@@ -14,13 +14,14 @@
 - Argos: assistente por texto e voz que conhece o comercial da empresa.
 - API e webhooks para ERP, loja virtual, Make e Zapier.
 - Carrosséis do Instagram escritos por um time de IA (estrategista, redator, diretor de arte e revisor) com a identidade visual e o jeito de falar da empresa; ajustes conversando com o time e imagens prontas para baixar e postar; com o Instagram conectado, o comente e receba do carrossel já sai pronto (link, arquivo ou promoção no direct, com quem abriu contado) e se liga sozinho quando o CRM reconhece o post.
+- Vídeos com IA: a empresa sobe o vídeo falado (até 3 minutos) e a IA corta as pausas, as muletas e as frases recomeçadas, legenda palavra por palavra nas cores da marca, anima o que a pessoa fala (lista que se marca, número grande, oferta com o preço exato da promoção cadastrada), põe imagens onde a fala cita produto ou lugar (fotos da empresa primeiro; as geradas pela IA são conferidas e nunca têm texto ou marca), o título e a chamada no fim, com efeitos sonoros discretos e o som tratado, sem nada em cima do rosto (o sistema mapeia o rosto em cada momento); a pessoa revisa os cortes, as imagens e as animações e baixa o vídeo pronto.
 
 ## Planos (por mês, sem fidelidade nem taxa de implantação)
 - Start: a partir de R$ 497 (2 usuários, 2.000 leads enriquecidos por mês).
 - Time: a partir de R$ 1.300 (4 usuários, 5.000 leads por mês, equipe, reuniões, e-mail, vendas na rua, Instagram, API). Teste grátis de 7 dias sem cartão.
 - Escala: a partir de R$ 2.500 (6 usuários, 10.000 leads por mês, Argos, várias unidades, marca própria).
 - Personalizado: a partir de R$ 497, montado com o time do Prospect Team só com as funções usadas.
-- Módulos: WhatsApp + Agente de IA (R$ 999), Ligações (R$ 499 com 2.000 minutos), Carrosséis com IA (R$ 200, sem limite de carrosséis), número de WhatsApp extra (R$ 110), usuário adicional (R$ 59).
+- Módulos: WhatsApp + Agente de IA (R$ 999), Ligações (R$ 499 com 2.000 minutos), Carrosséis com IA (R$ 200, sem limite de carrosséis), Vídeos com IA (R$ 200 com 60 vídeos por mês), número de WhatsApp extra (R$ 110), usuário adicional (R$ 59).
 - Pagamento mês a mês por Pix, boleto ou cartão.
 
 ## Links

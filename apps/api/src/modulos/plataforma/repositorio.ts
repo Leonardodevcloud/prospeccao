@@ -128,6 +128,7 @@ interface LinhaConta {
   ligacaoCelularSeg: number;
   ligacaoFixoSeg: number;
   carrosseisUsd: number;
+  videosUsd: number;
   /** Minutos de ligação no mês (feitas e recebidas, atendidas). */
   ligacaoMinutos: number;
   conversasIa: number;
@@ -193,6 +194,8 @@ async function linhasDasContas(db: Executor): Promise<LinhaConta[]> {
             coalesce(lg.minutos, 0)::float8 AS "ligacaoMinutos",
             coalesce((SELECT sum(cc.custo_usd) FROM cadastro.consumo_carrosseis cc
                        WHERE cc.conta_id = c.id AND cc.dia >= ${INICIO_MES_SP}), 0)::float8 AS "carrosseisUsd",
+            coalesce((SELECT sum(cv.custo_usd) FROM cadastro.consumo_videos cv
+                       WHERE cv.conta_id = c.id AND cv.dia >= ${INICIO_MES_SP}), 0)::float8 AS "videosUsd",
             (SELECT count(DISTINCT a.empresa_id) FROM comercial.atividades a
               WHERE a.conta_id = c.id AND a.autor = 'agente' AND a.direcao = 'enviada'
                 AND a.criado_em >= ${INICIO_MES_SP_TS})::int AS "conversasIa",
@@ -488,6 +491,7 @@ export async function clientes(
             ligacaoCelularMin: l.ligacaoCelularSeg / 60,
             ligacaoFixoMin: l.ligacaoFixoSeg / 60,
             carrosseisUsd: l.carrosseisUsd,
+            videosUsd: l.videosUsd,
           };
           return {
             l,
@@ -510,6 +514,7 @@ export async function clientes(
         reunioes: r2(somaCusto('reunioes')),
         ligacoes: r2(somaCusto('ligacoes')),
         carrosseis: r2(somaCusto('carrosseis')),
+        videos: r2(somaCusto('videos')),
         infra: r2(infra),
         total: r2(somaCusto('total') + infra),
       };

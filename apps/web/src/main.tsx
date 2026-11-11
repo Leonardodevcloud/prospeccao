@@ -107,6 +107,15 @@ const roteador = createBrowserRouter([
         path: 'carrosseis/:id',
         lazy: async () => ({ Component: (await import('./paginas/CarrosselEditor')).CarrosselEditor }),
       },
+      // Vídeos com IA (módulo à parte, só o administrador).
+      {
+        path: 'videos',
+        lazy: async () => ({ Component: (await import('./paginas/Videos')).Videos }),
+      },
+      {
+        path: 'videos/:id',
+        lazy: async () => ({ Component: (await import('./paginas/VideoDetalhe')).VideoDetalhe }),
+      },
       { path: 'relatorios', element: <Relatorios /> },
       // Qualidade do atendimento: o painel do gestor (e o resumo de cada pessoa).
       {

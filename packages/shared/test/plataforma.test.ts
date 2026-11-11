@@ -40,6 +40,7 @@ describe('custos da plataforma', () => {
         ligacaoCelularMin: 100,
         ligacaoFixoMin: 10,
         carrosseisUsd: 3,
+        videosUsd: 2,
       },
       c,
       50,
@@ -55,8 +56,10 @@ describe('custos da plataforma', () => {
       ligacoes: 20.5,
       // Claude dos carrosséis: US$ 3 × 5.
       carrosseis: 15,
+      // Vídeos com IA: US$ 2 × 5.
+      videos: 10,
       infra: 50,
-      total: 224.5,
+      total: 234.5,
     });
   });
   it('campo faltando ou inválido volta para o padrão', () => {

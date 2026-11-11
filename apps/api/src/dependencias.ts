@@ -63,4 +63,9 @@ export interface DepsApi {
   captcha?: { site: string; segredo: string } | null;
   /** O time de IA dos carrosséis (Claude, pela chave da plataforma; os testes simulam). */
   carrosseisIa?: CarrosseisIa | null;
+  /**
+   * Vídeos com IA: o que a tela pode oferecer. As imagens geradas dependem da chave da OpenAI no
+   * worker-videos (a mesma da api); a música, das contas liberadas em VIDEOS_MUSICA_CONTAS.
+   */
+  videos?: { imagensGeradas: boolean; musicaLiberada: (contaId: number) => boolean } | null;
 }

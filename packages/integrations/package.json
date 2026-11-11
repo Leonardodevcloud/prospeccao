@@ -23,7 +23,8 @@
     "./rede": "./src/rede.ts",
     "./slides": "./src/slides/index.ts",
     "./carrosseis": "./src/carrosseis/index.ts",
-    "./atendimento": "./src/atendimento/index.ts"
+    "./atendimento": "./src/atendimento/index.ts",
+    "./videos": "./src/videos/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

@@ -472,6 +472,7 @@ async function aplicarPlano(db: Executor, organizacaoId: number, p: AssinarEntra
     conversasIa: null,
     minutosLigacao: null,
     carrosseisMes: null,
+    videosMes: null,
   });
 }
 

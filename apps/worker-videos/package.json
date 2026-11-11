@@ -1,0 +1,39 @@
+{
+  "name": "@prospeccao/worker-videos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Edita os vídeos do módulo Vídeos com IA: corta pela fala, mapeia o rosto, legenda, anima e renderiza (HyperFrames + ffmpeg).",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource/montserrat": "5.3.0",
+    "@prospeccao/config": "workspace:*",
+    "@prospeccao/db": "workspace:*",
+    "@prospeccao/integrations": "workspace:*",
+    "@prospeccao/queue": "workspace:*",
+    "@prospeccao/shared": "workspace:*",
+    "@tensorflow/tfjs": "4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "4.22.0",
+    "@vladmandic/face-api": "1.7.15",
+    "fontkit": "2.0.4",
+    "gsap": "3.15.1",
+    "hyperframes": "0.9.31",
+    "pg": "8.23.1",
+    "pg-boss": "12.36.0",
+    "pino": "10.4.0",
+    "zod": "4.6.7"
+  },
+  "files": [
+    "dist",
+    "sons"
+  ],
+  "devDependencies": {
+    "@types/fontkit": "2.0.9"
+  }
+}
