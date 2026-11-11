@@ -66,23 +66,43 @@ export const URL_EDICAO_OPENAI = 'https://api.openai.com/v1/images/edits';
  * O pedido ao modelo de imagem, com o prompt pronto (vídeos e carrosséis). Com `referencia`, é uma
  * edição: a foto vai junto e o modelo mantém o que o prompt manda manter (o produto igual).
  */
+export interface ReferenciaImagem {
+  dados: Uint8Array;
+  tipo: 'image/jpeg' | 'image/png';
+  nome: string;
+}
+
 export async function pedirImagem(
   cfg: ConfigImagem,
-  e: { prompt: string; largura: number; altura: number; referencia?: Uint8Array },
+  e: {
+    prompt: string;
+    largura: number;
+    altura: number;
+    referencia?: Uint8Array;
+    /** v150: várias imagens de referência na mesma edição (a logo, as fotos, posts da marca). */
+    referencias?: ReferenciaImagem[];
+    /** v150: quanto o modelo segue as referências (padrão high, para o produto e a logo saírem iguais). */
+    fidelidade?: 'high' | 'low';
+  },
 ): Promise<Uint8Array> {
   const size = `${e.largura}x${e.altura}`;
+  const refs: ReferenciaImagem[] = [
+    ...(e.referencia ? [{ dados: e.referencia, tipo: 'image/jpeg' as const, nome: 'produto.jpg' }] : []),
+    ...(e.referencias ?? []),
+  ];
   let resposta: Response;
   try {
-    if (e.referencia) {
+    if (refs.length) {
       const form = new FormData();
       form.append('model', cfg.modelo);
       form.append('prompt', e.prompt);
       form.append('size', size);
       form.append('quality', cfg.qualidade ?? 'medium');
       form.append('output_format', 'jpeg');
-      form.append('input_fidelity', 'high');
+      form.append('input_fidelity', e.fidelidade ?? 'high');
       form.append('n', '1');
-      form.append('image[]', new Blob([Buffer.from(e.referencia)], { type: 'image/jpeg' }), 'produto.jpg');
+      for (const r of refs)
+        form.append('image[]', new Blob([Buffer.from(r.dados)], { type: r.tipo }), r.nome);
       resposta = await fetch(cfg.urlEdicao ?? URL_EDICAO_OPENAI, {
         method: 'POST',
         headers: { authorization: `Bearer ${cfg.chave}` },

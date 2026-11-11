@@ -128,6 +128,8 @@ const MODELO_PADRAO: Record<ObjetivoCard, ModeloCard> = {
 
 const MANUAL_CARDS = `CARDS AVULSOS: cada peça é um post sozinho (não é slide de carrossel). Ela tem um segundo para ser entendida: uma mensagem só, lida de longe no celular.
 - O título é a peça: curto, concreto, do jeito que o cliente fala. Nada de "Confira", "Venha conferir", "Imperdível", "Não perca".
+- CADA CARD É INDEPENDENTE: quem vê só aquele card no feed (sem os outros) entende a oferta inteira: o que é, o que ganha, a condição e o que fazer. Nunca escreva um card que continua, responde ou completa outro ("ou fique com a moto", "e tem mais", "parte 2"); nunca divida uma oferta em pedaços entre cards. Cards do mesmo pedido são peças diferentes: cada um com o seu gancho e o seu ângulo (o preço, o benefício, a dor que resolve, a prova), todos completos.
+- Nada repetido dentro da peça: o número grande não volta no título ("24 meses" grande + "Em 24 meses…" no título é a mesma coisa duas vezes); o título e o texto dizem coisas diferentes.
 - Cada card fala de uma coisa. Variações do mesmo card dizem a mesma mensagem por caminhos diferentes (outro modelo, outra foto, outro ângulo de texto), para a empresa escolher a melhor; nunca a mesma peça com uma palavra trocada.
 - Todo card leva um SELO ("sobretitulo", até 24 letras: o assunto em 2 a 4 palavras, ex.: "Chegamos a Brasília", "Só esta semana") e um BOTÃO ("botao", até 22 letras: a ação, ex.: "Chame no WhatsApp"), em qualquer modelo. A logo da empresa entra sozinha.
 - No título, marque entre asteriscos de 1 a 3 palavras seguidas que são o coração da mensagem (o benefício, o número, a novidade): "Sua loja entrega em *40 minutos*". Elas saem na cor de destaque. Uma marca por título, nunca o título todo. Os asteriscos não aparecem na imagem: não são erro de digitação.
@@ -336,7 +338,7 @@ function mensagemEstrategista(e: EntradaCards): string {
         ]
           .filter(Boolean)
           .join('\n')
-      : `QUANTIDADE: exatamente ${n} ${n === 1 ? 'card' : 'cards'}, cada um com ${v} ${v === 1 ? 'variação' : 'variações'}. Se o pedido lista coisas (produtos, datas, avisos), cada card é uma delas, na ordem do pedido.`,
+      : `QUANTIDADE: exatamente ${n} ${n === 1 ? 'card' : 'cards'}, cada um com ${v} ${v === 1 ? 'variação' : 'variações'}. Se o pedido lista coisas (produtos, datas, avisos), cada card é uma delas, na ordem do pedido; se não lista, cada card é um ângulo diferente e completo da mesma oferta (nunca a continuação do outro).`,
     '',
     'MODELOS QUE FUNCIONAM SOZINHOS (escolha o que serve à mensagem; varie entre as variações):',
     limitesParaORedator(MODELOS_CARD),

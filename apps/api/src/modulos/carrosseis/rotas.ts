@@ -548,6 +548,11 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     res.json({ relatorio });
   });
 
+  /** v150: desenhar a arte da IA de um card (troca a arte, ou cria a variação desenhada). */
+  r.post('/:id/arte', async (req, res) => {
+    res.json(await cards.desenharArteDoCard(pool, ia(), idDaRota(req)));
+  });
+
   r.post('/:id/duplicar', async (req, res) => {
     const c = await repo.carrossel(pool, idDaRota(req));
     if ((await repo.contar(pool)) >= MAX_CARROSSEIS_CONTA)

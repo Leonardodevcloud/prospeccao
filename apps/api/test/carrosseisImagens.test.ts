@@ -74,6 +74,64 @@ const notas = (n: number) =>
     ]),
   );
 
+/** v150: os cards (1 card, 2 variações) e o que o revisor de arte leu na imagem. */
+const PLANO_CARDS = {
+  titulo: 'Pastilha em promoção',
+  cards: [
+    {
+      titulo: 'Pastilha',
+      ideia: 'O preço da pastilha',
+      variacoes: [
+        { modelo: 'numero', abordagem: 'O preço grande' },
+        { modelo: 'capa', abordagem: 'O chiado' },
+      ],
+    },
+  ],
+};
+const CARDS = {
+  cards: [
+    {
+      variacoes: [
+        {
+          modelo: 'numero',
+          sobretitulo: 'Só esta semana',
+          destaque: 'R$ 139,90',
+          titulo: 'Pastilha *com instalação*',
+          texto: 'Na oficina do bairro.',
+          botao: 'Chame no WhatsApp',
+        },
+        {
+          modelo: 'capa',
+          sobretitulo: 'Freios',
+          titulo: 'Freio chiando? Hora da pastilha',
+          botao: 'Chame no WhatsApp',
+        },
+      ],
+      legenda: 'Pastilha com instalação por R$ 139,90.',
+      hashtags: ['freios'],
+    },
+  ],
+};
+let arteErrada = false;
+const ARTE_LIDA = () => ({
+  textos: arteErrada
+    ? ['SÓ ESTA SEMANA', 'R$ 129,90', 'Pastilha com instalação']
+    : [
+        'SÓ ESTA SEMANA',
+        'R$ 139,90',
+        'Pastilha com',
+        'instalação',
+        'Na oficina do bairro.',
+        'Chame no WhatsApp',
+      ],
+  logo_da_marca: true,
+  outra_marca: false,
+  defeito: false,
+  legivel: true,
+  nota: 4,
+  problemas: [],
+});
+
 let reprovar = false;
 const pedidos: { agente: string; ferramenta: string; imagens: number }[] = [];
 const chamadasImagem: { url: string; edicao: boolean }[] = [];
@@ -100,33 +158,39 @@ function iaComImagens(): CarrosseisIa {
           pedidos.push({ agente: p.agente, ferramenta: p.ferramenta.nome, imagens: p.imagens?.length ?? 0 });
           await medidor.depois(USO_ZERO, 0.001, true);
           const dados: Record<string, unknown> =
-            p.ferramenta.nome === 'estilo_da_referencia'
-              ? { estilo: 'Foto de produto centralizada, fundo escuro, luz lateral, texto embaixo.' }
-              : p.ferramenta.nome === 'conferir_cenario'
-                ? {
-                    produto_igual: !reprovar,
-                    texto_novo: false,
-                    marca_estranha: false,
-                    defeito: false,
-                    combina: true,
-                    problemas: [],
-                  }
-                : p.ferramenta.nome === 'conferir_imagem'
-                  ? {
-                      tem_texto: false,
-                      tem_marca: false,
-                      rosto_em_destaque: false,
-                      defeito: false,
-                      combina: true,
-                      problemas: [],
-                    }
-                  : p.agente === 'estrategista'
-                    ? ESTRATEGIA
-                    : p.agente === 'redator'
-                      ? REDACAO
-                      : p.agente === 'revisor'
-                        ? { notas: notas(5), ajustes: [], fatos: [] }
-                        : {};
+            p.ferramenta.nome === 'plano_cards'
+              ? PLANO_CARDS
+              : p.ferramenta.nome === 'cards'
+                ? CARDS
+                : p.ferramenta.nome === 'conferir_arte'
+                  ? ARTE_LIDA()
+                  : p.ferramenta.nome === 'estilo_da_referencia'
+                    ? { estilo: 'Foto de produto centralizada, fundo escuro, luz lateral, texto embaixo.' }
+                    : p.ferramenta.nome === 'conferir_cenario'
+                      ? {
+                          produto_igual: !reprovar,
+                          texto_novo: false,
+                          marca_estranha: false,
+                          defeito: false,
+                          combina: true,
+                          problemas: [],
+                        }
+                      : p.ferramenta.nome === 'conferir_imagem'
+                        ? {
+                            tem_texto: false,
+                            tem_marca: false,
+                            rosto_em_destaque: false,
+                            defeito: false,
+                            combina: true,
+                            problemas: [],
+                          }
+                        : p.agente === 'estrategista'
+                          ? ESTRATEGIA
+                          : p.agente === 'redator'
+                            ? REDACAO
+                            : p.agente === 'revisor'
+                              ? { notas: notas(5), ajustes: [], fatos: [] }
+                              : {};
           return { dados, uso: USO_ZERO, custoUsd: 0.001 };
         },
       };
@@ -335,5 +399,86 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
     expect((await mandar('post', `/carrosseis/fotos/${um}/cenarios`, {})).status).toBe(422);
     // As imagens feitas pela IA não tiram vaga das fotos enviadas.
     expect((await ler('/carrosseis/fotos')).body.fotos.length).toBeGreaterThan(1);
+  });
+
+  it('v150: cada card ganha a variação desenhada pela IA, conferida letra por letra', async () => {
+    chamadasImagem.length = 0;
+    const p = await mandar('post', '/carrosseis/cards', {
+      assunto: 'Promoção da pastilha com instalação',
+      quantidade: 1,
+      variacoes: 2,
+    });
+    expect(p.status).toBe(201);
+    expect(await rodarUmPedido(pool, ia, log)).toBe(true);
+    const lote = (await ler('/carrosseis/cards')).body.lotes.find(
+      (x: { pedidoId: number }) => x.pedidoId === p.body.id,
+    );
+    const vs = lote.cards[0].variacoes as {
+      id: number;
+      slide: { modelo: string; fotoId: number; titulo: string };
+    }[];
+    expect(vs.map((v) => v.slide.modelo)).toEqual(['numero', 'capa', 'arte']);
+    const arte = vs[2]!;
+    expect(arte.slide.titulo).toBe('Pastilha *com instalação*');
+    // Uma imagem só (aprovada na 1ª), sem foto nem logo de referência: o pedido vai para a geração.
+    expect(chamadasImagem).toHaveLength(1);
+    const { rows } = await pool.query<{ origem: string; carrossel_id: number }>(
+      'SELECT origem, carrossel_id FROM comercial.carrossel_fotos WHERE id = $1',
+      [arte.slide.fotoId],
+    );
+    expect(rows[0]).toEqual({ origem: 'arte', carrossel_id: arte.id });
+    // A arte não entra na biblioteca de fotos e a peça sai como a imagem inteira.
+    expect((await ler('/carrosseis/fotos')).body.fotos.map((f: { id: number }) => f.id)).not.toContain(
+      arte.slide.fotoId,
+    );
+    expect((await ler(`/carrosseis/${arte.id}/slides/0?largura=320`)).status).toBe(200);
+
+    // Desenhar de novo: troca a imagem da mesma variação.
+    const de = await mandar('post', `/carrosseis/${arte.id}/arte`);
+    expect(de.status).toBe(200);
+    expect(de.body.carrosselId).toBe(arte.id);
+    const depois = (await ler(`/carrosseis/${arte.id}`)).body;
+    expect(depois.conteudo[0].modelo).toBe('arte');
+    expect(depois.conteudo[0].fotoId).not.toBe(arte.slide.fotoId);
+
+    // A IA errou o preço duas vezes: nada muda e a tela recebe o aviso.
+    arteErrada = true;
+    chamadasImagem.length = 0;
+    const errou = await mandar('post', `/carrosseis/${vs[0]!.id}/arte`);
+    expect(errou.status).toBe(422);
+    expect(errou.body.erro.mensagem).toContain('duas tentativas');
+    expect(chamadasImagem).toHaveLength(2);
+    arteErrada = false;
+    // Num molde, "Arte da IA" cria mais uma variação desenhada do mesmo card.
+    const nova = await mandar('post', `/carrosseis/${vs[0]!.id}/arte`);
+    expect(nova.status).toBe(200);
+    const lote2 = (await ler('/carrosseis/cards')).body.lotes.find(
+      (x: { pedidoId: number }) => x.pedidoId === p.body.id,
+    );
+    expect(lote2.cards[0].variacoes.map((v: { slide: { modelo: string } }) => v.slide.modelo)).toEqual([
+      'numero',
+      'capa',
+      'arte',
+      'arte',
+    ]);
+  });
+
+  it('v150: sem a arte pedida, o card fica só nos moldes', async () => {
+    chamadasImagem.length = 0;
+    const p = await mandar('post', '/carrosseis/cards', {
+      assunto: 'Promoção da pastilha com instalação',
+      quantidade: 1,
+      variacoes: 2,
+      arteIa: false,
+    });
+    expect(await rodarUmPedido(pool, ia, log)).toBe(true);
+    const lote = (await ler('/carrosseis/cards')).body.lotes.find(
+      (x: { pedidoId: number }) => x.pedidoId === p.body.id,
+    );
+    expect(lote.cards[0].variacoes.map((v: { slide: { modelo: string } }) => v.slide.modelo)).toEqual([
+      'numero',
+      'capa',
+    ]);
+    expect(chamadasImagem).toHaveLength(0);
   });
 });

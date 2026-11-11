@@ -125,7 +125,7 @@ export function AbaCards(props: {
               }
             />
           ) : (
-            q.data.lotes.map((l) => <Lote key={l.pedidoId} l={l} />)
+            q.data.lotes.map((l) => <Lote key={l.pedidoId} l={l} arteLigada={!!props.situacao.ia.imagens} />)
           )}
         </div>
       </div>
@@ -187,6 +187,8 @@ function NovoPedidoDeCards(props: {
   const [palavra, setPalavra] = useState('');
   const [usarFotos, setUsarFotos] = useState(true);
   const [gerarImagens, setGerarImagens] = useState(false);
+  // v150: uma variação por card desenhada inteira pela IA (com a logo, as fotos e o jeito de postar).
+  const [arteIa, setArteIa] = useState(true);
   const [fotosPedido, setFotosPedido] = useState<FotoDoPedido[]>([]);
   // v148/v149: antes de criar, a estrategista conversa em rodadas (sem perguntas, cria direto).
   const [conversa, setConversa] = useState<RodadaDoTime | null>(null);
@@ -207,6 +209,7 @@ function NovoPedidoDeCards(props: {
           palavra,
           usarFotos,
           gerarImagens,
+          arteIa: arteIa && !!props.situacao.ia.imagens,
           fotos: fotosPedido,
           respostas,
           briefing,
@@ -251,7 +254,8 @@ function NovoPedidoDeCards(props: {
       onError: () => pedir.mutate(SEM_CONVERSA),
     });
   };
-  const textoCriar = `Criar ${pecas} ${pecas === 1 ? 'peça' : 'peças'} com o time`;
+  const comArte = arteIa && !!ia.imagens;
+  const textoCriar = `Criar ${pecas} ${pecas === 1 ? 'peça' : 'peças'}${comArte ? ` + ${quantidade} ${quantidade === 1 ? 'arte' : 'artes'} da IA` : ''}`;
   if (conversa)
     return (
       <PerguntasDoTime
@@ -423,6 +427,19 @@ function NovoPedidoDeCards(props: {
       </label>
       {ia.imagens && (
         <label className="opcao">
+          <input type="checkbox" checked={arteIa} onChange={(e) => setArteIa(e.target.checked)} />
+          <span>
+            Uma arte desenhada pela IA em cada card
+            <span className="campo__dica" style={{ display: 'block' }}>
+              Além das variações nos modelos, a IA desenha a peça inteira, como um designer: com a sua logo,
+              as fotos e o jeito de postar do seu Instagram. O texto é conferido letra por letra; se a IA
+              errar duas vezes, o card fica só nos modelos. Cerca de US$ 0,25 a 0,50 por arte.
+            </span>
+          </span>
+        </label>
+      )}
+      {ia.imagens && (
+        <label className="opcao">
           <input type="checkbox" checked={gerarImagens} onChange={(e) => setGerarImagens(e.target.checked)} />
           <span>
             A IA pode gerar as imagens que faltarem
@@ -476,7 +493,7 @@ function NovoPedidoDeCards(props: {
 
 const imagemDaPeca = (v: VariacaoCard) => `/api/carrosseis/${v.id}/slides/0?largura=480&v=${v.versao}`;
 
-function Lote(props: { l: LoteCards }) {
+function Lote(props: { l: LoteCards; arteLigada: boolean }) {
   const { l } = props;
   const cliente = useQueryClient();
   const atualizar = () => void cliente.invalidateQueries({ queryKey: ['carrosseis', 'cards'] });
@@ -499,6 +516,18 @@ function Lote(props: { l: LoteCards }) {
   const apagar = useMutation({
     mutationFn: () => api(`/carrosseis/cards/${l.pedidoId}`, { metodo: 'DELETE' }),
     onSuccess: atualizar,
+  });
+  // v150: desenhar a arte da IA de um card (a partir da variação escolhida) ou desenhar de novo.
+  const [desenhando, setDesenhando] = useState<number | null>(null);
+  const arte = useMutation({
+    mutationFn: (p: { card: number; id: number }) => {
+      setDesenhando(p.card);
+      return api<{ carrosselId: number }>(`/carrosseis/${p.id}/arte`, { metodo: 'POST' });
+    },
+    onSettled: () => {
+      setDesenhando(null);
+      atualizar();
+    },
   });
   const trabalhando = l.situacao === 'fila' || l.situacao === 'trabalhando';
   const falhou = l.situacao === 'falhou';
@@ -559,6 +588,11 @@ function Lote(props: { l: LoteCards }) {
                           onClick={() => setPrevia({ card: c.card, variacao: k })}
                         >
                           <img src={imagemDaPeca(v)} alt="" loading="lazy" />
+                          {v.slide?.modelo === 'arte' && (
+                            <span className="cards-card__selo-ia" aria-hidden="true">
+                              <Icon name="sparkles" size={11} /> Arte da IA
+                            </span>
+                          )}
                           {v.escolhido && (
                             <span className="cards-card__marca" aria-hidden="true">
                               <Icon name="check" size={12} />
@@ -582,10 +616,12 @@ function Lote(props: { l: LoteCards }) {
                         )}
                       </div>
                     ))}
-                    {fazendo && (
+                    {(fazendo || desenhando === c.card) && (
                       <span className="cards-card__variacao cards-card__variacao--fazendo" aria-live="polite">
                         <Icon name="loader" size={18} />
-                        <span>Nova variação…</span>
+                        <span>
+                          {desenhando === c.card ? 'Desenhando a arte… (até 3 min)' : 'Nova variação…'}
+                        </span>
                       </span>
                     )}
                   </div>
@@ -601,10 +637,22 @@ function Lote(props: { l: LoteCards }) {
                     >
                       Outra variação
                     </button>
+                    {props.arteLigada && (
+                      <button
+                        type="button"
+                        className="link-botao"
+                        disabled={arte.isPending}
+                        title="A IA desenha a peça inteira com o texto da variação escolhida"
+                        onClick={() => arte.mutate({ card: c.card, id: escolhida.id })}
+                      >
+                        {escolhida.slide?.modelo === 'arte' ? 'Desenhar de novo' : 'Arte da IA'}
+                      </button>
+                    )}
                     <Link className="link-botao" to={`/carrosseis/${escolhida.id}?aba=publicacao`}>
                       Publicar
                     </Link>
                   </div>
+                  {arte.isError && arte.variables?.card === c.card && <ErroDaApi erro={arte.error} />}
                 </li>
               );
             })}

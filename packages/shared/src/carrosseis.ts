@@ -162,8 +162,14 @@ export const MODELOS = [
   'comparacao',
   'foto',
   'chamada',
+  'arte',
 ] as const;
 export type ModeloSlide = (typeof MODELOS)[number];
+/**
+ * v150: os modelos montados por código (o time e o editor escolhem entre eles). A "Arte da IA" não
+ * entra: ela nasce desenhada pela IA de imagem, a partir do texto aprovado.
+ */
+export const MODELOS_A_MAO = MODELOS.filter((m) => m !== 'arte') as Exclude<ModeloSlide, 'arte'>[];
 
 /** Campos que cada modelo usa, com o limite de letras que cabe bem no slide. */
 export interface CampoModelo {
@@ -249,6 +255,18 @@ export const MODELO: Record<
     campos: [
       { campo: 'titulo', rotulo: 'Título', limite: 60 },
       { campo: 'texto', rotulo: 'Texto', limite: 140 },
+    ],
+    foto: true,
+  },
+  arte: {
+    nome: 'Arte da IA',
+    descricao: 'A peça inteira desenhada pela IA de imagem, com o texto conferido letra por letra.',
+    campos: [
+      { campo: 'sobretitulo', rotulo: 'Selo', limite: 24 },
+      { campo: 'destaque', rotulo: 'Número ou preço', limite: 16 },
+      { campo: 'titulo', rotulo: 'Título', limite: 80 },
+      { campo: 'texto', rotulo: 'Texto', limite: 140 },
+      { campo: 'botao', rotulo: 'Botão', limite: 22 },
     ],
     foto: true,
   },
@@ -423,7 +441,7 @@ export interface Carrossel extends ResumoCarrossel {
 }
 
 /** De onde a foto veio (v132): enviada pela empresa ou feita pela IA (cena nova ou o produto num cenário). */
-export type OrigemFoto = 'enviada' | 'gerada' | 'cenario' | 'referencia' | 'melhorada';
+export type OrigemFoto = 'enviada' | 'gerada' | 'cenario' | 'referencia' | 'melhorada' | 'arte';
 
 export interface FotoCarrossel {
   id: number;
@@ -489,6 +507,8 @@ export function slideNovo(modelo: ModeloSlide, id: string): SlideCarrossel {
       };
     case 'foto':
       return { ...base, titulo: 'Uma frase sobre a foto' };
+    case 'arte':
+      return { ...base, titulo: 'O título da arte' };
     case 'chamada':
       return {
         ...base,
@@ -1096,20 +1116,38 @@ function botaoNo(c: Contexto, marginTop = 48): No | null {
 
 /** O botão do card nos modelos que não são a chamada (no carrossel, o botão fica só na chamada). */
 const botaoDoCard = (c: Contexto) => (sozinho(c) && c.s.modelo !== 'chamada' ? botaoNo(c) : null);
+/** v149: nos modelos sem a logo no topo, o card guarda o lugar da logo grande do canto. */
+const reservaDaLogo = (c: Contexto) =>
+  sozinho(c) && c.s.modelo !== 'capa' && c.s.modelo !== 'chamada' ? ALTURA_LOGO_CARD : 0;
 const reservaDoBotao = (c: Contexto) =>
-  sozinho(c) && c.s.modelo !== 'chamada' && c.s.botao ? ALTURA_BOTAO_CARD : 0;
+  (sozinho(c) && c.s.modelo !== 'chamada' && c.s.botao ? ALTURA_BOTAO_CARD : 0) + reservaDaLogo(c);
 
 /** A logo por cima, no canto, para os modelos que não têm a logo no topo. */
 function logoNoCanto(c: Contexto): No | null {
   if (!sozinho(c)) return null;
-  const l = logoNo(c);
+  const l = logoNo(c, ALTURA_LOGO_CARD);
   if (!l) return null;
-  return div({ position: 'absolute', top: M.topo - 8, right: LADO, alignItems: 'center', height: 60 }, l);
+  return div(
+    {
+      position: 'absolute',
+      top: M.topo - 24,
+      right: LADO,
+      alignItems: 'center',
+      height: ALTURA_LOGO_CARD + 8,
+    },
+    l,
+  );
 }
+
+/** v149: no card avulso a logo é a assinatura da peça: grande o bastante para ser vista no feed. */
+const ALTURA_LOGO_CARD = 104;
 
 function logoNo(c: Contexto, altura = 52): No | null {
   if (c.logo) {
-    const largura = Math.min(300, Math.round((c.logo.largura / Math.max(1, c.logo.altura)) * altura));
+    const largura = Math.min(
+      altura > 60 ? 460 : 300,
+      Math.round((c.logo.largura / Math.max(1, c.logo.altura)) * altura),
+    );
     return {
       type: 'img',
       props: {
@@ -1122,7 +1160,7 @@ function logoNo(c: Contexto, altura = 52): No | null {
   }
   const nome = c.id.marcaTexto.trim();
   if (!nome) return null;
-  return textoNo(nome, fonteCorpo(c, 'forte'), 28, 1.1, c.cores.texto, {
+  return textoNo(nome, fonteCorpo(c, 'forte'), altura > 60 ? 44 : 28, 1.1, c.cores.texto, {
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   });
@@ -1154,9 +1192,10 @@ function rodapeNo(
   opcoes: { seta?: boolean; numero?: boolean; cor?: string; linha?: boolean } = {},
 ): No {
   const cor = opcoes.cor ?? c.cores.suave;
-  const assinatura = c.id.assinatura.trim();
-  // Peça de um slide só (card avulso): sem "Arraste" e sem 1/1.
+  // Peça de um slide só (card avulso): sem "Arraste", sem 1/1 e sem a assinatura solta no pé (a logo
+  // grande no topo já assina a peça).
   const sozinho = c.total <= 1;
+  const assinatura = sozinho ? '' : c.id.assinatura.trim();
   const direita = sozinho
     ? null
     : opcoes.seta
@@ -1200,6 +1239,8 @@ function quadro(
     atras?: No[];
     /** O modelo já põe a logo no topo (capa, chamada). */
     comLogo?: boolean;
+    /** v149: o modelo já põe o botão junto do texto (capa do card). */
+    comBotao?: boolean;
   },
 ): No {
   // O quadro cresce dentro da raiz (flexGrow): com altura fixa ou 100%, o Satori soma o espaçamento
@@ -1229,9 +1270,10 @@ function quadro(
           justifyContent: ALINHAR[partes.alinhar ?? 'centro'],
           position: 'relative',
           width: '100%',
+          paddingTop: partes.comLogo ? 0 : reservaDaLogo(c),
         },
         ...partes.corpo,
-        botaoDoCard(c),
+        partes.comBotao ? null : botaoDoCard(c),
       ),
       partes.rodape ?? null,
     ),
@@ -1273,7 +1315,8 @@ function fotoCheiaNo(c: Contexto, src: string): No[] {
       left: 0,
       width: M.largura,
       height: M.altura,
-      backgroundImage: `linear-gradient(180deg, ${cor}55 0%, ${cor}00 22%, ${cor}00 38%, ${cor}D9 68%, ${cor}F5 100%)`,
+      // v149: a foto aparece limpa em cima; a partir do meio vira a cor da marca, sólida onde mora o texto.
+      backgroundImage: `linear-gradient(180deg, ${cor}80 0%, ${cor}00 16%, ${cor}00 32%, ${cor}CC 48%, ${cor}F7 58%, ${cor} 72%, ${cor} 100%)`,
     }),
   ];
 }
@@ -1287,9 +1330,15 @@ function capa(c: Contexto): No {
   const comFoto = !!c.foto && c.tema.fotoCheia;
   const naBase = c.tema.capa === 'base' || comFoto;
   const topo = div(
-    { width: '100%', justifyContent: 'space-between', alignItems: 'center', minHeight: 52, flexShrink: 0 },
+    {
+      width: '100%',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      minHeight: sozinho(c) ? ALTURA_LOGO_CARD : 52,
+      flexShrink: 0,
+    },
     sobretituloNo(c, s.sobretitulo) ?? div({}),
-    c.id.logoNaCapa || sozinho(c) ? logoNo(c) : null,
+    sozinho(c) ? logoNo(c, ALTURA_LOGO_CARD) : c.id.logoNaCapa ? logoNo(c) : null,
   );
   // Estilos de foto em quadro (Editorial, Clean): a foto entra na capa como um quadro em cima do título.
   const fotoEmQuadro = !!c.foto && !c.tema.fotoCheia;
@@ -1320,7 +1369,11 @@ function capa(c: Contexto): No {
         antes: 36,
       },
     ],
-    M.conteudo - reservaDoBotao(c) - reservado - (comFoto ? 360 : 0),
+    M.conteudo -
+      reservaDoBotao(c) -
+      reservado -
+      (comFoto ? 500 : 0) -
+      (sozinho(c) ? ALTURA_LOGO_CARD - 52 : 0),
   );
   if (!ajuste.cabe) c.avisos.push('O título da capa está longo demais: encurte para caber sem apertar.');
   const titulo = tituloNo(
@@ -1352,8 +1405,16 @@ function capa(c: Contexto): No {
         },
       }
     : null;
+  // v149: no card, o botão vem colado no texto (o bloco todo na base), não solto no pé da peça.
+  const botaoJunto = naBase && sozinho(c) ? botaoNo(c, 44) : null;
   const miolo = naBase
-    ? div({ flexDirection: 'column', flexShrink: 0 }, div({ marginBottom: 40 }, divisorNo(c)), titulo, sub)
+    ? div(
+        { flexDirection: 'column', flexShrink: 0 },
+        div({ marginBottom: 40 }, divisorNo(c)),
+        titulo,
+        sub,
+        botaoJunto,
+      )
     : div({ flexDirection: 'column', flexGrow: 1, justifyContent: 'center', paddingTop: 24 }, titulo, sub);
   if (quadroFoto)
     return quadro(c, {
@@ -1372,6 +1433,7 @@ function capa(c: Contexto): No {
     corpo: [topo, miolo],
     rodape: rodapeNo(c, { seta: true, linha: c.tema.divisor === 'linha' && !comFoto }),
     comLogo: true,
+    comBotao: !!botaoJunto,
   });
 }
 
@@ -1913,8 +1975,8 @@ function chamada(c: Contexto): No {
     alinhar: 'inicio',
     corpo: [
       div(
-        { minHeight: 52, alignItems: 'center', flexShrink: 0 },
-        c.id.logoNaChamada || sozinho(c) ? logoNo(c) : null,
+        { minHeight: sozinho(c) ? ALTURA_LOGO_CARD : 52, alignItems: 'center', flexShrink: 0 },
+        sozinho(c) ? logoNo(c, ALTURA_LOGO_CARD) : c.id.logoNaChamada ? logoNo(c) : null,
       ),
       div(
         { flexDirection: 'column', flexGrow: 1, justifyContent: 'center' },
@@ -1930,7 +1992,26 @@ function chamada(c: Contexto): No {
   });
 }
 
+/**
+ * v150: a arte desenhada pela IA é a peça inteira (texto, logo e composição já estão nela): sai como
+ * está, de ponta a ponta. Sem a imagem (apagada ou ainda não feita), a peça cai na capa, com o mesmo
+ * texto, para nunca sair em branco.
+ */
+function arte(c: Contexto): No {
+  if (!c.foto) {
+    c.avisos.push(
+      'A arte da IA não está disponível: a peça aparece no modelo Capa até ser desenhada de novo.',
+    );
+    return capa({ ...c, s: { ...c.s, modelo: 'capa' } });
+  }
+  return div(
+    { width: M.largura, height: M.altura, position: 'relative', backgroundColor: c.cores.fundo },
+    imagemCheia(c.foto),
+  );
+}
+
 const MONTAR: Record<ModeloSlide, (c: Contexto) => No> = {
+  arte,
   capa,
   item,
   texto: textoModelo,

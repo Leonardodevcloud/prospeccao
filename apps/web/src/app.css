@@ -19732,3 +19732,29 @@ form.janela-pedido > button[type="submit"] {
   color: var(--ink-muted);
   font-size: 11px;
 }
+.cards-card__selo-ia {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgb(0 0 0 / 62%);
+}
+.painel-slide__arte {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.painel-slide__arte p {
+  margin: 0;
+  font-size: 13px;
+}

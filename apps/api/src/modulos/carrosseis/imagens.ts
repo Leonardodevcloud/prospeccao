@@ -3,22 +3,27 @@ import type { Executor } from '@prospeccao/db';
 import {
   CENA_MELHORADA,
   CENAS_PRODUTO,
+  conferirArte,
   conferirCenario,
   conferirImagemDoSlide,
   descreverReferencia,
+  desenharArte,
   type EstiloDaImagem,
   gerarCenario,
   gerarImagemDoSlide,
   type JeitoDePostar,
   lerJeitoDePostar,
   melhorarFoto,
+  textoDaArte,
 } from '@prospeccao/integrations/carrosseis';
 import { buscarNaInternet } from '@prospeccao/integrations/rede';
 import { prepararImagem } from '@prospeccao/integrations/slides';
+import type { ReferenciaImagem } from '@prospeccao/integrations/videos';
 import { AppError } from '@prospeccao/shared';
-import type { FormatoPeca, FotoCarrossel } from '@prospeccao/shared/carrosseis';
+import type { FormatoPeca, FotoCarrossel, LogoSlide, SlideCarrossel } from '@prospeccao/shared/carrosseis';
 import type { FotoDoPedido } from '@prospeccao/shared/carrosseis-time';
 import { conta, contaSql } from '../../contexto.js';
+import { materialDaConta } from './desenho.js';
 import * as repo from './repositorio.js';
 import type { CarrosseisIa } from './time.js';
 
@@ -60,7 +65,7 @@ async function guardar(
   ia: CarrosseisIa,
   jpeg: Uint8Array,
   d: {
-    origem: 'gerada' | 'cenario' | 'melhorada';
+    origem: 'gerada' | 'cenario' | 'melhorada' | 'arte';
     nome: string;
     pedido: string;
     baseFotoId?: number | null;
@@ -231,6 +236,124 @@ export async function guardarReferencia(
     estilo,
   });
   return { id: f.id, estilo };
+}
+
+/* ───────────────────────────── v150: a arte da IA ───────────────────────────── */
+
+const daDataUrl = (l: LogoSlide | null): ReferenciaImagem | null => {
+  const m = l?.src.match(/^data:(image\/(?:png|jpeg));base64,(.+)$/);
+  if (!m) return null;
+  return {
+    dados: new Uint8Array(Buffer.from(m[2]!, 'base64')),
+    tipo: m[1] as 'image/png' | 'image/jpeg',
+    nome: m[1] === 'image/png' ? 'logo.png' : 'logo.jpg',
+  };
+};
+
+/** Até `max` posts recentes do Instagram da conta (o jeito de postar dela), já reduzidos. */
+async function postsDaConta(db: Executor, max: number): Promise<ReferenciaImagem[]> {
+  if (max <= 0) return [];
+  const { rows } = await db.query<{ imagem: string }>(
+    `SELECT imagem FROM comercial.instagram_midias
+      WHERE conta_id = ${contaSql()} AND imagem IS NOT NULL
+      ORDER BY publicado_em DESC NULLS LAST LIMIT 8`,
+  );
+  const saida: ReferenciaImagem[] = [];
+  for (const r of rows) {
+    if (saida.length >= max) break;
+    try {
+      const resp = await buscarNaInternet(r.imagem, { timeoutMs: 10_000, limiteBytes: 8 * 1024 * 1024 });
+      if (resp.status !== 200 || resp.cortado) continue;
+      const img = await prepararImagem(new Uint8Array(resp.corpo), { maxLado: 1024 });
+      saida.push({
+        dados: new Uint8Array(img.dados),
+        tipo: 'image/jpeg',
+        nome: `post-${saida.length + 1}.jpg`,
+      });
+    } catch {
+      // Link da Meta vencido: segue sem este post.
+    }
+  }
+  return saida;
+}
+
+async function fotoComoReferencia(
+  db: Executor,
+  ia: CarrosseisIa,
+  id: number,
+  k: number,
+): Promise<ReferenciaImagem | null> {
+  const f = await repo.foto(db, id);
+  if (!f || f.origem === 'referencia' || f.origem === 'arte') return null;
+  const dados = await ia.armazenamento!.ler(f.chave).catch(() => null);
+  if (!dados) return null;
+  const img = await prepararImagem(dados, { maxLado: 1280 }).catch(() => null);
+  return img ? { dados: new Uint8Array(img.dados), tipo: 'image/jpeg', nome: `foto-${k}.jpg` } : null;
+}
+
+/**
+ * Desenha a arte de um card (a peça inteira pelo GPT Image, com a logo, as fotos e até 2 posts do
+ * Instagram da conta como referência) e confere o texto letra por letra. Duas tentativas; a segunda
+ * leva o que deu errado. Devolve a foto guardada (origem 'arte') ou null (o card fica nos moldes).
+ */
+export async function fazerArte(
+  db: Executor,
+  ia: CarrosseisIa,
+  contaId: number,
+  d: {
+    slide: SlideCarrossel;
+    formato: FormatoPeca;
+    objetivo: string;
+    fotoIds: number[];
+    criadoPor?: number | null;
+  },
+): Promise<FotoCarrossel | null> {
+  if (!imagensLigadas(ia)) return null;
+  const [material, empresa] = await Promise.all([
+    materialDaConta(db, ia.armazenamento ?? null),
+    db
+      .query<{ nome: string }>(`SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`)
+      .then((r) => r.rows[0]?.nome ?? ''),
+  ]);
+  const logo = daDataUrl(material.logoEscuro ?? material.logoClaro);
+  const fotos = (
+    await Promise.all(
+      [...new Set(d.fotoIds)].slice(0, 2).map((id, k) => fotoComoReferencia(db, ia, id, k + 1)),
+    )
+  ).filter((x): x is ReferenciaImagem => !!x);
+  const posts = await postsDaConta(db, 2);
+  const claude = ia.cliente(db, contaId);
+  const esperado = textoDaArte(d.slide);
+  let corrigir: string[] = [];
+  for (let k = 0; k < TENTATIVAS; k++) {
+    const jpeg = await desenharArte(ia.imagem!.config, {
+      empresa,
+      identidade: material.identidade,
+      formato: d.formato,
+      slide: d.slide,
+      objetivo: d.objetivo,
+      temLogo: !!logo,
+      fotos: fotos.length,
+      posts: posts.length,
+      corrigir,
+      referencias: [...(logo ? [logo] : []), ...fotos, ...posts],
+    });
+    await contarImagem(db, ia.imagem!.custoUsd);
+    const c = await conferirArte(claude, { jpeg, logo, esperado, empresa });
+    if (!c.aprovada) {
+      corrigir = c.problemas.slice(0, 5);
+      continue;
+    }
+    return guardar(db, ia, jpeg, {
+      origem: 'arte',
+      nome: `Arte da IA: ${esperado.titulo}`,
+      pedido: [esperado.selo, esperado.destaque, esperado.titulo, esperado.texto, esperado.botao]
+        .filter(Boolean)
+        .join(' · '),
+      ...(d.criadoPor !== undefined ? { criadoPor: d.criadoPor } : {}),
+    });
+  }
+  return null;
 }
 
 /* ───────────────────────────── v148: aprender com o Instagram da empresa ───────────────────────────── */

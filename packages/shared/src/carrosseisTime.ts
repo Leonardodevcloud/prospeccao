@@ -829,6 +829,11 @@ export const pedidoCardsEntrada = z
     respostas: respostasEntrada,
     /** v149: o resumo da estrategista que a pessoa conferiu antes de criar (vira fonte do pedido). */
     briefing: briefingEntrada,
+    /**
+     * v150: em cada card, mais uma variação com a peça inteira desenhada pela IA de imagem (com a logo,
+     * as fotos e o jeito de postar da conta), a partir do texto da 1ª variação, conferida letra por letra.
+     */
+    arteIa: z.boolean().default(true),
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga o que os cards precisam dizer (ou escolha o que divulgar).',

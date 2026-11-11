@@ -389,6 +389,12 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ac. Arte da IA nos cards (v150)
+1. [ ] **Migration 107** roda sozinha no redeploy da **api**.
+2. [ ] Conferir que a **logo** está salva (Identidade visual ou Marca e domínio) e o Instagram conectado com posts: a arte usa os dois como referência.
+3. [ ] Pedir 2 cards com a arte ligada. Conferir a variação **Arte da IA**: texto certo (acentos, preço), logo igual, cara do feed. Se a IA errar muito o texto, avisar: dá para afinar o pedido ou desligar a opção.
+4. [ ] Custo: cada arte é 1 a 2 imagens em qualidade alta (US$ 0,25 a 0,50) + a leitura do texto. Acompanhar em Saúde e consumo.
+
 ## 4ab. A conversa da estrategista (v149)
 1. [ ] Sem migration: redeploy da **api** e do **worker-videos** (o front publica sozinho).
 2. [ ] Pedir 1 card com um pedido curto (ex.: "lançamento em tal cidade"): conferir que a estrategista pergunta, que a 2ª rodada vai fundo no que foi respondido, e o **Entendi assim. Confere?** no fim. Corrigir algo no resumo e conferir que o card segue a correção.

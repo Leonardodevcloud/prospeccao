@@ -107,9 +107,9 @@ const COLUNAS_FOTO = `id, nome, largura, altura, criado_em AS "criadoEm", origem
 
 export async function fotos(db: Executor): Promise<FotoCarrossel[]> {
   const { rows } = await db.query<FotoCarrossel>(
-    // A referência de estilo não é foto para usar: fica fora da biblioteca.
+    // A referência de estilo não é foto para usar, e a arte da IA (v150) é a peça pronta: ficam fora.
     `SELECT ${COLUNAS_FOTO} FROM comercial.carrossel_fotos
-      WHERE conta_id = ${contaSql()} AND origem <> 'referencia' ORDER BY id DESC`,
+      WHERE conta_id = ${contaSql()} AND origem NOT IN ('referencia', 'arte') ORDER BY id DESC`,
   );
   return rows;
 }
@@ -151,7 +151,7 @@ export async function adicionarFotoDaIa(
     largura: number;
     altura: number;
     bytes: number;
-    origem: 'gerada' | 'cenario' | 'referencia' | 'melhorada';
+    origem: 'gerada' | 'cenario' | 'referencia' | 'melhorada' | 'arte';
     baseFotoId?: number | null;
     pedido?: string | null;
     carrosselId?: number | null;

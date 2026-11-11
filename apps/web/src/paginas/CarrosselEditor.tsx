@@ -12,7 +12,7 @@ import {
   type IdentidadeCarrossel,
   MAX_SLIDES,
   MODELO,
-  MODELOS,
+  MODELOS_A_MAO,
   type ModeloSlide,
   montarSlide,
   ROTULO_FUNDO,
@@ -259,7 +259,8 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
           botao: y.botao || p.botao,
           itens: y.itens.length ? y.itens : p.itens,
           colunas: y.colunas.length ? y.colunas : p.colunas,
-          fotoId: MODELO[modelo].foto ? y.fotoId : null,
+          // v150: a imagem da arte da IA é a peça inteira: não vira a foto de um modelo.
+          fotoId: MODELO[modelo].foto && y.modelo !== 'arte' ? y.fotoId : null,
           fundo: y.fundo,
         };
       }),
@@ -705,7 +706,7 @@ function NovoSlide(props: { cheio: boolean; aoEscolher: (m: ModeloSlide) => void
       </Button>
       {aberto && (
         <ul className="editor-carrossel__menu">
-          {MODELOS.map((m) => (
+          {MODELOS_A_MAO.map((m) => (
             <li key={m}>
               <button
                 type="button"
@@ -731,6 +732,41 @@ function Contador(props: { n: number; limite: number }) {
     <span className="campo__contador" data-passou={props.n > props.limite || undefined}>
       {props.n} de {props.limite}
     </span>
+  );
+}
+
+/**
+ * v150: a arte da IA tem o texto desenhado nela. O editor guarda o texto; para a imagem acompanhar,
+ * a pessoa pede para desenhar de novo (a tela recarrega com a arte nova). Trocar para um modelo volta
+ * a montar a peça por código, com o mesmo texto.
+ */
+function ArteDaIa(props: { carrosselId: number; imagens: boolean }) {
+  const desenhar = useMutation({
+    mutationFn: () =>
+      api<{ carrosselId: number }>(`/carrosseis/${props.carrosselId}/arte`, { metodo: 'POST' }),
+    onSuccess: () => window.location.reload(),
+  });
+  return (
+    <div className="campo painel-slide__arte" role="note">
+      <span className="campo__rotulo">Arte desenhada pela IA</span>
+      <p className="quieto">
+        O texto está desenhado na arte. Mudou o texto aqui? Espere salvar e clique em desenhar de novo: a IA
+        refaz a peça e confere letra por letra. Para mexer livre, troque para um modelo acima.
+      </p>
+      {props.imagens && (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          icon="sparkles"
+          disabled={desenhar.isPending}
+          onClick={() => desenhar.mutate()}
+        >
+          {desenhar.isPending ? 'Desenhando… (até 3 min)' : 'Desenhar de novo com este texto'}
+        </Button>
+      )}
+      <ErroDaApi erro={desenhar.error} />
+    </div>
   );
 }
 
@@ -772,7 +808,7 @@ function PainelSlide(props: {
       <div className="campo">
         <span className="campo__rotulo">Modelo do slide</span>
         <div className="painel-slide__modelos" role="radiogroup" aria-label="Modelo do slide">
-          {MODELOS.map((x) => (
+          {(slide.modelo === 'arte' ? [...MODELOS_A_MAO, 'arte' as const] : MODELOS_A_MAO).map((x) => (
             <label
               key={x}
               className="painel-slide__modelo"
@@ -901,7 +937,9 @@ function PainelSlide(props: {
           );
         })}
 
-      {m.foto && (
+      {slide.modelo === 'arte' && <ArteDaIa carrosselId={props.carrosselId} imagens={props.imagens} />}
+
+      {m.foto && slide.modelo !== 'arte' && (
         <div className="campo">
           <span className="campo__rotulo">Foto</span>
           <div className="painel-slide__foto">

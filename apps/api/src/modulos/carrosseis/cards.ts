@@ -1,10 +1,16 @@
 import type { Executor } from '@prospeccao/db';
 import { type ImagensDosCards, trabalharNosCards } from '@prospeccao/integrations/carrosseis';
 import { AppError } from '@prospeccao/shared';
-import type { EstiloCarrossel, FormatoPeca, SlideCarrossel } from '@prospeccao/shared/carrosseis';
+import {
+  type EstiloCarrossel,
+  type FormatoPeca,
+  type SlideCarrossel,
+  semMarcas,
+} from '@prospeccao/shared/carrosseis';
 import {
   type EtapaTime,
   type LoteCards,
+  OBJETIVO_CARD,
   type ObjetivoCard,
   outraVariacaoEntrada,
   type PedidoCards,
@@ -14,11 +20,11 @@ import {
   textoDoDossie,
 } from '@prospeccao/shared/carrosseis-time';
 import { z } from 'zod';
-import { contaSql, usuarioAtual } from '../../contexto.js';
+import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as aprender from './aprender.js';
 import * as cerebro from './cerebro.js';
-import { estiloDaConta, fazerImagem, imagensLigadas, tratarFotosDoPedido } from './imagens.js';
+import { estiloDaConta, fazerArte, fazerImagem, imagensLigadas, tratarFotosDoPedido } from './imagens.js';
 import * as repo from './repositorio.js';
 import type { CarrosseisIa } from './time.js';
 
@@ -53,7 +59,7 @@ const semIa = () =>
 async function conferirFotosDoPedido(db: Executor, fotos: PedidoCards['fotos']): Promise<void> {
   for (const f of fotos) {
     const foto = await repo.foto(db, f.fotoId);
-    if (!foto || foto.origem === 'referencia')
+    if (!foto || foto.origem === 'referencia' || foto.origem === 'arte')
       throw AppError.invalido('Uma das fotos do pedido não existe mais.');
     if (f.tratamento === 'cenario' && (foto.origem ?? 'enviada') !== 'enviada')
       throw AppError.invalido(
@@ -303,6 +309,56 @@ export async function trabalharCards(
         }),
       );
     }
+  // v150: em cada card, mais uma variação com a peça inteira desenhada pela IA, a partir do texto da
+  // 1ª variação (o que o time aprovou). Reprovada duas vezes na conferência: o card fica só nos moldes.
+  if (!outra && p.arteIa && imagensLigadas(ia) && r.cards.length) {
+    await avancar('diretor', 'Desenhando a arte de cada card');
+    const fotosDoPedidoIds = fotosDoPedido.map((f) => f.id);
+    const feitasArte = await Promise.all(
+      r.cards.map(async (card, i) => {
+        const base = card.variacoes[0]?.slide;
+        if (!base) return null;
+        const fotoIds = [
+          ...(base.fotoId ? [base.fotoId] : []),
+          ...card.variacoes.map((v) => v.slide.fotoId).filter((x): x is number => !!x),
+          ...fotosDoPedidoIds,
+        ];
+        const f = await fazerArte(db, ia, l.conta_id, {
+          slide: base,
+          formato: p.formato,
+          objetivo: `${OBJETIVO_CARD[p.objetivo].nome} (${OBJETIVO_CARD[p.objetivo].dica})`,
+          fotoIds,
+          criadoPor: l.criado_por,
+        }).catch(() => null);
+        return f ? { i, card, base, foto: f } : null;
+      }),
+    );
+    for (const a of feitasArte) {
+      if (!a) continue;
+      const id = await repo.criar(db, {
+        titulo: `${a.card.titulo} (arte da IA)`.slice(0, 120),
+        estilo,
+        slides: [{ ...a.base, id: `c${a.i + 1}arte`, modelo: 'arte', fotoId: a.foto.id, fundo: 'auto' }],
+        legenda: a.card.legenda,
+        origem: 'ia',
+        relatorio: a.card.variacoes[0]!.relatorio,
+        divulgarId: divulgar?.id ?? null,
+        criadoPor: l.criado_por,
+        card: {
+          formato: p.formato,
+          pedidoId: loteId,
+          card: a.i + 1,
+          variacao: a.card.variacoes.length + 1,
+          escolhido: false,
+        },
+      });
+      await db.query(
+        `UPDATE comercial.carrossel_fotos SET carrossel_id = $1 WHERE conta_id = ${contaSql()} AND id = $2`,
+        [id, a.foto.id],
+      );
+      ids.push(id);
+    }
+  }
   if (!outra)
     await db.query(
       `UPDATE comercial.carrossel_pedidos SET entrada = entrada || jsonb_build_object('tituloDoTime', $2::text) WHERE id = $1`,
@@ -452,4 +508,78 @@ export async function esquecerLote(db: Executor, loteId: number): Promise<void> 
       WHERE conta_id = ${contaSql()} AND tipo = 'cards' AND id = $1`,
     [loteId],
   );
+}
+
+/* ───────────────────────────── v150: desenhar a arte de novo ───────────────────────────── */
+
+/**
+ * "Desenhar a arte" de uma variação de card, com o texto que está nela agora. Numa variação que já é
+ * arte (o texto mudou no editor, ou a pessoa quer outra), troca a imagem; numa variação dos moldes, cria
+ * mais uma variação do mesmo card, desenhada pela IA. Reprovada duas vezes: nada muda e a tela avisa.
+ */
+export async function desenharArteDoCard(
+  db: Executor,
+  ia: CarrosseisIa | null,
+  id: number,
+): Promise<{ carrosselId: number }> {
+  if (!ia || !imagensLigadas(ia))
+    throw AppError.invalido('A arte desenhada pela IA ainda não está ligada. Fale com a gente.');
+  const c = await repo.carrossel(db, id);
+  const slide = c.conteudo[0];
+  if (c.tipo !== 'card' || !c.pedidoId || !c.card || !slide)
+    throw AppError.invalido('A arte da IA é feita para os cards avulsos.');
+  if (c.situacao === 'publicado' || c.situacao === 'agendado')
+    throw AppError.conflito('Esta peça já foi publicada ou agendada: duplique para mexer.');
+  if (!semMarcas(slide.titulo).trim()) throw AppError.invalido('Escreva o título da peça antes de desenhar.');
+  const { rows } = await db.query<{ objetivo: string | null }>(
+    `SELECT entrada->>'objetivo' AS objetivo FROM comercial.carrossel_pedidos WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [c.pedidoId],
+  );
+  const obj = (rows[0]?.objetivo as ObjetivoCard | null) ?? 'promocao';
+  const objetivo = OBJETIVO_CARD[obj] ?? OBJETIVO_CARD.promocao;
+  const base = slide.modelo === 'arte' ? null : slide.fotoId;
+  const f = await fazerArte(db, ia, conta(), {
+    slide,
+    formato: c.formato,
+    objetivo: `${objetivo.nome} (${objetivo.dica})`,
+    fotoIds: base ? [base] : [],
+  });
+  if (!f)
+    throw new AppError(
+      422,
+      'arte',
+      'A IA não acertou o texto da arte em duas tentativas: a peça ficou como estava. Tente de novo ou encurte o texto.',
+    );
+  if (slide.modelo === 'arte') {
+    const slides = [{ ...slide, fotoId: f.id }, ...c.conteudo.slice(1)];
+    await db.query(
+      `UPDATE comercial.carrosseis SET slides = $2, versao = versao + 1, atualizado_em = now()
+        WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [id, JSON.stringify(slides)],
+    );
+    await db.query(
+      `UPDATE comercial.carrossel_fotos SET carrossel_id = $1 WHERE conta_id = ${contaSql()} AND id = $2`,
+      [id, f.id],
+    );
+    return { carrosselId: id };
+  }
+  const { rows: prox } = await db.query<{ n: number }>(
+    `SELECT coalesce(max(variacao), 0)::int + 1 AS n FROM comercial.carrosseis
+      WHERE conta_id = ${contaSql()} AND tipo = 'card' AND pedido_id = $1 AND card = $2`,
+    [c.pedidoId, c.card],
+  );
+  const novo = await repo.criar(db, {
+    titulo: `${c.titulo} (arte da IA)`.slice(0, 120),
+    estilo: c.estilo,
+    slides: [{ ...slide, id: `${slide.id}-arte`, modelo: 'arte', fotoId: f.id, fundo: 'auto' }],
+    legenda: c.legenda,
+    origem: 'ia',
+    relatorio: c.relatorio,
+    card: { formato: c.formato, pedidoId: c.pedidoId, card: c.card, variacao: prox[0]!.n, escolhido: false },
+  });
+  await db.query(
+    `UPDATE comercial.carrossel_fotos SET carrossel_id = $1 WHERE conta_id = ${contaSql()} AND id = $2`,
+    [novo, f.id],
+  );
+  return { carrosselId: novo };
 }

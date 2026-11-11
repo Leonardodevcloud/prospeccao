@@ -5,6 +5,7 @@ import {
   MAX_SLIDES,
   MODELO,
   MODELOS,
+  MODELOS_A_MAO,
   type ModeloSlide,
   montarSlide,
   type SlideCarrossel,
@@ -251,7 +252,7 @@ const ESQUEMA_ESTRATEGIA = {
       items: {
         type: 'object',
         properties: {
-          modelo: { type: 'string', enum: [...MODELOS] },
+          modelo: { type: 'string', enum: [...MODELOS_A_MAO] },
           ideia: { type: 'string', description: 'O que este slide diz, em uma frase.' },
           fotoId: { type: ['integer', 'null'], description: 'Foto da empresa (só capa e foto), ou null.' },
           gerar: {
@@ -300,7 +301,7 @@ function lerEstrategia(d: Record<string, unknown>, e: EntradaTime): Estrategia {
   const doPedido = new Set((e.fotosDoPedido ?? []).map((f) => f.id));
   let roteiro = (Array.isArray(d.slides) ? d.slides : [])
     .map((s) => s as Record<string, unknown>)
-    .filter((s) => (MODELOS as readonly string[]).includes(String(s.modelo)))
+    .filter((s) => (MODELOS_A_MAO as readonly string[]).includes(String(s.modelo)))
     .map((s) => {
       const modelo = s.modelo as ModeloSlide;
       const fotoId = Number(s.fotoId);
@@ -1162,9 +1163,18 @@ function lerProposta(
   const ler = (b: Record<string, unknown>): SlideCarrossel => {
     const velho = typeof b.id === 'string' ? porId.get(b.id) : undefined;
     if (velho && b.igual === true) return velho;
-    const modelo: ModeloSlide = (MODELOS as readonly string[]).includes(String(b.modelo))
+    let modelo: ModeloSlide = (MODELOS as readonly string[]).includes(String(b.modelo))
       ? (b.modelo as ModeloSlide)
       : (velho?.modelo ?? 'texto');
+    // v150: a arte da IA tem o texto desenhado nela. Texto novo numa arte vira a capa (com o texto
+    // novo, fiel), até a pessoa pedir para desenhar a arte de novo.
+    if (modelo === 'arte') {
+      const t = slideDoTime(b, 'arte', velho?.id ?? novoId());
+      const mudou =
+        !velho ||
+        (['sobretitulo', 'titulo', 'texto', 'destaque', 'botao'] as const).some((k) => t[k] !== velho[k]);
+      if (mudou) modelo = 'capa';
+    }
     const s = slideDoTime(b, modelo, velho?.id ?? novoId());
     const pedida = Number(b.fotoId);
     const fotoId = MODELO[modelo].foto ? (velho ? velho.fotoId : fotos.has(pedida) ? pedida : null) : null;

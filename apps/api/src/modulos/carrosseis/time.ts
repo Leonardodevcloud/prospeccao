@@ -207,7 +207,7 @@ export async function pedirCarrossel(
   if (p.divulgarId) await cerebro.divulgar(db, p.divulgarId);
   for (const x of p.fotos) {
     const foto = await repo.foto(db, x.fotoId);
-    if (!foto || foto.origem === 'referencia')
+    if (!foto || foto.origem === 'referencia' || foto.origem === 'arte')
       throw AppError.invalido('Uma das fotos do pedido não existe mais.');
   }
   const f = await franquia(db);
