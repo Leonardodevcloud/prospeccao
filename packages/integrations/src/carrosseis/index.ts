@@ -5,4 +5,5 @@ export * from './direct.js';
 export * from './dossie.js';
 export * from './ideias.js';
 export * from './imagens.js';
+export * from './perguntas.js';
 export * from './time.js';

@@ -39,7 +39,7 @@ import {
 import { trechoNaFonte } from '../agente/perfil.js';
 import { MANUAL_REDACAO, MANUAL_REVISAO } from '../saber/index.js';
 import { type BlocoSistema, type ClienteClaude, somarUso, USO_ZERO, type UsoClaude } from './claude.js';
-import { CENAS_PRODUTO } from './imagens.js';
+import { CARTAO_POSTAL, CENAS_PRODUTO } from './imagens.js';
 
 /**
  * O time de IA de um carrossel. Cada agente é um pedido ao Claude com um papel e uma régua:
@@ -133,6 +133,7 @@ O QUE FAZ UM CARROSSEL EXCEPCIONAL
 - Específico vence genérico: situação real do nicho, exemplo concreto, número que a empresa pode provar. Nada de "soluções inovadoras", "excelência", "qualidade e compromisso".
 - Ritmo: a capa promete, o slide 2 mostra por que importa (ou a dor), o meio entrega o conteúdo, o penúltimo amarra, o último diz o que fazer agora.
 - O último slide pede UMA ação clara.
+- Em cada título, marque entre asteriscos de 1 a 3 palavras seguidas que são o coração da frase (o benefício, o número, a novidade): "Sua loja entrega em *40 minutos*". Elas saem na cor de destaque. Uma marca por título, nunca o título todo, e nem todo slide precisa. Os asteriscos não aparecem na imagem: não são erro de digitação.
 - Português do Brasil natural, como a empresa fala com o cliente. Sem emoji nos slides (as fontes não têm). Sem hashtag nos slides.
 
 REGRAS QUE NUNCA SE QUEBRAM
@@ -176,7 +177,10 @@ function blocoDoPedido(
     `HOJE: ${e.hoje}`,
     `OBJETIVO: ${OBJETIVO[p.objetivo].nome} (${OBJETIVO[p.objetivo].dica})`,
     p.assunto
-      ? `INSTRUÇÕES DE QUEM CRIOU (siga: o que pede para ter tem que aparecer; o que pede para não ter não aparece): ${p.assunto}`
+      ? `INSTRUÇÕES DE QUEM CRIOU (siga: o que pede para ter tem que aparecer; o que pede para não ter não aparece; o tom que ela pede vale mais que o objetivo): ${p.assunto}`
+      : '',
+    p.respostas?.length
+      ? `O QUE QUEM CRIOU RESPONDEU ÀS PERGUNTAS DO TIME (vale como fato: pode usar nos slides):\n${p.respostas.map((r) => `- ${r.pergunta} → ${r.resposta}`).join('\n')}`
       : '',
     d
       ? [
@@ -194,6 +198,9 @@ function blocoDoPedido(
     `CHAMADA FINAL: ${CHAMADA_FINAL[p.chamada]}${p.chamada === 'comentar' ? ` — a palavra é ${p.palavra.toUpperCase()} (o botão é "Comente ${p.palavra.toUpperCase()}")` : ''}`,
     `ESTILO VISUAL: ${e.estilo}`,
     e.identidade.assinatura ? `ASSINATURA NO RODAPÉ: ${e.identidade.assinatura}` : '',
+    e.identidade.jeitoDePostar
+      ? `COMO A EMPRESA COSTUMA POSTAR (lido dos posts dela; siga o espírito na escolha de modelos, fotos e palavras marcadas): ${e.identidade.jeitoDePostar}`
+      : '',
   ];
   return linhas.filter(Boolean).join('\n');
 }
@@ -399,7 +406,7 @@ function mensagemEstrategista(e: EntradaTime): string {
         ? 'FOTOS DA EMPRESA: nenhuma para usar (fotoId sempre null).'
         : 'FOTOS: não use fotos (fotoId sempre null). Não use o modelo "foto".',
     e.imagens?.gerar
-      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou um slide "foto", descreva em "gerar" a cena para a IA de imagem (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_GERADAS} no carrossel, só onde a imagem ajuda a entender. Nunca o produto que a empresa vende como se fosse real, nunca texto, marca ou rosto em destaque.`
+      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou um slide "foto", descreva em "gerar" a cena para a IA de imagem (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_GERADAS} no carrossel, só onde a imagem ajuda a entender. Nunca o produto que a empresa vende como se fosse real, nunca texto, marca ou rosto em destaque. ${CARTAO_POSTAL}`
       : '',
     e.imagens?.produto
       ? `A CAPA usa a foto do produto (${e.imagens.produto.nome}) num cenário novo, feito pela IA: na capa, fotoId null e "gerar" vazio.`
@@ -1110,6 +1117,7 @@ function mensagemEditor(e: EntradaConversa, base: EstadoCarrossel, naoCoube: str
         referenciaId: null,
         ideiaId: null,
         fotos: [],
+        respostas: [],
       },
     }),
     '',
@@ -1230,6 +1238,7 @@ export async function conversarComOTime(
       referenciaId: null,
       ideiaId: null,
       fotos: [],
+      respostas: [],
     },
     postsQueFuncionaram: [],
     anteriores: [],

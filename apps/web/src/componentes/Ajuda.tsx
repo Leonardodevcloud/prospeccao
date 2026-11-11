@@ -1207,7 +1207,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'O time de IA escreve carrosséis com a identidade e o jeito de falar da empresa; você confere, ajusta e baixa as imagens.',
     onde: { rotulo: 'Carrosséis', para: '/carrosseis' },
     termos:
-      'cards avulsos card avulso peça única post único story stories 9:16 feed 4:5 variação variações escolher outra variação fotos do pedido melhorar a foto melhorada tratar foto ideias buscar ideias aprendeu aprendizado aprendizados mediana teste contas de referência concorrente melhor horário agendar agendamento calendário publicar agora imagem gerada cenário produto referência de estilo revisor visual carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
+      'estilo vivo aprender com o meu instagram jeito de postar perguntas da estrategista respostas palavra colorida asteriscos selo botão cartão-postal prévia grande lançamento cards avulsos card avulso peça única post único story stories 9:16 feed 4:5 variação variações escolher outra variação fotos do pedido melhorar a foto melhorada tratar foto ideias buscar ideias aprendeu aprendizado aprendizados mediana teste contas de referência concorrente melhor horário agendar agendamento calendário publicar agora imagem gerada cenário produto referência de estilo revisor visual carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
     corpo: (
       <>
         <p>
@@ -1503,9 +1503,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             Escolha <b>quantos cards</b> (até 10), <b>quantas variações</b> de cada (até 3; no máximo 20 peças
-            por pedido), o <b>formato</b>, o <b>objetivo</b> (promoção, produto, aviso, data especial, frase,
-            institucional), o estilo e a ação que a peça pede. As variações dizem a mesma mensagem por
-            caminhos diferentes, para você escolher.
+            por pedido), o <b>formato</b>, o <b>objetivo</b> (promoção, lançamento, produto, aviso, data
+            especial, frase, institucional), o estilo e a ação que a peça pede. As variações dizem a mesma
+            mensagem por caminhos diferentes, para você escolher.
           </li>
           <li>
             Em <b>Fotos para usar neste pedido</b>, envie até 4 fotos (ou escolha das fotos da empresa) e diga
@@ -1514,17 +1514,44 @@ export const ARTIGOS: ArtigoAjuda[] = [
             feitas pela IA; a que não passa entra como foi enviada. O mesmo bloco está no pedido de carrossel.
           </li>
           <li>
-            Pronto, clique na variação que vai ser usada em cada card (a escolhida fica marcada).{' '}
-            <b>Editar</b> abre a peça no editor (com a Conversa com o time), <b>Outra variação</b> pede mais
-            uma diferente das que existem e <b>Publicar</b> leva à aba Publicação: no story, a peça vai como
-            story. Na caixa <b>Pedir ao time</b>, escreva o que mudar num card e o time faz uma variação nova
-            com isso, sem mexer nas que você já tem.
+            Clique em <b>Continuar</b>. A <b>estrategista</b> lê o pedido e o cérebro da marca e, se faltar
+            algo para a peça vender (o que o cliente ganha, a condição da oferta, para quem é, a ação), faz
+            até 4 perguntas com respostas prontas para tocar. O que você responder entra como fato confirmado:
+            o card pode dizer “1ª semana grátis” se você confirmou ali. Dá para <b>Pular e criar</b>. As
+            perguntas valem também no pedido de carrossel.
+          </li>
+          <li>
+            Cada variação sai num fundo diferente da marca (a cor principal, a de destaque e a clara), com a
+            logo salva, um selo no topo, a palavra mais importante do título na cor de destaque e o botão da
+            ação. No editor, a palavra entre *asteriscos* é a que ganha a cor.
+          </li>
+          <li>
+            Pronto, clique numa variação para vê-la grande, como sai no Instagram, com as setas para passar
+            entre as variações; <b>Usar esta</b> marca a escolhida de cada card. <b>Editar</b> abre a peça no
+            editor (com a Conversa com o time), <b>Outra variação</b> pede mais uma diferente das que existem
+            e <b>Publicar</b> leva à aba Publicação: no story, a peça vai como story. Na caixa{' '}
+            <b>Pedir ao time</b>, escreva o que mudar num card e o time faz uma variação nova com isso, sem
+            mexer nas que você já tem.
           </li>
           <li>
             <b>Baixar os escolhidos</b> baixa um .zip com a variação escolhida de cada card e as legendas. O
             pedido conta 1 na franquia do mês; outra variação não conta.
           </li>
         </Passos>
+        <h3>13. Com a cara do seu feed: o estilo Vivo e Aprender com o meu Instagram</h3>
+        <p>
+          O estilo <b>Vivo</b> é o jeito da maioria das marcas no Instagram: cor forte de fundo, foto de ponta
+          a ponta, palavra-chave colorida, selo e botão. Ele usa as cores, as fontes e a logo da sua
+          identidade visual. Em <b>Identidade visual › Aprender com o meu Instagram</b>, o diretor de arte
+          olha os seus posts mais recentes (com o Instagram conectado) e sugere as cores, o estilo, as fontes
+          e o <b>jeito de postar</b> da empresa. Confira, clique em <b>Usar na identidade</b> e salve: o time
+          passa a seguir isso em cada carrossel e card. O jeito de postar fica escrito ali e dá para editar.
+        </p>
+        <Nota>
+          Quando a peça fala de uma cidade, a imagem gerada é o cartão-postal dela (o lugar mais conhecido),
+          para quem vê reconhecer. A IA não cria rosto de pessoa em destaque: para ter gente nos posts, use as
+          fotos reais da empresa (dá para melhorar a foto no pedido).
+        </Nota>
       </>
     ),
   },

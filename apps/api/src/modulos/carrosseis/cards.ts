@@ -213,7 +213,13 @@ export async function trabalharCards(
     repo.fotos(db),
     cerebro.postsQueFuncionaram(db, 6),
     repo.titulosRecentes(db, 15),
-    cerebro.fontesParaOsFatos(db, { dossie: c.dossie, empresa, divulgar, assunto: p.assunto }),
+    cerebro.fontesParaOsFatos(db, {
+      dossie: c.dossie,
+      empresa,
+      divulgar,
+      assunto: p.assunto,
+      respostas: p.respostas,
+    }),
   ]);
   const aprendido = await aprender
     .paraOTime(db)

@@ -48,6 +48,7 @@ import * as conversa from './conversa.js';
 import { desenhar, materialDaConta } from './desenho.js';
 import * as imagens from './imagens.js';
 import { imagensLigadas } from './imagens.js';
+import * as perguntas from './perguntas.js';
 import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 import * as time from './time.js';
@@ -174,6 +175,10 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   r.get('/cards', async (_req, res) => {
     res.json({ lotes: await cards.lotes(pool), franquia: await franquia(), iaLigada: !!ia() });
   });
+  // v148: as perguntas da estrategista antes de criar (carrossel e cards).
+  r.post('/perguntas', async (req, res) => {
+    res.json(await perguntas.perguntas(pool, ia(), req.body));
+  });
   r.post('/cards', async (req, res) => {
     res.status(201).json(await cards.pedirCards(pool, ia(), req.body, franquia));
   });
@@ -288,6 +293,11 @@ export function rotasCarrosseis(deps: DepsApi): Router {
       ajustes: paletaDaIdentidade(g.identidade.cores).ajustes,
       atualizadaEm: g.atualizadaEm,
     });
+  });
+
+  // v148: lê os posts do Instagram da conta e sugere cores, estilo, fontes e o jeito de postar.
+  r.post('/identidade/aprender-instagram', async (_req, res) => {
+    res.json(await imagens.aprenderDoInstagram(pool, ia()));
   });
 
   r.put('/identidade', async (req, res) => {

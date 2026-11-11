@@ -1,4 +1,12 @@
-import type { FormatoPeca } from '@prospeccao/shared/carrosseis';
+import {
+  ESTILO,
+  ESTILOS,
+  type EstiloCarrossel,
+  FONTES_DO_PAR,
+  type FormatoPeca,
+  PARES_FONTES,
+  type ParFontes,
+} from '@prospeccao/shared/carrosseis';
 import { type ConfigImagem, conferirImagem, pedirImagem } from '../videos/imagens.js';
 import type { ClienteClaude } from './claude.js';
 
@@ -43,6 +51,10 @@ const linhaReferencia = (e: EstiloDaImagem) =>
   e.referencia
     ? `Inspire-se só no clima e na composição desta referência (não copie nada): ${e.referencia}`
     : '';
+
+/** v148: peça que fala de uma cidade: a imagem é o cartão-postal dela, pelo nome (dá para reconhecer o lugar). */
+export const CARTAO_POSTAL =
+  'Se a peça fala de uma cidade ou bairro, a cena é o cartão-postal dele pelo nome (ex.: Brasília → "o Congresso Nacional visto da Esplanada dos Ministérios, ao entardecer"; Salvador → "o Elevador Lacerda e a Baía de Todos-os-Santos"), nunca "uma cidade" genérica: quem vê tem que reconhecer o lugar.';
 
 const PROIBIDO =
   'Proibido: qualquer texto, letra, número, placa legível, logotipo, marca, marca d’água e moldura. Sem rosto de pessoa em destaque (pessoas só de costas, de longe ou só as mãos).';
@@ -237,4 +249,108 @@ export async function descreverReferencia(claude: ClienteClaude, jpeg: Uint8Arra
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 500);
+}
+
+/* ───────────────────────────── v148: aprender com o Instagram da empresa ───────────────────────────── */
+
+export interface JeitoDePostar {
+  cores: { principal: string; destaque: string; claro: string; texto: string };
+  estilo: EstiloCarrossel;
+  fontes: ParFontes;
+  /** Como a empresa posta, para o time seguir (composição, fotos, tipografia, selos, palavras marcadas). */
+  jeito: string;
+  /** Por que estas escolhas, em uma ou duas frases (a tela mostra). */
+  motivo: string;
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+const ESQUEMA_JEITO = {
+  type: 'object',
+  properties: {
+    principal: { type: 'string', description: 'A cor que mais aparece como fundo ou marca (hex #RRGGBB).' },
+    destaque: { type: 'string', description: 'A cor de destaque: palavras, selos, botões (hex #RRGGBB).' },
+    claro: {
+      type: 'string',
+      description: 'O fundo claro que a marca usa, ou um tom bem claro da principal (hex).',
+    },
+    texto: { type: 'string', description: 'A cor do texto sobre fundo claro (hex, bem escura).' },
+    estilo: {
+      type: 'string',
+      enum: [...ESTILOS],
+      description: `O estilo que mais se parece com os posts: ${ESTILOS.map((e) => `${e} (${ESTILO[e].descricao})`).join('; ')}`,
+    },
+    fontes: {
+      type: 'string',
+      enum: [...PARES_FONTES],
+      description: `O par de fontes mais parecido com os títulos: ${PARES_FONTES.map((p) => `${p} (${FONTES_DO_PAR[p].nome})`).join('; ')}`,
+    },
+    jeito: {
+      type: 'string',
+      description:
+        'De 60 a 160 palavras, para um designer seguir: o que costuma ter de fundo, como entram as fotos (pessoas, produto, ambiente, ponta a ponta ou em quadro), como é o título (caixa alta ou não, peso, palavras coloridas), selos, botões, ícones, onde fica a logo e o clima geral. Sem nomes de pessoas, sem copiar frases dos posts.',
+    },
+    motivo: { type: 'string', description: 'Em até 2 frases, o que levou a estas escolhas.' },
+  },
+  required: ['principal', 'destaque', 'claro', 'texto', 'estilo', 'fontes', 'jeito', 'motivo'],
+} as const;
+
+/**
+ * Lê os posts recentes da empresa (as imagens) e devolve o jeito de postar dela: as cores, o estilo e
+ * as fontes mais parecidos e uma descrição para o time seguir. Só sugere: a pessoa confere e aplica.
+ */
+export async function lerJeitoDePostar(
+  claude: ClienteClaude,
+  posts: { jpeg: Uint8Array; legenda?: string | null }[],
+  atual: { principal: string; destaque: string; claro: string; texto: string },
+): Promise<JeitoDePostar> {
+  const r = await claude.pedir({
+    agente: 'diretor de arte',
+    sistema: [
+      {
+        texto:
+          'Você é diretor de arte de uma agência. Olha o feed de uma empresa e descreve, com precisão de quem vai continuar o trabalho, como ela posta: cores, tipografia, composição e uso de fotos. Você descreve o estilo; não copia nada.',
+      },
+    ],
+    imagens: posts.map((p, i) => ({
+      tipo: 'image/jpeg' as const,
+      base64: Buffer.from(p.jpeg).toString('base64'),
+      legenda: `Post ${i + 1} do feed da empresa:`,
+    })),
+    mensagem: `Estes são os ${posts.length} posts mais recentes do Instagram da empresa. As cores que estão cadastradas hoje: principal ${atual.principal}, destaque ${atual.destaque}, claro ${atual.claro}, texto ${atual.texto} (troque se os posts mostrarem outras). Descreva o jeito de postar.`,
+    ferramenta: {
+      nome: 'jeito_de_postar',
+      descricao: 'O jeito de postar da empresa.',
+      esquema: ESQUEMA_JEITO,
+    },
+    maxTokens: 900,
+    temperatura: 0.2,
+    timeoutMs: 120_000,
+  });
+  const d = r.dados;
+  const cor = (v: unknown, padrao: string) =>
+    HEX.test(String(v ?? '').trim()) ? String(v).trim().toUpperCase() : padrao;
+  const estilo = (ESTILOS as readonly string[]).includes(String(d.estilo))
+    ? (d.estilo as EstiloCarrossel)
+    : 'vivo';
+  const fontes = (PARES_FONTES as readonly string[]).includes(String(d.fontes))
+    ? (d.fontes as ParFontes)
+    : 'moderno';
+  const limpo = (t: unknown, max: number) =>
+    String(t ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, max);
+  return {
+    cores: {
+      principal: cor(d.principal, atual.principal),
+      destaque: cor(d.destaque, atual.destaque),
+      claro: cor(d.claro, atual.claro),
+      texto: cor(d.texto, atual.texto),
+    },
+    estilo,
+    fontes,
+    jeito: limpo(d.jeito, 1500),
+    motivo: limpo(d.motivo, 300),
+  };
 }

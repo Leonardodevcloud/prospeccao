@@ -27,6 +27,15 @@ const notas = (n: number) => ({
 /** O que o Claude de mentira responde para cada agente (e o que cada um recebeu). */
 const recebidos: { agente: string; mensagem: string }[] = [];
 const RESPOSTAS: Record<string, Record<string, unknown>> = {
+  perguntas: {
+    perguntas: [
+      {
+        pergunta: 'Tem alguma condição na promoção?',
+        porque: 'Só entra no card o que você confirmar.',
+        sugestoes: ['Frete grátis', 'Não tem'],
+      },
+    ],
+  },
   cerebro: {
     nicho: 'Autopeças para oficinas em Salvador',
     publico: 'Mecânicos e donos de oficina da região',
@@ -115,7 +124,7 @@ function iaFalsa(): CarrosseisIa {
           }
           const uso = { ...USO_ZERO, entrada: 3000, saida: 800 };
           await medidor.depois(uso, 0.014, true);
-          const chave = ['plano_cards', 'cards', 'revisao'].includes(p.ferramenta.nome)
+          const chave = ['plano_cards', 'cards', 'revisao', 'perguntas'].includes(p.ferramenta.nome)
             ? p.ferramenta.nome
             : p.agente;
           return { dados: RESPOSTAS[chave] ?? {}, uso, custoUsd: 0.014 };
@@ -344,6 +353,53 @@ describe.skipIf(!URL_TESTE)('carrosséis: os cards avulsos (com Postgres)', () =
     expect(new TextDecoder().decode(arquivos['legendas.txt'])).toContain('CARD-01');
   });
 
+  it('v148: a estrategista pergunta antes, e a resposta vira fonte do pedido', async () => {
+    const q = await mandar('post', '/carrosseis/perguntas', {
+      tipo: 'cards',
+      assunto: 'Promoção da pastilha',
+      objetivo: 'promocao',
+      chamada: 'whatsapp',
+      formato: 'feed',
+    });
+    expect(q.status).toBe(200);
+    expect(q.body.perguntas).toEqual([
+      {
+        pergunta: 'Tem alguma condição na promoção?',
+        porque: 'Só entra no card o que você confirmar.',
+        sugestoes: ['Frete grátis', 'Não tem'],
+      },
+    ]);
+    expect(recebidos.at(-1)!.mensagem).toContain('Promoção da pastilha');
+
+    recebidos.length = 0;
+    const p = await mandar('post', '/carrosseis/cards', {
+      assunto: 'Promoção da pastilha',
+      objetivo: 'lancamento',
+      quantidade: 1,
+      variacoes: 2,
+      respostas: [{ pergunta: 'Tem alguma condição na promoção?', resposta: 'Frete grátis no bairro' }],
+    });
+    expect(p.status).toBe(201);
+    expect(await rodarUmPedido(pool, ia, log)).toBe(true);
+    const est = recebidos.find((r) => r.agente === 'estrategista')!.mensagem;
+    expect(est).toContain('Frete grátis no bairro');
+    expect(est).toContain('Lançamento');
+    const rev = recebidos.find((r) => r.agente === 'revisor' || r.agente === 'revisora');
+    if (rev) expect(rev.mensagem).toContain('Respostas de quem pediu');
+    const l = (await ler('/carrosseis/cards')).body.lotes.find(
+      (x: { pedidoId: number }) => x.pedidoId === p.body.id,
+    );
+    const fundos = l.cards[0].variacoes.map((v: { slide: { fundo: string } }) => v.slide.fundo);
+    expect(fundos).toEqual(['escuro', 'destaque']);
+    await mandar('delete', `/carrosseis/cards/${p.body.id}`);
+  });
+
+  it('v148: aprender com o Instagram pede o Instagram conectado com posts', async () => {
+    const r = await mandar('post', '/carrosseis/identidade/aprender-instagram');
+    expect(r.status).toBe(422);
+    expect(r.body.erro.mensagem).toContain('conecte o Instagram');
+  });
+
   it('apagar o lote tira as peças (a franquia do mês continua contada)', async () => {
     expect((await mandar('delete', `/carrosseis/cards/${lote}`)).status).toBe(200);
     expect((await ler('/carrosseis/cards')).body.lotes).toHaveLength(0);
@@ -351,6 +407,6 @@ describe.skipIf(!URL_TESTE)('carrosséis: os cards avulsos (com Postgres)', () =
       `SELECT count(*)::int AS n FROM comercial.carrosseis WHERE tipo = 'card'`,
     );
     expect(rows[0]!.n).toBe(0);
-    expect((await ler('/carrosseis/cards')).body.franquia.usados).toBe(1);
+    expect((await ler('/carrosseis/cards')).body.franquia.usados).toBe(2);
   });
 });

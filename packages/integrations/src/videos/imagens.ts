@@ -12,9 +12,14 @@ import type { ClienteClaude } from '../carrosseis/claude.js';
 export const URL_IMAGENS_OPENAI = 'https://api.openai.com/v1/images/generations';
 export const MODELO_IMAGEM_PADRAO = 'gpt-image-2';
 
+export const QUALIDADES_IMAGEM = ['low', 'medium', 'high'] as const;
+export type QualidadeImagem = (typeof QUALIDADES_IMAGEM)[number];
+
 export interface ConfigImagem {
   chave: string;
   modelo: string;
+  /** v148: a qualidade pedida ao GPT Image (padrão: medium; os carrosséis e cards usam high). */
+  qualidade?: QualidadeImagem;
   /** Para os testes (padrão: a API da OpenAI). */
   url?: string;
   urlEdicao?: string;
@@ -73,7 +78,7 @@ export async function pedirImagem(
       form.append('model', cfg.modelo);
       form.append('prompt', e.prompt);
       form.append('size', size);
-      form.append('quality', 'medium');
+      form.append('quality', cfg.qualidade ?? 'medium');
       form.append('output_format', 'jpeg');
       form.append('input_fidelity', 'high');
       form.append('n', '1');
@@ -92,7 +97,7 @@ export async function pedirImagem(
           model: cfg.modelo,
           prompt: e.prompt,
           size,
-          quality: 'medium',
+          quality: cfg.qualidade ?? 'medium',
           output_format: 'jpeg',
           output_compression: 90,
           n: 1,

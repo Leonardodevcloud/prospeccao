@@ -42,6 +42,9 @@ import * as repo from './repositorio.js';
 export const MODELO_ENV = 'CARROSSEIS_MODELO';
 
 /** O Claude dos carrosséis (a chave da plataforma) e o cliente de cada conta, com o consumo medido. */
+/** v148: o custo médio de uma imagem 4:5 do GPT Image por qualidade (conferir na Saúde e consumo). */
+export const CUSTO_MEDIO_IMAGEM = { low: 0.015, medium: 0.05, high: 0.2 } as const;
+
 export interface CarrosseisIa {
   modelo: string;
   cliente(db: Executor, contaId: number): ClienteClaude;
@@ -83,6 +86,7 @@ export function prepararCarrosseisIa(
     OPENAI_CHAVE?: string | null;
     CARROSSEIS_IMAGEM_MODELO?: string;
     CARROSSEIS_CUSTO_IMAGEM_USD?: number;
+    CARROSSEIS_IMAGEM_QUALIDADE?: 'low' | 'medium' | 'high';
   },
   armazenamento: Armazenamento | null = null,
 ): CarrosseisIa | null {
@@ -94,8 +98,14 @@ export function prepararCarrosseisIa(
     imagem:
       env.OPENAI_CHAVE && armazenamento
         ? {
-            config: { chave: env.OPENAI_CHAVE, modelo: env.CARROSSEIS_IMAGEM_MODELO || 'gpt-image-2' },
-            custoUsd: env.CARROSSEIS_CUSTO_IMAGEM_USD ?? 0.05,
+            config: {
+              chave: env.OPENAI_CHAVE,
+              modelo: env.CARROSSEIS_IMAGEM_MODELO || 'gpt-image-2',
+              qualidade: env.CARROSSEIS_IMAGEM_QUALIDADE ?? 'high',
+            },
+            custoUsd:
+              env.CARROSSEIS_CUSTO_IMAGEM_USD ??
+              CUSTO_MEDIO_IMAGEM[env.CARROSSEIS_IMAGEM_QUALIDADE ?? 'high'],
           }
         : null,
     armazenamento,
@@ -340,7 +350,13 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
     repo.fotos(db),
     cerebro.postsQueFuncionaram(db, 6),
     repo.titulosRecentes(db, 15),
-    cerebro.fontesParaOsFatos(db, { dossie: c.dossie, empresa, divulgar, assunto: p.assunto }),
+    cerebro.fontesParaOsFatos(db, {
+      dossie: c.dossie,
+      empresa,
+      divulgar,
+      assunto: p.assunto,
+      respostas: p.respostas,
+    }),
   ]);
   // v134: o que o time aprendeu com os posts da conta (e, de 10 em 10, 2 carrosséis são teste).
   const aprendido = await aprender

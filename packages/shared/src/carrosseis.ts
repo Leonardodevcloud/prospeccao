@@ -39,7 +39,7 @@ export const MAX_FOTOS_CONTA = 60;
 
 /* ───────────────────────────── Estilos, fontes e modelos ───────────────────────────── */
 
-export const ESTILOS = ['editorial', 'impacto', 'clean', 'foto'] as const;
+export const ESTILOS = ['editorial', 'impacto', 'clean', 'foto', 'vivo'] as const;
 export type EstiloCarrossel = (typeof ESTILOS)[number];
 export const ESTILO: Record<EstiloCarrossel, { nome: string; descricao: string }> = {
   editorial: {
@@ -54,6 +54,11 @@ export const ESTILO: Record<EstiloCarrossel, { nome: string; descricao: string }
   foto: {
     nome: 'Foto',
     descricao: 'A foto conta a história: capa e fotos de ponta a ponta, texto por cima.',
+  },
+  vivo: {
+    nome: 'Vivo',
+    descricao:
+      'O jeito da maioria das marcas: cor forte de fundo, foto de ponta a ponta, palavra-chave colorida, selo e botão.',
   },
 };
 
@@ -294,6 +299,8 @@ export const identidadeCarrosselEntrada = z.object({
   vende: texto(600),
   nuncaDizer: texto(400),
   pilares: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
+  /** v148: como a empresa costuma postar (lido dos posts do Instagram dela; a pessoa pode editar). */
+  jeitoDePostar: texto(1500),
 });
 export type IdentidadeCarrossel = z.infer<typeof identidadeCarrosselEntrada>;
 
@@ -312,6 +319,7 @@ export const IDENTIDADE_PADRAO: IdentidadeCarrossel = {
   vende: '',
   nuncaDizer: '',
   pilares: [],
+  jeitoDePostar: '',
 };
 
 /** Junta o que veio do banco com o padrão (campo novo ganha o padrão). */
@@ -866,11 +874,13 @@ interface Tema {
   citacao: TipoFundo;
   chamada: TipoFundo;
   capa: 'meio' | 'base';
-  divisor: 'linha' | 'barra';
+  divisor: 'linha' | 'barra' | 'nenhum';
   cartoes: 'nenhum' | 'cheio' | 'borda';
   cantos: number;
   /** Foto ocupa o slide todo (com o texto numa caixa por cima) ou fica num quadro. */
   fotoCheia: boolean;
+  /** v148: o rótulo de cima vira um selo (fundo na cor de destaque). */
+  selo?: boolean;
 }
 
 const TEMAS: Record<EstiloCarrossel, Tema> = {
@@ -913,6 +923,17 @@ const TEMAS: Record<EstiloCarrossel, Tema> = {
     cartoes: 'cheio',
     cantos: 20,
     fotoCheia: true,
+  },
+  vivo: {
+    base: 'escuro',
+    citacao: 'destaque',
+    chamada: 'destaque',
+    capa: 'base',
+    divisor: 'nenhum',
+    cartoes: 'cheio',
+    cantos: 24,
+    fotoCheia: true,
+    selo: true,
   },
 };
 
@@ -998,10 +1019,92 @@ const textoNo = (
   extra: Estilo = {},
 ) => div({ ...estiloTexto(f, tamanho, alturaLinha, cor), ...extra }, t);
 
-/** Rótulo pequeno em caixa alta, na cor de destaque. */
+/** A cor da palavra marcada: o destaque; no fundo da cor de destaque, a principal (ou a que ler). */
+const corDoRealce = (c: Contexto) => (c.tipoFundo === 'destaque' ? c.cores.botaoFundo : c.cores.acento);
+
+/** v148: o título com *palavras marcadas* (a marca some; a palavra fica na cor de destaque). */
+export const semMarcas = (t: string) => t.replace(/\*/g, '');
+
+function tituloNo(
+  c: Contexto,
+  t: string,
+  f: FonteMedida,
+  tamanho: number,
+  alturaLinha: number,
+  cor: string,
+  extra: Estilo = {},
+): No {
+  const partes = t.split(/\*([^*\n]+)\*/g);
+  if (partes.length < 3) return textoNo(semMarcas(t), f, tamanho, alturaLinha, cor, extra);
+  // Satori e o navegador escrevem os pedaços em linha quando a caixa é "block".
+  const filhos = partes
+    .map((p, i) =>
+      i % 2 === 1
+        ? ({ type: 'span', props: { style: { color: corDoRealce(c) }, children: p } } as No)
+        : semMarcas(p),
+    )
+    .filter((p) => p !== '');
+  return {
+    type: 'div',
+    props: {
+      style: { ...estiloTexto(f, tamanho, alturaLinha, cor), ...extra, display: 'block' },
+      children: filhos,
+    },
+  };
+}
+
+/** Rótulo pequeno em caixa alta, na cor de destaque (no estilo Vivo, um selo). */
 function sobretituloNo(c: Contexto, t: string, cor = c.cores.acentoTexto): No | null {
   if (!t) return null;
+  if (c.tema.selo) {
+    const fundo = c.tipoFundo === 'destaque' ? c.cores.botaoFundo : c.cores.acento;
+    return div(
+      {
+        padding: '12px 26px',
+        backgroundColor: fundo,
+        borderRadius: 999,
+        alignSelf: 'flex-start',
+        flexShrink: 0,
+      },
+      textoNo(t, fonteCorpo(c, 'forte'), 26, 1.1, primeiraQueLe(fundo, 4.5, BRANCO, c.cores.fundo, PRETO), {
+        letterSpacing: 2.4,
+        textTransform: 'uppercase',
+      }),
+    );
+  }
   return textoNo(t, fonteCorpo(c, 'forte'), 26, 1.2, cor, { letterSpacing: 3.6, textTransform: 'uppercase' });
+}
+
+/** Card avulso (peça de um slide só): a logo salva vai sempre, e o botão da ação também. */
+const sozinho = (c: Contexto) => c.total <= 1;
+const ALTURA_BOTAO_CARD = 38 * 1.2 + 52 + 48;
+
+function botaoNo(c: Contexto, marginTop = 48): No | null {
+  if (!c.s.botao) return null;
+  return div(
+    {
+      marginTop,
+      alignSelf: 'flex-start',
+      padding: '24px 40px',
+      backgroundColor: c.cores.botaoFundo,
+      borderRadius: c.tema.cantos ? 999 : 0,
+      flexShrink: 0,
+    },
+    textoNo(c.s.botao, fonteCorpo(c, 'forte'), 38, 1.2, c.cores.botaoTexto),
+  );
+}
+
+/** O botão do card nos modelos que não são a chamada (no carrossel, o botão fica só na chamada). */
+const botaoDoCard = (c: Contexto) => (sozinho(c) && c.s.modelo !== 'chamada' ? botaoNo(c) : null);
+const reservaDoBotao = (c: Contexto) =>
+  sozinho(c) && c.s.modelo !== 'chamada' && c.s.botao ? ALTURA_BOTAO_CARD : 0;
+
+/** A logo por cima, no canto, para os modelos que não têm a logo no topo. */
+function logoNoCanto(c: Contexto): No | null {
+  if (!sozinho(c)) return null;
+  const l = logoNo(c);
+  if (!l) return null;
+  return div({ position: 'absolute', top: M.topo - 8, right: LADO, alignItems: 'center', height: 60 }, l);
 }
 
 function logoNo(c: Contexto, altura = 52): No | null {
@@ -1095,6 +1198,8 @@ function quadro(
     alinhar?: keyof typeof ALINHAR;
     rodape?: No | null;
     atras?: No[];
+    /** O modelo já põe a logo no topo (capa, chamada). */
+    comLogo?: boolean;
   },
 ): No {
   // O quadro cresce dentro da raiz (flexGrow): com altura fixa ou 100%, o Satori soma o espaçamento
@@ -1112,6 +1217,7 @@ function quadro(
         overflow: 'hidden',
       },
       ...(partes.atras ?? []),
+      partes.comLogo ? null : logoNoCanto(c),
       div(
         {
           flexDirection: 'column',
@@ -1125,13 +1231,15 @@ function quadro(
           width: '100%',
         },
         ...partes.corpo,
+        botaoDoCard(c),
       ),
       partes.rodape ?? null,
     ),
   );
 }
 
-function divisorNo(c: Contexto, cor = c.cores.texto): No {
+function divisorNo(c: Contexto, cor = c.cores.texto): No | null {
+  if (c.tema.divisor === 'nenhum') return null;
   return c.tema.divisor === 'linha'
     ? div({ width: 72, height: 3, backgroundColor: cor })
     : div({ width: 88, height: 10, backgroundColor: c.cores.acento, borderRadius: c.tema.cantos ? 5 : 0 });
@@ -1181,7 +1289,7 @@ function capa(c: Contexto): No {
   const topo = div(
     { width: '100%', justifyContent: 'space-between', alignItems: 'center', minHeight: 52, flexShrink: 0 },
     sobretituloNo(c, s.sobretitulo) ?? div({}),
-    c.id.logoNaCapa ? logoNo(c) : null,
+    c.id.logoNaCapa || sozinho(c) ? logoNo(c) : null,
   );
   // Estilos de foto em quadro (Editorial, Clean): a foto entra na capa como um quadro em cima do título.
   const fotoEmQuadro = !!c.foto && !c.tema.fotoCheia;
@@ -1192,7 +1300,7 @@ function capa(c: Contexto): No {
     [
       {
         id: 't',
-        texto: s.titulo,
+        texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
         min: 56,
@@ -1212,10 +1320,11 @@ function capa(c: Contexto): No {
         antes: 36,
       },
     ],
-    M.conteudo - reservado - (comFoto ? 360 : 0),
+    M.conteudo - reservaDoBotao(c) - reservado - (comFoto ? 360 : 0),
   );
   if (!ajuste.cabe) c.avisos.push('O título da capa está longo demais: encurte para caber sem apertar.');
-  const titulo = textoNo(
+  const titulo = tituloNo(
+    c,
     s.titulo,
     fonteTitulo(c),
     ajuste.tamanhos.t!,
@@ -1255,12 +1364,14 @@ function capa(c: Contexto): No {
         div({ flexDirection: 'column', flexGrow: 1, justifyContent: 'center', paddingTop: 40 }, titulo, sub),
       ],
       rodape: rodapeNo(c, { seta: true, linha: c.tema.divisor === 'linha' }),
+      comLogo: true,
     });
   return quadro(c, {
     atras: comFoto ? fotoCheiaNo(c, c.foto!) : [],
     alinhar: naBase ? 'entre' : 'inicio',
     corpo: [topo, miolo],
     rodape: rodapeNo(c, { seta: true, linha: c.tema.divisor === 'linha' && !comFoto }),
+    comLogo: true,
   });
 }
 
@@ -1273,7 +1384,7 @@ function item(c: Contexto): No {
     [
       {
         id: 't',
-        texto: s.titulo,
+        texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
         min: 48,
@@ -1293,13 +1404,13 @@ function item(c: Contexto): No {
         antes: 44 + 3 + 44,
       },
     ],
-    M.conteudo - alturaNumero,
+    M.conteudo - reservaDoBotao(c) - alturaNumero,
   );
   if (!ajuste.cabe) c.avisos.push('O texto deste slide está longo demais: encurte o título ou o texto.');
   return quadro(c, {
     corpo: [
       textoNo(numero, fonteTitulo(c, true), tamNumero, 0.86, c.cores.acento, { height: alturaNumero }),
-      textoNo(s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
+      tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
         marginTop: 44,
       }),
       s.texto ? div({ marginTop: 44 }, divisorNo(c)) : null,
@@ -1320,7 +1431,7 @@ function textoModelo(c: Contexto): No {
     [
       {
         id: 't',
-        texto: s.titulo,
+        texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
         min: 48,
@@ -1340,13 +1451,13 @@ function textoModelo(c: Contexto): No {
         antes: 44 + 3 + 44,
       },
     ],
-    M.conteudo - (temSobre ? 32 : 0),
+    M.conteudo - reservaDoBotao(c) - (temSobre ? 32 : 0),
   );
   if (!ajuste.cabe) c.avisos.push('O texto deste slide está longo demais: divida em dois slides.');
   return quadro(c, {
     corpo: [
       sobretituloNo(c, s.sobretitulo),
-      textoNo(s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
+      tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
         marginTop: temSobre ? 28 : 0,
       }),
       s.texto ? div({ marginTop: 44 }, divisorNo(c)) : null,
@@ -1373,7 +1484,7 @@ function lista(c: Contexto): No {
   const blocos: BlocoTexto[] = [
     {
       id: 't',
-      texto: s.titulo,
+      texto: semMarcas(s.titulo),
       fonte: fonteTitulo(c),
       largura: MIOLO,
       min: 44,
@@ -1424,7 +1535,7 @@ function lista(c: Contexto): No {
   return quadro(c, {
     corpo: [
       sobretituloNo(c, s.sobretitulo),
-      textoNo(s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
+      tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
         marginTop: temSobre ? 24 : 0,
       }),
       ...linhas,
@@ -1445,7 +1556,7 @@ function numero(c: Contexto): No {
     [
       {
         id: 't',
-        texto: s.titulo,
+        texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
         min: 44,
@@ -1465,13 +1576,16 @@ function numero(c: Contexto): No {
         antes: 32,
       },
     ],
-    M.conteudo - alturaNum,
+    M.conteudo - reservaDoBotao(c) - alturaNum - (c.tema.selo && s.sobretitulo ? 100 : 0),
   );
   if (!ajuste.cabe) c.avisos.push('O texto deste slide está longo demais: encurte.');
   return quadro(c, {
     corpo: [
+      c.tema.selo && s.sobretitulo
+        ? div({ marginBottom: 44, flexShrink: 0 }, sobretituloNo(c, s.sobretitulo))
+        : null,
       textoNo(destaque, fonteNum, tamNum, 0.95, c.cores.acento, { height: alturaNum, whiteSpace: 'nowrap' }),
-      textoNo(s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
+      tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
         marginTop: 40,
       }),
       s.texto
@@ -1492,7 +1606,7 @@ function citacao(c: Contexto): No {
     [
       {
         id: 't',
-        texto: s.titulo,
+        texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
         min: 48,
@@ -1512,7 +1626,7 @@ function citacao(c: Contexto): No {
         antes: 48,
       },
     ],
-    M.conteudo - alturaAspas,
+    M.conteudo - reservaDoBotao(c) - alturaAspas,
   );
   if (!ajuste.cabe) c.avisos.push('A frase está longa demais para a citação: encurte.');
   return quadro(c, {
@@ -1528,7 +1642,9 @@ function citacao(c: Contexto): No {
           { marginTop: -30 },
         ),
       ),
-      textoNo(s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, alturaLinha, c.cores.texto, { marginTop: 28 }),
+      tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, alturaLinha, c.cores.texto, {
+        marginTop: 28,
+      }),
       s.texto ? div({ marginTop: 48, width: 72, height: 3, backgroundColor: c.cores.acento }) : null,
       s.texto
         ? textoNo(s.texto, fonteCorpo(c, 'medio'), ajuste.tamanhos.x!, 1.4, c.cores.suave, { marginTop: 28 })
@@ -1549,7 +1665,7 @@ function comparacao(c: Contexto): No {
     [
       {
         id: 't',
-        texto: s.titulo,
+        texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
         min: 44,
@@ -1588,7 +1704,7 @@ function comparacao(c: Contexto): No {
       : { fundo: c.cores.cartao, texto: c.cores.cartaoTexto, rotulo: c.cores.suave };
   return quadro(c, {
     corpo: [
-      textoNo(s.titulo, fonteTitulo(c), ajusteT.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto),
+      tituloNo(c, s.titulo, fonteTitulo(c), ajusteT.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto),
       div(
         { marginTop: 56, gap: vao, width: '100%', alignItems: 'stretch' },
         ...colunas.map((col, i) => {
@@ -1632,7 +1748,7 @@ function fotoModelo(c: Contexto): No {
       [
         {
           id: 't',
-          texto: s.titulo,
+          texto: semMarcas(s.titulo),
           fonte: fonteTitulo(c),
           largura: larguraCaixa,
           min: 40,
@@ -1652,7 +1768,7 @@ function fotoModelo(c: Contexto): No {
           antes: 20,
         },
       ],
-      440,
+      440 - (sozinho(c) && c.s.botao ? 110 : 0),
     );
     if (!ajuste.cabe) c.avisos.push('O texto sobre a foto está longo demais: encurte.');
     return div(
@@ -1669,11 +1785,13 @@ function fotoModelo(c: Contexto): No {
           backgroundColor: c.cores.fundo,
           borderRadius: tema.cantos,
         },
-        textoNo(s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto),
+        tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto),
         s.texto
           ? textoNo(s.texto, fonteCorpo(c), ajuste.tamanhos.x!, 1.42, c.cores.suave, { marginTop: 20 })
           : null,
+        sozinho(c) ? botaoNo(c, 28) : null,
       ),
+      logoNoCanto(c),
     );
   }
   const alturaFoto = 720 + Math.round(M.extra * 0.6);
@@ -1681,7 +1799,7 @@ function fotoModelo(c: Contexto): No {
     [
       {
         id: 't',
-        texto: s.titulo,
+        texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
         min: 40,
@@ -1701,7 +1819,7 @@ function fotoModelo(c: Contexto): No {
         antes: 24,
       },
     ],
-    M.conteudo - alturaFoto,
+    M.conteudo - reservaDoBotao(c) - alturaFoto,
   );
   if (!ajuste.cabe) c.avisos.push('O texto abaixo da foto está longo demais: encurte.');
   const quadroFoto: No = c.foto
@@ -1736,7 +1854,7 @@ function fotoModelo(c: Contexto): No {
     alinhar: 'inicio',
     corpo: [
       quadroFoto,
-      textoNo(s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
+      tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
         marginTop: 48,
       }),
       s.texto
@@ -1756,7 +1874,7 @@ function chamada(c: Contexto): No {
     [
       {
         id: 't',
-        texto: s.titulo,
+        texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
         min: 52,
@@ -1776,7 +1894,7 @@ function chamada(c: Contexto): No {
         antes: 32,
       },
     ],
-    M.conteudo - 52 - 24 - alturaBotao,
+    M.conteudo - reservaDoBotao(c) - 52 - 24 - alturaBotao,
   );
   if (!ajuste.cabe) c.avisos.push('A chamada final está longa demais: encurte o título.');
   const botao = temBotao
@@ -1794,10 +1912,13 @@ function chamada(c: Contexto): No {
   return quadro(c, {
     alinhar: 'inicio',
     corpo: [
-      div({ minHeight: 52, alignItems: 'center', flexShrink: 0 }, c.id.logoNaChamada ? logoNo(c) : null),
+      div(
+        { minHeight: 52, alignItems: 'center', flexShrink: 0 },
+        c.id.logoNaChamada || sozinho(c) ? logoNo(c) : null,
+      ),
       div(
         { flexDirection: 'column', flexGrow: 1, justifyContent: 'center' },
-        textoNo(s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto),
+        tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto),
         botao,
         s.texto
           ? textoNo(s.texto, fonteCorpo(c), ajuste.tamanhos.x!, 1.4, c.cores.suave, { marginTop: 32 })
@@ -1805,6 +1926,7 @@ function chamada(c: Contexto): No {
       ),
     ],
     rodape: rodapeNo(c, { numero: false }),
+    comLogo: true,
   });
 }
 
@@ -1850,7 +1972,7 @@ export function montarSlide(e: EntradaMontar): SlideMontado {
   // Passou do tamanho que lê bem no celular: o slide ainda cabe (a letra diminui), mas avisa.
   const modelo = MODELO[e.slide.modelo];
   for (const cp of modelo.campos)
-    if (e.slide[cp.campo].trim().length > cp.limite)
+    if (semMarcas(e.slide[cp.campo]).trim().length > cp.limite)
       avisos.push(`${cp.rotulo}: passou de ${cp.limite} letras, o tamanho que lê bem no celular.`);
   if (modelo.itens && e.slide.itens.some((i) => i.trim().length > modelo.itens!.limite))
     avisos.push(`Itens da lista: use até ${modelo.itens.limite} letras em cada um.`);

@@ -259,6 +259,40 @@ export const TRATAMENTO_FOTO: Record<TratamentoFoto, { nome: string; dica: strin
   cenario: { nome: 'Produto num cenário novo', dica: 'O produto fica igual; a IA troca o fundo e a luz.' },
 };
 export const MAX_FOTOS_PEDIDO = 4;
+
+/* ── v148: as perguntas do time antes de criar ── */
+
+export const MAX_PERGUNTAS_TIME = 4;
+/** Uma pergunta da estrategista, com as respostas prontas para tocar (a pessoa pode escrever outra). */
+export interface PerguntaDoTime {
+  pergunta: string;
+  /** Por que ela pergunta (uma linha). */
+  porque: string;
+  sugestoes: string[];
+}
+/** O que a pessoa respondeu: vira fonte do pedido (o card pode dizer o que foi confirmado aqui). */
+export const respostasEntrada = z
+  .array(
+    z.object({
+      pergunta: z.string().trim().min(3).max(200),
+      resposta: z.string().trim().min(1).max(400),
+    }),
+  )
+  .max(MAX_PERGUNTAS_TIME + 2)
+  .default([]);
+export type RespostaDoTime = z.infer<typeof respostasEntrada>[number];
+
+/** O pedido de perguntas: o mesmo rascunho do formulário (carrossel ou cards). */
+export const perguntasEntrada = z.object({
+  tipo: z.enum(['carrossel', 'cards']),
+  assunto: z.string().trim().max(1000).default(''),
+  divulgarId: z.number().int().positive().nullable().default(null),
+  objetivo: z.string().trim().max(30).default(''),
+  chamada: z.string().trim().max(20).default(''),
+  formato: z.string().trim().max(10).default('feed'),
+  fotos: z.number().int().min(0).max(MAX_FOTOS_PEDIDO).default(0),
+});
+export type PedidoDePerguntas = z.infer<typeof perguntasEntrada>;
 export const fotosDoPedidoEntrada = z
   .array(
     z.object({
@@ -293,6 +327,8 @@ export const pedidoTimeEntrada = z
     ideiaId: z.number().int().positive().nullable().default(null),
     /** v144: as fotos enviadas para este pedido (entram nos slides, tratadas como escolhido). */
     fotos: fotosDoPedidoEntrada,
+    /** v148: as respostas às perguntas do time (viram fonte do pedido). */
+    respostas: respostasEntrada,
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga sobre o que é o carrossel (ou escolha o que divulgar).',
@@ -710,10 +746,22 @@ export function mudancasEntre(antes: EstadoCarrossel, depois: EstadoCarrossel): 
 /* ───────────────────────────── v144: os cards avulsos ───────────────────────────── */
 
 /** O que o card faz: guia o time no texto e no modelo de cada card. */
-export const OBJETIVOS_CARD = ['promocao', 'produto', 'aviso', 'data', 'frase', 'institucional'] as const;
+export const OBJETIVOS_CARD = [
+  'promocao',
+  'lancamento',
+  'produto',
+  'aviso',
+  'data',
+  'frase',
+  'institucional',
+] as const;
 export type ObjetivoCard = (typeof OBJETIVOS_CARD)[number];
 export const OBJETIVO_CARD: Record<ObjetivoCard, { nome: string; dica: string }> = {
   promocao: { nome: 'Promoção', dica: 'oferta com preço, prazo e condição exatos; o preço em destaque' },
+  lancamento: {
+    nome: 'Lançamento',
+    dica: 'novidade, produto novo ou chegada numa cidade: o que muda para o cliente, com a data em destaque e tom de venda',
+  },
   produto: { nome: 'Produto', dica: 'um produto ou serviço e por que vale a pena' },
   aviso: { nome: 'Aviso', dica: 'horário, mudança, comunicado: claro e curto' },
   data: { nome: 'Data especial', dica: 'data comemorativa ligada à empresa, sem clichê' },
@@ -746,6 +794,8 @@ export const pedidoCardsEntrada = z
     gerarImagens: z.boolean().default(false),
     referenciaId: z.number().int().positive().nullable().default(null),
     fotos: fotosDoPedidoEntrada,
+    /** v148: as respostas às perguntas do time (viram fonte do pedido). */
+    respostas: respostasEntrada,
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga o que os cards precisam dizer (ou escolha o que divulgar).',

@@ -292,7 +292,14 @@ export async function fontesDoDossie(db: Executor, comSite = true): Promise<Font
 /** As fontes que um fato do carrossel pode citar (a conferência do revisor procura o trecho nelas). */
 export async function fontesParaOsFatos(
   db: Executor,
-  d: { dossie: DossieMarca; empresa: string; divulgar: DivulgarEntrada | null; assunto: string },
+  d: {
+    dossie: DossieMarca;
+    empresa: string;
+    divulgar: DivulgarEntrada | null;
+    assunto: string;
+    /** v148: as respostas às perguntas do time (fato confirmado por quem pediu). */
+    respostas?: { pergunta: string; resposta: string }[];
+  },
 ): Promise<FonteDoTime[]> {
   const f: FonteDoTime[] = [{ rotulo: 'Cérebro da marca', texto: textoDoDossie(d.dossie, d.empresa) }];
   if (d.divulgar)
@@ -309,6 +316,11 @@ export async function fontesParaOsFatos(
         .join('\n'),
     });
   if (d.assunto.trim()) f.push({ rotulo: 'Pedido de quem criou', texto: d.assunto });
+  if (d.respostas?.length)
+    f.push({
+      rotulo: 'Respostas de quem pediu',
+      texto: d.respostas.map((r) => `${r.pergunta}: ${r.resposta}`).join('\n'),
+    });
   const { perfil, conferidas } = await lerPerfil(db);
   if (Object.keys(conferidas).length) f.push(...fontesDoPerfil(perfil, d.empresa));
   // O Cérebro da empresa (quando ligado): o assunto do pedido e o que divulgar viram perguntas.

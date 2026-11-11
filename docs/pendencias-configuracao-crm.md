@@ -382,6 +382,13 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 6. [ ] Em até 6 horas depois de ligar (e depois 1 vez por semana), ver em **Revisar** no Cérebro a nota "Aprendizados do Instagram — <conta> — semana …" (ou clicar em Enviar aprendizados agora). Aprove se fizer sentido para a equipe. Conta sem números do Instagram não manda nada.
 7. [ ] Os tokens do Claude que já existiam continuam valendo só no conector do Claude (a migration marca todos como `claude`).
 
+## 4aa. Cards e carrosséis com a cara do feed (v148)
+1. [ ] **Migration 106** roda sozinha no redeploy da **api** (depois o front publica sozinho).
+2. [ ] Em Carrosséis › **Identidade visual**, clicar em **Aprender com o meu Instagram** (precisa do Instagram conectado e dos posts lidos; são lidos de 6 em 6 horas). Conferir as cores, o estilo e o jeito de postar sugeridos, **Usar na identidade** e **Salvar**.
+3. [ ] Conferir que a **logo** está salva na Identidade visual (ou em Marca e domínio): os cards usam a logo em todo modelo.
+4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
+5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
+
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.
 - [ ] Aba "Plano e módulos": ajustar usuários e leads/mês se o combinado foi diferente, e a mensalidade combinada.

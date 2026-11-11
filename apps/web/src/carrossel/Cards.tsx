@@ -20,6 +20,8 @@ import {
   OBJETIVOS_CARD,
   type ObjetivoCard,
   PALAVRA_COMENTAR,
+  type PerguntaDoTime,
+  type RespostaDoTime,
   ROTULO_DIVULGAR,
   type VariacaoCard,
 } from '@prospeccao/shared/carrosseis-time';
@@ -33,6 +35,8 @@ import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, useIdentidade } from './dados';
 import { FotosDoPedido } from './Imagens';
+import { PerguntasDoTime, usePerguntas } from './Perguntas';
+import { PreviaDoCard } from './PreviaDoCard';
 
 /**
  * Cards avulsos (v144): peças de um slide só, no feed (4:5) ou no story (9:16). A pessoa diz o que
@@ -179,8 +183,11 @@ function NovoPedidoDeCards(props: {
   const [usarFotos, setUsarFotos] = useState(true);
   const [gerarImagens, setGerarImagens] = useState(false);
   const [fotosPedido, setFotosPedido] = useState<FotoDoPedido[]>([]);
+  // v148: antes de criar, a estrategista pode perguntar (sem perguntas, cria direto).
+  const [perguntas, setPerguntas] = useState<PerguntaDoTime[] | null>(null);
+  const perguntar = usePerguntas();
   const pedir = useMutation({
-    mutationFn: () =>
+    mutationFn: (respostas: RespostaDoTime[]) =>
       api('/carrosseis/cards', {
         metodo: 'POST',
         corpo: {
@@ -196,11 +203,13 @@ function NovoPedidoDeCards(props: {
           usarFotos,
           gerarImagens,
           fotos: fotosPedido,
+          respostas,
         },
       }),
     onSuccess: () => {
       setAssunto('');
       setFotosPedido([]);
+      setPerguntas(null);
       void cliente.invalidateQueries({ queryKey: ['carrosseis', 'cards'] });
       props.aoPedido();
     },
@@ -220,8 +229,28 @@ function NovoPedidoDeCards(props: {
     pecas <= MAX_PECAS_PEDIDO;
   const enviar = (e: FormEvent) => {
     e.preventDefault();
-    if (pode) pedir.mutate();
+    if (!pode) return;
+    perguntar.mutate(
+      { tipo: 'cards', assunto, divulgarId, objetivo, chamada, formato, fotos: fotosPedido.length },
+      {
+        onSuccess: (r) => (r.perguntas.length ? setPerguntas(r.perguntas) : pedir.mutate([])),
+        // A pergunta é ajuda: se falhar, o pedido segue sem ela.
+        onError: () => pedir.mutate([]),
+      },
+    );
   };
+  const textoCriar = `Criar ${pecas} ${pecas === 1 ? 'peça' : 'peças'} com o time`;
+  if (perguntas)
+    return (
+      <PerguntasDoTime
+        perguntas={perguntas}
+        criando={pedir.isPending}
+        erro={pedir.error}
+        textoCriar={textoCriar}
+        aoCriar={(r) => pedir.mutate(r)}
+        aoVoltar={() => setPerguntas(null)}
+      />
+    );
   const estiloDaIdentidade = identidade.data?.identidade.estilo;
 
   return (
@@ -414,8 +443,17 @@ function NovoPedidoDeCards(props: {
         <Mensagem tipo="aviso">Até {MAX_PECAS_PEDIDO} peças por pedido (cards × variações).</Mensagem>
       )}
       {pedir.error && <ErroDaApi erro={pedir.error} />}
-      <Button type="submit" variant="primary" icon="sparkles" disabled={!pode || pedir.isPending}>
-        {pedir.isPending ? 'Chamando o time…' : `Criar ${pecas} ${pecas === 1 ? 'peça' : 'peças'} com o time`}
+      <Button
+        type="submit"
+        variant="primary"
+        icon="arrow-right"
+        disabled={!pode || pedir.isPending || perguntar.isPending}
+      >
+        {perguntar.isPending
+          ? 'A estrategista está lendo…'
+          : pedir.isPending
+            ? 'Chamando o time…'
+            : 'Continuar'}
       </Button>
     </form>
   );
@@ -423,7 +461,7 @@ function NovoPedidoDeCards(props: {
 
 /* ───────────────────────────── Um pedido (o lote) ───────────────────────────── */
 
-const imagemDaPeca = (v: VariacaoCard) => `/api/carrosseis/${v.id}/slides/0?largura=360&v=${v.versao}`;
+const imagemDaPeca = (v: VariacaoCard) => `/api/carrosseis/${v.id}/slides/0?largura=480&v=${v.versao}`;
 
 function Lote(props: { l: LoteCards }) {
   const { l } = props;
@@ -431,6 +469,8 @@ function Lote(props: { l: LoteCards }) {
   const atualizar = () => void cliente.invalidateQueries({ queryKey: ['carrosseis', 'cards'] });
   const [pedidoCard, setPedidoCard] = useState(1);
   const [pedidoTexto, setPedidoTexto] = useState('');
+  // v148: a prévia grande (o card e a variação abertos).
+  const [previa, setPrevia] = useState<{ card: number; variacao: number } | null>(null);
   const escolher = useMutation({
     mutationFn: (id: number) => api(`/carrosseis/cards/escolher/${id}`, { metodo: 'POST' }),
     onSuccess: atualizar,
@@ -493,25 +533,41 @@ function Lote(props: { l: LoteCards }) {
                 <li key={c.card} className="cards-card">
                   <span className="cards-card__rotulo">
                     Card {c.card}
-                    {escolhida.slide?.titulo ? ` · ${escolhida.slide.titulo}` : ''}
+                    {escolhida.slide?.titulo ? ` · ${escolhida.slide.titulo.replace(/\*/g, '')}` : ''}
                   </span>
                   <div className="cards-card__variacoes">
-                    {c.variacoes.map((v) => (
-                      <button
-                        key={v.id}
-                        type="button"
-                        className="cards-card__variacao"
-                        aria-pressed={v.escolhido}
-                        aria-label={`Card ${c.card}, variação ${v.variacao}${v.escolhido ? ' (escolhida)' : ''}`}
-                        onClick={() => !v.escolhido && escolher.mutate(v.id)}
-                      >
-                        <img src={imagemDaPeca(v)} alt="" loading="lazy" />
-                        {v.escolhido && (
-                          <span className="cards-card__marca" aria-hidden="true">
-                            <Icon name="check" size={12} />
+                    {c.variacoes.map((v, k) => (
+                      <div key={v.id} className="cards-card__peca">
+                        <button
+                          type="button"
+                          className="cards-card__variacao"
+                          data-escolhida={v.escolhido || undefined}
+                          aria-label={`Ver o card ${c.card}, variação ${v.variacao}, grande${v.escolhido ? ' (escolhida)' : ''}`}
+                          onClick={() => setPrevia({ card: c.card, variacao: k })}
+                        >
+                          <img src={imagemDaPeca(v)} alt="" loading="lazy" />
+                          {v.escolhido && (
+                            <span className="cards-card__marca" aria-hidden="true">
+                              <Icon name="check" size={12} />
+                            </span>
+                          )}
+                          <span className="cards-card__ampliar" aria-hidden="true">
+                            <Icon name="maximize-2" size={14} />
                           </span>
+                        </button>
+                        {v.escolhido ? (
+                          <span className="cards-card__estado">Escolhida</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="link-botao cards-card__usar"
+                            disabled={escolher.isPending}
+                            onClick={() => escolher.mutate(v.id)}
+                          >
+                            Usar esta
+                          </button>
                         )}
-                      </button>
+                      </div>
                     ))}
                     {fazendo && (
                       <span className="cards-card__variacao cards-card__variacao--fazendo" aria-live="polite">
@@ -609,6 +665,26 @@ function Lote(props: { l: LoteCards }) {
           </form>
         </>
       )}
+      {previa &&
+        (() => {
+          const c = l.cards.find((x) => x.card === previa.card);
+          if (!c) return null;
+          return (
+            <PreviaDoCard
+              card={c.card}
+              variacoes={c.variacoes}
+              inicial={previa.variacao}
+              formato={l.formato}
+              fazendoOutra={l.trabalhando.includes(c.card) || outra.isPending}
+              aoEscolher={(id) => escolher.mutate(id)}
+              aoOutra={() => {
+                outra.mutate({ card: c.card, pedido: '' });
+                setPrevia(null);
+              }}
+              aoFechar={() => setPrevia(null)}
+            />
+          );
+        })()}
       {(escolher.error || outra.error || apagar.error) && (
         <ErroDaApi erro={escolher.error ?? outra.error ?? apagar.error} />
       )}

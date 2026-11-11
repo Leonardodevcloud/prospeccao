@@ -649,6 +649,18 @@ function FormIdentidade(props: { d: IdentidadeDaConta }) {
       }}
     >
       <div className="identidade__campos">
+        <AprenderComInstagram
+          aoAplicar={(s) => {
+            setF((x) => ({
+              ...x,
+              cores: s.cores,
+              estilo: s.estilo,
+              fontes: s.fontes,
+              jeitoDePostar: s.jeito,
+            }));
+            setHex(s.cores);
+          }}
+        />
         <section className="pp-panel identidade__bloco" aria-labelledby="id-cores">
           <div className="identidade__titulo">
             <h2 id="id-cores">Cores</h2>
@@ -825,12 +837,27 @@ function FormIdentidade(props: { d: IdentidadeDaConta }) {
         </section>
 
         <section className="pp-panel identidade__bloco" aria-labelledby="id-fala">
-          <h2 id="id-fala">Como a empresa fala</h2>
+          <h2 id="id-fala">Como a empresa fala e posta</h2>
           <p className="quieto">
             O público, o tom de voz, o que a empresa vende e o que nunca dizer ficam no{' '}
             <Link to="/carrosseis?aba=cerebro">cérebro da marca</Link>, junto com as provas e o que os
             clientes perguntam. É de lá que o time de IA escreve.
           </p>
+          <div className="campo">
+            <label htmlFor="id-jeito">Jeito de postar</label>
+            <textarea
+              id="id-jeito"
+              rows={4}
+              maxLength={1500}
+              value={f.jeitoDePostar}
+              onChange={(e) => setF({ ...f, jeitoDePostar: e.target.value })}
+              placeholder="Ex.: fundo na cor principal, foto de ponta a ponta com pessoas da equipe, título grosso com uma palavra na cor de destaque, selo arredondado, logo no canto de cima."
+            />
+            <span className="campo__dica">
+              O time segue isto em cada peça. O botão Aprender com o meu Instagram, no topo, escreve sozinho a
+              partir dos seus posts.
+            </span>
+          </div>
         </section>
 
         <FotosDaEmpresa />
@@ -868,6 +895,89 @@ function FormIdentidade(props: { d: IdentidadeDaConta }) {
         </div>
       </aside>
     </form>
+  );
+}
+
+/** O que o diretor de arte leu nos posts do Instagram da conta (a sugestão, antes de aplicar). */
+interface SugestaoDoInstagram {
+  cores: IdentidadeCarrossel['cores'];
+  estilo: EstiloCarrossel;
+  fontes: IdentidadeCarrossel['fontes'];
+  jeito: string;
+  motivo: string;
+}
+
+/**
+ * v148: lê os posts recentes do Instagram da conta e sugere as cores, o estilo, as fontes e o jeito de
+ * postar. A pessoa confere, aplica no formulário e salva (nada muda sem ela salvar).
+ */
+function AprenderComInstagram(props: { aoAplicar: (s: SugestaoDoInstagram) => void }) {
+  const ler = useMutation({
+    mutationFn: () =>
+      api<{ sugestao: SugestaoDoInstagram; posts: number }>('/carrosseis/identidade/aprender-instagram', {
+        metodo: 'POST',
+      }),
+  });
+  const s = ler.data?.sugestao;
+  return (
+    <section className="pp-panel identidade__bloco identidade__aprender" aria-labelledby="id-aprender">
+      <div className="identidade__titulo">
+        <h2 id="id-aprender">Aprender com o meu Instagram</h2>
+        <Button
+          type="button"
+          size="sm"
+          variant={s ? 'ghost' : 'secondary'}
+          icon="camera"
+          disabled={ler.isPending}
+          onClick={() => ler.mutate()}
+        >
+          {ler.isPending ? 'Lendo os posts…' : s ? 'Ler de novo' : 'Ler os meus posts'}
+        </Button>
+      </div>
+      {!s && (
+        <p className="quieto">
+          O diretor de arte olha os seus posts mais recentes e sugere as cores, o estilo, as fontes e o jeito
+          de postar da empresa, para os carrosséis e os cards saírem com a cara do seu feed. Você confere
+          antes de salvar.
+        </p>
+      )}
+      <ErroDaApi erro={ler.error} />
+      {s && ler.data && (
+        <div className="identidade__sugestao">
+          <div className="identidade__sugestao-cores">
+            {(Object.keys(ROTULO_COR) as (keyof typeof ROTULO_COR)[]).map((k) => (
+              <span key={k} className="identidade__amostra" title={`${ROTULO_COR[k]}: ${s.cores[k]}`}>
+                <span style={{ background: s.cores[k] }} aria-hidden="true" />
+                <small>{ROTULO_COR[k]}</small>
+              </span>
+            ))}
+          </div>
+          <p>
+            <b>Estilo {ESTILO[s.estilo].nome}</b> · {FONTES_DO_PAR[s.fontes].nome}
+          </p>
+          <p className="quieto">{s.jeito}</p>
+          {s.motivo && <p className="quieto">Por quê: {s.motivo}</p>}
+          <p className="quieto">Lido de {fmtNumero(ler.data.posts)} posts.</p>
+          <div className="acoes">
+            <Button
+              type="button"
+              variant="primary"
+              icon="check"
+              onClick={() => {
+                props.aoAplicar(s);
+                ler.reset();
+              }}
+            >
+              Usar na identidade
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => ler.reset()}>
+              Descartar
+            </Button>
+          </div>
+          <p className="campo__dica">Usar na identidade preenche o formulário: confira a prévia e salve.</p>
+        </div>
+      )}
+    </section>
   );
 }
 

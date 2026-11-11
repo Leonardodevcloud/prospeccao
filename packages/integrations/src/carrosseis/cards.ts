@@ -27,6 +27,7 @@ import {
   slideDoTime,
 } from '@prospeccao/shared/carrosseis-time';
 import { type ClienteClaude, somarUso, USO_ZERO, type UsoClaude } from './claude.js';
+import { CARTAO_POSTAL } from './imagens.js';
 import {
   type AoAvancar,
   avisosParaPessoa,
@@ -106,6 +107,7 @@ export interface ResultadoCards {
 /** O objetivo do card no relatório (o relatório usa os objetivos do carrossel). */
 const OBJETIVO_DO_RELATORIO: Record<ObjetivoCard, ObjetivoCarrossel> = {
   promocao: 'vender',
+  lancamento: 'vender',
   produto: 'vender',
   aviso: 'bastidores',
   data: 'bastidores',
@@ -116,6 +118,7 @@ const OBJETIVO_DO_RELATORIO: Record<ObjetivoCard, ObjetivoCarrossel> = {
 /** O modelo de partida de cada objetivo, quando o estrategista não decide. */
 const MODELO_PADRAO: Record<ObjetivoCard, ModeloCard> = {
   promocao: 'numero',
+  lancamento: 'capa',
   produto: 'capa',
   aviso: 'capa',
   data: 'capa',
@@ -126,7 +129,10 @@ const MODELO_PADRAO: Record<ObjetivoCard, ModeloCard> = {
 const MANUAL_CARDS = `CARDS AVULSOS: cada peça é um post sozinho (não é slide de carrossel). Ela tem um segundo para ser entendida: uma mensagem só, lida de longe no celular.
 - O título é a peça: curto, concreto, do jeito que o cliente fala. Nada de "Confira", "Venha conferir", "Imperdível", "Não perca".
 - Cada card fala de uma coisa. Variações do mesmo card dizem a mesma mensagem por caminhos diferentes (outro modelo, outra foto, outro ângulo de texto), para a empresa escolher a melhor; nunca a mesma peça com uma palavra trocada.
-- A ação aparece na própria peça quando o pedido pede (o botão do modelo "chamada", ou uma frase curta no texto).
+- Todo card leva um SELO ("sobretitulo", até 24 letras: o assunto em 2 a 4 palavras, ex.: "Chegamos a Brasília", "Só esta semana") e um BOTÃO ("botao", até 22 letras: a ação, ex.: "Chame no WhatsApp"), em qualquer modelo. A logo da empresa entra sozinha.
+- No título, marque entre asteriscos de 1 a 3 palavras seguidas que são o coração da mensagem (o benefício, o número, a novidade): "Sua loja entrega em *40 minutos*". Elas saem na cor de destaque. Uma marca por título, nunca o título todo. Os asteriscos não aparecem na imagem: não são erro de digitação.
+- Promoção, lançamento e produto vendem: o título diz o que o cliente ganha (rapidez, preço, comodidade), não só o que a empresa faz; o texto dá o fato que prova; o botão diz o que fazer agora. Nada de "Salve a data", "Fique ligado", "Aguarde".
+- Se as instruções de quem pediu falam de um tom (promocional, divertido, sério), ele vale mais que o objetivo escolhido.
 - Story (9:16): a peça ocupa a tela inteira; o texto fica no meio da tela, longe do topo e da base. Feed (4:5): o post do perfil.`;
 
 function blocoDoPedidoCards(e: EntradaCards): string {
@@ -138,6 +144,9 @@ function blocoDoPedidoCards(e: EntradaCards): string {
     `FORMATO: ${FORMATO_PECA[p.formato].nome} (${FORMATO_PECA[p.formato].dica})`,
     p.assunto
       ? `INSTRUÇÕES DE QUEM PEDIU (siga: o que pede para ter tem que aparecer; o que pede para não ter não aparece): ${p.assunto}`
+      : '',
+    p.respostas?.length
+      ? `O QUE QUEM PEDIU RESPONDEU ÀS PERGUNTAS DO TIME (vale como fato: pode usar no card):\n${p.respostas.map((r) => `- ${r.pergunta} → ${r.resposta}`).join('\n')}`
       : '',
     d
       ? [
@@ -155,6 +164,9 @@ function blocoDoPedidoCards(e: EntradaCards): string {
     `A AÇÃO QUE A PEÇA PEDE: ${CHAMADA_FINAL[p.chamada]}${p.chamada === 'comentar' ? ` — a palavra é ${p.palavra.toUpperCase()} (o botão é "Comente ${p.palavra.toUpperCase()}")` : ''}`,
     `ESTILO VISUAL: ${e.estilo}`,
     e.identidade.assinatura ? `ASSINATURA NO RODAPÉ: ${e.identidade.assinatura}` : '',
+    e.identidade.jeitoDePostar
+      ? `COMO A EMPRESA COSTUMA POSTAR (lido dos posts dela; siga o espírito na escolha de modelos, fotos e palavras marcadas): ${e.identidade.jeitoDePostar}`
+      : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -333,7 +345,7 @@ function mensagemEstrategista(e: EntradaCards): string {
       ? `FOTOS DA EMPRESA (use quando a foto combina; só nos modelos capa e foto):\n${e.fotos.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
       : 'FOTOS DA EMPRESA: não use outras (fotoId null, a não ser as do pedido).',
     e.imagens?.gerar
-      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou "foto", descreva em "gerar" a cena (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_CARDS} no pedido. Nunca o produto que a empresa vende como se fosse real, nunca texto, marca ou rosto em destaque.`
+      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou "foto", descreva em "gerar" a cena (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_CARDS} no pedido. Nunca o produto que a empresa vende como se fosse real, nunca texto, marca ou rosto em destaque. ${CARTAO_POSTAL}`
       : '',
     e.imagens?.estiloReferencia
       ? `ESTILO DE REFERÊNCIA (um post de que a empresa gostou; inspire o clima, não copie): ${e.imagens.estiloReferencia}`
@@ -390,6 +402,15 @@ const limparHashtags = (x: unknown) =>
     ),
   ].slice(0, 8);
 
+/** As variações de um card passeiam pelas cores da marca (a 1ª na principal, que é a cara da marca). */
+export const FUNDOS_DAS_VARIACOES = ['escuro', 'destaque', 'claro'] as const;
+
+const corteCard = (t: unknown, max: number) =>
+  String(t ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+
 export function lerRedacaoCards(d: Record<string, unknown>, plano: Plano, e: EntradaCards): RedacaoCards {
   const brutos = (Array.isArray(d.cards) ? d.cards : []) as Record<string, unknown>[];
   const botao = botaoDaChamada(e.pedido.chamada, e.pedido.palavra);
@@ -399,8 +420,14 @@ export function lerRedacaoCards(d: Record<string, unknown>, plano: Plano, e: Ent
       const vb = (Array.isArray(b.variacoes) ? b.variacoes : []) as Record<string, unknown>[];
       return {
         variacoes: c.variacoes.map((p, k) => {
-          const s = { ...slideDoTime(vb[k] ?? {}, p.modelo, `c${i + 1}v${k + 1}`), fotoId: p.fotoId };
-          if (botao && s.modelo === 'chamada') s.botao = botao;
+          const bruto = vb[k] ?? {};
+          const s = { ...slideDoTime(bruto, p.modelo, `c${i + 1}v${k + 1}`), fotoId: p.fotoId };
+          // O card leva o selo e o botão em qualquer modelo (o slideDoTime só guarda os campos do modelo).
+          s.sobretitulo = s.sobretitulo || corteCard(bruto.sobretitulo, 40);
+          s.botao = botao ?? (corteCard(bruto.botao, 40) || s.botao);
+          // Cada variação num fundo da marca: a principal, a de destaque e a clara.
+          s.fundo =
+            FUNDOS_DAS_VARIACOES[(e.outra ? e.outra.existentes.length : k) % FUNDOS_DAS_VARIACOES.length]!;
           return s;
         }),
         legenda: String(b.legenda ?? '')
@@ -453,7 +480,8 @@ function mensagemRedator(e: EntradaCards, plano: Plano): string {
     '',
     '- Preencha só os campos do modelo de cada peça.',
     '- As variações de um card dizem a mesma mensagem por caminhos diferentes: títulos diferentes de verdade.',
-    '- No modelo "chamada", o "botao" é a ação em poucas palavras.',
+    '- Em toda peça: "sobretitulo" (o selo) e "botao" (a ação, em poucas palavras), qualquer que seja o modelo.',
+    '- Marque no título, entre asteriscos, as 1 a 3 palavras que são o coração da mensagem.',
     '- A legenda é a do post do card (serve para qualquer variação).',
     ...(e.preferencias?.length
       ? ['', 'O QUE QUEM PUBLICA SEMPRE MUDA NO EDITOR (siga):', ...e.preferencias.map((p) => `- ${p}`)]

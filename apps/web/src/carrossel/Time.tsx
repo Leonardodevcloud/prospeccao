@@ -14,7 +14,9 @@ import {
   type ObjetivoCarrossel,
   PALAVRA_COMENTAR,
   type PedidoDoTime,
+  type PerguntaDoTime,
   type RelatorioTime,
+  type RespostaDoTime,
   ROTULO_AVISO_TIME,
   ROTULO_DIVULGAR,
 } from '@prospeccao/shared/carrosseis-time';
@@ -28,6 +30,7 @@ import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, usePedidoDoTime } from './dados';
 import type { IdeiaInicial } from './Ideias';
 import { CamposDeImagens, FotosDoPedido, IMAGENS_VAZIAS, type ImagensDoPedido } from './Imagens';
+import { PerguntasDoTime, usePerguntas } from './Perguntas';
 import { FotoDoTime } from './TimeDeIa';
 
 /**
@@ -61,8 +64,11 @@ export function NovoComTime(props: {
   const [imagens, setImagens] = useState<ImagensDoPedido>(IMAGENS_VAZIAS);
   const [fotosPedido, setFotosPedido] = useState<FotoDoPedido[]>([]);
   const [pedidoId, setPedidoId] = useState<number | null>(null);
+  // v148: antes de criar, a estrategista pode perguntar (sem perguntas, cria direto).
+  const [perguntas, setPerguntas] = useState<PerguntaDoTime[] | null>(null);
+  const perguntar = usePerguntas();
   const pedir = useMutation({
-    mutationFn: () =>
+    mutationFn: (respostas: RespostaDoTime[]) =>
       api<PedidoDoTime>('/carrosseis/time', {
         metodo: 'POST',
         corpo: {
@@ -77,6 +83,7 @@ export function NovoComTime(props: {
           ...imagens,
           ideiaId: ini?.ideiaId ?? null,
           fotos: fotosPedido,
+          respostas,
         },
       }),
     onSuccess: (p) => {
@@ -100,8 +107,27 @@ export function NovoComTime(props: {
 
   const enviar = (e: FormEvent) => {
     e.preventDefault();
-    if (pode) pedir.mutate();
+    if (!pode) return;
+    perguntar.mutate(
+      { tipo: 'carrossel', assunto, divulgarId, objetivo, chamada, fotos: fotosPedido.length },
+      {
+        onSuccess: (r) => (r.perguntas.length ? setPerguntas(r.perguntas) : pedir.mutate([])),
+        // A pergunta é ajuda: se falhar, o pedido segue sem ela.
+        onError: () => pedir.mutate([]),
+      },
+    );
   };
+  if (perguntas)
+    return (
+      <PerguntasDoTime
+        perguntas={perguntas}
+        criando={pedir.isPending}
+        erro={pedir.error}
+        textoCriar="Criar com o time de IA"
+        aoCriar={(r) => pedir.mutate(r)}
+        aoVoltar={() => setPerguntas(null)}
+      />
+    );
 
   return (
     <form className="form novo-time" onSubmit={enviar}>
@@ -332,8 +358,17 @@ export function NovoComTime(props: {
       </p>
       {pedir.error && <ErroDaApi erro={pedir.error} />}
       <div className="acoes">
-        <Button type="submit" variant="primary" icon="sparkles" disabled={!pode || pedir.isPending}>
-          {pedir.isPending ? 'Chamando o time…' : 'Criar com o time de IA'}
+        <Button
+          type="submit"
+          variant="primary"
+          icon="arrow-right"
+          disabled={!pode || pedir.isPending || perguntar.isPending}
+        >
+          {perguntar.isPending
+            ? 'A estrategista está lendo…'
+            : pedir.isPending
+              ? 'Chamando o time…'
+              : 'Continuar'}
         </Button>
         <Button type="button" variant="ghost" onClick={props.aoEmBranco}>
           Começar em branco

@@ -617,6 +617,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                     aoModelo={trocarModelo}
                     imagens={!!situacao.data?.ia.imagens}
                     carrosselId={c.id}
+                    ehCard={ehCard}
                   />
                   {iaLigada && !s.travado && (
                     <PedirAoTime
@@ -741,9 +742,22 @@ function PainelSlide(props: {
   /** v132: o time pode fazer imagens (cenários para o produto). */
   imagens: boolean;
   carrosselId: number;
+  /** v148: card avulso: o selo e o botão valem em qualquer modelo. */
+  ehCard?: boolean;
 }) {
   const { slide } = props;
   const m = MODELO[slide.modelo];
+  const campos = [
+    ...m.campos,
+    ...(props.ehCard
+      ? (
+          [
+            { campo: 'sobretitulo', rotulo: 'Selo', limite: 24, dica: 'Ex.: Chegamos a Brasília' },
+            { campo: 'botao', rotulo: 'Botão', limite: 22, dica: 'Ex.: Chame no WhatsApp' },
+          ] as const
+        ).filter((x) => !m.campos.some((c) => c.campo === x.campo))
+      : []),
+  ];
   const [fotos, setFotos] = useState(false);
   const todas = useFotos(props.imagens).data?.fotos ?? [];
   // O produto de onde saem os cenários: a própria foto enviada ou a foto de onde o cenário saiu.
@@ -778,7 +792,7 @@ function PainelSlide(props: {
         </div>
       </div>
 
-      {m.campos.map((cp) => {
+      {campos.map((cp) => {
         const valor = slide[cp.campo];
         const longo = cp.limite > 60;
         const idCampo = `ps-${cp.campo}`;
@@ -805,6 +819,11 @@ function PainelSlide(props: {
                 placeholder={cp.dica}
                 onChange={(e) => props.aoMudar({ [cp.campo]: e.target.value })}
               />
+            )}
+            {cp.campo === 'titulo' && (
+              <span className="campo__dica">
+                Ponha *entre asteriscos* a palavra que sai na cor de destaque.
+              </span>
             )}
           </div>
         );

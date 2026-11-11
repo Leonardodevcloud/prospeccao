@@ -19078,7 +19078,7 @@ form.janela-pedido > button[type="submit"] {
 }
 .cards-lote__grade {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr));
   gap: 12px;
   margin: 0;
   padding: 0;
@@ -19102,7 +19102,7 @@ form.janela-pedido > button[type="submit"] {
 }
 .cards-card__variacoes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 200px));
   gap: 8px;
 }
 .cards-card__variacao {
@@ -19125,7 +19125,7 @@ form.janela-pedido > button[type="submit"] {
   height: 100%;
   object-fit: cover;
 }
-.cards-card__variacao[aria-pressed="true"] {
+.cards-card__variacao[data-escolhida] {
   border-color: var(--brand);
   box-shadow: 0 0 0 2px var(--brand-soft);
 }
@@ -19485,4 +19485,174 @@ form.janela-pedido > button[type="submit"] {
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+/* v148: a peça com "Usar esta", a lupa da prévia, a prévia grande e as perguntas do time */
+.cards-card__peca {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.cards-card__peca .cards-card__variacao {
+  width: 100%;
+  cursor: zoom-in;
+}
+.cards-card__ampliar {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(17, 17, 17, 0.6);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.cards-card__variacao:hover .cards-card__ampliar,
+.cards-card__variacao:focus-visible .cards-card__ampliar {
+  opacity: 1;
+}
+.cards-card__estado {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+}
+.cards-card__usar {
+  font-size: 12px;
+}
+.previa-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 440px) auto minmax(200px, 240px);
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: center;
+}
+.previa-card[data-formato="story"] {
+  grid-template-columns: auto minmax(0, 340px) auto minmax(200px, 240px);
+}
+.previa-card__imagem {
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 8px 28px rgba(0, 0, 0, 0.12);
+  background: var(--surface-sunken);
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+}
+.previa-card[data-formato="story"] .previa-card__imagem {
+  aspect-ratio: 9 / 16;
+}
+.previa-card__acoes {
+  display: grid;
+  gap: var(--space-2);
+  align-content: center;
+}
+.previa-card__escolhida {
+  color: var(--brand);
+  font-weight: 600;
+}
+.previa-card__pontos {
+  display: flex;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+.previa-card__pontos span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+.previa-card__pontos span[data-ativo] {
+  background: var(--brand);
+}
+@media (max-width: 760px) {
+  .previa-card,
+  .previa-card[data-formato="story"] {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .previa-card__acoes {
+    grid-column: 1 / -1;
+  }
+}
+.perguntas-time {
+  display: grid;
+  gap: var(--space-4);
+}
+.perguntas-time__quem {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+.perguntas-time__quem p {
+  margin: 0;
+}
+.perguntas-time__foto {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.perguntas-time__lista {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.perguntas-time__item fieldset {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.perguntas-time__pergunta {
+  padding: 0;
+  font-weight: 600;
+}
+.perguntas-time__porque {
+  margin: 2px 0 8px;
+  font-size: 13px;
+}
+.perguntas-time__livre {
+  width: 100%;
+  margin-top: 8px;
+}
+.perguntas-time__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.identidade__sugestao {
+  display: grid;
+  gap: var(--space-2);
+}
+.identidade__sugestao p {
+  margin: 0;
+}
+.identidade__sugestao-cores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.identidade__amostra {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+.identidade__amostra > span {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.identidade__amostra small {
+  color: var(--ink-muted);
+  font-size: 11px;
 }

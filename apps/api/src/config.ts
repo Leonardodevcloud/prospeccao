@@ -89,7 +89,10 @@ export const esquemaEnvApi = envBase.extend({
     .default('claude-sonnet-5-5'),
   /** v132: imagens dos carrosséis pelo GPT Image 2 (a mesma OPENAI_CHAVE) e o custo de cada uma. */
   CARROSSEIS_IMAGEM_MODELO: z.string().min(3).default('gpt-image-2'),
-  CARROSSEIS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).max(5).default(0.05),
+  /** v148: a qualidade das imagens dos carrosséis e cards (high: a mais caprichada do GPT Image). */
+  CARROSSEIS_IMAGEM_QUALIDADE: z.enum(['low', 'medium', 'high']).default('high'),
+  /** Sem valor: o custo médio de cada qualidade (high ≈ US$ 0,20; medium ≈ US$ 0,05). */
+  CARROSSEIS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).max(5).optional(),
   FALA_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   FALA_MODELO: z.string().default('gpt-4o-mini-tts'),
   /**

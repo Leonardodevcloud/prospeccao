@@ -9,8 +9,11 @@ import {
   type EstiloDaImagem,
   gerarCenario,
   gerarImagemDoSlide,
+  type JeitoDePostar,
+  lerJeitoDePostar,
   melhorarFoto,
 } from '@prospeccao/integrations/carrosseis';
+import { buscarNaInternet } from '@prospeccao/integrations/rede';
 import { prepararImagem } from '@prospeccao/integrations/slides';
 import { AppError } from '@prospeccao/shared';
 import type { FormatoPeca, FotoCarrossel } from '@prospeccao/shared/carrosseis';
@@ -228,4 +231,50 @@ export async function guardarReferencia(
     estilo,
   });
   return { id: f.id, estilo };
+}
+
+/* ───────────────────────────── v148: aprender com o Instagram da empresa ───────────────────────────── */
+
+const MIN_POSTS_PARA_APRENDER = 3;
+const MAX_POSTS_PARA_APRENDER = 9;
+
+/**
+ * Lê os posts mais recentes do Instagram da conta (as imagens que o CRM já guardou) e sugere as cores,
+ * o estilo, as fontes e o jeito de postar. Só sugere: a tela mostra e a pessoa aplica e salva.
+ */
+export async function aprenderDoInstagram(
+  db: Executor,
+  ia: CarrosseisIa | null,
+): Promise<{ sugestao: JeitoDePostar; posts: number }> {
+  if (!ia) throw AppError.invalido('O time de IA ainda não foi ligado na plataforma.');
+  const { rows } = await db.query<{ imagem: string; legenda: string | null }>(
+    `SELECT imagem, legenda FROM comercial.instagram_midias
+      WHERE conta_id = ${contaSql()} AND imagem IS NOT NULL
+      ORDER BY publicado_em DESC NULLS LAST LIMIT 15`,
+  );
+  if (rows.length < MIN_POSTS_PARA_APRENDER)
+    throw AppError.invalido(
+      'Para aprender o jeito de postar, conecte o Instagram da empresa (em Instagram) e espere os posts aparecerem: são lidos de 6 em 6 horas.',
+    );
+  const posts: { jpeg: Uint8Array; legenda: string | null }[] = [];
+  for (const r of rows) {
+    if (posts.length >= MAX_POSTS_PARA_APRENDER) break;
+    try {
+      const resp = await buscarNaInternet(r.imagem, { timeoutMs: 12_000, limiteBytes: 8 * 1024 * 1024 });
+      if (resp.status !== 200 || resp.cortado) continue;
+      const img = await prepararImagem(new Uint8Array(resp.corpo), { maxLado: 768 });
+      posts.push({ jpeg: new Uint8Array(img.dados), legenda: r.legenda });
+    } catch {
+      // Link vencido ou imagem que não abre: segue para o próximo post.
+    }
+  }
+  if (posts.length < MIN_POSTS_PARA_APRENDER)
+    throw AppError.invalido(
+      'Não consegui abrir as imagens dos posts agora (os links da Meta vencem e são renovados de 6 em 6 horas). Tente de novo mais tarde.',
+    );
+  const { identidade } = await repo.identidade(db);
+  const sugestao = await lerJeitoDePostar(ia.cliente(db, conta()), posts, identidade.cores).catch((e) => {
+    throw AppError.externo('IA', 'O diretor de arte não conseguiu ler os posts agora. Tente de novo.', e);
+  });
+  return { sugestao, posts: posts.length };
 }
