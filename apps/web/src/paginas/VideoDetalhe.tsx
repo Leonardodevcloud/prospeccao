@@ -527,6 +527,29 @@ function AbaCortes(props: {
   const { v } = props;
   const revisao = useRevisao(v.id);
   const [verPausas, setVerPausas] = useState(false);
+  // v142: "Ajustar" leva às palavras do corte no Texto do vídeo, já escolhidas.
+  const [ajustar, setAjustar] = useState<{ a: number; b: number; vez: number } | null>(null);
+  const palavrasDoCorte = (c: CorteVideo) => {
+    const dentro = v.palavras
+      .map((p, i) => ({ m: (p.i + p.f) / 2, i }))
+      .filter((x) => x.m >= c.inicio && x.m <= c.fim)
+      .map((x) => x.i);
+    return dentro.length ? { a: dentro[0]!, b: dentro[dentro.length - 1]! } : null;
+  };
+  const botaoAjustar = (c: CorteVideo, link = false) => {
+    const faixa = palavrasDoCorte(c);
+    if (!faixa) return null;
+    const ir = () => setAjustar({ ...faixa, vez: Date.now() });
+    return link ? (
+      <button type="button" className="link-botao" onClick={ir}>
+        Ajustar
+      </button>
+    ) : (
+      <Button size="sm" variant="secondary" icon="scissors" onClick={ir}>
+        Ajustar
+      </Button>
+    );
+  };
   const decidir = (c: CorteVideo, decisao: CorteVideo['decisao']) =>
     revisao.mutate({ cortes: [{ id: c.id, decisao, conferido: true }] });
   const duvidas = v.cortes.filter((c) => c.duvida && !c.conferido && c.decisao === 'cortar');
@@ -562,6 +585,7 @@ function AbaCortes(props: {
           <span className="video__motivo">{c.motivo}</span>
           <span className="acoes">
             {botaoOuvir(c)}
+            {botaoAjustar(c)}
             <Button
               size="sm"
               variant="secondary"
@@ -600,6 +624,7 @@ function AbaCortes(props: {
                     Ouvir
                   </button>
                 )}
+                {botaoAjustar(c, true)}
                 <button
                   type="button"
                   className="link-botao"
@@ -652,7 +677,13 @@ function AbaCortes(props: {
             ))}
         </ul>
       )}
-      <TextoDoVideo v={v} ouvir={props.ouvir} ouvindo={props.ouvindo} podeOuvir={props.podeOuvir} />
+      <TextoDoVideo
+        v={v}
+        ouvir={props.ouvir}
+        ouvindo={props.ouvindo}
+        podeOuvir={props.podeOuvir}
+        ajustar={ajustar}
+      />
       <Seletor
         rotulo="Ritmo dos cortes"
         valor={v.opcoes.ritmo}
@@ -673,11 +704,18 @@ function TextoDoVideo(props: {
   ouvir: (c: CorteVideo) => void;
   ouvindo: string | null;
   podeOuvir: boolean;
+  ajustar: { a: number; b: number; vez: number } | null;
 }) {
   const { v } = props;
   const revisao = useRevisao(v.id);
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null);
   const arrastando = useRef(false);
+  const caixa = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!props.ajustar) return;
+    setSel({ a: props.ajustar.a, b: props.ajustar.b });
+    caixa.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [props.ajustar]);
   useEffect(() => {
     const solta = () => {
       arrastando.current = false;
@@ -734,10 +772,11 @@ function TextoDoVideo(props: {
       });
   };
   return (
-    <section className="video__texto" aria-label="Texto do vídeo">
-      <span className="video__secao">Texto do vídeo</span>
-      <p className="quieto video__texto-dica">
-        Riscado sai do vídeo. Clique numa palavra e depois em outra (ou arraste) para escolher um trecho.
+    <section className="video__texto" aria-label="Texto do vídeo" ref={caixa}>
+      <span className="video__secao">Texto do vídeo · ajuste os cortes aqui</span>
+      <p className="video__texto-dica">
+        <Icon name="scissors" size={14} /> Riscado sai do vídeo. <b>Clique numa palavra</b> e depois em outra
+        (ou arraste) para escolher o trecho; aparecem Cortar e Devolver.
       </p>
       <div className="video__texto-palavras">
         {palavras.map((p, i) => (
@@ -771,7 +810,7 @@ function TextoDoVideo(props: {
         <span className="quieto">
           {sel
             ? `${escolhidas.length} ${escolhidas.length === 1 ? 'palavra' : 'palavras'}: "${escolhidas.map((p) => p.t).join(' ')}"`
-            : 'Nenhum trecho escolhido.'}
+            : 'Clique numa palavra para começar.'}
         </span>
         {sel && (
           <span className="video__texto-acoes">
