@@ -37,7 +37,7 @@ import { SlideHtml } from '../carrossel/SlideHtml';
 import { CartaoPedido, NovoComTime } from '../carrossel/Time';
 import { ApresentacaoDoTime, FaixaDoTime } from '../carrossel/TimeDeIa';
 import { LinkAjuda } from '../componentes/Ajuda';
-import { Drawer } from '../componentes/Drawer';
+import { Modal } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
 import { fmtNumero, fmtQuando } from '../formatar';
@@ -72,6 +72,8 @@ export function Carrosseis() {
       ? pedida
       : 'carrosseis';
   const [novo, setNovo] = useState(false);
+  // v146: o pedido de cards abre numa janela centralizada (a aba fica como biblioteca).
+  const [novosCards, setNovosCards] = useState(false);
   // v134: a ideia escolhida na aba Ideias preenche o pedido ao time.
   const [daIdeia, setDaIdeia] = useState<IdeiaInicial | null>(null);
   // A apresentação do time: abre sozinha na primeira entrada (uma vez por pessoa) e pela faixa.
@@ -112,7 +114,11 @@ export function Carrosseis() {
         </div>
         <div className="acoes">
           <LinkAjuda artigo="carrosseis">Como funciona</LinkAjuda>
-          {aba !== 'cards' && (
+          {aba === 'cards' ? (
+            <Button variant="primary" icon="plus" onClick={() => setNovosCards(true)}>
+              Novos cards
+            </Button>
+          ) : (
             <Button variant="primary" icon="plus" onClick={() => setNovo(true)}>
               Novo carrossel
             </Button>
@@ -125,7 +131,7 @@ export function Carrosseis() {
           as logos próprias não podem ser enviadas. Fale com a gente.
         </Mensagem>
       )}
-      {mostrarTime && aba === 'carrosseis' && apresentar !== 'primeira' && (
+      {mostrarTime && (aba === 'carrosseis' || aba === 'cards') && apresentar !== 'primeira' && (
         <FaixaDoTime aoConhecer={() => setApresentar('de-novo')} />
       )}
       <div className="pipelines" role="tablist" aria-label="Seções dos carrosséis">
@@ -154,6 +160,9 @@ export function Carrosseis() {
           situacao={situacao.data}
           aoCerebro={() => setParams({ aba: 'cerebro' })}
           aoIdentidade={() => setParams({ aba: 'identidade' })}
+          novo={novosCards}
+          aoNovo={() => setNovosCards(true)}
+          aoFecharNovo={() => setNovosCards(false)}
         />
       ) : aba === 'ideias' ? (
         <AbaIdeias
@@ -442,10 +451,16 @@ function NovoCarrossel(props: {
     criar.mutate();
   };
   const estiloAtual = estilo ?? identidade.data?.identidade.estilo ?? 'editorial';
+  // v146: o pedido abre numa janela grande e centralizada (como em Vídeos), não na lateral.
   if (modo === 'time')
     return (
-      <Drawer titulo="Novo carrossel" barra="Novo carrossel" aoFechar={props.aoFechar}>
-        <div className="drawer__corpo">
+      <Modal
+        titulo="Novo carrossel"
+        subtitulo="Diga ao time o que o carrossel precisa dizer: ele escreve com a cara da sua marca e você confere antes de postar."
+        largura="larga"
+        aoFechar={props.aoFechar}
+      >
+        <div className="janela-pedido">
           <NovoComTime
             situacao={props.situacao}
             estiloDaIdentidade={identidade.data?.identidade.estilo ?? 'editorial'}
@@ -455,11 +470,16 @@ function NovoCarrossel(props: {
             aoCerebro={props.aoCerebro}
           />
         </div>
-      </Drawer>
+      </Modal>
     );
   return (
-    <Drawer titulo="Novo carrossel" barra="Novo carrossel em branco" aoFechar={props.aoFechar}>
-      <div className="drawer__corpo">
+    <Modal
+      titulo="Novo carrossel em branco"
+      subtitulo="Você monta à mão no editor, com a identidade da empresa."
+      largura="media"
+      aoFechar={props.aoFechar}
+    >
+      <div>
         <form className="form" onSubmit={enviar}>
           <div className="campo">
             <label htmlFor="nc-titulo">Sobre o que é o carrossel</label>
@@ -534,7 +554,7 @@ function NovoCarrossel(props: {
           </div>
         </form>
       </div>
-    </Drawer>
+    </Modal>
   );
 }
 

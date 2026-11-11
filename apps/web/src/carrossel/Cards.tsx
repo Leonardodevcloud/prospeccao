@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
+import { Modal } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, useIdentidade } from './dados';
@@ -59,6 +60,10 @@ export function AbaCards(props: {
   situacao: SituacaoCarrosseis;
   aoCerebro: () => void;
   aoIdentidade: () => void;
+  /** v146: o pedido abre numa janela centralizada; a aba é a biblioteca. */
+  novo: boolean;
+  aoNovo: () => void;
+  aoFecharNovo: () => void;
 }) {
   const q = useCards();
   const identidade = useIdentidade();
@@ -76,8 +81,24 @@ export function AbaCards(props: {
           </Button>
         </div>
       )}
+      {props.novo && (
+        <Modal
+          titulo="Novos cards"
+          subtitulo="Diga ao time o que os cards precisam dizer, quantos quer e quantas variações de cada: saem com as cores, as fontes e a logo da empresa."
+          largura="larga"
+          aoFechar={props.aoFecharNovo}
+        >
+          <NovoPedidoDeCards
+            situacao={props.situacao}
+            aoCerebro={() => {
+              props.aoFecharNovo();
+              props.aoCerebro();
+            }}
+            aoPedido={props.aoFecharNovo}
+          />
+        </Modal>
+      )}
       <div className="cards__corpo">
-        <NovoPedidoDeCards situacao={props.situacao} aoCerebro={props.aoCerebro} />
         <div className="cards__lotes">
           {q.isPending ? (
             <div className="esqueleto" style={{ height: 320 }} />
@@ -88,6 +109,11 @@ export function AbaCards(props: {
               icone="layers"
               titulo="Nenhum card ainda"
               texto="Diga ao time o que os cards precisam dizer, quantos quer e quantas variações de cada. Eles saem com as cores, as fontes e a logo da empresa."
+              acao={
+                <Button variant="primary" icon="plus" onClick={props.aoNovo}>
+                  Novos cards
+                </Button>
+              }
             />
           ) : (
             q.data.lotes.map((l) => <Lote key={l.pedidoId} l={l} />)
@@ -132,7 +158,11 @@ function Escolhas<T extends string | number>(props: {
 const QUANTIDADES = [1, 2, 3, 4, 5, 6, 8, MAX_CARDS_PEDIDO] as const;
 const VARIACOES = Array.from({ length: MAX_VARIACOES_CARD }, (_, i) => i + 1);
 
-function NovoPedidoDeCards(props: { situacao: SituacaoCarrosseis; aoCerebro: () => void }) {
+function NovoPedidoDeCards(props: {
+  situacao: SituacaoCarrosseis;
+  aoCerebro: () => void;
+  aoPedido: () => void;
+}) {
   const cliente = useQueryClient();
   const divulgar = useDivulgar();
   const fotos = useFotos();
@@ -172,6 +202,7 @@ function NovoPedidoDeCards(props: { situacao: SituacaoCarrosseis; aoCerebro: () 
       setAssunto('');
       setFotosPedido([]);
       void cliente.invalidateQueries({ queryKey: ['carrosseis', 'cards'] });
+      props.aoPedido();
     },
   });
   const { ia, franquia } = props.situacao;
@@ -194,8 +225,7 @@ function NovoPedidoDeCards(props: { situacao: SituacaoCarrosseis; aoCerebro: () 
   const estiloDaIdentidade = identidade.data?.identidade.estilo;
 
   return (
-    <form className="form cards__pedido" onSubmit={enviar}>
-      <h2 className="cards__titulo">Novo pedido de cards</h2>
+    <form className="form cards__pedido janela-pedido" onSubmit={enviar}>
       {!ia.ligada ? (
         <Mensagem tipo="aviso">O time de IA ainda não foi ligado na plataforma. Fale com a gente.</Mensagem>
       ) : !ia.cerebroConferido ? (

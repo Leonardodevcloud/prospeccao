@@ -18984,22 +18984,32 @@ fieldset.assinar__formas {
 /* v144: Cards avulsos */
 .cards__corpo {
   display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
   gap: var(--space-5, 20px);
-  align-items: start;
 }
-@media (max-width: 960px) {
-  .cards__corpo {
-    grid-template-columns: minmax(0, 1fr);
+/* v146: os pedidos (carrossel e cards) na janela centralizada, em duas colunas como em Vídeos. */
+.janela-pedido > form,
+form.janela-pedido {
+  display: block;
+  column-count: 2;
+  column-gap: var(--space-6);
+}
+.janela-pedido > form > *,
+form.janela-pedido > * {
+  break-inside: avoid;
+  margin-bottom: var(--space-4);
+}
+.janela-pedido > form > .acoes,
+form.janela-pedido > button[type="submit"] {
+  column-span: all;
+}
+form.janela-pedido > button[type="submit"] {
+  width: 100%;
+}
+@media (max-width: 760px) {
+  .janela-pedido > form,
+  form.janela-pedido {
+    column-count: 1;
   }
-}
-.cards__pedido {
-  position: sticky;
-  top: calc(var(--barra-topo, 56px) + 12px);
-  padding: var(--space-4, 16px);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg, 12px);
-  background: var(--surface);
 }
 .cards__titulo {
   margin: 0 0 4px;
