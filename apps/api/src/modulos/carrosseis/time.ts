@@ -26,8 +26,9 @@ import { comConta, contaSql, usuarioAtual } from '../../contexto.js';
 import { contratoDaConta } from '../../recursos.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as aprender from './aprender.js';
+import * as cards from './cards.js';
 import * as cerebro from './cerebro.js';
-import { estiloDaConta, fazerImagem, imagensLigadas } from './imagens.js';
+import { estiloDaConta, fazerImagem, imagensLigadas, tratarFotosDoPedido } from './imagens.js';
 import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 
@@ -108,7 +109,7 @@ export function prepararCarrosseisIa(
 interface LinhaPedido {
   id: number;
   conta_id: number;
-  tipo: 'carrossel' | 'dossie' | 'ideias';
+  tipo: 'carrossel' | 'dossie' | 'ideias' | 'cards';
   entrada: Record<string, unknown>;
   situacao: PedidoDoTime['situacao'];
   etapa: EtapaTime | null;
@@ -194,6 +195,11 @@ export async function pedirCarrossel(
       'Antes do primeiro carrossel com IA, confira o cérebro da marca (o que a empresa vende, para quem e como fala).',
     );
   if (p.divulgarId) await cerebro.divulgar(db, p.divulgarId);
+  for (const x of p.fotos) {
+    const foto = await repo.foto(db, x.fotoId);
+    if (!foto || foto.origem === 'referencia')
+      throw AppError.invalido('Uma das fotos do pedido não existe mais.');
+  }
   const f = await franquia(db);
   if (f.limite != null && f.usados >= f.limite)
     throw new AppError(
@@ -340,6 +346,13 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
   const aprendido = await aprender
     .paraOTime(db)
     .catch(() => ({ aprendizados: [], preferencias: [], teste: null }));
+  // v144: as fotos que vieram com o pedido, tratadas antes do time começar.
+  if (p.fotos.length) await avancar(db, l.id, 'estrategista', 'Tratando as fotos que você mandou');
+  const fotosDoPedido = await tratarFotosDoPedido(db, ia, l.conta_id, p.fotos, {
+    formato: 'feed',
+    referenciaId: p.referenciaId,
+    criadoPor: l.criado_por,
+  });
   const r = await trabalharNoCarrossel(
     ia.cliente(db, l.conta_id),
     {
@@ -358,6 +371,7 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
       aprendizados: aprendido.aprendizados,
       preferencias: aprendido.preferencias,
       teste: aprendido.teste,
+      fotosDoPedido: fotosDoPedido.map((f) => ({ id: f.id, nome: f.nome })),
     },
     (etapa, detalhe) => avancar(db, l.id, etapa, detalhe),
   );
@@ -460,6 +474,12 @@ export async function trabalhar(pool: Pool, ia: CarrosseisIa, l: LinhaPedido, lo
     try {
       if (l.tipo === 'dossie') await trabalharDossie(pool, ia, l);
       else if (l.tipo === 'ideias') await trabalharBuscaDeIdeias(pool, ia, l);
+      else if (l.tipo === 'cards')
+        await concluir(
+          pool,
+          l.id,
+          await cards.trabalharCards(pool, ia, l, (etapa, detalhe) => avancar(pool, l.id, etapa, detalhe)),
+        );
       else await trabalharCarrossel(pool, ia, l);
       log.info({ conta: l.conta_id, pedido: l.id, tipo: l.tipo }, 'carrosséis: pedido pronto');
     } catch (erro) {
@@ -477,15 +497,20 @@ export async function trabalhar(pool: Pool, ia: CarrosseisIa, l: LinhaPedido, lo
             ? null
             : /HTTP 4(01|03)/.test(e.message ?? '')
               ? 'A chave do time de IA foi recusada. Fale com a gente.'
-              : 'O time de IA não conseguiu terminar este carrossel. Peça de novo; se repetir, fale com a gente.',
+              : l.tipo === 'cards'
+                ? 'O time de IA não conseguiu terminar estes cards. Peça de novo; se repetir, fale com a gente.'
+                : 'O time de IA não conseguiu terminar este carrossel. Peça de novo; se repetir, fale com a gente.',
         ],
       );
-      if (!passageiro && l.criado_por && l.tipo === 'carrossel')
+      if (!passageiro && l.criado_por && (l.tipo === 'carrossel' || l.tipo === 'cards'))
         await notificar(pool, l.criado_por, {
           tipo: 'sistema',
-          titulo: 'O time de IA não conseguiu terminar o carrossel',
-          texto: 'Peça de novo em Carrosséis. Este não contou na franquia.',
-          link: '/carrosseis',
+          titulo:
+            l.tipo === 'cards'
+              ? 'O time de IA não conseguiu terminar os cards'
+              : 'O time de IA não conseguiu terminar o carrossel',
+          texto: `Peça de novo em ${l.tipo === 'cards' ? 'Cards avulsos' : 'Carrosséis'}. Este não contou na franquia.`,
+          link: l.tipo === 'cards' ? '/carrosseis?aba=cards' : '/carrosseis',
         }).catch(() => undefined);
     }
   });

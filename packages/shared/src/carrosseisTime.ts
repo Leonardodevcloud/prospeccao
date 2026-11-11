@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import {
   ESTILOS,
+  type EstiloCarrossel,
+  FORMATOS_PECA,
+  type FormatoPeca,
   MAX_SLIDES,
   MODELO,
   MODELOS,
@@ -243,6 +246,30 @@ export const CHAMADA_FINAL: Record<ChamadaFinal, string> = {
 /** Palavra do "comente": uma palavra só, sem espaço (vira o botão "Comente PALAVRA"). */
 export const PALAVRA_COMENTAR = /^[\p{L}\p{N}]{2,20}$/u;
 
+/**
+ * v144: as fotos que a empresa manda junto do pedido (carrossel ou cards). Cada uma entra nas peças
+ * do jeito escolhido: como está, melhorada pela IA (a mesma foto, com luz, cor e fundo tratados; o
+ * assunto igual) ou o produto num cenário novo. O revisor visual confere as feitas pela IA.
+ */
+export const TRATAMENTOS_FOTO = ['como_esta', 'melhorar', 'cenario'] as const;
+export type TratamentoFoto = (typeof TRATAMENTOS_FOTO)[number];
+export const TRATAMENTO_FOTO: Record<TratamentoFoto, { nome: string; dica: string }> = {
+  como_esta: { nome: 'Usar como está', dica: 'A foto entra do jeito que foi enviada.' },
+  melhorar: { nome: 'Melhorar a foto', dica: 'A IA trata luz, cor, nitidez e fundo; o assunto fica igual.' },
+  cenario: { nome: 'Produto num cenário novo', dica: 'O produto fica igual; a IA troca o fundo e a luz.' },
+};
+export const MAX_FOTOS_PEDIDO = 4;
+export const fotosDoPedidoEntrada = z
+  .array(
+    z.object({
+      fotoId: z.number().int().positive(),
+      tratamento: z.enum(TRATAMENTOS_FOTO).default('como_esta'),
+    }),
+  )
+  .max(MAX_FOTOS_PEDIDO, `Até ${MAX_FOTOS_PEDIDO} fotos por pedido.`)
+  .default([]);
+export type FotoDoPedido = z.infer<typeof fotosDoPedidoEntrada>[number];
+
 export const pedidoTimeEntrada = z
   .object({
     /** Sobre o que é e o que não pode faltar (vai para o time como o pedido de quem criou). */
@@ -264,6 +291,8 @@ export const pedidoTimeEntrada = z
     referenciaId: z.number().int().positive().nullable().default(null),
     /** v134: a ideia de onde o carrossel saiu (a aba Ideias marca como usada). */
     ideiaId: z.number().int().positive().nullable().default(null),
+    /** v144: as fotos enviadas para este pedido (entram nos slides, tratadas como escolhido). */
+    fotos: fotosDoPedidoEntrada,
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga sobre o que é o carrossel (ou escolha o que divulgar).',
@@ -338,7 +367,7 @@ export type SituacaoPedido = (typeof SITUACOES_PEDIDO)[number];
 
 export interface PedidoDoTime {
   id: number;
-  tipo: 'carrossel' | 'dossie' | 'ideias';
+  tipo: 'carrossel' | 'dossie' | 'ideias' | 'cards';
   situacao: SituacaoPedido;
   etapa: EtapaTime | null;
   /** O que cada etapa já disse (ex.: o gancho escolhido). */
@@ -676,4 +705,94 @@ export function mudancasEntre(antes: EstadoCarrossel, depois: EstadoCarrossel): 
   if (antes.legenda.trim() !== depois.legenda.trim())
     m.push({ tipo: 'legenda', slideId: null, texto: 'Legenda reescrita' });
   return m;
+}
+
+/* ───────────────────────────── v144: os cards avulsos ───────────────────────────── */
+
+/** O que o card faz: guia o time no texto e no modelo de cada card. */
+export const OBJETIVOS_CARD = ['promocao', 'produto', 'aviso', 'data', 'frase', 'institucional'] as const;
+export type ObjetivoCard = (typeof OBJETIVOS_CARD)[number];
+export const OBJETIVO_CARD: Record<ObjetivoCard, { nome: string; dica: string }> = {
+  promocao: { nome: 'Promoção', dica: 'oferta com preço, prazo e condição exatos; o preço em destaque' },
+  produto: { nome: 'Produto', dica: 'um produto ou serviço e por que vale a pena' },
+  aviso: { nome: 'Aviso', dica: 'horário, mudança, comunicado: claro e curto' },
+  data: { nome: 'Data especial', dica: 'data comemorativa ligada à empresa, sem clichê' },
+  frase: { nome: 'Frase', dica: 'uma frase forte do jeito que a empresa fala' },
+  institucional: { nome: 'Institucional', dica: 'quem a empresa é, o diferencial, a confiança' },
+};
+
+/** Os modelos que funcionam sozinhos num card (sem lista longa nem "arraste"). */
+export const MODELOS_CARD = ['capa', 'numero', 'citacao', 'foto', 'comparacao', 'chamada'] as const;
+export type ModeloCard = (typeof MODELOS_CARD)[number];
+
+export const MAX_CARDS_PEDIDO = 10;
+export const MAX_VARIACOES_CARD = 3;
+export const MAX_PECAS_PEDIDO = 20;
+
+export const pedidoCardsEntrada = z
+  .object({
+    /** O que pedir ao time (o "chat" do pedido): o que os cards dizem e o que não pode faltar. */
+    assunto: z.string().trim().max(1000, 'Use até 1.000 letras.').default(''),
+    divulgarId: z.number().int().positive().nullable().default(null),
+    objetivo: z.enum(OBJETIVOS_CARD).default('promocao'),
+    quantidade: z.number().int().min(1).max(MAX_CARDS_PEDIDO).default(1),
+    variacoes: z.number().int().min(1).max(MAX_VARIACOES_CARD).default(2),
+    formato: z.enum(FORMATOS_PECA).default('feed'),
+    /** null: o da identidade visual. */
+    estilo: z.enum(ESTILOS).nullable().default(null),
+    chamada: z.enum(CHAMADAS_FINAIS).default('whatsapp'),
+    palavra: z.string().trim().max(20).default(''),
+    usarFotos: z.boolean().default(true),
+    gerarImagens: z.boolean().default(false),
+    referenciaId: z.number().int().positive().nullable().default(null),
+    fotos: fotosDoPedidoEntrada,
+  })
+  .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
+    message: 'Diga o que os cards precisam dizer (ou escolha o que divulgar).',
+    path: ['assunto'],
+  })
+  .refine((d) => d.quantidade * d.variacoes <= MAX_PECAS_PEDIDO, {
+    message: `Até ${MAX_PECAS_PEDIDO} peças por pedido (cards × variações).`,
+    path: ['variacoes'],
+  })
+  .refine((d) => d.chamada !== 'comentar' || PALAVRA_COMENTAR.test(d.palavra), {
+    message: 'Escolha a palavra que a pessoa vai comentar (uma palavra só, sem espaço).',
+    path: ['palavra'],
+  });
+export type PedidoCards = z.infer<typeof pedidoCardsEntrada>;
+
+/** "Outra variação" de um card: mais uma, diferente das que já existem, no mesmo pedido. */
+export const outraVariacaoEntrada = z.object({
+  /** O que mudar nesta variação (opcional). */
+  pedido: z.string().trim().max(400).default(''),
+});
+
+/** Uma variação de um card (é um carrossel de um slide). */
+export interface VariacaoCard {
+  id: number;
+  variacao: number;
+  escolhido: boolean;
+  versao: number;
+  situacao: string;
+  slide: SlideCarrossel | null;
+  estilo: EstiloCarrossel;
+}
+
+/** Os cards de um pedido, como a aba Cards avulsos mostra. */
+export interface LoteCards {
+  pedidoId: number;
+  titulo: string;
+  assunto: string;
+  objetivo: ObjetivoCard;
+  formato: FormatoPeca;
+  quantidade: number;
+  variacoes: number;
+  situacao: SituacaoPedido;
+  etapa: EtapaTime | null;
+  detalhes: Partial<Record<EtapaTime, string>>;
+  erro: string | null;
+  criadoEm: string;
+  /** Pedidos de "outra variação" ainda trabalhando neste lote (o card de cada um). */
+  trabalhando: number[];
+  cards: { card: number; variacoes: VariacaoCard[] }[];
 }

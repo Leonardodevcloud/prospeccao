@@ -1,3 +1,4 @@
+import type { FormatoPeca } from '@prospeccao/shared/carrosseis';
 import { type ConfigImagem, conferirImagem, pedirImagem } from '../videos/imagens.js';
 import type { ClienteClaude } from './claude.js';
 
@@ -14,6 +15,11 @@ import type { ClienteClaude } from './claude.js';
 
 /** 4:5, como o slide (1080 × 1350), em lados múltiplos de 16. */
 export const TAMANHO_SLIDE = { largura: 1088, altura: 1360 } as const;
+/** v144: 9:16, como o story (1080 × 1920). */
+export const TAMANHO_STORY = { largura: 1088, altura: 1920 } as const;
+export const tamanhoDaImagem = (f: FormatoPeca = 'feed') => (f === 'story' ? TAMANHO_STORY : TAMANHO_SLIDE);
+const proporcao = (f: FormatoPeca = 'feed') =>
+  f === 'story' ? 'em pé (9:16, tela cheia de story)' : 'em pé (4:5)';
 
 /** As três cenas de partida para o produto (o mockup: estúdio na cor da marca, uso real, close). */
 export const CENAS_PRODUTO = [
@@ -42,9 +48,13 @@ const PROIBIDO =
   'Proibido: qualquer texto, letra, número, placa legível, logotipo, marca, marca d’água e moldura. Sem rosto de pessoa em destaque (pessoas só de costas, de longe ou só as mãos).';
 
 /** A imagem de um slide: a cena, a paleta e o espaço livre para o texto que o sistema escreve. */
-export function promptDaImagemDoSlide(descricao: string, e: EstiloDaImagem): string {
+export function promptDaImagemDoSlide(
+  descricao: string,
+  e: EstiloDaImagem,
+  formato: FormatoPeca = 'feed',
+): string {
   return [
-    'Fotografia realista e profissional para um post do Instagram em pé (4:5), como foto de campanha.',
+    `Fotografia realista e profissional para um post do Instagram ${proporcao(formato)}, como foto de campanha.`,
     `Cena: ${descricao.trim()}.`,
     'Composição: o assunto principal nítido, com uma área calma e sem detalhes (em cima ou embaixo) onde vai entrar o texto.',
     linhaPaleta(e),
@@ -58,12 +68,12 @@ export function promptDaImagemDoSlide(descricao: string, e: EstiloDaImagem): str
 }
 
 /** O produto da foto num cenário novo: o produto fica exatamente igual. */
-export function promptDoCenario(cena: string, e: EstiloDaImagem): string {
+export function promptDoCenario(cena: string, e: EstiloDaImagem, formato: FormatoPeca = 'feed'): string {
   return [
     'Use a foto enviada como referência do produto.',
     'O produto continua EXATAMENTE igual: mesma forma, cor, proporção, peças, acabamento e o que estiver escrito nele. Não redesenhe, não troque nada no produto.',
     `Troque só o fundo, a luz e o ambiente: o produto ${cena}.`,
-    'Fotografia realista de produto, formato em pé (4:5), o produto inteiro e nítido, com espaço livre acima ou abaixo para texto.',
+    `Fotografia realista de produto, formato ${proporcao(formato)}, o produto inteiro e nítido, com espaço livre acima ou abaixo para texto.`,
     linhaPaleta(e),
     linhaReferencia(e),
     'Proibido: texto novo, letras, números, logotipo ou marca que não estejam no próprio produto, marca d’água, moldura, pessoas.',
@@ -72,12 +82,56 @@ export function promptDoCenario(cena: string, e: EstiloDaImagem): string {
     .join('\n');
 }
 
-export async function gerarImagemDoSlide(cfg: ConfigImagem, descricao: string, e: EstiloDaImagem) {
-  return pedirImagem(cfg, { prompt: promptDaImagemDoSlide(descricao, e), ...TAMANHO_SLIDE });
+export async function gerarImagemDoSlide(
+  cfg: ConfigImagem,
+  descricao: string,
+  e: EstiloDaImagem,
+  formato: FormatoPeca = 'feed',
+) {
+  return pedirImagem(cfg, {
+    prompt: promptDaImagemDoSlide(descricao, e, formato),
+    ...tamanhoDaImagem(formato),
+  });
 }
 
-export async function gerarCenario(cfg: ConfigImagem, produto: Uint8Array, cena: string, e: EstiloDaImagem) {
-  return pedirImagem(cfg, { prompt: promptDoCenario(cena, e), ...TAMANHO_SLIDE, referencia: produto });
+export async function gerarCenario(
+  cfg: ConfigImagem,
+  produto: Uint8Array,
+  cena: string,
+  e: EstiloDaImagem,
+  formato: FormatoPeca = 'feed',
+) {
+  return pedirImagem(cfg, {
+    prompt: promptDoCenario(cena, e, formato),
+    ...tamanhoDaImagem(formato),
+    referencia: produto,
+  });
+}
+
+/** A cena da conferência da foto melhorada (o revisor visual compara com a original). */
+export const CENA_MELHORADA =
+  'com a luz, a cor, a nitidez e o fundo tratados, o mesmo assunto e o mesmo enquadramento';
+
+/**
+ * v144: a mesma foto, melhorada: luz, cor, nitidez e um fundo limpo, sem mudar o assunto (o produto,
+ * a fachada, a equipe, o carro). O revisor visual confere que o assunto ficou igual.
+ */
+export function promptDaFotoMelhorada(formato: FormatoPeca = 'feed'): string {
+  return [
+    'Use a foto enviada e devolva A MESMA FOTO, tratada como por um fotógrafo profissional.',
+    'O assunto continua EXATAMENTE igual: mesmas pessoas, mesmo produto, mesma forma, cor, proporção, peças e o que estiver escrito nele. Não invente nem tire nada do assunto.',
+    'Melhore: luz equilibrada, cores naturais e vivas, nitidez, ruído limpo, horizonte reto; tire do fundo o que distrai (fios, lixo, bagunça), deixando o fundo limpo e coerente com o lugar.',
+    `Formato ${proporcao(formato)}: se precisar, estenda o fundo de forma natural para preencher, sem cortar o assunto.`,
+    'Proibido: texto novo, letra, número, logotipo ou marca que não estejam na foto, marca d’água, moldura, aparência de ilustração.',
+  ].join('\n');
+}
+
+export async function melhorarFoto(cfg: ConfigImagem, foto: Uint8Array, formato: FormatoPeca = 'feed') {
+  return pedirImagem(cfg, {
+    prompt: promptDaFotoMelhorada(formato),
+    ...tamanhoDaImagem(formato),
+    referencia: foto,
+  });
 }
 
 /** A imagem do slide passa pelo mesmo revisor de visão das imagens dos vídeos. */

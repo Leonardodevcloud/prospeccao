@@ -4,6 +4,7 @@ import {
   type Carrossel,
   type CarrosselEntrada,
   type EstiloCarrossel,
+  type FormatoPeca,
   type FotoCarrossel,
   type IdentidadeCarrossel,
   identidadeCompleta,
@@ -150,7 +151,7 @@ export async function adicionarFotoDaIa(
     largura: number;
     altura: number;
     bytes: number;
-    origem: 'gerada' | 'cenario' | 'referencia';
+    origem: 'gerada' | 'cenario' | 'referencia' | 'melhorada';
     baseFotoId?: number | null;
     pedido?: string | null;
     carrosselId?: number | null;
@@ -222,7 +223,8 @@ export async function apagarFoto(db: Executor, id: number): Promise<string> {
 /* ───────────────────────────── Carrosséis ───────────────────────────── */
 
 const COLUNAS_RESUMO = `c.id, c.titulo, c.estilo, c.situacao, jsonb_array_length(c.slides)::int AS slides, c.versao,
-  c.origem, c.criado_em AS "criadoEm", c.atualizado_em AS "atualizadoEm", u.nome AS "criadoPor",
+  c.origem, c.tipo, c.formato, c.pedido_id AS "pedidoId", c.card, c.variacao, c.escolhido,
+  c.criado_em AS "criadoEm", c.atualizado_em AS "atualizadoEm", u.nome AS "criadoPor",
   coalesce((SELECT count(*) FROM jsonb_array_elements(c.relatorio->'avisos') a WHERE a->>'resolvido' IS NULL), 0)::int AS "avisosAbertos",
   CASE WHEN pr.id IS NULL THEN NULL ELSE jsonb_build_object(
     'palavra', pr.palavras[1], 'esperando', pr.alvo = 'carrossel', 'ligada', pr.ligada,
@@ -239,7 +241,7 @@ export async function listar(db: Executor): Promise<ResumoCarrossel[]> {
   const { rows } = await db.query<ResumoCarrossel>(
     `SELECT ${COLUNAS_RESUMO}
        FROM comercial.carrosseis c LEFT JOIN cadastro.usuarios u ON u.id = c.criado_por ${JUNTA_PUBLICACAO}
-      WHERE c.conta_id = ${contaSql()}
+      WHERE c.conta_id = ${contaSql()} AND c.tipo = 'carrossel'
       ORDER BY c.atualizado_em DESC LIMIT ${MAX_CARROSSEIS_CONTA}`,
   );
   return rows;
@@ -288,12 +290,23 @@ export async function criar(
     divulgarId?: number | null;
     /** Quem pediu (o time trabalha fora da requisição). */
     criadoPor?: number | null;
+    /** v144: o card avulso (um slide só) e de que pedido, card e variação ele é. */
+    card?: {
+      formato: FormatoPeca;
+      pedidoId: number;
+      card: number;
+      variacao: number;
+      escolhido: boolean;
+    } | null;
   },
 ): Promise<number> {
   // v134: os slides como o time entregou ficam guardados (o time aprende com o que quem publica muda).
+  const k = d.card ?? null;
   const { rows } = await db.query<{ id: number }>(
-    `INSERT INTO comercial.carrosseis (conta_id, titulo, estilo, slides, legenda, origem, criado_por, relatorio, divulgar_id, slides_do_time)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'ia' THEN $3::jsonb END) RETURNING id`,
+    `INSERT INTO comercial.carrosseis (conta_id, titulo, estilo, slides, legenda, origem, criado_por, relatorio, divulgar_id, slides_do_time,
+                                       tipo, formato, pedido_id, card, variacao, escolhido)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $5 = 'ia' THEN $3::jsonb END,
+             $9, $10, $11, $12, $13, $14) RETURNING id`,
     [
       d.titulo,
       d.estilo,
@@ -303,6 +316,12 @@ export async function criar(
       d.criadoPor !== undefined ? d.criadoPor : (usuarioAtual()?.id ?? null),
       d.relatorio ? JSON.stringify(d.relatorio) : null,
       d.divulgarId ?? null,
+      k ? 'card' : 'carrossel',
+      k?.formato ?? 'feed',
+      k?.pedidoId ?? null,
+      k?.card ?? null,
+      k?.variacao ?? null,
+      k?.escolhido ?? false,
     ],
   );
   return rows[0]!.id;
@@ -375,7 +394,9 @@ export async function apagar(db: Executor, id: number): Promise<string[]> {
 export async function feitosPelaIaNoMes(db: Executor): Promise<number> {
   const { rows } = await db.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM comercial.carrossel_pedidos
-      WHERE conta_id = ${contaSql()} AND tipo = 'carrossel' AND situacao NOT IN ('falhou', 'cancelado')
+      WHERE conta_id = ${contaSql()} AND situacao NOT IN ('falhou', 'cancelado')
+        -- v144: o pedido de cards conta 1 (a "outra variação" não conta).
+        AND (tipo = 'carrossel' OR (tipo = 'cards' AND entrada->'outra' IS NULL))
         AND criado_em >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'`,
   );
   return rows[0]!.n;

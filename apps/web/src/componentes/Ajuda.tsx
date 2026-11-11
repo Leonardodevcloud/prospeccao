@@ -1207,7 +1207,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'O time de IA escreve carrosséis com a identidade e o jeito de falar da empresa; você confere, ajusta e baixa as imagens.',
     onde: { rotulo: 'Carrosséis', para: '/carrosseis' },
     termos:
-      'ideias buscar ideias aprendeu aprendizado aprendizados mediana teste contas de referência concorrente melhor horário agendar agendamento calendário publicar agora imagem gerada cenário produto referência de estilo revisor visual carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
+      'cards avulsos card avulso peça única post único story stories 9:16 feed 4:5 variação variações escolher outra variação fotos do pedido melhorar a foto melhorada tratar foto ideias buscar ideias aprendeu aprendizado aprendizados mediana teste contas de referência concorrente melhor horário agendar agendamento calendário publicar agora imagem gerada cenário produto referência de estilo revisor visual carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
     corpo: (
       <>
         <p>
@@ -1490,6 +1490,41 @@ export const ARTIGOS: ArtigoAjuda[] = [
           ver o que funciona no nicho e nunca copia. Para ler esses números, o Instagram da empresa precisa
           estar conectado.
         </p>
+        <h3>12. Cards avulsos (um post de uma imagem só)</h3>
+        <p>
+          Na aba <b>Cards avulsos</b>, peça ao time peças de uma imagem só, no <b>Feed 4:5</b> (1080 × 1350)
+          ou no <b>Story 9:16</b> (1080 × 1920). É o mesmo time, o mesmo cérebro da marca, a mesma identidade
+          visual e o mesmo revisor dos carrosséis.
+        </p>
+        <Passos>
+          <li>
+            Em <b>O que você quer</b>, escreva como falaria com o time (ex.: “3 cards de promoção: pastilha,
+            óleo e amortecedor, preço grande, só até sexta”). Se listar coisas, cada card é uma delas.
+          </li>
+          <li>
+            Escolha <b>quantos cards</b> (até 10), <b>quantas variações</b> de cada (até 3; no máximo 20 peças
+            por pedido), o <b>formato</b>, o <b>objetivo</b> (promoção, produto, aviso, data especial, frase,
+            institucional), o estilo e a ação que a peça pede. As variações dizem a mesma mensagem por
+            caminhos diferentes, para você escolher.
+          </li>
+          <li>
+            Em <b>Fotos para usar neste pedido</b>, envie até 4 fotos (ou escolha das fotos da empresa) e diga
+            como cada uma entra: <b>Usar como está</b>, <b>Melhorar a foto</b> (a IA trata luz, cor, nitidez e
+            o fundo, com o assunto igual) ou <b>Produto num cenário novo</b>. O revisor visual confere as
+            feitas pela IA; a que não passa entra como foi enviada. O mesmo bloco está no pedido de carrossel.
+          </li>
+          <li>
+            Pronto, clique na variação que vai ser usada em cada card (a escolhida fica marcada).{' '}
+            <b>Editar</b> abre a peça no editor (com a Conversa com o time), <b>Outra variação</b> pede mais
+            uma diferente das que existem e <b>Publicar</b> leva à aba Publicação: no story, a peça vai como
+            story. Na caixa <b>Pedir ao time</b>, escreva o que mudar num card e o time faz uma variação nova
+            com isso, sem mexer nas que você já tem.
+          </li>
+          <li>
+            <b>Baixar os escolhidos</b> baixa um .zip com a variação escolhida de cada card e as legendas. O
+            pedido conta 1 na franquia do mês; outra variação não conta.
+          </li>
+        </Passos>
       </>
     ),
   },

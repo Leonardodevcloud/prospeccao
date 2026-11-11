@@ -1,10 +1,13 @@
 import {
+  alturaDoFormato,
   avisosDoCarrossel,
   type Carrossel,
   type CarrosselEntrada,
   ESTILO,
   ESTILOS,
   type EstiloCarrossel,
+  FORMATO_PECA,
+  type FormatoPeca,
   FUNDOS_SLIDE,
   type IdentidadeCarrossel,
   MAX_SLIDES,
@@ -123,6 +126,8 @@ function usePreviaDoServidor(p: {
   total: number;
   estilo: EstiloCarrossel;
   identidade: IdentidadeCarrossel;
+  /** v144: feed ou story. */
+  formato: FormatoPeca;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [chaveDaImagem, setChaveDaImagem] = useState('');
@@ -204,6 +209,11 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
   const s = useSalvarSozinho(c, r);
   const identidade = d.identidade;
   const logos = useMemo(() => logosDaIdentidade(d, identidade), [d, identidade]);
+  // v144: o card avulso é um slide só, no feed ou no story.
+  const ehCard = c.tipo === 'card';
+  const formato: FormatoPeca = c.formato ?? 'feed';
+  const largPalco = formato === 'story' ? 324 : 432;
+  const largMini = formato === 'story' ? 80 : 104;
   const slide = r.slides[Math.min(atual, r.slides.length - 1)]!;
   const indice = Math.min(atual, r.slides.length - 1);
 
@@ -218,11 +228,19 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
           estilo: r.estilo,
           foto: x.fotoId && MODELO[x.modelo].foto ? urlFoto(x.fotoId) : null,
           ...logos,
+          formato,
         }),
       ),
-    [r.slides, r.estilo, identidade, logos],
+    [r.slides, r.estilo, identidade, logos, formato],
   );
-  const previa = usePreviaDoServidor({ slide, indice, total: r.slides.length, estilo: r.estilo, identidade });
+  const previa = usePreviaDoServidor({
+    slide,
+    indice,
+    total: r.slides.length,
+    estilo: r.estilo,
+    identidade,
+    formato,
+  });
 
   const mudarSlide = (patch: Partial<SlideCarrossel>) =>
     setR((x) => ({ ...x, slides: x.slides.map((y, i) => (i === indice ? { ...y, ...patch } : y)) }));
@@ -327,6 +345,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
           estilo: r.estilo,
           foto: x.fotoId && MODELO[x.modelo].foto ? urlFoto(x.fotoId) : null,
           ...logos,
+          formato,
         }).no,
     );
   // A proposta aplicada entra no rascunho (e o editor salva sozinho, como qualquer mudança).
@@ -340,7 +359,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
     setAba('slide');
   };
 
-  const avisosGerais = avisosDoCarrossel(r.slides);
+  const avisosGerais = ehCard ? [] : avisosDoCarrossel(r.slides);
   const avisosSlide = montados[indice]?.avisos ?? [];
   const estado = s.travado
     ? 'Publicado: só leitura'
@@ -353,11 +372,14 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
   return (
     <div className="editor-carrossel">
       <header className="editor-carrossel__topo">
-        <Link to="/carrosseis" className="link-botao editor-carrossel__voltar">
-          <Icon name="chevron-left" size={16} /> Carrosséis
+        <Link
+          to={ehCard ? '/carrosseis?aba=cards' : '/carrosseis'}
+          className="link-botao editor-carrossel__voltar"
+        >
+          <Icon name="chevron-left" size={16} /> {ehCard ? 'Cards avulsos' : 'Carrosséis'}
         </Link>
         <label className="pp-sr" htmlFor="ec-titulo">
-          Nome do carrossel
+          {ehCard ? 'Nome do card' : 'Nome do carrossel'}
         </label>
         <input
           id="ec-titulo"
@@ -372,15 +394,17 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
         </span>
         <span className="editor-carrossel__espaco" />
         <LinkAjuda artigo="carrosseis" />
-        <Button
-          size="sm"
-          variant="ghost"
-          icon="smartphone"
-          onClick={() => setInstagram(true)}
-          disabled={s.sujo}
-        >
-          Ver no celular
-        </Button>
+        {formato === 'feed' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon="smartphone"
+            onClick={() => setInstagram(true)}
+            disabled={s.sujo}
+          >
+            Ver no celular
+          </Button>
+        )}
         <Button size="sm" variant="secondary" icon="download" onClick={baixar} disabled={baixando}>
           {baixando ? 'Preparando…' : 'Baixar as imagens'}
         </Button>
@@ -427,12 +451,12 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                   onClick={() => setAtual(i)}
                 >
                   <span className="editor-carrossel__num">{i + 1}</span>
-                  <SlideHtml no={montados[i]!.no} largura={104} />
+                  <SlideHtml no={montados[i]!.no} largura={largMini} formato={formato} />
                   {(!!montados[i]!.avisos.length || avisosDoSlide(x.id).length > 0) && (
                     <span className="editor-carrossel__ponto" title="Tem aviso" />
                   )}
                 </button>
-                {i === indice && !s.travado && (
+                {i === indice && !s.travado && !ehCard && (
                   <span className="editor-carrossel__mini-acoes">
                     <button
                       type="button"
@@ -479,13 +503,19 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
               </li>
             ))}
           </ol>
-          {!s.travado && <NovoSlide cheio={r.slides.length >= MAX_SLIDES} aoEscolher={adicionar} />}
+          {!s.travado && !ehCard && (
+            <NovoSlide cheio={r.slides.length >= MAX_SLIDES} aoEscolher={adicionar} />
+          )}
         </nav>
 
         <section className="editor-carrossel__palco" aria-label={`Slide ${indice + 1}`}>
-          <div className="editor-carrossel__imagem" data-carregando={!previa.atualizada || undefined}>
+          <div
+            className="editor-carrossel__imagem"
+            data-carregando={!previa.atualizada || undefined}
+            data-formato={formato}
+          >
             {/* Enquanto o servidor desenha, a prévia do navegador fica por baixo. */}
-            <SlideHtml no={montados[indice]!.no} largura={432} />
+            <SlideHtml no={montados[indice]!.no} largura={largPalco} formato={formato} />
             {previa.url && (
               <img
                 src={previa.url}
@@ -506,7 +536,8 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
               <Icon name="chevron-left" size={16} />
             </button>
             <span className="quieto">
-              Slide {indice + 1} de {r.slides.length} · 1080 × 1350
+              {ehCard ? FORMATO_PECA[formato].nome : `Slide ${indice + 1} de ${r.slides.length}`} · 1080 ×{' '}
+              {alturaDoFormato(formato)}
             </span>
             <button
               type="button"

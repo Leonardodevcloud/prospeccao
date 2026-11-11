@@ -297,7 +297,10 @@ export interface DepsPublicar {
 async function linksDaPeca(
   deps: DepsPublicar,
   ag: LinhaAgendamento,
-): Promise<{ tipo: 'carrossel'; imagens: string[] } | { tipo: 'video'; video: string; capa: string | null }> {
+): Promise<
+  | { tipo: 'carrossel'; imagens: string[]; story: boolean }
+  | { tipo: 'video'; video: string; capa: string | null }
+> {
   const arm = deps.armazenamento;
   if (!arm) throw AppError.invalido('O armazenamento de arquivos não está ligado.');
   if (ag.video_id) {
@@ -321,12 +324,13 @@ async function linksDaPeca(
       indice: i,
       total: c.conteudo.length,
       estilo: c.estilo,
+      formato: c.formato,
     });
     const chave = `carrosseis/${conta()}/publicar/${ag.id}/${String(i + 1).padStart(2, '0')}.jpg`;
     await arm.enviar(chave, new Uint8Array(img.jpeg), 'image/jpeg');
     imagens.push(await arm.urlAssinada(chave, { segundos: 7200 }));
   }
-  return { tipo: 'carrossel', imagens };
+  return { tipo: 'carrossel', imagens, story: c.formato === 'story' };
 }
 
 async function avisar(db: Executor, ag: LinhaAgendamento, aviso: { titulo: string; texto: string }) {
@@ -379,6 +383,8 @@ export async function tentarPublicar(deps: DepsPublicar, ag: LinhaAgendamento): 
           legenda: ag.legenda,
           capa: l.capa,
         });
+      else if (l.story)
+        container = await m.criarMidia(c.igId, c.token, { tipo: 'story', imagem: l.imagens[0]! });
       else if (l.imagens.length === 1)
         container = await m.criarMidia(c.igId, c.token, {
           tipo: 'imagem',

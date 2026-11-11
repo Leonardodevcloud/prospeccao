@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import {
-  ALTURA_SLIDE,
+  alturaDoFormato,
   arquivoDaFonte,
   FONTES_SLIDES,
+  type FormatoPeca,
   LARGURA_SLIDE,
   type No,
 } from '@prospeccao/shared/carrosseis';
@@ -55,13 +56,20 @@ function carregarMotor(): Promise<Motor> {
 
 export type FormatoSlide = 'jpeg' | 'png';
 
-/** Desenha a árvore de um slide (1080 × 1350). `largura` menor serve para miniaturas. */
+/**
+ * Desenha a árvore de um slide (1080 × 1350 no feed, 1080 × 1920 no story). `largura` menor serve
+ * para miniaturas.
+ */
 export async function desenharSlide(
   no: No,
-  opcoes: { formato?: FormatoSlide; largura?: number; qualidade?: number } = {},
+  opcoes: { formato?: FormatoSlide; largura?: number; qualidade?: number; peca?: FormatoPeca } = {},
 ): Promise<Buffer> {
   const m = await carregarMotor();
-  const svg = await m.satori(no as never, { width: LARGURA_SLIDE, height: ALTURA_SLIDE, fonts: m.fontes });
+  const svg = await m.satori(no as never, {
+    width: LARGURA_SLIDE,
+    height: alturaDoFormato(opcoes.peca),
+    fonts: m.fontes,
+  });
   const largura = Math.min(LARGURA_SLIDE, Math.max(120, Math.round(opcoes.largura ?? LARGURA_SLIDE)));
   const png = new m.Resvg(svg, { fitTo: { mode: 'width', value: largura }, background: '#ffffff' })
     .render()

@@ -5,6 +5,7 @@ import {
   carrosselEntrada,
   carrosselNovoEntrada,
   ESTILOS,
+  FORMATOS_PECA,
   identidadeCarrosselEntrada,
   MAX_CARROSSEIS_CONTA,
   MAX_FOTOS_CONTA,
@@ -41,6 +42,7 @@ import * as publicar from '../instagram/publicar.js';
 import * as marca from '../marca/repositorio.js';
 import { organizacaoDaConta } from '../plano/repositorio.js';
 import * as aprender from './aprender.js';
+import * as cards from './cards.js';
 import * as cerebro from './cerebro.js';
 import * as conversa from './conversa.js';
 import { desenhar, materialDaConta } from './desenho.js';
@@ -160,6 +162,70 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   r.post('/time/:id/cancelar', async (req, res) => {
     await time.cancelar(pool, idDaRota(req));
     res.json({ ok: true });
+  });
+
+  /* ── v144: os cards avulsos ── */
+
+  const loteDaRota = (req: Request) => {
+    const n = Number(req.params.lote);
+    if (!Number.isInteger(n) || n <= 0) throw AppError.naoEncontrado('Pedido de cards');
+    return n;
+  };
+  r.get('/cards', async (_req, res) => {
+    res.json({ lotes: await cards.lotes(pool), franquia: await franquia(), iaLigada: !!ia() });
+  });
+  r.post('/cards', async (req, res) => {
+    res.status(201).json(await cards.pedirCards(pool, ia(), req.body, franquia));
+  });
+  r.post('/cards/:lote/:card/outra', async (req, res) => {
+    const card = Number(req.params.card);
+    if (!Number.isInteger(card) || card <= 0) throw AppError.naoEncontrado('Card');
+    res.status(201).json(await cards.pedirOutraVariacao(pool, ia(), loteDaRota(req), card, req.body));
+  });
+  r.post('/cards/escolher/:id', async (req, res) => {
+    await cards.escolher(pool, idDaRota(req));
+    res.json({ ok: true });
+  });
+  r.delete('/cards/:lote', async (req, res) => {
+    const lote = loteDaRota(req);
+    const ids = await cards.pecasDoLote(pool, lote, false);
+    await cards.esquecerLote(pool, lote);
+    const arquivos: string[] = [];
+    for (const id of ids) arquivos.push(...(await repo.apagar(pool, id)));
+    if (arquivos.length)
+      await arm()
+        ?.apagar(arquivos)
+        .catch(() => undefined);
+    res.json({ ok: true });
+  });
+  /** As peças escolhidas do lote (uma de cada card), num .zip, com as legendas. */
+  r.get('/cards/:lote/imagens.zip', async (req, res) => {
+    const ids = await cards.pecasDoLote(pool, loteDaRota(req), true);
+    if (!ids.length) throw AppError.naoEncontrado('Card escolhido');
+    const material = await materialDaConta(pool, arm());
+    const arquivos: Record<string, Uint8Array> = {};
+    const legendas: string[] = [];
+    for (const id of ids) {
+      const c = await repo.carrossel(pool, id);
+      const slide = c.conteudo[0];
+      if (!slide) continue;
+      const img = await desenhar(pool, arm(), material, {
+        slide,
+        indice: 0,
+        total: 1,
+        estilo: c.estilo,
+        formato: c.formato,
+      });
+      const nome = `card-${String(c.card ?? 1).padStart(2, '0')}`;
+      arquivos[`${nome}.jpg`] = new Uint8Array(img.jpeg);
+      if (c.legenda.trim()) legendas.push(`${nome.toUpperCase()}\n${c.legenda.trim()}`);
+      await repo.marcarBaixado(pool, c.id);
+    }
+    if (legendas.length) arquivos['legendas.txt'] = strToU8(legendas.join('\n\n---\n\n'));
+    const zip = zipSync(arquivos, { level: 0 });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="cards.zip"');
+    res.send(Buffer.from(zip));
   });
 
   /* ── v134: o que o time aprendeu, as ideias e as contas de referência ── */
@@ -366,6 +432,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
         estilo: z.enum(ESTILOS),
         identidade: identidadeCarrosselEntrada.optional(),
         largura: z.number().int().min(120).max(1080).default(720),
+        formato: z.enum(FORMATOS_PECA).default('feed'),
       }),
     );
     const [slide] = await repo.conferirFotos(pool, [d.slide]);
@@ -376,6 +443,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
       total: d.total,
       estilo: d.estilo,
       largura: d.largura,
+      formato: d.formato,
     });
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'no-store');
@@ -474,12 +542,33 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     const c = await repo.carrossel(pool, idDaRota(req));
     if ((await repo.contar(pool)) >= MAX_CARROSSEIS_CONTA)
       throw AppError.invalido(`Até ${MAX_CARROSSEIS_CONTA} carrosséis por conta: apague os antigos.`);
+    // v144: a cópia de um card vira mais uma variação do mesmo card.
+    const proxima =
+      c.tipo === 'card' && c.pedidoId
+        ? (
+            await pool.query<{ n: number }>(
+              `SELECT coalesce(max(variacao), 0)::int + 1 AS n FROM comercial.carrosseis
+                WHERE conta_id = $3 AND tipo = 'card' AND pedido_id = $1 AND card = $2`,
+              [c.pedidoId, c.card, conta()],
+            )
+          ).rows[0]!.n
+        : null;
     const id = await repo.criar(pool, {
       titulo: `${c.titulo} (cópia)`.slice(0, 120),
       estilo: c.estilo,
       slides: c.conteudo,
       legenda: c.legenda,
       relatorio: c.relatorio,
+      card:
+        c.tipo === 'card' && c.pedidoId && proxima
+          ? {
+              formato: c.formato,
+              pedidoId: c.pedidoId,
+              card: c.card ?? 1,
+              variacao: proxima,
+              escolhido: false,
+            }
+          : null,
     });
     res.status(201).json(await repo.carrossel(pool, id));
   });
@@ -611,6 +700,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
       total: c.conteudo.length,
       estilo: c.estilo,
       largura,
+      formato: c.formato,
     });
     const etag = `"${img.etag}"`;
     res.setHeader('ETag', etag);
@@ -631,6 +721,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
         indice: i,
         total: c.conteudo.length,
         estilo: c.estilo,
+        formato: c.formato,
       });
       arquivos[`${String(i + 1).padStart(2, '0')}-${slide.modelo}.jpg`] = new Uint8Array(img.jpeg);
     }

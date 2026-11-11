@@ -8,6 +8,7 @@ import {
   CRITERIOS_REVISOR,
   ETAPA_TIME,
   ETAPAS_TIME,
+  type FotoDoPedido,
   OBJETIVO,
   OBJETIVOS_CARROSSEL,
   type ObjetivoCarrossel,
@@ -26,7 +27,7 @@ import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, usePedidoDoTime } from './dados';
 import type { IdeiaInicial } from './Ideias';
-import { CamposDeImagens, IMAGENS_VAZIAS, type ImagensDoPedido } from './Imagens';
+import { CamposDeImagens, FotosDoPedido, IMAGENS_VAZIAS, type ImagensDoPedido } from './Imagens';
 import { FotoDoTime } from './TimeDeIa';
 
 /**
@@ -58,6 +59,7 @@ export function NovoComTime(props: {
   const [palavra, setPalavra] = useState('');
   const [usarFotos, setUsarFotos] = useState(true);
   const [imagens, setImagens] = useState<ImagensDoPedido>(IMAGENS_VAZIAS);
+  const [fotosPedido, setFotosPedido] = useState<FotoDoPedido[]>([]);
   const [pedidoId, setPedidoId] = useState<number | null>(null);
   const pedir = useMutation({
     mutationFn: () =>
@@ -74,6 +76,7 @@ export function NovoComTime(props: {
           usarFotos,
           ...imagens,
           ideiaId: ini?.ideiaId ?? null,
+          fotos: fotosPedido,
         },
       }),
     onSuccess: (p) => {
@@ -307,6 +310,14 @@ export function NovoComTime(props: {
         fotos={fotos.data?.fotos ?? []}
         valor={imagens}
         mudar={setImagens}
+      />
+
+      <FotosDoPedido
+        fotos={fotos.data?.fotos ?? []}
+        valor={fotosPedido}
+        mudar={setFotosPedido}
+        imagensLigadas={!!ia.imagens}
+        podeEnviar={props.situacao.armazenamento}
       />
 
       <p className="quieto novo-time__sabe">

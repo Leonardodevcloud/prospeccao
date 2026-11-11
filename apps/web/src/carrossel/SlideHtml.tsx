@@ -1,4 +1,4 @@
-import { ALTURA_SLIDE, LARGURA_SLIDE, type No } from '@prospeccao/shared/carrosseis';
+import { alturaDoFormato, type FormatoPeca, LARGURA_SLIDE, type No } from '@prospeccao/shared/carrosseis';
 import { createElement, type ReactNode } from 'react';
 import './fontes';
 
@@ -23,15 +23,25 @@ function paraReact(no: No | string, chave: string): ReactNode {
   return createElement(no.type, props, ...filhos.map((f, i) => paraReact(f, `${chave}.${i}`)));
 }
 
-export function SlideHtml(props: { no: No; largura: number; className?: string; rotulo?: string }) {
+export function SlideHtml(props: {
+  no: No;
+  largura: number;
+  className?: string;
+  rotulo?: string;
+  /** v144: feed (padrão) ou story. */
+  formato?: FormatoPeca;
+}) {
   const escala = props.largura / LARGURA_SLIDE;
   const classe = `slide-html${props.className ? ` ${props.className}` : ''}`;
   const tamanho = {
     width: props.largura,
-    height: Math.round(props.largura * (ALTURA_SLIDE / LARGURA_SLIDE)),
+    height: Math.round(props.largura * (alturaDoFormato(props.formato) / LARGURA_SLIDE)),
   };
   const tela = (
-    <div className="slide-html__tela" style={{ transform: `scale(${escala})` }}>
+    <div
+      className="slide-html__tela"
+      style={{ transform: `scale(${escala})`, height: alturaDoFormato(props.formato) }}
+    >
       {paraReact(props.no, 'r')}
     </div>
   );

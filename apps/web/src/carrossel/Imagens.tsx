@@ -1,4 +1,10 @@
 import type { FotoCarrossel } from '@prospeccao/shared/carrosseis';
+import {
+  type FotoDoPedido,
+  MAX_FOTOS_PEDIDO,
+  TRATAMENTO_FOTO,
+  TRATAMENTOS_FOTO,
+} from '@prospeccao/shared/carrosseis-time';
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
@@ -234,5 +240,133 @@ export function CenariosDoProduto(props: {
         <p className="campo__dica">O produto fica igual. Só o fundo e a luz mudam.</p>
       )}
     </div>
+  );
+}
+
+/**
+ * v144: "Fotos para usar neste pedido" (carrossel e cards): envie uma foto ou escolha das fotos da
+ * empresa e diga como ela entra: como está, melhorada pela IA ou o produto num cenário novo. O time
+ * usa cada uma em pelo menos um slide.
+ */
+export function FotosDoPedido(props: {
+  fotos: FotoCarrossel[];
+  valor: FotoDoPedido[];
+  mudar: (v: FotoDoPedido[]) => void;
+  /** A IA de imagem está ligada (sem ela, só "como está"). */
+  imagensLigadas: boolean;
+  /** O armazenamento está ligado (sem ele, não dá para enviar foto). */
+  podeEnviar: boolean;
+}) {
+  const { valor, mudar } = props;
+  const entrada = useRef<HTMLInputElement>(null);
+  const cliente = useQueryClient();
+  const [escolher, setEscolher] = useState('');
+  const enviar = useMutation({
+    mutationFn: (a: File) =>
+      enviarImagem<FotoCarrossel>(`/carrosseis/fotos?nome=${encodeURIComponent(a.name.slice(0, 80))}`, a),
+    onSuccess: (f) => {
+      void cliente.invalidateQueries({ queryKey: ['carrosseis', 'fotos'] });
+      mudar([...valor, { fotoId: f.id, tratamento: props.imagensLigadas ? 'melhorar' : 'como_esta' }]);
+    },
+  });
+  const disponiveis = props.fotos.filter(
+    (f) => f.origem !== 'referencia' && !valor.some((v) => v.fotoId === f.id),
+  );
+  const nome = (id: number) => props.fotos.find((f) => f.id === id)?.nome ?? 'Foto enviada';
+  const cheio = valor.length >= MAX_FOTOS_PEDIDO;
+  const tratamentos = props.imagensLigadas ? TRATAMENTOS_FOTO : (['como_esta'] as const);
+  return (
+    <fieldset className="campo fotos-pedido">
+      <legend>Fotos para usar neste pedido</legend>
+      <span className="campo__dica">
+        Até {MAX_FOTOS_PEDIDO}. O time põe cada uma em pelo menos uma peça.
+        {props.imagensLigadas
+          ? ' A IA pode melhorar a foto (luz, cor, nitidez e fundo, com o assunto igual) ou pôr o produto num cenário novo; o revisor visual confere.'
+          : ' As imagens feitas pela IA não estão ligadas: as fotos entram como foram enviadas.'}
+      </span>
+      {valor.length > 0 && (
+        <ul className="fotos-pedido__lista">
+          {valor.map((v, i) => (
+            <li key={v.fotoId} className="fotos-pedido__item">
+              <img src={urlFoto(v.fotoId, 160)} alt="" loading="lazy" />
+              <span className="fotos-pedido__nome">{nome(v.fotoId)}</span>
+              <select
+                className="filtro"
+                aria-label={`Como usar ${nome(v.fotoId)}`}
+                value={v.tratamento}
+                onChange={(e) =>
+                  mudar(
+                    valor.map((x, k) =>
+                      k === i ? { ...x, tratamento: e.target.value as FotoDoPedido['tratamento'] } : x,
+                    ),
+                  )
+                }
+              >
+                {tratamentos.map((t) => (
+                  <option key={t} value={t}>
+                    {TRATAMENTO_FOTO[t].nome}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="link-botao"
+                onClick={() => mudar(valor.filter((_, k) => k !== i))}
+              >
+                Tirar
+              </button>
+              <span className="campo__dica fotos-pedido__dica">{TRATAMENTO_FOTO[v.tratamento].dica}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!cheio && (
+        <div className="fotos-pedido__acoes">
+          {props.podeEnviar && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              icon="upload"
+              onClick={() => entrada.current?.click()}
+              disabled={enviar.isPending}
+            >
+              {enviar.isPending ? 'Enviando…' : 'Enviar uma foto'}
+            </Button>
+          )}
+          {disponiveis.length > 0 && (
+            <select
+              className="filtro"
+              aria-label="Escolher uma das fotos da empresa"
+              value={escolher}
+              onChange={(e) => {
+                const id = Number(e.target.value);
+                setEscolher('');
+                if (id) mudar([...valor, { fotoId: id, tratamento: 'como_esta' }]);
+              }}
+            >
+              <option value="">Escolher das fotos da empresa…</option>
+              {disponiveis.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.nome}
+                </option>
+              ))}
+            </select>
+          )}
+          <input
+            ref={entrada}
+            type="file"
+            className="pp-sr"
+            accept="image/jpeg,image/png,image/webp,image/heic"
+            onChange={(e) => {
+              const a = e.target.files?.[0];
+              e.target.value = '';
+              if (a) enviar.mutate(a);
+            }}
+          />
+        </div>
+      )}
+      <ErroDaApi erro={enviar.error} />
+    </fieldset>
   );
 }

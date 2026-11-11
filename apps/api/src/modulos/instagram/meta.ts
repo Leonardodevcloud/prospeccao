@@ -135,7 +135,9 @@ export type MidiaParaPublicar =
   | { tipo: 'item'; imagem: string }
   | { tipo: 'imagem'; imagem: string; legenda: string }
   | { tipo: 'carrossel'; filhos: string[]; legenda: string }
-  | { tipo: 'reels'; video: string; legenda: string; capa?: string | null };
+  | { tipo: 'reels'; video: string; legenda: string; capa?: string | null }
+  /** v144: o card avulso no formato story (story não tem legenda). */
+  | { tipo: 'story'; imagem: string };
 
 export interface EventoCrm {
   nome: string;
@@ -325,15 +327,17 @@ export function clienteMeta(cfg: ConfigMeta): ClienteMeta {
           ? { image_url: m.imagem, is_carousel_item: 'true' }
           : m.tipo === 'imagem'
             ? { image_url: m.imagem, caption: m.legenda }
-            : m.tipo === 'carrossel'
-              ? { media_type: 'CAROUSEL', children: m.filhos.join(','), caption: m.legenda }
-              : {
-                  media_type: 'REELS',
-                  video_url: m.video,
-                  caption: m.legenda,
-                  share_to_feed: 'true',
-                  ...(m.capa ? { cover_url: m.capa } : {}),
-                };
+            : m.tipo === 'story'
+              ? { image_url: m.imagem, media_type: 'STORIES' }
+              : m.tipo === 'carrossel'
+                ? { media_type: 'CAROUSEL', children: m.filhos.join(','), caption: m.legenda }
+                : {
+                    media_type: 'REELS',
+                    video_url: m.video,
+                    caption: m.legenda,
+                    share_to_feed: 'true',
+                    ...(m.capa ? { cover_url: m.capa } : {}),
+                  };
       const r = await chamar<{ id: string }>(`/${igId}/media`, { token, metodo: 'POST', params });
       return r.id;
     },

@@ -4,6 +4,7 @@ import type { Armazenamento } from '@prospeccao/integrations/reuniao';
 import { dataUrl, desenharSlide, prepararImagem } from '@prospeccao/integrations/slides';
 import {
   type EstiloCarrossel,
+  type FormatoPeca,
   type IdentidadeCarrossel,
   type LogoSlide,
   montarSlide,
@@ -133,6 +134,8 @@ export interface PedidoDesenho {
   total: number;
   estilo: EstiloCarrossel;
   largura?: number;
+  /** v144: feed (padrão) ou story. */
+  formato?: FormatoPeca;
 }
 
 /** Desenha um slide (JPEG). Devolve também os avisos de quem edita e a chave (para o ETag). */
@@ -152,6 +155,7 @@ export async function desenhar(
     foto,
     logoClaro: material.logoClaro,
     logoEscuro: material.logoEscuro,
+    formato: p.formato ?? 'feed',
   });
   const largura = Math.min(1080, Math.max(160, Math.round(p.largura ?? 1080)));
   const etag = createHash('sha1')
@@ -164,13 +168,18 @@ export async function desenhar(
         p.estilo,
         largura,
         foto ? foto.length : 0,
+        p.formato ?? 'feed',
       ]),
     )
     .digest('hex')
     .slice(0, 24);
   const guardada = imagens.obter(etag);
   if (guardada) return { jpeg: guardada, avisos: montado.avisos, etag };
-  const jpeg = await desenharSlide(montado.no, { largura, qualidade: largura < 1080 ? 86 : 92 });
+  const jpeg = await desenharSlide(montado.no, {
+    largura,
+    qualidade: largura < 1080 ? 86 : 92,
+    peca: p.formato ?? 'feed',
+  });
   imagens.guardar(etag, jpeg);
   return { jpeg, avisos: montado.avisos, etag };
 }

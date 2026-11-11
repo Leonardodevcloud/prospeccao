@@ -367,6 +367,12 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Música: a conta da ElevenLabs precisa de **plano pago** (no grátis a API de música responde 402). Se aparecer "a música não saiu", abrir a linha no log (o motivo vem junto). O 429 "system_busy" (ElevenLabs cheia) agora tenta de novo sozinho.
 5. [ ] **v140**: depois do redeploy do worker-videos, gerar um vídeo com música e ouvir **no celular**. A música tem que aparecer por baixo da fala o vídeo todo, mais alta nas pausas e na tela final. Se ficar alta ou baixa demais, mexer no volume da música na tela do vídeo (35 é o padrão) e me dizer qual número ficou bom.
 
+## 4y. Cards avulsos (v144)
+1. [ ] **Migration 104** roda sozinha no redeploy da **api** (depois o front publica sozinho; o worker-videos não muda).
+2. [ ] Conferir em Carrosséis › **Cards avulsos**: pedir 2 cards × 2 variações em **story** e em **feed**, escolher a variação, Baixar os escolhidos, Outra variação, Publicar (story vai como story no Instagram).
+3. [ ] **Melhorar a foto** e **cenário** precisam da `OPENAI_CHAVE` na **api** (é ela que faz as imagens dos carrosséis); sem a chave, as fotos do pedido entram como foram enviadas.
+4. [ ] Franquia: o pedido de cards conta 1 no mês (como um carrossel). Se preferir contar por card, me avise.
+
 ## 5. Cada cliente (Plataforma › Clientes e planos)
 - [ ] "Novo cliente": nome, plano (Start/Time/Escala/Personalizado), módulos (WhatsApp, Agente de IA, E-mail) e o 1º administrador. Mandar o link de convite.
 - [ ] Aba "Plano e módulos": ajustar usuários e leads/mês se o combinado foi diferente, e a mensalidade combinada.

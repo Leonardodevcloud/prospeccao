@@ -1,5 +1,6 @@
 import {
   type EstiloCarrossel,
+  type FormatoPeca,
   type IdentidadeCarrossel,
   MAX_SLIDES,
   MODELO,
@@ -88,6 +89,8 @@ export interface EntradaTime {
   preferencias?: string[];
   /** v134: este carrossel é um teste (2 de cada 10): o formato a testar. */
   teste?: string | null;
+  /** v144: as fotos que vieram com o pedido (já tratadas): cada uma entra em pelo menos um slide. */
+  fotosDoPedido?: { id: number; nome: string }[];
 }
 
 /** As imagens do time (v132): quem faz a imagem é a api (gera, confere e guarda nas fotos). */
@@ -284,13 +287,17 @@ function lerEstrategia(d: Record<string, unknown>, e: EntradaTime): Estrategia {
     .slice(0, 3);
   const idx = Math.max(0, Math.min(ganchos.length - 1, Number(d.escolhido) || 0));
   const fotos = new Set(e.fotos.map((f) => f.id));
+  const doPedido = new Set((e.fotosDoPedido ?? []).map((f) => f.id));
   let roteiro = (Array.isArray(d.slides) ? d.slides : [])
     .map((s) => s as Record<string, unknown>)
     .filter((s) => (MODELOS as readonly string[]).includes(String(s.modelo)))
     .map((s) => {
       const modelo = s.modelo as ModeloSlide;
       const fotoId = Number(s.fotoId);
-      const foto = e.pedido.usarFotos && MODELO[modelo].foto && fotos.has(fotoId) ? fotoId : null;
+      const foto =
+        MODELO[modelo].foto && ((e.pedido.usarFotos && fotos.has(fotoId)) || doPedido.has(fotoId))
+          ? fotoId
+          : null;
       const gerar =
         e.imagens?.gerar && MODELO[modelo].foto && !foto
           ? String(s.gerar ?? '')
@@ -328,6 +335,21 @@ function lerEstrategia(d: Record<string, unknown>, e: EntradaTime): Estrategia {
     const { gerar: _fora, ...resto } = s;
     return resto;
   });
+  // v144: as fotos do pedido entram: na capa (se ela não tem foto nem o cenário do produto) e nos
+  // slides do meio (um texto vira "foto"), uma foto em cada, até acabarem as vagas.
+  for (const f of e.fotosDoPedido ?? []) {
+    if (roteiro.some((s) => s.fotoId === f.id)) continue;
+    const capa = roteiro[0]!;
+    const alvo =
+      !capa.fotoId && !capa.gerar && !e.imagens?.produto
+        ? capa
+        : (roteiro.slice(1, -1).find((s) => s.modelo === 'foto' && !s.fotoId) ??
+          roteiro.slice(1, -1).find((s) => s.modelo === 'texto' && !s.fotoId));
+    if (!alvo) break;
+    if (alvo !== capa && alvo.modelo === 'texto') alvo.modelo = 'foto';
+    alvo.fotoId = f.id;
+    delete alvo.gerar;
+  }
   // "Foto" sem foto (nem imagem para gerar) não funciona: vira texto.
   roteiro = roteiro.map((s) =>
     s.modelo === 'foto' && !s.fotoId && !s.gerar ? { ...s, modelo: 'texto' as const } : s,
@@ -368,6 +390,9 @@ function mensagemEstrategista(e: EntradaTime): string {
     'O primeiro slide é "capa" e o último é "chamada". No meio, escolha o modelo que serve à ideia de cada slide:',
     limitesParaORedator(MODELOS.filter((m) => m !== 'capa' && m !== 'chamada')),
     '',
+    e.fotosDoPedido?.length
+      ? `FOTOS QUE A EMPRESA MANDOU PARA ESTE CARROSSEL (use cada uma em um slide capa ou foto, onde ela ajuda a mensagem):\n${e.fotosDoPedido.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
+      : '',
     e.pedido.usarFotos && e.fotos.length
       ? `FOTOS DA EMPRESA (use só quando a foto combina com o slide; só nos modelos capa e foto):\n${e.fotos.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
       : e.imagens?.gerar
@@ -399,7 +424,7 @@ function mensagemEstrategista(e: EntradaTime): string {
 
 /* ───────────────────────────── 2. Redator ───────────────────────────── */
 
-const ESQUEMA_SLIDE = {
+export const ESQUEMA_SLIDE = {
   type: 'object',
   properties: {
     modelo: { type: 'string', enum: [...MODELOS] },
@@ -519,7 +544,7 @@ function mensagemRedator(e: EntradaTime, est: Estrategia): string {
 
 /* ───────────────────────────── 3. Diretor de arte (código) ───────────────────────────── */
 
-interface ProblemaDoSlide {
+export interface ProblemaDoSlide {
   slide: number;
   tipo: TipoAvisoTime;
   texto: string;
@@ -530,6 +555,7 @@ export function conferirEncaixe(
   slides: SlideCarrossel[],
   legenda: string,
   e: Pick<EntradaTime, 'identidade' | 'estilo' | 'divulgar'>,
+  formato: FormatoPeca = 'feed',
 ): ProblemaDoSlide[] {
   const problemas: ProblemaDoSlide[] = [];
   slides.forEach((s, i) => {
@@ -539,6 +565,7 @@ export function conferirEncaixe(
       total: slides.length,
       identidade: e.identidade,
       estilo: e.estilo,
+      formato,
       // O tamanho do texto não depende da foto em si: um marcador basta para medir.
       foto: s.fotoId ? 'data:image/png;base64,' : null,
     });
@@ -554,7 +581,7 @@ export function conferirEncaixe(
 
 /* ───────────────────────────── 4. Revisor ───────────────────────────── */
 
-const ESQUEMA_REVISAO = {
+export const ESQUEMA_REVISAO = {
   type: 'object',
   properties: {
     notas: {
@@ -608,7 +635,7 @@ interface Ajuste {
   sugestao: string | null;
 }
 
-interface Revisao {
+export interface Revisao {
   notas: Partial<Record<CriterioRevisor, number>>;
   comentario: string;
   ajustes: Ajuste[];
@@ -634,7 +661,7 @@ function fatosSemFonte(brutos: unknown, fontes: FonteDoTime[]): { slide: number;
   return sem;
 }
 
-function lerRevisao(
+export function lerRevisao(
   d: Record<string, unknown>,
   total: number,
   fontes: FonteDoTime[],
@@ -752,7 +779,7 @@ function mensagemReescrita(e: EntradaTime, est: Estrategia, r: Redacao, rev: Rev
 
 /* ───────────────────────────── O carrossel inteiro ───────────────────────────── */
 
-function avisosParaPessoa(slides: SlideCarrossel[], rev: Revisao): AvisoTime[] {
+export function avisosParaPessoa(slides: SlideCarrossel[], rev: Revisao): AvisoTime[] {
   return rev.ajustes.map((a, i) => {
     const slide = a.slide ? slides[a.slide - 1] : null;
     const campo: CampoSugestao = a.slide ? (a.campo === 'legenda' ? 'texto' : a.campo) : 'legenda';
@@ -1082,6 +1109,7 @@ function mensagemEditor(e: EntradaConversa, base: EstadoCarrossel, naoCoube: str
         fotoProdutoId: null,
         referenciaId: null,
         ideiaId: null,
+        fotos: [],
       },
     }),
     '',
@@ -1201,6 +1229,7 @@ export async function conversarComOTime(
       fotoProdutoId: null,
       referenciaId: null,
       ideiaId: null,
+      fotos: [],
     },
     postsQueFuncionaram: [],
     anteriores: [],

@@ -18,6 +18,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api';
+import { AbaCards } from '../carrossel/Cards';
 import { AbaCerebro } from '../carrossel/Cerebro';
 import {
   enviarImagem,
@@ -47,9 +48,10 @@ import { fmtNumero, fmtQuando } from '../formatar';
  * seguem (cores, fontes, estilo, logo e as fotos da empresa). O editor fica em CarrosselEditor.
  */
 
-type Aba = 'carrosseis' | 'ideias' | 'calendario' | 'cerebro' | 'identidade';
+type Aba = 'carrosseis' | 'cards' | 'ideias' | 'calendario' | 'cerebro' | 'identidade';
 const ABAS: { id: Aba; rotulo: string }[] = [
   { id: 'carrosseis', rotulo: 'Carrosséis' },
+  { id: 'cards', rotulo: 'Cards avulsos' },
   { id: 'ideias', rotulo: 'Ideias' },
   { id: 'calendario', rotulo: 'Calendário' },
   { id: 'cerebro', rotulo: 'Cérebro da marca' },
@@ -62,7 +64,11 @@ export function Carrosseis() {
   const situacao = useSituacaoCarrosseis();
   const pedida = params.get('aba');
   const aba: Aba =
-    pedida === 'identidade' || pedida === 'cerebro' || pedida === 'calendario' || pedida === 'ideias'
+    pedida === 'identidade' ||
+    pedida === 'cerebro' ||
+    pedida === 'calendario' ||
+    pedida === 'ideias' ||
+    pedida === 'cards'
       ? pedida
       : 'carrosseis';
   const [novo, setNovo] = useState(false);
@@ -106,9 +112,11 @@ export function Carrosseis() {
         </div>
         <div className="acoes">
           <LinkAjuda artigo="carrosseis">Como funciona</LinkAjuda>
-          <Button variant="primary" icon="plus" onClick={() => setNovo(true)}>
-            Novo carrossel
-          </Button>
+          {aba !== 'cards' && (
+            <Button variant="primary" icon="plus" onClick={() => setNovo(true)}>
+              Novo carrossel
+            </Button>
+          )}
         </div>
       </div>
       {!situacao.data.armazenamento && (
@@ -140,6 +148,12 @@ export function Carrosseis() {
           aoNovo={() => setNovo(true)}
           aoIdentidade={() => setParams({ aba: 'identidade' })}
           aoCerebro={() => setParams({ aba: 'cerebro' })}
+        />
+      ) : aba === 'cards' ? (
+        <AbaCards
+          situacao={situacao.data}
+          aoCerebro={() => setParams({ aba: 'cerebro' })}
+          aoIdentidade={() => setParams({ aba: 'identidade' })}
         />
       ) : aba === 'ideias' ? (
         <AbaIdeias

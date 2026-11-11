@@ -16,6 +16,22 @@ export { arquivoDaFonte, chaveFonte, FONTES_SLIDES, type FonteSlide } from './ca
 
 export const LARGURA_SLIDE = 1080;
 export const ALTURA_SLIDE = 1350;
+
+/**
+ * v144: o formato da peça. Feed (4:5, 1080 × 1350, o dos carrosséis) ou story (9:16, 1080 × 1920).
+ * No story, o topo e a base guardam a área que o Instagram cobre (a barra do perfil em cima e a
+ * caixa de resposta embaixo): o texto e a logo nunca ficam ali.
+ */
+export const FORMATOS_PECA = ['feed', 'story'] as const;
+export type FormatoPeca = (typeof FORMATOS_PECA)[number];
+export const FORMATO_PECA: Record<
+  FormatoPeca,
+  { nome: string; dica: string; largura: number; altura: number }
+> = {
+  feed: { nome: 'Feed 4:5', dica: '1080 × 1350, o post do feed', largura: 1080, altura: 1350 },
+  story: { nome: 'Story 9:16', dica: '1080 × 1920, a tela cheia do story', largura: 1080, altura: 1920 },
+};
+export const alturaDoFormato = (f: FormatoPeca | null | undefined) => FORMATO_PECA[f ?? 'feed'].altura;
 /** O Instagram aceita até 10 imagens por carrossel pela API (no app são 20). */
 export const MAX_SLIDES = 10;
 export const MAX_CARROSSEIS_CONTA = 500;
@@ -368,6 +384,14 @@ export interface ResumoCarrossel {
   versao: number;
   /** Montado à mão ou pelo time de IA. */
   origem: 'manual' | 'ia';
+  /** v144: carrossel ou card avulso (um slide só), no feed ou no story. */
+  tipo: 'carrossel' | 'card';
+  formato: FormatoPeca;
+  /** v144: o card avulso: o pedido de onde saiu, o número do card e da variação, se é a escolhida. */
+  pedidoId: number | null;
+  card: number | null;
+  variacao: number | null;
+  escolhido: boolean;
   /** Avisos do revisor esperando alguém decidir. */
   avisosAbertos: number;
   criadoEm: string;
@@ -391,7 +415,7 @@ export interface Carrossel extends ResumoCarrossel {
 }
 
 /** De onde a foto veio (v132): enviada pela empresa ou feita pela IA (cena nova ou o produto num cenário). */
-export type OrigemFoto = 'enviada' | 'gerada' | 'cenario' | 'referencia';
+export type OrigemFoto = 'enviada' | 'gerada' | 'cenario' | 'referencia' | 'melhorada';
 
 export interface FotoCarrossel {
   id: number;
@@ -827,6 +851,8 @@ export interface EntradaMontar {
   /** Logo para fundo claro e para fundo escuro (a que existir serve para os dois). */
   logoClaro?: LogoSlide | null;
   logoEscuro?: LogoSlide | null;
+  /** v144: feed (padrão) ou story. */
+  formato?: FormatoPeca;
 }
 
 export interface SlideMontado {
@@ -890,15 +916,40 @@ const TEMAS: Record<EstiloCarrossel, Tema> = {
   },
 };
 
-/* Medidas do quadro (1080 × 1350). */
+/* Medidas do quadro (1080 × 1350 no feed; 1080 × 1920 no story). */
 const LADO = 96;
-const TOPO = 100;
-const BASE = 84;
 const MIOLO = LARGURA_SLIDE - LADO * 2;
 const RODAPE = 34;
 const ESPACO_RODAPE = 40;
-/** Altura que sobra para o conteúdo entre o topo e o rodapé. */
-const ALTURA_CONTEUDO = ALTURA_SLIDE - TOPO - BASE - RODAPE - ESPACO_RODAPE;
+
+interface Medidas {
+  largura: number;
+  altura: number;
+  topo: number;
+  base: number;
+  /** Altura que sobra para o conteúdo entre o topo e o rodapé. */
+  conteudo: number;
+  /** O que o formato tem a mais que o feed (0 no feed): fotos e quadros crescem com isso. */
+  extra: number;
+}
+
+function medidasDo(formato: FormatoPeca): Medidas {
+  const { largura, altura } = FORMATO_PECA[formato];
+  // Story: 250 px em cima (perfil e barra de progresso) e 300 embaixo (caixa de resposta).
+  const topo = formato === 'story' ? 250 : 100;
+  const base = formato === 'story' ? 300 : 84;
+  return {
+    largura,
+    altura,
+    topo,
+    base,
+    conteudo: altura - topo - base - RODAPE - ESPACO_RODAPE,
+    extra: altura - ALTURA_SLIDE - (topo - 100) - (base - 84),
+  };
+}
+
+/** As medidas do slide que está sendo montado (o montarSlide é síncrono: uma de cada vez). */
+let M: Medidas = medidasDo('feed');
 
 interface Contexto {
   s: SlideCarrossel;
@@ -1001,15 +1052,19 @@ function rodapeNo(
 ): No {
   const cor = opcoes.cor ?? c.cores.suave;
   const assinatura = c.id.assinatura.trim();
-  const direita = opcoes.seta
-    ? div(
-        { alignItems: 'center', gap: 10 },
-        textoNo('Arraste', fonteCorpo(c, 'forte'), 24, 1, c.cores.acentoTexto),
-        setaNo(c.cores.acentoTexto),
-      )
-    : opcoes.numero !== false && c.id.numeroDoSlide
-      ? textoNo(`${c.indice + 1}/${c.total}`, fonteCorpo(c, 'medio'), 24, 1, cor)
-      : null;
+  // Peça de um slide só (card avulso): sem "Arraste" e sem 1/1.
+  const sozinho = c.total <= 1;
+  const direita = sozinho
+    ? null
+    : opcoes.seta
+      ? div(
+          { alignItems: 'center', gap: 10 },
+          textoNo('Arraste', fonteCorpo(c, 'forte'), 24, 1, c.cores.acentoTexto),
+          setaNo(c.cores.acentoTexto),
+        )
+      : opcoes.numero !== false && c.id.numeroDoSlide
+        ? textoNo(`${c.indice + 1}/${c.total}`, fonteCorpo(c, 'medio'), 24, 1, cor)
+        : null;
   const espaco = opcoes.linha ? 28 : ESPACO_RODAPE;
   return div(
     {
@@ -1045,12 +1100,12 @@ function quadro(
   // O quadro cresce dentro da raiz (flexGrow): com altura fixa ou 100%, o Satori soma o espaçamento
   // por fora e o rodapé sai do slide.
   return div(
-    { width: LARGURA_SLIDE, height: ALTURA_SLIDE, flexDirection: 'column' },
+    { width: M.largura, height: M.altura, flexDirection: 'column' },
     div(
       {
         flexDirection: 'column',
         flexGrow: 1,
-        padding: `${TOPO}px ${LADO}px ${BASE}px`,
+        padding: `${M.topo}px ${LADO}px ${M.base}px`,
         backgroundColor: c.cores.fundo,
         color: c.cores.texto,
         position: 'relative',
@@ -1086,14 +1141,14 @@ const imagemCheia = (src: string): No => ({
   type: 'img',
   props: {
     src,
-    width: LARGURA_SLIDE,
-    height: ALTURA_SLIDE,
+    width: M.largura,
+    height: M.altura,
     style: {
       position: 'absolute',
       top: 0,
       left: 0,
-      width: LARGURA_SLIDE,
-      height: ALTURA_SLIDE,
+      width: M.largura,
+      height: M.altura,
       objectFit: 'cover',
     },
   },
@@ -1108,8 +1163,8 @@ function fotoCheiaNo(c: Contexto, src: string): No[] {
       position: 'absolute',
       top: 0,
       left: 0,
-      width: LARGURA_SLIDE,
-      height: ALTURA_SLIDE,
+      width: M.largura,
+      height: M.altura,
       backgroundImage: `linear-gradient(180deg, ${cor}55 0%, ${cor}00 22%, ${cor}00 38%, ${cor}D9 68%, ${cor}F5 100%)`,
     }),
   ];
@@ -1130,7 +1185,7 @@ function capa(c: Contexto): No {
   );
   // Estilos de foto em quadro (Editorial, Clean): a foto entra na capa como um quadro em cima do título.
   const fotoEmQuadro = !!c.foto && !c.tema.fotoCheia;
-  const alturaQuadro = 500;
+  const alturaQuadro = 500 + Math.round(M.extra * 0.5);
   const reservado =
     52 + (naBase ? 50 : 24) + (fotoEmQuadro ? alturaQuadro + 80 : 0) + (c.tema.divisor === 'linha' ? 16 : 0);
   const ajuste = caberBlocos(
@@ -1157,7 +1212,7 @@ function capa(c: Contexto): No {
         antes: 36,
       },
     ],
-    ALTURA_CONTEUDO - reservado - (comFoto ? 360 : 0),
+    M.conteudo - reservado - (comFoto ? 360 : 0),
   );
   if (!ajuste.cabe) c.avisos.push('O título da capa está longo demais: encurte para caber sem apertar.');
   const titulo = textoNo(
@@ -1238,7 +1293,7 @@ function item(c: Contexto): No {
         antes: 44 + 3 + 44,
       },
     ],
-    ALTURA_CONTEUDO - alturaNumero,
+    M.conteudo - alturaNumero,
   );
   if (!ajuste.cabe) c.avisos.push('O texto deste slide está longo demais: encurte o título ou o texto.');
   return quadro(c, {
@@ -1285,7 +1340,7 @@ function textoModelo(c: Contexto): No {
         antes: 44 + 3 + 44,
       },
     ],
-    ALTURA_CONTEUDO - (temSobre ? 32 : 0),
+    M.conteudo - (temSobre ? 32 : 0),
   );
   if (!ajuste.cabe) c.avisos.push('O texto deste slide está longo demais: divida em dois slides.');
   return quadro(c, {
@@ -1338,7 +1393,7 @@ function lista(c: Contexto): No {
       antes: (i === 0 ? 52 : espacoItem) + padV * 2,
     })),
   ];
-  const ajuste = caberBlocos(blocos, ALTURA_CONTEUDO - (temSobre ? 32 : 0));
+  const ajuste = caberBlocos(blocos, M.conteudo - (temSobre ? 32 : 0));
   // Todos os itens no mesmo tamanho (o menor), para a lista ficar uniforme.
   const tamItem = Math.min(38, ...itens.map((_, i) => ajuste.tamanhos[`i${i}`] ?? 38));
   if (!ajuste.cabe) c.avisos.push('A lista está longa demais: use até 5 itens curtos.');
@@ -1410,7 +1465,7 @@ function numero(c: Contexto): No {
         antes: 32,
       },
     ],
-    ALTURA_CONTEUDO - alturaNum,
+    M.conteudo - alturaNum,
   );
   if (!ajuste.cabe) c.avisos.push('O texto deste slide está longo demais: encurte.');
   return quadro(c, {
@@ -1457,7 +1512,7 @@ function citacao(c: Contexto): No {
         antes: 48,
       },
     ],
-    ALTURA_CONTEUDO - alturaAspas,
+    M.conteudo - alturaAspas,
   );
   if (!ajuste.cabe) c.avisos.push('A frase está longa demais para a citação: encurte.');
   return quadro(c, {
@@ -1505,7 +1560,7 @@ function comparacao(c: Contexto): No {
     ],
     380,
   );
-  const alturaCol = ALTURA_CONTEUDO - Math.min(380, ajusteT.altura) - 56;
+  const alturaCol = M.conteudo - Math.min(380, ajusteT.altura) - 56;
   const tamCol = Math.min(
     ...colunas.map(
       (col) =>
@@ -1601,14 +1656,14 @@ function fotoModelo(c: Contexto): No {
     );
     if (!ajuste.cabe) c.avisos.push('O texto sobre a foto está longo demais: encurte.');
     return div(
-      { width: LARGURA_SLIDE, height: ALTURA_SLIDE, position: 'relative', backgroundColor: c.cores.fundo },
+      { width: M.largura, height: M.altura, position: 'relative', backgroundColor: c.cores.fundo },
       imagemCheia(c.foto),
       div(
         {
           position: 'absolute',
           left: LADO - 24,
           right: LADO - 24,
-          bottom: BASE,
+          bottom: M.base,
           flexDirection: 'column',
           padding: '44px 48px',
           backgroundColor: c.cores.fundo,
@@ -1621,7 +1676,7 @@ function fotoModelo(c: Contexto): No {
       ),
     );
   }
-  const alturaFoto = 720;
+  const alturaFoto = 720 + Math.round(M.extra * 0.6);
   const ajuste = caberBlocos(
     [
       {
@@ -1646,7 +1701,7 @@ function fotoModelo(c: Contexto): No {
         antes: 24,
       },
     ],
-    ALTURA_CONTEUDO - alturaFoto,
+    M.conteudo - alturaFoto,
   );
   if (!ajuste.cabe) c.avisos.push('O texto abaixo da foto está longo demais: encurte.');
   const quadroFoto: No = c.foto
@@ -1721,7 +1776,7 @@ function chamada(c: Contexto): No {
         antes: 32,
       },
     ],
-    ALTURA_CONTEUDO - 52 - 24 - alturaBotao,
+    M.conteudo - 52 - 24 - alturaBotao,
   );
   if (!ajuste.cabe) c.avisos.push('A chamada final está longa demais: encurte o título.');
   const botao = temBotao
@@ -1780,6 +1835,7 @@ export function fundoDoSlide(s: SlideCarrossel, estilo: EstiloCarrossel): TipoFu
 
 /** Monta um slide: a árvore para desenhar e os avisos para quem edita. */
 export function montarSlide(e: EntradaMontar): SlideMontado {
+  M = medidasDo(e.formato ?? 'feed');
   const avisos: string[] = [];
   const campos = [
     e.slide.sobretitulo,

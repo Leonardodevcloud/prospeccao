@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Executor } from '@prospeccao/db';
 import {
+  CENA_MELHORADA,
   CENAS_PRODUTO,
   conferirCenario,
   conferirImagemDoSlide,
@@ -8,10 +9,12 @@ import {
   type EstiloDaImagem,
   gerarCenario,
   gerarImagemDoSlide,
+  melhorarFoto,
 } from '@prospeccao/integrations/carrosseis';
 import { prepararImagem } from '@prospeccao/integrations/slides';
 import { AppError } from '@prospeccao/shared';
-import type { FotoCarrossel } from '@prospeccao/shared/carrosseis';
+import type { FormatoPeca, FotoCarrossel } from '@prospeccao/shared/carrosseis';
+import type { FotoDoPedido } from '@prospeccao/shared/carrosseis-time';
 import { conta, contaSql } from '../../contexto.js';
 import * as repo from './repositorio.js';
 import type { CarrosseisIa } from './time.js';
@@ -54,7 +57,7 @@ async function guardar(
   ia: CarrosseisIa,
   jpeg: Uint8Array,
   d: {
-    origem: 'gerada' | 'cenario';
+    origem: 'gerada' | 'cenario' | 'melhorada';
     nome: string;
     pedido: string;
     baseFotoId?: number | null;
@@ -87,41 +90,91 @@ export async function fazerImagem(
   db: Executor,
   ia: CarrosseisIa,
   contaId: number,
-  p: { tipo: 'gerar' | 'cenario'; descricao: string; fotoId: number | null },
+  p: { tipo: 'gerar' | 'cenario' | 'melhorar'; descricao: string; fotoId: number | null },
   estilo: EstiloDaImagem,
-  extra: { carrosselId?: number | null; criadoPor?: number | null } = {},
+  extra: { carrosselId?: number | null; criadoPor?: number | null; formato?: FormatoPeca } = {},
 ): Promise<FotoCarrossel | null> {
   if (!imagensLigadas(ia)) return null;
   const cfg = ia.imagem!.config;
   const claude = ia.cliente(db, contaId);
+  const { formato = 'feed', ...resto } = extra;
   let original: Uint8Array | null = null;
   let nomeBase = '';
-  if (p.tipo === 'cenario') {
+  const daFoto = p.tipo === 'cenario' || p.tipo === 'melhorar';
+  if (daFoto) {
     const base = p.fotoId ? await repo.foto(db, p.fotoId) : null;
-    if (!base) throw AppError.naoEncontrado('Foto do produto');
+    if (!base) throw AppError.naoEncontrado('Foto');
     original = await ia.armazenamento!.ler(base.chave);
     nomeBase = base.nome;
   }
+  const cena = p.tipo === 'melhorar' ? CENA_MELHORADA : p.descricao;
   for (let k = 0; k < TENTATIVAS; k++) {
     const jpeg =
       p.tipo === 'cenario'
-        ? await gerarCenario(cfg, original!, p.descricao, estilo)
-        : await gerarImagemDoSlide(cfg, p.descricao, estilo);
+        ? await gerarCenario(cfg, original!, p.descricao, estilo, formato)
+        : p.tipo === 'melhorar'
+          ? await melhorarFoto(cfg, original!, formato)
+          : await gerarImagemDoSlide(cfg, p.descricao, estilo, formato);
     await contarImagem(db, ia.imagem!.custoUsd);
-    const conferencia =
-      p.tipo === 'cenario'
-        ? await conferirCenario(claude, { original: original!, gerada: jpeg, cena: p.descricao })
-        : await conferirImagemDoSlide(claude, { jpeg, descricao: p.descricao });
+    const conferencia = daFoto
+      ? await conferirCenario(claude, { original: original!, gerada: jpeg, cena })
+      : await conferirImagemDoSlide(claude, { jpeg, descricao: p.descricao });
     if (!conferencia.aprovada) continue;
     return guardar(db, ia, jpeg, {
-      origem: p.tipo === 'cenario' ? 'cenario' : 'gerada',
-      nome: p.tipo === 'cenario' ? `${nomeBase} · cenário` : `Gerada: ${p.descricao}`,
-      pedido: p.descricao,
-      baseFotoId: p.tipo === 'cenario' ? p.fotoId : null,
-      ...extra,
+      origem: p.tipo === 'cenario' ? 'cenario' : p.tipo === 'melhorar' ? 'melhorada' : 'gerada',
+      nome:
+        p.tipo === 'cenario'
+          ? `${nomeBase} · cenário`
+          : p.tipo === 'melhorar'
+            ? `${nomeBase} · melhorada`
+            : `Gerada: ${p.descricao}`,
+      pedido: cena,
+      baseFotoId: daFoto ? p.fotoId : null,
+      ...resto,
     });
   }
   return null;
+}
+
+/**
+ * v144: as fotos que vieram com o pedido, já tratadas como a pessoa escolheu: como está, melhorada
+ * ou o produto num cenário novo. Se a IA de imagem não estiver ligada (ou o revisor visual reprovar),
+ * a foto entra como foi enviada. Devolve a foto que vai nos slides, na ordem do pedido.
+ */
+export async function tratarFotosDoPedido(
+  db: Executor,
+  ia: CarrosseisIa | null,
+  contaId: number,
+  fotos: FotoDoPedido[],
+  d: { formato: FormatoPeca; referenciaId: number | null; criadoPor?: number | null },
+): Promise<{ id: number; nome: string; original: number; tratada: boolean }[]> {
+  const estilo = fotos.some((f) => f.tratamento === 'cenario')
+    ? await estiloDaConta(db, d.referenciaId)
+    : { paleta: [] };
+  const r = await Promise.all(
+    fotos.map(async (f) => {
+      const base = await repo.foto(db, f.fotoId);
+      if (!base) return null;
+      if (f.tratamento === 'como_esta' || !ia || !imagensLigadas(ia))
+        return { id: base.id, nome: base.nome, original: base.id, tratada: false };
+      const feita = await fazerImagem(
+        db,
+        ia,
+        contaId,
+        {
+          tipo: f.tratamento === 'melhorar' ? 'melhorar' : 'cenario',
+          descricao: CENAS_PRODUTO[0],
+          fotoId: base.id,
+        },
+        estilo,
+        { formato: d.formato, ...(d.criadoPor !== undefined ? { criadoPor: d.criadoPor } : {}) },
+      ).catch(() => null);
+      return feita
+        ? { id: feita.id, nome: base.nome, original: base.id, tratada: true }
+        : { id: base.id, nome: base.nome, original: base.id, tratada: false };
+    }),
+  );
+  return r.filter((x): x is NonNullable<typeof x> => !!x);
 }
 
 /** "Cenários para o produto" (o editor): três cenários de uma foto, cada um conferido. */
