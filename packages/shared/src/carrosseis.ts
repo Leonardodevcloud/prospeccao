@@ -180,11 +180,29 @@ export const MODELOS_A_MAO = MODELOS.filter((m) => m !== 'arte' && m !== 'camada
  * o texto, a cor e a logo são do sistema, como nos outros modelos. Duas composições: a foto ao lado
  * do texto ou embaixo dele.
  */
-export const COMPOSICOES_CAMADAS = ['lado', 'base'] as const;
+export const COMPOSICOES_CAMADAS = ['lado', 'esquerda', 'base'] as const;
 export type ComposicaoCamadas = (typeof COMPOSICOES_CAMADAS)[number];
 export const ROTULO_COMPOSICAO: Record<ComposicaoCamadas, string> = {
-  lado: 'Foto ao lado do texto',
-  base: 'Foto embaixo do texto',
+  lado: 'Foto à direita',
+  esquerda: 'Foto à esquerda',
+  base: 'Foto embaixo',
+};
+/** v155: a forma desenhada pelo código atrás da foto (sempre num tom vizinho da cor de fundo). */
+export const FORMAS_CAMADAS = ['circulo', 'mancha', 'faixa', 'reticula'] as const;
+export type FormaCamadas = (typeof FORMAS_CAMADAS)[number];
+export const ROTULO_FORMA: Record<FormaCamadas, string> = {
+  circulo: 'Círculo',
+  mancha: 'Mancha',
+  faixa: 'Faixa',
+  reticula: 'Retícula',
+};
+/** v155: o acabamento do recorte (feito pelo servidor na imagem final): sombra suave ou contorno de adesivo. */
+export const ACABAMENTOS_CAMADAS = ['sombra', 'contorno', 'nenhum'] as const;
+export type AcabamentoCamadas = (typeof ACABAMENTOS_CAMADAS)[number];
+export const ROTULO_ACABAMENTO: Record<AcabamentoCamadas, string> = {
+  sombra: 'Sombra',
+  contorno: 'Contorno',
+  nenhum: 'Sem acabamento',
 };
 
 /** Campos que cada modelo usa, com o limite de letras que cabe bem no slide. */
@@ -397,6 +415,9 @@ export const slideEntrada = z.object({
   fundo: z.enum(FUNDOS_SLIDE).default('auto'),
   /** v152: só no modelo "Em camadas" (sem valor: a foto ao lado do texto). */
   composicao: z.enum(COMPOSICOES_CAMADAS).optional(),
+  /** v155: a forma atrás da foto e o acabamento do recorte (sem valor: círculo e sombra). */
+  forma: z.enum(FORMAS_CAMADAS).optional(),
+  acabamento: z.enum(ACABAMENTOS_CAMADAS).optional(),
   /** v153: os elementos em 3D da peça em camadas (PNG transparente feito pela IA), até 2. */
   elementoIds: z.array(z.number().int().positive()).max(2).optional(),
 });
@@ -931,10 +952,14 @@ export interface EntradaMontar {
   fotoMedidas?: { largura: number; altura: number } | null;
   /** v153: os elementos em 3D da peça em camadas (data URL no servidor, endereço no navegador). */
   elementos?: { src: string }[];
+  /** v155: a margem (px da imagem) que o acabamento pôs em volta do recorte (sombra, contorno). */
+  fotoFolga?: number;
 }
 
 export interface SlideMontado {
   no: No;
+  /** v155: na peça em camadas, o tamanho que o título conseguiu e a parte da peça que a foto ocupa. */
+  camadas?: { titulo: number; foto: number; cabe: boolean };
   /** Avisos para quem edita (texto longo demais, emoji que não aparece, foto faltando). */
   avisos: string[];
 }
@@ -1054,6 +1079,9 @@ interface Contexto {
   foto: string | null;
   fotoMedidas: { largura: number; altura: number } | null;
   elementos: { src: string }[];
+  fotoFolga: number;
+  /** O que a peça em camadas mede de si mesma (para escolher a melhor composição). */
+  medida: { titulo: number; foto: number; cabe: boolean } | null;
   logo: LogoSlide | null;
   avisos: string[];
 }
@@ -2094,7 +2122,10 @@ export function geometriaCamadas(
   if (naBase) {
     // Embaixo: a foto deitada usa quase toda a largura; a em pé, 58%. Altura de até 44% da peça.
     const areaL = larga ? m.largura - 96 : Math.round(m.largura * 0.58);
-    const areaA = Math.round(m.altura * (larga ? (formato === 'story' ? 0.4 : 0.38) : 0.44));
+    // A deitada (moto, carro) é limitada pela largura; a quadrada ganha mais altura para não ficar pequena.
+    const areaA = Math.round(
+      m.altura * (larga ? (prop >= 1.3 ? (formato === 'story' ? 0.4 : 0.38) : 0.45) : 0.46),
+    );
     const l = Math.round(Math.min(areaL, areaA * prop));
     const a = Math.round(l / prop);
     const x = larga ? Math.round((m.largura - l) / 2) : m.largura - l - 48;
@@ -2107,19 +2138,94 @@ export function geometriaCamadas(
       !larga && lado >= 150 ? { x: LADO + Math.round((vazio - lado) / 2), y: baixo - lado, lado } : null;
     return { naBase, foto: { x, y, l, a }, texto, elemento };
   }
-  // Ao lado: a foto em pé à direita (46% da largura, até 72% da altura), encostada na base.
+  // Ao lado: a foto em pé à direita ou à esquerda (46% da largura, até 72% da altura), encostada na base.
   const areaL = Math.round(m.largura * 0.46);
   const areaA = Math.round(m.altura * (formato === 'story' ? 0.62 : 0.72));
   const l = Math.round(Math.min(areaL, areaA * prop));
   const a = Math.round(l / prop);
-  const x = m.largura - l;
+  const aEsquerda = composicao === 'esquerda';
+  const x = aEsquerda ? 0 : m.largura - l;
   const y = m.altura - a;
-  const texto = { x: LADO, y: m.topo, l: x - FOLGA_CAMADAS - LADO, a: baixo - m.topo };
+  const textoL = m.largura - l - FOLGA_CAMADAS - LADO;
+  const texto = { x: aEsquerda ? l + FOLGA_CAMADAS : LADO, y: m.topo, l: textoL, a: baixo - m.topo };
   const vazioA = y - FOLGA_CAMADAS - m.topo;
   const lado = Math.min(230, vazioA, l - 60);
   const elemento =
     lado >= 150 ? { x: x + Math.round((l - lado) / 2), y: y - FOLGA_CAMADAS - lado, lado } : null;
   return { naBase, foto: { x, y, l, a }, texto, elemento };
+}
+
+/** v155: as formas de fundo, desenhadas pelo código atrás da foto (custo zero, sempre na paleta). */
+function formaDeFundo(forma: FormaCamadas, g: GeometriaCamadas, cor: string): No {
+  const cx = g.foto.x + Math.round(g.foto.l / 2);
+  const lado = Math.round(Math.max(g.foto.l, g.foto.a) * (g.naBase ? 1.05 : 1.1));
+  const desvio = g.naBase ? 0 : g.foto.x === 0 ? -60 : 60;
+  if (forma === 'faixa') {
+    // Uma faixa larga em diagonal, atravessando a peça por trás da foto.
+    const altura = Math.round(g.foto.a * 0.62);
+    return div({
+      position: 'absolute',
+      left: -200,
+      top: g.foto.y + Math.round(g.foto.a * 0.3),
+      width: M.largura + 400,
+      height: altura,
+      backgroundColor: cor,
+      transform: 'rotate(-8deg)',
+    });
+  }
+  if (forma === 'reticula') {
+    // Uma grade de pontos atrás da foto (9 × 9), como retícula de impressão.
+    const n = 9;
+    const passo = Math.round(lado / n);
+    const ponto = Math.max(10, Math.round(passo * 0.34));
+    const pontos: No[] = [];
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++)
+        pontos.push(
+          div({
+            position: 'absolute',
+            left: j * passo,
+            top: i * passo,
+            width: ponto,
+            height: ponto,
+            borderRadius: ponto,
+            backgroundColor: cor,
+          }),
+        );
+    return div(
+      {
+        position: 'absolute',
+        left: cx - Math.round(lado / 2) + desvio,
+        top: g.foto.y - Math.round(g.foto.a * 0.06),
+        width: lado,
+        height: lado,
+      },
+      ...pontos,
+    );
+  }
+  if (forma === 'mancha') {
+    // Uma mancha orgânica (cantos de raios diferentes), maior que a foto.
+    const l = Math.round(lado * 1.08);
+    return div({
+      position: 'absolute',
+      left: cx - Math.round(l / 2) + desvio,
+      top: g.foto.y + Math.round(g.foto.a * 0.08),
+      width: l,
+      height: Math.round(l * 0.92),
+      borderRadius: `${Math.round(l * 0.62)}px ${Math.round(l * 0.38)}px ${Math.round(l * 0.55)}px ${Math.round(l * 0.45)}px`,
+      backgroundColor: cor,
+      transform: 'rotate(-6deg)',
+    });
+  }
+  return div({
+    position: 'absolute',
+    left: cx - Math.round(lado / 2) + desvio,
+    top: g.foto.y + Math.round(g.foto.a * 0.12),
+    width: lado,
+    height: lado,
+    borderRadius: lado,
+    backgroundColor: cor,
+  });
 }
 
 /**
@@ -2136,18 +2242,24 @@ function camadas(c: Contexto): No {
   const { s } = c;
   const formato: FormatoPeca = M.altura > ALTURA_SLIDE ? 'story' : 'feed';
   const g = geometriaCamadas(formato, c.fotoMedidas, s.composicao ?? 'lado');
+  // O acabamento (sombra, contorno) vem com uma margem em volta do recorte: a imagem é desenhada maior,
+  // para o assunto continuar exatamente na caixa da foto.
+  const folga =
+    c.fotoMedidas && c.fotoFolga
+      ? Math.round((c.fotoFolga * g.foto.l) / Math.max(1, c.fotoMedidas.largura))
+      : 0;
   const recorte: No = {
     type: 'img',
     props: {
       src: c.foto,
-      width: g.foto.l,
-      height: g.foto.a,
+      width: g.foto.l + folga * 2,
+      height: g.foto.a + folga * 2,
       style: {
         position: 'absolute',
-        left: g.foto.x,
-        top: g.foto.y,
-        width: g.foto.l,
-        height: g.foto.a,
+        left: g.foto.x - folga,
+        top: g.foto.y - folga,
+        width: g.foto.l + folga * 2,
+        height: g.foto.a + folga * 2,
         objectFit: 'contain',
         ...(c.fotoMedidas ? {} : { objectPosition: 'right bottom' }),
       },
@@ -2175,17 +2287,8 @@ function camadas(c: Contexto): No {
         }
       : null;
   const claroSobre = contraste(c.cores.fundo, BRANCO) >= 3;
-  // A forma de fundo abraça a foto (um círculo atrás dela, maior que ela).
-  const forma = Math.round(Math.max(g.foto.l, g.foto.a) * (g.naBase ? 1.05 : 1.1));
-  const circulo = div({
-    position: 'absolute',
-    left: g.foto.x + Math.round(g.foto.l / 2) - Math.round(forma / 2) + (g.naBase ? 0 : 60),
-    top: g.foto.y + Math.round(g.foto.a * 0.12),
-    width: forma,
-    height: forma,
-    borderRadius: forma,
-    backgroundColor: misturar(c.cores.fundo, claroSobre ? BRANCO : PRETO, claroSobre ? 0.12 : 0.07),
-  });
+  const tom = misturar(c.cores.fundo, claroSobre ? BRANCO : PRETO, claroSobre ? 0.12 : 0.07);
+  const circulo = formaDeFundo(s.forma ?? 'circulo', g, tom);
   const largura = g.texto.l;
   /** O maior tamanho (entre min e max) em que o texto cabe numa linha da coluna. */
   const naLinha = (t: string, f: FonteMedida, max: number, min: number, espaco = largura) => {
@@ -2301,6 +2404,11 @@ function camadas(c: Contexto): No {
   );
   if (!ajuste.cabe)
     c.avisos.push('O texto está longo demais para a peça em camadas: encurte o título ou o texto.');
+  c.medida = {
+    titulo: ajuste.tamanhos.t!,
+    foto: Math.round(((g.foto.l * g.foto.a) / (M.largura * M.altura)) * 1000) / 1000,
+    cabe: ajuste.cabe,
+  };
   const coluna = div(
     {
       position: 'absolute',
@@ -2432,10 +2540,13 @@ export function montarSlide(e: EntradaMontar): SlideMontado {
     foto: MODELO[s.modelo].foto ? (e.foto ?? null) : null,
     fotoMedidas: e.fotoMedidas ?? null,
     elementos: s.modelo === 'camadas' ? (e.elementos ?? []).slice(0, 2) : [],
+    fotoFolga: e.fotoFolga ?? 0,
+    medida: null,
     logo,
     avisos,
   };
-  return { no: MONTAR[s.modelo](ctx), avisos };
+  const no = MONTAR[s.modelo](ctx);
+  return { no, avisos, ...(ctx.medida ? { camadas: ctx.medida } : {}) };
 }
 
 /** Avisos do carrossel inteiro (antes de baixar ou publicar). */

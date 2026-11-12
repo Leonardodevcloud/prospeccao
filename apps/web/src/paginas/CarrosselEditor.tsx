@@ -1,4 +1,5 @@
 import {
+  ACABAMENTOS_CAMADAS,
   alturaDoFormato,
   avisosDoCarrossel,
   type Carrossel,
@@ -7,6 +8,7 @@ import {
   ESTILO,
   ESTILOS,
   type EstiloCarrossel,
+  FORMAS_CAMADAS,
   FORMATO_PECA,
   type FormatoPeca,
   FUNDOS_SLIDE,
@@ -16,7 +18,9 @@ import {
   MODELOS_A_MAO,
   type ModeloSlide,
   montarSlide,
+  ROTULO_ACABAMENTO,
   ROTULO_COMPOSICAO,
+  ROTULO_FORMA,
   ROTULO_FUNDO,
   type SlideCarrossel,
   slideNovo,
@@ -828,6 +832,48 @@ function CamadasDaPeca(props: {
           </label>
         ))}
       </div>
+      <span className="campo__rotulo">Forma atrás da foto</span>
+      <div className="painel-slide__modelos" role="radiogroup" aria-label="Forma atrás da foto">
+        {FORMAS_CAMADAS.map((x) => (
+          <label
+            key={x}
+            className="painel-slide__modelo"
+            data-ativo={(props.slide.forma ?? 'circulo') === x || undefined}
+          >
+            <input
+              type="radio"
+              name="ps-forma"
+              className="pp-sr"
+              checked={(props.slide.forma ?? 'circulo') === x}
+              onChange={() => props.aoMudar({ forma: x })}
+            />
+            {ROTULO_FORMA[x]}
+          </label>
+        ))}
+      </div>
+      <span className="campo__rotulo">Acabamento do recorte</span>
+      <div className="painel-slide__modelos" role="radiogroup" aria-label="Acabamento do recorte">
+        {ACABAMENTOS_CAMADAS.map((x) => (
+          <label
+            key={x}
+            className="painel-slide__modelo"
+            data-ativo={(props.slide.acabamento ?? 'sombra') === x || undefined}
+          >
+            <input
+              type="radio"
+              name="ps-acabamento"
+              className="pp-sr"
+              checked={(props.slide.acabamento ?? 'sombra') === x}
+              onChange={() => props.aoMudar({ acabamento: x })}
+            />
+            {ROTULO_ACABAMENTO[x]}
+          </label>
+        ))}
+      </div>
+      <p className="quieto">
+        A sombra e o contorno aparecem na imagem final (Ver no celular e ao baixar), não na prévia enquanto
+        você edita.
+      </p>
       <div className="painel-slide__foto">
         {props.slide.fotoId ? (
           <img

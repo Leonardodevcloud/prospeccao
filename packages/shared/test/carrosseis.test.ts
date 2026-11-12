@@ -260,7 +260,7 @@ describe('módulo Carrosséis com IA no plano', () => {
       const cruza = (p: { x: number; y: number; l: number; a: number }, q: typeof p) =>
         p.x < q.x + q.l && q.x < p.x + p.l && p.y < q.y + q.a && q.y < p.y + p.a;
       for (const formato of ['feed', 'story'] as const)
-        for (const composicao of ['lado', 'base'] as const)
+        for (const composicao of ['lado', 'esquerda', 'base'] as const)
           for (const [largura, altura] of [
             [420, 1000],
             [600, 900],
@@ -300,6 +300,31 @@ describe('módulo Carrosséis com IA no plano', () => {
     it('o elemento em 3D entra sobre a cor principal e some sobre a cor de destaque', () => {
       expect(imagens(montar({}).no).some((i) => i.src.endsWith('BBBB'))).toBe(true);
       expect(imagens(montar({ fundo: 'destaque' }).no).some((i) => i.src.endsWith('BBBB'))).toBe(false);
+    });
+    it('v155: as quatro formas de fundo montam, a peça se mede e a margem do acabamento não tira a foto do lugar', () => {
+      for (const forma of ['circulo', 'mancha', 'faixa', 'reticula'] as const) {
+        const m = montar({ forma });
+        expect(m.avisos, forma).toEqual([]);
+        expect(m.camadas).toMatchObject({ cabe: true });
+        expect(m.camadas!.titulo).toBeGreaterThanOrEqual(40);
+        expect(m.camadas!.foto).toBeGreaterThan(0.15);
+      }
+      const sem = imagens(montar({}).no).find((i) => i.src.endsWith('AAAA'))!.style;
+      const com = imagens(
+        montarSlide({
+          slide: base,
+          indice: 0,
+          total: 1,
+          identidade: IDENTIDADE_PADRAO,
+          estilo: 'vivo',
+          foto: 'data:image/png;base64,AAAA',
+          fotoMedidas: { largura: 600, altura: 900 },
+          fotoFolga: 45,
+        }).no,
+      ).find((i) => i.src.endsWith('AAAA'))!.style;
+      // 45 px de margem numa foto de 600 de largura: a imagem cresce igual para os dois lados.
+      expect(com.width! - sem.width!).toBe(2 * (sem.left! - com.left!));
+      expect(sem.left! - com.left!).toBeGreaterThan(0);
     });
     it('sem o recorte, cai na capa com um aviso', () => {
       const m = montarSlide({

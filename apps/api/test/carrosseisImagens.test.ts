@@ -637,7 +637,8 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
       ]);
       expect(vs.map((v) => [v.slide.modelo, v.slide.composicao, v.slide.fundo])).toEqual([
         ['camadas', 'lado', 'auto'],
-        ['camadas', 'base', 'destaque'],
+        // v155: a 2ª opção é a composição seguinte na medição (aqui, a foto do outro lado), em outra cor.
+        ['camadas', 'esquerda', 'destaque'],
       ]);
       // Um recorte só para as duas opções (PNG transparente), aparado no tamanho do assunto.
       expect(transparentes).toEqual(['png']);

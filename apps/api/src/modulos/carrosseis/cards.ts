@@ -7,7 +7,9 @@ import {
 } from '@prospeccao/integrations/carrosseis';
 import { AppError } from '@prospeccao/shared';
 import {
+  COMPOSICOES_CAMADAS,
   type EstiloCarrossel,
+  FORMAS_CAMADAS,
   type FormatoPeca,
   type FotoCarrossel,
   geometriaCamadas,
@@ -238,34 +240,51 @@ export function slideEmCamadas(
     total?: number;
     /** v153: o elemento em 3D da peça. */
     elementoId?: number | null;
+    /** v155: o número do card no pedido (as formas de fundo se revezam de um card para o outro). */
+    indice?: number;
   },
 ): SlideCarrossel | null {
   if (!recorte || !slide.titulo.trim()) return null;
   if (!['capa', 'numero', 'foto', 'chamada'].includes(slide.modelo)) return null;
-  const novo: SlideCarrossel = {
+  const medidas = { largura: recorte.largura, altura: recorte.altura };
+  const base: SlideCarrossel = {
     ...slide,
     modelo: 'camadas',
     fotoId: recorte.id,
     itens: [],
     colunas: [],
-    composicao: k % 2 === 0 ? 'lado' : 'base',
     fundo: k % 2 === 0 ? 'auto' : 'destaque',
+    forma: FORMAS_CAMADAS[((e.indice ?? 0) + k * 2) % FORMAS_CAMADAS.length]!,
+    acabamento: k % 2 === 0 ? 'sombra' : 'contorno',
     ...(e.elementoId ? { elementoIds: [e.elementoId] } : {}),
   };
-  const cabe = e.formatos.every(
-    (formato) =>
-      !montarSlide({
+  // v155: o código monta as composições possíveis e mede cada uma (o tamanho que o título conseguiu e
+  // quanto da peça a foto ocupa); composições que dão no mesmo desenho contam uma vez. A 1ª opção fica
+  // com a melhor; a 2ª, com a seguinte (ou a mesma, com outra cor, forma e acabamento).
+  const candidatas = COMPOSICOES_CAMADAS.flatMap((composicao) => {
+    const novo: SlideCarrossel = { ...base, composicao };
+    let nota = 0;
+    for (const formato of e.formatos) {
+      const m = montarSlide({
         slide: novo,
         indice: 0,
         total: e.total ?? 1,
         identidade: e.identidade,
         estilo: e.estilo,
         foto: 'recorte',
-        fotoMedidas: { largura: recorte.largura, altura: recorte.altura },
+        fotoMedidas: medidas,
         formato,
-      }).avisos.some((a) => /longo demais/.test(a)),
-  );
-  return cabe ? novo : null;
+      }).camadas;
+      if (!m?.cabe) return [];
+      nota += m.titulo / 100 + m.foto * 3;
+    }
+    const g = geometriaCamadas(e.formatos[0]!, medidas, composicao);
+    return [{ novo, nota, desenho: `${g.naBase}:${g.foto.x}:${g.foto.y}` }];
+  });
+  const unicas = candidatas
+    .sort((a, b) => b.nota - a.nota)
+    .filter((c, i, l) => l.findIndex((x) => x.desenho === c.desenho) === i);
+  return unicas.length ? unicas[k % unicas.length]!.novo : null;
 }
 
 /**

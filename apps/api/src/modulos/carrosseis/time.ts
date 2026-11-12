@@ -1,6 +1,7 @@
 import type { Executor, Pool } from '@prospeccao/db';
 import {
   type ClienteClaude,
+  type ConfigRecorteLocal,
   criarClaude,
   type ImagensDoTime,
   type MedidorClaude,
@@ -57,6 +58,8 @@ export interface CarrosseisIa {
   imagem?: { config: ConfigImagem; custoUsd: number } | null;
   /** Onde as imagens feitas ficam guardadas (o mesmo armazenamento das fotos). */
   armazenamento?: Armazenamento | null;
+  /** v155: o recorte feito no servidor (sem custo por imagem); null: o recorte é pela IA de imagem. */
+  recorteLocal?: ConfigRecorteLocal | null;
   /** O botão "Testar" das Configurações da plataforma. */
   testar(): Promise<string>;
 }
@@ -92,6 +95,7 @@ export function prepararCarrosseisIa(
     CARROSSEIS_IMAGEM_MODELO?: string;
     CARROSSEIS_CUSTO_IMAGEM_USD?: number;
     CARROSSEIS_IMAGEM_QUALIDADE?: QualidadeImagem;
+    RECORTE_LOCAL_MODELO?: string | null;
   },
   armazenamento: Armazenamento | null = null,
 ): CarrosseisIa | null {
@@ -114,6 +118,7 @@ export function prepararCarrosseisIa(
           }
         : null,
     armazenamento,
+    recorteLocal: env.RECORTE_LOCAL_MODELO ? { modelo: env.RECORTE_LOCAL_MODELO } : null,
     cliente: (db, contaId) => criarClaude({ chave, modelo, medidor: medidorClaude(db, contaId) }),
     testar: () => testarClaude({ chave, modelo }),
   };

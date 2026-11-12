@@ -91,6 +91,12 @@ export const esquemaEnvApi = envBase.extend({
   CARROSSEIS_IMAGEM_MODELO: z.string().min(3).default('gpt-image-2.6-sunburst'),
   /** v148: a qualidade das imagens dos carrosséis e cards (high: a mais caprichada do GPT Image). */
   CARROSSEIS_IMAGEM_QUALIDADE: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),
+  /**
+   * v155: o recorte das fotos feito no próprio servidor (sem pagar por imagem): o caminho de um modelo
+   * .onnx de separação de fundo ou o endereço https de onde baixá-lo. Sem valor, o recorte é pela IA de
+   * imagem. Usa cerca de 1,2 GB de memória durante cada recorte.
+   */
+  RECORTE_LOCAL_MODELO: opcional(z.string().min(5)),
   /** Sem valor: o custo médio de cada qualidade (high ≈ US$ 0,20; medium ≈ US$ 0,05). */
   CARROSSEIS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).max(5).optional(),
   FALA_BASE_URL: z.string().url().default('https://api.openai.com/v1'),

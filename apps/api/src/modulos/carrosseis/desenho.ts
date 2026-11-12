@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Executor } from '@prospeccao/db';
+import { acabarRecorte } from '@prospeccao/integrations/carrosseis';
 import type { Armazenamento } from '@prospeccao/integrations/reuniao';
 import { dataUrl, desenharSlide, prepararImagem } from '@prospeccao/integrations/slides';
 import {
@@ -138,6 +139,25 @@ export async function fotoDoSlide(
   return (await fotoComMedidas(db, arm, fotoId))?.url ?? null;
 }
 
+const acabadas = new Lembranca<{ url: string; folga: number }>(24);
+
+/** O recorte com a sombra ou o contorno (só PNG transparente; qualquer falha: o recorte como está). */
+async function recorteAcabado(
+  url: string,
+  tipo: 'sombra' | 'contorno',
+): Promise<{ url: string; folga: number } | null> {
+  const m = url.match(/^data:image\/png;base64,(.+)$/);
+  if (!m) return null;
+  const chave = `${tipo}:${createHash('sha1').update(m[1]!).digest('hex')}`;
+  const lembrada = acabadas.obter(chave);
+  if (lembrada) return lembrada;
+  const r = await acabarRecorte(new Uint8Array(Buffer.from(m[1]!, 'base64')), tipo).catch(() => null);
+  if (!r?.folga) return null;
+  const pronta = { url: dataUrl(r.png, 'image/png'), folga: r.folga };
+  acabadas.guardar(chave, pronta);
+  return pronta;
+}
+
 export interface PedidoDesenho {
   slide: SlideCarrossel;
   indice: number;
@@ -156,7 +176,10 @@ export async function desenhar(
   p: PedidoDesenho,
 ): Promise<{ jpeg: Buffer; avisos: string[]; etag: string }> {
   const lida = await fotoComMedidas(db, arm, p.slide.fotoId);
-  const foto = lida?.url ?? null;
+  // v155: o acabamento do recorte (sombra ou contorno), feito aqui e lembrado.
+  const acabamento = p.slide.modelo === 'camadas' ? (p.slide.acabamento ?? 'sombra') : 'nenhum';
+  const acabada = lida && acabamento !== 'nenhum' ? await recorteAcabado(lida.url, acabamento) : null;
+  const foto = acabada?.url ?? lida?.url ?? null;
   // v153: os elementos em 3D da peça em camadas.
   const elementos = (
     await Promise.all((p.slide.elementoIds ?? []).map((id) => fotoComMedidas(db, arm, id)))
@@ -169,6 +192,7 @@ export async function desenhar(
     estilo: p.estilo,
     foto,
     fotoMedidas: lida ? { largura: lida.largura, altura: lida.altura } : null,
+    fotoFolga: acabada?.folga ?? 0,
     elementos,
     logoClaro: material.logoClaro,
     logoEscuro: material.logoEscuro,

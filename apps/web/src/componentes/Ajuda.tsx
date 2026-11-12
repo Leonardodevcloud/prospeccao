@@ -1552,10 +1552,15 @@ export const ARTIGOS: ArtigoAjuda[] = [
             principal; a outra, embaixo, sobre a cor de destaque. Foto deitada ou quadrada (uma moto, um
             carro, um produto largo) vai sempre embaixo do texto, quase de ponta a ponta, que é onde ela fica
             grande. Cada coisa tem o seu espaço: o texto e o botão nunca passam por cima da foto, e o elemento
-            em 3D só entra quando sobra um vazio para ele. No editor, em <b>Peça em camadas</b>, troque onde a
-            foto entra e a própria foto (<b>Trocar a foto</b> pede um recorte novo; a mesma foto é recortada
-            uma vez só e reaproveitada). Foto de fachada, rua ou ambiente inteiro não serve para recortar:
-            nesse caso, ou sem foto, o card fica nos modelos de sempre. Com{' '}
+            em 3D só entra quando sobra um vazio para ele. O sistema monta as composições possíveis (foto à
+            direita, à esquerda ou embaixo), mede cada uma e fica com as que deixam o título e a foto maiores.
+            Atrás da foto vai uma forma desenhada pelo sistema (círculo, mancha, faixa ou retícula) e o
+            recorte ganha um acabamento: sombra suave ou contorno branco de adesivo. No editor, em{' '}
+            <b>Peça em camadas</b>, dá para trocar a composição, a forma e o acabamento (a sombra e o contorno
+            aparecem na imagem final, não na prévia de edição). No editor, em <b>Peça em camadas</b>, troque
+            onde a foto entra e a própria foto (<b>Trocar a foto</b> pede um recorte novo; a mesma foto é
+            recortada uma vez só e reaproveitada). Foto de fachada, rua ou ambiente inteiro não serve para
+            recortar: nesse caso, ou sem foto, o card fica nos modelos de sempre. Com{' '}
             <b>Um elemento em 3D na peça em camadas</b> ligado, a IA faz também um objeto ligado ao assunto,
             na cor de destaque, sem letra nem marca (é mais uma imagem por card; sobre o fundo de destaque ele
             não aparece). No editor, <b>Outro elemento em 3D</b> troca e <b>Tirar o elemento</b> remove.

@@ -124,6 +124,17 @@ export async function recorteDaFoto(db: Executor, fotoId: number): Promise<FotoC
   return rows[0] ?? null;
 }
 
+/** v155: o elemento em 3D já feito para o mesmo objeto, para reaproveitar (não gasta outra imagem). */
+export async function elementoDoObjeto(db: Executor, objeto: string): Promise<FotoCarrossel | null> {
+  const { rows } = await db.query<FotoCarrossel>(
+    `SELECT ${COLUNAS_FOTO} FROM comercial.carrossel_fotos
+      WHERE conta_id = ${contaSql()} AND origem = 'elemento' AND lower(pedido) = lower($1)
+      ORDER BY id DESC LIMIT 1`,
+    [objeto],
+  );
+  return rows[0] ?? null;
+}
+
 export async function contarFotos(db: Executor): Promise<number> {
   const { rows } = await db.query<{ n: number }>(
     // O limite é das fotos enviadas: as que a IA faz não tiram vaga.

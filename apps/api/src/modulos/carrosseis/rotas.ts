@@ -405,7 +405,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
   /** v152: o recorte da foto (fundo tirado pela IA) para a peça "Em camadas". */
   r.post('/fotos/:id/recorte', async (req, res) => {
     const i = ia();
-    if (!i || !imagensLigadas(i))
+    if (!i || !(imagensLigadas(i) || i.recorteLocal))
       throw AppError.invalido('As imagens feitas pela IA ainda não estão ligadas. Fale com a gente.');
     const foto = await imagens.fazerRecorte(pool, i, conta(), idDaRota(req));
     if (!foto)
@@ -428,7 +428,8 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     const i = ia();
     if (!i || !imagensLigadas(i))
       throw AppError.invalido('As imagens feitas pela IA ainda não estão ligadas. Fale com a gente.');
-    const foto = await imagens.fazerElemento(pool, i, conta(), d);
+    // No editor a pessoa pediu "outro": faz um novo em vez de reaproveitar o guardado.
+    const foto = await imagens.fazerElemento(pool, i, conta(), d, { novo: true });
     if (!foto) throw AppError.invalido('O elemento não saiu desta vez. Tente de novo.');
     res.json({ foto });
   });

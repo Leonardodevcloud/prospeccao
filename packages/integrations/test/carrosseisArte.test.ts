@@ -402,4 +402,44 @@ describe('v152: peça em camadas, imagens e Claude', () => {
     expect(p).toContain('#FACC15');
     expect(p).toContain('transparent background');
   });
+
+  it('v155: o acabamento põe a sombra ou o contorno numa margem em volta, sem mexer no recorte', async () => {
+    const { acabarRecorte } = await import('../src/carrosseis/camadas.js');
+    const sharp = (await import('sharp')).default;
+    const png = new Uint8Array(
+      await sharp(
+        Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect x="60" y="60" width="280" height="480" fill="#c00"/></svg>',
+        ),
+      )
+        .png()
+        .toBuffer(),
+    );
+    for (const tipo of ['sombra', 'contorno'] as const) {
+      const r = await acabarRecorte(png, tipo);
+      expect(r.folga).toBe(30);
+      const m = await sharp(Buffer.from(r.png)).metadata();
+      expect([m.width, m.height, m.hasAlpha]).toEqual([460, 660, true]);
+      const { data } = await sharp(Buffer.from(r.png)).raw().toBuffer({ resolveWithObject: true });
+      const px = (x: number, y: number) => [...data.subarray((y * 460 + x) * 4, (y * 460 + x) * 4 + 4)];
+      // O miolo continua o recorte (vermelho cheio) e o canto da margem continua transparente.
+      expect(px(230, 330)).toEqual([204, 0, 0, 255]);
+      expect(px(2, 2)[3]).toBe(0);
+      // Logo fora da borda do recorte: sombra escura (meio transparente) ou contorno branco (cheio).
+      const fora = px(230, 30 + 60 + 480 + 4);
+      if (tipo === 'contorno') expect(fora).toEqual([255, 255, 255, 255]);
+      else {
+        expect(fora[3]).toBeGreaterThan(20);
+        expect(fora[3]).toBeLessThan(200);
+        expect(fora[0]).toBeLessThan(40);
+      }
+    }
+    // Imagem sem transparência: volta como veio.
+    const jpg = new Uint8Array(
+      await sharp({ create: { width: 50, height: 50, channels: 3, background: '#fff' } })
+        .jpeg()
+        .toBuffer(),
+    );
+    expect((await acabarRecorte(jpg, 'sombra')).folga).toBe(0);
+  });
 });

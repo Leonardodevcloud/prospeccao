@@ -246,7 +246,7 @@ export async function avaliarOpcoes(
         texto:
           'Você é a revisora final de uma agência brasileira. Olha posts de Instagram prontos, no tamanho do celular, e diz com franqueza qual funciona melhor: o que o olho vê primeiro, se o número e o título se leem em um segundo, se a foto ajuda a mensagem, se a peça está equilibrada. Compara as opções entre si; não dá a mesma nota por educação.',
       },
-      { texto: MANUAL_DESIGN },
+      { texto: MANUAL_DESIGN, cache: true },
     ],
     imagens: e.opcoes.map((jpeg, k) => ({
       tipo: 'image/jpeg' as const,
@@ -288,7 +288,7 @@ export async function escolherElemento(
         texto:
           'Você é diretor de arte. Para um post de Instagram, escolhe UM objeto em 3D que enfeita a peça ao lado da foto: concreto, fácil de reconhecer pequeno, ligado ao que o post vende ou ensina. Nunca um objeto genérico (estrela, raio, coração) quando existe um do assunto.',
       },
-      { texto: MANUAL_DESIGN },
+      { texto: MANUAL_DESIGN, cache: true },
     ],
     mensagem: `Post da ${e.empresa}. Título: "${e.titulo}". ${e.destaque ? `Número em destaque: "${e.destaque}". ` : ''}${e.texto ? `Texto: "${e.texto}".` : ''} Escolha o objeto.`,
     ferramenta: { nome: 'elemento_da_peca', descricao: 'O objeto da peça.', esquema: ESQUEMA_ELEMENTO },
@@ -321,4 +321,85 @@ export async function gerarElemento(cfg: ConfigImagem, objeto: string, cor: stri
     altura: 1024,
     transparente: true,
   });
+}
+
+/* ───────────────────────────── v155: o acabamento do recorte ───────────────────────────── */
+
+export interface RecorteAcabado {
+  png: Uint8Array;
+  /** A margem (px) posta em volta do recorte para caber a sombra ou o contorno. */
+  folga: number;
+}
+
+/**
+ * O acabamento que faz o recorte parecer pousado na peça, e não colado: uma sombra suave atrás dele
+ * ou um contorno branco de adesivo (com uma sombra leve). Feito no servidor, sem IA, a partir do
+ * canal de transparência do próprio recorte. A imagem ganha uma margem em volta (`folga`).
+ */
+export async function acabarRecorte(png: Uint8Array, tipo: 'sombra' | 'contorno'): Promise<RecorteAcabado> {
+  const sharp = await carregarSharp();
+  const meta = await sharp(Buffer.from(png)).metadata();
+  const L = meta.width ?? 0;
+  const A = meta.height ?? 0;
+  if (!L || !A || !meta.hasAlpha) return { png, folga: 0 };
+  const maior = Math.max(L, A);
+  const folga = Math.round(maior * 0.05);
+  const largura = L + folga * 2;
+  const altura = A + folga * 2;
+  const base = await sharp(Buffer.from(png))
+    .extend({
+      top: folga,
+      bottom: folga,
+      left: folga,
+      right: folga,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+  const alfa = () => sharp(base).extractChannel('alpha');
+  /** Uma camada de uma cor só, com a transparência dada (cinza: 0 some, 255 cheio). */
+  const camada = async (mascara: Buffer, cor: { r: number; g: number; b: number }) =>
+    sharp({ create: { width: largura, height: altura, channels: 3, background: cor } })
+      .joinChannel(mascara, { raw: { width: largura, height: altura, channels: 1 } })
+      .png()
+      .toBuffer();
+  const cinza = (s: ReturnType<typeof alfa>) => s.toColourspace('b-w').raw().toBuffer();
+  const camadas: { input: Buffer; left: number; top: number }[] = [];
+  if (tipo === 'contorno') {
+    // O contorno: a transparência "engordada" (borrada e cortada), pintada de branco.
+    const raio = Math.max(6, Math.round(maior * 0.014));
+    // Borrar e depois cortar baixo "engorda" a silhueta; um borrão leve no fim alisa a borda. Cada passo
+    // numa imagem própria: no mesmo encadeamento o sharp corta antes de borrar.
+    const cru = (b: Buffer) => sharp(b, { raw: { width: largura, height: altura, channels: 1 } });
+    // A mediana tira os pontinhos soltos da máscara (senão cada um viraria uma bolinha branca).
+    const limpo = await cinza(alfa().median(7));
+    const borrado = await cinza(cru(limpo).blur(raio));
+    const cortado = await cinza(cru(borrado).threshold(8));
+    const gordo = await cinza(cru(cortado).blur(1.2));
+    const sombra = await cinza(
+      sharp(gordo, { raw: { width: largura, height: altura, channels: 1 } })
+        .blur(Math.max(4, raio))
+        .linear(0.28, 0),
+    );
+    camadas.push({ input: await camada(sombra, { r: 0, g: 0, b: 0 }), left: 0, top: Math.round(raio * 0.8) });
+    camadas.push({ input: await camada(gordo, { r: 255, g: 255, b: 255 }), left: 0, top: 0 });
+  } else {
+    const sombra = await cinza(
+      alfa()
+        .blur(Math.max(6, Math.round(maior * 0.016)))
+        .linear(0.38, 0),
+    );
+    camadas.push({
+      input: await camada(sombra, { r: 0, g: 0, b: 0 }),
+      left: 0,
+      top: Math.round(maior * 0.014),
+    });
+  }
+  const saida = await sharp({
+    create: { width: largura, height: altura, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  })
+    .composite([...camadas, { input: base, left: 0, top: 0 }])
+    .png({ compressionLevel: 8 })
+    .toBuffer();
+  return { png: new Uint8Array(saida), folga };
 }

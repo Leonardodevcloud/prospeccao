@@ -389,6 +389,12 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ag. Estúdio de arte, parte 3 (v155)
+1. [ ] Sem migration. Redeploy da **api** (o `pnpm-lock.yaml` mudou: entra o `onnxruntime-node`, cerca de 300 MB a mais na imagem da api) e do worker-videos se ainda não recebeu o conserto.
+2. [ ] Pedir 2 cards com foto e conferir: formas diferentes atrás da foto, a **sombra** numa opção e o **contorno** na outra, nada sobreposto.
+3. [ ] **Recorte no servidor (opcional, desligado)**: para ligar, pôr na api `RECORTE_LOCAL_MODELO` com o endereço https (ou o caminho) de um modelo .onnx de separação de fundo. Testado aqui com o `isnet-general-use` distribuído pelo projeto rembg. Antes de ligar: (a) conferir a **licença dos pesos** do modelo escolhido para uso comercial; (b) a api precisa de **pelo menos 2 GB de memória livres** (cada recorte usa cerca de 1,2 GB por uns 2 s; sem isso o serviço pode cair); (c) o primeiro recorte demora mais (baixa o modelo, 178 MB). Se o recorte local sair ruim, o revisor reprova e o sistema usa a IA de imagem, como antes.
+4. [ ] Ainda por fazer do mapa de 11/11: biblioteca de ícones 3D prontos, mais famílias de fonte, garimpo das skills abertas de design, mais composições (número gigante atrás da foto, foto vazando a borda).
+
 ## 4af. Estúdio de arte, parte 2 (v153)
 1. [ ] **Migration 109** roda sozinha no redeploy da **api**. Redeploy também do **worker-videos** (traz o conserto: ele caía ao subir desde a v152, talvez desde a v150; conferir nos logs que ficou no ar).
 2. [ ] Pedir 2 cards com foto e conferir: o **elemento em 3D** (objeto do assunto, sem letra), a **nota da revisora** em cada opção e a preferida já escolhida.

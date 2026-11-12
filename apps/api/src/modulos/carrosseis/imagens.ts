@@ -21,6 +21,7 @@ import {
   melhorarFoto,
   porLogo,
   recortarFoto,
+  recortarLocal,
   recorteParaConferir,
   textoDaArte,
 } from '@prospeccao/integrations/carrosseis';
@@ -277,7 +278,7 @@ export async function fazerRecorte(
   fotoId: number,
   extra: { carrosselId?: number | null; criadoPor?: number | null } = {},
 ): Promise<FotoCarrossel | null> {
-  if (!imagensLigadas(ia)) return null;
+  if (!imagensLigadas(ia) && !(ia.recorteLocal && ia.armazenamento)) return null;
   const base = await repo.foto(db, fotoId);
   if (!base || (base.origem && ORIGENS_FORA_DA_BIBLIOTECA.includes(base.origem))) return null;
   // A mesma foto já recortada: aproveita (não gasta outra imagem).
@@ -287,6 +288,40 @@ export async function fazerRecorte(
   if (!bruta) return null;
   const original = new Uint8Array((await prepararImagem(bruta, { maxLado: 1536 })).dados);
   const claude = ia.cliente(db, contaId);
+  const guardarRecorte = async (
+    aparado: { png: Uint8Array; largura: number; altura: number },
+    como: string,
+  ) => {
+    const chave = `carrosseis/${conta()}/fotos/recorte-${randomUUID()}.png`;
+    await ia.armazenamento!.enviar(chave, aparado.png, 'image/png');
+    return repo.adicionarFotoDaIa(db, {
+      nome: `${base.nome} · recorte`.slice(0, 80),
+      chave,
+      largura: aparado.largura,
+      altura: aparado.altura,
+      bytes: aparado.png.byteLength,
+      origem: 'recorte',
+      baseFotoId: fotoId,
+      pedido: como,
+      carrosselId: extra.carrosselId ?? null,
+      ...(extra.criadoPor !== undefined ? { criadoPor: extra.criadoPor } : {}),
+    });
+  };
+  // v155: primeiro o recorte no servidor (sem custo por imagem, e a foto não é redesenhada). Passa pelas
+  // mesmas duas conferências; se falhar ou for reprovado, segue para a IA de imagem.
+  if (ia.recorteLocal) {
+    const local = await recortarLocal(ia.recorteLocal, original)
+      .then((png) => apararRecorte(png))
+      .catch(() => null);
+    if (local) {
+      const c = await conferirRecorte(claude, {
+        original,
+        recorte: await recorteParaConferir(local.png),
+      }).catch(() => null);
+      if (c?.aprovada) return guardarRecorte(local, 'A foto com o fundo tirado (no servidor)');
+    }
+  }
+  if (!imagensLigadas(ia)) return null;
   for (let k = 0; k < TENTATIVAS; k++) {
     let png: Uint8Array;
     try {
@@ -305,20 +340,7 @@ export async function fazerRecorte(
       recorte: await recorteParaConferir(aparado.png),
     });
     if (!c.aprovada) continue;
-    const chave = `carrosseis/${conta()}/fotos/recorte-${randomUUID()}.png`;
-    await ia.armazenamento!.enviar(chave, aparado.png, 'image/png');
-    return repo.adicionarFotoDaIa(db, {
-      nome: `${base.nome} · recorte`.slice(0, 80),
-      chave,
-      largura: aparado.largura,
-      altura: aparado.altura,
-      bytes: aparado.png.byteLength,
-      origem: 'recorte',
-      baseFotoId: fotoId,
-      pedido: 'A foto com o fundo tirado',
-      carrosselId: extra.carrosselId ?? null,
-      ...(extra.criadoPor !== undefined ? { criadoPor: extra.criadoPor } : {}),
-    });
+    return guardarRecorte(aparado, 'A foto com o fundo tirado');
   }
   return null;
 }
@@ -333,7 +355,7 @@ export async function fazerElemento(
   ia: CarrosseisIa,
   contaId: number,
   texto: { titulo: string; destaque: string; texto: string },
-  extra: { criadoPor?: number | null } = {},
+  extra: { criadoPor?: number | null; novo?: boolean } = {},
 ): Promise<FotoCarrossel | null> {
   if (!imagensLigadas(ia)) return null;
   const claude = ia.cliente(db, contaId);
@@ -345,6 +367,11 @@ export async function fazerElemento(
   ]);
   const objeto = await escolherElemento(claude, { empresa, ...texto }).catch(() => null);
   if (!objeto) return null;
+  // O mesmo objeto já foi feito para esta conta: reaproveita ("Outro elemento" no editor pede um novo).
+  if (!extra.novo) {
+    const pronto = await repo.elementoDoObjeto(db, objeto);
+    if (pronto) return pronto;
+  }
   for (let k = 0; k < TENTATIVAS; k++) {
     let png: Uint8Array;
     try {

@@ -9,12 +9,12 @@ import { MANUAL_MOTION } from './motion.js';
 import { MANUAL_REDACAO } from './redacao.js';
 import { MANUAL_REVISAO } from './revisao.js';
 
-/** O manual de design é curto e vai direto no prompt dos agentes de arte (fora do bloco do cache). */
 export { MANUAL_DESIGN, MANUAL_EDITOR_VIDEO, MANUAL_MOTION, MANUAL_REDACAO, MANUAL_REVISAO };
 
-export type NomeManual = 'editorDeVideo' | 'motion' | 'redacao' | 'revisao';
+export type NomeManual = 'design' | 'editorDeVideo' | 'motion' | 'redacao' | 'revisao';
 
 export const MANUAIS: Record<NomeManual, string> = {
+  design: MANUAL_DESIGN,
   editorDeVideo: MANUAL_EDITOR_VIDEO,
   motion: MANUAL_MOTION,
   redacao: MANUAL_REDACAO,
