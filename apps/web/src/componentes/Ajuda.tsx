@@ -1207,7 +1207,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'O time de IA escreve carrosséis com a identidade e o jeito de falar da empresa; você confere, ajusta e baixa as imagens.',
     onde: { rotulo: 'Carrosséis', para: '/carrosseis' },
     termos:
-      'estilo vivo aprender com o meu instagram jeito de postar perguntas da estrategista respostas palavra colorida asteriscos selo botão cartão-postal prévia grande lançamento cards avulsos card avulso peça única post único story stories 9:16 feed 4:5 variação variações escolher outra variação fotos do pedido melhorar a foto melhorada tratar foto ideias buscar ideias aprendeu aprendizado aprendizados mediana teste contas de referência concorrente melhor horário agendar agendamento calendário publicar agora imagem gerada cenário produto referência de estilo revisor visual carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
+      'estilo vivo aprender com o meu instagram jeito de postar perguntas da estrategista respostas palavra colorida asteriscos selo botão cartão-postal prévia grande lançamento cards avulsos card avulso peça única post único story stories 9:16 feed 4:5 feed e story os dois formatos em camadas recorte tirar o fundo foto recortada variação variações escolher outra variação fotos do pedido melhorar a foto melhorada tratar foto ideias buscar ideias aprendeu aprendizado aprendizados mediana teste contas de referência concorrente melhor horário agendar agendamento calendário publicar agora imagem gerada cenário produto referência de estilo revisor visual carrossel carrosséis instagram post slides imagens design identidade visual cores fontes logo fotos da empresa legenda hashtags baixar zip arte publicação feed conteúdo time de ia estrategista redator revisor cérebro da marca dossiê promoção o que divulgar gancho conversa pedir ajuste correção mudar slide instruções aplicar desfazer comente e receba palavra direct regra postar publicar reconhecer post legenda arquivo pdf link whatsapp abriram ver no celular prévia',
     corpo: (
       <>
         <p>
@@ -1493,8 +1493,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>12. Cards avulsos (um post de uma imagem só)</h3>
         <p>
           Na aba <b>Cards avulsos</b>, peça ao time peças de uma imagem só, no <b>Feed 4:5</b> (1080 × 1350)
-          ou no <b>Story 9:16</b> (1080 × 1920). É o mesmo time, o mesmo cérebro da marca, a mesma identidade
-          visual e o mesmo revisor dos carrosséis.
+          ou no <b>Story 9:16</b> (1080 × 1920), ou em <b>Feed e story</b> de uma vez: cada peça sai nos dois
+          tamanhos, com o mesmo texto e a mesma foto, em dois grupos (um do feed e um do story) para escolher,
+          editar e publicar cada um; conta como um pedido só. É o mesmo time, o mesmo cérebro da marca, a
+          mesma identidade visual e o mesmo revisor dos carrosséis.
         </p>
         <Passos>
           <li>
@@ -1537,16 +1539,29 @@ export const ARTIGOS: ArtigoAjuda[] = [
             *asteriscos* é a que ganha a cor.
           </li>
           <li>
-            Com <b>Uma arte desenhada pela IA em cada card</b> ligado, cada card ganha mais uma variação,
-            marcada <b>Arte da IA</b>: a peça inteira desenhada como um designer faria, a partir do texto da
-            1ª variação. Antes de desenhar, o diretor de arte olha as suas fotos e os posts do seu Instagram e
-            planeja a composição; a IA desenha deixando um canto livre e o sistema põe ali a sua logo de
-            verdade (o arquivo salvo, sem a IA redesenhar). Uma IA com visão lê o que saiu escrito e confere
-            com o texto aprovado, palavra por palavra (acentos e preços contam); se errar duas vezes, o card
-            fica só nos modelos. Num card pronto, <b>Arte da IA</b> desenha a arte a partir da variação
-            escolhida e <b>Desenhar de novo</b> refaz a arte. Na arte, o texto está desenhado na imagem: mudou
-            o texto no editor, clique em <b>Desenhar de novo com este texto</b> (ou troque para um modelo, que
-            monta a peça com o texto novo na hora). Cada arte custa cerca de US$ 0,25 a 0,50.
+            Com <b>Peças em camadas</b> ligado e uma foto da empresa no card (a que o time escolheu ou a que
+            você mandou no pedido), as duas primeiras opções saem marcadas <b>Em camadas</b>: a IA tira o
+            fundo da sua foto (a pessoa ou o produto ficam iguais; um revisor com visão compara com a foto
+            original) e o sistema monta a peça sobre a cor da marca, com a logo e o texto escritos por ele.
+            Como o texto não é desenhado pela IA, nenhuma letra, acento ou preço sai errado, e dá para mudar o
+            texto no editor sem refazer a imagem. Uma opção põe a foto ao lado do texto, sobre a cor
+            principal; a outra, embaixo, sobre a cor de destaque. No editor, em <b>Peça em camadas</b>, troque
+            onde a foto entra e a própria foto (<b>Trocar a foto</b> pede um recorte novo; a mesma foto é
+            recortada uma vez só e reaproveitada). Foto de fachada, rua ou ambiente inteiro não serve para
+            recortar: nesse caso, ou sem foto, o card fica nos modelos de sempre.
+          </li>
+          <li>
+            Com <b>Uma arte desenhada pela IA em cada card</b> ligado (vem desligado), cada card ganha mais
+            uma variação, marcada <b>Arte da IA</b>: a peça inteira desenhada como um designer faria, a partir
+            do texto da 1ª variação. Antes de desenhar, o diretor de arte olha as suas fotos e os posts do seu
+            Instagram e planeja a composição; a IA desenha deixando um canto livre e o sistema põe ali a sua
+            logo de verdade (o arquivo salvo, sem a IA redesenhar). Uma IA com visão lê o que saiu escrito e
+            confere com o texto aprovado, palavra por palavra (acentos e preços contam); se errar duas vezes,
+            o card fica só nos modelos (a arte só passa com nota 4 de 5 ou mais do revisor). Num card pronto,{' '}
+            <b>Arte da IA</b> desenha a arte a partir da variação escolhida e <b>Desenhar de novo</b> refaz a
+            arte. Na arte, o texto está desenhado na imagem: mudou o texto no editor, clique em{' '}
+            <b>Desenhar de novo com este texto</b> (ou troque para um modelo, que monta a peça com o texto
+            novo na hora). Cada arte custa cerca de US$ 0,25 a 0,50.
           </li>
           <li>
             Pronto, clique numa variação para vê-la grande, como sai no Instagram, com as setas para passar

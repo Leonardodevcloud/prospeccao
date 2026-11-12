@@ -3,6 +3,7 @@ import {
   avisosDoCarrossel,
   type Carrossel,
   type CarrosselEntrada,
+  COMPOSICOES_CAMADAS,
   ESTILO,
   ESTILOS,
   type EstiloCarrossel,
@@ -15,6 +16,7 @@ import {
   MODELOS_A_MAO,
   type ModeloSlide,
   montarSlide,
+  ROTULO_COMPOSICAO,
   ROTULO_FUNDO,
   type SlideCarrossel,
   slideNovo,
@@ -260,7 +262,8 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
           itens: y.itens.length ? y.itens : p.itens,
           colunas: y.colunas.length ? y.colunas : p.colunas,
           // v150: a imagem da arte da IA é a peça inteira: não vira a foto de um modelo.
-          fotoId: MODELO[modelo].foto && y.modelo !== 'arte' ? y.fotoId : null,
+          // v152: o recorte (PNG sem fundo) também não: só serve na peça em camadas.
+          fotoId: MODELO[modelo].foto && y.modelo !== 'arte' && y.modelo !== 'camadas' ? y.fotoId : null,
           fundo: y.fundo,
         };
       }),
@@ -770,6 +773,78 @@ function ArteDaIa(props: { carrosselId: number; imagens: boolean }) {
   );
 }
 
+/**
+ * v152: a peça em camadas. O texto, o fundo e a logo são os campos de sempre; aqui ficam as duas coisas
+ * que são só dela: onde a foto recortada entra e qual foto é (trocar pede um recorte novo à IA).
+ */
+function CamadasDaPeca(props: {
+  slide: SlideCarrossel;
+  imagens: boolean;
+  aoMudar: (p: Partial<SlideCarrossel>) => void;
+}) {
+  const [fotos, setFotos] = useState(false);
+  const recortar = useMutation({
+    mutationFn: (fotoId: number) =>
+      api<{ foto: { id: number } }>(`/carrosseis/fotos/${fotoId}/recorte`, { metodo: 'POST' }),
+    onSuccess: (r) => {
+      props.aoMudar({ fotoId: r.foto.id });
+      setFotos(false);
+    },
+  });
+  const composicao = props.slide.composicao ?? 'lado';
+  return (
+    <div className="campo painel-slide__arte">
+      <span className="campo__rotulo">Peça em camadas</span>
+      <p className="quieto">
+        A foto é a sua, com o fundo tirado pela IA. O texto é escrito pelo sistema: pode mudar à vontade, sem
+        refazer a imagem. A cor de trás é a do campo Fundo, mais abaixo.
+      </p>
+      <div className="painel-slide__modelos" role="radiogroup" aria-label="Onde a foto entra">
+        {COMPOSICOES_CAMADAS.map((x) => (
+          <label key={x} className="painel-slide__modelo" data-ativo={composicao === x || undefined}>
+            <input
+              type="radio"
+              name="ps-composicao"
+              className="pp-sr"
+              checked={composicao === x}
+              onChange={() => props.aoMudar({ composicao: x })}
+            />
+            {ROTULO_COMPOSICAO[x]}
+          </label>
+        ))}
+      </div>
+      <div className="painel-slide__foto">
+        {props.slide.fotoId ? (
+          <img
+            className="painel-slide__foto-img"
+            src={urlFoto(props.slide.fotoId, 240)}
+            alt="A foto recortada"
+            style={{ background: 'var(--surface-sunken)' }}
+          />
+        ) : (
+          <span className="quieto">Sem o recorte: a peça aparece no modelo Capa.</span>
+        )}
+        {props.imagens && (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            icon="image"
+            disabled={recortar.isPending}
+            onClick={() => setFotos((x) => !x)}
+          >
+            {recortar.isPending ? 'Recortando… (até 2 min)' : fotos ? 'Fechar as fotos' : 'Trocar a foto'}
+          </Button>
+        )}
+      </div>
+      {fotos && !recortar.isPending && (
+        <FotosDaEmpresa escolhida={null} escolher={(id) => recortar.mutate(id)} />
+      )}
+      <ErroDaApi erro={recortar.error} />
+    </div>
+  );
+}
+
 function PainelSlide(props: {
   slide: SlideCarrossel;
   avisos: string[];
@@ -808,7 +883,10 @@ function PainelSlide(props: {
       <div className="campo">
         <span className="campo__rotulo">Modelo do slide</span>
         <div className="painel-slide__modelos" role="radiogroup" aria-label="Modelo do slide">
-          {(slide.modelo === 'arte' ? [...MODELOS_A_MAO, 'arte' as const] : MODELOS_A_MAO).map((x) => (
+          {(slide.modelo === 'arte' || slide.modelo === 'camadas'
+            ? [...MODELOS_A_MAO, slide.modelo]
+            : MODELOS_A_MAO
+          ).map((x) => (
             <label
               key={x}
               className="painel-slide__modelo"
@@ -938,8 +1016,11 @@ function PainelSlide(props: {
         })}
 
       {slide.modelo === 'arte' && <ArteDaIa carrosselId={props.carrosselId} imagens={props.imagens} />}
+      {slide.modelo === 'camadas' && (
+        <CamadasDaPeca slide={slide} imagens={props.imagens} aoMudar={props.aoMudar} />
+      )}
 
-      {m.foto && slide.modelo !== 'arte' && (
+      {m.foto && slide.modelo !== 'arte' && slide.modelo !== 'camadas' && (
         <div className="campo">
           <span className="campo__rotulo">Foto</span>
           <div className="painel-slide__foto">

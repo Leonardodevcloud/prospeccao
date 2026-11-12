@@ -165,6 +165,9 @@ function Escolhas<T extends string | number>(props: {
 }
 
 const QUANTIDADES = [1, 2, 3, 4, 5, 6, 8, MAX_CARDS_PEDIDO] as const;
+/** v152: o formato do pedido: um dos dois, ou os dois de uma vez. */
+const FORMATOS_PEDIDO = ['feed', 'story', 'os-dois'] as const;
+type FormatoPedido = (typeof FORMATOS_PEDIDO)[number];
 const VARIACOES = Array.from({ length: MAX_VARIACOES_CARD }, (_, i) => i + 1);
 
 function NovoPedidoDeCards(props: {
@@ -181,14 +184,19 @@ function NovoPedidoDeCards(props: {
   const [objetivo, setObjetivo] = useState<ObjetivoCard>('promocao');
   const [quantidade, setQuantidade] = useState(3);
   const [variacoes, setVariacoes] = useState(2);
-  const [formato, setFormato] = useState<FormatoPeca>('feed');
+  // v152: feed, story ou os dois de uma vez (a mesma peça nos dois tamanhos).
+  const [formatoPedido, setFormatoPedido] = useState<FormatoPedido>('feed');
+  const formatos: FormatoPeca[] = formatoPedido === 'os-dois' ? ['feed', 'story'] : [formatoPedido];
+  const formato = formatos[0]!;
   const [estilo, setEstilo] = useState<EstiloCarrossel | null>(null);
   const [chamada, setChamada] = useState<ChamadaFinal>('whatsapp');
   const [palavra, setPalavra] = useState('');
   const [usarFotos, setUsarFotos] = useState(true);
   const [gerarImagens, setGerarImagens] = useState(false);
   // v150: uma variação por card desenhada inteira pela IA (com a logo, as fotos e o jeito de postar).
-  const [arteIa, setArteIa] = useState(true);
+  const [arteIa, setArteIa] = useState(false);
+  // v152: as duas opções "em camadas" (a foto da empresa com o fundo tirado; o texto é do sistema).
+  const [camadas, setCamadas] = useState(true);
   const [fotosPedido, setFotosPedido] = useState<FotoDoPedido[]>([]);
   // v148/v149: antes de criar, a estrategista conversa em rodadas (sem perguntas, cria direto).
   const [conversa, setConversa] = useState<RodadaDoTime | null>(null);
@@ -204,12 +212,14 @@ function NovoPedidoDeCards(props: {
           quantidade,
           variacoes,
           formato,
+          formatos,
           estilo,
           chamada,
           palavra,
           usarFotos,
           gerarImagens,
           arteIa: arteIa && !!props.situacao.ia.imagens,
+          camadas: camadas && !!props.situacao.ia.imagens,
           fotos: fotosPedido,
           respostas,
           briefing,
@@ -225,7 +235,7 @@ function NovoPedidoDeCards(props: {
   });
   const { ia, franquia } = props.situacao;
   const itens = divulgar.data?.itens ?? [];
-  const pecas = quantidade * variacoes;
+  const pecas = quantidade * variacoes * formatos.length;
   const esgotou = franquia.limite != null && franquia.usados >= franquia.limite;
   const palavraOk = chamada !== 'comentar' || PALAVRA_COMENTAR.test(palavra);
   const nFotos = (fotos.data?.fotos ?? []).filter((f) => f.origem !== 'referencia').length;
@@ -346,11 +356,17 @@ function NovoPedidoDeCards(props: {
       <Escolhas
         nome="cards-formato"
         rotulo="Formato"
-        opcoes={FORMATOS_PECA}
-        valor={formato}
-        mudar={setFormato}
-        texto={(f) => FORMATO_PECA[f].nome}
+        opcoes={FORMATOS_PEDIDO}
+        valor={formatoPedido}
+        mudar={setFormatoPedido}
+        texto={(f) => (f === 'os-dois' ? 'Feed e story' : FORMATO_PECA[f].nome)}
       />
+      {formatoPedido === 'os-dois' && (
+        <p className="campo__dica" style={{ marginTop: -4 }}>
+          Cada peça sai nos dois tamanhos, com o mesmo texto e a mesma foto. Elas aparecem em dois grupos
+          (Feed e Story), para escolher, editar e publicar cada um.
+        </p>
+      )}
       <Escolhas
         nome="cards-objetivo"
         rotulo="Objetivo"
@@ -425,6 +441,19 @@ function NovoPedidoDeCards(props: {
           </span>
         </span>
       </label>
+      {ia.imagens && (
+        <label className="opcao">
+          <input type="checkbox" checked={camadas} onChange={(e) => setCamadas(e.target.checked)} />
+          <span>
+            Peças em camadas quando houver foto da empresa
+            <span className="campo__dica" style={{ display: 'block' }}>
+              A IA tira o fundo da sua foto (a pessoa ou o produto ficam iguais) e o sistema monta a peça
+              sobre a cor da marca, com o texto escrito por ele: nenhuma letra sai errada. As duas primeiras
+              opções de cada card saem assim; sem foto que sirva, ficam os modelos de sempre.
+            </span>
+          </span>
+        </label>
+      )}
       {ia.imagens && (
         <label className="opcao">
           <input type="checkbox" checked={arteIa} onChange={(e) => setArteIa(e.target.checked)} />
@@ -588,6 +617,11 @@ function Lote(props: { l: LoteCards; arteLigada: boolean }) {
                           onClick={() => setPrevia({ card: c.card, variacao: k })}
                         >
                           <img src={imagemDaPeca(v)} alt="" loading="lazy" />
+                          {v.slide?.modelo === 'camadas' && (
+                            <span className="cards-card__selo-ia" aria-hidden="true">
+                              <Icon name="sparkles" size={11} /> Em camadas
+                            </span>
+                          )}
                           {v.slide?.modelo === 'arte' && (
                             <span className="cards-card__selo-ia" aria-hidden="true">
                               <Icon name="sparkles" size={11} /> Arte da IA

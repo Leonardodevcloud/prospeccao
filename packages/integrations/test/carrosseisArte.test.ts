@@ -188,3 +188,186 @@ describe('v150/v151: a arte da IA', () => {
     expect(px2.channels[0]!.mean).toBeLessThan(60);
   });
 });
+
+describe('v152: peça em camadas, imagens e Claude', () => {
+  it('apara o recorte e reprova quando o fundo não saiu ou o assunto sumiu', async () => {
+    const { apararRecorte, avaliarRecorte } = await import('../src/carrosseis/camadas.js');
+    const sharp = (await import('sharp')).default;
+    const svg = (corpo: string) =>
+      sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600">${corpo}</svg>`))
+        .png()
+        .toBuffer();
+    const bom = await apararRecorte(
+      new Uint8Array(await svg('<rect x="100" y="150" width="200" height="400" fill="#c00"/>')),
+    );
+    expect(bom).toMatchObject({ largura: 200, altura: 400 });
+    expect(bom!.transparente).toBeGreaterThan(0.6);
+    // Fundo inteiro pintado (a IA não tirou o fundo) e imagem quase vazia: reprovam.
+    expect(
+      await apararRecorte(new Uint8Array(await svg('<rect width="400" height="600" fill="#fff"/>'))),
+    ).toBeNull();
+    expect(
+      await apararRecorte(
+        new Uint8Array(await svg('<rect x="0" y="0" width="20" height="20" fill="#c00"/>')),
+      ),
+    ).toBeNull();
+    const ok = {
+      assunto_igual: true,
+      inteiro: true,
+      fundo_limpo: true,
+      defeito: false,
+      texto_novo: false,
+      isolavel: true,
+      problemas: [],
+    };
+    expect(avaliarRecorte(ok).aprovada).toBe(true);
+    expect(avaliarRecorte({ ...ok, isolavel: false }).aprovada).toBe(false);
+    expect(avaliarRecorte({ ...ok, assunto_igual: false }).problemas.length).toBeGreaterThan(0);
+  });
+
+  it('imagem: família nova aceita transparente e xhigh; uso vira custo; moderação não repete', async () => {
+    const im = await import('../src/videos/imagens.js');
+    expect(im.aceitaTransparente('gpt-image-2.6-sunburst')).toBe(true);
+    expect(im.aceitaTransparente('gpt-image-2')).toBe(false);
+    expect(im.qualidadeDoModelo('gpt-image-2', 'max')).toBe('high');
+    expect(im.qualidadeDoModelo('gpt-image-2.6-flare', 'max')).toBe('max');
+    expect(
+      im.lerUso('gpt-image-2.6-sunburst', {
+        input_tokens: 1200,
+        output_tokens: 6000,
+        input_tokens_details: { text_tokens: 200, image_tokens: 1000 },
+      })?.usd,
+    ).toBeCloseTo(0.189, 3);
+    expect(im.lerUso('gpt-image-2', { output_tokens: 6000 })?.usd).toBeNull();
+    const corpos: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => {
+      const c = JSON.parse(String(init.body));
+      corpos.push(c);
+      // O modelo novo ainda não existe na conta: cai no de reserva.
+      if (c.model !== 'gpt-image-2')
+        return new Response(JSON.stringify({ error: { code: 'model_not_found', message: 'x' } }), {
+          status: 404,
+        });
+      return new Response(JSON.stringify({ data: [{ b64_json: 'AAAA' }], usage: { output_tokens: 10 } }), {
+        status: 200,
+      });
+    });
+    const dados = await im.pedirImagem(
+      { chave: 'x', modelo: 'gpt-image-2.6-sunburst', qualidade: 'max' },
+      { prompt: 'p', largura: 1088, altura: 1360 },
+    );
+    expect(corpos.map((c) => [c.model, c.quality])).toEqual([
+      ['gpt-image-2.6-sunburst', 'max'],
+      ['gpt-image-2', 'high'],
+    ]);
+    expect(im.usoDaImagem(dados)).toMatchObject({ saida: 10, usd: null });
+    await expect(
+      im.pedirImagem(
+        { chave: 'x', modelo: 'gpt-image-2' },
+        { prompt: 'p', largura: 1024, altura: 1536, transparente: true },
+      ),
+    ).rejects.toMatchObject({ codigo: 'sem_transparencia' });
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'moderation_blocked', message: 'no' } }), {
+          status: 400,
+        }),
+    );
+    await expect(
+      im.pedirImagem({ chave: 'x', modelo: 'gpt-image-2' }, { prompt: 'p', largura: 1024, altura: 1536 }),
+    ).rejects.toMatchObject({ codigo: 'imagem_recusada', repetivel: false });
+    vi.unstubAllGlobals();
+  });
+
+  it('Claude: ferramenta estrita, esforço por agente e a volta ao jeito antigo quando o esquema é recusado', async () => {
+    const { criarClaude, custoUsd, esquemaEstrito, pensamentoDo } = await import(
+      '../src/carrosseis/claude.js'
+    );
+    expect(
+      esquemaEstrito({
+        type: 'object',
+        properties: { a: { type: 'array', items: { type: 'object', properties: {} } } },
+      }),
+    ).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        a: { type: 'array', items: { type: 'object', properties: {}, additionalProperties: false } },
+      },
+    });
+    expect(pensamentoDo('claude-sonnet-5-5', 'alto')).toEqual({
+      thinking: { type: 'between_tools' },
+      output_config: { effort: 'high' },
+    });
+    // Ler do cache no Sonnet 5.5: US$ 0,10 por milhão.
+    expect(
+      custoUsd('claude-sonnet-5-5', { entrada: 0, saida: 0, cacheEscrita: 0, cacheLeitura: 1e6 }),
+    ).toBeCloseTo(0.1, 6);
+    const corpos: { tools: { strict?: boolean }[] }[] = [];
+    vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => {
+      const c = JSON.parse(String(init.body));
+      corpos.push(c);
+      if (c.tools[0].strict) return new Response('{"error":{"message":"schema"}}', { status: 400 });
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'tool_use', name: 'so_teste_v152', input: { ok: true } }],
+          usage: {},
+        }),
+        { status: 200 },
+      );
+    });
+    const c = criarClaude({ chave: 'x'.repeat(30), modelo: 'claude-sonnet-5-5' });
+    const pedido = {
+      agente: 't',
+      sistema: [{ texto: 's' }],
+      mensagem: 'm',
+      ferramenta: {
+        nome: 'so_teste_v152',
+        descricao: 'd',
+        esquema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+      },
+    };
+    expect((await c.pedir(pedido)).dados).toEqual({ ok: true });
+    expect(corpos.map((x) => !!x.tools[0]!.strict)).toEqual([true, false]);
+    await c.pedir(pedido);
+    expect(corpos.length).toBe(3);
+    vi.unstubAllGlobals();
+  });
+
+  it('música: as partes somam o vídeo, cada uma com 3 s ou mais, e o plano recusado cai na faixa única', async () => {
+    const som = await import('../src/videos/som.js');
+    const p = som.partesDaMusica({ total: 42, ofertaEm: 24, chamadaEm: 35 });
+    expect(p.map((x) => x.nome)).toEqual(['gancho', 'explicacao', 'oferta', 'chamada']);
+    expect(p.reduce((s, x) => s + x.segundos, 0)).toBe(42);
+    expect(som.partesDaMusica({ total: 10 })).toEqual([]);
+    for (const total of [14, 30, 95, 180])
+      for (const x of som.partesDaMusica({ total, ofertaEm: total / 2, chamadaEm: total - 2 })) {
+        expect(x.segundos).toBeGreaterThanOrEqual(3);
+        expect(x.segundos).toBeLessThanOrEqual(120);
+      }
+    expect(som.partesDaMusica({ total: 180 }).reduce((s, x) => s + x.segundos, 0)).toBe(180);
+    const corpos: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => {
+      const c = JSON.parse(String(init.body));
+      corpos.push(c);
+      return c.composition_plan
+        ? new Response('{"detail":{"status":"bad_composition_plan"}}', { status: 422 })
+        : new Response(new Uint8Array([7]), { status: 200 });
+    });
+    const mp3 = await som.comporMusica(
+      { chave: 'x' },
+      { clima: 'confiante', descricao: '', estilo: '', segundos: 42, partes: p },
+      [1],
+    );
+    expect([...mp3]).toEqual([7]);
+    expect(corpos[0]).toMatchObject({ model_id: 'music_v2_5' });
+    expect((corpos[0]!.composition_plan as { chunks: unknown[] }).chunks).toHaveLength(4);
+    expect(corpos[1]).toMatchObject({
+      model_id: 'music_v2_5',
+      music_length_ms: 42_000,
+      force_instrumental: true,
+    });
+    vi.unstubAllGlobals();
+  });
+});

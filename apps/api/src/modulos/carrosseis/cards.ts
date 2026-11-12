@@ -4,11 +4,15 @@ import { AppError } from '@prospeccao/shared';
 import {
   type EstiloCarrossel,
   type FormatoPeca,
+  type FotoCarrossel,
+  type IdentidadeCarrossel,
+  montarSlide,
   type SlideCarrossel,
   semMarcas,
 } from '@prospeccao/shared/carrosseis';
 import {
   type EtapaTime,
+  formatosDoPedido,
   type LoteCards,
   OBJETIVO_CARD,
   type ObjetivoCard,
@@ -24,7 +28,14 @@ import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as aprender from './aprender.js';
 import * as cerebro from './cerebro.js';
-import { estiloDaConta, fazerArte, fazerImagem, imagensLigadas, tratarFotosDoPedido } from './imagens.js';
+import {
+  estiloDaConta,
+  fazerArte,
+  fazerImagem,
+  fazerRecorte,
+  imagensLigadas,
+  tratarFotosDoPedido,
+} from './imagens.js';
 import * as repo from './repositorio.js';
 import type { CarrosseisIa } from './time.js';
 
@@ -59,7 +70,7 @@ const semIa = () =>
 async function conferirFotosDoPedido(db: Executor, fotos: PedidoCards['fotos']): Promise<void> {
   for (const f of fotos) {
     const foto = await repo.foto(db, f.fotoId);
-    if (!foto || foto.origem === 'referencia' || foto.origem === 'arte')
+    if (!foto || foto.origem === 'referencia' || foto.origem === 'arte' || foto.origem === 'recorte')
       throw AppError.invalido('Uma das fotos do pedido não existe mais.');
     if (f.tratamento === 'cenario' && (foto.origem ?? 'enviada') !== 'enviada')
       throw AppError.invalido(
@@ -200,6 +211,45 @@ async function imagensDosCards(
   };
 }
 
+/**
+ * v152: o slide do time na peça "em camadas": o mesmo texto, com o recorte da foto no lugar da foto. A
+ * 1ª opção põe a foto ao lado do texto, sobre a cor principal; a 2ª, embaixo, sobre a cor de destaque.
+ * Devolve null (fica o modelo do time) quando não há recorte, o modelo tem conteúdo que a peça em
+ * camadas não mostra (lista, comparação, citação) ou o texto não cabe em algum dos formatos pedidos.
+ */
+export function slideEmCamadas(
+  slide: SlideCarrossel,
+  recorte: FotoCarrossel | null,
+  k: number,
+  e: { identidade: IdentidadeCarrossel; estilo: EstiloCarrossel; formatos: FormatoPeca[] },
+): SlideCarrossel | null {
+  if (!recorte || !slide.titulo.trim()) return null;
+  if (!['capa', 'numero', 'foto', 'chamada'].includes(slide.modelo)) return null;
+  const novo: SlideCarrossel = {
+    ...slide,
+    modelo: 'camadas',
+    fotoId: recorte.id,
+    itens: [],
+    colunas: [],
+    composicao: k % 2 === 0 ? 'lado' : 'base',
+    fundo: k % 2 === 0 ? 'auto' : 'destaque',
+  };
+  const cabe = e.formatos.every(
+    (formato) =>
+      !montarSlide({
+        slide: novo,
+        indice: 0,
+        total: 1,
+        identidade: e.identidade,
+        estilo: e.estilo,
+        foto: 'recorte',
+        fotoMedidas: { largura: recorte.largura, altura: recorte.altura },
+        formato,
+      }).avisos.some((a) => /longo demais/.test(a)),
+  );
+  return cabe ? novo : null;
+}
+
 /** O que o time faz com um pedido de cards (a fila chama). Devolve o uso para o pedido. */
 export async function trabalharCards(
   db: Executor,
@@ -276,7 +326,35 @@ export async function trabalharCards(
     },
     avancar,
   );
+  // v152: as opções "em camadas" de cada card. A IA tira o fundo da foto do card (a que o time escolheu
+  // ou a que veio no pedido) e a peça é montada pelo sistema; sem foto que sirva, ficam os modelos.
+  const formatos = formatosDoPedido(p);
+  const fotosDoPedidoIds = fotosDoPedido.map((f) => f.id);
+  const recortes: (FotoCarrossel | null)[] =
+    !outra && p.camadas && imagensLigadas(ia) && r.cards.length
+      ? await (async () => {
+          await avancar('diretor', 'Recortando as fotos para as peças em camadas');
+          return Promise.all(
+            r.cards.map((card) => {
+              const doTime = card.variacoes
+                .map((v) => v.slide.fotoId)
+                .find((id) => !!id && (fotos.find((f) => f.id === id)?.origem ?? 'enviada') !== 'gerada');
+              const fotoId = doTime ?? fotosDoPedidoIds[0] ?? null;
+              return fotoId
+                ? fazerRecorte(db, ia, l.conta_id, fotoId, { criadoPor: l.criado_por }).catch(() => null)
+                : null;
+            }),
+          );
+        })()
+      : [];
   const ids: number[] = [];
+  /** O que foi criado, para nascer igual no outro formato (feed e story pedidos juntos). */
+  const criadas: {
+    dados: Omit<Parameters<typeof repo.criar>[1], 'card'>;
+    card: number;
+    variacao: number;
+    escolhido: boolean;
+  }[] = [];
   const proxima = outra
     ? (
         await db.query<{ n: number }>(
@@ -288,32 +366,36 @@ export async function trabalharCards(
     : 1;
   for (const [i, card] of r.cards.entries())
     for (const [k, v] of card.variacoes.entries()) {
-      const [slide] = await repo.conferirFotos(db, [v.slide]);
+      const [conferido] = await repo.conferirFotos(db, [v.slide]);
+      // As duas primeiras opções do card viram "em camadas" quando o recorte saiu e o texto cabe.
+      const emCamadas =
+        !outra && k < 2
+          ? slideEmCamadas(conferido!, recortes[i] ?? null, k, { identidade, estilo, formatos })
+          : null;
+      const dados = {
+        titulo: (outra ? `${card.titulo} (variação)` : card.titulo).slice(0, 120),
+        estilo,
+        slides: [emCamadas ?? conferido!],
+        legenda: card.legenda,
+        origem: 'ia' as const,
+        relatorio: v.relatorio,
+        divulgarId: divulgar?.id ?? null,
+        criadoPor: l.criado_por,
+      };
+      const numero = { card: outra ? outra.card : i + 1, variacao: outra ? proxima + k : k + 1 };
+      const escolhido = !outra && k === 0;
       ids.push(
         await repo.criar(db, {
-          titulo: (outra ? `${card.titulo} (variação)` : card.titulo).slice(0, 120),
-          estilo,
-          slides: [slide!],
-          legenda: card.legenda,
-          origem: 'ia',
-          relatorio: v.relatorio,
-          divulgarId: divulgar?.id ?? null,
-          criadoPor: l.criado_por,
-          card: {
-            formato: p.formato,
-            pedidoId: loteId,
-            card: outra ? outra.card : i + 1,
-            variacao: outra ? proxima + k : k + 1,
-            escolhido: !outra && k === 0,
-          },
+          ...dados,
+          card: { formato: formatos[0]!, pedidoId: loteId, ...numero, escolhido },
         }),
       );
+      if (!outra) criadas.push({ dados, ...numero, escolhido });
     }
   // v150: em cada card, mais uma variação com a peça inteira desenhada pela IA, a partir do texto da
   // 1ª variação (o que o time aprovou). Reprovada duas vezes na conferência: o card fica só nos moldes.
   if (!outra && p.arteIa && imagensLigadas(ia) && r.cards.length) {
     await avancar('diretor', 'Desenhando a arte de cada card');
-    const fotosDoPedidoIds = fotosDoPedido.map((f) => f.id);
     const feitasArte = await Promise.all(
       r.cards.map(async (card, i) => {
         const base = card.variacoes[0]?.slide;
@@ -325,7 +407,7 @@ export async function trabalharCards(
         ];
         const f = await fazerArte(db, ia, l.conta_id, {
           slide: base,
-          formato: p.formato,
+          formato: formatos[0]!,
           objetivo: `${OBJETIVO_CARD[p.objetivo].nome} (${OBJETIVO_CARD[p.objetivo].dica})`,
           fotoIds,
           criadoPor: l.criado_por,
@@ -345,7 +427,7 @@ export async function trabalharCards(
         divulgarId: divulgar?.id ?? null,
         criadoPor: l.criado_por,
         card: {
-          formato: p.formato,
+          formato: formatos[0]!,
           pedidoId: loteId,
           card: a.i + 1,
           variacao: a.card.variacoes.length + 1,
@@ -364,6 +446,38 @@ export async function trabalharCards(
       `UPDATE comercial.carrossel_pedidos SET entrada = entrada || jsonb_build_object('tituloDoTime', $2::text) WHERE id = $1`,
       [l.id, r.titulo],
     );
+  // v152: feed e story pedidos juntos. As mesmas peças nascem no outro formato, num lote irmão (o texto,
+  // a foto e o recorte são os mesmos; o sistema monta de novo no outro tamanho). Não conta na franquia.
+  if (!outra && formatos.length > 1 && criadas.length) {
+    const { rows: irmao } = await db.query<{ id: number }>(
+      `INSERT INTO comercial.carrossel_pedidos (conta_id, tipo, entrada, criado_por, situacao, concluido_em)
+       VALUES (${contaSql()}, 'cards', $1, $2, 'pronto', now()) RETURNING id`,
+      [
+        JSON.stringify({
+          ...p,
+          formato: formatos[1],
+          formatos: [],
+          fotos: [],
+          irmaoDe: l.id,
+          tituloDoTime: r.titulo,
+        }),
+        l.criado_por,
+      ],
+    );
+    for (const c of criadas)
+      ids.push(
+        await repo.criar(db, {
+          ...c.dados,
+          card: {
+            formato: formatos[1]!,
+            pedidoId: irmao[0]!.id,
+            card: c.card,
+            variacao: c.variacao,
+            escolhido: c.escolhido,
+          },
+        }),
+      );
+  }
   if (feitas.length && ids.length)
     await db.query(
       `UPDATE comercial.carrossel_fotos SET carrossel_id = $1

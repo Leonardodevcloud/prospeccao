@@ -127,7 +127,7 @@ describe('montar os slides', () => {
             total: MODELOS.length,
             identidade: { ...IDENTIDADE_PADRAO, fontes, assinatura: '@empresa' },
             estilo,
-            foto: modelo === 'foto' || modelo === 'capa' || modelo === 'arte' ? 'data:image/jpeg;base64,AAAA' : null,
+            foto: ['foto', 'capa', 'arte', 'camadas'].includes(modelo) ? 'data:image/jpeg;base64,AAAA' : null,
           });
           expect(m.no.props.style).toMatchObject({ width: 1080, height: 1350 });
           expect(largurasPerigosas(m.no)).toEqual([]);

@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Executor } from '@prospeccao/db';
 import {
+  apararRecorte,
   CENA_MELHORADA,
   CENAS_PRODUTO,
   conferirArte,
   conferirCenario,
   conferirImagemDoSlide,
+  conferirRecorte,
   descreverReferencia,
   desenharArte,
   dirigirArte,
@@ -16,13 +18,21 @@ import {
   lerJeitoDePostar,
   melhorarFoto,
   porLogo,
+  recortarFoto,
+  recorteParaConferir,
   textoDaArte,
 } from '@prospeccao/integrations/carrosseis';
 import { buscarNaInternet } from '@prospeccao/integrations/rede';
 import { prepararImagem } from '@prospeccao/integrations/slides';
-import type { ReferenciaImagem } from '@prospeccao/integrations/videos';
+import { type ReferenciaImagem, usoDaImagem } from '@prospeccao/integrations/videos';
 import { AppError } from '@prospeccao/shared';
-import type { FormatoPeca, FotoCarrossel, LogoSlide, SlideCarrossel } from '@prospeccao/shared/carrosseis';
+import {
+  type FormatoPeca,
+  type FotoCarrossel,
+  type LogoSlide,
+  ORIGENS_FORA_DA_BIBLIOTECA,
+  type SlideCarrossel,
+} from '@prospeccao/shared/carrosseis';
 import type { FotoDoPedido } from '@prospeccao/shared/carrosseis-time';
 import { conta, contaSql } from '../../contexto.js';
 import { materialDaConta } from './desenho.js';
@@ -50,8 +60,12 @@ export async function estiloDaConta(db: Executor, referenciaId: number | null): 
   };
 }
 
-/** Cada imagem pedida conta no consumo (aprovada ou não: a OpenAI cobra igual). */
-async function contarImagem(db: Executor, custoUsd: number): Promise<void> {
+/**
+ * Cada imagem pedida conta no consumo (aprovada ou não: a OpenAI cobra igual). v152: quando a OpenAI
+ * diz quanto o pedido gastou (tokens), entra o custo de verdade; sem isso, a média configurada.
+ */
+async function contarImagem(db: Executor, custoMedioUsd: number, imagem?: Uint8Array): Promise<void> {
+  const custoUsd = (imagem ? usoDaImagem(imagem)?.usd : null) ?? custoMedioUsd;
   await db.query(
     `INSERT INTO cadastro.consumo_carrosseis (conta_id, dia, imagens, imagens_usd)
      VALUES (${contaSql()}, (now() AT TIME ZONE 'America/Sao_Paulo')::date, 1, $1)
@@ -125,7 +139,7 @@ export async function fazerImagem(
         : p.tipo === 'melhorar'
           ? await melhorarFoto(cfg, original!, formato)
           : await gerarImagemDoSlide(cfg, p.descricao, estilo, formato);
-    await contarImagem(db, ia.imagem!.custoUsd);
+    await contarImagem(db, ia.imagem!.custoUsd, jpeg);
     const conferencia = daFoto
       ? await conferirCenario(claude, { original: original!, gerada: jpeg, cena })
       : await conferirImagemDoSlide(claude, { jpeg, descricao: p.descricao });
@@ -240,6 +254,67 @@ export async function guardarReferencia(
   return { id: f.id, estilo };
 }
 
+/* ───────────────────────────── v152: o recorte da peça em camadas ───────────────────────────── */
+
+/**
+ * Tira o fundo de uma foto da empresa (PNG transparente) para a peça "Em camadas". Duas conferências: o
+ * código confere a transparência e apara as bordas; o revisor visual compara o assunto com a foto.
+ * Duas tentativas. Devolve a foto guardada (origem 'recorte') ou null: sem as imagens ligadas, modelo
+ * sem fundo transparente, pedido recusado ou recorte reprovado (a peça fica nos outros modelos).
+ */
+export async function fazerRecorte(
+  db: Executor,
+  ia: CarrosseisIa,
+  contaId: number,
+  fotoId: number,
+  extra: { carrosselId?: number | null; criadoPor?: number | null } = {},
+): Promise<FotoCarrossel | null> {
+  if (!imagensLigadas(ia)) return null;
+  const base = await repo.foto(db, fotoId);
+  if (!base || (base.origem && ORIGENS_FORA_DA_BIBLIOTECA.includes(base.origem))) return null;
+  // A mesma foto já recortada: aproveita (não gasta outra imagem).
+  const pronto = await repo.recorteDaFoto(db, fotoId);
+  if (pronto) return pronto;
+  const bruta = await ia.armazenamento!.ler(base.chave).catch(() => null);
+  if (!bruta) return null;
+  const original = new Uint8Array((await prepararImagem(bruta, { maxLado: 1536 })).dados);
+  const claude = ia.cliente(db, contaId);
+  for (let k = 0; k < TENTATIVAS; k++) {
+    let png: Uint8Array;
+    try {
+      png = await recortarFoto(ia.imagem!.config, original);
+    } catch (erro) {
+      const codigo = (erro as AppError).codigo;
+      // Modelo sem fundo transparente ou pedido recusado: tentar de novo não muda nada.
+      if (codigo === 'sem_transparencia' || codigo === 'imagem_recusada') return null;
+      throw erro;
+    }
+    await contarImagem(db, ia.imagem!.custoUsd, png);
+    const aparado = await apararRecorte(png).catch(() => null);
+    if (!aparado) continue;
+    const c = await conferirRecorte(claude, {
+      original,
+      recorte: await recorteParaConferir(aparado.png),
+    });
+    if (!c.aprovada) continue;
+    const chave = `carrosseis/${conta()}/fotos/recorte-${randomUUID()}.png`;
+    await ia.armazenamento!.enviar(chave, aparado.png, 'image/png');
+    return repo.adicionarFotoDaIa(db, {
+      nome: `${base.nome} · recorte`.slice(0, 80),
+      chave,
+      largura: aparado.largura,
+      altura: aparado.altura,
+      bytes: aparado.png.byteLength,
+      origem: 'recorte',
+      baseFotoId: fotoId,
+      pedido: 'A foto com o fundo tirado',
+      carrosselId: extra.carrosselId ?? null,
+      ...(extra.criadoPor !== undefined ? { criadoPor: extra.criadoPor } : {}),
+    });
+  }
+  return null;
+}
+
 /* ───────────────────────────── v150: a arte da IA ───────────────────────────── */
 
 const daDataUrl = (l: LogoSlide | null): ReferenciaImagem | null => {
@@ -286,7 +361,7 @@ async function fotoComoReferencia(
   k: number,
 ): Promise<ReferenciaImagem | null> {
   const f = await repo.foto(db, id);
-  if (!f || f.origem === 'referencia' || f.origem === 'arte') return null;
+  if (!f || (f.origem && ORIGENS_FORA_DA_BIBLIOTECA.includes(f.origem))) return null;
   const dados = await ia.armazenamento!.ler(f.chave).catch(() => null);
   if (!dados) return null;
   const img = await prepararImagem(dados, { maxLado: 1280 }).catch(() => null);
@@ -343,7 +418,7 @@ export async function fazerArte(
   let corrigir: string[] = [];
   for (let k = 0; k < TENTATIVAS; k++) {
     const jpeg = await desenharArte(ia.imagem!.config, { ...entrada, direcao, corrigir });
-    await contarImagem(db, ia.imagem!.custoUsd);
+    await contarImagem(db, ia.imagem!.custoUsd, jpeg);
     const c = await conferirArte(claude, { jpeg, canto, esperado, empresa });
     if (!c.aprovada) {
       corrigir = c.problemas.slice(0, 5);

@@ -12,7 +12,11 @@ import {
   type UsoClaude,
 } from '@prospeccao/integrations/carrosseis';
 import type { Armazenamento } from '@prospeccao/integrations/reuniao';
-import type { ConfigImagem } from '@prospeccao/integrations/videos';
+import {
+  type ConfigImagem,
+  MODELO_IMAGEM_PADRAO,
+  type QualidadeImagem,
+} from '@prospeccao/integrations/videos';
 import { AppError, type Logger } from '@prospeccao/shared';
 import { directPadrao } from '@prospeccao/shared/carrosseis-publicacao';
 import {
@@ -43,7 +47,7 @@ export const MODELO_ENV = 'CARROSSEIS_MODELO';
 
 /** O Claude dos carrosséis (a chave da plataforma) e o cliente de cada conta, com o consumo medido. */
 /** v148: o custo médio de uma imagem 4:5 do GPT Image por qualidade (conferir na Saúde e consumo). */
-export const CUSTO_MEDIO_IMAGEM = { low: 0.015, medium: 0.05, high: 0.2 } as const;
+export const CUSTO_MEDIO_IMAGEM = { low: 0.015, medium: 0.05, high: 0.2, xhigh: 0.32, max: 0.5 } as const;
 
 export interface CarrosseisIa {
   modelo: string;
@@ -86,7 +90,7 @@ export function prepararCarrosseisIa(
     OPENAI_CHAVE?: string | null;
     CARROSSEIS_IMAGEM_MODELO?: string;
     CARROSSEIS_CUSTO_IMAGEM_USD?: number;
-    CARROSSEIS_IMAGEM_QUALIDADE?: 'low' | 'medium' | 'high';
+    CARROSSEIS_IMAGEM_QUALIDADE?: QualidadeImagem;
   },
   armazenamento: Armazenamento | null = null,
 ): CarrosseisIa | null {
@@ -100,7 +104,7 @@ export function prepararCarrosseisIa(
         ? {
             config: {
               chave: env.OPENAI_CHAVE,
-              modelo: env.CARROSSEIS_IMAGEM_MODELO || 'gpt-image-2',
+              modelo: env.CARROSSEIS_IMAGEM_MODELO || MODELO_IMAGEM_PADRAO,
               qualidade: env.CARROSSEIS_IMAGEM_QUALIDADE ?? 'high',
             },
             custoUsd:
@@ -207,7 +211,7 @@ export async function pedirCarrossel(
   if (p.divulgarId) await cerebro.divulgar(db, p.divulgarId);
   for (const x of p.fotos) {
     const foto = await repo.foto(db, x.fotoId);
-    if (!foto || foto.origem === 'referencia' || foto.origem === 'arte')
+    if (!foto || foto.origem === 'referencia' || foto.origem === 'arte' || foto.origem === 'recorte')
       throw AppError.invalido('Uma das fotos do pedido não existe mais.');
   }
   const f = await franquia(db);

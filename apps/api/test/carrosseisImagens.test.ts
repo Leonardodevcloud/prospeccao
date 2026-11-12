@@ -168,41 +168,53 @@ function iaComImagens(): CarrosseisIa {
           pedidos.push({ agente: p.agente, ferramenta: p.ferramenta.nome, imagens: p.imagens?.length ?? 0 });
           await medidor.depois(USO_ZERO, 0.001, true);
           const dados: Record<string, unknown> =
-            p.ferramenta.nome === 'plano_cards'
-              ? PLANO_CARDS
-              : p.ferramenta.nome === 'cards'
-                ? CARDS
-                : p.ferramenta.nome === 'conferir_arte'
-                  ? ARTE_LIDA()
-                  : p.ferramenta.nome === 'direcao_de_arte'
-                    ? DIRECAO
-                    : p.ferramenta.nome === 'estilo_da_referencia'
-                      ? { estilo: 'Foto de produto centralizada, fundo escuro, luz lateral, texto embaixo.' }
-                      : p.ferramenta.nome === 'conferir_cenario'
+            p.ferramenta.nome === 'conferir_recorte'
+              ? {
+                  assunto_igual: true,
+                  inteiro: true,
+                  fundo_limpo: true,
+                  defeito: false,
+                  texto_novo: false,
+                  isolavel: true,
+                  problemas: [],
+                }
+              : p.ferramenta.nome === 'plano_cards'
+                ? PLANO_CARDS
+                : p.ferramenta.nome === 'cards'
+                  ? CARDS
+                  : p.ferramenta.nome === 'conferir_arte'
+                    ? ARTE_LIDA()
+                    : p.ferramenta.nome === 'direcao_de_arte'
+                      ? DIRECAO
+                      : p.ferramenta.nome === 'estilo_da_referencia'
                         ? {
-                            produto_igual: !reprovar,
-                            texto_novo: false,
-                            marca_estranha: false,
-                            defeito: false,
-                            combina: true,
-                            problemas: [],
+                            estilo: 'Foto de produto centralizada, fundo escuro, luz lateral, texto embaixo.',
                           }
-                        : p.ferramenta.nome === 'conferir_imagem'
+                        : p.ferramenta.nome === 'conferir_cenario'
                           ? {
-                              tem_texto: false,
-                              tem_marca: false,
-                              rosto_em_destaque: false,
+                              produto_igual: !reprovar,
+                              texto_novo: false,
+                              marca_estranha: false,
                               defeito: false,
                               combina: true,
                               problemas: [],
                             }
-                          : p.agente === 'estrategista'
-                            ? ESTRATEGIA
-                            : p.agente === 'redator'
-                              ? REDACAO
-                              : p.agente === 'revisor'
-                                ? { notas: notas(5), ajustes: [], fatos: [] }
-                                : {};
+                          : p.ferramenta.nome === 'conferir_imagem'
+                            ? {
+                                tem_texto: false,
+                                tem_marca: false,
+                                rosto_em_destaque: false,
+                                defeito: false,
+                                combina: true,
+                                problemas: [],
+                              }
+                            : p.agente === 'estrategista'
+                              ? ESTRATEGIA
+                              : p.agente === 'redator'
+                                ? REDACAO
+                                : p.agente === 'revisor'
+                                  ? { notas: notas(5), ajustes: [], fatos: [] }
+                                  : {};
           return { dados, uso: USO_ZERO, custoUsd: 0.001 };
         },
       };
@@ -427,6 +439,7 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
       assunto: 'Promoção da pastilha com instalação',
       quantidade: 1,
       variacoes: 2,
+      arteIa: true,
     });
     expect(p.status).toBe(201);
     expect(await rodarUmPedido(pool, ia, log)).toBe(true);
@@ -504,5 +517,112 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
       'capa',
     ]);
     expect(chamadasImagem).toHaveLength(0);
+  });
+  it('v152: feed e story juntos nascem em dois grupos com as mesmas peças, e contam um pedido só', async () => {
+    const antes = (await ler('/carrosseis/situacao')).body.franquia.usados as number;
+    const p = await mandar('post', '/carrosseis/cards', {
+      assunto: 'Promoção da pastilha com instalação',
+      quantidade: 1,
+      variacoes: 2,
+      formatos: ['feed', 'story'],
+    });
+    expect(p.status).toBe(201);
+    expect(await rodarUmPedido(pool, ia, log)).toBe(true);
+    const lotes = (await ler('/carrosseis/cards')).body.lotes as {
+      pedidoId: number;
+      formato: string;
+      situacao: string;
+      cards: { variacoes: { id: number; escolhido: boolean; slide: { titulo: string } }[] }[];
+    }[];
+    const feed = lotes.find((x) => x.pedidoId === p.body.id)!;
+    const story = lotes.find((x) => x.pedidoId !== p.body.id && x.formato === 'story')!;
+    expect(feed.formato).toBe('feed');
+    expect(story.situacao).toBe('pronto');
+    const titulos = (l: typeof feed) => l.cards[0]!.variacoes.map((v) => v.slide.titulo);
+    expect(titulos(story)).toEqual(titulos(feed));
+    expect(story.cards[0]!.variacoes.map((v) => v.escolhido)).toEqual([true, false]);
+    // A peça do story sai no tamanho do story.
+    const img = await ler(`/carrosseis/${story.cards[0]!.variacoes[0]!.id}/slides/0?largura=320`).buffer();
+    const m = await sharp(img.body as Buffer).metadata();
+    expect(Math.round((m.height! / m.width!) * 100)).toBe(178);
+    expect((await ler('/carrosseis/situacao')).body.franquia.usados).toBe(antes + 1);
+  });
+
+  it('v152: com foto no pedido, as duas opções do card saem em camadas (recorte da IA, texto do sistema)', async () => {
+    const config = ia.imagem!.config;
+    const modeloAntes = config.modelo;
+    config.modelo = 'gpt-image-2.6-sunburst';
+    const recorte = Buffer.from(
+      await sharp(
+        Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1536"><rect x="262" y="336" width="500" height="1200" fill="#a33"/></svg>',
+        ),
+      )
+        .png()
+        .toBuffer(),
+    ).toString('base64');
+    const fetchAntes = globalThis.fetch;
+    const transparentes: string[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      const corpo = init.body;
+      if (corpo instanceof FormData && corpo.get('background') === 'transparent') {
+        transparentes.push(String(corpo.get('output_format')));
+        return new Response(
+          JSON.stringify({
+            data: [{ b64_json: recorte }],
+            usage: { input_tokens: 1000, output_tokens: 6000, input_tokens_details: { image_tokens: 800 } },
+          }),
+          { status: 200 },
+        );
+      }
+      return fetchAntes(url, init);
+    });
+    try {
+      const p = await mandar('post', '/carrosseis/cards', {
+        assunto: 'Promoção da pastilha com instalação',
+        quantidade: 1,
+        variacoes: 2,
+        fotos: [{ fotoId: produtoId, tratamento: 'como_esta' }],
+      });
+      expect(p.status).toBe(201);
+      expect(await rodarUmPedido(pool, ia, log)).toBe(true);
+      const lote = (await ler('/carrosseis/cards')).body.lotes.find(
+        (x: { pedidoId: number }) => x.pedidoId === p.body.id,
+      );
+      const vs = lote.cards[0].variacoes as {
+        id: number;
+        slide: { modelo: string; fotoId: number; composicao: string; fundo: string; destaque: string };
+      }[];
+      expect(vs.map((v) => [v.slide.modelo, v.slide.composicao, v.slide.fundo])).toEqual([
+        ['camadas', 'lado', 'auto'],
+        ['camadas', 'base', 'destaque'],
+      ]);
+      // Um recorte só para as duas opções (PNG transparente), aparado no tamanho do assunto.
+      expect(transparentes).toEqual(['png']);
+      expect(vs[0]!.slide.fotoId).toBe(vs[1]!.slide.fotoId);
+      expect(vs[0]!.slide.destaque).toBe('R$ 139,90');
+      const { rows } = await pool.query<{ origem: string; largura: number; altura: number; chave: string }>(
+        'SELECT origem, largura, altura, chave FROM comercial.carrossel_fotos WHERE id = $1',
+        [vs[0]!.slide.fotoId],
+      );
+      expect(rows[0]).toMatchObject({ origem: 'recorte', largura: 500, altura: 1200 });
+      expect(rows[0]!.chave.endsWith('.png')).toBe(true);
+      // O recorte fica fora da biblioteca, a peça desenha, e o custo gravado é o que a OpenAI informou.
+      expect((await ler('/carrosseis/fotos')).body.fotos.map((f: { id: number }) => f.id)).not.toContain(
+        vs[0]!.slide.fotoId,
+      );
+      expect((await ler(`/carrosseis/${vs[1]!.id}/slides/0?largura=320`)).status).toBe(200);
+      expect(
+        (await ler(`/carrosseis/fotos/${vs[0]!.slide.fotoId}/imagem?largura=240`)).headers['content-type'],
+      ).toBe('image/png');
+      // A mesma foto de novo: aproveita o recorte guardado, sem pedir outra imagem.
+      const de = await mandar('post', `/carrosseis/fotos/${produtoId}/recorte`);
+      expect(de.status).toBe(200);
+      expect(de.body.foto.id).toBe(vs[0]!.slide.fotoId);
+      expect(transparentes).toHaveLength(1);
+    } finally {
+      config.modelo = modeloAntes;
+      vi.stubGlobal('fetch', fetchAntes);
+    }
   });
 });

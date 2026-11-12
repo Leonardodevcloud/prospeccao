@@ -683,7 +683,19 @@ export async function editarVideo(
     const renderizado = join(pasta, 'renderizado.mp4');
     const total = duracaoTotal({ duracao: duracaoEditado, chamada: chamadaFinal });
     // A música é composta enquanto o vídeo renderiza.
-    const musicaPronta = prepararMusica(deps, { contaId: v.conta_id, videoId, som, total, pasta }, custos);
+    const musicaPronta = prepararMusica(
+      deps,
+      {
+        contaId: v.conta_id,
+        videoId,
+        som,
+        total,
+        pasta,
+        ofertaEm: tela.momentos.find((m) => m.tipo === 'oferta')?.ini ?? null,
+        chamadaEm: chamadaFinal ? duracaoEditado : null,
+      },
+      custos,
+    );
     await renderizar(
       deps,
       pasta,

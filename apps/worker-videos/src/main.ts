@@ -46,7 +46,12 @@ const env = carregarEnv(
     OPENAI_CHAVE: opcional(z.string().min(10)),
     VIDEOS_IMAGEM_MODELO: z.string().default(MODELO_IMAGEM_PADRAO),
     /** v148: a qualidade das imagens geradas (high: a mais caprichada do GPT Image). */
-    VIDEOS_IMAGEM_QUALIDADE: z.enum(['low', 'medium', 'high']).default('high'),
+    VIDEOS_IMAGEM_QUALIDADE: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),
+    /** v152: o modelo de música da ElevenLabs (music_v2_5 compõe por partes; music_v1 é o de reserva). */
+    VIDEOS_MUSICA_MODELO: z
+      .string()
+      .regex(/^music_[\w.]+$/)
+      .default('music_v2_5'),
     /** Sem valor: o custo médio da qualidade (em pé, 9:16: high ≈ US$ 0,25; medium ≈ US$ 0,06). */
     VIDEOS_CUSTO_IMAGEM_USD: z.coerce.number().min(0).optional(),
     /** Música (Eleven Music): com a chave, vale para toda conta com o módulo Vídeos (o plano decide). */
@@ -131,11 +136,14 @@ const deps: DepsEdicao = {
           e,
         )
     : null,
-  comporMusica: env.ELEVENLABS_CHAVE ? (e) => comporMusica({ chave: env.ELEVENLABS_CHAVE! }, e) : null,
+  comporMusica: env.ELEVENLABS_CHAVE
+    ? (e) => comporMusica({ chave: env.ELEVENLABS_CHAVE!, modelo: env.VIDEOS_MUSICA_MODELO }, e)
+    : null,
   gerarEfeito: env.ELEVENLABS_CHAVE ? (e) => gerarEfeito({ chave: env.ELEVENLABS_CHAVE! }, e) : null,
   musicaLiberada,
   custoImagemUsd:
-    env.VIDEOS_CUSTO_IMAGEM_USD ?? { low: 0.02, medium: 0.06, high: 0.25 }[env.VIDEOS_IMAGEM_QUALIDADE],
+    env.VIDEOS_CUSTO_IMAGEM_USD ??
+    { low: 0.02, medium: 0.06, high: 0.25, xhigh: 0.4, max: 0.6 }[env.VIDEOS_IMAGEM_QUALIDADE],
   custoMusicaMinutoUsd: env.VIDEOS_CUSTO_MUSICA_USD_MINUTO,
   pasta: env.VIDEOS_PASTA,
   navegador,

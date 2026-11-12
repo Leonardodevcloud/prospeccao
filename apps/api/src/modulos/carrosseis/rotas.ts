@@ -402,6 +402,19 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     res.json(await imagens.cenarios(pool, ia(), idDaRota(req), d));
   });
 
+  /** v152: o recorte da foto (fundo tirado pela IA) para a peça "Em camadas". */
+  r.post('/fotos/:id/recorte', async (req, res) => {
+    const i = ia();
+    if (!i || !imagensLigadas(i))
+      throw AppError.invalido('As imagens feitas pela IA ainda não estão ligadas. Fale com a gente.');
+    const foto = await imagens.fazerRecorte(pool, i, conta(), idDaRota(req));
+    if (!foto)
+      throw AppError.invalido(
+        'Não deu para recortar esta foto. Use uma foto com a pessoa ou o produto inteiro e bem destacado do fundo.',
+      );
+    res.json({ foto });
+  });
+
   r.get('/fotos/:id/cenarios', async (req, res) => {
     res.json({ cenarios: await repo.cenariosDaFoto(pool, idDaRota(req)) });
   });
@@ -412,8 +425,12 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     if (!f || !a) throw AppError.naoEncontrado('Foto');
     const { largura } = consulta(req, larguraConsulta);
     const dados = await a.ler(f.chave);
-    const img = await prepararImagem(dados, { maxLado: largura });
-    res.setHeader('Content-Type', 'image/jpeg');
+    // v152: o recorte (PNG) mantém a transparência; as outras fotos saem em JPEG.
+    const img = await prepararImagem(dados, {
+      maxLado: largura,
+      manterTransparencia: f.origem === 'recorte',
+    });
+    res.setHeader('Content-Type', img.tipo);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(img.dados);
   });

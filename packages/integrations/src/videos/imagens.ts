@@ -10,10 +10,55 @@ import type { ClienteClaude } from '../carrosseis/claude.js';
  */
 
 export const URL_IMAGENS_OPENAI = 'https://api.openai.com/v1/images/generations';
-export const MODELO_IMAGEM_PADRAO = 'gpt-image-2';
+/**
+ * v152: o padrão é o GPT-Image-2.6 Sunburst, o que a OpenAI indica para integrações novas (mais detalhe
+ * e edição mais precisa; aceita fundo transparente e as qualidades xhigh e max). Se a conta da OpenAI
+ * ainda não tiver o modelo, o pedido cai sozinho no de reserva.
+ */
+export const MODELO_IMAGEM_PADRAO = 'gpt-image-2.6-sunburst';
+export const MODELO_IMAGEM_RESERVA = 'gpt-image-2';
 
-export const QUALIDADES_IMAGEM = ['low', 'medium', 'high'] as const;
+export const QUALIDADES_IMAGEM = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type QualidadeImagem = (typeof QUALIDADES_IMAGEM)[number];
+
+/** A família nova (GPT-Image-2.5 e 2.6): fundo transparente e qualidades acima de "high". */
+export const familiaNova = (modelo: string) => /^gpt-image-(2\.[5-9]|[3-9])/.test(modelo);
+export const aceitaTransparente = familiaNova;
+/** A qualidade que o modelo aceita (xhigh e max só na família nova; nos outros, high). */
+export const qualidadeDoModelo = (modelo: string, q: QualidadeImagem = 'medium'): QualidadeImagem =>
+  (q === 'xhigh' || q === 'max') && !familiaNova(modelo) ? 'high' : q;
+
+/** O que a OpenAI diz que o pedido gastou (tokens) e quanto custou, quando dá para calcular. */
+export interface UsoImagem {
+  modelo: string;
+  entradaTexto: number;
+  entradaImagem: number;
+  saida: number;
+  /** null: modelo sem preço por token conhecido aqui (vale a média configurada). */
+  usd: number | null;
+}
+/** Preço por milhão de tokens da família nova (US$): texto 5, imagem de entrada 8, imagem de saída 30. */
+const PRECO_NOVA = { texto: 5, imagem: 8, saida: 30 };
+const usos = new WeakMap<Uint8Array, UsoImagem>();
+/** O gasto real da imagem que o `pedirImagem` devolveu (sem os dados de uso na resposta: undefined). */
+export const usoDaImagem = (dados: Uint8Array): UsoImagem | undefined => usos.get(dados);
+
+export function lerUso(modelo: string, u: RespostaImagem['usage']): UsoImagem | null {
+  if (!u || typeof u.output_tokens !== 'number') return null;
+  const entradaImagem = u.input_tokens_details?.image_tokens ?? 0;
+  const entradaTexto =
+    u.input_tokens_details?.text_tokens ?? Math.max(0, (u.input_tokens ?? 0) - entradaImagem);
+  const usd = familiaNova(modelo)
+    ? Math.round(
+        ((entradaTexto * PRECO_NOVA.texto +
+          entradaImagem * PRECO_NOVA.imagem +
+          u.output_tokens * PRECO_NOVA.saida) /
+          1e6) *
+          1e6,
+      ) / 1e6
+    : null;
+  return { modelo, entradaTexto, entradaImagem, saida: u.output_tokens, usd };
+}
 
 export interface ConfigImagem {
   chave: string;
@@ -46,9 +91,14 @@ export function promptDaImagem(descricao: string, formato: 'cheia' | 'acima'): s
   ].join('\n');
 }
 
-interface RespostaImagem {
+export interface RespostaImagem {
   data?: { b64_json?: string }[];
   error?: { message?: string; code?: string };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+  };
 }
 
 /** Gera uma imagem e devolve o JPEG. Erros da API viram AppError (429 e 5xx: dá para tentar de novo). */
@@ -86,8 +136,38 @@ export async function pedirImagem(
     referencias?: ReferenciaImagem[];
     /** v150: quanto o modelo segue as referências (padrão high, para o produto e a logo saírem iguais). */
     fidelidade?: 'high' | 'low';
+    /** v152: PNG com o fundo transparente (só a família nova; nos outros modelos o pedido é recusado aqui). */
+    transparente?: boolean;
   },
 ): Promise<Uint8Array> {
+  try {
+    return await pedirUmaVez(cfg, e);
+  } catch (erro) {
+    // A conta da OpenAI ainda não tem o modelo novo: o mesmo pedido no de reserva.
+    const d = (erro as AppError).detalhes as { status?: number; codigo?: string | null } | undefined;
+    const semModelo =
+      d?.codigo === 'model_not_found' || (d?.status === 404 && cfg.modelo !== MODELO_IMAGEM_RESERVA);
+    if (!semModelo || cfg.modelo === MODELO_IMAGEM_RESERVA) throw erro;
+    return pedirUmaVez({ ...cfg, modelo: MODELO_IMAGEM_RESERVA }, e);
+  }
+}
+
+async function pedirUmaVez(
+  cfg: ConfigImagem,
+  e: {
+    prompt: string;
+    largura: number;
+    altura: number;
+    referencia?: Uint8Array;
+    referencias?: ReferenciaImagem[];
+    fidelidade?: 'high' | 'low';
+    transparente?: boolean;
+  },
+): Promise<Uint8Array> {
+  if (e.transparente && !aceitaTransparente(cfg.modelo))
+    throw new AppError(422, 'sem_transparencia', 'Este modelo de imagem não faz fundo transparente.');
+  const qualidade = qualidadeDoModelo(cfg.modelo, cfg.qualidade);
+  const formato = e.transparente ? 'png' : 'jpeg';
   const size = `${e.largura}x${e.altura}`;
   const refs: ReferenciaImagem[] = [
     ...(e.referencia ? [{ dados: e.referencia, tipo: 'image/jpeg' as const, nome: 'produto.jpg' }] : []),
@@ -100,8 +180,9 @@ export async function pedirImagem(
       form.append('model', cfg.modelo);
       form.append('prompt', e.prompt);
       form.append('size', size);
-      form.append('quality', cfg.qualidade ?? 'medium');
-      form.append('output_format', 'jpeg');
+      form.append('quality', qualidade);
+      form.append('output_format', formato);
+      if (e.transparente) form.append('background', 'transparent');
       // v151: o GPT Image 2 já lê as referências em alta fidelidade e RECUSA o campo input_fidelity
       // (erro 400): mandar só para os modelos antigos (gpt-image-1 e 1.5), que ainda pedem.
       if (aceitaFidelidade(cfg.modelo)) form.append('input_fidelity', e.fidelidade ?? 'high');
@@ -122,9 +203,9 @@ export async function pedirImagem(
           model: cfg.modelo,
           prompt: e.prompt,
           size,
-          quality: cfg.qualidade ?? 'medium',
-          output_format: 'jpeg',
-          output_compression: 90,
+          quality: qualidade,
+          output_format: formato,
+          ...(e.transparente ? { background: 'transparent' } : { output_compression: 90 }),
           n: 1,
         }),
         signal: AbortSignal.timeout(240_000),
@@ -136,6 +217,14 @@ export async function pedirImagem(
     });
   }
   const corpo = (await resposta.json().catch(() => ({}))) as RespostaImagem;
+  // v152: pedido barrado pela moderação da OpenAI: não adianta repetir, e a pessoa precisa saber.
+  if (corpo.error?.code === 'moderation_blocked')
+    throw new AppError(
+      422,
+      'imagem_recusada',
+      'A IA de imagem recusou este pedido (conteúdo que ela não desenha). Mude a descrição ou a foto e tente de novo.',
+      { detalhes: { status: resposta.status, codigo: 'moderation_blocked' } },
+    );
   if (!resposta.ok) {
     const msg = (corpo.error?.message ?? '').slice(0, 240).replace(/[A-Za-z0-9_\-+/=.]{24,}/g, '…');
     throw new AppError(502, 'falha_externa', `Imagem: HTTP ${resposta.status} ${msg}`.trim(), {
@@ -145,7 +234,10 @@ export async function pedirImagem(
   }
   const b64 = corpo.data?.[0]?.b64_json;
   if (!b64) throw AppError.externo('Imagem', 'a resposta veio sem a imagem');
-  return new Uint8Array(Buffer.from(b64, 'base64'));
+  const dados = new Uint8Array(Buffer.from(b64, 'base64'));
+  const uso = lerUso(cfg.modelo, corpo.usage);
+  if (uso) usos.set(dados, uso);
+  return dados;
 }
 
 /* ───────────────────────────── Conferência e descrição ───────────────────────────── */

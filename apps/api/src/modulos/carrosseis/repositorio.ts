@@ -109,9 +109,19 @@ export async function fotos(db: Executor): Promise<FotoCarrossel[]> {
   const { rows } = await db.query<FotoCarrossel>(
     // A referência de estilo não é foto para usar, e a arte da IA (v150) é a peça pronta: ficam fora.
     `SELECT ${COLUNAS_FOTO} FROM comercial.carrossel_fotos
-      WHERE conta_id = ${contaSql()} AND origem NOT IN ('referencia', 'arte') ORDER BY id DESC`,
+      WHERE conta_id = ${contaSql()} AND origem NOT IN ('referencia', 'arte', 'recorte') ORDER BY id DESC`,
   );
   return rows;
+}
+
+/** v152: o recorte (fundo tirado) que já existe de uma foto, para não fazer outro. */
+export async function recorteDaFoto(db: Executor, fotoId: number): Promise<FotoCarrossel | null> {
+  const { rows } = await db.query<FotoCarrossel>(
+    `SELECT ${COLUNAS_FOTO} FROM comercial.carrossel_fotos
+      WHERE conta_id = ${contaSql()} AND origem = 'recorte' AND base_foto_id = $1 ORDER BY id DESC LIMIT 1`,
+    [fotoId],
+  );
+  return rows[0] ?? null;
 }
 
 export async function contarFotos(db: Executor): Promise<number> {
@@ -151,7 +161,7 @@ export async function adicionarFotoDaIa(
     largura: number;
     altura: number;
     bytes: number;
-    origem: 'gerada' | 'cenario' | 'referencia' | 'melhorada' | 'arte';
+    origem: 'gerada' | 'cenario' | 'referencia' | 'melhorada' | 'arte' | 'recorte';
     baseFotoId?: number | null;
     pedido?: string | null;
     carrosselId?: number | null;
@@ -396,7 +406,7 @@ export async function feitosPelaIaNoMes(db: Executor): Promise<number> {
     `SELECT count(*)::int AS n FROM comercial.carrossel_pedidos
       WHERE conta_id = ${contaSql()} AND situacao NOT IN ('falhou', 'cancelado')
         -- v144: o pedido de cards conta 1 (a "outra variação" não conta).
-        AND (tipo = 'carrossel' OR (tipo = 'cards' AND entrada->'outra' IS NULL))
+        AND (tipo = 'carrossel' OR (tipo = 'cards' AND entrada->'outra' IS NULL AND entrada->'irmaoDe' IS NULL))
         AND criado_em >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'`,
   );
   return rows[0]!.n;

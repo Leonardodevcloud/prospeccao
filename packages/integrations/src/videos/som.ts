@@ -40,42 +40,159 @@ export function promptDaMusica(clima: ClimaMusica, descricao: string, estiloDaIa
 /** Esperas entre as tentativas quando a ElevenLabs está ocupada (429 "system_busy") ou fora (5xx). */
 export const ESPERAS_MUSICA_MS = [8_000, 25_000, 60_000];
 
+/** v152: o modelo de música padrão (o mais novo da ElevenLabs) e o de reserva. */
+export const MODELO_MUSICA_PADRAO = 'music_v2_5';
+export const MODELO_MUSICA_RESERVA = 'music_v1';
+/** Os modelos que compõem por partes (plano com a duração de cada trecho respeitada). */
+export const compoePorPartes = (modelo: string) => /^music_v[2-9]/.test(modelo);
+
+/**
+ * v152: as partes do vídeo, para a música acompanhar: entra no gancho, fica por baixo da explicação,
+ * sobe na oferta e fecha junto com a chamada (antes era uma faixa só, do começo ao fim).
+ */
+export type NomeParteMusica = 'gancho' | 'explicacao' | 'oferta' | 'chamada';
+export interface ParteMusica {
+  nome: NomeParteMusica;
+  segundos: number;
+}
+export const ROTULO_PARTE_MUSICA: Record<NomeParteMusica, string> = {
+  gancho: 'Gancho',
+  explicacao: 'Explicação',
+  oferta: 'Oferta',
+  chamada: 'Chamada',
+};
+
+const DIRECAO_DA_PARTE: Record<NomeParteMusica, { texto: string; estilos: string[] }> = {
+  gancho: {
+    texto: '[Intro] {instrumental, starts immediately with the beat, confident hook, no slow fade-in}',
+    estilos: ['immediate start', 'punchy intro', 'clear beat'],
+  },
+  explicacao: {
+    texto:
+      '[Verse] {instrumental, light and steady under a person talking, sparse arrangement, no lead melody}',
+    estilos: ['sparse arrangement', 'steady groove', 'light mid frequencies', 'background bed'],
+  },
+  oferta: {
+    texto: '[Chorus] {instrumental, energy lifts, fuller arrangement, positive and bright}',
+    estilos: ['energy lift', 'fuller drums', 'bright', 'uplifting'],
+  },
+  chamada: {
+    texto:
+      '[Outro] {instrumental, resolves and ends with one clean final hit exactly at the end, no fade-out}',
+    estilos: ['resolved ending', 'clean final hit'],
+  },
+};
+
+/** Cada parte tem de 3 s a 2 min (o que a ElevenLabs aceita por trecho). Vídeo curto: sem partes. */
+export function partesDaMusica(e: {
+  total: number;
+  ofertaEm?: number | null;
+  chamadaEm?: number | null;
+}): ParteMusica[] {
+  const total = Math.round(e.total);
+  if (total < 14) return [];
+  const gancho = Math.max(3, Math.min(4, Math.round(total * 0.12)));
+  let chamadaIni = e.chamadaEm != null ? Math.round(e.chamadaEm) : total - 4;
+  chamadaIni = Math.max(gancho + 6, Math.min(total - 3, chamadaIni));
+  let ofertaIni = e.ofertaEm != null ? Math.round(e.ofertaEm) : null;
+  // A oferta precisa de 3 s antes da chamada e de 3 s de explicação antes dela.
+  if (ofertaIni != null && (chamadaIni - ofertaIni < 3 || ofertaIni - gancho < 3)) ofertaIni = null;
+  const partes: ParteMusica[] = [{ nome: 'gancho', segundos: gancho }];
+  let resto = (ofertaIni ?? chamadaIni) - gancho;
+  while (resto > 0) {
+    // Trecho de até 2 min; o que sobra nunca fica com menos de 3 s.
+    const n = resto > 120 ? (resto - 120 < 3 ? resto - 3 : 120) : resto;
+    partes.push({ nome: 'explicacao', segundos: n });
+    resto -= n;
+  }
+  if (ofertaIni != null) partes.push({ nome: 'oferta', segundos: Math.min(120, chamadaIni - ofertaIni) });
+  partes.push({ nome: 'chamada', segundos: Math.min(120, total - chamadaIni) });
+  return partes;
+}
+
+/** O plano de composição (modelos v2): uma parte do vídeo, um trecho da música, sempre instrumental. */
+export function planoDaMusica(partes: ParteMusica[], estilo: string) {
+  const base = estilo
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+  return {
+    chunks: partes.map((p) => ({
+      text: DIRECAO_DA_PARTE[p.nome].texto,
+      duration_ms: Math.round(Math.min(120, Math.max(3, p.segundos)) * 1000),
+      positive_styles: ['instrumental', ...base, ...DIRECAO_DA_PARTE[p.nome].estilos].slice(0, 8),
+      negative_styles: ['vocals', 'singing', 'lyrics', 'spoken word'],
+    })),
+  };
+}
+
+interface PedidoMusica {
+  clima: ClimaMusica;
+  descricao: string;
+  estilo: string;
+  segundos: number;
+  /** v152: as partes do vídeo (sem elas, ou num modelo que não compõe por partes: uma faixa só). */
+  partes?: ParteMusica[];
+}
+
 /**
  * Compõe a música (MP3) com o tamanho pedido (entre 3 s e 10 min). Quando a ElevenLabs responde
  * que está ocupada, espera e tenta de novo (até 4 vezes); pedido recusado ou sem plano não repete.
+ * v152: com as partes do vídeo e um modelo v2, compõe por partes; se a ElevenLabs recusar o plano,
+ * cai na faixa única, e se recusar o modelo, no de reserva.
  */
 export async function comporMusica(
   cfg: ConfigMusica,
-  e: { clima: ClimaMusica; descricao: string; estilo: string; segundos: number },
+  e: PedidoMusica,
   esperas: readonly number[] = ESPERAS_MUSICA_MS,
 ): Promise<Uint8Array> {
-  for (let k = 0; ; k++) {
-    try {
-      return await comporUmaVez(cfg, e);
-    } catch (erro) {
-      const repetivel = (erro as AppError).repetivel;
-      if (!repetivel || k >= esperas.length) throw erro;
-      await new Promise((r) => setTimeout(r, esperas[k]));
+  const modelo = cfg.modelo ?? MODELO_MUSICA_PADRAO;
+  const jeitos: { modelo: string; partes: boolean }[] = [];
+  if (e.partes && e.partes.length >= 2 && compoePorPartes(modelo)) jeitos.push({ modelo, partes: true });
+  jeitos.push({ modelo, partes: false });
+  if (modelo !== MODELO_MUSICA_RESERVA) jeitos.push({ modelo: MODELO_MUSICA_RESERVA, partes: false });
+  let ultimo: unknown;
+  for (const j of jeitos) {
+    for (let k = 0; ; k++) {
+      try {
+        return await comporUmaVez({ ...cfg, modelo: j.modelo }, e, j.partes);
+      } catch (erro) {
+        ultimo = erro;
+        const a = erro as AppError;
+        if (a.repetivel && k < esperas.length) {
+          await new Promise((r) => setTimeout(r, esperas[k]));
+          continue;
+        }
+        break;
+      }
     }
+    // Ocupada até o fim, sem plano (401/402/403) ou pedido recusado: outro jeito não resolve.
+    const d = (ultimo as AppError).detalhes as { status?: number; pedidoRecusado?: boolean } | undefined;
+    const trocar = !!d && [400, 404, 422].includes(d.status ?? 0) && !d.pedidoRecusado;
+    if (!trocar) break;
   }
+  throw ultimo;
 }
 
-async function comporUmaVez(
-  cfg: ConfigMusica,
-  e: { clima: ClimaMusica; descricao: string; estilo: string; segundos: number },
-): Promise<Uint8Array> {
+async function comporUmaVez(cfg: ConfigMusica, e: PedidoMusica, porPartes: boolean): Promise<Uint8Array> {
   const ms = Math.round(Math.min(600, Math.max(3, e.segundos)) * 1000);
+  const estilo = e.descricao.trim() || e.estilo.trim() || ESTILO_DO_CLIMA[e.clima];
   let resposta: Response;
   try {
     resposta = await fetch(`${cfg.url ?? URL_MUSICA_ELEVENLABS}?output_format=mp3_44100_128`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'audio/mpeg', 'xi-api-key': cfg.chave },
-      body: JSON.stringify({
-        prompt: promptDaMusica(e.clima, e.descricao, e.estilo),
-        music_length_ms: ms,
-        force_instrumental: true,
-        model_id: cfg.modelo ?? 'music_v1',
-      }),
+      body: JSON.stringify(
+        porPartes
+          ? { composition_plan: planoDaMusica(e.partes ?? [], estilo), model_id: cfg.modelo }
+          : {
+              prompt: promptDaMusica(e.clima, e.descricao, e.estilo),
+              music_length_ms: ms,
+              force_instrumental: true,
+              model_id: cfg.modelo ?? MODELO_MUSICA_PADRAO,
+            },
+      ),
       signal: AbortSignal.timeout(300_000),
     });
   } catch (erro) {
@@ -89,7 +206,7 @@ async function comporUmaVez(
       .slice(0, 300)
       .replace(/[A-Za-z0-9_\-+/=.]{24,}/g, '…');
     // A ElevenLabs recusa pedido que cita artista ou música conhecida ("bad_prompt").
-    const pedidoRecusado = /bad_prompt|bad_composition_plan/i.test(texto);
+    const pedidoRecusado = /bad_prompt/i.test(texto);
     throw new AppError(502, 'falha_externa', `Música: HTTP ${resposta.status} ${texto}`.trim(), {
       repetivel: !pedidoRecusado && (resposta.status === 429 || resposta.status >= 500),
       detalhes: { status: resposta.status, pedidoRecusado },

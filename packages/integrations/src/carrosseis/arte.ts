@@ -282,7 +282,8 @@ export async function dirigirArte(
     ferramenta: { nome: 'direcao_de_arte', descricao: 'O plano visual da peça.', esquema: ESQUEMA_DIRECAO },
     maxTokens: 1200,
     temperatura: 0.6,
-    timeoutMs: 60_000,
+    esforco: 'alto',
+    timeoutMs: 90_000,
   });
   return lerDirecao(r.dados);
 }
@@ -397,6 +398,9 @@ export const normalizarTexto = (t: string) =>
 
 const numeros = (t: string) => t.match(/\d+(?:[.,]\d+)?/g) ?? [];
 
+/** v152: a arte só passa com nota 4 ou mais (antes, 3): abaixo disso o time desenha de novo. */
+export const NOTA_MINIMA_ARTE = 4;
+
 export interface ConferenciaArte {
   aprovada: boolean;
   problemas: string[];
@@ -406,7 +410,7 @@ export interface ConferenciaArte {
 /**
  * O código decide, com o que o modelo de visão leu: cada campo do texto aprovado está lá inteiro (na
  * ordem das palavras), nenhum número ou preço a mais, a logo apareceu (quando foi), sem marca estranha
- * nem defeito, legível e nota 3 ou mais.
+ * nem defeito, legível e nota 4 ou mais.
  */
 export function avaliarArte(
   esperado: TextoDaArte,
@@ -443,7 +447,8 @@ export function avaliarArte(
   if (d.defeito === true) problemas.push('A arte tem defeito de imagem gerada.');
   if (d.legivel === false) problemas.push('O título ou o número não se lê bem.');
   const nota = Number(d.nota);
-  if (Number.isFinite(nota) && nota < 3) problemas.push(`A peça ficou fraca (nota ${nota} de 5).`);
+  if (Number.isFinite(nota) && nota < NOTA_MINIMA_ARTE)
+    problemas.push(`A peça ficou fraca (nota ${nota} de 5).`);
   for (const p of Array.isArray(d.problemas) ? d.problemas : [])
     if (problemas.length < 8) problemas.push(String(p).slice(0, 160));
   const reprovou =
@@ -453,7 +458,7 @@ export function avaliarArte(
     d.outra_marca === true ||
     d.defeito === true ||
     d.legivel === false ||
-    (Number.isFinite(nota) && nota < 3);
+    (Number.isFinite(nota) && nota < NOTA_MINIMA_ARTE);
   return { aprovada: !reprovou, problemas: reprovou ? problemas : [], lidos };
 }
 

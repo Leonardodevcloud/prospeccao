@@ -162,6 +162,7 @@ export const MODELOS = [
   'comparacao',
   'foto',
   'chamada',
+  'camadas',
   'arte',
 ] as const;
 export type ModeloSlide = (typeof MODELOS)[number];
@@ -169,7 +170,22 @@ export type ModeloSlide = (typeof MODELOS)[number];
  * v150: os modelos montados por código (o time e o editor escolhem entre eles). A "Arte da IA" não
  * entra: ela nasce desenhada pela IA de imagem, a partir do texto aprovado.
  */
-export const MODELOS_A_MAO = MODELOS.filter((m) => m !== 'arte') as Exclude<ModeloSlide, 'arte'>[];
+export const MODELOS_A_MAO = MODELOS.filter((m) => m !== 'arte' && m !== 'camadas') as Exclude<
+  ModeloSlide,
+  'arte' | 'camadas'
+>[];
+
+/**
+ * v152: a peça "em camadas". A IA faz só o que não tem letra (a foto da empresa com o fundo tirado);
+ * o texto, a cor e a logo são do sistema, como nos outros modelos. Duas composições: a foto ao lado
+ * do texto ou embaixo dele.
+ */
+export const COMPOSICOES_CAMADAS = ['lado', 'base'] as const;
+export type ComposicaoCamadas = (typeof COMPOSICOES_CAMADAS)[number];
+export const ROTULO_COMPOSICAO: Record<ComposicaoCamadas, string> = {
+  lado: 'Foto ao lado do texto',
+  base: 'Foto embaixo do texto',
+};
 
 /** Campos que cada modelo usa, com o limite de letras que cabe bem no slide. */
 export interface CampoModelo {
@@ -255,6 +271,18 @@ export const MODELO: Record<
     campos: [
       { campo: 'titulo', rotulo: 'Título', limite: 60 },
       { campo: 'texto', rotulo: 'Texto', limite: 140 },
+    ],
+    foto: true,
+  },
+  camadas: {
+    nome: 'Em camadas',
+    descricao: 'A sua foto com o fundo tirado pela IA, sobre a cor da marca; o texto é escrito pelo sistema.',
+    campos: [
+      { campo: 'sobretitulo', rotulo: 'Selo', limite: 24 },
+      { campo: 'destaque', rotulo: 'Número ou preço', limite: 16 },
+      { campo: 'titulo', rotulo: 'Título', limite: 60 },
+      { campo: 'texto', rotulo: 'Texto', limite: 90 },
+      { campo: 'botao', rotulo: 'Botão', limite: 22 },
     ],
     foto: true,
   },
@@ -367,6 +395,8 @@ export const slideEntrada = z.object({
     .default([]),
   fotoId: z.number().int().positive().nullable().default(null),
   fundo: z.enum(FUNDOS_SLIDE).default('auto'),
+  /** v152: só no modelo "Em camadas" (sem valor: a foto ao lado do texto). */
+  composicao: z.enum(COMPOSICOES_CAMADAS).optional(),
 });
 export type SlideCarrossel = z.infer<typeof slideEntrada>;
 
@@ -441,7 +471,17 @@ export interface Carrossel extends ResumoCarrossel {
 }
 
 /** De onde a foto veio (v132): enviada pela empresa ou feita pela IA (cena nova ou o produto num cenário). */
-export type OrigemFoto = 'enviada' | 'gerada' | 'cenario' | 'referencia' | 'melhorada' | 'arte';
+export type OrigemFoto =
+  | 'enviada'
+  | 'gerada'
+  | 'cenario'
+  | 'referencia'
+  | 'melhorada'
+  | 'arte'
+  /** v152: a foto da empresa com o fundo tirado (PNG transparente), a camada da peça "Em camadas". */
+  | 'recorte';
+/** As origens que não são fotos da biblioteca (não aparecem para escolher num slide). */
+export const ORIGENS_FORA_DA_BIBLIOTECA: OrigemFoto[] = ['referencia', 'arte', 'recorte'];
 
 export interface FotoCarrossel {
   id: number;
@@ -509,6 +549,8 @@ export function slideNovo(modelo: ModeloSlide, id: string): SlideCarrossel {
       return { ...base, titulo: 'Uma frase sobre a foto' };
     case 'arte':
       return { ...base, titulo: 'O título da arte' };
+    case 'camadas':
+      return { ...base, titulo: 'O título da peça' };
     case 'chamada':
       return {
         ...base,
@@ -881,6 +923,8 @@ export interface EntradaMontar {
   logoEscuro?: LogoSlide | null;
   /** v144: feed (padrão) ou story. */
   formato?: FormatoPeca;
+  /** v152: o tamanho da foto (no modelo "Em camadas", o recorte encosta na base sem sobrar espaço). */
+  fotoMedidas?: { largura: number; altura: number } | null;
 }
 
 export interface SlideMontado {
@@ -1002,6 +1046,7 @@ interface Contexto {
   cores: CoresDoFundo;
   tipoFundo: TipoFundo;
   foto: string | null;
+  fotoMedidas: { largura: number; altura: number } | null;
   logo: LogoSlide | null;
   avisos: string[];
 }
@@ -2010,8 +2055,165 @@ function arte(c: Contexto): No {
   );
 }
 
+/**
+ * v152: a peça em camadas. Fundo na cor da marca com uma forma em tom vizinho, a foto recortada (PNG
+ * transparente) encostada na base, e o texto escrito pelo sistema na área que sobra. Sem o recorte
+ * (apagado ou ainda não feito), a peça cai na capa, com o mesmo texto.
+ */
+function camadas(c: Contexto): No {
+  if (!c.foto) {
+    c.avisos.push('O recorte da foto não está disponível: a peça aparece no modelo Capa até ser refeito.');
+    return capa({ ...c, s: { ...c.s, modelo: 'capa' } });
+  }
+  const { s } = c;
+  const naBase = s.composicao === 'base';
+  const story = M.altura > ALTURA_SLIDE;
+  // A área do recorte: ao lado, metade da largura e 70% da altura; embaixo, 62% × 46%.
+  const areaL = Math.round(M.largura * (naBase ? 0.62 : 0.5));
+  const areaA = Math.round(M.altura * (naBase ? 0.46 : story ? 0.6 : 0.7));
+  // O recorte encosta na base da peça nos dois formatos (cortado no ar, a borda de baixo apareceria).
+  const pe = 0;
+  const prop = c.fotoMedidas ? c.fotoMedidas.largura / Math.max(1, c.fotoMedidas.altura) : null;
+  const fotoL = prop ? Math.round(Math.min(areaL, areaA * prop)) : areaL;
+  const fotoA = prop ? Math.round(Math.min(areaA, areaL / prop)) : areaA;
+  const recorte: No = {
+    type: 'img',
+    props: {
+      src: c.foto,
+      width: fotoL,
+      height: fotoA,
+      style: {
+        position: 'absolute',
+        left: M.largura - fotoL - (naBase ? 24 : 0),
+        top: M.altura - fotoA - pe,
+        width: fotoL,
+        height: fotoA,
+        objectFit: 'contain',
+        ...(prop ? {} : { objectPosition: 'right bottom' }),
+      },
+    },
+  };
+  const claroSobre = contraste(c.cores.fundo, BRANCO) >= 3;
+  const forma = Math.round(M.largura * (naBase ? 0.7 : 0.78));
+  const circulo = div({
+    position: 'absolute',
+    left: M.largura - Math.round(forma * 0.8),
+    top: M.altura - pe - Math.round(areaA * 0.86),
+    width: forma,
+    height: forma,
+    borderRadius: forma,
+    backgroundColor: misturar(c.cores.fundo, claroSobre ? BRANCO : PRETO, claroSobre ? 0.12 : 0.07),
+  });
+  const largura = naBase ? MIOLO : Math.round(M.largura * 0.5) - LADO + 44;
+  const logo = logoNo(c, ALTURA_LOGO_CARD);
+  const selo = sobretituloNo({ ...c, tema: { ...c.tema, selo: true } }, s.sobretitulo);
+  const alturaTexto = M.altura - M.topo - M.base;
+  const fixo =
+    (logo ? ALTURA_LOGO_CARD + 44 : 0) +
+    (selo ? 56 + 28 : 0) +
+    (s.botao ? ALTURA_BOTAO_CARD : 0) +
+    (naBase ? Math.round(areaA * 0.82) + pe - M.base : 0);
+  // O número ou preço fica sempre numa linha só: o maior tamanho que cabe na largura.
+  const maxDestaque = naBase ? 150 : 132;
+  let tamanhoDestaque = maxDestaque;
+  while (
+    tamanhoDestaque > 56 &&
+    s.destaque &&
+    larguraTexto(s.destaque, fonteTitulo(c, true), tamanhoDestaque) > largura
+  )
+    tamanhoDestaque -= 2;
+  const ajuste = caberBlocos(
+    [
+      {
+        id: 'd',
+        texto: s.destaque,
+        fonte: fonteTitulo(c, true),
+        largura,
+        min: Math.min(64, tamanhoDestaque),
+        max: tamanhoDestaque,
+        alturaLinha: 1,
+        antes: 0,
+        peso: 2,
+      },
+      {
+        id: 't',
+        texto: semMarcas(s.titulo),
+        fonte: fonteTitulo(c),
+        largura,
+        min: 40,
+        max: s.destaque ? 68 : 92,
+        alturaLinha: c.par.titulo.alturaLinha,
+        antes: s.destaque ? 20 : 0,
+        peso: 1.5,
+      },
+      {
+        id: 'x',
+        texto: s.texto,
+        fonte: fonteCorpo(c),
+        largura,
+        min: 26,
+        max: 34,
+        alturaLinha: 1.38,
+        antes: 24,
+      },
+    ],
+    alturaTexto - fixo,
+  );
+  if (!ajuste.cabe)
+    c.avisos.push('O texto está longo demais para a peça em camadas: encurte o título ou o texto.');
+  const bloco = div(
+    { flexDirection: 'column', width: largura, flexShrink: 0 },
+    selo ? div({ marginBottom: 28, flexShrink: 0 }, selo) : null,
+    s.destaque
+      ? textoNo(s.destaque, fonteTitulo(c, true), ajuste.tamanhos.d!, 1, corDoRealce(c), {
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+        })
+      : null,
+    tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
+      marginTop: s.destaque ? 20 : 0,
+    }),
+    s.texto
+      ? textoNo(s.texto, fonteCorpo(c), ajuste.tamanhos.x!, 1.38, c.cores.suave, { marginTop: 24 })
+      : null,
+    naBase ? null : botaoNo(c, 44),
+  );
+  const coluna = div(
+    {
+      position: 'absolute',
+      left: LADO,
+      top: M.topo,
+      width: MIOLO,
+      height: alturaTexto,
+      flexDirection: 'column',
+      justifyContent: naBase ? 'space-between' : 'flex-start',
+    },
+    div(
+      { flexDirection: 'column', flexShrink: 0 },
+      logo
+        ? div({ height: ALTURA_LOGO_CARD, marginBottom: 44, alignItems: 'center', flexShrink: 0 }, logo)
+        : null,
+      bloco,
+    ),
+    naBase ? botaoNo(c, 0) : null,
+  );
+  return div(
+    {
+      width: M.largura,
+      height: M.altura,
+      position: 'relative',
+      overflow: 'hidden',
+      backgroundColor: c.cores.fundo,
+    },
+    circulo,
+    recorte,
+    coluna,
+  );
+}
+
 const MONTAR: Record<ModeloSlide, (c: Contexto) => No> = {
   arte,
+  camadas,
   capa,
   item,
   texto: textoModelo,
@@ -2031,6 +2233,8 @@ export function fundoDoSlide(s: SlideCarrossel, estilo: EstiloCarrossel): TipoFu
   if (s.fundo === 'destaque') return 'destaque';
   if (s.modelo === 'citacao') return tema.citacao;
   if (s.modelo === 'chamada') return tema.chamada;
+  // v152: a peça em camadas mora sobre a cor da marca (a principal; "destaque" troca pela de destaque).
+  if (s.modelo === 'camadas') return 'escuro';
   // Capa e foto de ponta a ponta: o véu é da cor principal, então o texto é o do fundo escuro.
   if ((s.modelo === 'capa' || s.modelo === 'foto') && tema.fotoCheia && s.fotoId) return 'escuro';
   return tema.base;
@@ -2087,6 +2291,7 @@ export function montarSlide(e: EntradaMontar): SlideMontado {
     cores,
     tipoFundo,
     foto: MODELO[s.modelo].foto ? (e.foto ?? null) : null,
+    fotoMedidas: e.fotoMedidas ?? null,
     logo,
     avisos,
   };

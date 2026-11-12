@@ -13,12 +13,18 @@ export const URL_ANTHROPIC = 'https://api.anthropic.com/v1/messages';
 export const VERSAO_ANTHROPIC = '2023-06-01';
 export const MODELO_CARROSSEIS_PADRAO = 'claude-sonnet-5-5';
 
-/** Preço por milhão de tokens (US$). O cache: escrever custa 1,25× a entrada; ler, 0,1×. */
+/**
+ * Preço por milhão de tokens (US$). O cache: escrever custa 1,25× a entrada; ler, 0,1× (v152: no
+ * Sonnet 5.5 a leitura do cache custa US$ 0,10 por milhão, 0,05× a entrada).
+ */
 export interface PrecoClaude {
   entradaMilhaoUsd: number;
   saidaMilhaoUsd: number;
+  /** Quanto custa ler do cache, em vezes a entrada (padrão 0,1). */
+  cacheLeitura?: number;
 }
 const PRECOS: { prefixo: string; preco: PrecoClaude }[] = [
+  { prefixo: 'claude-sonnet-5-5', preco: { entradaMilhaoUsd: 2, saidaMilhaoUsd: 10, cacheLeitura: 0.05 } },
   { prefixo: 'claude-opus', preco: { entradaMilhaoUsd: 5, saidaMilhaoUsd: 25 } },
   { prefixo: 'claude-haiku', preco: { entradaMilhaoUsd: 1, saidaMilhaoUsd: 5 } },
   { prefixo: 'claude-sonnet', preco: { entradaMilhaoUsd: 2, saidaMilhaoUsd: 10 } },
@@ -45,7 +51,8 @@ export const somarUso = (a: UsoClaude, b: UsoClaude): UsoClaude => ({
 export function custoUsd(modelo: string, u: UsoClaude): number {
   const p = precoDoModelo(modelo);
   const v =
-    ((u.entrada + u.cacheEscrita * 1.25 + u.cacheLeitura * 0.1) / 1e6) * p.entradaMilhaoUsd +
+    ((u.entrada + u.cacheEscrita * 1.25 + u.cacheLeitura * (p.cacheLeitura ?? 0.1)) / 1e6) *
+      p.entradaMilhaoUsd +
     (u.saida / 1e6) * p.saidaMilhaoUsd;
   return Math.round(v * 1e6) / 1e6;
 }
@@ -79,7 +86,14 @@ export interface PedidoClaude {
   maxTokens?: number;
   temperatura?: number;
   timeoutMs?: number;
+  /**
+   * v152: quanto o modelo pensa antes de responder (modelos novos). "alto" para quem cria (direção de
+   * arte, estratégia); "baixo" para conferências mecânicas; sem valor, "medio".
+   */
+  esforco?: EsforcoClaude;
 }
+export type EsforcoClaude = 'baixo' | 'medio' | 'alto';
+const EFFORT: Record<EsforcoClaude, string> = { baixo: 'low', medio: 'medium', alto: 'high' };
 
 export interface RespostaClaude {
   dados: Record<string, unknown>;
@@ -118,12 +132,30 @@ export function estiloDoModelo(modelo: string): EstiloDoModelo {
 }
 
 /** O pensamento no mínimo: o Sonnet 5.5 aceita "between_tools"; o Sonnet 5, "disabled"; os outros, o padrão. */
-function pensamentoDo(modelo: string): Record<string, unknown> {
+export function pensamentoDo(modelo: string, esforco: EsforcoClaude = 'medio'): Record<string, unknown> {
   if (/sonnet-5-5/.test(modelo))
-    return { thinking: { type: 'between_tools' }, output_config: { effort: 'medium' } };
+    return { thinking: { type: 'between_tools' }, output_config: { effort: EFFORT[esforco] } };
   if (/sonnet-5($|-\d{8})/.test(modelo)) return { thinking: { type: 'disabled' } };
-  return { output_config: { effort: 'low' } };
+  return { output_config: { effort: esforco === 'alto' ? 'medium' : 'low' } };
 }
+
+/**
+ * v152: o esquema no formato da ferramenta estrita (`strict: true`): todo objeto fecha as propriedades
+ * (`additionalProperties: false`). Com ela, a resposta sai sempre no esquema; a Anthropic indica isso no
+ * lugar da ferramenta forçada, que os modelos novos não aceitam.
+ */
+export function esquemaEstrito(e: unknown): unknown {
+  if (Array.isArray(e)) return e.map(esquemaEstrito);
+  if (!e || typeof e !== 'object') return e;
+  const o = Object.fromEntries(
+    Object.entries(e as Record<string, unknown>).map(([k, v]) => [k, esquemaEstrito(v)]),
+  );
+  if (o.type === 'object' && o.properties && o.additionalProperties === undefined)
+    o.additionalProperties = false;
+  return o;
+}
+/** Ferramentas cujo esquema a API recusou no modo estrito: seguem do jeito antigo (instrução no prompt). */
+const semEstrito = new Set<string>();
 
 /** A instrução que substitui a ferramenta forçada (vai no fim do prompt do sistema). */
 export const instrucaoDaFerramenta = (nome: string) =>
@@ -132,6 +164,7 @@ export const instrucaoDaFerramenta = (nome: string) =>
 /** Um pedido à API (sem novas tentativas). Erro da API vira AppError com o status. */
 async function chamar(cfg: ConfigClaude, p: PedidoClaude, lembrete = false): Promise<RespostaApi> {
   const novo = estiloDoModelo(cfg.modelo) === 'novo';
+  const estrito = novo && !semEstrito.has(p.ferramenta.nome);
   const sistema = p.sistema.filter((b) => b.texto.trim());
   const mensagem = lembrete
     ? `${p.mensagem}\n\n(${instrucaoDaFerramenta(p.ferramenta.nome)} Na tentativa anterior a resposta veio sem a ferramenta.)`
@@ -150,7 +183,7 @@ async function chamar(cfg: ConfigClaude, p: PedidoClaude, lembrete = false): Pro
         model: cfg.modelo,
         // Nos modelos novos o pensamento curto entre ferramentas também conta no máximo: uma folga.
         max_tokens: (p.maxTokens ?? 4000) + (novo ? 2000 : 0),
-        ...(novo ? pensamentoDo(cfg.modelo) : { temperature: p.temperatura ?? 0.6 }),
+        ...(novo ? pensamentoDo(cfg.modelo, p.esforco) : { temperature: p.temperatura ?? 0.6 }),
         system: [
           ...sistema.map((b) => ({
             type: 'text',
@@ -178,7 +211,9 @@ async function chamar(cfg: ConfigClaude, p: PedidoClaude, lembrete = false): Pro
           {
             name: p.ferramenta.nome,
             description: p.ferramenta.descricao,
-            input_schema: p.ferramenta.esquema,
+            ...(estrito
+              ? { strict: true, input_schema: esquemaEstrito(p.ferramenta.esquema) }
+              : { input_schema: p.ferramenta.esquema }),
           },
         ],
         tool_choice: novo ? { type: 'auto' } : { type: 'tool', name: p.ferramenta.nome },
@@ -199,7 +234,7 @@ async function chamar(cfg: ConfigClaude, p: PedidoClaude, lembrete = false): Pro
     const repetivel = resposta.status === 429 || resposta.status >= 500;
     throw new AppError(502, 'falha_externa', `Claude: HTTP ${resposta.status} ${corpo}`.trim(), {
       repetivel,
-      detalhes: { status: resposta.status },
+      detalhes: { status: resposta.status, estrito },
     });
   }
   return (await resposta.json()) as RespostaApi;
@@ -239,6 +274,12 @@ export function criarClaude(cfg: ConfigClaude): ClienteClaude {
             r = await chamar(cfg, p, lembrar);
           } catch (erro) {
             const e = erro as AppError;
+            // O esquema não passou no modo estrito (400): esta ferramenta volta ao jeito antigo.
+            const d = e.detalhes as { status?: number; estrito?: boolean } | undefined;
+            if (d?.status === 400 && d.estrito && !semEstrito.has(p.ferramenta.nome)) {
+              semEstrito.add(p.ferramenta.nome);
+              continue;
+            }
             if (e.repetivel && tentativa < 2) {
               await esperar(2000 * 3 ** tentativa);
               continue;

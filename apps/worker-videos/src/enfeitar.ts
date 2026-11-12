@@ -14,7 +14,9 @@ import {
   enfeitesPelasRegras,
   type FotoParaIa,
   GANHO_EFEITO,
+  type ParteMusica,
   type PromocaoParaIa,
+  partesDaMusica,
   pedirEnfeites,
   pedirImagemPara,
   VERSAO_EFEITOS,
@@ -57,6 +59,7 @@ export interface DepsEnfeites {
         descricao: string;
         estilo: string;
         segundos: number;
+        partes?: ParteMusica[];
       }) => Promise<Uint8Array>)
     | null;
   /** A música só sai para as contas liberadas (contrato da ElevenLabs). */
@@ -352,7 +355,16 @@ async function gerarConferida(
 /** A música no tamanho do vídeo: reaproveita a última se o tamanho mal mudou e ninguém pediu outra. */
 export async function prepararMusica(
   deps: DepsEnfeites,
-  e: { contaId: number; videoId: number; som: SomVideo; total: number; pasta: string },
+  e: {
+    contaId: number;
+    videoId: number;
+    som: SomVideo;
+    total: number;
+    pasta: string;
+    /** v152: onde a oferta aparece e onde a chamada começa (a música sobe e fecha junto). */
+    ofertaEm?: number | null;
+    chamadaEm?: number | null;
+  },
   custos: CustosEnfeites,
 ): Promise<{ som: SomVideo; arquivo: string | null }> {
   const som: SomVideo = { ...e.som, musica: { ...e.som.musica } };
@@ -376,6 +388,7 @@ export async function prepararMusica(
       descricao: m.descricao,
       estilo: m.estiloIa,
       segundos,
+      partes: partesDaMusica({ total: segundos, ofertaEm: e.ofertaEm, chamadaEm: e.chamadaEm }),
     });
     custos.musicaSeg += segundos;
     custos.musicaUsd += (segundos / 60) * deps.custoMusicaMinutoUsd;

@@ -817,6 +817,15 @@ export const pedidoCardsEntrada = z
     quantidade: z.number().int().min(1).max(MAX_CARDS_PEDIDO).default(1),
     variacoes: z.number().int().min(1).max(MAX_VARIACOES_CARD).default(2),
     formato: z.enum(FORMATOS_PECA).default('feed'),
+    /**
+     * v152: os formatos pedidos de uma vez (feed e story: a mesma peça nos dois). Vazio: só o `formato`.
+     * O primeiro é o que o time trabalha; o outro nasce da mesma peça, montada no outro tamanho.
+     */
+    formatos: z
+      .array(z.enum(FORMATOS_PECA))
+      .max(2)
+      .default([])
+      .transform((f) => [...new Set(f)]),
     /** null: o da identidade visual. */
     estilo: z.enum(ESTILOS).nullable().default(null),
     chamada: z.enum(CHAMADAS_FINAIS).default('whatsapp'),
@@ -833,14 +842,19 @@ export const pedidoCardsEntrada = z
      * v150: em cada card, mais uma variação com a peça inteira desenhada pela IA de imagem (com a logo,
      * as fotos e o jeito de postar da conta), a partir do texto da 1ª variação, conferida letra por letra.
      */
-    arteIa: z.boolean().default(true),
+    arteIa: z.boolean().default(false),
+    /**
+     * v152: as duas opções de cada card "em camadas" quando há foto da empresa: a IA tira o fundo da
+     * foto e o sistema escreve o texto por cima da cor da marca (o texto nunca sai errado).
+     */
+    camadas: z.boolean().default(true),
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga o que os cards precisam dizer (ou escolha o que divulgar).',
     path: ['assunto'],
   })
-  .refine((d) => d.quantidade * d.variacoes <= MAX_PECAS_PEDIDO, {
-    message: `Até ${MAX_PECAS_PEDIDO} peças por pedido (cards × variações).`,
+  .refine((d) => d.quantidade * d.variacoes * Math.max(1, d.formatos.length) <= MAX_PECAS_PEDIDO, {
+    message: `Até ${MAX_PECAS_PEDIDO} peças por pedido (cards × variações × formatos).`,
     path: ['variacoes'],
   })
   .refine((d) => d.chamada !== 'comentar' || PALAVRA_COMENTAR.test(d.palavra), {
@@ -848,6 +862,9 @@ export const pedidoCardsEntrada = z
     path: ['palavra'],
   });
 export type PedidoCards = z.infer<typeof pedidoCardsEntrada>;
+/** Os formatos de um pedido de cards (o primeiro é o que o time trabalha). */
+export const formatosDoPedido = (p: { formato: FormatoPeca; formatos?: FormatoPeca[] }): FormatoPeca[] =>
+  p.formatos?.length ? p.formatos : [p.formato];
 
 /** "Outra variação" de um card: mais uma, diferente das que já existem, no mesmo pedido. */
 export const outraVariacaoEntrada = z.object({

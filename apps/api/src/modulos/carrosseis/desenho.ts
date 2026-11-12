@@ -110,22 +110,32 @@ export async function materialDaConta(
   return { identidade: id, logoClaro: claro, logoEscuro: escuro, versao };
 }
 
-/** Foto do slide em data URL (null: sem foto, foto de outra conta ou armazenamento desligado). */
+/** Foto do slide em data URL, com o tamanho (null: sem foto, foto de outra conta ou armazenamento desligado). */
+export async function fotoComMedidas(
+  db: Executor,
+  arm: Armazenamento | null,
+  fotoId: number | null,
+): Promise<{ url: string; largura: number; altura: number } | null> {
+  if (!fotoId || !arm) return null;
+  const f = await repo.foto(db, fotoId);
+  if (!f) return null;
+  const medidas = { largura: f.largura, altura: f.altura };
+  const lembrada = fotosLidas.obter(f.chave);
+  if (lembrada) return { url: lembrada, ...medidas };
+  const dados = await lerArquivo(arm, f.chave);
+  if (!dados) return null;
+  // v152: o recorte é PNG (com transparência); as outras fotos são JPEG.
+  const url = dataUrl(dados, f.chave.endsWith('.png') ? 'image/png' : 'image/jpeg');
+  fotosLidas.guardar(f.chave, url);
+  return { url, ...medidas };
+}
+
 export async function fotoDoSlide(
   db: Executor,
   arm: Armazenamento | null,
   fotoId: number | null,
 ): Promise<string | null> {
-  if (!fotoId || !arm) return null;
-  const f = await repo.foto(db, fotoId);
-  if (!f) return null;
-  const lembrada = fotosLidas.obter(f.chave);
-  if (lembrada) return lembrada;
-  const dados = await lerArquivo(arm, f.chave);
-  if (!dados) return null;
-  const url = dataUrl(dados, 'image/jpeg');
-  fotosLidas.guardar(f.chave, url);
-  return url;
+  return (await fotoComMedidas(db, arm, fotoId))?.url ?? null;
 }
 
 export interface PedidoDesenho {
@@ -145,7 +155,8 @@ export async function desenhar(
   material: MaterialDaConta,
   p: PedidoDesenho,
 ): Promise<{ jpeg: Buffer; avisos: string[]; etag: string }> {
-  const foto = await fotoDoSlide(db, arm, p.slide.fotoId);
+  const lida = await fotoComMedidas(db, arm, p.slide.fotoId);
+  const foto = lida?.url ?? null;
   const montado = montarSlide({
     slide: p.slide,
     indice: p.indice,
@@ -153,6 +164,7 @@ export async function desenhar(
     identidade: material.identidade,
     estilo: p.estilo,
     foto,
+    fotoMedidas: lida ? { largura: lida.largura, altura: lida.altura } : null,
     logoClaro: material.logoClaro,
     logoEscuro: material.logoEscuro,
     formato: p.formato ?? 'feed',

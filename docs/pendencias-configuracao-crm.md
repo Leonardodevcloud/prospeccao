@@ -389,6 +389,14 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ae. Estúdio de arte, parte 1 (v152)
+1. [ ] **Migration 108** roda sozinha no redeploy da **api**. Redeploy também do **worker-videos** (música e imagens).
+2. [ ] **Modelo de imagem**: o padrão passou a ser `gpt-image-2.6-sunburst` (api: `CARROSSEIS_IMAGEM_MODELO`; worker-videos: `VIDEOS_IMAGEM_MODELO`). Conferir no painel da OpenAI se a conta tem acesso; se não tiver, o sistema cai sozinho no `gpt-image-2`, mas **sem o recorte** (a peça em camadas precisa do fundo transparente, que só a família 2.5/2.6 faz) e os cards ficam nos modelos de sempre. Quem tinha a variável com `gpt-image-2` precisa apagar ou trocar.
+3. [ ] **Testar a peça em camadas** com a chave de verdade: pedir 2 cards mandando uma foto de pessoa ou produto. Conferir: recorte limpo (cabelo, mãos), pessoa igual à foto, texto e preço certos, logo. Testar também **Feed e story** juntos e, no editor, **Trocar a foto**.
+4. [ ] **Custo**: o recorte é 1 imagem por foto (reaproveitada nas peças seguintes). Com o modelo novo, a Saúde e consumo passa a gravar o custo que a OpenAI informa em cada pedido; conferir o valor do primeiro dia e ajustar `CARROSSEIS_CUSTO_IMAGEM_USD` (a média, usada só quando a resposta não traz o gasto). Qualidades novas, se quiser: `CARROSSEIS_IMAGEM_QUALIDADE=xhigh` ou `max` (mais caras).
+5. [ ] **Claude**: nos primeiros pedidos, olhar em Saúde e consumo se o custo por carrossel mudou (a ferramenta estrita e o esforço por agente mexem pouco, mas não foi medido). Dúvida que ficou: o cache do cérebro da marca pode não estar sendo aproveitado entre agentes diferentes (cada um manda uma ferramenta diferente); conferir pelos tokens lidos do cache.
+6. [ ] **Música**: o worker-videos usa o `music_v2_5` por partes (`VIDEOS_MUSICA_MODELO`); se a ElevenLabs recusar o plano ou o modelo, cai na faixa única e depois no `music_v1`. Ouvir um vídeo com oferta e chamada e conferir se a música sobe na oferta e fecha no fim.
+
 ## 4ad. Imagens profissionais (v151)
 1. [ ] Redeploy da **api** e do **worker-videos** (o conserto do erro das imagens com referência vale para os dois).
 2. [ ] Conferir as **logos** em Identidade visual: uma para fundo claro e outra para fundo escuro, de preferência PNG com fundo transparente (a arte cola o arquivo como está).
