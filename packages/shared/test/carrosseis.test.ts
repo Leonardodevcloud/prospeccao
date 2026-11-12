@@ -4,6 +4,7 @@ import {
   contarLinhas,
   contraste,
   ESTILOS,
+  geometriaCamadas,
   IDENTIDADE_PADRAO,
   identidadeCompleta,
   limparParaSlide,
@@ -254,6 +255,47 @@ describe('módulo Carrosséis com IA no plano', () => {
           // A proporção da foto é respeitada (600 × 900).
           expect(Math.round((recorte.style.width! / recorte.style.height!) * 100)).toBe(67);
         }
+    });
+    it('v154: em qualquer foto, formato e composição, texto, foto e elemento não se encostam', () => {
+      const cruza = (p: { x: number; y: number; l: number; a: number }, q: typeof p) =>
+        p.x < q.x + q.l && q.x < p.x + p.l && p.y < q.y + q.a && q.y < p.y + p.a;
+      for (const formato of ['feed', 'story'] as const)
+        for (const composicao of ['lado', 'base'] as const)
+          for (const [largura, altura] of [
+            [420, 1000],
+            [600, 900],
+            [800, 800],
+            [1200, 780],
+            [1600, 600],
+          ] as const) {
+            const g = geometriaCamadas(formato, { largura, altura }, composicao);
+            const onde = `${formato} ${composicao} ${largura}x${altura}`;
+            expect(cruza(g.texto, g.foto), onde).toBe(false);
+            expect(g.foto.x, onde).toBeGreaterThanOrEqual(0);
+            expect(g.foto.x + g.foto.l, onde).toBeLessThanOrEqual(1080);
+            expect(g.foto.y + g.foto.a, onde).toBeLessThanOrEqual(formato === 'story' ? 1920 : 1350);
+            expect(g.texto.l, onde).toBeGreaterThanOrEqual(400);
+            // A foto deitada vai sempre embaixo, grande (mais de 60% da largura; a quadrada, quase metade).
+            if (largura / altura >= 0.95) {
+              expect(g.naBase, onde).toBe(true);
+              expect(g.foto.l, onde).toBeGreaterThan(1080 * (largura / altura >= 1.3 ? 0.6 : 0.45));
+            }
+            if (g.elemento) {
+              const e = { x: g.elemento.x, y: g.elemento.y, l: g.elemento.lado, a: g.elemento.lado };
+              expect(cruza(e, g.foto), onde).toBe(false);
+              expect(cruza(e, g.texto), onde).toBe(false);
+              expect(e.l, onde).toBeGreaterThanOrEqual(150);
+            }
+          }
+    });
+    it('v154: título com palavra comprida não quebra a palavra, e selo e botão ficam numa linha', () => {
+      const m = montar({
+        titulo: 'Alugue sua moto *sem burocracia*',
+        sobretitulo: 'Novidade: aluguel de moto',
+      });
+      const textos = JSON.stringify(m.no);
+      expect(textos).toContain('"whiteSpace":"nowrap"');
+      expect(m.avisos.filter((a) => /longo demais/.test(a))).toEqual([]);
     });
     it('o elemento em 3D entra sobre a cor principal e some sobre a cor de destaque', () => {
       expect(imagens(montar({}).no).some((i) => i.src.endsWith('BBBB'))).toBe(true);

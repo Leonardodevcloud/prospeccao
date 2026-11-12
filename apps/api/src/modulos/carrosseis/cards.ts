@@ -10,6 +10,7 @@ import {
   type EstiloCarrossel,
   type FormatoPeca,
   type FotoCarrossel,
+  geometriaCamadas,
   type IdentidadeCarrossel,
   montarSlide,
   type SlideCarrossel,
@@ -431,7 +432,15 @@ export async function trabalharCards(
       ? await Promise.all(
           r.cards.map((card, i) => {
             const s = card.variacoes[0]?.slide;
-            return recortes[i] && s
+            // v154: sem um vazio para o elemento na peça (foto deitada, por exemplo), nem pede a imagem.
+            const cabe =
+              !!recortes[i] &&
+              !!geometriaCamadas(
+                formatos[0]!,
+                { largura: recortes[i]!.largura, altura: recortes[i]!.altura },
+                'lado',
+              ).elemento;
+            return cabe && s
               ? fazerElemento(
                   db,
                   ia,

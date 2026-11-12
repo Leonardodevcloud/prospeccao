@@ -5,6 +5,7 @@ import {
   type SlideCarrossel,
   semMarcas,
 } from '@prospeccao/shared/carrosseis';
+import { MANUAL_DESIGN } from '../saber/design.js';
 import { type ConfigImagem, pedirImagem, type ReferenciaImagem } from '../videos/imagens.js';
 import type { ClienteClaude } from './claude.js';
 import { CARTAO_POSTAL, tamanhoDaImagem } from './imagens.js';
@@ -250,6 +251,7 @@ export async function dirigirArte(
         texto:
           'Você é o diretor de arte sênior de uma agência brasileira que faz posts de Instagram para marcas de varejo e serviços. Planeja cada peça como um designer: uma ideia visual forte, um herói claro, hierarquia que se lê em um segundo no celular, as cores da marca cheias, elementos gráficos com função. Descreve fatos visuais concretos para a IA de imagem, nunca adjetivos vagos ("bonito", "moderno", "premium").',
       },
+      { texto: MANUAL_DESIGN },
     ],
     imagens: e.referencias.map((x, i) => ({
       tipo: x.tipo,

@@ -2062,10 +2062,71 @@ function arte(c: Contexto): No {
   );
 }
 
+/** v154: onde cada camada da peça fica (px no quadro), para nenhuma encostar na outra. */
+export interface GeometriaCamadas {
+  /** A foto fica embaixo do texto (sempre que a foto é deitada ou quadrada). */
+  naBase: boolean;
+  foto: { x: number; y: number; l: number; a: number };
+  /** A coluna do texto (logo, selo, número, título, texto e botão). */
+  texto: { x: number; y: number; l: number; a: number };
+  /** Onde cabe o elemento em 3D (null: não há espaço livre, a peça fica sem ele). */
+  elemento: { x: number; y: number; lado: number } | null;
+}
+
+const FOLGA_CAMADAS = 32;
+
+/**
+ * A geometria da peça em camadas, pela proporção do recorte. Foto em pé: ao lado do texto (ou embaixo,
+ * se a composição pedir). Foto deitada ou quadrada: sempre embaixo, quase de ponta a ponta, que é onde
+ * ela fica grande. O texto mora só no espaço que sobra, e o elemento só entra onde há um vazio de
+ * verdade (acima da foto em pé; ao lado da foto estreita que está embaixo).
+ */
+export function geometriaCamadas(
+  formato: FormatoPeca,
+  medidas: { largura: number; altura: number } | null,
+  composicao: ComposicaoCamadas = 'lado',
+): GeometriaCamadas {
+  const m = medidasDo(formato);
+  const prop = medidas ? medidas.largura / Math.max(1, medidas.altura) : 0.67;
+  const larga = prop >= 0.95;
+  const naBase = composicao === 'base' || larga;
+  const baixo = m.altura - m.base;
+  if (naBase) {
+    // Embaixo: a foto deitada usa quase toda a largura; a em pé, 58%. Altura de até 44% da peça.
+    const areaL = larga ? m.largura - 96 : Math.round(m.largura * 0.58);
+    const areaA = Math.round(m.altura * (larga ? (formato === 'story' ? 0.4 : 0.38) : 0.44));
+    const l = Math.round(Math.min(areaL, areaA * prop));
+    const a = Math.round(l / prop);
+    const x = larga ? Math.round((m.largura - l) / 2) : m.largura - l - 48;
+    // O produto deitado pousa um pouco acima da borda; a pessoa em pé encosta na base da peça.
+    const y = larga ? baixo - a - (formato === 'story' ? 0 : 12) : m.altura - a;
+    const texto = { x: LADO, y: m.topo, l: MIOLO, a: y - FOLGA_CAMADAS - m.topo };
+    const vazio = x - FOLGA_CAMADAS - LADO;
+    const lado = Math.min(220, vazio, a - 40);
+    const elemento =
+      !larga && lado >= 150 ? { x: LADO + Math.round((vazio - lado) / 2), y: baixo - lado, lado } : null;
+    return { naBase, foto: { x, y, l, a }, texto, elemento };
+  }
+  // Ao lado: a foto em pé à direita (46% da largura, até 72% da altura), encostada na base.
+  const areaL = Math.round(m.largura * 0.46);
+  const areaA = Math.round(m.altura * (formato === 'story' ? 0.62 : 0.72));
+  const l = Math.round(Math.min(areaL, areaA * prop));
+  const a = Math.round(l / prop);
+  const x = m.largura - l;
+  const y = m.altura - a;
+  const texto = { x: LADO, y: m.topo, l: x - FOLGA_CAMADAS - LADO, a: baixo - m.topo };
+  const vazioA = y - FOLGA_CAMADAS - m.topo;
+  const lado = Math.min(230, vazioA, l - 60);
+  const elemento =
+    lado >= 150 ? { x: x + Math.round((l - lado) / 2), y: y - FOLGA_CAMADAS - lado, lado } : null;
+  return { naBase, foto: { x, y, l, a }, texto, elemento };
+}
+
 /**
  * v152: a peça em camadas. Fundo na cor da marca com uma forma em tom vizinho, a foto recortada (PNG
- * transparente) encostada na base, e o texto escrito pelo sistema na área que sobra. Sem o recorte
- * (apagado ou ainda não feito), a peça cai na capa, com o mesmo texto.
+ * transparente) e o texto escrito pelo sistema. v154: cada camada no seu espaço (`geometriaCamadas`):
+ * o texto nunca passa por cima da foto e o elemento só entra onde há vazio. Sem o recorte (apagado ou
+ * ainda não feito), a peça cai na capa, com o mesmo texto.
  */
 function camadas(c: Contexto): No {
   if (!c.foto) {
@@ -2073,84 +2134,134 @@ function camadas(c: Contexto): No {
     return capa({ ...c, s: { ...c.s, modelo: 'capa' } });
   }
   const { s } = c;
-  const naBase = s.composicao === 'base';
-  const story = M.altura > ALTURA_SLIDE;
-  // A área do recorte: ao lado, metade da largura e 70% da altura; embaixo, 62% × 46%.
-  const areaL = Math.round(M.largura * (naBase ? 0.62 : 0.5));
-  const areaA = Math.round(M.altura * (naBase ? 0.46 : story ? 0.6 : 0.7));
-  // O recorte encosta na base da peça nos dois formatos (cortado no ar, a borda de baixo apareceria).
-  const pe = 0;
-  const prop = c.fotoMedidas ? c.fotoMedidas.largura / Math.max(1, c.fotoMedidas.altura) : null;
-  const fotoL = prop ? Math.round(Math.min(areaL, areaA * prop)) : areaL;
-  const fotoA = prop ? Math.round(Math.min(areaA, areaL / prop)) : areaA;
+  const formato: FormatoPeca = M.altura > ALTURA_SLIDE ? 'story' : 'feed';
+  const g = geometriaCamadas(formato, c.fotoMedidas, s.composicao ?? 'lado');
   const recorte: No = {
     type: 'img',
     props: {
       src: c.foto,
-      width: fotoL,
-      height: fotoA,
+      width: g.foto.l,
+      height: g.foto.a,
       style: {
         position: 'absolute',
-        left: M.largura - fotoL - (naBase ? 24 : 0),
-        top: M.altura - fotoA - pe,
-        width: fotoL,
-        height: fotoA,
+        left: g.foto.x,
+        top: g.foto.y,
+        width: g.foto.l,
+        height: g.foto.a,
         objectFit: 'contain',
-        ...(prop ? {} : { objectPosition: 'right bottom' }),
+        ...(c.fotoMedidas ? {} : { objectPosition: 'right bottom' }),
       },
     },
   };
-  // v153: os elementos em 3D. O maior fica na frente da foto, na borda dela que dá para o texto; o
-  // menor, atrás, no alto da área da foto. Sempre fora da coluna do texto.
-  const fotoX = M.largura - fotoL - (naBase ? 24 : 0);
-  const fotoY = M.altura - fotoA - pe;
-  const elemento = (src: string, lado: number, left: number, top: number): No => ({
-    type: 'img',
-    props: {
-      src,
-      width: lado,
-      height: lado,
-      style: { position: 'absolute', left, top, width: lado, height: lado, objectFit: 'contain' },
-    },
-  });
   // Sobre a cor de destaque o elemento (que é da cor de destaque) sumiria: a peça fica sem ele.
-  const [el1, el2] = c.tipoFundo === 'destaque' ? [] : c.elementos;
-  const naFrente = el1
-    ? elemento(el1.src, naBase ? 200 : 230, fotoX - (naBase ? 150 : 96), fotoY + Math.round(fotoA * 0.5))
-    : null;
-  const atras = el2
-    ? elemento(el2.src, 150, M.largura - 150 - 36, Math.max(M.topo, fotoY - (naBase ? 60 : 110)))
-    : null;
+  const el = c.tipoFundo === 'destaque' ? undefined : c.elementos[0];
+  const elemento: No | null =
+    el && g.elemento
+      ? {
+          type: 'img',
+          props: {
+            src: el.src,
+            width: g.elemento.lado,
+            height: g.elemento.lado,
+            style: {
+              position: 'absolute',
+              left: g.elemento.x,
+              top: g.elemento.y,
+              width: g.elemento.lado,
+              height: g.elemento.lado,
+              objectFit: 'contain',
+            },
+          },
+        }
+      : null;
   const claroSobre = contraste(c.cores.fundo, BRANCO) >= 3;
-  const forma = Math.round(M.largura * (naBase ? 0.7 : 0.78));
+  // A forma de fundo abraça a foto (um círculo atrás dela, maior que ela).
+  const forma = Math.round(Math.max(g.foto.l, g.foto.a) * (g.naBase ? 1.05 : 1.1));
   const circulo = div({
     position: 'absolute',
-    left: M.largura - Math.round(forma * 0.8),
-    top: M.altura - pe - Math.round(areaA * 0.86),
+    left: g.foto.x + Math.round(g.foto.l / 2) - Math.round(forma / 2) + (g.naBase ? 0 : 60),
+    top: g.foto.y + Math.round(g.foto.a * 0.12),
     width: forma,
     height: forma,
     borderRadius: forma,
     backgroundColor: misturar(c.cores.fundo, claroSobre ? BRANCO : PRETO, claroSobre ? 0.12 : 0.07),
   });
-  const largura = naBase ? MIOLO : Math.round(M.largura * 0.5) - LADO + 44;
+  const largura = g.texto.l;
+  /** O maior tamanho (entre min e max) em que o texto cabe numa linha da coluna. */
+  const naLinha = (t: string, f: FonteMedida, max: number, min: number, espaco = largura) => {
+    let tam = max;
+    while (tam > min && larguraTexto(t, f, tam) > espaco) tam -= 2;
+    return tam;
+  };
   // No card a logo vai sempre; na capa de um carrossel, só com "logo na capa" ligado na identidade.
-  const logo = sozinho(c) || c.id.logoNaCapa ? logoNo(c, ALTURA_LOGO_CARD) : null;
-  const selo = sobretituloNo({ ...c, tema: { ...c.tema, selo: true } }, s.sobretitulo);
-  const alturaTexto = M.altura - M.topo - M.base;
+  const comLogo = sozinho(c) || c.id.logoNaCapa;
+  // Foto embaixo: a logo divide a linha com o selo (sobra altura para o título). Ao lado: em cima.
+  const logo = comLogo ? logoNo(c, g.naBase ? 72 : ALTURA_LOGO_CARD) : null;
+  // O selo e o botão diminuem a letra para caber na coluna (nunca cortam nem quebram em duas linhas).
+  const corSelo = c.tipoFundo === 'destaque' ? c.cores.botaoFundo : c.cores.acento;
+  const espacoSelo = (g.naBase && logo ? largura - 300 : largura) - 52;
+  const tamSelo = naLinha(s.sobretitulo.toUpperCase(), fonteCorpo(c, 'forte'), 26, 16, espacoSelo / 1.12);
+  const selo = s.sobretitulo
+    ? div(
+        { padding: '12px 26px', backgroundColor: corSelo, borderRadius: 999, flexShrink: 0 },
+        textoNo(
+          s.sobretitulo,
+          fonteCorpo(c, 'forte'),
+          tamSelo,
+          1.1,
+          primeiraQueLe(corSelo, 4.5, BRANCO, c.cores.fundo, PRETO),
+          {
+            letterSpacing: Math.round(tamSelo * 0.09 * 10) / 10,
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+          },
+        ),
+      )
+    : null;
+  const tamBotao = naLinha(s.botao, fonteCorpo(c, 'forte'), 38, 26, largura - 80);
+  const botao = s.botao
+    ? div(
+        {
+          marginTop: 40,
+          alignSelf: 'flex-start',
+          padding: '24px 40px',
+          backgroundColor: c.cores.botaoFundo,
+          borderRadius: 999,
+          flexShrink: 0,
+        },
+        textoNo(s.botao, fonteCorpo(c, 'forte'), tamBotao, 1.2, c.cores.botaoTexto, { whiteSpace: 'nowrap' }),
+      )
+    : null;
+  const topo = g.naBase
+    ? logo || selo
+      ? div(
+          {
+            width: largura,
+            height: 72,
+            marginBottom: 32,
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+          },
+          selo ?? div({}),
+          logo,
+        )
+      : null
+    : null;
   const fixo =
-    (logo ? ALTURA_LOGO_CARD + 44 : 0) +
-    (selo ? 56 + 28 : 0) +
-    (s.botao ? ALTURA_BOTAO_CARD : 0) +
-    (naBase ? Math.round(areaA * 0.82) + pe - M.base : 0);
-  // O número ou preço fica sempre numa linha só: o maior tamanho que cabe na largura.
-  const maxDestaque = naBase ? 150 : 132;
-  let tamanhoDestaque = maxDestaque;
-  while (
-    tamanhoDestaque > 56 &&
-    s.destaque &&
-    larguraTexto(s.destaque, fonteTitulo(c, true), tamanhoDestaque) > largura
-  )
-    tamanhoDestaque -= 2;
+    (g.naBase
+      ? topo
+        ? 72 + 32
+        : 0
+      : (logo ? ALTURA_LOGO_CARD + 36 : 0) + (selo ? tamSelo * 1.1 + 24 + 24 : 0)) +
+    (s.botao ? tamBotao * 1.2 + 48 + 40 : 0);
+  // O número ou preço fica sempre numa linha só; no título, nenhuma palavra é quebrada no meio.
+  const tamanhoDestaque = s.destaque
+    ? naLinha(s.destaque, fonteTitulo(c, true), g.naBase ? 150 : 132, 56)
+    : 56;
+  const palavras = semMarcas(s.titulo).split(/\s+/).filter(Boolean);
+  const maiorPalavra = palavras.reduce((m, x) => (x.length > m.length ? x : m), '');
+  const maxTitulo = naLinha(maiorPalavra, fonteTitulo(c), s.destaque ? 72 : g.naBase ? 104 : 88, 36);
   const ajuste = caberBlocos(
     [
       {
@@ -2169,8 +2280,8 @@ function camadas(c: Contexto): No {
         texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura,
-        min: 40,
-        max: s.destaque ? 68 : 92,
+        min: Math.min(40, maxTitulo),
+        max: maxTitulo,
         alturaLinha: c.par.titulo.alturaLinha,
         antes: s.destaque ? 20 : 0,
         peso: 1.5,
@@ -2180,19 +2291,32 @@ function camadas(c: Contexto): No {
         texto: s.texto,
         fonte: fonteCorpo(c),
         largura,
-        min: 26,
-        max: 34,
+        min: 28,
+        max: 36,
         alturaLinha: 1.38,
         antes: 24,
       },
     ],
-    alturaTexto - fixo,
+    g.texto.a - fixo,
   );
   if (!ajuste.cabe)
     c.avisos.push('O texto está longo demais para a peça em camadas: encurte o título ou o texto.');
-  const bloco = div(
-    { flexDirection: 'column', width: largura, flexShrink: 0 },
-    selo ? div({ marginBottom: 28, flexShrink: 0 }, selo) : null,
+  const coluna = div(
+    {
+      position: 'absolute',
+      left: g.texto.x,
+      top: g.texto.y,
+      width: largura,
+      height: g.texto.a,
+      flexDirection: 'column',
+      justifyContent: 'flex-start',
+      overflow: 'hidden',
+    },
+    topo,
+    !g.naBase && logo
+      ? div({ height: ALTURA_LOGO_CARD, marginBottom: 36, alignItems: 'center', flexShrink: 0 }, logo)
+      : null,
+    !g.naBase && selo ? div({ marginBottom: 24, flexShrink: 0 }, selo) : null,
     s.destaque
       ? textoNo(s.destaque, fonteTitulo(c, true), ajuste.tamanhos.d!, 1, corDoRealce(c), {
           flexShrink: 0,
@@ -2201,30 +2325,15 @@ function camadas(c: Contexto): No {
       : null,
     tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
       marginTop: s.destaque ? 20 : 0,
+      flexShrink: 0,
     }),
     s.texto
-      ? textoNo(s.texto, fonteCorpo(c), ajuste.tamanhos.x!, 1.38, c.cores.suave, { marginTop: 24 })
+      ? textoNo(s.texto, fonteCorpo(c), ajuste.tamanhos.x!, 1.38, c.cores.suave, {
+          marginTop: 24,
+          flexShrink: 0,
+        })
       : null,
-    naBase ? null : botaoNo(c, 44),
-  );
-  const coluna = div(
-    {
-      position: 'absolute',
-      left: LADO,
-      top: M.topo,
-      width: MIOLO,
-      height: alturaTexto,
-      flexDirection: 'column',
-      justifyContent: naBase ? 'space-between' : 'flex-start',
-    },
-    div(
-      { flexDirection: 'column', flexShrink: 0 },
-      logo
-        ? div({ height: ALTURA_LOGO_CARD, marginBottom: 44, alignItems: 'center', flexShrink: 0 }, logo)
-        : null,
-      bloco,
-    ),
-    naBase ? botaoNo(c, 0) : null,
+    botao,
   );
   return div(
     {
@@ -2235,9 +2344,8 @@ function camadas(c: Contexto): No {
       backgroundColor: c.cores.fundo,
     },
     circulo,
-    atras,
     recorte,
-    naFrente,
+    elemento,
     coluna,
   );
 }

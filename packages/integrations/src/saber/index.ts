@@ -3,12 +3,14 @@
  * que estudou o ofício. Vão no começo do prompt, marcados para o cache da Anthropic (do segundo pedido
  * em diante custam um décimo). Créditos e licenças em CREDITOS.md.
  */
+import { MANUAL_DESIGN } from './design.js';
 import { MANUAL_EDITOR_VIDEO } from './editorDeVideo.js';
 import { MANUAL_MOTION } from './motion.js';
 import { MANUAL_REDACAO } from './redacao.js';
 import { MANUAL_REVISAO } from './revisao.js';
 
-export { MANUAL_EDITOR_VIDEO, MANUAL_MOTION, MANUAL_REDACAO, MANUAL_REVISAO };
+/** O manual de design é curto e vai direto no prompt dos agentes de arte (fora do bloco do cache). */
+export { MANUAL_DESIGN, MANUAL_EDITOR_VIDEO, MANUAL_MOTION, MANUAL_REDACAO, MANUAL_REVISAO };
 
 export type NomeManual = 'editorDeVideo' | 'motion' | 'redacao' | 'revisao';
 

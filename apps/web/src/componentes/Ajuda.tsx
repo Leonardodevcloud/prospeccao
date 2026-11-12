@@ -1549,10 +1549,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
             original) e o sistema monta a peça sobre a cor da marca, com a logo e o texto escritos por ele.
             Como o texto não é desenhado pela IA, nenhuma letra, acento ou preço sai errado, e dá para mudar o
             texto no editor sem refazer a imagem. Uma opção põe a foto ao lado do texto, sobre a cor
-            principal; a outra, embaixo, sobre a cor de destaque. No editor, em <b>Peça em camadas</b>, troque
-            onde a foto entra e a própria foto (<b>Trocar a foto</b> pede um recorte novo; a mesma foto é
-            recortada uma vez só e reaproveitada). Foto de fachada, rua ou ambiente inteiro não serve para
-            recortar: nesse caso, ou sem foto, o card fica nos modelos de sempre. Com{' '}
+            principal; a outra, embaixo, sobre a cor de destaque. Foto deitada ou quadrada (uma moto, um
+            carro, um produto largo) vai sempre embaixo do texto, quase de ponta a ponta, que é onde ela fica
+            grande. Cada coisa tem o seu espaço: o texto e o botão nunca passam por cima da foto, e o elemento
+            em 3D só entra quando sobra um vazio para ele. No editor, em <b>Peça em camadas</b>, troque onde a
+            foto entra e a própria foto (<b>Trocar a foto</b> pede um recorte novo; a mesma foto é recortada
+            uma vez só e reaproveitada). Foto de fachada, rua ou ambiente inteiro não serve para recortar:
+            nesse caso, ou sem foto, o card fica nos modelos de sempre. Com{' '}
             <b>Um elemento em 3D na peça em camadas</b> ligado, a IA faz também um objeto ligado ao assunto,
             na cor de destaque, sem letra nem marca (é mais uma imagem por card; sobre o fundo de destaque ele
             não aparece). No editor, <b>Outro elemento em 3D</b> troca e <b>Tirar o elemento</b> remove.

@@ -1,3 +1,4 @@
+import { MANUAL_DESIGN } from '../saber/design.js';
 import { type ConfigImagem, pedirImagem } from '../videos/imagens.js';
 import type { ClienteClaude } from './claude.js';
 
@@ -192,8 +193,13 @@ const ESQUEMA_OPCOES = {
             description:
               'Uma ou duas frases para o dono da empresa, em português simples: o que funciona e o que atrapalha nesta opção (leitura, o que o olho vê primeiro, a foto, o equilíbrio). Sem termos de design.',
           },
+          sobreposto: {
+            type: 'boolean',
+            description:
+              'Algum texto, botão ou enfeite está por cima da foto, do produto ou de outro texto (ou cortado na borda).',
+          },
         },
-        required: ['opcao', 'nota', 'comentario'],
+        required: ['opcao', 'nota', 'comentario', 'sobreposto'],
       },
     },
   },
@@ -209,7 +215,8 @@ export function lerNotasDasOpcoes(d: Record<string, unknown>, quantas: number): 
     const nota = Number(o?.nota);
     if (!o || !Number.isFinite(nota)) return null;
     notas.push({
-      nota: Math.round(Math.min(5, Math.max(1, nota)) * 10) / 10,
+      // Peça com sobreposição nunca passa de 2: é o defeito mais grave.
+      nota: Math.round(Math.min(o.sobreposto === true ? 2 : 5, Math.max(1, nota)) * 10) / 10,
       comentario: String(o.comentario ?? '')
         .replace(/\s+/g, ' ')
         .trim()
@@ -239,6 +246,7 @@ export async function avaliarOpcoes(
         texto:
           'Você é a revisora final de uma agência brasileira. Olha posts de Instagram prontos, no tamanho do celular, e diz com franqueza qual funciona melhor: o que o olho vê primeiro, se o número e o título se leem em um segundo, se a foto ajuda a mensagem, se a peça está equilibrada. Compara as opções entre si; não dá a mesma nota por educação.',
       },
+      { texto: MANUAL_DESIGN },
     ],
     imagens: e.opcoes.map((jpeg, k) => ({
       tipo: 'image/jpeg' as const,
@@ -280,6 +288,7 @@ export async function escolherElemento(
         texto:
           'Você é diretor de arte. Para um post de Instagram, escolhe UM objeto em 3D que enfeita a peça ao lado da foto: concreto, fácil de reconhecer pequeno, ligado ao que o post vende ou ensina. Nunca um objeto genérico (estrela, raio, coração) quando existe um do assunto.',
       },
+      { texto: MANUAL_DESIGN },
     ],
     mensagem: `Post da ${e.empresa}. Título: "${e.titulo}". ${e.destaque ? `Número em destaque: "${e.destaque}". ` : ''}${e.texto ? `Texto: "${e.texto}".` : ''} Escolha o objeto.`,
     ferramenta: { nome: 'elemento_da_peca', descricao: 'O objeto da peça.', esquema: ESQUEMA_ELEMENTO },
