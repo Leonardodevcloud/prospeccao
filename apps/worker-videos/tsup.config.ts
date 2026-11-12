@@ -10,4 +10,6 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   noExternal: [/^@prospeccao\//],
+  // O sharp (com binário nativo) é só da api: aqui nunca é empacotado nem carregado ao subir.
+  external: ['sharp'],
 });

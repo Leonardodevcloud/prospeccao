@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import { type ConfigImagem, pedirImagem } from '../videos/imagens.js';
 import type { ClienteClaude } from './claude.js';
 
@@ -9,6 +8,12 @@ import type { ClienteClaude } from './claude.js';
  * mexe no resto. O recorte passa por duas conferências: o código confere a transparência e um modelo
  * de visão compara o assunto com a foto original.
  */
+
+/**
+ * O sharp é carregado só na hora de usar: o worker-videos empacota este pacote e não tem o sharp
+ * instalado (um import no topo derrubava o serviço ao subir, na v152).
+ */
+const carregarSharp = async () => (await import('sharp')).default;
 
 /** O recorte é pedido em pé, com folga (lados múltiplos de 16). */
 export const TAMANHO_RECORTE = { largura: 1024, altura: 1536 } as const;
@@ -47,6 +52,7 @@ export interface RecorteAparado {
  * transparente (o fundo não saiu) ou quase tudo ficou (o assunto sumiu).
  */
 export async function apararRecorte(png: Uint8Array): Promise<RecorteAparado | null> {
+  const sharp = await carregarSharp();
   const img = sharp(Buffer.from(png), { failOn: 'error' });
   const meta = await img.metadata();
   if (!meta.hasAlpha || !meta.width || !meta.height) return null;
@@ -65,6 +71,7 @@ export async function apararRecorte(png: Uint8Array): Promise<RecorteAparado | n
 
 /** O recorte sobre um fundo liso, em JPEG, para o modelo de visão comparar com a foto. */
 export async function recorteParaConferir(png: Uint8Array): Promise<Uint8Array> {
+  const sharp = await carregarSharp();
   return new Uint8Array(
     await sharp(Buffer.from(png))
       .flatten({ background: '#8a8f98' })
@@ -156,4 +163,153 @@ export async function conferirRecorte(
     timeoutMs: 90_000,
   });
   return avaliarRecorte(r.dados);
+}
+
+/* ───────────────────────────── v153: a revisora olha as opções prontas ───────────────────────────── */
+
+export interface NotaDaOpcao {
+  /** De 1 a 5, com uma casa. */
+  nota: number;
+  comentario: string;
+}
+
+const ESQUEMA_OPCOES = {
+  type: 'object',
+  properties: {
+    opcoes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          opcao: { type: 'integer', description: 'O número da opção, como na legenda da imagem.' },
+          nota: {
+            type: 'number',
+            description:
+              'De 1 a 5, com uma casa: a peça como post de agência, vista no celular (5: pronta para publicar).',
+          },
+          comentario: {
+            type: 'string',
+            description:
+              'Uma ou duas frases para o dono da empresa, em português simples: o que funciona e o que atrapalha nesta opção (leitura, o que o olho vê primeiro, a foto, o equilíbrio). Sem termos de design.',
+          },
+        },
+        required: ['opcao', 'nota', 'comentario'],
+      },
+    },
+  },
+  required: ['opcoes'],
+} as const;
+
+/** Lê as notas: uma por opção, na ordem das imagens; resposta incompleta devolve null (a tela fica sem nota). */
+export function lerNotasDasOpcoes(d: Record<string, unknown>, quantas: number): NotaDaOpcao[] | null {
+  const lista = Array.isArray(d.opcoes) ? (d.opcoes as Record<string, unknown>[]) : [];
+  const notas: NotaDaOpcao[] = [];
+  for (let k = 1; k <= quantas; k++) {
+    const o = lista.find((x) => Number(x.opcao) === k);
+    const nota = Number(o?.nota);
+    if (!o || !Number.isFinite(nota)) return null;
+    notas.push({
+      nota: Math.round(Math.min(5, Math.max(1, nota)) * 10) / 10,
+      comentario: String(o.comentario ?? '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 240),
+    });
+  }
+  return notas;
+}
+
+/** A opção que a revisora prefere: a de maior nota (no empate, a primeira). */
+export const opcaoPreferida = (notas: NotaDaOpcao[]): number =>
+  notas.reduce((melhor, n, k) => (n.nota > notas[melhor]!.nota ? k : melhor), 0);
+
+/**
+ * A revisora olha as opções de um card já prontas (as imagens finais), como um designer olharia, e dá
+ * a nota de cada uma. O texto já foi conferido antes: aqui é só a peça (leitura, hierarquia, foto).
+ */
+export async function avaliarOpcoes(
+  claude: ClienteClaude,
+  e: { empresa: string; objetivo: string; opcoes: Uint8Array[] },
+): Promise<NotaDaOpcao[] | null> {
+  if (e.opcoes.length < 2) return null;
+  const r = await claude.pedir({
+    agente: 'revisor de arte',
+    sistema: [
+      {
+        texto:
+          'Você é a revisora final de uma agência brasileira. Olha posts de Instagram prontos, no tamanho do celular, e diz com franqueza qual funciona melhor: o que o olho vê primeiro, se o número e o título se leem em um segundo, se a foto ajuda a mensagem, se a peça está equilibrada. Compara as opções entre si; não dá a mesma nota por educação.',
+      },
+    ],
+    imagens: e.opcoes.map((jpeg, k) => ({
+      tipo: 'image/jpeg' as const,
+      base64: Buffer.from(jpeg).toString('base64'),
+      legenda: `Opção ${k + 1}:`,
+    })),
+    mensagem: `São ${e.opcoes.length} opções do mesmo post da ${e.empresa}. Objetivo: ${e.objetivo}. Dê a nota e o comentário de cada uma.`,
+    ferramenta: { nome: 'avaliar_opcoes', descricao: 'A nota de cada opção.', esquema: ESQUEMA_OPCOES },
+    maxTokens: 700,
+    temperatura: 0.2,
+    timeoutMs: 90_000,
+  });
+  return lerNotasDasOpcoes(r.dados, e.opcoes.length);
+}
+
+/* ───────────────────────────── v153: os elementos em 3D ───────────────────────────── */
+
+const ESQUEMA_ELEMENTO = {
+  type: 'object',
+  properties: {
+    objeto: {
+      type: 'string',
+      description:
+        'Em inglês, um único objeto físico e concreto que simboliza a oferta ou o assunto (ex.: "a car brake disc", "a delivery box", "a wrench"). Sem pessoas, sem texto, sem marcas, sem símbolos de moeda com letras.',
+    },
+  },
+  required: ['objeto'],
+} as const;
+
+/** O diretor de arte escolhe o objeto que enfeita a peça (um só, concreto, ligado à mensagem). */
+export async function escolherElemento(
+  claude: ClienteClaude,
+  e: { empresa: string; titulo: string; destaque: string; texto: string },
+): Promise<string | null> {
+  const r = await claude.pedir({
+    agente: 'diretor de arte',
+    sistema: [
+      {
+        texto:
+          'Você é diretor de arte. Para um post de Instagram, escolhe UM objeto em 3D que enfeita a peça ao lado da foto: concreto, fácil de reconhecer pequeno, ligado ao que o post vende ou ensina. Nunca um objeto genérico (estrela, raio, coração) quando existe um do assunto.',
+      },
+    ],
+    mensagem: `Post da ${e.empresa}. Título: "${e.titulo}". ${e.destaque ? `Número em destaque: "${e.destaque}". ` : ''}${e.texto ? `Texto: "${e.texto}".` : ''} Escolha o objeto.`,
+    ferramenta: { nome: 'elemento_da_peca', descricao: 'O objeto da peça.', esquema: ESQUEMA_ELEMENTO },
+    maxTokens: 200,
+    temperatura: 0.5,
+    esforco: 'baixo',
+    timeoutMs: 45_000,
+  });
+  const objeto = String(r.dados.objeto ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  return objeto.length >= 3 ? objeto : null;
+}
+
+export function promptDoElemento(objeto: string, cor: string): string {
+  return [
+    `A single 3D rendered object: ${objeto}.`,
+    `STYLE: clean modern 3D illustration for a brand social post, smooth glossy material, soft studio light from the top left, gentle shading, seen from a slight three-quarter angle. Main color ${cor} with lighter and darker tones of the same color; at most one neutral secondary tone.`,
+    'FRAMING: the whole object, centered, with padding around it, on a fully transparent background (alpha channel).',
+    'CONSTRAINTS: no text, letters or numbers anywhere; no logos or brand marks; no people or hands; no ground, no cast shadow, no background, no frame, no checkerboard pattern.',
+  ].join('\n');
+}
+
+/** O objeto em 3D, em PNG transparente (quadrado). */
+export async function gerarElemento(cfg: ConfigImagem, objeto: string, cor: string): Promise<Uint8Array> {
+  return pedirImagem(cfg, {
+    prompt: promptDoElemento(objeto, cor),
+    largura: 1024,
+    altura: 1024,
+    transparente: true,
+  });
 }

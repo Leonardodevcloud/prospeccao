@@ -5,7 +5,6 @@ import {
   type SlideCarrossel,
   semMarcas,
 } from '@prospeccao/shared/carrosseis';
-import sharp from 'sharp';
 import { type ConfigImagem, pedirImagem, type ReferenciaImagem } from '../videos/imagens.js';
 import type { ClienteClaude } from './claude.js';
 import { CARTAO_POSTAL, tamanhoDaImagem } from './imagens.js';
@@ -320,6 +319,8 @@ export async function porLogo(
   formato: FormatoPeca,
 ): Promise<Uint8Array> {
   if (!logos.claro && !logos.escuro) return jpeg;
+  // Carregado só aqui: o worker-videos empacota este pacote e não tem o sharp instalado.
+  const sharp = (await import('sharp')).default;
   const base = sharp(Buffer.from(jpeg));
   const { width: W = 1088, height: H = 1360 } = await base.metadata();
   const margem = Math.round(W * 0.06);
