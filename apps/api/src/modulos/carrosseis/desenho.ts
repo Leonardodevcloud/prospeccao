@@ -157,6 +157,10 @@ export async function desenhar(
 ): Promise<{ jpeg: Buffer; avisos: string[]; etag: string }> {
   const lida = await fotoComMedidas(db, arm, p.slide.fotoId);
   const foto = lida?.url ?? null;
+  // v153: os elementos em 3D da peça em camadas.
+  const elementos = (
+    await Promise.all((p.slide.elementoIds ?? []).map((id) => fotoComMedidas(db, arm, id)))
+  ).flatMap((x) => (x ? [{ src: x.url }] : []));
   const montado = montarSlide({
     slide: p.slide,
     indice: p.indice,
@@ -165,6 +169,7 @@ export async function desenhar(
     estilo: p.estilo,
     foto,
     fotoMedidas: lida ? { largura: lida.largura, altura: lida.altura } : null,
+    elementos,
     logoClaro: material.logoClaro,
     logoEscuro: material.logoEscuro,
     formato: p.formato ?? 'feed',
@@ -180,6 +185,7 @@ export async function desenhar(
         p.estilo,
         largura,
         foto ? foto.length : 0,
+        elementos.map((x) => x.src.length),
         p.formato ?? 'feed',
       ]),
     )

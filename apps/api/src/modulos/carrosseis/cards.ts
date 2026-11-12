@@ -1,5 +1,10 @@
 import type { Executor } from '@prospeccao/db';
-import { type ImagensDosCards, trabalharNosCards } from '@prospeccao/integrations/carrosseis';
+import {
+  avaliarOpcoes,
+  type ImagensDosCards,
+  opcaoPreferida,
+  trabalharNosCards,
+} from '@prospeccao/integrations/carrosseis';
 import { AppError } from '@prospeccao/shared';
 import {
   type EstiloCarrossel,
@@ -14,6 +19,7 @@ import {
   type EtapaTime,
   formatosDoPedido,
   type LoteCards,
+  type NotaVisual,
   OBJETIVO_CARD,
   type ObjetivoCard,
   outraVariacaoEntrada,
@@ -28,9 +34,11 @@ import { conta, contaSql, usuarioAtual } from '../../contexto.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as aprender from './aprender.js';
 import * as cerebro from './cerebro.js';
+import { desenhar, materialDaConta } from './desenho.js';
 import {
   estiloDaConta,
   fazerArte,
+  fazerElemento,
   fazerImagem,
   fazerRecorte,
   imagensLigadas,
@@ -221,7 +229,15 @@ export function slideEmCamadas(
   slide: SlideCarrossel,
   recorte: FotoCarrossel | null,
   k: number,
-  e: { identidade: IdentidadeCarrossel; estilo: EstiloCarrossel; formatos: FormatoPeca[] },
+  e: {
+    identidade: IdentidadeCarrossel;
+    estilo: EstiloCarrossel;
+    formatos: FormatoPeca[];
+    /** v153: quantos slides a peça tem (1: card; mais: a capa de um carrossel). */
+    total?: number;
+    /** v153: o elemento em 3D da peça. */
+    elementoId?: number | null;
+  },
 ): SlideCarrossel | null {
   if (!recorte || !slide.titulo.trim()) return null;
   if (!['capa', 'numero', 'foto', 'chamada'].includes(slide.modelo)) return null;
@@ -233,13 +249,14 @@ export function slideEmCamadas(
     colunas: [],
     composicao: k % 2 === 0 ? 'lado' : 'base',
     fundo: k % 2 === 0 ? 'auto' : 'destaque',
+    ...(e.elementoId ? { elementoIds: [e.elementoId] } : {}),
   };
   const cabe = e.formatos.every(
     (formato) =>
       !montarSlide({
         slide: novo,
         indice: 0,
-        total: 1,
+        total: e.total ?? 1,
         identidade: e.identidade,
         estilo: e.estilo,
         foto: 'recorte',
@@ -248,6 +265,67 @@ export function slideEmCamadas(
       }).avisos.some((a) => /longo demais/.test(a)),
   );
   return cabe ? novo : null;
+}
+
+/**
+ * v153: desenha as opções de cada card (a imagem final, pequena) e pede a nota da revisora. Grava a nota
+ * no relatório de cada opção e deixa escolhida a que ela prefere. Sem as imagens ou sem resposta, as
+ * opções ficam como estavam (sem nota).
+ */
+async function avaliarAsOpcoes(
+  db: Executor,
+  ia: CarrosseisIa,
+  contaId: number,
+  criadas: {
+    id: number;
+    dados: Omit<Parameters<typeof repo.criar>[1], 'card'>;
+    card: number;
+    escolhido: boolean;
+  }[],
+  e: { empresa: string; objetivo: string; estilo: EstiloCarrossel; formato: FormatoPeca },
+): Promise<void> {
+  const material = await materialDaConta(db, ia.armazenamento ?? null);
+  const claude = ia.cliente(db, contaId);
+  const cards = [...new Set(criadas.map((c) => c.card))];
+  await Promise.all(
+    cards.map(async (n) => {
+      const opcoes = criadas.filter((c) => c.card === n).slice(0, 4);
+      if (opcoes.length < 2) return;
+      const imagens = await Promise.all(
+        opcoes.map(async (o) => {
+          const d = await desenhar(db, ia.armazenamento ?? null, material, {
+            slide: o.dados.slides[0]!,
+            indice: 0,
+            total: 1,
+            estilo: e.estilo,
+            formato: e.formato,
+            largura: 540,
+          });
+          return new Uint8Array(d.jpeg);
+        }),
+      );
+      const notas = await avaliarOpcoes(claude, {
+        empresa: e.empresa,
+        objetivo: e.objetivo,
+        opcoes: imagens,
+      });
+      if (!notas) return;
+      const preferida = opcaoPreferida(notas);
+      for (const [k, o] of opcoes.entries()) {
+        const visual = { ...notas[k]!, preferida: k === preferida };
+        o.escolhido = k === preferida;
+        if (o.dados.relatorio) o.dados.relatorio = { ...o.dados.relatorio, visual };
+        await db.query(
+          `UPDATE comercial.carrosseis
+              SET escolhido = $2,
+                  relatorio = CASE WHEN relatorio IS NULL THEN NULL
+                                   ELSE relatorio || jsonb_build_object('visual', $3::jsonb) END
+            WHERE id = $1 AND conta_id = ${contaSql()}`,
+          [o.id, o.escolhido, JSON.stringify(visual)],
+        );
+      }
+    }),
+  );
 }
 
 /** O que o time faz com um pedido de cards (a fila chama). Devolve o uso para o pedido. */
@@ -347,9 +425,28 @@ export async function trabalharCards(
           );
         })()
       : [];
+  // v153: um elemento em 3D por card com recorte (o mesmo nas duas opções), pelo texto da 1ª opção.
+  const elementos: (FotoCarrossel | null)[] =
+    p.elementos && recortes.some(Boolean)
+      ? await Promise.all(
+          r.cards.map((card, i) => {
+            const s = card.variacoes[0]?.slide;
+            return recortes[i] && s
+              ? fazerElemento(
+                  db,
+                  ia,
+                  l.conta_id,
+                  { titulo: semMarcas(s.titulo), destaque: s.destaque, texto: s.texto },
+                  { criadoPor: l.criado_por },
+                ).catch(() => null)
+              : null;
+          }),
+        )
+      : [];
   const ids: number[] = [];
   /** O que foi criado, para nascer igual no outro formato (feed e story pedidos juntos). */
   const criadas: {
+    id: number;
     dados: Omit<Parameters<typeof repo.criar>[1], 'card'>;
     card: number;
     variacao: number;
@@ -370,7 +467,12 @@ export async function trabalharCards(
       // As duas primeiras opções do card viram "em camadas" quando o recorte saiu e o texto cabe.
       const emCamadas =
         !outra && k < 2
-          ? slideEmCamadas(conferido!, recortes[i] ?? null, k, { identidade, estilo, formatos })
+          ? slideEmCamadas(conferido!, recortes[i] ?? null, k, {
+              identidade,
+              estilo,
+              formatos,
+              elementoId: elementos[i]?.id ?? null,
+            })
           : null;
       const dados = {
         titulo: (outra ? `${card.titulo} (variação)` : card.titulo).slice(0, 120),
@@ -384,13 +486,12 @@ export async function trabalharCards(
       };
       const numero = { card: outra ? outra.card : i + 1, variacao: outra ? proxima + k : k + 1 };
       const escolhido = !outra && k === 0;
-      ids.push(
-        await repo.criar(db, {
-          ...dados,
-          card: { formato: formatos[0]!, pedidoId: loteId, ...numero, escolhido },
-        }),
-      );
-      if (!outra) criadas.push({ dados, ...numero, escolhido });
+      const id = await repo.criar(db, {
+        ...dados,
+        card: { formato: formatos[0]!, pedidoId: loteId, ...numero, escolhido },
+      });
+      ids.push(id);
+      if (!outra) criadas.push({ id, dados, ...numero, escolhido });
     }
   // v150: em cada card, mais uma variação com a peça inteira desenhada pela IA, a partir do texto da
   // 1ª variação (o que o time aprovou). Reprovada duas vezes na conferência: o card fica só nos moldes.
@@ -446,6 +547,16 @@ export async function trabalharCards(
       `UPDATE comercial.carrossel_pedidos SET entrada = entrada || jsonb_build_object('tituloDoTime', $2::text) WHERE id = $1`,
       [l.id, r.titulo],
     );
+  // v153: a revisora olha as opções prontas de cada card e dá a nota; a que ela prefere fica escolhida.
+  if (!outra && criadas.length > 1) {
+    await avancar('revisor', 'Olhando as opções prontas de cada card');
+    await avaliarAsOpcoes(db, ia, l.conta_id, criadas, {
+      empresa,
+      objetivo: `${OBJETIVO_CARD[p.objetivo].nome} (${OBJETIVO_CARD[p.objetivo].dica})`,
+      estilo,
+      formato: formatos[0]!,
+    }).catch(() => undefined);
+  }
   // v152: feed e story pedidos juntos. As mesmas peças nascem no outro formato, num lote irmão (o texto,
   // a foto e o recorte são os mesmos; o sistema monta de novo no outro tamanho). Não conta na franquia.
   if (!outra && formatos.length > 1 && criadas.length) {
@@ -528,8 +639,11 @@ export async function lotes(db: Executor): Promise<LoteCards[]> {
       situacao: string;
       estilo: EstiloCarrossel;
       slides: SlideCarrossel[];
+      visual: NotaVisual | null;
     }>(
-      `SELECT id, pedido_id, card, variacao, escolhido, versao, situacao, estilo, slides FROM comercial.carrosseis
+      `SELECT id, pedido_id, card, variacao, escolhido, versao, situacao, estilo, slides,
+              relatorio->'visual' AS visual
+         FROM comercial.carrosseis
         WHERE conta_id = ${contaSql()} AND tipo = 'card' AND pedido_id = ANY($1::int[])
         ORDER BY pedido_id, card, variacao`,
       [ids],
@@ -572,6 +686,7 @@ export async function lotes(db: Executor): Promise<LoteCards[]> {
             situacao: x.situacao,
             slide: Array.isArray(x.slides) ? (x.slides[0] ?? null) : null,
             estilo: x.estilo,
+            visual: x.visual ?? null,
           })),
       })),
     };

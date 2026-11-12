@@ -12,7 +12,9 @@ import {
   desenharArte,
   dirigirArte,
   type EstiloDaImagem,
+  escolherElemento,
   gerarCenario,
+  gerarElemento,
   gerarImagemDoSlide,
   type JeitoDePostar,
   lerJeitoDePostar,
@@ -116,12 +118,18 @@ export async function fazerImagem(
   contaId: number,
   p: { tipo: 'gerar' | 'cenario' | 'melhorar'; descricao: string; fotoId: number | null },
   estilo: EstiloDaImagem,
-  extra: { carrosselId?: number | null; criadoPor?: number | null; formato?: FormatoPeca } = {},
+  extra: {
+    carrosselId?: number | null;
+    criadoPor?: number | null;
+    formato?: FormatoPeca;
+    /** v153: a imagem que dá o estilo (a primeira gerada do carrossel), só para as imagens geradas. */
+    estiloDe?: Uint8Array | null;
+  } = {},
 ): Promise<FotoCarrossel | null> {
   if (!imagensLigadas(ia)) return null;
   const cfg = ia.imagem!.config;
   const claude = ia.cliente(db, contaId);
-  const { formato = 'feed', ...resto } = extra;
+  const { formato = 'feed', estiloDe = null, ...resto } = extra;
   let original: Uint8Array | null = null;
   let nomeBase = '';
   const daFoto = p.tipo === 'cenario' || p.tipo === 'melhorar';
@@ -138,7 +146,7 @@ export async function fazerImagem(
         ? await gerarCenario(cfg, original!, p.descricao, estilo, formato)
         : p.tipo === 'melhorar'
           ? await melhorarFoto(cfg, original!, formato)
-          : await gerarImagemDoSlide(cfg, p.descricao, estilo, formato);
+          : await gerarImagemDoSlide(cfg, p.descricao, estilo, formato, estiloDe);
     await contarImagem(db, ia.imagem!.custoUsd, jpeg);
     const conferencia = daFoto
       ? await conferirCenario(claude, { original: original!, gerada: jpeg, cena })
@@ -309,6 +317,61 @@ export async function fazerRecorte(
       baseFotoId: fotoId,
       pedido: 'A foto com o fundo tirado',
       carrosselId: extra.carrosselId ?? null,
+      ...(extra.criadoPor !== undefined ? { criadoPor: extra.criadoPor } : {}),
+    });
+  }
+  return null;
+}
+
+/**
+ * v153: um elemento em 3D para a peça em camadas (um objeto ligado à mensagem, na cor de destaque, em
+ * PNG transparente). O diretor de arte escolhe o objeto; o código confere a transparência e o revisor
+ * visual confere que não tem letra, marca nem defeito. Duas tentativas; null: a peça fica sem elemento.
+ */
+export async function fazerElemento(
+  db: Executor,
+  ia: CarrosseisIa,
+  contaId: number,
+  texto: { titulo: string; destaque: string; texto: string },
+  extra: { criadoPor?: number | null } = {},
+): Promise<FotoCarrossel | null> {
+  if (!imagensLigadas(ia)) return null;
+  const claude = ia.cliente(db, contaId);
+  const [{ identidade }, empresa] = await Promise.all([
+    repo.identidade(db),
+    db
+      .query<{ nome: string }>(`SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`)
+      .then((r) => r.rows[0]?.nome ?? ''),
+  ]);
+  const objeto = await escolherElemento(claude, { empresa, ...texto }).catch(() => null);
+  if (!objeto) return null;
+  for (let k = 0; k < TENTATIVAS; k++) {
+    let png: Uint8Array;
+    try {
+      png = await gerarElemento(ia.imagem!.config, objeto, identidade.cores.destaque);
+    } catch (erro) {
+      const codigo = (erro as AppError).codigo;
+      if (codigo === 'sem_transparencia' || codigo === 'imagem_recusada') return null;
+      throw erro;
+    }
+    await contarImagem(db, ia.imagem!.custoUsd, png);
+    const aparado = await apararRecorte(png).catch(() => null);
+    if (!aparado) continue;
+    const c = await conferirImagemDoSlide(claude, {
+      jpeg: await recorteParaConferir(aparado.png),
+      descricao: `um objeto em 3D sobre fundo cinza liso: ${objeto}`,
+    });
+    if (!c.aprovada) continue;
+    const chave = `carrosseis/${conta()}/fotos/elemento-${randomUUID()}.png`;
+    await ia.armazenamento!.enviar(chave, aparado.png, 'image/png');
+    return repo.adicionarFotoDaIa(db, {
+      nome: `Elemento: ${objeto}`.slice(0, 80),
+      chave,
+      largura: aparado.largura,
+      altura: aparado.altura,
+      bytes: aparado.png.byteLength,
+      origem: 'elemento',
+      pedido: objeto,
       ...(extra.criadoPor !== undefined ? { criadoPor: extra.criadoPor } : {}),
     });
   }

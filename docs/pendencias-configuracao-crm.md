@@ -389,6 +389,13 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4af. Estúdio de arte, parte 2 (v153)
+1. [ ] **Migration 109** roda sozinha no redeploy da **api**. Redeploy também do **worker-videos** (traz o conserto: ele caía ao subir desde a v152, talvez desde a v150; conferir nos logs que ficou no ar).
+2. [ ] Pedir 2 cards com foto e conferir: o **elemento em 3D** (objeto do assunto, sem letra), a **nota da revisora** em cada opção e a preferida já escolhida.
+3. [ ] Pedir 1 carrossel com "A IA pode gerar as imagens" e uma foto na capa: conferir a **capa em camadas** e se as imagens geradas parecem do mesmo ensaio.
+4. [ ] Custo por card em camadas: até 2 imagens (recorte + elemento) mais 3 pedidos curtos ao Claude (conferir o recorte, escolher o elemento, a nota das opções). Para gastar menos, desmarcar "Um elemento em 3D" no pedido.
+5. [ ] Vídeo com 14 s ou mais: na aba Som, conferir **A música acompanha o vídeo**. Se não aparecer, a ElevenLabs recusou o plano por partes e a música saiu como faixa única (ver o log do worker).
+
 ## 4ae. Estúdio de arte, parte 1 (v152)
 1. [ ] **Migration 108** roda sozinha no redeploy da **api**. Redeploy também do **worker-videos** (música e imagens).
 2. [ ] **Modelo de imagem**: o padrão passou a ser `gpt-image-2.6-sunburst` (api: `CARROSSEIS_IMAGEM_MODELO`; worker-videos: `VIDEOS_IMAGEM_MODELO`). Conferir no painel da OpenAI se a conta tem acesso; se não tiver, o sistema cai sozinho no `gpt-image-2`, mas **sem o recorte** (a peça em camadas precisa do fundo transparente, que só a família 2.5/2.6 faz) e os cards ficam nos modelos de sempre. Quem tinha a variável com `gpt-image-2` precisa apagar ou trocar.

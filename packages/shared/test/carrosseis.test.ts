@@ -210,4 +210,65 @@ describe('módulo Carrosséis com IA no plano', () => {
     expect(t.modulos).toMatchObject({ whatsapp: 300, carrosseis: TABELA_PADRAO.modulos.carrosseis });
     expect(t.carrosseisMes).toBe(TABELA_PADRAO.carrosseisMes);
   });
+
+  describe('v152/v153: a peça em camadas', () => {
+    const base = {
+      ...slideNovo('camadas', 'a'),
+      sobretitulo: 'Só esta semana',
+      destaque: 'R$ 89,90',
+      titulo: 'Pastilha de *cerâmica* instalada',
+      botao: 'Chame no WhatsApp',
+      fotoId: 1,
+    };
+    const montar = (extra: object, formato: 'feed' | 'story' = 'feed') =>
+      montarSlide({
+        slide: { ...base, ...extra },
+        indice: 0,
+        total: 1,
+        identidade: IDENTIDADE_PADRAO,
+        estilo: 'vivo',
+        foto: 'data:image/png;base64,AAAA',
+        fotoMedidas: { largura: 600, altura: 900 },
+        elementos: [{ src: 'data:image/png;base64,BBBB' }],
+        formato,
+      });
+    const imagens = (no: unknown): { src: string; style: Record<string, number> }[] => {
+      const n = no as {
+        type: string;
+        props: { src?: string; style?: Record<string, number>; children?: unknown };
+      };
+      if (!n || typeof n !== 'object') return [];
+      const filhos = Array.isArray(n.props?.children) ? n.props.children : [n.props?.children];
+      return [
+        ...(n.type === 'img' && n.props.src ? [{ src: n.props.src, style: n.props.style ?? {} }] : []),
+        ...filhos.flatMap(imagens),
+      ];
+    };
+    it('monta nos dois formatos e nas duas composições, sem aviso, com o recorte encostado na base', () => {
+      for (const formato of ['feed', 'story'] as const)
+        for (const composicao of ['lado', 'base'] as const) {
+          const m = montar({ composicao }, formato);
+          expect(m.avisos, `${formato} ${composicao}`).toEqual([]);
+          const recorte = imagens(m.no).find((i) => i.src.endsWith('AAAA'))!;
+          expect(recorte.style.top! + recorte.style.height!).toBe(formato === 'story' ? 1920 : 1350);
+          // A proporção da foto é respeitada (600 × 900).
+          expect(Math.round((recorte.style.width! / recorte.style.height!) * 100)).toBe(67);
+        }
+    });
+    it('o elemento em 3D entra sobre a cor principal e some sobre a cor de destaque', () => {
+      expect(imagens(montar({}).no).some((i) => i.src.endsWith('BBBB'))).toBe(true);
+      expect(imagens(montar({ fundo: 'destaque' }).no).some((i) => i.src.endsWith('BBBB'))).toBe(false);
+    });
+    it('sem o recorte, cai na capa com um aviso', () => {
+      const m = montarSlide({
+        slide: base,
+        indice: 0,
+        total: 1,
+        identidade: IDENTIDADE_PADRAO,
+        estilo: 'vivo',
+        foto: null,
+      });
+      expect(m.avisos.join(' ')).toContain('recorte');
+    });
+  });
 });

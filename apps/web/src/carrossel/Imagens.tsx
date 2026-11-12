@@ -20,12 +20,15 @@ import { enviarImagem, urlFoto } from './dados';
 
 export interface ImagensDoPedido {
   gerarImagens: boolean;
+  /** v153: a capa em camadas quando ela tem foto da empresa. */
+  capaEmCamadas: boolean;
   fotoProdutoId: number | null;
   referenciaId: number | null;
 }
 
 export const IMAGENS_VAZIAS: ImagensDoPedido = {
   gerarImagens: false,
+  capaEmCamadas: true,
   fotoProdutoId: null,
   referenciaId: null,
 };
@@ -74,7 +77,22 @@ export function CamposDeImagens(props: {
           A IA pode gerar as imagens que faltarem
           <span className="campo__dica" style={{ display: 'block' }}>
             Sem texto e nas cores da marca, até 3 por carrossel, só onde nenhuma foto da empresa combina. O
-            revisor visual confere cada uma.
+            revisor visual confere cada uma, e todas seguem o estilo da primeira, para o carrossel parecer uma
+            peça só.
+          </span>
+        </span>
+      </label>
+      <label className="opcao">
+        <input
+          type="checkbox"
+          checked={valor.capaEmCamadas}
+          onChange={(e) => mudar({ ...valor, capaEmCamadas: e.target.checked })}
+        />
+        <span>
+          Capa em camadas quando ela tiver foto da empresa
+          <span className="campo__dica" style={{ display: 'block' }}>
+            A IA tira o fundo da foto (a pessoa ou o produto ficam iguais) e o sistema monta a capa sobre a
+            cor da marca, com o título escrito por ele.
           </span>
         </span>
       </label>

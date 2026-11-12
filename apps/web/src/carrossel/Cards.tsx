@@ -197,6 +197,8 @@ function NovoPedidoDeCards(props: {
   const [arteIa, setArteIa] = useState(false);
   // v152: as duas opções "em camadas" (a foto da empresa com o fundo tirado; o texto é do sistema).
   const [camadas, setCamadas] = useState(true);
+  // v153: um objeto em 3D feito pela IA em cada peça em camadas.
+  const [elementos, setElementos] = useState(true);
   const [fotosPedido, setFotosPedido] = useState<FotoDoPedido[]>([]);
   // v148/v149: antes de criar, a estrategista conversa em rodadas (sem perguntas, cria direto).
   const [conversa, setConversa] = useState<RodadaDoTime | null>(null);
@@ -220,6 +222,7 @@ function NovoPedidoDeCards(props: {
           gerarImagens,
           arteIa: arteIa && !!props.situacao.ia.imagens,
           camadas: camadas && !!props.situacao.ia.imagens,
+          elementos: elementos && camadas && !!props.situacao.ia.imagens,
           fotos: fotosPedido,
           respostas,
           briefing,
@@ -454,6 +457,18 @@ function NovoPedidoDeCards(props: {
           </span>
         </label>
       )}
+      {ia.imagens && camadas && (
+        <label className="opcao">
+          <input type="checkbox" checked={elementos} onChange={(e) => setElementos(e.target.checked)} />
+          <span>
+            Um elemento em 3D na peça em camadas
+            <span className="campo__dica" style={{ display: 'block' }}>
+              Um objeto ligado ao assunto (uma peça, uma caixa, uma ferramenta), na cor de destaque, feito
+              pela IA sem letra nem marca. É mais uma imagem por card.
+            </span>
+          </span>
+        </label>
+      )}
       {ia.imagens && (
         <label className="opcao">
           <input type="checkbox" checked={arteIa} onChange={(e) => setArteIa(e.target.checked)} />
@@ -606,6 +621,11 @@ function Lote(props: { l: LoteCards; arteLigada: boolean }) {
                     Card {c.card}
                     {escolhida.slide?.titulo ? ` · ${escolhida.slide.titulo.replace(/\*/g, '')}` : ''}
                   </span>
+                  {escolhida.visual?.comentario && (
+                    <span className="campo__dica">
+                      Revisora, sobre a escolhida: {escolhida.visual.comentario}
+                    </span>
+                  )}
                   <div className="cards-card__variacoes">
                     {c.variacoes.map((v, k) => (
                       <div key={v.id} className="cards-card__peca">
@@ -636,6 +656,12 @@ function Lote(props: { l: LoteCards; arteLigada: boolean }) {
                             <Icon name="maximize-2" size={14} />
                           </span>
                         </button>
+                        {v.visual && (
+                          <span className="campo__dica">
+                            Nota {v.visual.nota.toFixed(1).replace('.', ',')} de 5
+                            {v.visual.preferida ? ' · a revisora prefere' : ''}
+                          </span>
+                        )}
                         {v.escolhido ? (
                           <span className="cards-card__estado">Escolhida</span>
                         ) : (

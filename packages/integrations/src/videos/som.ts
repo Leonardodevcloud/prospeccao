@@ -1,5 +1,14 @@
 import { AppError } from '@prospeccao/shared';
-import type { ClimaMusica, EfeitoVideo, ImagemPosta, TipoEfeito } from '@prospeccao/shared/videos';
+import type {
+  ClimaMusica,
+  EfeitoVideo,
+  ImagemPosta,
+  NomeParteMusica,
+  ParteMusica,
+  TipoEfeito,
+} from '@prospeccao/shared/videos';
+
+export type { NomeParteMusica, ParteMusica } from '@prospeccao/shared/videos';
 
 /**
  * O som do vídeo (v129):
@@ -50,18 +59,6 @@ export const compoePorPartes = (modelo: string) => /^music_v[2-9]/.test(modelo);
  * v152: as partes do vídeo, para a música acompanhar: entra no gancho, fica por baixo da explicação,
  * sobe na oferta e fecha junto com a chamada (antes era uma faixa só, do começo ao fim).
  */
-export type NomeParteMusica = 'gancho' | 'explicacao' | 'oferta' | 'chamada';
-export interface ParteMusica {
-  nome: NomeParteMusica;
-  segundos: number;
-}
-export const ROTULO_PARTE_MUSICA: Record<NomeParteMusica, string> = {
-  gancho: 'Gancho',
-  explicacao: 'Explicação',
-  oferta: 'Oferta',
-  chamada: 'Chamada',
-};
-
 const DIRECAO_DA_PARTE: Record<NomeParteMusica, { texto: string; estilos: string[] }> = {
   gancho: {
     texto: '[Intro] {instrumental, starts immediately with the beat, confident hook, no slow fade-in}',
@@ -127,6 +124,10 @@ export function planoDaMusica(partes: ParteMusica[], estilo: string) {
   };
 }
 
+const porPartes = new WeakSet<Uint8Array>();
+/** v153: esta música foi composta por partes? (Se a ElevenLabs recusou o plano, saiu uma faixa só.) */
+export const musicaPorPartes = (mp3: Uint8Array) => porPartes.has(mp3);
+
 interface PedidoMusica {
   clima: ClimaMusica;
   descricao: string;
@@ -156,7 +157,9 @@ export async function comporMusica(
   for (const j of jeitos) {
     for (let k = 0; ; k++) {
       try {
-        return await comporUmaVez({ ...cfg, modelo: j.modelo }, e, j.partes);
+        const mp3 = await comporUmaVez({ ...cfg, modelo: j.modelo }, e, j.partes);
+        if (j.partes) porPartes.add(mp3);
+        return mp3;
       } catch (erro) {
         ultimo = erro;
         const a = erro as AppError;

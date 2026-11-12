@@ -168,53 +168,63 @@ function iaComImagens(): CarrosseisIa {
           pedidos.push({ agente: p.agente, ferramenta: p.ferramenta.nome, imagens: p.imagens?.length ?? 0 });
           await medidor.depois(USO_ZERO, 0.001, true);
           const dados: Record<string, unknown> =
-            p.ferramenta.nome === 'conferir_recorte'
-              ? {
-                  assunto_igual: true,
-                  inteiro: true,
-                  fundo_limpo: true,
-                  defeito: false,
-                  texto_novo: false,
-                  isolavel: true,
-                  problemas: [],
-                }
-              : p.ferramenta.nome === 'plano_cards'
-                ? PLANO_CARDS
-                : p.ferramenta.nome === 'cards'
-                  ? CARDS
-                  : p.ferramenta.nome === 'conferir_arte'
-                    ? ARTE_LIDA()
-                    : p.ferramenta.nome === 'direcao_de_arte'
-                      ? DIRECAO
-                      : p.ferramenta.nome === 'estilo_da_referencia'
-                        ? {
-                            estilo: 'Foto de produto centralizada, fundo escuro, luz lateral, texto embaixo.',
-                          }
-                        : p.ferramenta.nome === 'conferir_cenario'
-                          ? {
-                              produto_igual: !reprovar,
-                              texto_novo: false,
-                              marca_estranha: false,
-                              defeito: false,
-                              combina: true,
-                              problemas: [],
-                            }
-                          : p.ferramenta.nome === 'conferir_imagem'
+            p.ferramenta.nome === 'elemento_da_peca'
+              ? { objeto: 'a car brake disc' }
+              : p.ferramenta.nome === 'avaliar_opcoes'
+                ? {
+                    opcoes: [
+                      { opcao: 1, nota: 4.1, comentario: 'O preço se lê bem.' },
+                      { opcao: 2, nota: 4.6, comentario: 'A foto aparece mais e o título se lê primeiro.' },
+                    ],
+                  }
+                : p.ferramenta.nome === 'conferir_recorte'
+                  ? {
+                      assunto_igual: true,
+                      inteiro: true,
+                      fundo_limpo: true,
+                      defeito: false,
+                      texto_novo: false,
+                      isolavel: true,
+                      problemas: [],
+                    }
+                  : p.ferramenta.nome === 'plano_cards'
+                    ? PLANO_CARDS
+                    : p.ferramenta.nome === 'cards'
+                      ? CARDS
+                      : p.ferramenta.nome === 'conferir_arte'
+                        ? ARTE_LIDA()
+                        : p.ferramenta.nome === 'direcao_de_arte'
+                          ? DIRECAO
+                          : p.ferramenta.nome === 'estilo_da_referencia'
                             ? {
-                                tem_texto: false,
-                                tem_marca: false,
-                                rosto_em_destaque: false,
-                                defeito: false,
-                                combina: true,
-                                problemas: [],
+                                estilo:
+                                  'Foto de produto centralizada, fundo escuro, luz lateral, texto embaixo.',
                               }
-                            : p.agente === 'estrategista'
-                              ? ESTRATEGIA
-                              : p.agente === 'redator'
-                                ? REDACAO
-                                : p.agente === 'revisor'
-                                  ? { notas: notas(5), ajustes: [], fatos: [] }
-                                  : {};
+                            : p.ferramenta.nome === 'conferir_cenario'
+                              ? {
+                                  produto_igual: !reprovar,
+                                  texto_novo: false,
+                                  marca_estranha: false,
+                                  defeito: false,
+                                  combina: true,
+                                  problemas: [],
+                                }
+                              : p.ferramenta.nome === 'conferir_imagem'
+                                ? {
+                                    tem_texto: false,
+                                    tem_marca: false,
+                                    rosto_em_destaque: false,
+                                    defeito: false,
+                                    combina: true,
+                                    problemas: [],
+                                  }
+                                : p.agente === 'estrategista'
+                                  ? ESTRATEGIA
+                                  : p.agente === 'redator'
+                                    ? REDACAO
+                                    : p.agente === 'revisor'
+                                      ? { notas: notas(5), ajustes: [], fatos: [] }
+                                      : {};
           return { dados, uso: USO_ZERO, custoUsd: 0.001 };
         },
       };
@@ -540,7 +550,11 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
     expect(story.situacao).toBe('pronto');
     const titulos = (l: typeof feed) => l.cards[0]!.variacoes.map((v) => v.slide.titulo);
     expect(titulos(story)).toEqual(titulos(feed));
-    expect(story.cards[0]!.variacoes.map((v) => v.escolhido)).toEqual([true, false]);
+    // A opção que a revisora prefere fica escolhida nos dois formatos.
+    expect(story.cards[0]!.variacoes.map((v) => v.escolhido)).toEqual(
+      feed.cards[0]!.variacoes.map((v) => v.escolhido),
+    );
+    expect(feed.cards[0]!.variacoes.filter((v) => v.escolhido)).toHaveLength(1);
     // A peça do story sai no tamanho do story.
     const img = await ler(`/carrosseis/${story.cards[0]!.variacoes[0]!.id}/slides/0?largura=320`).buffer();
     const m = await sharp(img.body as Buffer).metadata();
@@ -563,8 +577,14 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
     ).toString('base64');
     const fetchAntes = globalThis.fetch;
     const transparentes: string[] = [];
+    const elementos: string[] = [];
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
       const corpo = init.body;
+      const json = typeof corpo === 'string' ? (JSON.parse(corpo) as Record<string, unknown>) : null;
+      if (json?.background === 'transparent') {
+        elementos.push(String(json.prompt));
+        return new Response(JSON.stringify({ data: [{ b64_json: recorte }] }), { status: 200 });
+      }
       if (corpo instanceof FormData && corpo.get('background') === 'transparent') {
         transparentes.push(String(corpo.get('output_format')));
         return new Response(
@@ -591,8 +611,30 @@ describe.skipIf(!URL_TESTE)('v132: imagens nos carrosséis (com Postgres)', () =
       );
       const vs = lote.cards[0].variacoes as {
         id: number;
-        slide: { modelo: string; fotoId: number; composicao: string; fundo: string; destaque: string };
+        escolhido: boolean;
+        visual: { nota: number; comentario: string; preferida: boolean } | null;
+        slide: {
+          modelo: string;
+          fotoId: number;
+          composicao: string;
+          fundo: string;
+          destaque: string;
+          elementoIds?: number[];
+        };
       }[];
+      // v153: um elemento em 3D por card (o mesmo nas duas opções), fora da biblioteca de fotos.
+      expect(elementos).toHaveLength(1);
+      expect(elementos[0]).toContain('a car brake disc');
+      expect(vs[0]!.slide.elementoIds).toHaveLength(1);
+      expect(vs[1]!.slide.elementoIds).toEqual(vs[0]!.slide.elementoIds);
+      expect((await ler('/carrosseis/fotos')).body.fotos.map((f: { id: number }) => f.id)).not.toContain(
+        vs[0]!.slide.elementoIds![0],
+      );
+      // v153: a revisora deu a nota de cada opção pronta e a que ela prefere ficou escolhida.
+      expect(vs.map((v) => [v.visual?.nota, v.visual?.preferida, v.escolhido])).toEqual([
+        [4.1, false, false],
+        [4.6, true, true],
+      ]);
       expect(vs.map((v) => [v.slide.modelo, v.slide.composicao, v.slide.fundo])).toEqual([
         ['camadas', 'lado', 'auto'],
         ['camadas', 'base', 'destaque'],

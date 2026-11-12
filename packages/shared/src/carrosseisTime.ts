@@ -348,6 +348,11 @@ export const pedidoTimeEntrada = z
     usarFotos: z.boolean().default(true),
     /** v132: a IA pode gerar as imagens que faltarem (sem texto, na paleta da marca). */
     gerarImagens: z.boolean().default(false),
+    /**
+     * v153: a capa "em camadas" quando ela tem foto da empresa (a IA tira o fundo e o sistema monta a
+     * capa sobre a cor da marca). As imagens geradas do carrossel seguem o estilo da primeira.
+     */
+    capaEmCamadas: z.boolean().default(true),
     /** v132: a foto do produto (das fotos da empresa): a capa usa o produto num cenário novo. */
     fotoProdutoId: z.number().int().positive().nullable().default(null),
     /** v132: um post de que a empresa gostou (inspira o clima e a composição; nunca é copiado). */
@@ -524,6 +529,14 @@ export interface RelatorioTime {
   chamada: ChamadaFinal;
   palavra: string;
   modelo: string;
+  /** v153: o que a revisora achou da peça pronta, comparada com as outras opções do card. */
+  visual?: NotaVisual | null;
+}
+/** A nota da peça pronta (1 a 5), o comentário para a pessoa e se é a opção que a revisora prefere. */
+export interface NotaVisual {
+  nota: number;
+  comentario: string;
+  preferida: boolean;
 }
 
 export const avisoResolverEntrada = z.object({ acao: z.enum(['usar', 'manter']) });
@@ -848,6 +861,8 @@ export const pedidoCardsEntrada = z
      * foto e o sistema escreve o texto por cima da cor da marca (o texto nunca sai errado).
      */
     camadas: z.boolean().default(true),
+    /** v153: um objeto em 3D feito pela IA em cada peça em camadas (mais uma imagem por card). */
+    elementos: z.boolean().default(true),
   })
   .refine((d) => d.assunto.length >= 3 || d.divulgarId != null, {
     message: 'Diga o que os cards precisam dizer (ou escolha o que divulgar).',
@@ -881,6 +896,8 @@ export interface VariacaoCard {
   situacao: string;
   slide: SlideCarrossel | null;
   estilo: EstiloCarrossel;
+  /** v153: a nota da revisora para esta opção (null: sem nota). */
+  visual?: NotaVisual | null;
 }
 
 /** Os cards de um pedido, como a aba Cards avulsos mostra. */

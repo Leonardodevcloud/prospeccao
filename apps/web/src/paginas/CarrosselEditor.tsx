@@ -229,6 +229,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
           identidade,
           estilo: r.estilo,
           foto: x.fotoId && MODELO[x.modelo].foto ? urlFoto(x.fotoId) : null,
+          elementos: (x.elementoIds ?? []).map((id) => ({ src: urlFoto(id, 480) })),
           ...logos,
           formato,
         }),
@@ -348,6 +349,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
           identidade,
           estilo: r.estilo,
           foto: x.fotoId && MODELO[x.modelo].foto ? urlFoto(x.fotoId) : null,
+          elementos: (x.elementoIds ?? []).map((id) => ({ src: urlFoto(id, 480) })),
           ...logos,
           formato,
         }).no,
@@ -791,6 +793,19 @@ function CamadasDaPeca(props: {
       setFotos(false);
     },
   });
+  const elemento = useMutation({
+    mutationFn: () =>
+      api<{ foto: { id: number } }>('/carrosseis/elementos', {
+        metodo: 'POST',
+        corpo: {
+          titulo: props.slide.titulo.replace(/\*/g, ''),
+          destaque: props.slide.destaque,
+          texto: props.slide.texto,
+        },
+      }),
+    onSuccess: (r) => props.aoMudar({ elementoIds: [r.foto.id] }),
+  });
+  const temElemento = (props.slide.elementoIds ?? []).length > 0;
   const composicao = props.slide.composicao ?? 'lado';
   return (
     <div className="campo painel-slide__arte">
@@ -841,6 +856,38 @@ function CamadasDaPeca(props: {
         <FotosDaEmpresa escolhida={null} escolher={(id) => recortar.mutate(id)} />
       )}
       <ErroDaApi erro={recortar.error} />
+      {props.imagens && (
+        <div className="acoes">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            icon="sparkles"
+            disabled={elemento.isPending || !props.slide.titulo.trim()}
+            onClick={() => elemento.mutate()}
+          >
+            {elemento.isPending
+              ? 'Fazendo o elemento… (até 2 min)'
+              : temElemento
+                ? 'Outro elemento em 3D'
+                : 'Pôr um elemento em 3D'}
+          </Button>
+          {temElemento && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => props.aoMudar({ elementoIds: [] })}
+            >
+              Tirar o elemento
+            </Button>
+          )}
+        </div>
+      )}
+      {temElemento && props.slide.fundo === 'destaque' && (
+        <p className="quieto">O elemento é da cor de destaque: sobre o fundo de destaque ele não aparece.</p>
+      )}
+      <ErroDaApi erro={elemento.error} />
     </div>
   );
 }

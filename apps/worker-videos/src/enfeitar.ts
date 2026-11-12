@@ -14,6 +14,7 @@ import {
   enfeitesPelasRegras,
   type FotoParaIa,
   GANHO_EFEITO,
+  musicaPorPartes,
   type ParteMusica,
   type PromocaoParaIa,
   partesDaMusica,
@@ -383,12 +384,13 @@ export async function prepararMusica(
       return { som, arquivo: destino };
     }
     const segundos = Math.ceil(e.total + 0.5);
+    const partes = partesDaMusica({ total: segundos, ofertaEm: e.ofertaEm, chamadaEm: e.chamadaEm });
     const mp3 = await deps.comporMusica({
       clima: m.clima,
       descricao: m.descricao,
       estilo: m.estiloIa,
       segundos,
-      partes: partesDaMusica({ total: segundos, ofertaEm: e.ofertaEm, chamadaEm: e.chamadaEm }),
+      partes,
     });
     custos.musicaSeg += segundos;
     custos.musicaUsd += (segundos / 60) * deps.custoMusicaMinutoUsd;
@@ -396,7 +398,13 @@ export async function prepararMusica(
     await deps.arm.enviar(chave, mp3, 'audio/mpeg');
     if (m.chave?.startsWith('videos/')) await deps.arm.apagar([m.chave]).catch(() => undefined);
     await writeFile(destino, mp3);
-    Object.assign(m, { chave, segundos: e.total, pedirOutra: false, erro: null });
+    Object.assign(m, {
+      chave,
+      segundos: e.total,
+      pedirOutra: false,
+      erro: null,
+      partes: musicaPorPartes(mp3) ? partes : null,
+    });
     return { som, arquivo: destino };
   } catch (erro) {
     const recusado = (erro as { detalhes?: { pedidoRecusado?: boolean } }).detalhes?.pedidoRecusado;

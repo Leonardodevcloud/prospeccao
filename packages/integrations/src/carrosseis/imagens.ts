@@ -98,15 +98,26 @@ export function promptDoCenario(cena: string, e: EstiloDaImagem, formato: Format
     .join('\n');
 }
 
+/**
+ * v153: a âncora de estilo do carrossel. A primeira imagem gerada vai como referência das seguintes,
+ * para o carrossel parecer uma peça só (mesma luz, cor, lente e clima), com outra cena.
+ */
+export const LINHA_DA_ANCORA =
+  'STYLE ANCHOR: the input image is another slide of this same carousel. Create a NEW photograph of the scene described above (different subject and composition) that clearly belongs to the same shoot: same color palette, lighting direction and quality, lens look, color grading and mood. Do not copy its subject, framing or any object from it.';
+
 export async function gerarImagemDoSlide(
   cfg: ConfigImagem,
   descricao: string,
   e: EstiloDaImagem,
   formato: FormatoPeca = 'feed',
+  estiloDe: Uint8Array | null = null,
 ) {
   return pedirImagem(cfg, {
-    prompt: promptDaImagemDoSlide(descricao, e, formato),
+    prompt: estiloDe
+      ? `${promptDaImagemDoSlide(descricao, e, formato)}\n${LINHA_DA_ANCORA}`
+      : promptDaImagemDoSlide(descricao, e, formato),
     ...tamanhoDaImagem(formato),
+    ...(estiloDe ? { referencia: estiloDe } : {}),
   });
 }
 

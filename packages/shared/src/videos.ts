@@ -335,6 +335,25 @@ export interface EfeitoVideo {
   onde: string;
 }
 
+/** v152/v153: as partes do vídeo que a música acompanha (uma parte, um trecho composto para ela). */
+export type NomeParteMusica = 'gancho' | 'explicacao' | 'oferta' | 'chamada';
+export interface ParteMusica {
+  nome: NomeParteMusica;
+  segundos: number;
+}
+export const ROTULO_PARTE_MUSICA: Record<NomeParteMusica, string> = {
+  gancho: 'Gancho',
+  explicacao: 'Explicação',
+  oferta: 'Oferta',
+  chamada: 'Chamada',
+};
+export const DICA_PARTE_MUSICA: Record<NomeParteMusica, string> = {
+  gancho: 'Entra já com a batida, para segurar os primeiros segundos.',
+  explicacao: 'Leve, por baixo da voz. A música abaixa sozinha quando você fala.',
+  oferta: 'Sobe quando a oferta aparece na tela.',
+  chamada: 'Fecha com um final limpo, junto com a chamada.',
+};
+
 export interface SomVideo {
   musica: {
     usar: boolean;
@@ -350,6 +369,8 @@ export interface SomVideo {
     pedirOutra: boolean;
     /** Por que a música não entrou (para a tela explicar). */
     erro: string | null;
+    /** v153: as partes em que a música foi composta (null ou ausente: uma faixa só). */
+    partes?: ParteMusica[] | null;
   };
   efeitos: { ligados: boolean; desligados: string[]; lista: EfeitoVideo[] };
 }

@@ -415,6 +415,24 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     res.json({ foto });
   });
 
+  /** v153: um elemento em 3D novo para a peça em camadas, pelo texto da peça. */
+  r.post('/elementos', async (req, res) => {
+    const d = corpo(
+      req,
+      z.object({
+        titulo: z.string().trim().min(1).max(160),
+        destaque: z.string().trim().max(24).default(''),
+        texto: z.string().trim().max(400).default(''),
+      }),
+    );
+    const i = ia();
+    if (!i || !imagensLigadas(i))
+      throw AppError.invalido('As imagens feitas pela IA ainda não estão ligadas. Fale com a gente.');
+    const foto = await imagens.fazerElemento(pool, i, conta(), d);
+    if (!foto) throw AppError.invalido('O elemento não saiu desta vez. Tente de novo.');
+    res.json({ foto });
+  });
+
   r.get('/fotos/:id/cenarios', async (req, res) => {
     res.json({ cenarios: await repo.cenariosDaFoto(pool, idDaRota(req)) });
   });
@@ -428,7 +446,7 @@ export function rotasCarrosseis(deps: DepsApi): Router {
     // v152: o recorte (PNG) mantém a transparência; as outras fotos saem em JPEG.
     const img = await prepararImagem(dados, {
       maxLado: largura,
-      manterTransparencia: f.origem === 'recorte',
+      manterTransparencia: f.origem === 'recorte' || f.origem === 'elemento',
     });
     res.setHeader('Content-Type', img.tipo);
     res.setHeader('Cache-Control', 'private, max-age=3600');

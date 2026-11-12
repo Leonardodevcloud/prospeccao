@@ -31,8 +31,9 @@ import { contratoDaConta } from '../../recursos.js';
 import { notificar } from '../notificacoes/repositorio.js';
 import * as aprender from './aprender.js';
 import * as cards from './cards.js';
+import { slideEmCamadas } from './cards.js';
 import * as cerebro from './cerebro.js';
-import { estiloDaConta, fazerImagem, imagensLigadas, tratarFotosDoPedido } from './imagens.js';
+import { estiloDaConta, fazerImagem, fazerRecorte, imagensLigadas, tratarFotosDoPedido } from './imagens.js';
 import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 
@@ -327,6 +328,7 @@ async function imagensDoPedido(
   if (!imagensLigadas(ia) || !(p.gerarImagens || p.fotoProdutoId)) return null;
   const produto = p.fotoProdutoId ? await repo.foto(db, p.fotoProdutoId) : null;
   const estilo = await estiloDaConta(db, p.referenciaId);
+  let ancora: Promise<Uint8Array | null> | null = null;
   return {
     gerar: p.gerarImagens,
     produto:
@@ -335,7 +337,19 @@ async function imagensDoPedido(
         : null,
     estiloReferencia: estilo.referencia ?? null,
     fazer: async (x) => {
-      const f = await fazerImagem(db, ia, l.conta_id, x, estilo, { criadoPor: l.criado_por });
+      // v153: a primeira imagem gerada dá o estilo das outras (o time pede todas juntas: as seguintes
+      // esperam a primeira ficar pronta e vão com ela de referência).
+      const primeira = x.tipo === 'gerar' && !ancora;
+      const estiloDe = x.tipo === 'gerar' && ancora ? await ancora : null;
+      const fazendo = fazerImagem(db, ia, l.conta_id, x, estilo, { criadoPor: l.criado_por, estiloDe });
+      if (primeira)
+        ancora = fazendo
+          .then(async (f) => {
+            const g = f ? await repo.foto(db, f.id) : null;
+            return g ? new Uint8Array(await ia.armazenamento!.ler(g.chave)) : null;
+          })
+          .catch(() => null);
+      const f = await fazendo;
       if (f) feitas.push(f.id);
       return f?.id ?? null;
     },
@@ -397,6 +411,29 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
     (etapa, detalhe) => avancar(db, l.id, etapa, detalhe),
   );
   const slides = await repo.conferirFotos(db, r.slides);
+  // v153: a capa em camadas. Com foto da empresa na capa, a IA tira o fundo e o sistema monta a capa
+  // sobre a cor da marca; se o recorte não sair ou o texto não couber, a capa fica como o time fez.
+  const capa = slides[0];
+  if (p.capaEmCamadas && imagensLigadas(ia) && capa?.modelo === 'capa' && capa.fotoId) {
+    const daCapa = fotos.find((f) => f.id === capa.fotoId) ?? (await repo.foto(db, capa.fotoId));
+    // O cenário do produto volta à foto do produto (é ela que se recorta); imagem gerada não se recorta.
+    const baseId =
+      daCapa?.origem === 'cenario'
+        ? (daCapa.baseFotoId ?? null)
+        : daCapa?.origem === 'gerada'
+          ? null
+          : capa.fotoId;
+    const recorte = baseId
+      ? await fazerRecorte(db, ia, l.conta_id, baseId, { criadoPor: l.criado_por }).catch(() => null)
+      : null;
+    const emCamadas = slideEmCamadas(capa, recorte, 0, {
+      identidade,
+      estilo,
+      formatos: ['feed'],
+      total: slides.length,
+    });
+    if (emCamadas) slides[0] = emCamadas;
+  }
   const carrosselId = await repo.criar(db, {
     titulo: r.titulo,
     estilo,

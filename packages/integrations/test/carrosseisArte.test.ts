@@ -370,4 +370,36 @@ describe('v152: peça em camadas, imagens e Claude', () => {
     });
     vi.unstubAllGlobals();
   });
+
+  it('v153: o sharp nunca é importado no topo (o worker-videos empacota este pacote e não tem o sharp)', async () => {
+    const { readFileSync, readdirSync } = await import('node:fs');
+    for (const pasta of ['carrosseis', 'videos', 'saber']) {
+      const dir = new URL(`../src/${pasta}/`, import.meta.url);
+      for (const f of readdirSync(dir).filter((x) => x.endsWith('.ts')))
+        expect(readFileSync(new URL(f, dir), 'utf8'), `${pasta}/${f}`).not.toMatch(/^import .*from 'sharp'/m);
+    }
+  });
+
+  it('v153: notas das opções (a preferida é a maior) e o pedido do elemento em 3D', async () => {
+    const c = await import('../src/carrosseis/camadas.js');
+    const notas = c.lerNotasDasOpcoes(
+      {
+        opcoes: [
+          { opcao: 2, nota: 4.64, comentario: ' b ' },
+          { opcao: 1, nota: 9, comentario: 'a' },
+        ],
+      },
+      2,
+    );
+    expect(notas).toEqual([
+      { nota: 5, comentario: 'a' },
+      { nota: 4.6, comentario: 'b' },
+    ]);
+    expect(c.opcaoPreferida(notas!)).toBe(0);
+    expect(c.lerNotasDasOpcoes({ opcoes: [{ opcao: 1, nota: 4, comentario: '' }] }, 2)).toBeNull();
+    const p = c.promptDoElemento('a car brake disc', '#FACC15');
+    expect(p).toContain('a car brake disc');
+    expect(p).toContain('#FACC15');
+    expect(p).toContain('transparent background');
+  });
 });

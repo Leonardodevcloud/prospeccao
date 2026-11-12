@@ -397,6 +397,8 @@ export const slideEntrada = z.object({
   fundo: z.enum(FUNDOS_SLIDE).default('auto'),
   /** v152: só no modelo "Em camadas" (sem valor: a foto ao lado do texto). */
   composicao: z.enum(COMPOSICOES_CAMADAS).optional(),
+  /** v153: os elementos em 3D da peça em camadas (PNG transparente feito pela IA), até 2. */
+  elementoIds: z.array(z.number().int().positive()).max(2).optional(),
 });
 export type SlideCarrossel = z.infer<typeof slideEntrada>;
 
@@ -479,9 +481,11 @@ export type OrigemFoto =
   | 'melhorada'
   | 'arte'
   /** v152: a foto da empresa com o fundo tirado (PNG transparente), a camada da peça "Em camadas". */
-  | 'recorte';
+  | 'recorte'
+  /** v153: um objeto em 3D feito pela IA (PNG transparente), enfeite da peça "Em camadas". */
+  | 'elemento';
 /** As origens que não são fotos da biblioteca (não aparecem para escolher num slide). */
-export const ORIGENS_FORA_DA_BIBLIOTECA: OrigemFoto[] = ['referencia', 'arte', 'recorte'];
+export const ORIGENS_FORA_DA_BIBLIOTECA: OrigemFoto[] = ['referencia', 'arte', 'recorte', 'elemento'];
 
 export interface FotoCarrossel {
   id: number;
@@ -925,6 +929,8 @@ export interface EntradaMontar {
   formato?: FormatoPeca;
   /** v152: o tamanho da foto (no modelo "Em camadas", o recorte encosta na base sem sobrar espaço). */
   fotoMedidas?: { largura: number; altura: number } | null;
+  /** v153: os elementos em 3D da peça em camadas (data URL no servidor, endereço no navegador). */
+  elementos?: { src: string }[];
 }
 
 export interface SlideMontado {
@@ -1047,6 +1053,7 @@ interface Contexto {
   tipoFundo: TipoFundo;
   foto: string | null;
   fotoMedidas: { largura: number; altura: number } | null;
+  elementos: { src: string }[];
   logo: LogoSlide | null;
   avisos: string[];
 }
@@ -2093,6 +2100,27 @@ function camadas(c: Contexto): No {
       },
     },
   };
+  // v153: os elementos em 3D. O maior fica na frente da foto, na borda dela que dá para o texto; o
+  // menor, atrás, no alto da área da foto. Sempre fora da coluna do texto.
+  const fotoX = M.largura - fotoL - (naBase ? 24 : 0);
+  const fotoY = M.altura - fotoA - pe;
+  const elemento = (src: string, lado: number, left: number, top: number): No => ({
+    type: 'img',
+    props: {
+      src,
+      width: lado,
+      height: lado,
+      style: { position: 'absolute', left, top, width: lado, height: lado, objectFit: 'contain' },
+    },
+  });
+  // Sobre a cor de destaque o elemento (que é da cor de destaque) sumiria: a peça fica sem ele.
+  const [el1, el2] = c.tipoFundo === 'destaque' ? [] : c.elementos;
+  const naFrente = el1
+    ? elemento(el1.src, naBase ? 200 : 230, fotoX - (naBase ? 150 : 96), fotoY + Math.round(fotoA * 0.5))
+    : null;
+  const atras = el2
+    ? elemento(el2.src, 150, M.largura - 150 - 36, Math.max(M.topo, fotoY - (naBase ? 60 : 110)))
+    : null;
   const claroSobre = contraste(c.cores.fundo, BRANCO) >= 3;
   const forma = Math.round(M.largura * (naBase ? 0.7 : 0.78));
   const circulo = div({
@@ -2105,7 +2133,8 @@ function camadas(c: Contexto): No {
     backgroundColor: misturar(c.cores.fundo, claroSobre ? BRANCO : PRETO, claroSobre ? 0.12 : 0.07),
   });
   const largura = naBase ? MIOLO : Math.round(M.largura * 0.5) - LADO + 44;
-  const logo = logoNo(c, ALTURA_LOGO_CARD);
+  // No card a logo vai sempre; na capa de um carrossel, só com "logo na capa" ligado na identidade.
+  const logo = sozinho(c) || c.id.logoNaCapa ? logoNo(c, ALTURA_LOGO_CARD) : null;
   const selo = sobretituloNo({ ...c, tema: { ...c.tema, selo: true } }, s.sobretitulo);
   const alturaTexto = M.altura - M.topo - M.base;
   const fixo =
@@ -2206,7 +2235,9 @@ function camadas(c: Contexto): No {
       backgroundColor: c.cores.fundo,
     },
     circulo,
+    atras,
     recorte,
+    naFrente,
     coluna,
   );
 }
@@ -2292,6 +2323,7 @@ export function montarSlide(e: EntradaMontar): SlideMontado {
     tipoFundo,
     foto: MODELO[s.modelo].foto ? (e.foto ?? null) : null,
     fotoMedidas: e.fotoMedidas ?? null,
+    elementos: s.modelo === 'camadas' ? (e.elementos ?? []).slice(0, 2) : [],
     logo,
     avisos,
   };

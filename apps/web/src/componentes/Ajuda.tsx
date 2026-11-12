@@ -1373,13 +1373,17 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <p>
           <b>Imagens feitas pela IA</b> (no pedido ao time, em <b>Imagens</b>): ligue{' '}
           <b>A IA pode gerar as imagens que faltarem</b> para o time pôr, onde nenhuma foto combina, até 3
-          imagens sem texto e nas cores da marca. Em <b>Foto do produto para a capa</b>, escolha a foto do
-          produto: ele fica igual e a IA troca só o fundo e a luz. Em <b>Referência de estilo</b>, envie um
-          post de que você gostou: o time usa a composição e o clima, com as suas cores e fontes, sem copiar a
-          arte de ninguém. Cada imagem passa pelo <b>revisor visual</b> (produto igual, sem texto nem marca
-          estranha); a reprovada não entra. No editor, no slide com a foto de um produto,{' '}
-          <b>Cenários para o produto</b> faz mais três para você escolher. As imagens da IA ficam nas Fotos da
-          empresa com a marca “gerada IA” ou “cenário IA” e não contam no limite de 60.
+          imagens sem texto e nas cores da marca; a primeira dá o estilo das outras (luz, cor e clima), para o
+          carrossel parecer uma peça só. Com <b>Capa em camadas</b> ligado e uma foto da empresa na capa, a IA
+          tira o fundo da foto e o sistema monta a capa sobre a cor da marca, com o título escrito por ele (se
+          o recorte não sair ou o título não couber, a capa fica no modelo de sempre). Em{' '}
+          <b>Foto do produto para a capa</b>, escolha a foto do produto: ele fica igual e a IA troca só o
+          fundo e a luz. Em <b>Referência de estilo</b>, envie um post de que você gostou: o time usa a
+          composição e o clima, com as suas cores e fontes, sem copiar a arte de ninguém. Cada imagem passa
+          pelo <b>revisor visual</b> (produto igual, sem texto nem marca estranha); a reprovada não entra. No
+          editor, no slide com a foto de um produto, <b>Cenários para o produto</b> faz mais três para você
+          escolher. As imagens da IA ficam nas Fotos da empresa com a marca “gerada IA” ou “cenário IA” e não
+          contam no limite de 60.
         </p>
         <h3>8. Editar, conferir e postar</h3>
         <Passos>
@@ -1548,7 +1552,15 @@ export const ARTIGOS: ArtigoAjuda[] = [
             principal; a outra, embaixo, sobre a cor de destaque. No editor, em <b>Peça em camadas</b>, troque
             onde a foto entra e a própria foto (<b>Trocar a foto</b> pede um recorte novo; a mesma foto é
             recortada uma vez só e reaproveitada). Foto de fachada, rua ou ambiente inteiro não serve para
-            recortar: nesse caso, ou sem foto, o card fica nos modelos de sempre.
+            recortar: nesse caso, ou sem foto, o card fica nos modelos de sempre. Com{' '}
+            <b>Um elemento em 3D na peça em camadas</b> ligado, a IA faz também um objeto ligado ao assunto,
+            na cor de destaque, sem letra nem marca (é mais uma imagem por card; sobre o fundo de destaque ele
+            não aparece). No editor, <b>Outro elemento em 3D</b> troca e <b>Tirar o elemento</b> remove.
+          </li>
+          <li>
+            Com duas ou mais opções prontas, a revisora olha as peças finais (como aparecem no celular) e dá
+            uma <b>nota de 1 a 5</b> a cada uma, com um comentário. A que ela prefere já vem escolhida; a
+            escolha final é sua: clique em outra para trocar.
           </li>
           <li>
             Com <b>Uma arte desenhada pela IA em cada card</b> ligado (vem desligado), cada card ganha mais
@@ -1767,7 +1779,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
           <li>
             Na aba <b>Som</b>, ouça a música, troque o clima ou descreva o estilo (sem nome de artista: a
             música é sempre original), mude o volume, peça <b>Fazer outra música</b> ou desligue. Os efeitos
-            aparecem um por um, com <b>Ouvir</b> e <b>Tirar</b>.
+            aparecem um por um, com <b>Ouvir</b> e <b>Tirar</b>. Em vídeos de 14 segundos ou mais, a música é
+            composta por partes e a aba mostra <b>A música acompanha o vídeo</b>: entra no gancho, fica leve
+            por baixo da explicação, sobe quando a oferta aparece e fecha junto com a chamada.
           </li>
           <li>
             Tudo fica salvo na hora. Para o vídeo mudar, clique em <b>Gerar de novo com as mudanças</b>: leva

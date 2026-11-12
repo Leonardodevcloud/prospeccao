@@ -2,6 +2,7 @@ import {
   CLIMAS_MUSICA,
   type ClimaMusica,
   type DetalheVideo,
+  DICA_PARTE_MUSICA,
   type EfeitoVideo,
   type EncaixeImagem,
   fmtDuracao,
@@ -9,10 +10,12 @@ import {
   type ImagemVideo,
   type MomentoVideo,
   momentosDe,
+  type ParteMusica,
   ROTULO_EFEITO,
   ROTULO_IMAGEM_POSTA,
   ROTULO_MOMENTO,
   ROTULO_ORIGEM_IMAGEM,
+  ROTULO_PARTE_MUSICA,
   tempoNoEditado,
   trechosQueFicam,
 } from '@prospeccao/shared/videos';
@@ -609,6 +612,45 @@ export function AbaSomCompleta({ v, situacao }: { v: DetalheVideo; situacao: Sit
   );
 }
 
+/** v153: as partes em que a música foi composta, com o tempo de cada uma no vídeo. */
+function PartesDaMusica(props: { partes: ParteMusica[] }) {
+  const tempo = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  let inicio = 0;
+  const linhas = props.partes.map((p) => {
+    const de = inicio;
+    inicio += p.segundos;
+    return { ...p, de, ate: inicio };
+  });
+  // Trechos seguidos da mesma parte (a explicação longa é composta em mais de um) viram uma linha só.
+  const juntas = linhas.reduce<typeof linhas>((l, p) => {
+    const ultima = l.at(-1);
+    if (ultima && ultima.nome === p.nome) ultima.ate = p.ate;
+    else l.push({ ...p });
+    return l;
+  }, []);
+  return (
+    <div className="campo">
+      <span className="campo__rotulo">A música acompanha o vídeo</span>
+      <ul
+        className="lista-simples"
+        style={{ display: 'grid', gap: 6, margin: 0, padding: 0, listStyle: 'none' }}
+      >
+        {juntas.map((p) => (
+          <li key={`${p.nome}-${p.de}`}>
+            <span className="dado">
+              {tempo(p.de)} a {tempo(p.ate)}
+            </span>{' '}
+            <b>{ROTULO_PARTE_MUSICA[p.nome]}</b>
+            <span className="campo__dica" style={{ display: 'block' }}>
+              {DICA_PARTE_MUSICA[p.nome]}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function Musica({ v, liberada }: { v: DetalheVideo; liberada: boolean }) {
   const m = v.som!.musica;
   const revisao = useRevisao(v.id);
@@ -660,6 +702,7 @@ function Musica({ v, liberada }: { v: DetalheVideo; liberada: boolean }) {
           </span>
         </div>
       )}
+      {m.usar && arq.data && m.partes && m.partes.length > 1 && <PartesDaMusica partes={m.partes} />}
       {m.pedirOutra && m.usar && (
         <span className="campo__dica video__pendente">Uma música nova sai quando você gerar de novo.</span>
       )}
