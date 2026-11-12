@@ -443,3 +443,75 @@ describe('v152: peça em camadas, imagens e Claude', () => {
     expect((await acabarRecorte(jpg, 'sombra')).folga).toBe(0);
   });
 });
+
+describe('ícones 3D prontos (v156)', () => {
+  it('o catálogo não repete código e todo ícone tem nome em português e endereço', async () => {
+    const { ICONES_PRONTOS, enderecoDoIcone, LISTA_ICONES } = await import('../src/carrosseis/icones.js');
+    const slugs = ICONES_PRONTOS.map((i) => i.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    expect(slugs.length).toBeGreaterThan(60);
+    for (const i of ICONES_PRONTOS) {
+      expect(i.nome.length).toBeGreaterThan(2);
+      expect(enderecoDoIcone(i.slug)).toMatch(/^https:\/\/.+\/clay\/[a-z0-9-]+-dynamic-clay\.png$/);
+    }
+    expect(LISTA_ICONES).toContain('megaphone = megafone');
+  });
+
+  it('a escolha do diretor só aceita ícone do catálogo e guarda o objeto de reserva', async () => {
+    const { lerElementoEscolhido } = await import('../src/carrosseis/camadas.js');
+    expect(lerElementoEscolhido({ icone: 'megaphone', objeto: 'a megaphone' })).toEqual({
+      icone: 'megaphone',
+      objeto: 'a megaphone',
+    });
+    expect(lerElementoEscolhido({ icone: 'inventado', objeto: 'a car brake disc' })).toEqual({
+      icone: null,
+      objeto: 'a car brake disc',
+    });
+    expect(lerElementoEscolhido({ icone: '', objeto: '' })).toBeNull();
+  });
+
+  it('tingir leva a argila para a cor da marca, guarda o volume e não mexe na transparência', async () => {
+    const { tingirPontos } = await import('../src/carrosseis/icones.js');
+    // sombra, argila cheia, brilho, e um ponto transparente
+    const pontos = new Uint8Array([60, 60, 60, 255, 214, 214, 214, 255, 255, 255, 255, 200, 9, 9, 9, 0]);
+    const t = tingirPontos(pontos, '#ff6600');
+    const [sombra, cheia, brilho] = [t.slice(0, 4), t.slice(4, 8), t.slice(8, 12)];
+    // argila cheia = a cor da marca
+    expect(Math.abs((cheia[0] ?? 0) - 255)).toBeLessThan(6);
+    expect(Math.abs((cheia[1] ?? 0) - 102)).toBeLessThan(6);
+    expect(cheia[2]).toBeLessThan(6);
+    // a sombra é a mesma cor, mais escura (nunca cinza)
+    expect(sombra[0]).toBeLessThan(cheia[0] ?? 0);
+    expect(sombra[0]).toBeGreaterThan((sombra[2] ?? 0) + 40);
+    // o brilho clareia
+    expect(brilho[1]).toBeGreaterThan(cheia[1] ?? 0);
+    expect([t[3], t[7], t[11], t[15]]).toEqual([255, 255, 200, 0]);
+    expect([t[12], t[13], t[14]]).toEqual([0, 0, 0]);
+  });
+
+  it('tingirIcone devolve PNG transparente do mesmo tamanho', async () => {
+    const sharp = (await import('sharp')).default;
+    const { tingirIcone } = await import('../src/carrosseis/icones.js');
+    const base = await sharp({
+      create: { width: 80, height: 60, channels: 4, background: { r: 210, g: 210, b: 210, alpha: 0 } },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: { width: 40, height: 30, channels: 4, background: { r: 214, g: 214, b: 214, alpha: 1 } },
+          })
+            .png()
+            .toBuffer(),
+        },
+      ])
+      .png()
+      .toBuffer();
+    const tinto = await tingirIcone(new Uint8Array(base), '#7c3aed');
+    const { data, info } = await sharp(tinto).raw().toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height, info.channels]).toEqual([80, 60, 4]);
+    const meio = (30 * 80 + 40) * 4;
+    expect(Math.abs((data[meio] ?? 0) - 0x7c)).toBeLessThan(8);
+    expect(data[meio + 3]).toBe(255);
+    expect(data[3]).toBe(0);
+  });
+});

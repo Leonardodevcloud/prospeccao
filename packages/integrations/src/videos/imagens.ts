@@ -86,7 +86,8 @@ export function promptDaImagem(descricao: string, formato: 'cheia' | 'acima'): s
       : 'Composição: o assunto ocupa a maior parte do quadro, de perto, fundo limpo e desfocado, como foto de catálogo bem-feita.',
     'Cenário brasileiro quando houver lugar, rua ou carro (carros, ruas, lojas e oficinas como são no Brasil).',
     'Proibido: qualquer texto, letra, número, placa legível, logotipo, marca, embalagem de marca, marca d’água e moldura.',
-    'Sem rosto de pessoa em destaque (pessoas só de costas, de longe ou só as mãos).',
+    // v156: pessoas liberadas quando combinam com a cena (o revisor reprova rosto ou mão com defeito).
+    'Pessoas podem aparecer quando combinam com a cena (inclusive de frente e em destaque): adultos, com jeito brasileiro, expressão natural, pele, olhos, dentes e mãos de foto de verdade. Nunca uma pessoa real ou famosa, nunca crianças.',
     'Cores naturais, nitidez boa, sem aparência de ilustração.',
   ].join('\n');
 }
@@ -250,7 +251,15 @@ const ESQUEMA_CONFERENCIA = {
       description: 'Aparece qualquer letra, número ou texto, mesmo pequeno ou borrado.',
     },
     tem_marca: { type: 'boolean', description: 'Aparece logotipo, marca ou embalagem reconhecível.' },
-    rosto_em_destaque: { type: 'boolean', description: 'Um rosto de pessoa aparece de frente e grande.' },
+    pessoa_com_defeito: {
+      type: 'boolean',
+      description:
+        'Há pessoa com defeito de imagem gerada: rosto, olhos ou dentes estranhos, pele de plástico, mãos com dedos a mais ou a menos, corpo deformado. Sem pessoa na imagem: false.',
+    },
+    pessoa_conhecida: {
+      type: 'boolean',
+      description: 'Aparece uma pessoa famosa ou que parece ser alguém real e conhecido, ou uma criança.',
+    },
     defeito: {
       type: 'boolean',
       description:
@@ -263,7 +272,15 @@ const ESQUEMA_CONFERENCIA = {
       description: 'Cada problema em uma frase curta, em português.',
     },
   },
-  required: ['tem_texto', 'tem_marca', 'rosto_em_destaque', 'defeito', 'combina', 'problemas'],
+  required: [
+    'tem_texto',
+    'tem_marca',
+    'pessoa_com_defeito',
+    'pessoa_conhecida',
+    'defeito',
+    'combina',
+    'problemas',
+  ],
 } as const;
 
 export interface ConferenciaImagem {
@@ -271,7 +288,10 @@ export interface ConferenciaImagem {
   problemas: string[];
 }
 
-/** Um modelo de visão olha a imagem gerada: sem texto, sem marca, sem rosto em destaque, sem defeito. */
+/**
+ * Um modelo de visão olha a imagem gerada: sem texto, sem marca, sem defeito. v156: pessoa pode (de
+ * frente também), desde que sem defeito de imagem gerada e sem ser alguém conhecido nem criança.
+ */
 export async function conferirImagem(
   claude: ClienteClaude,
   e: { jpeg: Uint8Array; descricao: string },
@@ -281,7 +301,7 @@ export async function conferirImagem(
     sistema: [
       {
         texto:
-          'Você confere imagens geradas por IA antes de entrarem num vídeo de uma empresa. Seja rigoroso: qualquer letra ou número visível, marca, rosto de frente em destaque ou defeito reprova.',
+          'Você confere imagens geradas por IA antes de entrarem num vídeo ou post de uma empresa. Seja rigoroso: qualquer letra ou número visível, marca ou defeito reprova. Pessoas podem aparecer, inclusive de frente; olhe rosto, olhos, dentes e mãos com atenção: qualquer coisa estranha, pele de plástico ou dedo a mais reprova, assim como pessoa famosa ou criança.',
       },
     ],
     imagens: [{ tipo: 'image/jpeg', base64: Buffer.from(e.jpeg).toString('base64') }],
@@ -297,11 +317,18 @@ export async function conferirImagem(
   });
   const d = r.dados;
   const problemas = (Array.isArray(d.problemas) ? d.problemas : []).map((p) => String(p).slice(0, 160));
-  const aprovada = !d.tem_texto && !d.tem_marca && !d.rosto_em_destaque && !d.defeito && d.combina !== false;
+  const aprovada =
+    !d.tem_texto &&
+    !d.tem_marca &&
+    !d.pessoa_com_defeito &&
+    !d.pessoa_conhecida &&
+    !d.defeito &&
+    d.combina !== false;
   if (!aprovada && !problemas.length) {
     if (d.tem_texto) problemas.push('Apareceu texto na imagem.');
     if (d.tem_marca) problemas.push('Apareceu uma marca na imagem.');
-    if (d.rosto_em_destaque) problemas.push('Apareceu um rosto em destaque.');
+    if (d.pessoa_com_defeito) problemas.push('A pessoa da imagem saiu com defeito (rosto ou mãos).');
+    if (d.pessoa_conhecida) problemas.push('Apareceu uma pessoa conhecida ou uma criança.');
     if (d.defeito) problemas.push('A imagem tem um defeito.');
     if (d.combina === false) problemas.push('A imagem não mostra a cena pedida.');
   }

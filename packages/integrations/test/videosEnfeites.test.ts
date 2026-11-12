@@ -445,12 +445,14 @@ describe('som', () => {
 describe('imagens', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('o pedido proíbe texto, marca e rosto em destaque', () => {
+  it('o pedido proíbe texto e marca; pessoas podem, menos famosa e criança (v156)', () => {
     const p = promptDaImagem('oficina de carro', 'cheia');
     expect(p).toContain('vertical');
     expect(p).toMatch(/texto/);
     expect(p).toMatch(/logotipo/);
-    expect(p).toMatch(/rosto/);
+    expect(p).toMatch(/Pessoas podem aparecer/);
+    expect(p).toMatch(/Nunca uma pessoa real ou famosa, nunca crianças/);
+    expect(p).not.toMatch(/Sem rosto/);
   });
 
   it('gera pelo GPT Image 2 em qualidade média, no tamanho do encaixe', async () => {
@@ -499,7 +501,8 @@ describe('imagens', () => {
     const ok = {
       tem_texto: false,
       tem_marca: false,
-      rosto_em_destaque: false,
+      pessoa_com_defeito: false,
+      pessoa_conhecida: false,
       defeito: false,
       combina: true,
       problemas: [],

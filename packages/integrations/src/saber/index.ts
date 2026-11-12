@@ -39,6 +39,13 @@ export const FONTES_DO_SABER = [
     url: 'https://github.com/coreyhaines31/marketingskills',
     licenca: 'MIT',
   },
+  { nome: 'Travis Neuman · graphic-design', url: 'https://github.com/travisjneuman/.claude', licenca: 'MIT' },
+  {
+    nome: 'Sanket Dongre · vibe-building-skills',
+    url: 'https://github.com/sanky369/vibe-building-skills',
+    licenca: 'MIT',
+  },
+  { nome: 'realvjy · 3dicons (ícones 3D)', url: 'https://github.com/realvjy/3dicons', licenca: 'CC0 1.0' },
   { nome: 'HeyGen · HyperFrames', url: 'https://github.com/heygen-com/hyperframes', licenca: 'Apache 2.0' },
   {
     nome: 'Rob Palmer · claude-code-copywriting-skills',

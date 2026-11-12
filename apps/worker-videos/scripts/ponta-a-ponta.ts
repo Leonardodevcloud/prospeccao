@@ -154,7 +154,8 @@ const claudeDeMentira = (): ClienteClaude => ({
       return r({
         tem_texto: false,
         tem_marca: false,
-        rosto_em_destaque: false,
+        pessoa_com_defeito: false,
+        pessoa_conhecida: false,
         defeito: false,
         combina: true,
         problemas: [],

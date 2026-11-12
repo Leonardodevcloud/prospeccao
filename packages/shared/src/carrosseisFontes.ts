@@ -37,6 +37,12 @@ export const FONTES_SLIDES: FonteSlide[] = [
   { familia: 'Playfair Display', peso: 800, pacote: '@fontsource/playfair-display' },
   { familia: 'Lato', peso: 400, pacote: '@fontsource/lato' },
   { familia: 'Lato', peso: 700, pacote: '@fontsource/lato' },
+  // v156: três pares a mais, os que mais aparecem em post de marca no Brasil.
+  { familia: 'Poppins', peso: 700, pacote: '@fontsource/poppins' },
+  { familia: 'Poppins', peso: 800, pacote: '@fontsource/poppins' },
+  { familia: 'Montserrat', peso: 800, pacote: '@fontsource/montserrat' },
+  { familia: 'Montserrat', peso: 900, pacote: '@fontsource/montserrat' },
+  { familia: 'Bebas Neue', peso: 400, pacote: '@fontsource/bebas-neue' },
 ];
 
 /** Chave da fonte nas tabelas de medida ("Inter 400"). */

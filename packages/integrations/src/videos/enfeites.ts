@@ -134,7 +134,7 @@ const ESQUEMA_ENFEITES = {
           gerar: {
             type: 'string',
             description:
-              'Se nenhuma foto da empresa serve: a cena a gerar, em português, genérica (sem produto de marca, sem texto, sem rosto em destaque). Vazio se usar foto.',
+              'Se nenhuma foto da empresa serve: a cena a gerar, em português, genérica (sem produto de marca e sem texto; pessoas podem aparecer se combinam). Vazio se usar foto.',
           },
           encaixe: {
             type: 'string',
@@ -182,7 +182,7 @@ Proponha o que entra em cima da fala para o vídeo prender e explicar melhor, se
 
 Imagens:
 - Só onde a fala cita algo concreto que a imagem mostra (produto, número, comparação, lugar, situação). Frase de opinião, emoção ou conversa direta com quem assiste fica sem imagem: o rosto é o que convence.
-- Use primeiro as fotos da empresa (foto_id) quando a descrição bate com a fala. Gere (gerar) só cenas genéricas que a empresa não tem: estrada, oficina, carro na chuva, mãos trabalhando. Nunca gere o produto que a empresa vende como se fosse real, nem marca, embalagem, texto ou rosto em destaque.
+- Use primeiro as fotos da empresa (foto_id) quando a descrição bate com a fala. Gere (gerar) só cenas genéricas que a empresa não tem: estrada, oficina, carro na chuva, mãos trabalhando. Nunca gere o produto que a empresa vende como se fosse real, nem marca, embalagem ou texto. Pessoas podem aparecer quando combinam com a fala (nunca pessoa real ou famosa nem criança).
 - Nada nos 2 primeiros segundos. Cada imagem de 1,5 a 4 segundos, no total no máximo 30% do vídeo.
 - encaixe "cheia" para cenas (tela cheia por pouco tempo, a voz continua); "acima" para produto e detalhe.
 - Animações e imagens não se sobrepõem.
@@ -545,7 +545,7 @@ const ESQUEMA_UMA_IMAGEM = {
     gerar: {
       type: 'string',
       description:
-        'Se nenhuma foto serve: a cena a gerar, em português, genérica (sem marca, texto ou rosto em destaque).',
+        'Se nenhuma foto serve: a cena a gerar, em português, genérica (sem marca nem texto; pessoas podem aparecer se combinam).',
     },
     encaixe: { type: 'string', enum: ['acima', 'cheia'] },
     motivo: { type: 'string', description: 'Por que esta imagem, em uma frase curta.' },

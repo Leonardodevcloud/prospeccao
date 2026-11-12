@@ -1,6 +1,7 @@
 import { MANUAL_DESIGN } from '../saber/design.js';
 import { type ConfigImagem, pedirImagem } from '../videos/imagens.js';
 import type { ClienteClaude } from './claude.js';
+import { iconePronto, LISTA_ICONES, SLUGS_ICONES, type SlugIcone } from './icones.js';
 
 /**
  * v152: a peça "em camadas". A IA de imagem faz só o que não tem letra: tira o fundo da foto da empresa
@@ -267,26 +268,47 @@ export async function avaliarOpcoes(
 const ESQUEMA_ELEMENTO = {
   type: 'object',
   properties: {
+    icone: {
+      type: 'string',
+      enum: ['', ...SLUGS_ICONES],
+      description:
+        'O ícone pronto da lista que representa o assunto SEM forçar a barra. Vazio quando nenhum serve de verdade: um ícone genérico (estrela, raio, coração, foguete) só entra se o post for mesmo sobre isso.',
+    },
     objeto: {
       type: 'string',
       description:
-        'Em inglês, um único objeto físico e concreto que simboliza a oferta ou o assunto (ex.: "a car brake disc", "a delivery box", "a wrench"). Sem pessoas, sem texto, sem marcas, sem símbolos de moeda com letras.',
+        'Em inglês, um único objeto físico e concreto que simboliza a oferta ou o assunto (ex.: "a car brake disc", "a delivery box", "a wrench"). Sem pessoas, sem texto, sem marcas, sem símbolos de moeda com letras. Preencha sempre, mesmo escolhendo um ícone pronto: é a reserva.',
     },
   },
-  required: ['objeto'],
+  required: ['icone', 'objeto'],
 } as const;
+
+/** O que o diretor de arte escolheu: um ícone pronto da biblioteca (de graça) e/ou um objeto para a IA fazer. */
+export interface ElementoEscolhido {
+  icone: SlugIcone | null;
+  objeto: string | null;
+}
+
+export function lerElementoEscolhido(dados: Record<string, unknown>): ElementoEscolhido | null {
+  const icone = iconePronto(String(dados.icone ?? '').trim())?.slug ?? null;
+  const texto = String(dados.objeto ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  const objeto = texto.length >= 3 ? texto : null;
+  return icone || objeto ? { icone, objeto } : null;
+}
 
 /** O diretor de arte escolhe o objeto que enfeita a peça (um só, concreto, ligado à mensagem). */
 export async function escolherElemento(
   claude: ClienteClaude,
   e: { empresa: string; titulo: string; destaque: string; texto: string },
-): Promise<string | null> {
+): Promise<ElementoEscolhido | null> {
   const r = await claude.pedir({
     agente: 'diretor de arte',
     sistema: [
       {
-        texto:
-          'Você é diretor de arte. Para um post de Instagram, escolhe UM objeto em 3D que enfeita a peça ao lado da foto: concreto, fácil de reconhecer pequeno, ligado ao que o post vende ou ensina. Nunca um objeto genérico (estrela, raio, coração) quando existe um do assunto.',
+        texto: `Você é diretor de arte. Para um post de Instagram, escolhe UM objeto em 3D que enfeita a peça ao lado da foto: concreto, fácil de reconhecer pequeno, ligado ao que o post vende ou ensina. Nunca um objeto genérico (estrela, raio, coração) quando existe um do assunto.\n\nVocê tem uma biblioteca de ícones 3D prontos, que saem de graça e na cor da marca. Use um deles quando ele disser o assunto tão bem quanto um objeto feito sob medida; quando o assunto pede um objeto que não está na lista (uma peça de carro, um prato, um produto), deixe o ícone vazio e descreva o objeto.\n\nÍcones prontos (código = o que é): ${LISTA_ICONES}.`,
       },
       { texto: MANUAL_DESIGN, cache: true },
     ],
@@ -297,11 +319,7 @@ export async function escolherElemento(
     esforco: 'baixo',
     timeoutMs: 45_000,
   });
-  const objeto = String(r.dados.objeto ?? '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 120);
-  return objeto.length >= 3 ? objeto : null;
+  return lerElementoEscolhido(r.dados);
 }
 
 export function promptDoElemento(objeto: string, cor: string): string {

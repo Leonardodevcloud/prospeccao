@@ -410,7 +410,7 @@ function mensagemEstrategista(e: EntradaTime): string {
         ? 'FOTOS DA EMPRESA: nenhuma para usar (fotoId sempre null).'
         : 'FOTOS: não use fotos (fotoId sempre null). Não use o modelo "foto".',
     e.imagens?.gerar
-      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou um slide "foto", descreva em "gerar" a cena para a IA de imagem (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_GERADAS} no carrossel, só onde a imagem ajuda a entender. Nunca o produto que a empresa vende como se fosse real, nunca texto, marca ou rosto em destaque. ${CARTAO_POSTAL}`
+      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou um slide "foto", descreva em "gerar" a cena para a IA de imagem (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_GERADAS} no carrossel, só onde a imagem ajuda a entender. Nunca o produto que a empresa vende como se fosse real, nunca texto ou marca. Pessoas podem aparecer quando ajudam a mensagem (diga quem são e o que fazem: "um mecânico de uniforme sorrindo para a câmera"), nunca pessoa real ou famosa nem criança. ${CARTAO_POSTAL}`
       : '',
     e.imagens?.produto
       ? `A CAPA usa a foto do produto (${e.imagens.produto.nome}) num cenário novo, feito pela IA: na capa, fotoId null e "gerar" vazio.`

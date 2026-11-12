@@ -20,3 +20,8 @@ import '@fontsource/playfair-display/latin-700.css';
 import '@fontsource/playfair-display/latin-800.css';
 import '@fontsource/lato/latin-400.css';
 import '@fontsource/lato/latin-700.css';
+import '@fontsource/poppins/latin-700.css';
+import '@fontsource/poppins/latin-800.css';
+import '@fontsource/montserrat/latin-800.css';
+import '@fontsource/montserrat/latin-900.css';
+import '@fontsource/bebas-neue/latin-400.css';

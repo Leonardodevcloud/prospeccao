@@ -350,7 +350,7 @@ function mensagemEstrategista(e: EntradaCards): string {
       ? `FOTOS DA EMPRESA (use quando a foto combina; só nos modelos capa e foto):\n${e.fotos.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
       : 'FOTOS DA EMPRESA: não use outras (fotoId null, a não ser as do pedido).',
     e.imagens?.gerar
-      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou "foto", descreva em "gerar" a cena (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_CARDS} no pedido. Nunca o produto que a empresa vende como se fosse real, nunca texto, marca ou rosto em destaque. ${CARTAO_POSTAL}`
+      ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou "foto", descreva em "gerar" a cena (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_CARDS} no pedido. Nunca o produto que a empresa vende como se fosse real, nunca texto ou marca. Pessoas podem aparecer quando ajudam a mensagem (diga quem são e o que fazem), nunca pessoa real ou famosa nem criança. ${CARTAO_POSTAL}`
       : '',
     e.imagens?.estiloReferencia
       ? `ESTILO DE REFERÊNCIA (um post de que a empresa gostou; inspire o clima, não copie): ${e.imagens.estiloReferencia}`

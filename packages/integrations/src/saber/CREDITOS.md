@@ -22,6 +22,8 @@ Skills lidas e não usadas por falta de licença (não foram copiadas nem adapta
 | [vyralcontent/content-skills](https://github.com/vyralcontent/content-skills) (viral-hooks, viral-short-form, viral-captions-and-ctas) — © 2026 Vyral | MIT | `349e495` | Gancho, anti-padrões de abertura, estrutura gancho → meio → entrega → chamada, carrossel, legenda e chamada única |
 | [iart-ai/tiktok-video-skills](https://github.com/iart-ai/tiktok-video-skills) (short-form-video, caption-animation) — © 2026 iart.ai | MIT | `2a77533` | Uma ideia por vídeo, meio sem esfriar, legenda para quem assiste sem som |
 | [thisisfaizi/Video-Editing-Skill](https://github.com/thisisfaizi/Video-Editing-Skill) (short-form-video-editing, sound-design) — © 2026 Muhammad Faizan (Nowdigiverse) | MIT | `f2d0852` | Padrão de marca e não de meme, cada enfeite com um trabalho, música abaixo da voz, efeitos discretos |
+| [travisjneuman/.claude](https://github.com/travisjneuman/.claude) (skills/graphic-design) — © 2026 Travis Neuman | MIT | `8c44f89` | Equilíbrio, movimento, repetição e unidade; o que cada cor costuma dizer; harmonias de cor; espaço entre letras em caixa alta; par de letras por contraste |
+| [sanky369/vibe-building-skills](https://github.com/sanky369/vibe-building-skills) (skills/creative/social-graphics) — © 2026 Sanket Dongre | MIT | `e9714d8` | Peça puxada pela foto ou pela letra; título de até dez palavras; no máximo três blocos de texto; nada de número inventado |
 | [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) (copy-editing, copywriting, marketing-psychology, image) — © 2025 Corey Haines | MIT | `3e72962` | Revisão em passadas, "e daí?", sinais de texto feito por máquina, descrever imagem como fotógrafo |
 | [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) (skill hyperframes, referência de movimento) — © 2026 HeyGen, Inc. | Apache 2.0 | `668983e` | Tempo de leitura na tela, uma coisa por vez, variar o tipo de entrada |
 | [robpalmer99/claude-code-copywriting-skills](https://github.com/robpalmer99/claude-code-copywriting-skills) (direct-response-copy, copychief, compliance-checker) — © 2026 Rob Palmer | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `0f6a04b` | Escrever para o amigo desconfiado, cadeia do "e daí?", níveis de consciência, nota e ajustes da revisora, risco de publicidade |
@@ -31,7 +33,7 @@ Este material foi adaptado (traduzido, resumido e alterado) e não tem endosso d
 
 ## Avisos das licenças
 
-### MIT (vale para Vyral, iart.ai, Muhammad Faizan e Corey Haines, cada um com o seu copyright acima)
+### MIT (vale para Vyral, iart.ai, Muhammad Faizan, Corey Haines, Travis Neuman e Sanket Dongre, cada um com o seu copyright acima)
 
 ```
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -63,3 +65,11 @@ adaptado). Distribuído "AS IS", sem garantias de qualquer tipo.
 
 Licença: <https://creativecommons.org/licenses/by/4.0/>. Alterações: tradução para o português,
 resumo e adaptação para empresas brasileiras e para as regras do produto.
+
+### CC0 1.0 (3dicons)
+
+Os ícones 3D prontos das peças vêm de [realvjy/3dicons](https://github.com/realvjy/3dicons)
+(<https://3dicons.co>), publicados por realvjy em domínio público (CC0 1.0:
+<https://creativecommons.org/publicdomain/zero/1.0/>). A licença não exige crédito; ele fica aqui por
+respeito ao autor. O sistema baixa cada ícone do endereço público da biblioteca na hora de usar e o
+tinge com a cor de destaque da marca (`carrosseis/icones.ts`); nenhum arquivo deles vai no repositório.

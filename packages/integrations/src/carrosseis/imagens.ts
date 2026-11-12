@@ -56,8 +56,16 @@ const linhaReferencia = (e: EstiloDaImagem) =>
 export const CARTAO_POSTAL =
   'Se a peça fala de uma cidade ou bairro, a cena é o cartão-postal dele pelo nome (ex.: Brasília → "o Congresso Nacional visto da Esplanada dos Ministérios, ao entardecer"; Salvador → "o Elevador Lacerda e a Baía de Todos-os-Santos"), nunca "uma cidade" genérica: quem vê tem que reconhecer o lugar.';
 
+/**
+ * v156: pessoas liberadas nas imagens geradas (pedido do Leonardo: gente que combina com a publicação,
+ * em boa qualidade). Continua de fora: pessoa real ou famosa, criança, e gente com defeito de imagem
+ * gerada (o revisor visual reprova rosto ou mão deformados).
+ */
+export const PESSOAS_NA_IMAGEM =
+  'PEOPLE: people are welcome when they fit the scene, including faces in the foreground: adults who look Brazilian, natural expression and pose, real skin texture, natural eyes and teeth, correct hands with five fingers. Never a real or famous person, never children.';
+
 const PROIBIDO =
-  'Proibido: qualquer texto, letra, número, placa legível, logotipo, marca, marca d’água e moldura. Sem rosto de pessoa em destaque (pessoas só de costas, de longe ou só as mãos).';
+  'Proibido: qualquer texto, letra, número, placa legível, logotipo, marca, marca d’água e moldura.';
 
 /**
  * A imagem de um slide: a cena, a paleta e o espaço livre para o texto que o sistema escreve. v151: no
@@ -77,6 +85,7 @@ export function promptDaImagemDoSlide(
     linhaPaleta(e),
     linhaReferencia(e),
     `PLACE: people, streets, cars and shops look Brazilian. ${CARTAO_POSTAL}`,
+    PESSOAS_NA_IMAGEM,
     `CONSTRAINTS: ${PROIBIDO} No illustration look, no plastic CGI look, no generic stock-photo look.`,
   ]
     .filter(Boolean)

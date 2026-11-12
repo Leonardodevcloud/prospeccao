@@ -1241,7 +1241,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             Escolha o <b>estilo</b> (Editorial, Impacto, Clean ou Foto) e o <b>par de fontes</b>. A prévia ao
-            lado mostra como ficam a capa, um texto, uma lista e o fechamento.
+            lado mostra como ficam a capa, um texto, uma lista e o fechamento. Além dos pares de sempre, há
+            três novos: <b>amigável</b> (letra arredondada, boa para comércio de bairro, saúde e alimentação),{' '}
+            <b>forte</b> (letra pesada, para promoção e indústria) e <b>cartaz</b> (letra alta e estreita,
+            sempre em maiúsculas, para preço e chamada curta; evite em títulos longos).
           </li>
           <li>
             Envie a <b>logo</b> para fundo claro e, se tiver, a versão para fundo escuro (PNG com fundo
@@ -1563,7 +1566,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
             recortar: nesse caso, ou sem foto, o card fica nos modelos de sempre. Com{' '}
             <b>Um elemento em 3D na peça em camadas</b> ligado, a IA faz também um objeto ligado ao assunto,
             na cor de destaque, sem letra nem marca (é mais uma imagem por card; sobre o fundo de destaque ele
-            não aparece). No editor, <b>Outro elemento em 3D</b> troca e <b>Tirar o elemento</b> remove.
+            não aparece). Quando o assunto tem um <b>ícone pronto</b> na nossa biblioteca (megafone,
+            calendário, cadeado, sacola, troféu e mais de 70 outros), a peça usa o pronto, tingido com a sua
+            cor de destaque: não gasta imagem e fica igual em todas as peças. Para o que é específico do seu
+            negócio (uma peça, um prato, um aparelho), a IA faz o objeto sob medida. No editor,{' '}
+            <b>Outro elemento em 3D</b> pede um objeto novo à IA e <b>Tirar o elemento</b> remove.
           </li>
           <li>
             Com duas ou mais opções prontas, a revisora olha as peças finais (como aparecem no celular) e dá
@@ -1607,8 +1614,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
         </p>
         <Nota>
           Quando a peça fala de uma cidade, a imagem gerada é o cartão-postal dela (o lugar mais conhecido),
-          para quem vê reconhecer. A IA não cria rosto de pessoa em destaque: para ter gente nos posts, use as
-          fotos reais da empresa (dá para melhorar a foto no pedido).
+          para quem vê reconhecer. A IA pode criar pessoas quando elas combinam com a publicação (adultos, com
+          jeito de foto de verdade); o revisor visual reprova rosto ou mão com defeito, pessoa famosa e
+          criança. Para mostrar a sua equipe de verdade, use as fotos reais da empresa (dá para melhorar a
+          foto no pedido).
         </Nota>
       </>
     ),
@@ -1719,8 +1728,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
             lugar), de 1,5 a 4 segundos cada, num cartão acima da cabeça ou em tela cheia (a sua voz e a
             legenda continuam). As regras: nada nos 2 primeiros segundos (o começo é o seu rosto), no máximo
             30% do vídeo com imagem, o produto que a empresa vende só pela foto real dele, e nenhuma imagem
-            gerada com texto, marca ou rosto em destaque. Cada imagem gerada é conferida por outra IA antes de
-            entrar.
+            gerada com texto ou marca (pessoas podem aparecer, sem defeito). Cada imagem gerada é conferida
+            por outra IA antes de entrar.
           </li>
           <li>
             Disfarça os cortes com uma <b>aproximação alternada</b> (um plano normal, o seguinte um pouco mais

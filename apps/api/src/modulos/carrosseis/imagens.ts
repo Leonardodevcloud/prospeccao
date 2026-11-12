@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Executor } from '@prospeccao/db';
 import {
   apararRecorte,
+  baixarIcone,
   CENA_MELHORADA,
   CENAS_PRODUTO,
   conferirArte,
@@ -16,6 +17,7 @@ import {
   gerarCenario,
   gerarElemento,
   gerarImagemDoSlide,
+  iconePronto,
   type JeitoDePostar,
   lerJeitoDePostar,
   melhorarFoto,
@@ -23,7 +25,9 @@ import {
   recortarFoto,
   recortarLocal,
   recorteParaConferir,
+  type SlugIcone,
   textoDaArte,
+  tingirIcone,
 } from '@prospeccao/integrations/carrosseis';
 import { buscarNaInternet } from '@prospeccao/integrations/rede';
 import { prepararImagem } from '@prospeccao/integrations/slides';
@@ -346,6 +350,42 @@ export async function fazerRecorte(
 }
 
 /**
+ * O ícone 3D pronto, tingido com a cor de destaque e guardado como elemento da conta. A marca
+ * `icone:<código>:<cor>` no pedido faz a mesma conta reaproveitar o arquivo enquanto a cor não muda.
+ * Devolve `null` se a biblioteca não responder: quem chama segue para a imagem feita pela IA.
+ */
+async function elementoPronto(
+  db: Executor,
+  ia: CarrosseisIa,
+  slug: SlugIcone,
+  cor: string,
+  criadoPor?: number | null,
+): Promise<FotoCarrossel | null> {
+  const marca = `icone:${slug}:${cor.toLowerCase()}`;
+  const guardado = await repo.elementoDoObjeto(db, marca);
+  if (guardado) return guardado;
+  try {
+    const tinto = await tingirIcone(await baixarIcone(slug), cor);
+    const aparado = await apararRecorte(tinto);
+    if (!aparado) return null;
+    const chave = `carrosseis/${conta()}/fotos/elemento-${randomUUID()}.png`;
+    await ia.armazenamento!.enviar(chave, aparado.png, 'image/png');
+    return await repo.adicionarFotoDaIa(db, {
+      nome: `Elemento: ${iconePronto(slug)?.nome ?? slug}`.slice(0, 80),
+      chave,
+      largura: aparado.largura,
+      altura: aparado.altura,
+      bytes: aparado.png.byteLength,
+      origem: 'elemento',
+      pedido: marca,
+      ...(criadoPor !== undefined ? { criadoPor } : {}),
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * v153: um elemento em 3D para a peça em camadas (um objeto ligado à mensagem, na cor de destaque, em
  * PNG transparente). O diretor de arte escolhe o objeto; o código confere a transparência e o revisor
  * visual confere que não tem letra, marca nem defeito. Duas tentativas; null: a peça fica sem elemento.
@@ -365,7 +405,14 @@ export async function fazerElemento(
       .query<{ nome: string }>(`SELECT nome FROM cadastro.contas WHERE id = ${contaSql()}`)
       .then((r) => r.rows[0]?.nome ?? ''),
   ]);
-  const objeto = await escolherElemento(claude, { empresa, ...texto }).catch(() => null);
+  const escolha = await escolherElemento(claude, { empresa, ...texto }).catch(() => null);
+  if (!escolha) return null;
+  // Ícone pronto da biblioteca aberta: de graça e na cor da marca. "Outro elemento" pula o pronto.
+  if (escolha.icone && !extra.novo) {
+    const pronto = await elementoPronto(db, ia, escolha.icone, identidade.cores.destaque, extra.criadoPor);
+    if (pronto) return pronto;
+  }
+  const objeto = escolha.objeto;
   if (!objeto) return null;
   // O mesmo objeto já foi feito para esta conta: reaproveita ("Outro elemento" no editor pede um novo).
   if (!extra.novo) {

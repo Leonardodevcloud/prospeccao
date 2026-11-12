@@ -39,6 +39,9 @@ importers:
       '@fontsource/archivo':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/bebas-neue':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource/fraunces':
         specifier: 5.3.0
         version: 5.3.0
@@ -48,10 +51,16 @@ importers:
       '@fontsource/lato':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/montserrat':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource/playfair-display':
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/plus-jakarta-sans':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource/poppins':
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/space-grotesk':
@@ -173,6 +182,9 @@ importers:
       '@fontsource/archivo':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/bebas-neue':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource/fraunces':
         specifier: 5.3.0
         version: 5.3.0
@@ -182,10 +194,16 @@ importers:
       '@fontsource/lato':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/montserrat':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource/playfair-display':
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/plus-jakarta-sans':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource/poppins':
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/space-grotesk':
@@ -441,6 +459,9 @@ importers:
       '@fontsource/archivo':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/bebas-neue':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource/fraunces':
         specifier: 5.3.0
         version: 5.3.0
@@ -450,10 +471,16 @@ importers:
       '@fontsource/lato':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/montserrat':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource/playfair-display':
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/plus-jakarta-sans':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource/poppins':
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/space-grotesk':
@@ -919,6 +946,9 @@ packages:
   '@fontsource/archivo@5.3.0':
     resolution: {integrity: sha512-5DIMgPVJRi62OqdOVoogCFxP73EkNM/E0YVTSDIQlDEJfDbxqZduwM/YoNZwC9Sx1CDgpKinqf8ckRY1QNIecw==}
 
+  '@fontsource/bebas-neue@5.3.0':
+    resolution: {integrity: sha512-nCxMEb9Bg9sjNWm9TIOsvHKDMLRUfEZPWpLgYu6m9KavZZVSA/WoHzI5wROwqA+eNwEi/PNBAcB5Co7HA3S0Cw==}
+
   '@fontsource/fraunces@5.3.0':
     resolution: {integrity: sha512-LEHTOBiZufQzAvnAe2rZ8ZknbDS28Q9kzwb0L+gZJEmjLGr8hhZ/5NuHXwDuHBWhVXYoiGGXmrb0H6Ko/RrHTg==}
 
@@ -936,6 +966,9 @@ packages:
 
   '@fontsource/plus-jakarta-sans@5.3.0':
     resolution: {integrity: sha512-9WRw3G74Ve4cyPApAZSXLPY5DiLOZXDn7Q7dIBjFBpA0Pj56ljDItEdy2UUajjJxRuTg2HkMLO5C3K2nAQORWg==}
+
+  '@fontsource/poppins@5.3.0':
+    resolution: {integrity: sha512-cms1nM7U6SN8epIV1WMVOV8VsA645aSm3wHfzIQnkk188U341ThbJGSl2Sv54V29gnDbT2arMPfLzvVIIVCceQ==}
 
   '@fontsource/space-grotesk@5.3.0':
     resolution: {integrity: sha512-ksnGizDPXIDuvqcTYTSrmZ+evx9sDlS8rp7+42BQ7wU+spt3twEoXfbJz672C+5CLg6VeUQwRy5RXshWb67LcQ==}
@@ -3922,6 +3955,8 @@ snapshots:
 
   '@fontsource/archivo@5.3.0': {}
 
+  '@fontsource/bebas-neue@5.3.0': {}
+
   '@fontsource/fraunces@5.3.0': {}
 
   '@fontsource/inter@5.3.0': {}
@@ -3933,6 +3968,8 @@ snapshots:
   '@fontsource/playfair-display@5.3.0': {}
 
   '@fontsource/plus-jakarta-sans@5.3.0': {}
+
+  '@fontsource/poppins@5.3.0': {}
 
   '@fontsource/space-grotesk@5.3.0': {}
 

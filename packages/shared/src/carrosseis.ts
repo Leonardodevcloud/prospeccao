@@ -62,7 +62,16 @@ export const ESTILO: Record<EstiloCarrossel, { nome: string; descricao: string }
   },
 };
 
-export const PARES_FONTES = ['editorial', 'impacto', 'moderno', 'tecnologia', 'elegante'] as const;
+export const PARES_FONTES = [
+  'editorial',
+  'impacto',
+  'moderno',
+  'tecnologia',
+  'elegante',
+  'amigavel',
+  'forte',
+  'cartaz',
+] as const;
 export type ParFontes = (typeof PARES_FONTES)[number];
 
 export interface FonteTitulo {
@@ -75,6 +84,8 @@ export interface FonteTitulo {
   /** Espaço entre letras, em "em" (negativo aproxima). */
   espacamento: number;
   alturaLinha: number;
+  /** Letra estreita (cartaz) entra maior para pesar o mesmo que as outras. Padrão: 1. */
+  escala?: number;
 }
 export interface FontesDoPar {
   nome: string;
@@ -149,6 +160,49 @@ export const FONTES_DO_PAR: Record<ParFontes, FontesDoPar> = {
     },
     corpo: 'Lato',
     pesosCorpo: { texto: 400, medio: 700, forte: 700 },
+  },
+  // v156: redonda e simpática (serviços, alimentação, saúde).
+  amigavel: {
+    nome: 'Poppins + Inter (amigável)',
+    titulo: {
+      familia: 'Poppins',
+      peso: 700,
+      pesoForte: 800,
+      caixaAlta: false,
+      espacamento: -0.012,
+      alturaLinha: 1.1,
+    },
+    corpo: 'Inter',
+    pesosCorpo: { texto: 400, medio: 500, forte: 700 },
+  },
+  // v156: geométrica e pesada (varejo, promoção).
+  forte: {
+    nome: 'Montserrat + Inter (forte)',
+    titulo: {
+      familia: 'Montserrat',
+      peso: 800,
+      pesoForte: 900,
+      caixaAlta: false,
+      espacamento: -0.015,
+      alturaLinha: 1.06,
+    },
+    corpo: 'Inter',
+    pesosCorpo: { texto: 400, medio: 500, forte: 700 },
+  },
+  // v156: estreita, alta e em caixa alta, como letra de cartaz (oferta, evento, esporte).
+  cartaz: {
+    nome: 'Bebas Neue + Inter (cartaz)',
+    titulo: {
+      familia: 'Bebas Neue',
+      peso: 400,
+      pesoForte: 400,
+      caixaAlta: true,
+      espacamento: 0.01,
+      alturaLinha: 0.96,
+      escala: 1.3,
+    },
+    corpo: 'Inter',
+    pesosCorpo: { texto: 400, medio: 500, forte: 700 },
   },
 };
 
@@ -792,6 +846,8 @@ export interface FonteMedida {
   caixaAlta?: boolean;
   /** Espaço entre letras, em "em". */
   espacamento?: number;
+  /** Multiplica o maior e o menor tamanho do bloco (letra estreita entra maior). */
+  escala?: number;
 }
 
 const semAcento = (c: string) => c.normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -867,7 +923,11 @@ const alturaBloco = (b: BlocoTexto, tamanho: number) =>
  * Tamanho de cada bloco para tudo caber na altura: começa no maior e vai diminuindo, de 2 em 2 px,
  * o bloco que está mais longe do mínimo (o título resiste mais que o texto).
  */
-export function caberBlocos(blocos: BlocoTexto[], alturaDisponivel: number): Ajuste {
+export function caberBlocos(entrada: BlocoTexto[], alturaDisponivel: number): Ajuste {
+  const blocos = entrada.map((b) => {
+    const e = b.fonte.escala ?? 1;
+    return e === 1 ? b : { ...b, max: Math.round((b.max * e) / 2) * 2, min: Math.round((b.min * e) / 2) * 2 };
+  });
   const tamanhos: Record<string, number> = Object.fromEntries(blocos.map((b) => [b.id, b.max]));
   const total = () => blocos.reduce((s, b) => s + alturaBloco(b, tamanhos[b.id]!), 0);
   let altura = total();
@@ -1091,6 +1151,7 @@ const fonteTitulo = (c: Contexto, forte = false): FonteMedida => ({
   peso: forte ? c.par.titulo.pesoForte : c.par.titulo.peso,
   caixaAlta: c.par.titulo.caixaAlta,
   espacamento: c.par.titulo.espacamento,
+  ...(c.par.titulo.escala ? { escala: c.par.titulo.escala } : {}),
 });
 const fonteCorpo = (c: Contexto, peso: 'texto' | 'medio' | 'forte' = 'texto'): FonteMedida => ({
   familia: c.par.corpo,
