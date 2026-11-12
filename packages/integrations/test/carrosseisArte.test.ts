@@ -515,3 +515,51 @@ describe('ícones 3D prontos (v156)', () => {
     expect(data[3]).toBe(0);
   });
 });
+
+describe('v158: a arte sem texto (o sistema escreve por cima)', () => {
+  const entrada = {
+    empresa: 'Tutts',
+    identidade: IDENTIDADE_PADRAO,
+    formato: 'feed' as const,
+    slide: {
+      ...slideNovo('capa', 'c'),
+      sobretitulo: 'Para motoboys',
+      titulo: 'Rode amanhã sem comprar moto',
+      texto: 'Troca em 24 h.',
+      botao: 'Chame no WhatsApp',
+    },
+    objetivo: 'Produto',
+    fotos: 0,
+    posts: 0,
+  };
+  it('o pedido da cena não leva o texto da peça, proíbe letras e reserva a faixa', async () => {
+    const { promptDaArte } = await import('../src/carrosseis/arte.js');
+    const cena = promptDaArte({ ...entrada, textoPorCodigo: true });
+    expect(cena).not.toContain('TEXT (render EXACTLY');
+    expect(cena).not.toContain('Chame no WhatsApp');
+    expect(cena).not.toContain('Para motoboys');
+    expect(cena).toContain('TEXT AREA');
+    expect(cena).toContain('the top 46%');
+    expect(cena).toMatch(/NO text, letters, numbers/);
+    // O jeito antigo continua mandando o texto literal.
+    expect(promptDaArte(entrada)).toContain('"Rode amanhã sem comprar moto"');
+  });
+  it('a conferência da cena reprova qualquer letra, faixa suja, marca ou defeito', async () => {
+    const { avaliarCena } = await import('../src/carrosseis/arte.js');
+    const boa = {
+      textos: [],
+      canto_livre: true,
+      outra_marca: false,
+      defeito: false,
+      legivel: true,
+      nota: 4,
+      problemas: [],
+    };
+    expect(avaliarCena(boa).aprovada).toBe(true);
+    expect(avaliarCena({ ...boa, textos: ['ALUGUE'] }).aprovada).toBe(false);
+    expect(avaliarCena({ ...boa, textos: ['-', '•'] }).aprovada).toBe(true);
+    expect(avaliarCena({ ...boa, canto_livre: false }).aprovada).toBe(false);
+    expect(avaliarCena({ ...boa, defeito: true }).aprovada).toBe(false);
+    expect(avaliarCena({ ...boa, nota: 3 }).aprovada).toBe(false);
+  });
+});

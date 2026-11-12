@@ -389,6 +389,13 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4aj. Arte com texto do sistema e a mesa do time (v158)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] **Arte da IA nova**: num card pronto, clicar em Arte da IA. Conferir: a cena sem nenhuma letra, a faixa do texto lisa na cor da marca, o texto escrito pelo sistema com a fonte certa; mudar o título no editor e ver a peça mudar na hora. Se a IA insistir em sujar a faixa ou escrever na imagem (a peça reprova e o card fica sem arte), avisar; `CARROSSEIS_ARTE_TEXTO=ia` volta ao jeito antigo.
+3. [ ] **Mesa do time**: pedir um carrossel, um lote de cards e editar um vídeo; olhar a tela de andamento no computador e no celular.
+4. [ ] **Card de frase**: pedir um card com o objetivo Frase e conferir o tamanho da letra.
+5. [ ] Ainda em aberto: aviso flutuante no canto da tela enquanto o time trabalha; peças tomando forma e fotos lidas dentro da mesa; força da música por parte; fotos para o time de vídeo (hoje são ícones).
+
 ## 4ai. Menos genérico e mais barato (v157)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
 2. [ ] Variáveis novas, todas opcionais (sem elas vale o padrão): `CARROSSEIS_MODELO_LEVE` (padrão `claude-haiku-5-5`; `nenhum` desliga) e `CARROSSEIS_ELEMENTO_QUALIDADE` (padrão `medium`) na api; `VIDEOS_MODELO_LEVE` no worker-videos.

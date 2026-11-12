@@ -749,7 +749,7 @@ function Contador(props: { n: number; limite: number }) {
  * a pessoa pede para desenhar de novo (a tela recarrega com a arte nova). Trocar para um modelo volta
  * a montar a peça por código, com o mesmo texto.
  */
-function ArteDaIa(props: { carrosselId: number; imagens: boolean }) {
+function ArteDaIa(props: { carrosselId: number; imagens: boolean; textoDoSistema: boolean }) {
   const desenhar = useMutation({
     mutationFn: () =>
       api<{ carrosselId: number }>(`/carrosseis/${props.carrosselId}/arte`, { metodo: 'POST' }),
@@ -758,10 +758,19 @@ function ArteDaIa(props: { carrosselId: number; imagens: boolean }) {
   return (
     <div className="campo painel-slide__arte" role="note">
       <span className="campo__rotulo">Arte desenhada pela IA</span>
-      <p className="quieto">
-        O texto está desenhado na arte. Mudou o texto aqui? Espere salvar e clique em desenhar de novo: a IA
-        refaz a peça e confere letra por letra. Para mexer livre, troque para um modelo acima.
-      </p>
+      {props.textoDoSistema ? (
+        <p className="quieto">
+          A IA desenhou só a cena. O texto, o selo, a logo e o botão são escritos pelo sistema, com as suas
+          fontes: mude qualquer um aqui e a peça muda na hora, sem desenhar de novo. Quer outra cena? Peça
+          abaixo.
+        </p>
+      ) : (
+        <p className="quieto">
+          O texto está desenhado na arte. Mudou o texto aqui? Espere salvar e clique em desenhar de novo: a IA
+          refaz a peça com a cena nova e o texto passa a ser escrito pelo sistema. Para mexer livre, troque
+          para um modelo acima.
+        </p>
+      )}
       {props.imagens && (
         <Button
           type="button"
@@ -771,7 +780,11 @@ function ArteDaIa(props: { carrosselId: number; imagens: boolean }) {
           disabled={desenhar.isPending}
           onClick={() => desenhar.mutate()}
         >
-          {desenhar.isPending ? 'Desenhando… (até 3 min)' : 'Desenhar de novo com este texto'}
+          {desenhar.isPending
+            ? 'Desenhando… (até 3 min)'
+            : props.textoDoSistema
+              ? 'Desenhar outra cena'
+              : 'Desenhar de novo com este texto'}
         </Button>
       )}
       <ErroDaApi erro={desenhar.error} />
@@ -1108,7 +1121,13 @@ function PainelSlide(props: {
           );
         })}
 
-      {slide.modelo === 'arte' && <ArteDaIa carrosselId={props.carrosselId} imagens={props.imagens} />}
+      {slide.modelo === 'arte' && (
+        <ArteDaIa
+          carrosselId={props.carrosselId}
+          imagens={props.imagens}
+          textoDoSistema={!!slide.zonaTexto}
+        />
+      )}
       {slide.modelo === 'camadas' && (
         <CamadasDaPeca slide={slide} imagens={props.imagens} aoMudar={props.aoMudar} />
       )}

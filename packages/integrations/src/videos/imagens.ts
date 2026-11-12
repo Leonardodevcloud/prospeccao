@@ -67,6 +67,8 @@ export interface ConfigImagem {
   qualidade?: QualidadeImagem;
   /** v157: a qualidade do elemento 3D (um objeto pequeno na peça): padrão medium, bem mais barato que high. */
   qualidadeElemento?: QualidadeImagem;
+  /** v158: a qualidade da cena da arte quando o texto é escrito pelo sistema e não há foto de referência. */
+  qualidadeCena?: QualidadeImagem;
   /** Para os testes (padrão: a API da OpenAI). */
   url?: string;
   urlEdicao?: string;

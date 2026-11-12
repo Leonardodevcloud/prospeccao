@@ -6,6 +6,7 @@ import {
   CENA_MELHORADA,
   CENAS_PRODUTO,
   conferirArte,
+  conferirCena,
   conferirCenario,
   conferirImagemDoSlide,
   conferirRecorte,
@@ -39,6 +40,7 @@ import {
   type LogoSlide,
   ORIGENS_FORA_DA_BIBLIOTECA,
   type SlideCarrossel,
+  type ZonaDaArte,
 } from '@prospeccao/shared/carrosseis';
 import type { FotoDoPedido } from '@prospeccao/shared/carrosseis-time';
 import { conta, contaSql } from '../../contexto.js';
@@ -577,7 +579,7 @@ export async function fazerArte(
     fotoIds: number[];
     criadoPor?: number | null;
   },
-): Promise<FotoCarrossel | null> {
+): Promise<(FotoCarrossel & { zonaTexto?: ZonaDaArte }) | null> {
   if (!imagensLigadas(ia)) return null;
   const [material, empresa] = await Promise.all([
     materialDaConta(db, ia.armazenamento ?? null),
@@ -604,6 +606,8 @@ export async function fazerArte(
     fotos: fotos.length,
     posts: posts.length,
     referencias: [...fotos, ...posts],
+    // v158: a IA desenha só a cena; o texto é escrito pelo sistema, com as fontes da marca.
+    textoPorCodigo: ia.arteTextoPorCodigo,
   };
   // O diretor de arte planeja a peça olhando as fotos e os posts; se falhar, vai a direção simples.
   const direcao = await dirigirArte(claude, entrada).catch(() => null);
@@ -612,6 +616,21 @@ export async function fazerArte(
   for (let k = 0; k < TENTATIVAS; k++) {
     const jpeg = await desenharArte(ia.imagem!.config, { ...entrada, direcao, corrigir });
     await contarImagem(db, ia.imagem!.custoUsd, jpeg);
+    if (ia.arteTextoPorCodigo) {
+      const zona = direcao?.zonaDoTexto ?? 'topo';
+      const cena = await conferirCena(claude, { jpeg, zona });
+      if (!cena.aprovada) {
+        corrigir = cena.problemas.slice(0, 5);
+        continue;
+      }
+      const guardada = await guardar(db, ia, jpeg, {
+        origem: 'arte',
+        nome: `Arte da IA: ${esperado.titulo}`,
+        pedido: `cena sem texto (${zona}) · ${esperado.titulo}`,
+        ...(d.criadoPor !== undefined ? { criadoPor: d.criadoPor } : {}),
+      });
+      return guardada ? { ...guardada, zonaTexto: zona } : null;
+    }
     const c = await conferirArte(claude, { jpeg, canto, esperado, empresa });
     if (!c.aprovada) {
       corrigir = c.problemas.slice(0, 5);

@@ -67,6 +67,8 @@ export interface CarrosseisIa {
   armazenamento?: Armazenamento | null;
   /** v155: o recorte feito no servidor (sem custo por imagem); null: o recorte é pela IA de imagem. */
   recorteLocal?: ConfigRecorteLocal | null;
+  /** v158: na Arte da IA, a IA desenha só a cena e o sistema escreve o texto (padrão). */
+  arteTextoPorCodigo?: boolean;
   /** O botão "Testar" das Configurações da plataforma. */
   testar(): Promise<string>;
 }
@@ -105,6 +107,8 @@ export function prepararCarrosseisIa(
     RECORTE_LOCAL_MODELO?: string | null;
     CARROSSEIS_MODELO_LEVE?: string | null;
     CARROSSEIS_ELEMENTO_QUALIDADE?: QualidadeImagem;
+    CARROSSEIS_CENA_QUALIDADE?: QualidadeImagem;
+    CARROSSEIS_ARTE_TEXTO?: 'codigo' | 'ia';
   },
   armazenamento: Armazenamento | null = null,
 ): CarrosseisIa | null {
@@ -124,6 +128,7 @@ export function prepararCarrosseisIa(
               modelo: env.CARROSSEIS_IMAGEM_MODELO || MODELO_IMAGEM_PADRAO,
               qualidade: env.CARROSSEIS_IMAGEM_QUALIDADE ?? 'high',
               qualidadeElemento: env.CARROSSEIS_ELEMENTO_QUALIDADE ?? 'medium',
+              qualidadeCena: env.CARROSSEIS_CENA_QUALIDADE ?? 'medium',
             },
             custoUsd:
               env.CARROSSEIS_CUSTO_IMAGEM_USD ??
@@ -132,6 +137,7 @@ export function prepararCarrosseisIa(
         : null,
     armazenamento,
     recorteLocal: env.RECORTE_LOCAL_MODELO ? { modelo: env.RECORTE_LOCAL_MODELO } : null,
+    arteTextoPorCodigo: env.CARROSSEIS_ARTE_TEXTO !== 'ia',
     cliente: (db, contaId) => criarClaude({ chave, modelo, modeloLeve, medidor: medidorClaude(db, contaId) }),
     testar: () => testarClaude({ chave, modelo }),
   };
@@ -440,26 +446,41 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
   const slides = await repo.conferirFotos(db, r.slides);
   // v153: a capa em camadas. Com foto da empresa na capa, a IA tira o fundo e o sistema monta a capa
   // sobre a cor da marca; se o recorte não sair ou o texto não couber, a capa fica como o time fez.
-  const capa = slides[0];
-  if (p.capaEmCamadas && imagensLigadas(ia) && capa?.modelo === 'capa' && capa.fotoId) {
-    const daCapa = fotos.find((f) => f.id === capa.fotoId) ?? (await repo.foto(db, capa.fotoId));
-    // O cenário do produto volta à foto do produto (é ela que se recorta); imagem gerada não se recorta.
-    const baseId =
-      daCapa?.origem === 'cenario'
-        ? (daCapa.baseFotoId ?? null)
-        : daCapa?.origem === 'gerada'
-          ? null
-          : capa.fotoId;
-    const recorte = baseId
-      ? await fazerRecorte(db, ia, l.conta_id, baseId, { criadoPor: l.criado_por }).catch(() => null)
-      : null;
-    const emCamadas = slideEmCamadas(capa, recorte, 0, {
-      identidade,
-      estilo,
-      formatos: ['feed'],
-      total: slides.length,
-    });
-    if (emCamadas) slides[0] = emCamadas;
+  // v158: com o recorte feito no próprio servidor (de graça), até dois slides de foto do miolo também
+  // viram peça em camadas; sem ele, só a capa (cada recorte pela IA de imagem é pago).
+  const emCamadasNoMiolo = ia.recorteLocal
+    ? slides
+        .map((s, k) => ({ s, k }))
+        .filter(({ s, k }) => k > 0 && k < slides.length - 1 && s.modelo === 'foto' && !!s.fotoId)
+        .slice(0, 2)
+        .map(({ k }) => k)
+    : [];
+  const alvos = [...(slides[0]?.modelo === 'capa' && slides[0].fotoId ? [0] : []), ...emCamadasNoMiolo];
+  if (p.capaEmCamadas && imagensLigadas(ia) && alvos.length) {
+    await Promise.all(
+      alvos.map(async (k) => {
+        const slide = slides[k]!;
+        const doSlide = fotos.find((f) => f.id === slide.fotoId) ?? (await repo.foto(db, slide.fotoId!));
+        // O cenário do produto volta à foto do produto (é ela que se recorta); imagem gerada não se recorta.
+        const baseId =
+          doSlide?.origem === 'cenario'
+            ? (doSlide.baseFotoId ?? null)
+            : doSlide?.origem === 'gerada'
+              ? null
+              : slide.fotoId;
+        const recorte = baseId
+          ? await fazerRecorte(db, ia, l.conta_id, baseId, { criadoPor: l.criado_por }).catch(() => null)
+          : null;
+        const emCamadas = slideEmCamadas(slide, recorte, k, {
+          identidade,
+          estilo,
+          formatos: ['feed'],
+          total: slides.length,
+        });
+        // No miolo, a peça fica sobre a cor principal, como os outros slides (a cor de destaque é da capa).
+        if (emCamadas) slides[k] = k > 0 ? { ...emCamadas, fundo: 'auto' } : emCamadas;
+      }),
+    );
   }
   const carrosselId = await repo.criar(db, {
     titulo: r.titulo,

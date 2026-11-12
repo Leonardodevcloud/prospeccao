@@ -4,6 +4,7 @@ import {
   contarLinhas,
   contraste,
   ESTILOS,
+  fundoDoSlide,
   geometriaCamadas,
   IDENTIDADE_PADRAO,
   identidadeCompleta,
@@ -408,5 +409,74 @@ describe('v157: selo que repete, título com palavras marcadas e composições n
     const pessoa = geometriaCamadas('feed', { largura: 600, altura: 900 }, 'topo');
     expect(pessoa.logo).toBeUndefined();
     expect(pessoa.foto.y + pessoa.foto.a).toBe(1350);
+  });
+});
+
+describe('v158: arte com o texto do sistema e a frase do card', () => {
+  const textos = (no: unknown, saida: string[] = []): string[] => {
+    if (typeof no === 'string') saida.push(no);
+    else if (no && typeof no === 'object') {
+      const f = (no as { props?: { children?: unknown } }).props?.children;
+      for (const x of Array.isArray(f) ? f : [f]) textos(x, saida);
+    }
+    return saida;
+  };
+  it('arte com zona do texto: o código escreve o título, o selo e o botão por cima da cena', () => {
+    const s = {
+      ...slideNovo('arte', 'a'),
+      sobretitulo: 'Para motoboys',
+      titulo: 'Rode amanhã *sem comprar* moto',
+      texto: 'Troca em 24 h.',
+      botao: 'Chame no WhatsApp',
+      destaque: '',
+      zonaTexto: 'topo' as const,
+    };
+    const m = montarSlide({
+      slide: s,
+      indice: 0,
+      total: 1,
+      identidade: IDENTIDADE_PADRAO,
+      estilo: 'impacto',
+      foto: 'cena',
+    });
+    const t = textos(m.no).join(' ').replace(/\s+/g, ' ');
+    expect(t).toContain('Rode amanhã');
+    expect(t).toContain('Chame no WhatsApp');
+    expect(m.camadas?.cabe).toBe(true);
+    expect(fundoDoSlide(s, 'clean')).toBe('escuro');
+    // A arte antiga (sem a zona) continua sendo só a imagem: o texto está desenhado nela.
+    const antiga = montarSlide({
+      slide: { ...s, zonaTexto: undefined },
+      indice: 0,
+      total: 1,
+      identidade: IDENTIDADE_PADRAO,
+      estilo: 'impacto',
+      foto: 'cena',
+    });
+    expect(textos(antiga.no).join(' ')).not.toContain('Chame no WhatsApp');
+  });
+
+  it('a frase do card avulso cresce mais que a do carrossel', () => {
+    const s = { ...slideNovo('citacao', 'f'), titulo: 'Quem entrega rápido vende de novo', texto: '' };
+    const tamanho = (total: number) => {
+      const m = montarSlide({
+        slide: s,
+        indice: total === 1 ? 0 : 1,
+        total,
+        identidade: IDENTIDADE_PADRAO,
+        estilo: 'impacto',
+      });
+      const achar = (no: unknown): number => {
+        if (!no || typeof no !== 'object') return 0;
+        const n = no as { props?: { style?: { fontSize?: number }; children?: unknown } };
+        const f = Array.isArray(n.props?.children) ? n.props.children : [n.props?.children];
+        const aqui = f.some((x) => typeof x === 'string' && x.includes('Quem entrega'))
+          ? (n.props?.style?.fontSize ?? 0)
+          : 0;
+        return Math.max(aqui, ...f.map(achar));
+      };
+      return achar(m.no);
+    };
+    expect(tamanho(1)).toBeGreaterThan(tamanho(5));
   });
 });

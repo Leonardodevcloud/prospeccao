@@ -637,7 +637,16 @@ export async function trabalharCards(
       const id = await repo.criar(db, {
         titulo: `${a.card.titulo} (arte da IA)`.slice(0, 120),
         estilo,
-        slides: [{ ...a.base, id: `c${a.i + 1}arte`, modelo: 'arte', fotoId: a.foto.id, fundo: 'auto' }],
+        slides: [
+          {
+            ...a.base,
+            id: `c${a.i + 1}arte`,
+            modelo: 'arte',
+            fotoId: a.foto.id,
+            fundo: 'auto',
+            ...(a.foto.zonaTexto ? { zonaTexto: a.foto.zonaTexto } : {}),
+          },
+        ],
         legenda: a.card.legenda,
         origem: 'ia',
         relatorio: a.card.variacoes[0]!.relatorio,
@@ -896,7 +905,11 @@ export async function desenharArteDoCard(
       'A IA não acertou o texto da arte em duas tentativas: a peça ficou como estava. Tente de novo ou encurte o texto.',
     );
   if (slide.modelo === 'arte') {
-    const slides = [{ ...slide, fotoId: f.id }, ...c.conteudo.slice(1)];
+    const { zonaTexto: _antiga, ...semZona } = slide;
+    const slides = [
+      { ...semZona, fotoId: f.id, ...(f.zonaTexto ? { zonaTexto: f.zonaTexto } : {}) },
+      ...c.conteudo.slice(1),
+    ];
     await db.query(
       `UPDATE comercial.carrosseis SET slides = $2, versao = versao + 1, atualizado_em = now()
         WHERE id = $1 AND conta_id = ${contaSql()}`,
@@ -916,7 +929,16 @@ export async function desenharArteDoCard(
   const novo = await repo.criar(db, {
     titulo: `${c.titulo} (arte da IA)`.slice(0, 120),
     estilo: c.estilo,
-    slides: [{ ...slide, id: `${slide.id}-arte`, modelo: 'arte', fotoId: f.id, fundo: 'auto' }],
+    slides: [
+      {
+        ...slide,
+        id: `${slide.id}-arte`,
+        modelo: 'arte',
+        fotoId: f.id,
+        fundo: 'auto',
+        ...(f.zonaTexto ? { zonaTexto: f.zonaTexto } : {}),
+      },
+    ],
     legenda: c.legenda,
     origem: 'ia',
     relatorio: c.relatorio,

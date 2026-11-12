@@ -1,9 +1,12 @@
 import {
+  FATIA_DO_TEXTO_NA_ARTE,
   FONTES_DO_PAR,
   type FormatoPeca,
   type IdentidadeCarrossel,
   type SlideCarrossel,
   semMarcas,
+  ZONAS_DA_ARTE,
+  type ZonaDaArte,
 } from '@prospeccao/shared/carrosseis';
 import { MANUAL_DESIGN } from '../saber/design.js';
 import { type ConfigImagem, pedirImagem, type ReferenciaImagem } from '../videos/imagens.js';
@@ -69,6 +72,8 @@ export interface DirecaoDeArte {
   tipografia: string;
   luzECor: string;
   cantoDaLogo: CantoDaLogo;
+  /** v158: onde fica a faixa lisa do texto quando o código escreve por cima (padrão: em cima). */
+  zonaDoTexto?: ZonaDaArte;
 }
 
 export interface EntradaArte {
@@ -86,7 +91,22 @@ export interface EntradaArte {
   direcao?: DirecaoDeArte | null;
   /** A segunda tentativa leva o que deu errado na primeira. */
   corrigir?: string[];
+  /**
+   * v158: a IA desenha só a cena, sem nenhuma letra, e deixa uma faixa lisa na cor da marca; o texto é
+   * escrito depois pelo código, com as fontes de verdade. Acaba com a letra torta e com a arte reprovada
+   * por erro de texto.
+   */
+  textoPorCodigo?: boolean;
 }
+
+/** A faixa do texto, em palavras que a IA de imagem entende. */
+const faixaDoTexto = (zona: ZonaDaArte, story: boolean) => {
+  const pct = Math.round(FATIA_DO_TEXTO_NA_ARTE * 100);
+  // No story, o alto e o pé são da interface do Instagram: a faixa começa depois deles.
+  return zona === 'topo'
+    ? `the top ${pct}% of the image${story ? ' (the story interface covers the first 13%)' : ''}`
+    : `the bottom ${pct}% of the image${story ? ' (the story interface covers the last 16%)' : ''}`;
+};
 
 const NOME_DO_CANTO: Record<CantoDaLogo, string> = {
   'topo-esquerda': 'top-left',
@@ -96,7 +116,9 @@ const NOME_DO_CANTO: Record<CantoDaLogo, string> = {
 };
 
 const direcaoSimples = (e: EntradaArte): DirecaoDeArte => ({
-  ideia: `A bold promotional post that sells: ${textoDaArte(e.slide).titulo}`,
+  ideia: e.textoPorCodigo
+    ? `A bold key visual for an ad about this message (context only, never written in the image): ${textoDaArte(e.slide).titulo}`
+    : `A bold promotional post that sells: ${textoDaArte(e.slide).titulo}`,
   cena: `A solid, saturated brand-color background (${e.identidade.cores.principal}) with subtle depth (soft gradient or light glow).`,
   assunto: e.fotos
     ? 'The company photo (image 1) as the hero, cut out cleanly and placed large on one side.'
@@ -122,6 +144,33 @@ export function promptDaArte(e: EntradaArte): string {
   const fotos = Array.from({ length: e.fotos }, (_, i) => i + 1);
   const posts = Array.from({ length: e.posts }, (_, i) => e.fotos + i + 1);
   const linha = (rotulo: string, x: string) => (x ? `- ${rotulo}: "${x}"` : '');
+  if (e.textoPorCodigo) {
+    const zona = d.zonaDoTexto ?? 'topo';
+    const faixa = faixaDoTexto(zona, story);
+    return [
+      `USE CASE: background artwork for ${story ? 'an Instagram story, vertical 9:16 full screen' : 'an Instagram feed post, vertical 4:5'} of the Brazilian company ${e.empresa} (${e.objetivo}). The headline and all text are added later by a designer, on top of this image. It must look like the key visual of a real brand campaign, not a template.`,
+      `BIG IDEA: ${d.ideia}`,
+      `SCENE / BACKGROUND: ${d.cena}`,
+      `SUBJECT: ${d.assunto}`,
+      d.elementos.length ? `GRAPHIC ELEMENTS:\n${d.elementos.map((x) => `- ${x}`).join('\n')}` : '',
+      `LIGHT & COLOR: ${d.luzECor} Brand palette (use these exact colors, saturated): dominant ${c.principal}, accent ${c.destaque}, light ${c.claro}.`,
+      `TEXT AREA (critical): ${faixa} is reserved for the text. Fill it with a flat, clean, solid ${c.principal} and nothing else: no objects, no shapes, no gradients to other colors, no light effects. The subject and every graphic element live in the remaining ${100 - Math.round(FATIA_DO_TEXTO_NA_ARTE * 100)}% of the image, and the solid color blends softly into the scene at the border between the two areas. The subject is large and fills its area; it looks toward or leans toward the text area.`,
+      e.identidade.jeitoDePostar
+        ? `HOW THIS BRAND POSTS (follow the visual language): ${e.identidade.jeitoDePostar.replace(/\s+/g, ' ').slice(0, 500)}`
+        : '',
+      fotos.length || posts.length ? 'REFERENCE IMAGES:' : '',
+      fotos.length
+        ? `- Image${fotos.length > 1 ? 's' : ''} ${fotos.join(', ')}: real photo${fotos.length > 1 ? 's' : ''} of the company. Use as the subject described above; keep the person or product identical (face, shape, colors, labels); cut it out and place it over the brand color.`
+        : '',
+      posts.length
+        ? `- Image${posts.length > 1 ? 's' : ''} ${posts.join(', ')}: posts this brand already published. Borrow their visual language (graphic elements, 3D icons, how they use color and photos). Ignore their text, logo and layout.`
+        : '',
+      `CONSTRAINTS: absolutely NO text, letters, numbers, prices, signs, labels, captions, buttons or badges anywhere in the image; no logos, wordmarks or brand names; no watermark; no frame or border; no generic stock-template look; people and places look Brazilian. ${CARTAO_POSTAL}${story ? ' Keep the top 13% and bottom 16% free of anything important (the story UI covers them).' : ''}`,
+      e.corrigir?.length ? `FIX FROM THE LAST ATTEMPT: ${e.corrigir.join(' ')}` : '',
+    ]
+      .filter((x) => x !== '')
+      .join('\n');
+  }
   return [
     `USE CASE: ${story ? 'Instagram story, vertical 9:16 full screen' : 'Instagram feed post, vertical 4:5'} for the Brazilian company ${e.empresa}. A finished, ready-to-publish promotional ad made by a top Brazilian advertising agency (${e.objetivo}). It must stop the scroll and look like a real brand campaign, not a template.`,
     `BIG IDEA: ${d.ideia}`,
@@ -190,6 +239,12 @@ const ESQUEMA_DIRECAO = {
       description: 'Peso, caixa, cor e tamanho relativo de cada texto (em inglês).',
     },
     luz_e_cor: { type: 'string', description: 'Luz e uso das cores da marca (em inglês).' },
+    zona_do_texto: {
+      type: 'string',
+      enum: [...ZONAS_DA_ARTE],
+      description:
+        'Só quando o texto é escrito pelo sistema: a faixa lisa do texto fica em cima ("topo": o herói pousa embaixo, que é o natural para produto, moto, carro, prato) ou embaixo ("base": o herói fica em cima, bom para rosto e para cena com céu).',
+    },
     canto_da_logo: {
       type: 'string',
       enum: CANTOS_DA_LOGO,
@@ -204,6 +259,7 @@ const ESQUEMA_DIRECAO = {
     'elementos',
     'tipografia',
     'luz_e_cor',
+    'zona_do_texto',
     'canto_da_logo',
   ],
 } as const;
@@ -231,6 +287,9 @@ export function lerDirecao(d: Record<string, unknown>): DirecaoDeArte | null {
     tipografia: curto(d.tipografia, 400),
     luzECor: curto(d.luz_e_cor, 300),
     cantoDaLogo: CANTOS_DA_LOGO.includes(canto) ? canto : 'topo-direita',
+    zonaDoTexto: (ZONAS_DA_ARTE as readonly string[]).includes(String(d.zona_do_texto))
+      ? (d.zona_do_texto as ZonaDaArte)
+      : 'topo',
   };
 }
 
@@ -276,7 +335,9 @@ export async function dirigirArte(
       e.fotos
         ? 'Use a foto da empresa como herói sempre que ela servir à mensagem (pessoa ou produto recortado sobre a cor da marca é o que mais funciona).'
         : 'Não há foto da empresa: o herói é um objeto ou cena criada que mostre o benefício (3D, bem iluminado), nunca um banco de imagens genérico.',
-      'Escolha o canto livre para a logo de verdade (ela é posta depois, por cima).',
+      e.textoPorCodigo
+        ? `IMPORTANTE: a IA de imagem NÃO vai escrever nada. Ela desenha só a cena; o sistema escreve o texto por cima, com as fontes da marca, numa faixa lisa na cor principal que ocupa ${Math.round(FATIA_DO_TEXTO_NA_ARTE * 100)}% da altura. Em "zona_do_texto", diga se a faixa fica em cima ou embaixo. Em "composicao" e "assunto", descreva só a cena e o herói, que moram no resto da imagem, grandes; em "tipografia", escreva "none".`
+        : 'Escolha o canto livre para a logo de verdade (ela é posta depois, por cima).',
     ]
       .filter(Boolean)
       .join('\n'),
@@ -294,7 +355,11 @@ export async function desenharArte(
   e: EntradaArte & { referencias: ReferenciaImagem[] },
 ): Promise<Uint8Array> {
   const t = tamanhoDaImagem(e.formato);
-  return pedirImagem(cfg, {
+  // v158: a cena sem texto não precisa da qualidade máxima (era a letra que pedia). Com foto da empresa
+  // de referência fica a qualidade configurada, para o produto ou a pessoa saírem iguais.
+  const config: ConfigImagem =
+    e.textoPorCodigo && !e.fotos ? { ...cfg, qualidade: cfg.qualidadeCena ?? 'medium' } : cfg;
+  return pedirImagem(config, {
     prompt: promptDaArte(e),
     ...t,
     ...(e.referencias.length ? { referencias: e.referencias } : {}),
@@ -463,6 +528,60 @@ export function avaliarArte(
     d.legivel === false ||
     (Number.isFinite(nota) && nota < NOTA_MINIMA_ARTE);
   return { aprovada: !reprovou, problemas: reprovou ? problemas : [], lidos };
+}
+
+/**
+ * v158: a conferência da cena sem texto. Reprova se apareceu qualquer coisa escrita, se a faixa do
+ * texto não ficou lisa, se há outra marca, defeito de imagem gerada ou a cena ficou fraca.
+ */
+export function avaliarCena(d: Record<string, unknown>): ConferenciaArte {
+  const lidos = (Array.isArray(d.textos) ? d.textos : []).map((x) => String(x).slice(0, 300));
+  const escrito = lidos.filter((x) => /[\p{L}\p{N}]{2,}/u.test(x));
+  const problemas: string[] = [];
+  if (escrito.length)
+    problemas.push(
+      `Apareceu texto na imagem (${escrito
+        .slice(0, 3)
+        .map((x) => `"${x}"`)
+        .join(', ')}): a imagem não pode ter nenhuma letra nem número.`,
+    );
+  if (d.canto_livre === false)
+    problemas.push('A faixa do texto não ficou lisa: nada de objeto, forma ou luz dentro dela.');
+  if (d.outra_marca === true) problemas.push('Apareceu logotipo ou marca na imagem.');
+  if (d.defeito === true) problemas.push('A imagem tem defeito de imagem gerada.');
+  const nota = Number(d.nota);
+  if (Number.isFinite(nota) && nota < NOTA_MINIMA_ARTE)
+    problemas.push(`A cena ficou fraca (nota ${nota} de 5).`);
+  return { aprovada: problemas.length === 0, problemas, lidos };
+}
+
+export async function conferirCena(
+  claude: ClienteClaude,
+  e: { jpeg: Uint8Array; zona: ZonaDaArte },
+): Promise<ConferenciaArte> {
+  const faixa = e.zona === 'topo' ? 'de cima' : 'de baixo';
+  const r = await claude.pedir({
+    agente: 'revisor de arte',
+    sistema: [
+      {
+        texto:
+          'Você é o revisor final de uma agência: confere a imagem de fundo que a IA desenhou para um post. O texto do post é escrito depois, por cima, numa faixa que precisa estar lisa.',
+      },
+    ],
+    imagens: [
+      {
+        tipo: 'image/jpeg' as const,
+        base64: Buffer.from(e.jpeg).toString('base64'),
+        legenda: 'A imagem para conferir:',
+      },
+    ],
+    mensagem: `Confira a imagem. Em "textos", liste qualquer letra, palavra ou número que apareça (o certo é não haver nenhum). Em "canto_livre", diga se a faixa ${faixa} da imagem (${Math.round(FATIA_DO_TEXTO_NA_ARTE * 100)}% da altura) está lisa, numa cor só, sem objeto nem forma dentro. Em "legivel", responda true. A nota é da cena: o herói grande e bem resolvido, com cara de campanha e não de modelo pronto.`,
+    ferramenta: { nome: 'conferir_arte', descricao: 'A conferência da cena.', esquema: ESQUEMA_ARTE },
+    maxTokens: 600,
+    temperatura: 0,
+    timeoutMs: 90_000,
+  });
+  return avaliarCena(r.dados);
 }
 
 export async function conferirArte(

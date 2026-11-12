@@ -56,8 +56,10 @@ describe('v148: cards mais vivos', () => {
     const m = montarSlide({ slide, indice: 0, total: 1, identidade, estilo: 'vivo' });
     const t = textos(m.no);
     expect(t.map((x) => x.t).join('')).not.toContain('*');
-    const marcada = t.find((x) => x.t === '40 minutos');
-    const resto = t.find((x) => x.t.includes('Entrega em'));
+    // v157: cada palavra marcada é um pedaço próprio (a quebra de linha é decidida pelo código).
+    const marcada = t.find((x) => x.t === '40');
+    expect(t.find((x) => x.t === 'minutos')?.cor).toBe(marcada?.cor);
+    const resto = t.find((x) => x.t.includes('Entrega'));
     expect(marcada?.cor).toBeTruthy();
     expect(marcada?.cor).not.toBe(resto?.cor);
     expect(semMarcas('a *b* c')).toBe('a b c');

@@ -98,6 +98,13 @@ export const esquemaEnvApi = envBase.extend({
     .default('claude-haiku-5-5'),
   /** v157: a qualidade do elemento 3D das peças (um objeto pequeno): medium custa uma fração de high. */
   CARROSSEIS_ELEMENTO_QUALIDADE: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('medium'),
+  /**
+   * v158: quem escreve o texto da Arte da IA. "codigo" (padrão): a IA desenha só a cena e o sistema
+   * escreve o texto com as fontes da marca. "ia": o jeito antigo, com a IA desenhando as letras.
+   */
+  CARROSSEIS_ARTE_TEXTO: z.enum(['codigo', 'ia']).default('codigo'),
+  /** v158: a qualidade da cena da arte sem foto de referência (o texto já não depende dela). */
+  CARROSSEIS_CENA_QUALIDADE: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('medium'),
   CARROSSEIS_IMAGEM_MODELO: z.string().min(3).default('gpt-image-2.6-sunburst'),
   /** v148: a qualidade das imagens dos carrosséis e cards (high: a mais caprichada do GPT Image). */
   CARROSSEIS_IMAGEM_QUALIDADE: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),

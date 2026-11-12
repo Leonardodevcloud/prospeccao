@@ -3,14 +3,12 @@ import {
   ESTILOS,
   type EstiloCarrossel,
   FORMATO_PECA,
-  FORMATOS_PECA,
   type FormatoPeca,
 } from '@prospeccao/shared/carrosseis';
 import {
   CHAMADA_FINAL,
   CHAMADAS_FINAIS,
   type ChamadaFinal,
-  ETAPA_TIME,
   type FotoDoPedido,
   type LoteCards,
   MAX_CARDS_PEDIDO,
@@ -34,6 +32,7 @@ import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, useIdentidade } from './dados';
 import { FotosDoPedido } from './Imagens';
+import { ENTREGAS_DO_TIME, estacoesDoTime, MesaDoTime, NOTA_DO_TIME } from './Mesa';
 import {
   type ConversaRespondida,
   PerguntasDoTime,
@@ -598,13 +597,19 @@ function Lote(props: { l: LoteCards; arteLigada: boolean }) {
       </header>
 
       {trabalhando && (
-        <p className="cards-lote__andamento" aria-live="polite">
-          <Icon name="loader" size={14} />{' '}
-          {l.etapa
-            ? `${ETAPA_TIME[l.etapa].nome}: ${l.detalhes[l.etapa] ?? ETAPA_TIME[l.etapa].faz}`
-            : 'Começa em instantes.'}
-          <span className="quieto"> Leva de 1 a 3 minutos; pode sair desta tela, o aviso chega no sino.</span>
-        </p>
+        <>
+          <MesaDoTime
+            titulo="A mesa do time"
+            estacoes={estacoesDoTime(l)}
+            entregas={ENTREGAS_DO_TIME}
+            nota={NOTA_DO_TIME}
+            parado={l.situacao !== 'trabalhando'}
+          />
+          <p className="quieto cards-lote__andamento">
+            {l.etapa ? '' : 'Começa em instantes. '}Leva de 1 a 3 minutos; pode sair desta tela, o aviso chega
+            no sino.
+          </p>
+        </>
       )}
       {falhou && <Mensagem tipo="erro">{l.erro ?? 'O time não conseguiu terminar. Peça de novo.'}</Mensagem>}
 

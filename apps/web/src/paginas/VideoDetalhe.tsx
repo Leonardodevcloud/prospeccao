@@ -5,6 +5,7 @@ import {
   ESTILOS_LEGENDA,
   type EstiloLegenda,
   ETAPAS_VIDEO,
+  type EtapaVideo,
   fmtDuracao,
   linhaDoAndamento,
   mapaDaPrevia,
@@ -25,6 +26,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api';
+import { type EstacaoDaMesa, MesaDoTime } from '../carrossel/Mesa';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
@@ -149,6 +151,72 @@ function Topo({ v }: { v: DetalheComFila }) {
   );
 }
 
+/**
+ * v158: a ilha de edição. As nove etapas do vídeo viram quatro papéis; o que cada um "fala" é o que as
+ * etapas dele anotaram de verdade (palavras ouvidas, cortes, imagens) ou, com a vez, o que está fazendo.
+ */
+const PAPEIS_DO_VIDEO: { id: string; nome: string; funcao: string; icone: string; etapas: EtapaVideo[] }[] = [
+  {
+    id: 'corte',
+    nome: 'Editora de vídeo',
+    funcao: 'Ouve a fala e corta pausas, "éé" e frases recomeçadas.',
+    icone: 'scissors',
+    etapas: ['preparando', 'ouvindo', 'cortando'],
+  },
+  {
+    id: 'motion',
+    nome: 'Editor de motion',
+    funcao: 'Escolhe as imagens e monta a legenda e as animações.',
+    icone: 'sparkles',
+    etapas: ['rosto', 'imagens', 'montando', 'gerando'],
+  },
+  {
+    id: 'som',
+    nome: 'Técnico de som',
+    funcao: 'Compõe a música no tamanho do vídeo, mais baixa que a sua voz.',
+    icone: 'volume-2',
+    etapas: ['som'],
+  },
+  {
+    id: 'revisao',
+    nome: 'Revisora',
+    funcao: 'Confere quadro a quadro que nenhum texto encostou no rosto.',
+    icone: 'eye',
+    etapas: ['conferindo'],
+  },
+];
+
+function estacoesDoVideo(v: DetalheComFila, atual: number): EstacaoDaMesa[] {
+  const pronto = v.progresso >= 100;
+  return PAPEIS_DO_VIDEO.map((p) => {
+    const indices = p.etapas.map((e) => ETAPAS_VIDEO.findIndex((x) => x.id === e));
+    const comVez = !pronto && indices.includes(atual);
+    const feito = pronto || (atual >= 0 && indices.every((i) => i < atual));
+    const etapaAtual = comVez ? ETAPAS_VIDEO[atual] : null;
+    // O que as etapas já feitas deste papel acharam (os números de verdade).
+    const achados = p.etapas
+      .filter((e) => ETAPAS_VIDEO.findIndex((x) => x.id === e) < atual || pronto)
+      .map((e) => linhaDoAndamento(e, v.andamento))
+      .filter((x): x is string => !!x);
+    const fala = etapaAtual
+      ? [
+          ...achados.slice(-1),
+          `${etapaAtual.nome}: ${etapaAtual.dica.charAt(0).toLowerCase()}${etapaAtual.dica.slice(1)}`,
+        ].join('. ')
+      : achados.length
+        ? `${achados.join('. ')}.`
+        : null;
+    return {
+      id: p.id,
+      nome: p.nome,
+      funcao: p.funcao,
+      icone: p.icone,
+      estado: comVez ? 'agora' : feito ? 'feito' : 'depois',
+      fala,
+    };
+  });
+}
+
 /* ───────────────────────────── Editando ───────────────────────────── */
 
 function Editando({ v }: { v: DetalheComFila }) {
@@ -178,32 +246,30 @@ function Editando({ v }: { v: DetalheComFila }) {
             <span style={{ width: `${Math.max(3, v.progresso)}%` }} />
           </span>
         </div>
-        <ol className="video__etapas">
-          {ETAPAS_VIDEO.map((e, k) => {
-            const feito = atual > k || v.progresso >= 100;
-            const agora = atual === k;
-            // O que a etapa achou de verdade (palavras, cortes, rosto, imagens), quando já passou.
-            const achou = feito ? linhaDoAndamento(e.id, v.andamento) : null;
-            return (
-              <li
-                key={e.id}
-                className="video__etapa"
-                data-agora={agora || undefined}
-                data-feito={feito || undefined}
-              >
-                <Icon
-                  name={feito ? 'check' : agora ? 'refresh-cw' : 'circle-dashed'}
-                  size={18}
-                  spin={agora}
-                />
-                <span>
-                  <b>{e.nome}</b>
-                  <span className="campo__dica">{achou ?? e.dica}</span>
-                </span>
-              </li>
-            );
-          })}
-        </ol>
+        <MesaDoTime
+          titulo="A ilha de edição"
+          estacoes={estacoesDoVideo(v, atual)}
+          entregas={['corte', 'vídeo', 'final']}
+          parado={v.situacao === 'na_fila'}
+        >
+          <ol className="video__passos" aria-label="Etapas da edição">
+            {ETAPAS_VIDEO.map((e, k) => {
+              const feito = atual > k || v.progresso >= 100;
+              return (
+                <li
+                  key={e.id}
+                  className="video__passo"
+                  data-agora={atual === k || undefined}
+                  data-feito={feito || undefined}
+                  title={(feito ? linhaDoAndamento(e.id, v.andamento) : null) ?? e.dica}
+                >
+                  {feito && <Icon name="check" size={12} strokeWidth={3} />}
+                  {e.nome}
+                </li>
+              );
+            })}
+          </ol>
+        </MesaDoTime>
         <FalaOuvida v={v} />
         {v.erro && v.situacao === 'na_fila' && (
           <Mensagem tipo="aviso">Na tentativa anterior: {v.erro} Vamos tentar de novo.</Mensagem>

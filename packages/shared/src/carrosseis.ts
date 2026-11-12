@@ -243,6 +243,20 @@ export const ROTULO_COMPOSICAO: Record<ComposicaoCamadas, string> = {
   centro: 'Tudo no centro',
   topo: 'Foto em cima',
 };
+/**
+ * v158: a arte da IA sem texto. A IA desenha a cena e deixa uma faixa lisa na cor da marca; o código
+ * escreve o texto nessa faixa com as fontes de verdade (em cima ou embaixo). Arte sem este campo é a
+ * antiga, com o texto desenhado pela IA dentro da imagem.
+ */
+export const ZONAS_DA_ARTE = ['topo', 'base'] as const;
+export type ZonaDaArte = (typeof ZONAS_DA_ARTE)[number];
+export const ROTULO_ZONA_DA_ARTE: Record<ZonaDaArte, string> = {
+  topo: 'Texto em cima',
+  base: 'Texto embaixo',
+};
+/** Quanto da altura da peça é a faixa do texto (a IA recebe o mesmo número no pedido). */
+export const FATIA_DO_TEXTO_NA_ARTE = 0.46;
+
 /** v155: a forma desenhada pelo código atrás da foto (sempre num tom vizinho da cor de fundo). */
 export const FORMAS_CAMADAS = ['circulo', 'mancha', 'faixa', 'reticula'] as const;
 export type FormaCamadas = (typeof FORMAS_CAMADAS)[number];
@@ -471,6 +485,7 @@ export const slideEntrada = z.object({
   fundo: z.enum(FUNDOS_SLIDE).default('auto'),
   /** v152: só no modelo "Em camadas" (sem valor: a foto ao lado do texto). */
   composicao: z.enum(COMPOSICOES_CAMADAS).optional(),
+  zonaTexto: z.enum(ZONAS_DA_ARTE).optional(),
   /** v155: a forma atrás da foto e o acabamento do recorte (sem valor: círculo e sombra). */
   forma: z.enum(FORMAS_CAMADAS).optional(),
   acabamento: z.enum(ACABAMENTOS_CAMADAS).optional(),
@@ -1196,8 +1211,8 @@ function tituloNo(
   alturaLinha: number,
   cor: string,
   extra: Estilo = {},
-  /** v157: com a largura, o código quebra as linhas (a medida e o desenho passam a ser a mesma conta). */
-  largura?: number,
+  /** v157: o código quebra as linhas pela largura (a medida e o desenho passam a ser a mesma conta). */
+  largura: number = MIOLO,
 ): No {
   const partes = t.split(/\*([^*\n]+)\*/g);
   if (partes.length < 3) return textoNo(semMarcas(t), f, tamanho, alturaLinha, cor, extra);
@@ -1205,7 +1220,7 @@ function tituloNo(
     type: 'span',
     props: { style: { color: corDoRealce(c) }, children: palavra },
   });
-  if (largura) {
+  {
     // Título com palavras marcadas: o Satori quebra a linha de um jeito quando há pedaços coloridos e
     // de outro quando o texto é liso, e o título ocupava mais linhas do que o código tinha medido (o
     // botão saía cortado). Aqui cada linha é decidida pelas medidas da fonte e desenhada sem quebra.
@@ -1243,15 +1258,6 @@ function tituloNo(
       ),
     );
   }
-  // Satori e o navegador escrevem os pedaços em linha quando a caixa é "block".
-  const filhos = partes.map((p, i) => (i % 2 === 1 ? realce(p) : semMarcas(p))).filter((p) => p !== '');
-  return {
-    type: 'div',
-    props: {
-      style: { ...estiloTexto(f, tamanho, alturaLinha, cor), ...extra, display: 'block' },
-      children: filhos,
-    },
-  };
 }
 
 /** Rótulo pequeno em caixa alta, na cor de destaque (no estilo Vivo, um selo). */
@@ -1843,7 +1849,10 @@ function numero(c: Contexto): No {
 
 function citacao(c: Contexto): No {
   const { s } = c;
-  const alturaAspas = 140;
+  // v158: no card avulso a frase é a peça. As aspas viram um desenho grande atrás do texto (não gastam
+  // altura) e a letra pode crescer até ocupar a peça; no carrossel fica como sempre.
+  const card = sozinho(c);
+  const alturaAspas = card ? 0 : 140;
   const alturaLinha = Math.max(1.12, c.par.titulo.alturaLinha);
   const ajuste = caberBlocos(
     [
@@ -1852,10 +1861,10 @@ function citacao(c: Contexto): No {
         texto: semMarcas(s.titulo),
         fonte: fonteTitulo(c),
         largura: MIOLO,
-        min: 48,
-        max: 96,
+        min: card ? 56 : 48,
+        max: card ? 132 : 96,
         alturaLinha,
-        antes: 28,
+        antes: card ? 0 : 28,
         peso: 2,
       },
       {
@@ -1872,21 +1881,34 @@ function citacao(c: Contexto): No {
     M.conteudo - reservaDoBotao(c) - alturaAspas,
   );
   if (!ajuste.cabe) c.avisos.push('A frase está longa demais para a citação: encurte.');
+  const claroSobre = contraste(c.cores.fundo, BRANCO) >= 3;
+  const tom = misturar(c.cores.fundo, claroSobre ? BRANCO : PRETO, claroSobre ? 0.13 : 0.08);
   return quadro(c, {
+    atras: card
+      ? [
+          textoNo('“', { familia: c.par.titulo.familia, peso: c.par.titulo.pesoForte }, 900, 1, tom, {
+            position: 'absolute',
+            left: LADO - 40,
+            top: M.topo - 90,
+          }),
+        ]
+      : [],
     corpo: [
-      div(
-        { height: alturaAspas, overflow: 'hidden', flexShrink: 0 },
-        textoNo(
-          '“',
-          { familia: c.par.titulo.familia, peso: c.par.titulo.pesoForte },
-          300,
-          1,
-          c.cores.acento,
-          { marginTop: -30 },
-        ),
-      ),
+      card
+        ? null
+        : div(
+            { height: alturaAspas, overflow: 'hidden', flexShrink: 0 },
+            textoNo(
+              '“',
+              { familia: c.par.titulo.familia, peso: c.par.titulo.pesoForte },
+              300,
+              1,
+              c.cores.acento,
+              { marginTop: -30 },
+            ),
+          ),
       tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, alturaLinha, c.cores.texto, {
-        marginTop: 28,
+        marginTop: card ? 0 : 28,
       }),
       s.texto ? div({ marginTop: 48, width: 72, height: 3, backgroundColor: c.cores.acento }) : null,
       s.texto
@@ -2028,7 +2050,16 @@ function fotoModelo(c: Contexto): No {
           backgroundColor: c.cores.fundo,
           borderRadius: tema.cantos,
         },
-        tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto),
+        tituloNo(
+          c,
+          s.titulo,
+          fonteTitulo(c),
+          ajuste.tamanhos.t!,
+          c.par.titulo.alturaLinha,
+          c.cores.texto,
+          {},
+          larguraCaixa,
+        ),
         s.texto
           ? textoNo(s.texto, fonteCorpo(c), ajuste.tamanhos.x!, 1.42, c.cores.suave, { marginTop: 20 })
           : null,
@@ -2185,9 +2216,42 @@ function arte(c: Contexto): No {
     );
     return capa({ ...c, s: { ...c.s, modelo: 'capa' } });
   }
+  if (!c.s.zonaTexto)
+    return div(
+      { width: M.largura, height: M.altura, position: 'relative', backgroundColor: c.cores.fundo },
+      imagemCheia(c.foto),
+    );
+  // v158: a cena é da IA, o texto é do código. A faixa do texto vem lisa na cor principal; um véu da
+  // mesma cor garante a leitura mesmo que a IA tenha deixado algo escapar para dentro dela.
+  const emCima = c.s.zonaTexto === 'topo';
+  const faixa = Math.round(M.altura * FATIA_DO_TEXTO_NA_ARTE);
+  const y = emCima ? M.topo : M.altura - faixa + 24;
+  const g: GeometriaCamadas = {
+    naBase: true,
+    foto: { x: 0, y: emCima ? faixa : 0, l: M.largura, a: M.altura - faixa },
+    texto: { x: LADO, y, l: MIOLO, a: (emCima ? faixa : M.altura - M.base) - y },
+    elemento: null,
+  };
+  const veu = div({
+    position: 'absolute',
+    left: 0,
+    top: emCima ? 0 : M.altura - faixa - 120,
+    width: M.largura,
+    height: faixa + 120,
+    backgroundImage: `linear-gradient(${emCima ? 180 : 0}deg, ${c.cores.fundo} 0%, ${c.cores.fundo} 72%, ${c.cores.fundo}00 100%)`,
+  });
+  const { coluna } = colunaDaPeca(c, g);
   return div(
-    { width: M.largura, height: M.altura, position: 'relative', backgroundColor: c.cores.fundo },
+    {
+      width: M.largura,
+      height: M.altura,
+      position: 'relative',
+      overflow: 'hidden',
+      backgroundColor: c.cores.fundo,
+    },
     imagemCheia(c.foto),
+    veu,
+    coluna,
   );
 }
 
@@ -2361,61 +2425,13 @@ function formaDeFundo(forma: FormaCamadas, g: GeometriaCamadas, cor: string): No
  * o texto nunca passa por cima da foto e o elemento só entra onde há vazio. Sem o recorte (apagado ou
  * ainda não feito), a peça cai na capa, com o mesmo texto.
  */
-function camadas(c: Contexto): No {
-  if (!c.foto) {
-    c.avisos.push('O recorte da foto não está disponível: a peça aparece no modelo Capa até ser refeito.');
-    return capa({ ...c, s: { ...c.s, modelo: 'capa' } });
-  }
+/**
+ * A coluna de texto da peça (logo, selo, número, título, texto e botão), ajustada para caber na caixa
+ * `g.texto`. É a mesma para a peça em camadas e, desde a v158, para a arte da IA sem texto: a IA
+ * desenha a cena e o código escreve por cima, com as fontes da marca.
+ */
+function colunaDaPeca(c: Contexto, g: GeometriaCamadas): { coluna: No; logoSolta: No | null } {
   const { s } = c;
-  const formato: FormatoPeca = M.altura > ALTURA_SLIDE ? 'story' : 'feed';
-  const g = geometriaCamadas(formato, c.fotoMedidas, s.composicao ?? 'lado');
-  // O acabamento (sombra, contorno) vem com uma margem em volta do recorte: a imagem é desenhada maior,
-  // para o assunto continuar exatamente na caixa da foto.
-  const folga =
-    c.fotoMedidas && c.fotoFolga
-      ? Math.round((c.fotoFolga * g.foto.l) / Math.max(1, c.fotoMedidas.largura))
-      : 0;
-  const recorte: No = {
-    type: 'img',
-    props: {
-      src: c.foto,
-      width: g.foto.l + folga * 2,
-      height: g.foto.a + folga * 2,
-      style: {
-        position: 'absolute',
-        left: g.foto.x - folga,
-        top: g.foto.y - folga,
-        width: g.foto.l + folga * 2,
-        height: g.foto.a + folga * 2,
-        objectFit: 'contain',
-        ...(c.fotoMedidas ? {} : { objectPosition: 'right bottom' }),
-      },
-    },
-  };
-  // Sobre a cor de destaque o elemento (que é da cor de destaque) sumiria: a peça fica sem ele.
-  const el = c.tipoFundo === 'destaque' ? undefined : c.elementos[0];
-  const elemento: No | null =
-    el && g.elemento
-      ? {
-          type: 'img',
-          props: {
-            src: el.src,
-            width: g.elemento.lado,
-            height: g.elemento.lado,
-            style: {
-              position: 'absolute',
-              left: g.elemento.x,
-              top: g.elemento.y,
-              width: g.elemento.lado,
-              height: g.elemento.lado,
-              objectFit: 'contain',
-            },
-          },
-        }
-      : null;
-  const claroSobre = contraste(c.cores.fundo, BRANCO) >= 3;
-  const tom = misturar(c.cores.fundo, claroSobre ? BRANCO : PRETO, claroSobre ? 0.12 : 0.07);
-  const circulo = formaDeFundo(s.forma ?? 'circulo', g, tom);
   const largura = g.texto.l;
   /** O maior tamanho (entre min e max) em que o texto cabe numa linha da coluna. */
   const naLinha = (t: string, f: FonteMedida, max: number, min: number, espaco = largura) => {
@@ -2424,7 +2440,7 @@ function camadas(c: Contexto): No {
     return tam;
   };
   // No card a logo vai sempre; na capa de um carrossel, só com "logo na capa" ligado na identidade.
-  const comLogo = sozinho(c) || c.id.logoNaCapa;
+  const comLogo = sozinho(c) || (c.indice === 0 && c.id.logoNaCapa);
   // Foto embaixo: a logo divide a linha com o selo (sobra altura para o título). Ao lado: em cima.
   const logoDaPeca = comLogo ? logoNo(c, g.naBase ? 72 : ALTURA_LOGO_CARD) : null;
   // "Foto em cima": a logo fica solta no canto de cima, fora da coluna do texto.
@@ -2606,6 +2622,65 @@ function camadas(c: Contexto): No {
       : null,
     botao,
   );
+  return { coluna, logoSolta };
+}
+
+function camadas(c: Contexto): No {
+  if (!c.foto) {
+    c.avisos.push('O recorte da foto não está disponível: a peça aparece no modelo Capa até ser refeito.');
+    return capa({ ...c, s: { ...c.s, modelo: 'capa' } });
+  }
+  const { s } = c;
+  const formato: FormatoPeca = M.altura > ALTURA_SLIDE ? 'story' : 'feed';
+  const g = geometriaCamadas(formato, c.fotoMedidas, s.composicao ?? 'lado');
+  // O acabamento (sombra, contorno) vem com uma margem em volta do recorte: a imagem é desenhada maior,
+  // para o assunto continuar exatamente na caixa da foto.
+  const folga =
+    c.fotoMedidas && c.fotoFolga
+      ? Math.round((c.fotoFolga * g.foto.l) / Math.max(1, c.fotoMedidas.largura))
+      : 0;
+  const recorte: No = {
+    type: 'img',
+    props: {
+      src: c.foto,
+      width: g.foto.l + folga * 2,
+      height: g.foto.a + folga * 2,
+      style: {
+        position: 'absolute',
+        left: g.foto.x - folga,
+        top: g.foto.y - folga,
+        width: g.foto.l + folga * 2,
+        height: g.foto.a + folga * 2,
+        objectFit: 'contain',
+        ...(c.fotoMedidas ? {} : { objectPosition: 'right bottom' }),
+      },
+    },
+  };
+  // Sobre a cor de destaque o elemento (que é da cor de destaque) sumiria: a peça fica sem ele.
+  const el = c.tipoFundo === 'destaque' ? undefined : c.elementos[0];
+  const elemento: No | null =
+    el && g.elemento
+      ? {
+          type: 'img',
+          props: {
+            src: el.src,
+            width: g.elemento.lado,
+            height: g.elemento.lado,
+            style: {
+              position: 'absolute',
+              left: g.elemento.x,
+              top: g.elemento.y,
+              width: g.elemento.lado,
+              height: g.elemento.lado,
+              objectFit: 'contain',
+            },
+          },
+        }
+      : null;
+  const claroSobre = contraste(c.cores.fundo, BRANCO) >= 3;
+  const tom = misturar(c.cores.fundo, claroSobre ? BRANCO : PRETO, claroSobre ? 0.12 : 0.07);
+  const circulo = formaDeFundo(s.forma ?? 'circulo', g, tom);
+  const { coluna, logoSolta } = colunaDaPeca(c, g);
   return div(
     {
       width: M.largura,
@@ -2646,6 +2721,8 @@ export function fundoDoSlide(s: SlideCarrossel, estilo: EstiloCarrossel): TipoFu
   if (s.modelo === 'chamada') return tema.chamada;
   // v152: a peça em camadas mora sobre a cor da marca (a principal; "destaque" troca pela de destaque).
   if (s.modelo === 'camadas') return 'escuro';
+  // v158: a arte sem texto tem a faixa do texto na cor principal.
+  if (s.modelo === 'arte' && s.zonaTexto) return 'escuro';
   // Capa e foto de ponta a ponta: o véu é da cor principal, então o texto é o do fundo escuro.
   if ((s.modelo === 'capa' || s.modelo === 'foto') && tema.fotoCheia && s.fotoId) return 'escuro';
   return tema.base;

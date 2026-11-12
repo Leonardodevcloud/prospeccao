@@ -30,6 +30,7 @@ import { fmtNumero, fmtQuando } from '../formatar';
 import { type SituacaoCarrosseis, useDivulgar, useFotos, usePedidoDoTime } from './dados';
 import type { IdeiaInicial } from './Ideias';
 import { CamposDeImagens, FotosDoPedido, IMAGENS_VAZIAS, type ImagensDoPedido } from './Imagens';
+import { ENTREGAS_DO_TIME, estacoesDoTime, MesaDoTime, NOTA_DO_TIME, PilhaDoTime } from './Mesa';
 import {
   type ConversaRespondida,
   PerguntasDoTime,
@@ -37,7 +38,6 @@ import {
   SEM_CONVERSA,
   usePerguntas,
 } from './Perguntas';
-import { FotoDoTime } from './TimeDeIa';
 
 /**
  * As telas do time de IA: o pedido de um carrossel (o que o time precisa saber), o time
@@ -393,15 +393,6 @@ export function NovoComTime(props: {
 
 /* ───────────────────────────── O time trabalhando ───────────────────────────── */
 
-function estadoDaEtapa(p: PedidoDoTime, e: (typeof ETAPAS_TIME)[number]): 'feito' | 'agora' | 'depois' {
-  if (p.situacao === 'pronto') return 'feito';
-  const atual = p.etapa ? ETAPAS_TIME.indexOf(p.etapa) : -1;
-  const esta = ETAPAS_TIME.indexOf(e);
-  if (p.etapa === e) return 'agora';
-  // O revisor pode devolver ao redator: o que já tem detalhe e veio antes do atual está feito.
-  return esta < atual || (p.detalhes[e] && esta !== atual) ? 'feito' : 'depois';
-}
-
 export function TimeTrabalhando(props: { id: number; aoFechar: () => void }) {
   const q = usePedidoDoTime(props.id);
   const navegar = useNavigate();
@@ -422,27 +413,13 @@ export function TimeTrabalhando(props: { id: number; aoFechar: () => void }) {
             : 'Leva cerca de 1 a 2 minutos. Pode fechar: avisamos quando o carrossel ficar pronto.'}
         </p>
       )}
-      <ol className="time-trabalhando__etapas">
-        {ETAPAS_TIME.map((e) => {
-          const est = estadoDaEtapa(p, e);
-          return (
-            <li key={e} className="time-trabalhando__etapa" data-estado={est}>
-              <span className="time-trabalhando__marca" aria-hidden="true">
-                {est === 'feito' ? (
-                  <Icon name="check" size={14} />
-                ) : est === 'agora' ? (
-                  <Icon name="loader" size={14} />
-                ) : null}
-              </span>
-              <FotoDoTime etapa={e} tamanho={36} />
-              <span>
-                <b>{ETAPA_TIME[e].nome}</b>
-                <span className="quieto time-trabalhando__faz">{p.detalhes[e] ?? ETAPA_TIME[e].faz}</span>
-              </span>
-            </li>
-          );
-        })}
-      </ol>
+      <MesaDoTime
+        titulo="A mesa do time"
+        estacoes={estacoesDoTime(p)}
+        entregas={ENTREGAS_DO_TIME}
+        nota={NOTA_DO_TIME}
+        parado={p.situacao !== 'trabalhando'}
+      />
       <div className="acoes">
         <Button variant="secondary" onClick={props.aoFechar}>
           Fechar e avisar quando ficar pronto
@@ -464,7 +441,11 @@ export function CartaoPedido(props: { p: PedidoDoTime }) {
   return (
     <li className="carrossel-cartao carrossel-cartao--pedido" data-falhou={falhou || undefined}>
       <div className="carrossel-cartao__trabalhando" aria-hidden="true">
-        <Icon name={falhou ? 'circle-x' : 'sparkles'} size={26} />
+        {falhou ? (
+          <Icon name="circle-x" size={26} />
+        ) : (
+          <PilhaDoTime estacoes={estacoesDoTime(p)} tamanho={30} />
+        )}
       </div>
       <div className="carrossel-cartao__info">
         <span className="carrossel-cartao__titulo">{p.assunto || 'Carrossel do time de IA'}</span>
@@ -476,7 +457,7 @@ export function CartaoPedido(props: { p: PedidoDoTime }) {
             {falhou
               ? (p.erro ?? 'Peça de novo.')
               : p.etapa
-                ? `${ETAPA_TIME[p.etapa].nome}…`
+                ? `${ETAPA_TIME[p.etapa].nome}: ${p.detalhes[p.etapa] ?? ETAPA_TIME[p.etapa].faz}`
                 : fmtQuando(p.criadoEm)}
           </span>
         </div>

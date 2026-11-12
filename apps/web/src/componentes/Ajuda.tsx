@@ -1579,16 +1579,15 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             Com <b>Uma arte desenhada pela IA em cada card</b> ligado (vem desligado), cada card ganha mais
-            uma variação, marcada <b>Arte da IA</b>: a peça inteira desenhada como um designer faria, a partir
-            do texto da 1ª variação. Antes de desenhar, o diretor de arte olha as suas fotos e os posts do seu
-            Instagram e planeja a composição; a IA desenha deixando um canto livre e o sistema põe ali a sua
-            logo de verdade (o arquivo salvo, sem a IA redesenhar). Uma IA com visão lê o que saiu escrito e
-            confere com o texto aprovado, palavra por palavra (acentos e preços contam); se errar duas vezes,
-            o card fica só nos modelos (a arte só passa com nota 4 de 5 ou mais do revisor). Num card pronto,{' '}
-            <b>Arte da IA</b> desenha a arte a partir da variação escolhida e <b>Desenhar de novo</b> refaz a
-            arte. Na arte, o texto está desenhado na imagem: mudou o texto no editor, clique em{' '}
-            <b>Desenhar de novo com este texto</b> (ou troque para um modelo, que monta a peça com o texto
-            novo na hora). Cada arte custa cerca de US$ 0,25 a 0,50.
+            uma variação, marcada <b>Arte da IA</b>. O diretor de arte olha as suas fotos e os posts do seu
+            Instagram e planeja a cena; a IA desenha <b>só a cena, sem nenhuma letra</b>, deixando uma faixa
+            lisa na sua cor; e o <b>sistema escreve o texto</b> por cima (título, selo, logo e botão), com as
+            suas fontes. Por isso a letra sai sempre certa e você pode mudar o texto no editor que a peça muda
+            na hora, sem desenhar de novo. Uma IA com visão confere se a cena saiu sem texto, com a faixa
+            limpa e sem defeito; reprovou duas vezes, o card fica só nos modelos. Num card pronto,{' '}
+            <b>Arte da IA</b> desenha a arte a partir da variação escolhida e <b>Desenhar outra cena</b> troca
+            a imagem. Artes feitas antes desta versão têm o texto dentro da imagem: nelas, mudar o texto pede
+            desenhar de novo.
           </li>
           <li>
             Pronto, clique numa variação para vê-la grande, como sai no Instagram, com as setas para passar
@@ -1611,6 +1610,17 @@ export const ARTIGOS: ArtigoAjuda[] = [
           olha os seus posts mais recentes (com o Instagram conectado) e sugere as cores, o estilo, as fontes
           e o <b>jeito de postar</b> da empresa. Confira, clique em <b>Usar na identidade</b> e salve: o time
           passa a seguir isso em cada carrossel e card. O jeito de postar fica escrito ali e dá para editar.
+        </p>
+        <p>
+          <b>A mesa do time.</b> Enquanto o pedido anda, a tela mostra quem está trabalhando: cada pessoa do
+          time numa estação, a folha passando de uma para a outra, o balão de quem está com a vez e a conversa
+          do time. O que aparece escrito é o que cada um anotou de verdade naquele pedido. Vale para
+          carrosséis, cards e, nos vídeos, a <b>ilha de edição</b> (editora de vídeo, editor de motion,
+          técnico de som e revisora). Pode fechar a tela: o aviso chega no sino.
+        </p>
+        <p>
+          <b>Card de frase.</b> No card avulso, a frase ocupa a peça (letra bem maior) e as aspas viram um
+          desenho grande ao fundo.
         </p>
         <p>
           <b>O time enxerga as suas fotos.</b> Cada foto é lida uma vez e o que ela mostra fica guardado. A
