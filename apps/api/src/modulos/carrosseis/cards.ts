@@ -45,6 +45,7 @@ import {
   fazerImagem,
   fazerRecorte,
   imagensLigadas,
+  olharAsFotos,
   tratarFotosDoPedido,
 } from './imagens.js';
 import * as repo from './repositorio.js';
@@ -279,13 +280,17 @@ export function slideEmCamadas(
       nota += m.titulo / 100 + m.foto * 3;
     }
     const g = geometriaCamadas(e.formatos[0]!, medidas, composicao);
-    return [{ novo, nota, desenho: `${g.naBase}:${g.foto.x}:${g.foto.y}` }];
+    return [{ novo, nota, desenho: `${g.naBase}:${!!g.centrado}:${g.foto.x}:${g.foto.y}` }];
   });
   const unicas = candidatas
     .sort((a, b) => b.nota - a.nota)
     .filter((c, i, l) => l.findIndex((x) => x.desenho === c.desenho) === i);
-  return unicas.length ? unicas[k % unicas.length]!.novo : null;
+  // v157: de um card para o outro a composição também muda (o perfil não fica com tudo igual).
+  return unicas.length ? unicas[(k + (e.indice ?? 0)) % unicas.length]!.novo : null;
 }
+
+/** v157: abaixo desta nota a opção em camadas é remontada em outra composição e avaliada de novo. */
+const NOTA_PARA_REFAZER = 4;
 
 /**
  * v153: desenha as opções de cada card (a imagem final, pequena) e pede a nota da revisora. Grava a nota
@@ -330,6 +335,78 @@ async function avaliarAsOpcoes(
         opcoes: imagens,
       });
       if (!notas) return;
+      // v157: opção em camadas com nota abaixo de 4 ganha uma segunda chance sozinha: o código monta a
+      // mesma peça em outra composição (de graça) e a revisora olha de novo. Fica a que tiver nota maior.
+      const trocas = await Promise.all(
+        opcoes.map(async (o, k) => {
+          const slide = o.dados.slides[0]!;
+          if (notas[k]!.nota >= NOTA_PARA_REFAZER || slide.modelo !== 'camadas' || !slide.fotoId) return null;
+          const recorte = await repo.foto(db, slide.fotoId);
+          if (!recorte) return null;
+          const medidas = { largura: recorte.largura, altura: recorte.altura };
+          const chave = (c: SlideCarrossel['composicao']) => {
+            const g = geometriaCamadas(e.formato, medidas, c ?? 'lado');
+            return `${g.naBase}:${!!g.centrado}:${g.foto.x}:${g.foto.y}`;
+          };
+          const usadas = new Set(
+            opcoes
+              .map((x) => x.dados.slides[0]!)
+              .filter((x) => x.modelo === 'camadas')
+              .map((x) => chave(x.composicao)),
+          );
+          for (const composicao of COMPOSICOES_CAMADAS) {
+            if (usadas.has(chave(composicao))) continue;
+            const novo: SlideCarrossel = {
+              ...slide,
+              composicao,
+              forma:
+                FORMAS_CAMADAS[
+                  (FORMAS_CAMADAS.indexOf(slide.forma ?? 'circulo') + 1) % FORMAS_CAMADAS.length
+                ]!,
+            };
+            const cabe = montarSlide({
+              slide: novo,
+              indice: 0,
+              total: 1,
+              identidade: material.identidade,
+              estilo: e.estilo,
+              foto: 'recorte',
+              fotoMedidas: medidas,
+              formato: e.formato,
+            }).camadas?.cabe;
+            if (!cabe) continue;
+            const d = await desenhar(db, ia.armazenamento ?? null, material, {
+              slide: novo,
+              indice: 0,
+              total: 1,
+              estilo: e.estilo,
+              formato: e.formato,
+              largura: 540,
+            });
+            return { k, novo, jpeg: new Uint8Array(d.jpeg) };
+          }
+          return null;
+        }),
+      );
+      const refeitas = trocas.flatMap((t) => (t ? [t] : []));
+      if (refeitas.length) {
+        const segundas = await avaliarOpcoes(claude, {
+          empresa: e.empresa,
+          objetivo: e.objetivo,
+          opcoes: imagens.map((im, k) => refeitas.find((t) => t.k === k)?.jpeg ?? im),
+        }).catch(() => null);
+        for (const t of refeitas) {
+          const nova = segundas?.[t.k];
+          if (!nova || nova.nota <= notas[t.k]!.nota) continue;
+          notas[t.k] = nova;
+          const o = opcoes[t.k]!;
+          o.dados.slides = [t.novo, ...o.dados.slides.slice(1)];
+          await db.query(
+            `UPDATE comercial.carrosseis SET slides = $2::jsonb WHERE id = $1 AND conta_id = ${contaSql()}`,
+            [o.id, JSON.stringify(o.dados.slides)],
+          );
+        }
+      }
       const preferida = opcaoPreferida(notas);
       for (const [k, o] of opcoes.entries()) {
         const visual = { ...notas[k]!, preferida: k === preferida };
@@ -401,6 +478,11 @@ export async function trabalharCards(
           : '';
       })
     : [];
+  // v157: o time enxerga as fotos (descritas uma vez e guardadas): as do pedido e as mais novas da empresa.
+  const vistas = await olharAsFotos(db, ia, l.conta_id, [
+    ...fotosDoPedido.map((f) => f.id),
+    ...(p.usarFotos ? fotos.filter((f) => f.origem !== 'referencia').map((f) => f.id) : []),
+  ]);
   const feitas: number[] = [];
   const r = await trabalharNosCards(
     ia.cliente(db, l.conta_id),
@@ -414,8 +496,14 @@ export async function trabalharCards(
       divulgar,
       postsQueFuncionaram: posts,
       anteriores,
-      fotos: fotos.filter((f) => f.origem !== 'referencia').map((f) => ({ id: f.id, nome: f.nome })),
-      fotosDoPedido: fotosDoPedido.map((f) => ({ id: f.id, nome: f.nome })),
+      fotos: fotos
+        .filter((f) => f.origem !== 'referencia')
+        .map((f) => ({ id: f.id, nome: f.nome, descricao: vistas.get(f.id) ?? null })),
+      fotosDoPedido: fotosDoPedido.map((f) => ({
+        id: f.id,
+        nome: f.nome,
+        descricao: vistas.get(f.id) ?? null,
+      })),
       hoje: hojeSp(),
       imagens: await imagensDosCards(db, ia, l, p, feitas),
       aprendizados: aprendido.aprendizados,

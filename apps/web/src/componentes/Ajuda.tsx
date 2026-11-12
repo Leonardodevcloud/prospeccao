@@ -1612,6 +1612,25 @@ export const ARTIGOS: ArtigoAjuda[] = [
           e o <b>jeito de postar</b> da empresa. Confira, clique em <b>Usar na identidade</b> e salve: o time
           passa a seguir isso em cada carrossel e card. O jeito de postar fica escrito ali e dá para editar.
         </p>
+        <p>
+          <b>O time enxerga as suas fotos.</b> Cada foto é lida uma vez e o que ela mostra fica guardado. A
+          estrategista escolhe a foto pelo conteúdo (não pelo nome do arquivo) e a redatora escreve o título
+          que <b>completa</b> a imagem em vez de repetir o que já se vê. Por isso o selo agora é opcional: ele
+          só aparece quando acrescenta algo (a condição, para quem é, a novidade). Selo que repete o título o
+          sistema tira sozinho.
+        </p>
+        <p>
+          <b>Fato concreto.</b> Card que vende precisa de um dado da sua empresa: preço, prazo, requisito, o
+          que está incluso. Se o pedido não tiver nenhum, o time pergunta antes de criar. Quanto mais você
+          contar no pedido (ou em O que divulgar), menos genérica sai a peça.
+        </p>
+        <p>
+          <b>Composições da peça em camadas.</b> Além de foto à direita, à esquerda e embaixo, há{' '}
+          <b>Tudo no centro</b> (texto e foto no eixo do meio) e <b>Foto em cima</b> (o produto primeiro, o
+          texto responde embaixo; só para foto deitada ou quadrada). De um card para o outro a composição muda
+          sozinha, e a opção que a revisora avalia abaixo de 4 é remontada em outra composição e avaliada de
+          novo: fica a de nota maior.
+        </p>
         <Nota>
           Quando a peça fala de uma cidade, a imagem gerada é o cartão-postal dela (o lugar mais conhecido),
           para quem vê reconhecer. A IA pode criar pessoas quando elas combinam com a publicação (adultos, com

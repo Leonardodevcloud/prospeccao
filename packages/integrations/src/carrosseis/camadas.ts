@@ -143,6 +143,7 @@ export async function conferirRecorte(
 ): Promise<{ aprovada: boolean; problemas: string[] }> {
   const r = await claude.pedir({
     agente: 'revisor de imagem',
+    leve: true,
     sistema: [
       {
         texto:
@@ -199,8 +200,18 @@ const ESQUEMA_OPCOES = {
             description:
               'Algum texto, botão ou enfeite está por cima da foto, do produto ou de outro texto (ou cortado na borda).',
           },
+          repete: {
+            type: 'boolean',
+            description:
+              'A peça diz a mesma coisa mais de uma vez: selo, título e texto com a mesma informação, ou o título só descreve o que a foto já mostra.',
+          },
+          generica: {
+            type: 'boolean',
+            description:
+              'A peça parece modelo pronto: serviria para qualquer empresa do ramo trocando a logo (sem fato concreto, sem ideia, tudo empilhado do mesmo jeito).',
+          },
         },
-        required: ['opcao', 'nota', 'comentario', 'sobreposto'],
+        required: ['opcao', 'nota', 'comentario', 'sobreposto', 'repete', 'generica'],
       },
     },
   },
@@ -216,8 +227,14 @@ export function lerNotasDasOpcoes(d: Record<string, unknown>, quantas: number): 
     const nota = Number(o?.nota);
     if (!o || !Number.isFinite(nota)) return null;
     notas.push({
-      // Peça com sobreposição nunca passa de 2: é o defeito mais grave.
-      nota: Math.round(Math.min(o.sobreposto === true ? 2 : 5, Math.max(1, nota)) * 10) / 10,
+      // Peça com sobreposição nunca passa de 2 (o defeito mais grave); repetida ou genérica, de 3,5.
+      nota:
+        Math.round(
+          Math.min(
+            o.sobreposto === true ? 2 : o.repete === true || o.generica === true ? 3.5 : 5,
+            Math.max(1, nota),
+          ) * 10,
+        ) / 10,
       comentario: String(o.comentario ?? '')
         .replace(/\s+/g, ' ')
         .trim()
@@ -245,7 +262,7 @@ export async function avaliarOpcoes(
     sistema: [
       {
         texto:
-          'Você é a revisora final de uma agência brasileira. Olha posts de Instagram prontos, no tamanho do celular, e diz com franqueza qual funciona melhor: o que o olho vê primeiro, se o número e o título se leem em um segundo, se a foto ajuda a mensagem, se a peça está equilibrada. Compara as opções entre si; não dá a mesma nota por educação.',
+          'Você é a revisora final de uma agência brasileira. Olha posts de Instagram prontos, no tamanho do celular, e diz com franqueza qual funciona melhor: o que o olho vê primeiro, se o número e o título se leem em um segundo, se a foto ajuda a mensagem, se a peça está equilibrada, se texto e imagem se completam em vez de se repetir, se a peça tem cara da empresa ou de modelo pronto. Compara as opções entre si; não dá a mesma nota por educação. Peça correta mas comum é nota 3.',
       },
       { texto: MANUAL_DESIGN, cache: true },
     ],
@@ -306,11 +323,12 @@ export async function escolherElemento(
 ): Promise<ElementoEscolhido | null> {
   const r = await claude.pedir({
     agente: 'diretor de arte',
+    // v157: escolha em lista, com as regras no próprio pedido: vai no modelo leve, sem o manual inteiro.
+    leve: true,
     sistema: [
       {
-        texto: `Você é diretor de arte. Para um post de Instagram, escolhe UM objeto em 3D que enfeita a peça ao lado da foto: concreto, fácil de reconhecer pequeno, ligado ao que o post vende ou ensina. Nunca um objeto genérico (estrela, raio, coração) quando existe um do assunto.\n\nVocê tem uma biblioteca de ícones 3D prontos, que saem de graça e na cor da marca. Use um deles quando ele disser o assunto tão bem quanto um objeto feito sob medida; quando o assunto pede um objeto que não está na lista (uma peça de carro, um prato, um produto), deixe o ícone vazio e descreva o objeto.\n\nÍcones prontos (código = o que é): ${LISTA_ICONES}.`,
+        texto: `Você é diretor de arte. Para um post de Instagram, escolhe UM objeto em 3D que enfeita a peça ao lado da foto: concreto, fácil de reconhecer pequeno, ligado ao que o post vende ou ensina. Nunca um objeto genérico (estrela, raio, coração) quando existe um do assunto. O objeto não repete o que a foto da peça já mostra: se a foto é o produto, o enfeite é o benefício ou a condição (um relógio para rapidez, um calendário para prazo, uma carteira para preço).\n\nVocê tem uma biblioteca de ícones 3D prontos, que saem de graça e na cor da marca. Use um deles quando ele disser o assunto tão bem quanto um objeto feito sob medida; quando o assunto pede um objeto que não está na lista (uma peça de carro, um prato, um produto), deixe o ícone vazio e descreva o objeto.\n\nÍcones prontos (código = o que é): ${LISTA_ICONES}.`,
       },
-      { texto: MANUAL_DESIGN, cache: true },
     ],
     mensagem: `Post da ${e.empresa}. Título: "${e.titulo}". ${e.destaque ? `Número em destaque: "${e.destaque}". ` : ''}${e.texto ? `Texto: "${e.texto}".` : ''} Escolha o objeto.`,
     ferramenta: { nome: 'elemento_da_peca', descricao: 'O objeto da peça.', esquema: ESQUEMA_ELEMENTO },
@@ -333,12 +351,16 @@ export function promptDoElemento(objeto: string, cor: string): string {
 
 /** O objeto em 3D, em PNG transparente (quadrado). */
 export async function gerarElemento(cfg: ConfigImagem, objeto: string, cor: string): Promise<Uint8Array> {
-  return pedirImagem(cfg, {
-    prompt: promptDoElemento(objeto, cor),
-    largura: 1024,
-    altura: 1024,
-    transparente: true,
-  });
+  // O objeto aparece pequeno na peça: a qualidade média basta e custa uma fração da alta.
+  return pedirImagem(
+    { ...cfg, qualidade: cfg.qualidadeElemento ?? 'medium' },
+    {
+      prompt: promptDoElemento(objeto, cor),
+      largura: 1024,
+      altura: 1024,
+      transparente: true,
+    },
+  );
 }
 
 /* ───────────────────────────── v155: o acabamento do recorte ───────────────────────────── */

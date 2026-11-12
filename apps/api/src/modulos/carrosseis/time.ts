@@ -34,7 +34,14 @@ import * as aprender from './aprender.js';
 import * as cards from './cards.js';
 import { slideEmCamadas } from './cards.js';
 import * as cerebro from './cerebro.js';
-import { estiloDaConta, fazerImagem, fazerRecorte, imagensLigadas, tratarFotosDoPedido } from './imagens.js';
+import {
+  estiloDaConta,
+  fazerImagem,
+  fazerRecorte,
+  imagensLigadas,
+  olharAsFotos,
+  tratarFotosDoPedido,
+} from './imagens.js';
 import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
 
@@ -96,12 +103,17 @@ export function prepararCarrosseisIa(
     CARROSSEIS_CUSTO_IMAGEM_USD?: number;
     CARROSSEIS_IMAGEM_QUALIDADE?: QualidadeImagem;
     RECORTE_LOCAL_MODELO?: string | null;
+    CARROSSEIS_MODELO_LEVE?: string | null;
+    CARROSSEIS_ELEMENTO_QUALIDADE?: QualidadeImagem;
   },
   armazenamento: Armazenamento | null = null,
 ): CarrosseisIa | null {
   if (!env.ANTHROPIC_CHAVE) return null;
   const chave = env.ANTHROPIC_CHAVE;
   const modelo = env.CARROSSEIS_MODELO || 'claude-sonnet-5-5';
+  // v157: as conferências e descrições vão num modelo barato ("nenhum" desliga e tudo volta ao principal).
+  const modeloLeve =
+    env.CARROSSEIS_MODELO_LEVE === 'nenhum' ? null : env.CARROSSEIS_MODELO_LEVE || 'claude-haiku-5-5';
   return {
     modelo,
     imagem:
@@ -111,6 +123,7 @@ export function prepararCarrosseisIa(
               chave: env.OPENAI_CHAVE,
               modelo: env.CARROSSEIS_IMAGEM_MODELO || MODELO_IMAGEM_PADRAO,
               qualidade: env.CARROSSEIS_IMAGEM_QUALIDADE ?? 'high',
+              qualidadeElemento: env.CARROSSEIS_ELEMENTO_QUALIDADE ?? 'medium',
             },
             custoUsd:
               env.CARROSSEIS_CUSTO_IMAGEM_USD ??
@@ -119,7 +132,7 @@ export function prepararCarrosseisIa(
         : null,
     armazenamento,
     recorteLocal: env.RECORTE_LOCAL_MODELO ? { modelo: env.RECORTE_LOCAL_MODELO } : null,
-    cliente: (db, contaId) => criarClaude({ chave, modelo, medidor: medidorClaude(db, contaId) }),
+    cliente: (db, contaId) => criarClaude({ chave, modelo, modeloLeve, medidor: medidorClaude(db, contaId) }),
     testar: () => testarClaude({ chave, modelo }),
   };
 }
@@ -393,6 +406,11 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
     referenciaId: p.referenciaId,
     criadoPor: l.criado_por,
   });
+  // v157: o time enxerga as fotos (descritas uma vez e guardadas).
+  const vistas = await olharAsFotos(db, ia, l.conta_id, [
+    ...fotosDoPedido.map((f) => f.id),
+    ...fotos.map((f) => f.id),
+  ]);
   const r = await trabalharNoCarrossel(
     ia.cliente(db, l.conta_id),
     {
@@ -405,13 +423,17 @@ async function trabalharCarrossel(db: Executor, ia: CarrosseisIa, l: LinhaPedido
       divulgar,
       postsQueFuncionaram: posts,
       anteriores,
-      fotos: fotos.map((f) => ({ id: f.id, nome: f.nome })),
+      fotos: fotos.map((f) => ({ id: f.id, nome: f.nome, descricao: vistas.get(f.id) ?? null })),
       hoje: hojeSp(),
       imagens: await imagensDoPedido(db, ia, l, p, feitas),
       aprendizados: aprendido.aprendizados,
       preferencias: aprendido.preferencias,
       teste: aprendido.teste,
-      fotosDoPedido: fotosDoPedido.map((f) => ({ id: f.id, nome: f.nome })),
+      fotosDoPedido: fotosDoPedido.map((f) => ({
+        id: f.id,
+        nome: f.nome,
+        descricao: vistas.get(f.id) ?? null,
+      })),
     },
     (etapa, detalhe) => avancar(db, l.id, etapa, detalhe),
   );

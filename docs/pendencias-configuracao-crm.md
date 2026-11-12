@@ -389,6 +389,14 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ai. Menos genérico e mais barato (v157)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] Variáveis novas, todas opcionais (sem elas vale o padrão): `CARROSSEIS_MODELO_LEVE` (padrão `claude-haiku-5-5`; `nenhum` desliga) e `CARROSSEIS_ELEMENTO_QUALIDADE` (padrão `medium`) na api; `VIDEOS_MODELO_LEVE` no worker-videos.
+3. [ ] **Conferir o modelo leve**: depois de 3 ou 4 pedidos, olhar em Saúde e consumo se o custo do Claude por card caiu. Se as conferências de imagem começarem a deixar passar defeito (recorte ruim aprovado, imagem com erro), pôr `CARROSSEIS_MODELO_LEVE=nenhum` e avisar.
+4. [ ] **Teste do card da moto**: refazer o pedido "Tutts aluga moto para motoboy" com a foto e um fato no pedido (preço, requisito ou o que está incluso). Conferir: selo ausente ou diferente do título; título que não descreve a foto; texto com o fato; no painel da revisora, os critérios novos.
+5. [ ] Na primeira vez, o pedido demora um pouco mais (o time lê até 8 fotos). Depois fica guardado.
+6. [ ] Ainda em aberto: peça em camadas nos slides do meio do carrossel, força da música por parte, rascunho antes da Arte da IA (descartado por ora: ver continuidade).
+
 ## 4ah. Estúdio de arte, parte 4 (v156)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos** (o `pnpm-lock.yaml` mudou: entram as três famílias de letra) e da **web** na Vercel.
 2. [ ] **Ícones prontos**: pedir 2 cards de um assunto com ícone (um aviso, uma data, uma promoção de loja) e conferir se o elemento veio na cor de destaque, sem custo de imagem em Saúde e consumo. O download não foi testado no desenvolvimento: se nenhum card usar ícone pronto, olhar o log da api (a peça cai no objeto feito pela IA, sem erro na tela) e avisar.

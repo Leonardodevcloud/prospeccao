@@ -74,7 +74,7 @@ G. ENFEITES E FORMAS
 - Forma de fundo (círculo, faixa, mancha, retícula) fica atrás do herói e o ancora; nunca atravessa o texto.
 
 H. INSTAGRAM
-- Feed em pé (4:5): na grade do perfil a peça aparece cortada no meio; o título e o herói precisam sobreviver a esse corte.
+- Feed em pé (4:5): desde 2025 a grade do perfil mostra cada post em 3:4, um pouco mais estreito que a peça, e apara uma tira fina dos dois lados. Título, logo, selo e botão ficam dentro da margem lateral; o herói pode encostar na borda, o texto não.
 - Story (9:16): o alto e o pé ficam livres para a interface do Instagram; nada de texto, logo ou botão ali.
 - Margens: nada de texto ou logo colado na borda.
 - A primeira imagem de um carrossel é a que aparece no feed: ela promete o que os outros slides entregam e convida a arrastar.
@@ -95,6 +95,8 @@ J. O QUE REPROVA (lista de defeitos)
 - Letra com pouco contraste; texto sobre parte movimentada da foto.
 - Enfeite genérico, sem relação com o assunto, ou mais de um.
 - Peça que não diz de quem é (sem logo) ou o que fazer (sem ação).
+- Ver e dizer a mesma coisa: título que descreve a imagem (foto de moto + "temos moto"), selo que repete o título, texto que reescreve o título. Imagem e palavras são dupla: uma mostra, a outra acrescenta.
+- Peça que serviria para qualquer empresa do ramo trocando a logo: sem fato da empresa, sem ideia, tudo empilhado no mesmo molde.
 - Pessoa gerada com defeito de mão, olho ou pele; pessoa famosa ou parecida com alguém real.
 - Mais de três blocos de texto; título com mais de dez palavras; letra de cartaz em frase longa.
 - Número de resultado, avaliação ou depoimento que a empresa não informou: nada inventado entra na peça.

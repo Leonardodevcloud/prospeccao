@@ -10,7 +10,7 @@ import {
 import {
   botaoDaChamada,
   CHAMADA_FINAL,
-  CRITERIO,
+  CRITERIO_CARD,
   CRITERIOS_REVISOR,
   conferirPromocao,
   type DivulgarEntrada,
@@ -24,6 +24,7 @@ import {
   type PedidoCards,
   type RelatorioTime,
   ROTULO_DIVULGAR,
+  seloRepete,
   slideDoTime,
 } from '@prospeccao/shared/carrosseis-time';
 import { type ClienteClaude, somarUso, USO_ZERO, type UsoClaude } from './claude.js';
@@ -75,9 +76,9 @@ export interface EntradaCards {
   postsQueFuncionaram: PostQueFuncionou[];
   anteriores: string[];
   /** As fotos da empresa que o time pode usar. */
-  fotos: { id: number; nome: string }[];
+  fotos: FotoDoTime[];
   /** As fotos que vieram com o pedido (já tratadas): cada uma entra em pelo menos uma peça. */
-  fotosDoPedido: { id: number; nome: string }[];
+  fotosDoPedido: FotoDoTime[];
   hoje: string;
   imagens?: ImagensDosCards | null;
   aprendizados?: string[];
@@ -85,6 +86,15 @@ export interface EntradaCards {
   /** "Outra variação" de um card: o que já existe (para sair diferente) e o que mudar. */
   outra?: { existentes: string[]; pedido: string } | null;
 }
+
+/** v157: a foto como o time a vê: o nome do arquivo e o que ela mostra (lido uma vez por um modelo de visão). */
+export interface FotoDoTime {
+  id: number;
+  nome: string;
+  descricao?: string | null;
+}
+export const linhaDaFoto = (f: FotoDoTime) =>
+  `- id ${f.id}: ${f.nome}${f.descricao ? ` · mostra: ${f.descricao}` : ''}`;
 
 export interface PecaPronta {
   slide: SlideCarrossel;
@@ -127,13 +137,17 @@ const MODELO_PADRAO: Record<ObjetivoCard, ModeloCard> = {
 };
 
 const MANUAL_CARDS = `CARDS AVULSOS: cada peça é um post sozinho (não é slide de carrossel). Ela tem um segundo para ser entendida: uma mensagem só, lida de longe no celular.
-- O título é a peça: curto, concreto, do jeito que o cliente fala. Nada de "Confira", "Venha conferir", "Imperdível", "Não perca".
+- O título é a peça: curto (4 a 8 palavras), concreto, do jeito que o cliente fala. Nada de "Confira", "Venha conferir", "Imperdível", "Não perca".
+- TEXTO E IMAGEM SE COMPLETAM, NUNCA SE REPETEM. O olho vê a imagem primeiro e o título depois: o título acrescenta o que a imagem não diz (o benefício, o número, a condição, a virada). Se a imagem mostra uma moto, o título não diz "temos moto": diz o que o cliente ganha com ela ("Rode amanhã sem comprar moto"). Título que só descreve a imagem é o defeito mais comum de anúncio ruim.
+- NADA REPETIDO DENTRO DA PEÇA: selo, número, título e texto dizem cada um uma coisa. O número grande não volta no título ("24 meses" grande + "Em 24 meses…" no título é a mesma coisa duas vezes); o texto não reescreve o título com outras palavras.
+- O SELO ("sobretitulo", até 24 letras) é OPCIONAL e só entra quando acrescenta: a condição ("Só esta semana"), para quem é ("Para motoboys"), a novidade ("Chegamos a Brasília"), a prova ("Desde 2012"). Nunca o assunto que o título já diz ("Aluguel de moto" sobre um título que fala de alugar moto): nesse caso deixe vazio. Selo que repete o título o sistema apaga.
+- TODO CARD QUE VENDE LEVA UM FATO CONCRETO da empresa: um preço, um prazo, um número, um requisito, uma garantia, o que está incluso. Procure nas instruções, no que divulgar e no que a empresa informou. Frase vazia no lugar do fato é proibida: "condições na conversa", "consulte", "saiba mais", "qualidade e confiança", "o melhor da região". Se não existe nenhum fato para usar, o texto diz para quem é e que problema resolve (isso também é concreto) e o card fala só do que se sabe; nunca invente número.
 - CADA CARD É INDEPENDENTE: quem vê só aquele card no feed (sem os outros) entende a oferta inteira: o que é, o que ganha, a condição e o que fazer. Nunca escreva um card que continua, responde ou completa outro ("ou fique com a moto", "e tem mais", "parte 2"); nunca divida uma oferta em pedaços entre cards. Cards do mesmo pedido são peças diferentes: cada um com o seu gancho e o seu ângulo (o preço, o benefício, a dor que resolve, a prova), todos completos.
-- Nada repetido dentro da peça: o número grande não volta no título ("24 meses" grande + "Em 24 meses…" no título é a mesma coisa duas vezes); o título e o texto dizem coisas diferentes.
 - Cada card fala de uma coisa. Variações do mesmo card dizem a mesma mensagem por caminhos diferentes (outro modelo, outra foto, outro ângulo de texto), para a empresa escolher a melhor; nunca a mesma peça com uma palavra trocada.
-- Todo card leva um SELO ("sobretitulo", até 24 letras: o assunto em 2 a 4 palavras, ex.: "Chegamos a Brasília", "Só esta semana") e um BOTÃO ("botao", até 22 letras: a ação, ex.: "Chame no WhatsApp"), em qualquer modelo. A logo da empresa entra sozinha.
-- No título, marque entre asteriscos de 1 a 3 palavras seguidas que são o coração da mensagem (o benefício, o número, a novidade): "Sua loja entrega em *40 minutos*". Elas saem na cor de destaque. Uma marca por título, nunca o título todo. Os asteriscos não aparecem na imagem: não são erro de digitação.
+- Todo card leva um BOTÃO ("botao", até 22 letras: a ação, ex.: "Chame no WhatsApp"), em qualquer modelo. A logo da empresa entra sozinha.
+- No título, marque entre asteriscos 1 ou 2 palavras seguidas que são o coração da mensagem (o benefício, o número, a novidade): "Sua loja entrega em *40 minutos*". Elas saem na cor de destaque. Uma marca por título, nunca metade do título. Os asteriscos não aparecem na imagem: não são erro de digitação.
 - Promoção, lançamento e produto vendem: o título diz o que o cliente ganha (rapidez, preço, comodidade), não só o que a empresa faz; o texto dá o fato que prova; o botão diz o que fazer agora. Nada de "Salve a data", "Fique ligado", "Aguarde".
+- Frase (citação): a frase é curta e tem dono ou ponto de vista; frase longa em letra pequena numa peça vazia não funciona. Até 12 palavras.
 - Se as instruções de quem pediu falam de um tom (promocional, divertido, sério), ele vale mais que o objetivo escolhido.
 - Story (9:16): a peça ocupa a tela inteira; o texto fica no meio da tela, longe do topo e da base. Feed (4:5): o post do perfil.`;
 
@@ -202,6 +216,11 @@ const ESQUEMA_PLANO = {
                   type: 'string',
                   description: 'O caminho desta variação (visual e de texto) em uma frase.',
                 },
+                conceito: {
+                  type: 'string',
+                  description:
+                    'A ideia da peça em uma frase: o que a imagem mostra e o que o título ACRESCENTA a ela (o benefício, o número, a virada). Nunca "o título descreve a imagem".',
+                },
                 fotoId: { type: ['integer', 'null'], description: 'Foto da empresa (capa e foto), ou null.' },
                 gerar: {
                   type: 'string',
@@ -223,8 +242,12 @@ const ESQUEMA_PLANO = {
 interface PlanoVariacao {
   modelo: ModeloCard;
   abordagem: string;
+  /** v157: o que a imagem mostra e o que o título acrescenta. */
+  conceito: string;
   fotoId: number | null;
   gerar?: string;
+  /** A cena da imagem gerada (fica depois que a imagem é feita, para a redatora saber o que ela mostra). */
+  cena?: string;
 }
 interface PlanoCard {
   titulo: string;
@@ -271,8 +294,11 @@ export function lerPlano(d: Record<string, unknown>, e: EntradaCards): Plano {
         abordagem: String(x.abordagem ?? '')
           .trim()
           .slice(0, 300),
+        conceito: String(x.conceito ?? '')
+          .trim()
+          .slice(0, 300),
         fotoId: foto,
-        ...(gerar.length >= 8 ? { gerar } : {}),
+        ...(gerar.length >= 8 ? { gerar, cena: gerar } : {}),
       });
     }
     cards.push({
@@ -299,6 +325,7 @@ export function lerPlano(d: Record<string, unknown>, e: EntradaCards): Plano {
     if (!usaFoto(alvo.modelo)) alvo.modelo = 'capa';
     alvo.fotoId = f.id;
     delete alvo.gerar;
+    delete alvo.cena;
   }
   // Só as primeiras imagens pedidas são geradas (custo e tempo).
   let pedidas = 0;
@@ -344,10 +371,10 @@ function mensagemEstrategista(e: EntradaCards): string {
     limitesParaORedator(MODELOS_CARD),
     '',
     e.fotosDoPedido.length
-      ? `FOTOS QUE A EMPRESA MANDOU PARA ESTE PEDIDO (use cada uma em pelo menos uma peça, nos modelos capa ou foto):\n${e.fotosDoPedido.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
+      ? `FOTOS QUE A EMPRESA MANDOU PARA ESTE PEDIDO (use cada uma em pelo menos uma peça, nos modelos capa ou foto):\n${e.fotosDoPedido.map(linhaDaFoto).join('\n')}`
       : '',
     e.pedido.usarFotos && e.fotos.length
-      ? `FOTOS DA EMPRESA (use quando a foto combina; só nos modelos capa e foto):\n${e.fotos.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
+      ? `FOTOS DA EMPRESA (use quando a foto combina; só nos modelos capa e foto):\n${e.fotos.map(linhaDaFoto).join('\n')}`
       : 'FOTOS DA EMPRESA: não use outras (fotoId null, a não ser as do pedido).',
     e.imagens?.gerar
       ? `IMAGENS GERADAS: quando nenhuma foto combina com uma capa ou "foto", descreva em "gerar" a cena (o que aparece, onde, a luz). No máximo ${MAX_IMAGENS_CARDS} no pedido. Nunca o produto que a empresa vende como se fosse real, nunca texto ou marca. Pessoas podem aparecer quando ajudam a mensagem (diga quem são e o que fazem), nunca pessoa real ou famosa nem criança. ${CARTAO_POSTAL}`
@@ -359,6 +386,7 @@ function mensagemEstrategista(e: EntradaCards): string {
       ? `O QUE O TIME APRENDEU COM OS POSTS DESTA CONTA:\n${e.aprendizados.map((a) => `- ${a}`).join('\n')}`
       : '',
     'Promoção: o preço é o centro (modelo "numero" ou "comparacao"), exatamente como foi digitado.',
+    'ESCOLHA A FOTO PELO QUE ELA MOSTRA (está escrito ao lado de cada uma), não pelo nome do arquivo. Em "conceito", decida a dupla imagem + título antes de qualquer texto: a imagem mostra uma coisa, o título acrescenta outra. Em cada variação, um fato concreto diferente da empresa puxa a peça (o preço, o prazo, o requisito, o que está incluso).',
   ]
     .filter((x) => x !== '')
     .join('\n');
@@ -429,6 +457,8 @@ export function lerRedacaoCards(d: Record<string, unknown>, plano: Plano, e: Ent
           const s = { ...slideDoTime(bruto, p.modelo, `c${i + 1}v${k + 1}`), fotoId: p.fotoId };
           // O card leva o selo e o botão em qualquer modelo (o slideDoTime só guarda os campos do modelo).
           s.sobretitulo = s.sobretitulo || corteCard(bruto.sobretitulo, 40);
+          // v157: selo que só repete o título não entra (a instrução pede; o código garante).
+          if (seloRepete(s.sobretitulo, s.titulo)) s.sobretitulo = '';
           s.botao = botao ?? (corteCard(bruto.botao, 40) || s.botao);
           // Cada variação num fundo da marca: a principal, a de destaque e a clara.
           s.fundo =
@@ -446,7 +476,7 @@ export function lerRedacaoCards(d: Record<string, unknown>, plano: Plano, e: Ent
 }
 
 /** As peças em JSON para o redator e o revisor: "peça" é o número corrido (card e variação juntos). */
-function jsonDasPecas(r: RedacaoCards): string {
+function jsonDasPecas(r: RedacaoCards, imagens?: string[]): string {
   let n = 0;
   return JSON.stringify(
     r.cards.flatMap((c, i) =>
@@ -456,12 +486,19 @@ function jsonDasPecas(r: RedacaoCards): string {
         const o: Record<string, unknown> = { peca: n, card: i + 1, variacao: k + 1, modelo: s.modelo };
         for (const cp of d.campos) o[cp.campo] = s[cp.campo];
         if (d.colunas) o.colunas = s.colunas;
+        if (imagens?.[n - 1]) o.imagem_mostra = imagens[n - 1];
         return o;
       }),
     ),
     null,
     1,
   );
+}
+
+/** O que a imagem de uma variação mostra: a descrição da foto escolhida ou a cena da imagem gerada. */
+function imagemDaVariacao(e: EntradaCards, v: PlanoVariacao): string {
+  const foto = v.fotoId ? [...e.fotosDoPedido, ...e.fotos].find((f) => f.id === v.fotoId) : null;
+  return (foto?.descricao || v.cena || (foto ? foto.nome : '')).slice(0, 240);
 }
 
 function mensagemRedator(e: EntradaCards, plano: Plano): string {
@@ -476,7 +513,12 @@ function mensagemRedator(e: EntradaCards, plano: Plano): string {
     plano.cards
       .map(
         (c, i) =>
-          `CARD ${i + 1} — ${c.titulo}: ${c.ideia}\n${c.variacoes.map((v, k) => `  variação ${k + 1} (${v.modelo}${v.fotoId ? ', com foto' : ''}): ${v.abordagem}`).join('\n')}`,
+          `CARD ${i + 1} — ${c.titulo}: ${c.ideia}\n${c.variacoes
+            .map((v, k) => {
+              const imagem = imagemDaVariacao(e, v);
+              return `  variação ${k + 1} (${v.modelo}): ${v.abordagem}${v.conceito ? `\n    conceito: ${v.conceito}` : ''}${imagem ? `\n    a imagem desta peça mostra: ${imagem}` : ''}`;
+            })
+            .join('\n')}`,
       )
       .join('\n'),
     '',
@@ -485,8 +527,9 @@ function mensagemRedator(e: EntradaCards, plano: Plano): string {
     '',
     '- Preencha só os campos do modelo de cada peça.',
     '- As variações de um card dizem a mesma mensagem por caminhos diferentes: títulos diferentes de verdade.',
-    '- Em toda peça: "sobretitulo" (o selo) e "botao" (a ação, em poucas palavras), qualquer que seja o modelo.',
-    '- Marque no título, entre asteriscos, as 1 a 3 palavras que são o coração da mensagem.',
+    '- Em toda peça: "botao" (a ação, em poucas palavras). O "sobretitulo" (selo) só quando acrescenta algo que o título não diz; senão, vazio.',
+    '- Quando a peça tem imagem, escreva o título sabendo o que ela mostra: ele acrescenta, não descreve.',
+    '- Marque no título, entre asteriscos, 1 ou 2 palavras que são o coração da mensagem.',
     '- A legenda é a do post do card (serve para qualquer variação).',
     ...(e.preferencias?.length
       ? ['', 'O QUE QUEM PUBLICA SEMPRE MUDA NO EDITOR (siga):', ...e.preferencias.map((p) => `- ${p}`)]
@@ -519,7 +562,12 @@ export function conferirPecas(r: RedacaoCards, e: EntradaCards): ProblemaDoSlide
 
 /* ───────────────────────────── 4. Revisor ───────────────────────────── */
 
-function mensagemRevisor(e: EntradaCards, r: RedacaoCards, problemas: ProblemaDoSlide[]): string {
+function mensagemRevisor(
+  e: EntradaCards,
+  r: RedacaoCards,
+  problemas: ProblemaDoSlide[],
+  imagens: string[] = [],
+): string {
   return [
     'Você é o REVISOR. Seja exigente como o diretor de criação de uma agência: estes cards só saem se cada peça estiver pronta para publicar sozinha.',
     '',
@@ -527,11 +575,14 @@ function mensagemRevisor(e: EntradaCards, r: RedacaoCards, problemas: ProblemaDo
     '',
     blocoDoPedidoCards(e),
     '',
-    'CRITÉRIOS (nota de 1 a 5, para o lote inteiro; "gancho" é a força do título de cada peça, "umaIdeia" é uma mensagem por peça):',
-    CRITERIOS_REVISOR.map((c) => `- ${c}: ${CRITERIO[c]}`).join('\n'),
+    'CRITÉRIOS (nota de 1 a 5, para o lote inteiro). Dê 5 só ao que uma agência publicaria sem mexer; peça correta mas comum é 3:',
+    CRITERIOS_REVISOR.map((c) => `- ${c}: ${CRITERIO_CARD[c]}`).join('\n'),
+    '- "umaIdeia": cai para 2 ou menos se selo, número, título e texto repetem a mesma informação em qualquer peça.',
+    '- "clareza": cai para 2 ou menos se o título só descreve o que a imagem já mostra ("imagem_mostra" em cada peça), em vez de acrescentar.',
+    '- "especifico": cai para 2 ou menos se uma peça que vende não tem nenhum fato concreto (preço, prazo, número, requisito, o que está incluso) ou usa frase vazia ("condições na conversa", "consulte", "qualidade e confiança").',
     '',
     'PEÇAS (em "ajustes", o número do "slide" é o número da peça; 0 = legenda):',
-    jsonDasPecas(r),
+    jsonDasPecas(r, imagens),
     '',
     'LEGENDAS:',
     r.cards.map((c, i) => `CARD ${i + 1}: ${c.legenda}`).join('\n\n'),
@@ -544,6 +595,8 @@ function mensagemRevisor(e: EntradaCards, r: RedacaoCards, problemas: ProblemaDo
     e.fontes.map((f) => `[${f.rotulo}]\n${f.texto.slice(0, 4000)}`).join('\n\n'),
     '',
     '- Variações quase iguais são um ajuste (tipo "outro"): cada uma tem que ser um caminho diferente.',
+    '- Repetição dentro da peça, título que descreve a imagem e frase vazia no lugar do fato são ajustes (tipo "outro"), sempre com a "sugestao" pronta para o campo.',
+    '- Sempre que der, escreva a "sugestao" (o texto novo do campo, dentro do limite): ajuste com sugestão é aplicado na hora, sem reescrever o resto.',
     '- Erro de português, clichê, título genérico, ação confusa e tom fora da marca são ajustes, com a sugestão pronta.',
     '- Em "fatos", liste toda afirmação sobre a empresa e copie o trecho exato da fonte. Sem fonte, fonte e trecho ficam null.',
   ].join('\n');
@@ -576,6 +629,46 @@ function mensagemReescrita(e: EntradaCards, plano: Plano, r: RedacaoCards, rev: 
     '',
     'Devolva todos os cards (todas as variações, as legendas e as hashtags).',
   ].join('\n');
+}
+
+const LIMITE_DO_CAMPO = { sobretitulo: 40, titulo: 160, texto: 400, destaque: 24, botao: 40 } as const;
+
+/**
+ * v157: quando a revisora já escreveu o texto novo de TODOS os ajustes, o código aplica cada um no seu
+ * campo, sem pedir à redatora que reescreva o lote inteiro (a saída é a parte cara do pedido). Devolve
+ * null quando algum ajuste precisa de redação (sem sugestão, ou de um campo que o código não troca).
+ */
+export function aplicarAjustesDaRevisora(
+  r: RedacaoCards,
+  rev: Pick<Revisao, 'ajustes'>,
+  e: Pick<EntradaCards, 'pedido'>,
+): RedacaoCards | null {
+  if (!rev.ajustes.length) return null;
+  const botaoFixo = botaoDaChamada(e.pedido.chamada, e.pedido.palavra);
+  const cards = r.cards.map((c) => ({ ...c, variacoes: c.variacoes.map((v) => ({ ...v })) }));
+  const pecas = cards.flatMap((c) => c.variacoes);
+  for (const a of rev.ajustes) {
+    const valor = (a.sugestao ?? '').replace(/\s+/g, ' ').trim();
+    if (!valor) return null;
+    if (a.campo === 'legenda') {
+      // A legenda é uma por card: só dá para saber de qual quando o pedido tem um card.
+      if (cards.length !== 1) return null;
+      cards[0]!.legenda = (a.sugestao ?? '').trim().slice(0, 1900);
+      continue;
+    }
+    const peca = pecas[a.slide - 1];
+    if (
+      !peca ||
+      (!MODELO[peca.modelo].campos.some((c) => c.campo === a.campo) &&
+        a.campo !== 'sobretitulo' &&
+        a.campo !== 'botao')
+    )
+      return null;
+    if (a.campo === 'botao' && botaoFixo) continue;
+    peca[a.campo] = valor.slice(0, LIMITE_DO_CAMPO[a.campo]);
+  }
+  for (const p of pecas) if (seloRepete(p.sobretitulo, p.titulo)) p.sobretitulo = '';
+  return { cards };
 }
 
 /* ───────────────────────────── O pedido inteiro ───────────────────────────── */
@@ -679,7 +772,12 @@ export async function trabalharNosCards(
     rev = lerRevisao(
       await pedir(
         'revisor',
-        mensagemRevisor(e, red, problemas),
+        mensagemRevisor(
+          e,
+          red,
+          problemas,
+          plano.cards.flatMap((c) => c.variacoes.map((v) => imagemDaVariacao(e, v))),
+        ),
         {
           nome: 'revisao',
           descricao: 'As notas, os ajustes e os fatos conferidos.',
@@ -709,6 +807,12 @@ export async function trabalharNosCards(
       'revisor',
       `Nota ${media}: devolveu ${rev.ajustes.length} ajuste(s) à redatora (volta ${voltas})`,
     );
+    const direto = aplicarAjustesDaRevisora(red, rev, e);
+    if (direto) {
+      red = direto;
+      await aoAvancar('redator', `Aplicou os ${rev.ajustes.length} ajuste(s) da revisora (volta ${voltas})`);
+      continue;
+    }
     await aoAvancar('redator');
     red = lerRedacaoCards(
       await pedir(

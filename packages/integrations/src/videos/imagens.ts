@@ -65,6 +65,8 @@ export interface ConfigImagem {
   modelo: string;
   /** v148: a qualidade pedida ao GPT Image (padrão: medium; os carrosséis e cards usam high). */
   qualidade?: QualidadeImagem;
+  /** v157: a qualidade do elemento 3D (um objeto pequeno na peça): padrão medium, bem mais barato que high. */
+  qualidadeElemento?: QualidadeImagem;
   /** Para os testes (padrão: a API da OpenAI). */
   url?: string;
   urlEdicao?: string;
@@ -298,6 +300,7 @@ export async function conferirImagem(
 ): Promise<ConferenciaImagem> {
   const r = await claude.pedir({
     agente: 'revisor de imagem',
+    leve: true,
     sistema: [
       {
         texto:
@@ -347,7 +350,7 @@ const ESQUEMA_DESCRICOES = {
           descricao: {
             type: 'string',
             description:
-              'Uma frase em português com o que a foto mostra, concreto (produto, peça, fachada, equipe, serviço). Sem opinião.',
+              'Uma ou duas frases em português com o que a foto mostra, concreto: o assunto (produto, peça, fachada, equipe, serviço), de que ângulo, o fundo e o clima (luz, cor dominante). Sem opinião e sem inventar o que não se vê.',
           },
         },
         required: ['indice', 'descricao'],
@@ -365,10 +368,11 @@ export async function descreverFotos(
   if (!fotos.length) return [];
   const r = await claude.pedir({
     agente: 'descrição das fotos',
+    leve: true,
     sistema: [
       {
         texto:
-          'Você descreve fotos de uma empresa brasileira para outro editor escolher a foto certa para cada momento de um vídeo. Seja concreto e curto.',
+          'Você descreve fotos de uma empresa brasileira para um redator e um diretor de arte que não vão ver a foto: eles escolhem a foto certa e escrevem o texto que a completa só pela sua descrição. Seja concreto e curto.',
       },
     ],
     imagens: fotos.map((f, k) => ({
@@ -392,7 +396,7 @@ export async function descreverFotos(
       k: Number(x.indice),
       descricao: String(x.descricao ?? '')
         .trim()
-        .slice(0, 200),
+        .slice(0, 260),
     }))
     .filter((x) => Number.isInteger(x.k) && fotos[x.k] && x.descricao)
     .map((x) => ({ id: fotos[x.k]!.id, descricao: x.descricao }));

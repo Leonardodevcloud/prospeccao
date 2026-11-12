@@ -31,7 +31,7 @@ import {
 } from '@prospeccao/integrations/carrosseis';
 import { buscarNaInternet } from '@prospeccao/integrations/rede';
 import { prepararImagem } from '@prospeccao/integrations/slides';
-import { type ReferenciaImagem, usoDaImagem } from '@prospeccao/integrations/videos';
+import { descreverFotos, type ReferenciaImagem, usoDaImagem } from '@prospeccao/integrations/videos';
 import { AppError } from '@prospeccao/shared';
 import {
   type FormatoPeca,
@@ -503,6 +503,62 @@ async function fotoComoReferencia(
   if (!dados) return null;
   const img = await prepararImagem(dados, { maxLado: 1280 }).catch(() => null);
   return img ? { dados: new Uint8Array(img.dados), tipo: 'image/jpeg', nome: `foto-${k}.jpg` } : null;
+}
+
+/** Quantas fotos sem descrição são lidas num pedido (as outras ficam para os próximos). */
+const FOTOS_DESCRITAS_POR_PEDIDO = 8;
+
+/**
+ * v157: o time enxerga as fotos. Cada foto da empresa é descrita uma vez por um modelo de visão barato
+ * (o que mostra, de que ângulo, o clima) e a descrição fica guardada na foto (`descricao_ia`, a mesma
+ * coluna que os vídeos já usam). O estrategista escolhe a foto pelo que ela mostra e a redatora escreve
+ * o título que a completa. Nunca derruba o pedido: sem descrição, a foto segue só com o nome.
+ */
+export async function olharAsFotos(
+  db: Executor,
+  ia: CarrosseisIa,
+  contaId: number,
+  ids: number[],
+): Promise<Map<number, string>> {
+  const unicos = [...new Set(ids)].slice(0, 40);
+  const mapa = new Map<number, string>();
+  if (!unicos.length) return mapa;
+  try {
+    const { rows } = await db.query<{ id: number; nome: string; chave: string; descricao_ia: string | null }>(
+      `SELECT id, nome, chave, descricao_ia FROM comercial.carrossel_fotos
+        WHERE conta_id = ${contaSql()} AND id = ANY($1::bigint[])`,
+      [unicos],
+    );
+    for (const r of rows) if (r.descricao_ia) mapa.set(Number(r.id), r.descricao_ia);
+    if (!ia.armazenamento) return mapa;
+    // Na ordem pedida (as do pedido primeiro, depois as mais novas).
+    const faltam = unicos
+      .map((id) => rows.find((r) => Number(r.id) === id))
+      .filter((r): r is (typeof rows)[number] => !!r && !r.descricao_ia)
+      .slice(0, FOTOS_DESCRITAS_POR_PEDIDO);
+    if (!faltam.length) return mapa;
+    const lidas = (
+      await Promise.all(
+        faltam.map(async (f) => {
+          const dados = await ia.armazenamento!.ler(f.chave).catch(() => null);
+          const img = dados ? await prepararImagem(dados, { maxLado: 768 }).catch(() => null) : null;
+          return img ? { id: Number(f.id), nome: f.nome, jpeg: new Uint8Array(img.dados) } : null;
+        }),
+      )
+    ).flatMap((x) => (x ? [x] : []));
+    if (!lidas.length) return mapa;
+    for (const d of await descreverFotos(ia.cliente(db, contaId), lidas)) {
+      if (!d.descricao) continue;
+      mapa.set(d.id, d.descricao);
+      await db.query(
+        `UPDATE comercial.carrossel_fotos SET descricao_ia = $2 WHERE id = $1 AND conta_id = ${contaSql()}`,
+        [d.id, d.descricao],
+      );
+    }
+  } catch {
+    // Descrever é um capricho: qualquer falha deixa as fotos só com o nome.
+  }
+  return mapa;
 }
 
 /**

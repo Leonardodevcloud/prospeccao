@@ -129,7 +129,7 @@ export function promptDaArte(e: EntradaArte): string {
     `SUBJECT: ${d.assunto}`,
     `LAYOUT: ${d.composicao}`,
     d.elementos.length ? `GRAPHIC ELEMENTS:\n${d.elementos.map((x) => `- ${x}`).join('\n')}` : '',
-    `TYPOGRAPHY: ${d.tipografia} Brand fonts for reference: headlines like "${par.titulo.familia}"${par.titulo.caixaAlta ? ' in uppercase' : ''}, body like "${par.corpo}". Strong hierarchy: the number and the headline read in one second on a phone.`,
+    `TYPOGRAPHY: ${d.tipografia} Brand fonts for reference: headlines like "${par.titulo.familia}"${par.titulo.caixaAlta ? ' in uppercase' : ''}, body like "${par.corpo}". Strong hierarchy: the number and the headline read in one second on a phone. The support line is at most 40% of the headline size, with open line spacing (about 1.4), never crowded against the headline. Text aligned to one axis.`,
     `LIGHT & COLOR: ${d.luzECor} Brand palette (use these exact colors, saturated): dominant ${c.principal}, accent ${c.destaque} (number, highlighted words, button), light ${c.claro}.`,
     e.identidade.jeitoDePostar
       ? `HOW THIS BRAND POSTS (follow it): ${e.identidade.jeitoDePostar.replace(/\s+/g, ' ').slice(0, 700)}`
@@ -151,7 +151,7 @@ export function promptDaArte(e: EntradaArte): string {
       ? `- Image${posts.length > 1 ? 's' : ''} ${posts.join(', ')}: posts this brand already published. Borrow their visual language (composition, graphic elements, 3D icons, how they use color and photos). Ignore their text, logo and exact layout.`
       : '',
     `LOGO AREA: keep the ${NOME_DO_CANTO[d.cantoDaLogo]} corner (about 30% of the width and 12% of the height${story ? ', below the top 13%' : ''}) clean and flat: plain background, no text, no objects. The real logo is placed there afterwards. Do NOT draw any logo, wordmark or brand name anywhere.`,
-    `CONSTRAINTS: no text besides TEXT; no numbers, prices, phone numbers, websites or @ handles besides TEXT; no logos or brand names; no watermark; no frame or border; no generic stock-template look; people and places look Brazilian. ${CARTAO_POSTAL} Safe margins: nothing touches the edges${story ? '; keep the top 13% and bottom 16% free of text (the story UI covers them)' : ''}.`,
+    `CONSTRAINTS: no text besides TEXT; no numbers, prices, phone numbers, websites or @ handles besides TEXT; no logos or brand names; no watermark; no frame or border; no generic stock-template look; not a plain top-to-bottom stack of logo, badge, headline, text, picture and button: one visual idea leads and the text answers it; people and places look Brazilian. ${CARTAO_POSTAL} Safe margins: nothing touches the edges${story ? '; keep the top 13% and bottom 16% free of text (the story UI covers them)' : ''}.`,
     e.corrigir?.length ? `FIX FROM THE LAST ATTEMPT: ${e.corrigir.join(' ')}` : '',
   ]
     .filter((x) => x !== '')

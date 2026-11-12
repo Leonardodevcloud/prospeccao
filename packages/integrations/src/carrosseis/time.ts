@@ -80,7 +80,7 @@ export interface EntradaTime {
   postsQueFuncionaram: PostQueFuncionou[];
   /** Títulos dos últimos carrosséis (para não repetir o assunto do mesmo jeito). */
   anteriores: string[];
-  fotos: { id: number; nome: string }[];
+  fotos: { id: number; nome: string; descricao?: string | null }[];
   hoje: string;
   /** v132: as imagens que o time pode pôr (sem isto, só as fotos da empresa). */
   imagens?: ImagensDoTime | null;
@@ -91,7 +91,7 @@ export interface EntradaTime {
   /** v134: este carrossel é um teste (2 de cada 10): o formato a testar. */
   teste?: string | null;
   /** v144: as fotos que vieram com o pedido (já tratadas): cada uma entra em pelo menos um slide. */
-  fotosDoPedido?: { id: number; nome: string }[];
+  fotosDoPedido?: { id: number; nome: string; descricao?: string | null }[];
 }
 
 /** As imagens do time (v132): quem faz a imagem é a api (gera, confere e guarda nas fotos). */
@@ -402,10 +402,10 @@ function mensagemEstrategista(e: EntradaTime): string {
     limitesParaORedator(MODELOS.filter((m) => m !== 'capa' && m !== 'chamada')),
     '',
     e.fotosDoPedido?.length
-      ? `FOTOS QUE A EMPRESA MANDOU PARA ESTE CARROSSEL (use cada uma em um slide capa ou foto, onde ela ajuda a mensagem):\n${e.fotosDoPedido.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
+      ? `FOTOS QUE A EMPRESA MANDOU PARA ESTE CARROSSEL (use cada uma em um slide capa ou foto, onde ela ajuda a mensagem):\n${e.fotosDoPedido.map((f) => `- id ${f.id}: ${f.nome}${f.descricao ? ` · mostra: ${f.descricao}` : ''}`).join('\n')}`
       : '',
     e.pedido.usarFotos && e.fotos.length
-      ? `FOTOS DA EMPRESA (use só quando a foto combina com o slide; só nos modelos capa e foto):\n${e.fotos.map((f) => `- id ${f.id}: ${f.nome}`).join('\n')}`
+      ? `FOTOS DA EMPRESA (use só quando a foto combina com o slide; só nos modelos capa e foto):\n${e.fotos.map((f) => `- id ${f.id}: ${f.nome}${f.descricao ? ` · mostra: ${f.descricao}` : ''}`).join('\n')}`
       : e.imagens?.gerar
         ? 'FOTOS DA EMPRESA: nenhuma para usar (fotoId sempre null).'
         : 'FOTOS: não use fotos (fotoId sempre null). Não use o modelo "foto".',

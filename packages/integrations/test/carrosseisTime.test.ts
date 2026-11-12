@@ -531,6 +531,52 @@ describe('o cliente do Claude', () => {
     expect(corpos[3]).toMatchObject({ output_config: { effort: 'low' }, tool_choice: { type: 'auto' } });
   });
 
+  it('v157: tarefa leve vai no modelo barato; se a API recusa o modelo, o principal assume e não insiste', async () => {
+    const { custoUsd, esquecerLeveRecusado, modeloDoPedido } = await import('../src/carrosseis/claude.js');
+    esquecerLeveRecusado();
+    const corpos: Record<string, unknown>[] = [];
+    let respostas: (() => Response)[] = [];
+    vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => {
+      corpos.push(JSON.parse(String(init.body)));
+      return respostas.shift()!();
+    });
+    const ok = () =>
+      Response.json({
+        content: [{ type: 'tool_use', name: 'leve', input: { ok: 1 } }],
+        stop_reason: 'tool_use',
+        usage: { input_tokens: 1_000_000, output_tokens: 0 },
+      });
+    const pedido = {
+      agente: 'a',
+      sistema: [],
+      mensagem: 'x',
+      ferramenta: { nome: 'leve', descricao: 'x', esquema: {} },
+    };
+    const cfg = { chave: 'k'.repeat(30), modelo: 'claude-sonnet-5-5', modeloLeve: 'claude-haiku-5-5' };
+    respostas = [ok, ok];
+    const barato = await criarClaude(cfg).pedir({ ...pedido, leve: true });
+    expect(corpos[0]!.model).toBe('claude-haiku-5-5');
+    expect(barato.custoUsd).toBeCloseTo(0.1, 5);
+    const normal = await criarClaude(cfg).pedir(pedido);
+    expect(corpos[1]!.model).toBe('claude-sonnet-5-5');
+    expect(normal.custoUsd).toBeCloseTo(2, 5);
+    expect(
+      custoUsd('claude-haiku-5-5', { entrada: 0, saida: 1_000_000, cacheEscrita: 0, cacheLeitura: 0 }),
+    ).toBeCloseTo(0.5, 5);
+    // A conta não tem o modelo leve (404): o pedido termina no principal e os próximos nem tentam.
+    respostas = [() => new Response('{"error":{"type":"not_found_error"}}', { status: 404 }), ok];
+    const n = corpos.length;
+    const r = await criarClaude(cfg).pedir({ ...pedido, leve: true });
+    expect(r.dados).toEqual({ ok: 1 });
+    expect(corpos.at(-1)!.model).toBe('claude-sonnet-5-5');
+    expect(corpos.slice(n).filter((c) => c.model === 'claude-haiku-5-5').length).toBeGreaterThanOrEqual(1);
+    expect(modeloDoPedido(cfg, true)).toBe('claude-sonnet-5-5');
+    expect(modeloDoPedido({ modelo: 'claude-sonnet-5-5', modeloLeve: null }, true)).toBe('claude-sonnet-5-5');
+    esquecerLeveRecusado();
+    expect(modeloDoPedido(cfg, true)).toBe('claude-haiku-5-5');
+    expect(modeloDoPedido(cfg, false)).toBe('claude-sonnet-5-5');
+  });
+
   it('resposta cortada no teto vira erro (o JSON pela metade não serve)', async () => {
     vi.stubGlobal('fetch', async () =>
       Response.json({

@@ -88,6 +88,16 @@ export const esquemaEnvApi = envBase.extend({
     .regex(/^claude-[\w.-]+$/, 'CARROSSEIS_MODELO começa com claude-')
     .default('claude-sonnet-5-5'),
   /** v132: imagens dos carrosséis pelo GPT Image 2 (a mesma OPENAI_CHAVE) e o custo de cada uma. */
+  /**
+   * v157: o modelo barato das tarefas leves (conferir recorte e imagem, descrever foto, escolher ícone).
+   * "nenhum" manda tudo para o CARROSSEIS_MODELO. Se a conta não tiver o modelo, o sistema volta sozinho.
+   */
+  CARROSSEIS_MODELO_LEVE: z
+    .string()
+    .regex(/^(claude-[\w.-]+|nenhum)$/, 'CARROSSEIS_MODELO_LEVE começa com claude- (ou "nenhum")')
+    .default('claude-haiku-5-5'),
+  /** v157: a qualidade do elemento 3D das peças (um objeto pequeno): medium custa uma fração de high. */
+  CARROSSEIS_ELEMENTO_QUALIDADE: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('medium'),
   CARROSSEIS_IMAGEM_MODELO: z.string().min(3).default('gpt-image-2.6-sunburst'),
   /** v148: a qualidade das imagens dos carrosséis e cards (high: a mais caprichada do GPT Image). */
   CARROSSEIS_IMAGEM_QUALIDADE: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),

@@ -666,7 +666,7 @@ function Editor(props: { c: Carrossel; d: IdentidadeDaConta }) {
                   aoVerSlide={verSlide}
                 />
               ) : aba === 'time' && relatorio ? (
-                <PainelTime r={relatorio} aoUsarGancho={usarGancho} travado={s.travado} />
+                <PainelTime r={relatorio} aoUsarGancho={usarGancho} travado={s.travado} card={ehCard} />
               ) : (
                 <PainelEstilo estilo={r.estilo} aoMudar={(estilo) => setR({ ...r, estilo })} />
               )}

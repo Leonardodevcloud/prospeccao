@@ -34,6 +34,8 @@ const env = carregarEnv(
     /** A IA que decide os cortes (a mesma chave dos carrosséis). Sem ela, só as regras. */
     ANTHROPIC_CHAVE: opcional(z.string().min(20)),
     VIDEOS_MODELO: z.string().default('claude-sonnet-5-5'),
+    /** v157: o modelo barato das conferências e descrições de foto ("nenhum" desliga). */
+    VIDEOS_MODELO_LEVE: z.string().default('claude-haiku-5-5'),
     /** Chrome do render (a imagem traz o Chromium em /usr/bin/chromium). */
     VIDEOS_NAVEGADOR: opcional(z.string().min(1)),
     VIDEOS_WORKERS_RENDER: z.coerce.number().int().min(1).max(8).default(2),
@@ -84,8 +86,9 @@ const arm = criarArmazenamento({
 const voz = env.GROQ_CHAVE
   ? { baseUrl: env.VOZ_BASE_URL, chave: env.GROQ_CHAVE, modelo: env.VIDEOS_VOZ_MODELO }
   : null;
+const modeloLeve = env.VIDEOS_MODELO_LEVE === 'nenhum' ? null : env.VIDEOS_MODELO_LEVE;
 const claude = env.ANTHROPIC_CHAVE
-  ? criarClaude({ chave: env.ANTHROPIC_CHAVE, modelo: env.VIDEOS_MODELO })
+  ? criarClaude({ chave: env.ANTHROPIC_CHAVE, modelo: env.VIDEOS_MODELO, modeloLeve })
   : null;
 const navegador = env.VIDEOS_NAVEGADOR ?? (existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : null);
 
@@ -103,6 +106,7 @@ const deps: DepsEdicao = {
         const medido = criarClaude({
           chave: env.ANTHROPIC_CHAVE!,
           modelo: env.VIDEOS_MODELO,
+          modeloLeve,
           medidor: {
             async depois(_uso, custoUsd) {
               custo += custoUsd;
@@ -118,6 +122,7 @@ const deps: DepsEdicao = {
         criarClaude({
           chave: env.ANTHROPIC_CHAVE!,
           modelo: env.VIDEOS_MODELO,
+          modeloLeve,
           medidor: {
             async depois(_uso, custoUsd) {
               somar(custoUsd);

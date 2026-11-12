@@ -202,6 +202,7 @@ export async function conferirCenario(
 ): Promise<{ aprovada: boolean; problemas: string[] }> {
   const r = await claude.pedir({
     agente: 'revisor de imagem',
+    leve: true,
     sistema: [
       {
         texto:
@@ -256,6 +257,7 @@ const ESQUEMA_REFERENCIA = {
 export async function descreverReferencia(claude: ClienteClaude, jpeg: Uint8Array): Promise<string> {
   const r = await claude.pedir({
     agente: 'descrição das fotos',
+    leve: true,
     sistema: [
       {
         texto:

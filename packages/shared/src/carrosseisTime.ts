@@ -475,6 +475,56 @@ export const CRITERIO: Record<CriterioRevisor, string> = {
   portugues: 'Português',
 };
 
+/**
+ * v157: o que cada critério quer dizer num card avulso (as chaves são as mesmas do carrossel; a peça
+ * que vive sozinha é julgada por outra régua: repetição dentro da peça, texto e imagem, fato concreto).
+ */
+export const CRITERIO_CARD: Record<CriterioRevisor, string> = {
+  gancho: 'Título que para o dedo',
+  umaIdeia: 'Uma mensagem, sem repetição',
+  clareza: 'Texto e imagem se completam',
+  especifico: 'Fato concreto (nada genérico)',
+  tamanho: 'Tamanho do texto',
+  chamada: 'Ação clara',
+  tom: 'Tom da marca',
+  portugues: 'Português',
+};
+
+const VAZIAS_DO_SELO = new Set(
+  'a o as os um uma de da do das dos e em no na nos nas para pra por com sem sua seu suas seus que ao aos'.split(
+    ' ',
+  ),
+);
+const palavrasDeConteudo = (t: string) =>
+  t
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((x) => x && !VAZIAS_DO_SELO.has(x));
+/**
+ * Duas palavras dizem o mesmo: iguais, ou com o mesmo começo e só o final diferente ("aluguel" e
+ * "alugar", "entrega" e "entregas"). "Motoboys" e "moto" não: o que sobra depois do começo é outra palavra.
+ */
+function mesmaPalavra(a: string, b: string): boolean {
+  if (a === b) return true;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i >= 4 && a.length - i <= 3 && b.length - i <= 3;
+}
+
+/**
+ * v157: o selo só repete o título ("Aluguel de moto" sobre "…tem moto para alugar"). Selo assim não
+ * acrescenta nada e gasta o espaço mais nobre da peça: o sistema tira.
+ */
+export function seloRepete(selo: string, titulo: string): boolean {
+  const doSelo = palavrasDeConteudo(selo);
+  const doTitulo = palavrasDeConteudo(titulo.replace(/\*/g, ''));
+  if (!doSelo.length || !doTitulo.length) return false;
+  return doSelo.every((x) => doTitulo.some((y) => mesmaPalavra(x, y)));
+}
+
 /** Passa quando nenhum critério fica abaixo de 3 e a média é 4 ou mais (notas de 1 a 5). */
 export function revisaoAprovada(notas: Partial<Record<CriterioRevisor, number>>): boolean {
   const v = CRITERIOS_REVISOR.map((c) => notas[c] ?? 0);

@@ -5,6 +5,7 @@ import {
   CHAMADAS_FINAIS,
   type ChamadaFinal,
   CRITERIO,
+  CRITERIO_CARD,
   CRITERIOS_REVISOR,
   ETAPA_TIME,
   ETAPAS_TIME,
@@ -544,7 +545,13 @@ export function AvisosDoRevisor(props: {
 
 /* ───────────────────────────── O relatório do time ───────────────────────────── */
 
-export function PainelTime(props: { r: RelatorioTime; aoUsarGancho: (g: string) => void; travado: boolean }) {
+export function PainelTime(props: {
+  r: RelatorioTime;
+  aoUsarGancho: (g: string) => void;
+  travado: boolean;
+  /** v157: o card avulso é julgado por outra régua (os mesmos critérios, com outro sentido). */
+  card?: boolean;
+}) {
   const { r } = props;
   const media = CRITERIOS_REVISOR.reduce((s, c) => s + (r.notas[c] ?? 0), 0) / CRITERIOS_REVISOR.length;
   const abertos = r.avisos.filter((a) => !a.resolvido).length;
@@ -599,7 +606,7 @@ export function PainelTime(props: { r: RelatorioTime; aoUsarGancho: (g: string) 
         <ul className="painel-time__notas">
           {CRITERIOS_REVISOR.map((c) => (
             <li key={c} className="painel-time__nota">
-              <span>{CRITERIO[c]}</span>
+              <span>{(props.card ? CRITERIO_CARD : CRITERIO)[c]}</span>
               <span className="painel-time__barra" role="img" aria-label={`${r.notas[c] ?? 0} de 5`}>
                 <span className="painel-time__cheio" style={{ width: `${((r.notas[c] ?? 0) / 5) * 100}%` }} />
               </span>

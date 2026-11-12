@@ -325,3 +325,92 @@ describe('carrossel: as fotos do pedido (v144)', () => {
     );
   });
 });
+
+describe('v157: ajustes da revisora aplicados pelo código e nota da peça repetida', () => {
+  const redacao = () => ({
+    cards: [
+      {
+        legenda: 'Legenda antiga.',
+        hashtags: [],
+        variacoes: [
+          {
+            ...slideNovo('capa', 'c1v1'),
+            sobretitulo: 'Só esta semana',
+            titulo: 'Temos moto para alugar',
+            texto: 'Condições na conversa.',
+            botao: 'Chame no WhatsApp',
+          },
+          {
+            ...slideNovo('capa', 'c1v2'),
+            sobretitulo: '',
+            titulo: 'Alugue sua moto',
+            texto: 'Fale com a gente.',
+            botao: 'Chame no WhatsApp',
+          },
+        ],
+      },
+    ],
+  });
+  const pedido = entradaCards({}, { chamada: 'salvar' });
+
+  it('todos os ajustes com sugestão: troca só os campos apontados, sem chamar a redatora', async () => {
+    const { aplicarAjustesDaRevisora } = await import('../src/carrosseis/cards.js');
+    const r = aplicarAjustesDaRevisora(
+      redacao() as never,
+      {
+        ajustes: [
+          {
+            slide: 1,
+            campo: 'titulo',
+            tipo: 'outro',
+            problema: 'descreve a imagem',
+            sugestao: 'Rode amanhã *sem comprar* moto',
+          },
+          {
+            slide: 1,
+            campo: 'texto',
+            tipo: 'outro',
+            problema: 'frase vazia',
+            sugestao: 'Moto revisada e baú incluso.',
+          },
+          { slide: 2, campo: 'sobretitulo', tipo: 'outro', problema: 'x', sugestao: 'Aluguel de moto' },
+          { slide: 0, campo: 'legenda', tipo: 'outro', problema: 'x', sugestao: 'Legenda nova.' },
+        ],
+      },
+      pedido as never,
+    )!;
+    expect(r.cards[0]!.variacoes[0]!.titulo).toBe('Rode amanhã *sem comprar* moto');
+    expect(r.cards[0]!.variacoes[0]!.texto).toBe('Moto revisada e baú incluso.');
+    expect(r.cards[0]!.variacoes[0]!.sobretitulo).toBe('Só esta semana');
+    // O selo sugerido repete o título da peça 2: o código não deixa entrar.
+    expect(r.cards[0]!.variacoes[1]!.sobretitulo).toBe('');
+    expect(r.cards[0]!.legenda).toBe('Legenda nova.');
+  });
+
+  it('ajuste sem sugestão (ou nenhum ajuste) volta para a redatora', async () => {
+    const { aplicarAjustesDaRevisora } = await import('../src/carrosseis/cards.js');
+    expect(aplicarAjustesDaRevisora(redacao() as never, { ajustes: [] }, pedido as never)).toBeNull();
+    expect(
+      aplicarAjustesDaRevisora(
+        redacao() as never,
+        { ajustes: [{ slide: 1, campo: 'titulo', tipo: 'outro', problema: 'fraco', sugestao: null }] },
+        pedido as never,
+      ),
+    ).toBeNull();
+  });
+
+  it('peça repetida ou genérica não passa de 3,5 na nota da revisora; sobreposta, de 2', async () => {
+    const { lerNotasDasOpcoes } = await import('../src/carrosseis/camadas.js');
+    const notas = lerNotasDasOpcoes(
+      {
+        opcoes: [
+          { opcao: 1, nota: 4.6, comentario: 'a', sobreposto: false, repete: true, generica: false },
+          { opcao: 2, nota: 4.6, comentario: 'b', sobreposto: false, repete: false, generica: false },
+          { opcao: 3, nota: 4.6, comentario: 'c', sobreposto: true, repete: false, generica: true },
+        ],
+      },
+      3,
+    )!;
+    expect(notas.map((n) => n.nota)).toEqual([3.5, 4.6, 2]);
+  });
+});

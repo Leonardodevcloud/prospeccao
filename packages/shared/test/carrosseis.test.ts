@@ -260,7 +260,7 @@ describe('módulo Carrosséis com IA no plano', () => {
       const cruza = (p: { x: number; y: number; l: number; a: number }, q: typeof p) =>
         p.x < q.x + q.l && q.x < p.x + p.l && p.y < q.y + q.a && q.y < p.y + p.a;
       for (const formato of ['feed', 'story'] as const)
-        for (const composicao of ['lado', 'esquerda', 'base'] as const)
+        for (const composicao of ['lado', 'esquerda', 'base', 'centro', 'topo'] as const)
           for (const [largura, altura] of [
             [420, 1000],
             [600, 900],
@@ -337,5 +337,76 @@ describe('módulo Carrosséis com IA no plano', () => {
       });
       expect(m.avisos.join(' ')).toContain('recorte');
     });
+  });
+});
+
+describe('v157: selo que repete, título com palavras marcadas e composições novas', () => {
+  it('o selo que só repete o título é reconhecido; o que acrescenta, não', async () => {
+    const { seloRepete } = await import('../src/carrosseisTime.js');
+    expect(seloRepete('Aluguel de moto', 'Motoboy, a Tutts tem *moto para alugar*')).toBe(true);
+    expect(seloRepete('Entrega rápida', 'Entregas rápidas para a sua loja')).toBe(true);
+    expect(seloRepete('Só esta semana', 'Rode amanhã sem comprar moto')).toBe(false);
+    expect(seloRepete('Para motoboys', 'Rode amanhã sem comprar moto')).toBe(false);
+    expect(seloRepete('', 'Qualquer título')).toBe(false);
+  });
+
+  it('título com duas palavras marcadas é desenhado no número de linhas que o código mediu', () => {
+    const s = {
+      ...slideNovo('camadas', 'c'),
+      sobretitulo: 'Para motoboys',
+      titulo: 'Rode amanhã *sem comprar* moto',
+      texto: 'Moto revisada e baú incluso.',
+      botao: 'Chame no WhatsApp',
+      destaque: '',
+      composicao: 'base' as const,
+    };
+    const m = montarSlide({
+      slide: s,
+      indice: 0,
+      total: 1,
+      identidade: IDENTIDADE_PADRAO,
+      estilo: 'impacto',
+      foto: 'recorte',
+      fotoMedidas: { largura: 900, altura: 560 },
+      formato: 'feed',
+    });
+    expect(m.camadas?.cabe).toBe(true);
+    // Cada linha do título é uma caixa sem quebra, com as palavras marcadas em pedaços próprios.
+    const linhas: string[] = [];
+    const andar = (no: unknown) => {
+      if (!no || typeof no !== 'object') return;
+      const n = no as { props?: { style?: Record<string, unknown>; children?: unknown } };
+      const filhos = Array.isArray(n.props?.children) ? n.props.children : [n.props?.children];
+      if (
+        n.props?.style?.whiteSpace === 'nowrap' &&
+        filhos.some((f) => (f as { type?: string })?.type === 'span')
+      )
+        linhas.push(
+          filhos
+            .map((f) =>
+              typeof f === 'string' ? f : String((f as { props: { children: string } }).props.children),
+            )
+            .join(''),
+        );
+      for (const f of filhos) andar(f);
+    };
+    andar(m.no);
+    expect(linhas.join(' ').replace(/\s+/g, ' ')).toContain('sem comprar');
+    expect(linhas.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('"Foto em cima" põe o produto deitado antes do texto e a logo solta no canto; "centro" centraliza', () => {
+    const topo = geometriaCamadas('feed', { largura: 900, altura: 560 }, 'topo');
+    expect(topo.logo).toBeTruthy();
+    expect(topo.texto.y).toBeGreaterThan(topo.foto.y + topo.foto.a);
+    expect(topo.foto.y).toBeGreaterThan(topo.logo!.y + topo.logo!.altura);
+    const centro = geometriaCamadas('feed', { largura: 600, altura: 900 }, 'centro');
+    expect(centro.centrado).toBe(true);
+    expect(Math.abs(centro.foto.x + centro.foto.l / 2 - 540)).toBeLessThan(2);
+    expect(centro.elemento).toBeNull();
+    // Pessoa em pé não flutua no meio da peça: "topo" cai na foto embaixo.
+    const pessoa = geometriaCamadas('feed', { largura: 600, altura: 900 }, 'topo');
+    expect(pessoa.logo).toBeUndefined();
+    expect(pessoa.foto.y + pessoa.foto.a).toBe(1350);
   });
 });

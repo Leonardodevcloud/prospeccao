@@ -25,6 +25,8 @@ export interface PrecoClaude {
 }
 const PRECOS: { prefixo: string; preco: PrecoClaude }[] = [
   { prefixo: 'claude-sonnet-5-5', preco: { entradaMilhaoUsd: 2, saidaMilhaoUsd: 10, cacheLeitura: 0.05 } },
+  // v157: o Haiku 5.5 (até 100 mil tokens de pedido; os nossos pedidos leves ficam muito abaixo disso).
+  { prefixo: 'claude-haiku-5-5', preco: { entradaMilhaoUsd: 0.1, saidaMilhaoUsd: 0.5 } },
   { prefixo: 'claude-opus', preco: { entradaMilhaoUsd: 5, saidaMilhaoUsd: 25 } },
   { prefixo: 'claude-haiku', preco: { entradaMilhaoUsd: 1, saidaMilhaoUsd: 5 } },
   { prefixo: 'claude-sonnet', preco: { entradaMilhaoUsd: 2, saidaMilhaoUsd: 10 } },
@@ -66,6 +68,11 @@ export interface MedidorClaude {
 export interface ConfigClaude {
   chave: string;
   modelo: string;
+  /**
+   * v157: o modelo barato das tarefas leves (conferir um recorte, descrever uma foto, escolher um ícone).
+   * Os pedidos marcados com `leve` vão para ele; se a API recusar o modelo, voltam ao principal.
+   */
+  modeloLeve?: string | null;
   medidor?: MedidorClaude | null;
 }
 
@@ -91,6 +98,8 @@ export interface PedidoClaude {
    * arte, estratégia); "baixo" para conferências mecânicas; sem valor, "medio".
    */
   esforco?: EsforcoClaude;
+  /** v157: tarefa leve (sim ou não, descrição curta, escolha em lista): usa o modelo barato, se houver. */
+  leve?: boolean;
 }
 export type EsforcoClaude = 'baixo' | 'medio' | 'alto';
 const EFFORT: Record<EsforcoClaude, string> = { baixo: 'low', medio: 'medium', alto: 'high' };
@@ -156,6 +165,15 @@ export function esquemaEstrito(e: unknown): unknown {
 }
 /** Ferramentas cujo esquema a API recusou no modo estrito: seguem do jeito antigo (instrução no prompt). */
 const semEstrito = new Set<string>();
+/** Modelos leves que a API recusou (nome errado, conta sem acesso, pedido fora do formato): não insiste. */
+const leveRecusado = new Set<string>();
+/** O modelo que atende o pedido: o leve nas tarefas leves, enquanto a API o aceitar. */
+export function modeloDoPedido(cfg: Pick<ConfigClaude, 'modelo' | 'modeloLeve'>, leve?: boolean): string {
+  const m = cfg.modeloLeve?.trim();
+  return leve && m && m !== cfg.modelo && !leveRecusado.has(m) ? m : cfg.modelo;
+}
+/** Só para os testes. */
+export const esquecerLeveRecusado = () => leveRecusado.clear();
 
 /** A instrução que substitui a ferramenta forçada (vai no fim do prompt do sistema). */
 export const instrucaoDaFerramenta = (nome: string) =>
@@ -267,17 +285,24 @@ export function criarClaude(cfg: ConfigClaude): ClienteClaude {
       let uso = USO_ZERO;
       let ok = false;
       let lembrar = false;
+      let modelo = modeloDoPedido(cfg, p.leve);
       try {
         for (let tentativa = 0; ; tentativa++) {
           let r: RespostaApi;
           try {
-            r = await chamar(cfg, p, lembrar);
+            r = await chamar({ ...cfg, modelo }, p, lembrar);
           } catch (erro) {
             const e = erro as AppError;
             // O esquema não passou no modo estrito (400): esta ferramenta volta ao jeito antigo.
             const d = e.detalhes as { status?: number; estrito?: boolean } | undefined;
             if (d?.status === 400 && d.estrito && !semEstrito.has(p.ferramenta.nome)) {
               semEstrito.add(p.ferramenta.nome);
+              continue;
+            }
+            // O modelo leve não serviu (não existe na conta, não aceita o pedido): o principal assume.
+            if (modelo !== cfg.modelo && (d?.status === 400 || d?.status === 404 || d?.status === 403)) {
+              leveRecusado.add(modelo);
+              modelo = cfg.modelo;
               continue;
             }
             if (e.repetivel && tentativa < 2) {
@@ -303,18 +328,18 @@ export function criarClaude(cfg: ConfigClaude): ClienteClaude {
             bloco?.input && typeof bloco.input === 'object' ? bloco.input : jsonDoTexto(r.content ?? []);
           if (!dados) {
             // Nos modelos novos a ferramenta não pode ser forçada: uma volta com o lembrete.
-            if (!lembrar && estiloDoModelo(cfg.modelo) === 'novo') {
+            if (!lembrar && estiloDoModelo(modelo) === 'novo') {
               lembrar = true;
               continue;
             }
             throw AppError.externo('Claude', `${p.agente}: a resposta veio sem o formato pedido`);
           }
           ok = true;
-          return { dados, uso, custoUsd: custoUsd(cfg.modelo, uso) };
+          return { dados, uso, custoUsd: custoUsd(modelo, uso) };
         }
       } finally {
         // Medir nunca derruba o pedido.
-        await cfg.medidor?.depois(uso, custoUsd(cfg.modelo, uso), ok).catch(() => undefined);
+        await cfg.medidor?.depois(uso, custoUsd(modelo, uso), ok).catch(() => undefined);
       }
     },
   };

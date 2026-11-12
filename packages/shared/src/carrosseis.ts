@@ -234,12 +234,14 @@ export const MODELOS_A_MAO = MODELOS.filter((m) => m !== 'arte' && m !== 'camada
  * o texto, a cor e a logo são do sistema, como nos outros modelos. Duas composições: a foto ao lado
  * do texto ou embaixo dele.
  */
-export const COMPOSICOES_CAMADAS = ['lado', 'esquerda', 'base'] as const;
+export const COMPOSICOES_CAMADAS = ['lado', 'esquerda', 'base', 'centro', 'topo'] as const;
 export type ComposicaoCamadas = (typeof COMPOSICOES_CAMADAS)[number];
 export const ROTULO_COMPOSICAO: Record<ComposicaoCamadas, string> = {
   lado: 'Foto à direita',
   esquerda: 'Foto à esquerda',
   base: 'Foto embaixo',
+  centro: 'Tudo no centro',
+  topo: 'Foto em cima',
 };
 /** v155: a forma desenhada pelo código atrás da foto (sempre num tom vizinho da cor de fundo). */
 export const FORMAS_CAMADAS = ['circulo', 'mancha', 'faixa', 'reticula'] as const;
@@ -1194,17 +1196,55 @@ function tituloNo(
   alturaLinha: number,
   cor: string,
   extra: Estilo = {},
+  /** v157: com a largura, o código quebra as linhas (a medida e o desenho passam a ser a mesma conta). */
+  largura?: number,
 ): No {
   const partes = t.split(/\*([^*\n]+)\*/g);
   if (partes.length < 3) return textoNo(semMarcas(t), f, tamanho, alturaLinha, cor, extra);
+  const realce = (palavra: string): No => ({
+    type: 'span',
+    props: { style: { color: corDoRealce(c) }, children: palavra },
+  });
+  if (largura) {
+    // Título com palavras marcadas: o Satori quebra a linha de um jeito quando há pedaços coloridos e
+    // de outro quando o texto é liso, e o título ocupava mais linhas do que o código tinha medido (o
+    // botão saía cortado). Aqui cada linha é decidida pelas medidas da fonte e desenhada sem quebra.
+    const palavras = partes.flatMap((p, i) =>
+      semMarcas(p)
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((x) => ({ x, marcada: i % 2 === 1 })),
+    );
+    const espaco = larguraTexto(' ', f, tamanho);
+    const linhas: (typeof palavras)[] = [[]];
+    let atual = 0;
+    for (const p of palavras) {
+      const w = larguraTexto(p.x, f, tamanho);
+      const com = atual === 0 ? w : atual + espaco + w;
+      if (atual > 0 && com > largura) {
+        linhas.push([p]);
+        atual = w;
+      } else {
+        linhas.at(-1)!.push(p);
+        atual = com;
+      }
+    }
+    const { textAlign, ...resto } = extra as Estilo & { textAlign?: string };
+    return div(
+      { flexDirection: 'column', alignItems: textAlign === 'center' ? 'center' : 'flex-start', ...resto },
+      ...linhas.map(
+        (linha): No => ({
+          type: 'div',
+          props: {
+            style: { ...estiloTexto(f, tamanho, alturaLinha, cor), display: 'block', whiteSpace: 'nowrap' },
+            children: linha.flatMap((p, k) => [...(k ? [' '] : []), p.marcada ? realce(p.x) : p.x]),
+          },
+        }),
+      ),
+    );
+  }
   // Satori e o navegador escrevem os pedaços em linha quando a caixa é "block".
-  const filhos = partes
-    .map((p, i) =>
-      i % 2 === 1
-        ? ({ type: 'span', props: { style: { color: corDoRealce(c) }, children: p } } as No)
-        : semMarcas(p),
-    )
-    .filter((p) => p !== '');
+  const filhos = partes.map((p, i) => (i % 2 === 1 ? realce(p) : semMarcas(p))).filter((p) => p !== '');
   return {
     type: 'div',
     props: {
@@ -2160,6 +2200,10 @@ export interface GeometriaCamadas {
   texto: { x: number; y: number; l: number; a: number };
   /** Onde cabe o elemento em 3D (null: não há espaço livre, a peça fica sem ele). */
   elemento: { x: number; y: number; lado: number } | null;
+  /** v157: o texto, o selo, a logo e o botão no eixo do meio (composição "centro"). */
+  centrado?: boolean;
+  /** v157: a logo fora da coluna do texto, no canto de cima (composição "topo": a foto vem antes do texto). */
+  logo?: { x: number; y: number; altura: number };
 }
 
 const FOLGA_CAMADAS = 32;
@@ -2178,8 +2222,27 @@ export function geometriaCamadas(
   const m = medidasDo(formato);
   const prop = medidas ? medidas.largura / Math.max(1, medidas.altura) : 0.67;
   const larga = prop >= 0.95;
-  const naBase = composicao === 'base' || larga;
+  const naBase = composicao === 'base' || composicao === 'centro' || composicao === 'topo' || larga;
   const baixo = m.altura - m.base;
+  // v157, "Foto em cima": a foto é a primeira coisa que o olho vê e o texto responde embaixo. Só para o
+  // produto deitado ou quadrado, que pousa bem no meio da peça (pessoa em pé cortada no ar fica estranha:
+  // nesse caso a composição cai na "foto embaixo").
+  if (composicao === 'topo' && larga) {
+    const alturaLogo = 72;
+    const y0 = m.topo + alturaLogo + 28;
+    const areaA = Math.round(m.altura * (formato === 'story' ? 0.32 : prop >= 1.3 ? 0.36 : 0.4));
+    const l = Math.round(Math.min(m.largura - 96, areaA * prop));
+    const a = Math.round(l / prop);
+    const x = Math.round((m.largura - l) / 2);
+    const yTexto = y0 + a + FOLGA_CAMADAS + 8;
+    return {
+      naBase: true,
+      foto: { x, y: y0, l, a },
+      texto: { x: LADO, y: yTexto, l: MIOLO, a: baixo - yTexto },
+      elemento: null,
+      logo: { x: LADO, y: m.topo, altura: alturaLogo },
+    };
+  }
   if (naBase) {
     // Embaixo: a foto deitada usa quase toda a largura; a em pé, 58%. Altura de até 44% da peça.
     const areaL = larga ? m.largura - 96 : Math.round(m.largura * 0.58);
@@ -2189,15 +2252,18 @@ export function geometriaCamadas(
     );
     const l = Math.round(Math.min(areaL, areaA * prop));
     const a = Math.round(l / prop);
-    const x = larga ? Math.round((m.largura - l) / 2) : m.largura - l - 48;
+    const centrado = composicao === 'centro';
+    const x = larga || centrado ? Math.round((m.largura - l) / 2) : m.largura - l - 48;
     // O produto deitado pousa um pouco acima da borda; a pessoa em pé encosta na base da peça.
     const y = larga ? baixo - a - (formato === 'story' ? 0 : 12) : m.altura - a;
     const texto = { x: LADO, y: m.topo, l: MIOLO, a: y - FOLGA_CAMADAS - m.topo };
     const vazio = x - FOLGA_CAMADAS - LADO;
     const lado = Math.min(220, vazio, a - 40);
     const elemento =
-      !larga && lado >= 150 ? { x: LADO + Math.round((vazio - lado) / 2), y: baixo - lado, lado } : null;
-    return { naBase, foto: { x, y, l, a }, texto, elemento };
+      !larga && !centrado && lado >= 150
+        ? { x: LADO + Math.round((vazio - lado) / 2), y: baixo - lado, lado }
+        : null;
+    return { naBase, foto: { x, y, l, a }, texto, elemento, ...(centrado ? { centrado } : {}) };
   }
   // Ao lado: a foto em pé à direita ou à esquerda (46% da largura, até 72% da altura), encostada na base.
   const areaL = Math.round(m.largura * 0.46);
@@ -2360,10 +2426,26 @@ function camadas(c: Contexto): No {
   // No card a logo vai sempre; na capa de um carrossel, só com "logo na capa" ligado na identidade.
   const comLogo = sozinho(c) || c.id.logoNaCapa;
   // Foto embaixo: a logo divide a linha com o selo (sobra altura para o título). Ao lado: em cima.
-  const logo = comLogo ? logoNo(c, g.naBase ? 72 : ALTURA_LOGO_CARD) : null;
+  const logoDaPeca = comLogo ? logoNo(c, g.naBase ? 72 : ALTURA_LOGO_CARD) : null;
+  // "Foto em cima": a logo fica solta no canto de cima, fora da coluna do texto.
+  const logoSolta =
+    g.logo && logoDaPeca
+      ? div(
+          {
+            position: 'absolute',
+            left: g.logo.x,
+            top: g.logo.y,
+            height: g.logo.altura,
+            alignItems: 'center',
+          },
+          logoDaPeca,
+        )
+      : null;
+  const logo = g.logo ? null : logoDaPeca;
+  const meio = !!g.centrado;
   // O selo e o botão diminuem a letra para caber na coluna (nunca cortam nem quebram em duas linhas).
   const corSelo = c.tipoFundo === 'destaque' ? c.cores.botaoFundo : c.cores.acento;
-  const espacoSelo = (g.naBase && logo ? largura - 300 : largura) - 52;
+  const espacoSelo = (g.naBase && logo && !meio ? largura - 300 : largura) - 52;
   const tamSelo = naLinha(s.sobretitulo.toUpperCase(), fonteCorpo(c, 'forte'), 26, 16, espacoSelo / 1.12);
   const selo = s.sobretitulo
     ? div(
@@ -2387,7 +2469,7 @@ function camadas(c: Contexto): No {
     ? div(
         {
           marginTop: 40,
-          alignSelf: 'flex-start',
+          alignSelf: meio ? 'center' : 'flex-start',
           padding: '24px 40px',
           backgroundColor: c.cores.botaoFundo,
           borderRadius: 999,
@@ -2396,28 +2478,32 @@ function camadas(c: Contexto): No {
         textoNo(s.botao, fonteCorpo(c, 'forte'), tamBotao, 1.2, c.cores.botaoTexto, { whiteSpace: 'nowrap' }),
       )
     : null;
-  const topo = g.naBase
-    ? logo || selo
-      ? div(
-          {
-            width: largura,
-            height: 72,
-            marginBottom: 32,
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-          },
-          selo ?? div({}),
-          logo,
-        )
-      : null
-    : null;
+  const topo = meio
+    ? null
+    : g.naBase
+      ? logo || selo
+        ? div(
+            {
+              width: largura,
+              height: 72,
+              marginBottom: 32,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexShrink: 0,
+            },
+            selo ?? div({}),
+            logo,
+          )
+        : null
+      : null;
   const fixo =
-    (g.naBase
-      ? topo
-        ? 72 + 32
-        : 0
-      : (logo ? ALTURA_LOGO_CARD + 36 : 0) + (selo ? tamSelo * 1.1 + 24 + 24 : 0)) +
+    (meio
+      ? (logo ? 72 + 24 : 0) + (selo ? tamSelo * 1.1 + 24 + 24 : 0)
+      : g.naBase
+        ? topo
+          ? 72 + 32
+          : 0
+        : (logo ? ALTURA_LOGO_CARD + 36 : 0) + (selo ? tamSelo * 1.1 + 24 + 24 : 0)) +
     (s.botao ? tamBotao * 1.2 + 48 + 40 : 0);
   // O número ou preço fica sempre numa linha só; no título, nenhuma palavra é quebrada no meio.
   const tamanhoDestaque = s.destaque
@@ -2479,9 +2565,12 @@ function camadas(c: Contexto): No {
       height: g.texto.a,
       flexDirection: 'column',
       justifyContent: 'flex-start',
+      ...(meio ? { alignItems: 'center' } : {}),
       overflow: 'hidden',
     },
     topo,
+    meio && logo ? div({ height: 72, marginBottom: 24, alignItems: 'center', flexShrink: 0 }, logo) : null,
+    meio && selo ? div({ marginBottom: 24, flexShrink: 0 }, selo) : null,
     !g.naBase && logo
       ? div({ height: ALTURA_LOGO_CARD, marginBottom: 36, alignItems: 'center', flexShrink: 0 }, logo)
       : null,
@@ -2492,14 +2581,27 @@ function camadas(c: Contexto): No {
           whiteSpace: 'nowrap',
         })
       : null,
-    tituloNo(c, s.titulo, fonteTitulo(c), ajuste.tamanhos.t!, c.par.titulo.alturaLinha, c.cores.texto, {
-      marginTop: s.destaque ? 20 : 0,
-      flexShrink: 0,
-    }),
+    tituloNo(
+      c,
+      s.titulo,
+      fonteTitulo(c),
+      ajuste.tamanhos.t!,
+      c.par.titulo.alturaLinha,
+      c.cores.texto,
+      {
+        marginTop: s.destaque ? 20 : 0,
+        flexShrink: 0,
+        width: largura,
+        ...(meio ? { textAlign: 'center' } : {}),
+      },
+      largura,
+    ),
     s.texto
       ? textoNo(s.texto, fonteCorpo(c), ajuste.tamanhos.x!, 1.38, c.cores.suave, {
           marginTop: 24,
           flexShrink: 0,
+          width: largura,
+          ...(meio ? { textAlign: 'center', justifyContent: 'center' } : {}),
         })
       : null,
     botao,
@@ -2515,6 +2617,7 @@ function camadas(c: Contexto): No {
     circulo,
     recorte,
     elemento,
+    logoSolta,
     coluna,
   );
 }
