@@ -1659,7 +1659,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
     onde: { rotulo: 'Vídeos', para: '/videos' },
     termos:
-      'palavra errada palavra toca frase inteira corte pega mais mapeamento das palavras ouvir de novo refazer do zero transcrição errou vídeo de apoio b-roll broll segundo vídeo mais de um vídeo cenas de apoio flashes trecho por cima da fala peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+      'transição do apoio aproximação deslize clarão flash fusão tratamento da imagem cor cinema vivo nitidez palavra errada palavra toca frase inteira corte pega mais mapeamento das palavras ouvir de novo refazer do zero transcrição errou vídeo de apoio b-roll broll segundo vídeo mais de um vídeo cenas de apoio flashes trecho por cima da fala peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
     corpo: (
       <>
         <p>
@@ -1743,6 +1743,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
             o começo de frase que você largou e a correção ("cinquenta, quer dizer, quarenta": fica só o
             certo). Quando o pedaço cortado pode ser uma palavra de verdade, o corte entra como dúvida para
             você conferir.
+          </li>
+          <li>
+            <b>Dá acabamento à imagem e às transições</b>: o trecho de vídeo de apoio entra e sai com
+            transição (aproximação com desfoque, deslize, clarão ou fusão; por padrão elas se revezam) e a
+            imagem do vídeo recebe um tratamento de cor e nitidez (<b>Vivo</b> por padrão, <b>Cinema</b> ou{' '}
+            <b>Original</b>). A legenda e as animações ficam com a cor exata da marca. Os dois se mudam na aba
+            Animações da revisão.
           </li>
           <li>
             <b>Confere a escuta da fala</b>: quando a transcrição pula um pedaço (uma palavra que cobre uma

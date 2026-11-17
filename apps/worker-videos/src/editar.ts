@@ -55,6 +55,7 @@ import {
   type SomVideo,
   TAMANHO_PARTE_ENVIO,
   type TrechoSemImagem,
+  transicaoDoTrecho,
   trechosQueFicam,
 } from '@prospeccao/shared/videos';
 import { prepararApoios } from './apoios.js';
@@ -651,19 +652,31 @@ export async function editarVideo(
     const deApoio = new Map(imagens.filter((im) => im.origem === 'apoio').map((im) => [im.id, im]));
     const trechosDeApoio = tela.imagens
       .filter((i) => deApoio.has(i.id))
-      .map((i) => ({
+      .map((i, k) => ({
         arquivo: preparo.arquivos.get(i.id)!,
         de: deApoio.get(i.id)!.apoioDe ?? 0,
         ini: i.ini,
         fim: i.fim,
+        // v165: como o trecho entra e sai (a "variada" reveza os estilos).
+        estilo: transicaoDoTrecho(v.opcoes.transicaoApoio, k),
       }));
-    if (trechosDeApoio.length) {
-      const comApoio = join(pasta, 'editado-apoio.mp4');
-      await rodar('ffmpeg', argumentosDoApoio({ editado, saida: comApoio, trechos: trechosDeApoio }), {
-        timeoutMs: 15 * 60_000,
-      });
+    // v165: a mesma passada trata a imagem (cor e nitidez), com ou sem apoio.
+    const comApoioEImagem = argumentosDoApoio({
+      editado,
+      saida: join(pasta, 'editado-apoio.mp4'),
+      trechos: trechosDeApoio,
+      imagem: v.opcoes.imagem,
+    });
+    if (comApoioEImagem) {
+      await rodar('ffmpeg', comApoioEImagem, { timeoutMs: 15 * 60_000 });
       await rm(editado, { force: true });
-      editado = comApoio;
+      editado = join(pasta, 'editado-apoio.mp4');
+      // O último quadro (o fundo da tela final) sai da imagem já tratada.
+      await rodar(
+        'ffmpeg',
+        ['-v', 'error', '-y', '-sseof', '-0.1', '-i', editado, '-frames:v', '1', '-update', '1', ultimo],
+        { timeoutMs: 60_000 },
+      );
     }
     const imagensDesenhadas = tela.imagens.filter((i) => !deApoio.has(i.id));
     const chamada =
@@ -703,6 +716,7 @@ export async function editarVideo(
       chamada: chamadaFinal,
       momentos: tela.momentos,
       imagens: imagensDesenhadas,
+      apoios: trechosDeApoio.map((t) => ({ ini: t.ini, fim: t.fim, estilo: t.estilo })),
       transicao: v.opcoes.transicao,
       medir: regua(900, 0),
       arquivos: {

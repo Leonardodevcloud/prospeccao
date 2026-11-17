@@ -19,7 +19,11 @@ import {
   ROTULO_SITUACAO_VIDEO,
   type TipoChamada,
   TRANSICOES,
+  TRANSICOES_APOIO,
+  TRATAMENTOS_IMAGEM,
+  type TransicaoApoio,
   type TransicaoCortes,
+  type TratamentoImagem,
   trechosQueFicam,
 } from '@prospeccao/shared/videos';
 import { Badge, Button, Icon } from '@prospeccao/ui';
@@ -1300,6 +1304,22 @@ function AbaAnimacoes({ v }: { v: DetalheVideo }) {
         opcoes={TRANSICOES.map((t) => ({ id: t.id, nome: t.nome }))}
         aoMudar={(transicao) => revisao.mutate({ transicao: transicao as TransicaoCortes })}
         dica={`${TRANSICOES.find((t) => t.id === v.opcoes.transicao)?.dica}.`}
+      />
+      {v.apoios.length > 0 && (
+        <Seletor
+          rotulo="Transição do vídeo de apoio"
+          valor={v.opcoes.transicaoApoio}
+          opcoes={TRANSICOES_APOIO.map((t) => ({ id: t.id, nome: t.nome }))}
+          aoMudar={(t) => revisao.mutate({ transicaoApoio: t as TransicaoApoio })}
+          dica={`${TRANSICOES_APOIO.find((t) => t.id === v.opcoes.transicaoApoio)?.dica}.`}
+        />
+      )}
+      <Seletor
+        rotulo="Tratamento da imagem"
+        valor={v.opcoes.imagem}
+        opcoes={TRATAMENTOS_IMAGEM.map((t) => ({ id: t.id, nome: t.nome }))}
+        aoMudar={(t) => revisao.mutate({ imagem: t as TratamentoImagem })}
+        dica={`${TRATAMENTOS_IMAGEM.find((t) => t.id === v.opcoes.imagem)?.dica}. A legenda e as animações não mudam de cor.`}
       />
     </div>
   );

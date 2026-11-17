@@ -389,6 +389,14 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4aq. Transições do apoio e tratamento da imagem (v165)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] Gerar de novo um vídeo com apoio e conferir as quatro transições (elas se revezam): alguma ficou exagerada? Dá para fixar uma só na aba Animações › Transição do vídeo de apoio.
+3. [ ] Conferir a imagem em **Vivo** (o padrão novo) contra Original e Cinema no mesmo vídeo: a pele ficou natural? Se preferir outro padrão, avisar.
+4. [ ] Conferir o tempo de edição: a passada da imagem recodifica o vídeo cortado uma vez a mais.
+5. [ ] **Aprovar o mockup** "Legenda em camadas: ajustar e arrastar". Só depois do ok ele é codado.
+6. [ ] Em aberto: voz de estúdio com DeepFilterNet (precisa testar o binário no Docker do worker), texto atrás da pessoa, estilos novos de zoom no rosto.
+
 ## 4ap. Mapeamento das palavras na fala (v164)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
 2. [ ] No vídeo em que "você" tocava a frase inteira: aba Cortes › "As palavras não batem com o que você fala?" › **Ouvir a fala de novo e refazer a edição**. Depois conferir: a palavra agora toca só ela? A frase que faltava apareceu na legenda (as palavras recuperadas vêm marcadas para conferir)?

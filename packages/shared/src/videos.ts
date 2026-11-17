@@ -96,6 +96,36 @@ export const TRANSICOES: { id: TransicaoCortes; nome: string; dica: string }[] =
   { id: 'deslizar', nome: 'Deslizar', dica: 'Aproximação nos cortes; as imagens entram deslizando' },
 ];
 
+/* ───────────────────────── v165: transição do apoio e tratamento da imagem ───────────────────────── */
+
+/** Como o trecho de vídeo de apoio entra e sai. */
+export type TransicaoApoio = 'variada' | 'zoom' | 'deslize' | 'clarao' | 'fusao' | 'corte';
+export const TRANSICOES_APOIO: { id: TransicaoApoio; nome: string; dica: string }[] = [
+  { id: 'variada', nome: 'Variada', dica: 'Reveza aproximação, deslize, clarão e fusão' },
+  { id: 'zoom', nome: 'Aproximação', dica: 'Entra num impulso de zoom com leve desfoque' },
+  { id: 'deslize', nome: 'Deslize', dica: 'Entra pela direita e sai pela esquerda' },
+  { id: 'clarao', nome: 'Clarão', dica: 'Um flash de luz no corte' },
+  { id: 'fusao', nome: 'Fusão', dica: 'Uma imagem se dissolve na outra' },
+  { id: 'corte', nome: 'Corte seco', dica: 'Sem efeito' },
+];
+/** A ordem em que a "variada" reveza. */
+export const RODIZIO_DO_APOIO: Exclude<TransicaoApoio, 'variada' | 'corte'>[] = [
+  'zoom',
+  'deslize',
+  'clarao',
+  'fusao',
+];
+export const transicaoDoTrecho = (t: TransicaoApoio, k: number): Exclude<TransicaoApoio, 'variada'> =>
+  t === 'variada' ? RODIZIO_DO_APOIO[k % RODIZIO_DO_APOIO.length]! : t;
+
+/** O tratamento de cor e nitidez da imagem do vídeo (a legenda e as animações não mudam). */
+export type TratamentoImagem = 'vivo' | 'cinema' | 'original';
+export const TRATAMENTOS_IMAGEM: { id: TratamentoImagem; nome: string; dica: string }[] = [
+  { id: 'vivo', nome: 'Vivo', dica: 'Um pouco mais de contraste, cor e nitidez' },
+  { id: 'cinema', nome: 'Cinema', dica: 'Contraste forte, sombras frias, pele quente e bordas escurecidas' },
+  { id: 'original', nome: 'Original', dica: 'A imagem como foi gravada' },
+];
+
 /* ───────────────────────────── Imagens, música e efeitos (v129) ───────────────────────────── */
 
 export type ModoImagens = 'ia' | 'fotos' | 'nenhuma';
@@ -178,6 +208,9 @@ export const opcoesVideoEntrada = z.object({
   instrucoes: textoCurto(600).default(''),
   /** v163: as cores dos elementos e da legenda só deste vídeo (null: as da marca). */
   cores: coresDoVideoEntrada.nullable().default(null),
+  /** v165: como o apoio entra e sai, e o tratamento de cor da imagem. */
+  transicaoApoio: z.enum(['variada', 'zoom', 'deslize', 'clarao', 'fusao', 'corte']).default('variada'),
+  imagem: z.enum(['vivo', 'cinema', 'original']).default('vivo'),
 });
 export type OpcoesVideo = z.infer<typeof opcoesVideoEntrada>;
 
@@ -571,6 +604,8 @@ export const revisaoEntrada = z.object({
   cores: coresDoVideoEntrada.nullable().optional(),
   ritmo: z.enum(['dinamico', 'natural', 'pausas']).optional(),
   transicao: z.enum(['alternada', 'seco', 'deslizar']).optional(),
+  transicaoApoio: z.enum(['variada', 'zoom', 'deslize', 'clarao', 'fusao', 'corte']).optional(),
+  imagem: z.enum(['vivo', 'cinema', 'original']).optional(),
   momentos: z
     .array(
       z.object({
@@ -727,6 +762,8 @@ export function juntarPropostas(propostas: readonly Pick<PropostaDaEditora, 'rev
     if (p.estilo) r.estilo = p.estilo;
     if (p.cores !== undefined) r.cores = p.cores;
     if (p.transicao) r.transicao = p.transicao;
+    if (p.transicaoApoio) r.transicaoApoio = p.transicaoApoio;
+    if (p.imagem) r.imagem = p.imagem;
     if (p.musica) r.musica = { ...r.musica, ...p.musica };
     if (p.efeitos) r.efeitos = { ...r.efeitos, ...p.efeitos };
   }

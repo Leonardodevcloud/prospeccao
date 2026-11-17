@@ -705,7 +705,7 @@ export async function revisar(
     mudou = true;
   }
   const opcoes = opcoesVideoEntrada.parse({ ...(l.opcoes ?? {}) });
-  for (const k of ['estilo', 'ritmo', 'transicao'] as const)
+  for (const k of ['estilo', 'ritmo', 'transicao', 'transicaoApoio', 'imagem'] as const)
     if (r[k] && r[k] !== opcoes[k]) {
       (opcoes as Record<string, unknown>)[k] = r[k];
       mudou = true;

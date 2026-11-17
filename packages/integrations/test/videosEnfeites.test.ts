@@ -950,13 +950,43 @@ describe('v162: vídeos de apoio', () => {
         { arquivo: 'a1.mp4', de: 2.5, ini: 9, fim: 11 },
         { arquivo: 'a2.mp4', de: 0, ini: 12, fim: 12.1 },
       ],
-    });
+    })!;
     expect(a.filter((x) => x === '-i')).toHaveLength(3);
     const filtro = a[a.indexOf('-filter_complex') + 1]!;
     expect(filtro).toContain("[0:v][a0]overlay=enable='between(t,3.000,5.500)'");
     expect(filtro).toContain('[2:v]setpts=PTS-STARTPTS+9.000/TB[a1]');
     expect(a.join(' ')).toContain('-map [v1] -map 0:a? -c:a copy');
     expect(a.slice(a.indexOf('-ss'), a.indexOf('-ss') + 4)).toEqual(['-ss', '0.000', '-t', '2.500']);
+  });
+  it('v165: deslize, fusão e o tratamento da imagem entram no mesmo comando; sem nada a fazer, não roda', () => {
+    expect(
+      argumentosDoApoio({ editado: 'e.mp4', saida: 's.mp4', trechos: [], imagem: 'original' }),
+    ).toBeNull();
+    const so = argumentosDoApoio({ editado: 'e.mp4', saida: 's.mp4', trechos: [], imagem: 'vivo' })!;
+    expect(so[so.indexOf('-filter_complex') + 1]).toBe(
+      '[0:v]eq=contrast=1.06:saturation=1.14:gamma=0.98,unsharp=5:5:0.45:5:5:0[cor]',
+    );
+    const a = argumentosDoApoio({
+      editado: 'e.mp4',
+      saida: 's.mp4',
+      imagem: 'cinema',
+      trechos: [
+        { arquivo: 'a1.mp4', de: 0, ini: 3, fim: 6, estilo: 'deslize' },
+        { arquivo: 'a1.mp4', de: 3, ini: 9, fim: 11, estilo: 'fusao' },
+        { arquivo: 'a1.mp4', de: 5, ini: 14, fim: 16, estilo: 'zoom' },
+      ],
+    })!;
+    const f = a[a.indexOf('-filter_complex') + 1]!;
+    expect(f).toContain(
+      "overlay=x='if(lt(t,3.260),W*pow(1-(t-3.000)/0.260,3),if(gt(t,5.740),-W*pow((t-5.740)/0.260,3),0))':enable='between(t,3.000,6.000)'",
+    );
+    expect(f).toContain(
+      '[2:v]format=yuva420p,fade=t=in:st=0:d=0.260:alpha=1,fade=t=out:st=1.740:d=0.260:alpha=1,setpts=PTS-STARTPTS+9.000/TB[a1]',
+    );
+    expect(f).toContain("[v1][a2]overlay=enable='between(t,14.000,16.000)'");
+    expect(f).toContain('[v2]eq=contrast=1.11');
+    expect(f).toContain('vignette=angle=PI/6[cor]');
+    expect(a.join(' ')).toContain('-map [cor] -map 0:a?');
   });
 });
 

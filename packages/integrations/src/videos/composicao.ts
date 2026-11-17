@@ -25,6 +25,8 @@ export interface EntradaComposicao {
    * fica estático e a legenda (embaixo do queixo) não se mexe.
    */
   empurroes?: { ini: number; fim: number; ox: number; oy: number }[];
+  /** v165: os trechos de vídeo de apoio (já no vídeo): a aproximação e o clarão são desenhados aqui. */
+  apoios?: { ini: number; fim: number; estilo: string }[];
   estilo: EstiloLegenda;
   marca: MarcaDoVideo;
   /** Duração do vídeo editado (s). */
@@ -175,6 +177,7 @@ export function montarComposicao(e: EntradaComposicao): string {
     imagens: (e.imagens ?? []).map((i) => ({ id: i.id, ini: i.ini, fim: i.fim, encaixe: i.encaixe })),
     deslizar: e.transicao === 'deslizar',
     empurroes: e.empurroes ?? [],
+    apoios: (e.apoios ?? []).filter((x) => x.estilo === 'zoom' || x.estilo === 'clarao'),
   };
   const medir = e.medir ?? estimar;
   const graficos = (e.momentos ?? [])
@@ -211,6 +214,8 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 #fundo-marca { position: absolute; inset: 0; background: radial-gradient(120% 70% at 50% 0%, ${primaria} 0%, ${escura} 100%); }
 #camada-video { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: hidden; transform-origin: 0 0; isolation: isolate; }
 #camada-video video { width: 1080px; height: 1920px; object-fit: cover; display: block; }
+#pulso { width: 1080px; height: 1920px; transform-origin: 50% 42%; }
+#clarao { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 #sombra-baixo { position: absolute; left: 0; right: 0; bottom: 0; height: 620px; background: linear-gradient(to top, rgba(0,0,0,.5), rgba(0,0,0,0)); }
 #legendas { position: absolute; inset: 0; }
 .bloco { position: absolute; left: 110px; width: 860px; display: flex; flex-direction: column; align-items: center; opacity: 0; transform-origin: 50% 0; }
@@ -276,7 +281,8 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 <div id="root" data-composition-id="main" data-start="0" data-duration="${total}" data-width="1080" data-height="1920">
   <div id="fundo-marca" class="clip" data-start="0" data-duration="${D}" data-track-index="0"></div>
   <div id="camada-video">
-    <video id="fala" src="${esc(a.video)}" data-start="0" data-duration="${D}" data-has-audio="true"></video>
+    <div id="pulso"><video id="fala" src="${esc(a.video)}" data-start="0" data-duration="${D}" data-has-audio="true"></video></div>
+    <div id="clarao"></div>
     <div id="sombra-baixo"></div>
   </div>
   ${
@@ -325,6 +331,16 @@ for (const c of DADOS.cartoes) {
 }
 
 // A câmera chegando devagar em cada plano (o queixo fica parado; nada encosta no rosto).
+// v165: o corte para o vídeo de apoio e de volta. Aproximação: um impulso de zoom com desfoque que
+// assenta em 0,3 s. Clarão: um flash de luz que some em 0,28 s.
+for (const a of DADOS.apoios) {
+  for (const t of [a.ini, a.fim]) {
+    if (t >= DADOS.D - 0.2) continue;
+    if (a.estilo === 'zoom')
+      tl.fromTo('#pulso', { scale: 1.16, filter: 'blur(7px)' }, { scale: 1, filter: 'blur(0px)', duration: 0.3, ease: 'power3.out', immediateRender: false }, t);
+    else tl.fromTo('#clarao', { opacity: 0.85 }, { opacity: 0, duration: 0.28, ease: 'power2.out', immediateRender: false }, t);
+  }
+}
 for (const p of DADOS.empurroes) {
   tl.set('#camada-video', { transformOrigin: p.ox + 'px ' + p.oy + 'px', scale: 1 }, p.ini);
   tl.to('#camada-video', { scale: 1.04, duration: Math.max(0.1, p.fim - p.ini), ease: 'none' }, p.ini);
