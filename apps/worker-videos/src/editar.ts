@@ -673,7 +673,8 @@ export async function editarVideo(
       animacoes.chamada.usar && animacoes.chamada.tipo !== 'nenhuma'
         ? fraseDaChamada(animacoes.chamada)
         : null;
-    const marca = await repo.marcaDaConta(db, v.conta_id);
+    // v163: as cores só deste vídeo (pedidas na revisão) valem mais que as da marca.
+    const marca = v.opcoes.cores ?? (await repo.marcaDaConta(db, v.conta_id));
     const cartaoDe = (id: string) => diagrama.cartoes.find((c) => c.id === id);
     const posta = new Map<string, ImagemPosta | null>(
       tela.imagens.map((i) => [

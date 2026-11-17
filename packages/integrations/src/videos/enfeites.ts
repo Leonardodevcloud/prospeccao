@@ -1,4 +1,7 @@
 import {
+  APOIO_FRACAO_ESPALHADA,
+  APOIO_FRACAO_MAXIMA,
+  APOIO_MAX_SEGUNDOS,
   type ClimaMusica,
   type EncaixeImagem,
   IMAGEM_MAX_SEGUNDOS,
@@ -204,7 +207,7 @@ Proponha o que entra em cima da fala para o vídeo prender e explicar melhor, se
 Imagens:
 - Só onde a fala cita algo concreto que a imagem mostra (produto, número, comparação, lugar, situação). Frase de opinião, emoção ou conversa direta com quem assiste fica sem imagem: o rosto é o que convence.
 - Use primeiro as fotos da empresa (foto_id) quando a descrição bate com a fala. Gere (gerar) só cenas genéricas que a empresa não tem: estrada, oficina, carro na chuva, mãos trabalhando. Nunca gere o produto que a empresa vende como se fosse real, nem marca, embalagem ou texto. Pessoas podem aparecer quando combinam com a fala (nunca pessoa real ou famosa nem criança).
-- Vídeos de apoio (v162): quando a pessoa mandou vídeos de apoio, eles vêm antes de foto e de imagem gerada. São os "flashes" do vídeo: ponha um trecho (apoio_id) de 1,5 a 4 segundos sempre que a fala citar o que o apoio mostra, e também para dar respiro numa explicação comprida; espalhe pelo vídeo (não junte tudo no começo), deixando o rosto voltar entre um e outro. O mesmo apoio pode entrar mais de uma vez (cada vez mostra um pedaço diferente dele). A frase mais forte e a chamada continuam com o rosto.
+- Vídeos de apoio (v163): se a pessoa mandou vídeo de apoio, ela QUER que ele apareça: é obrigatório usar, várias vezes. O apoio mostra o assunto do vídeo (o produto, o lugar, o serviço), então serve em quase toda frase que fala do assunto, não só quando a palavra exata aparece: "aluguel de moto" com um apoio de motos no pátio é o encaixe certo. Ponha um trecho (apoio_id) de 2 a 6 segundos a cada 5 a 8 segundos de vídeo, espalhados do começo ao fim, com o rosto voltando entre um e outro; num vídeo de 30 s, de 3 a 5 trechos. O mesmo apoio pode entrar várias vezes (cada vez mostra um pedaço diferente dele). O trecho de apoio pode ficar junto com lista, selo e número (eles são desenhados por cima). Só a frase mais forte e a chamada final ficam com o rosto. Nunca responda que nenhuma imagem ajuda quando há vídeo de apoio.
 - Nada nos 2 primeiros segundos. Cada imagem de 1,5 a 4 segundos, no total no máximo 30% do vídeo.
 - encaixe "cheia" para cenas (tela cheia por pouco tempo, a voz continua); "acima" para produto e detalhe.
 - Animações e imagens não se sobrepõem.
@@ -362,6 +365,34 @@ export async function pedirEnfeites(claude: ClienteClaude, e: EntradaEnfeites): 
   return lerEnfeites(r.dados, e.palavras.length);
 }
 
+/** Um trecho de apoio a cada `passo` segundos de fala, revezando os apoios (a partir dos 4 s). */
+export function trechosDeApoioPelaFala(
+  palavras: PalavraVideo[],
+  ficam: Trecho[],
+  apoios: ApoioParaIa[],
+  passo: number,
+): DecisaoEnfeites['imagens'] {
+  const imagens: DecisaoEnfeites['imagens'] = [];
+  let proximo = 4;
+  palavras.forEach((p, k) => {
+    const t = tempoNoEditado(p.i + 0.02, ficam);
+    if (t == null || t < proximo) return;
+    let ate = k;
+    while (ate + 1 < palavras.length && palavras[ate + 1]!.f - p.i < 2.6) ate++;
+    imagens.push({
+      de: k,
+      ate,
+      motivo: 'Trecho do vídeo de apoio para dar ritmo.',
+      fotoId: null,
+      gerar: '',
+      encaixe: 'cheia',
+      apoioId: apoios[imagens.length % apoios.length]!.id,
+    });
+    proximo = t + passo;
+  });
+  return imagens;
+}
+
 /**
  * Sem a IA: nenhuma animação nem imagem; a música no clima escolhido (ou confiante). Com vídeos de
  * apoio (v162), um trecho a cada 7 s de fala, revezando os apoios: os flashes não dependem da IA.
@@ -371,26 +402,9 @@ export function enfeitesPelasRegras(
   apoio?: { palavras: PalavraVideo[]; ficam: Trecho[]; apoios: ApoioParaIa[] },
 ): DecisaoEnfeites {
   const clima = opcoes.musica !== 'ia' && opcoes.musica !== 'nenhuma' ? opcoes.musica : 'confiante';
-  const imagens: DecisaoEnfeites['imagens'] = [];
-  if (apoio?.apoios.length) {
-    let proximo = 4;
-    apoio.palavras.forEach((p, k) => {
-      const t = tempoNoEditado(p.i + 0.02, apoio.ficam);
-      if (t == null || t < proximo) return;
-      let ate = k;
-      while (ate + 1 < apoio.palavras.length && apoio.palavras[ate + 1]!.f - p.i < 2.6) ate++;
-      imagens.push({
-        de: k,
-        ate,
-        motivo: 'Trecho do vídeo de apoio para dar ritmo.',
-        fotoId: null,
-        gerar: '',
-        encaixe: 'cheia',
-        apoioId: apoio.apoios[imagens.length % apoio.apoios.length]!.id,
-      });
-      proximo = t + 7;
-    });
-  }
+  const imagens = apoio?.apoios.length
+    ? trechosDeApoioPelaFala(apoio.palavras, apoio.ficam, apoio.apoios, 7)
+    : [];
   return { momentos: [], imagens, semImagem: [], musica: { clima, estilo: '' } };
 }
 
@@ -549,6 +563,8 @@ export function aplicarRegras(
     fotos: FotoParaIa[];
     promocoes: PromocaoParaIa[];
     apoios?: ApoioParaIa[];
+    /** false: só entram os trechos de apoio que a IA pediu (o padrão espalha o apoio pelo vídeo). */
+    espalharApoio?: boolean;
   },
 ): ResultadoEnfeites {
   const { palavras, ficam } = c;
@@ -642,66 +658,91 @@ export function aplicarRegras(
   const semImagem: TrechoSemImagem[] = [];
   const usadas: Janela[] = [];
   let tempoComImagem = 0;
-  const orcamento = c.duracaoEditado * IMAGENS_FRACAO_MAXIMA;
+  let tempoSemApoio = 0;
   const apoios = (c.apoios ?? []).filter((a) => a.duracao >= IMAGEM_MIN_SEGUNDOS);
   // Onde o próximo trecho de cada apoio começa (cada entrada mostra um pedaço diferente dele).
   const cursor = new Map<string, number>();
-  if (c.modo !== 'nenhuma' || apoios.length)
-    for (const m of [...d.imagens].sort((a, b) => a.de - b.de)) {
-      if (imagens.length >= MAX_IMAGENS_VIDEO) break;
-      const apoio = m.apoioId ? apoios.find((a) => a.id === m.apoioId) : undefined;
-      // "Sem imagens" vale para foto e imagem gerada; o apoio que a pessoa mandou entra.
-      const foto =
-        !apoio && c.modo !== 'nenhuma' && m.fotoId != null
-          ? c.fotos.find((f) => f.id === m.fotoId)
-          : undefined;
-      const gerar = c.modo === 'ia' && !foto && !apoio ? m.gerar : '';
-      if (!apoio && !foto && !gerar) continue;
-      let ini = ed(palavras[m.de]!.i);
-      let fim = ed(palavras[m.ate]!.f);
-      if (ini == null || fim == null) continue;
-      ini = Math.max(ini, IMAGEM_SEM_NO_COMECO, titulo ? titulo.fim + 0.25 : 0);
-      fim = Math.min(
-        Math.max(fim, ini + IMAGEM_MIN_SEGUNDOS),
-        ini + Math.min(IMAGEM_MAX_SEGUNDOS, apoio ? apoio.duracao : IMAGEM_MAX_SEGUNDOS),
-        fimLivre,
-      );
-      if (fim - ini < IMAGEM_MIN_SEGUNDOS - 0.05) continue;
-      const janela = { ini, fim };
-      // "acima" disputa o espaço acima da cabeça com as animações; "cheia" cobre tudo, inclusive elas.
-      if (graficos.some((g) => encosta(g, janela, 0.2))) continue;
-      if (usadas.some((u) => encosta(u, janela, 0.5))) continue;
-      if (tempoComImagem + (fim - ini) > orcamento + 0.01) continue;
-      const oi = orig(ini);
-      const of = orig(fim);
-      if (oi == null || of == null) continue;
-      usadas.push(janela);
-      tempoComImagem += fim - ini;
-      let apoioDe = 0;
-      if (apoio) {
-        apoioDe = cursor.get(apoio.id) ?? 0;
-        if (apoioDe + (fim - ini) > apoio.duracao) apoioDe = 0;
-        cursor.set(apoio.id, r3(apoioDe + (fim - ini)));
-      }
-      imagens.push({
-        id: `i${imagens.length + 1}`,
-        inicio: oi,
-        fim: of,
-        fala: fala(m.de, m.ate),
-        motivo: m.motivo,
-        origem: apoio ? 'apoio' : foto ? 'empresa' : 'gerada',
-        fotoId: foto?.id ?? null,
-        chave: null,
-        descricao: apoio ? apoio.descricao : foto ? foto.descricao || foto.nome : gerar,
-        encaixe: apoio ? 'cheia' : m.encaixe,
-        ...(apoio ? { apoioId: apoio.id, apoioDe: r3(apoioDe) } : {}),
-        usar: true,
-        pedido: null,
-        conferencia: null,
-        posta: null,
-        manual: false,
-      });
+  /** Põe uma imagem ou um trecho de apoio, se couber nas regras. */
+  const por = (m: DecisaoEnfeites['imagens'][number], o: { distancia: number; teto: number }): boolean => {
+    if (imagens.length >= MAX_IMAGENS_VIDEO) return false;
+    const apoio = m.apoioId ? apoios.find((a) => a.id === m.apoioId) : undefined;
+    // "Sem imagens" vale para foto e imagem gerada; o apoio que a pessoa mandou entra.
+    const foto =
+      !apoio && c.modo !== 'nenhuma' && m.fotoId != null ? c.fotos.find((f) => f.id === m.fotoId) : undefined;
+    const gerar = c.modo === 'ia' && !foto && !apoio ? m.gerar : '';
+    if (!apoio && !foto && !gerar) return false;
+    let ini = ed(palavras[m.de]!.i);
+    let fim = ed(palavras[m.ate]!.f);
+    if (ini == null || fim == null) return false;
+    ini = Math.max(ini, IMAGEM_SEM_NO_COMECO, titulo ? titulo.fim + 0.25 : 0);
+    fim = Math.min(
+      Math.max(fim, ini + IMAGEM_MIN_SEGUNDOS),
+      ini + (apoio ? Math.min(APOIO_MAX_SEGUNDOS, apoio.duracao) : IMAGEM_MAX_SEGUNDOS),
+      fimLivre,
+    );
+    if (fim - ini < IMAGEM_MIN_SEGUNDOS - 0.05) return false;
+    const janela = { ini, fim };
+    // A foto disputa o espaço com as animações. O trecho de apoio não (v163): ele vira o fundo do
+    // vídeo naquele momento, e a animação e a legenda são desenhadas por cima dele.
+    if (!apoio && graficos.some((g) => encosta(g, janela, 0.2))) return false;
+    if (usadas.some((u) => encosta(u, janela, o.distancia))) return false;
+    const dur = fim - ini;
+    if (tempoComImagem + dur > c.duracaoEditado * (apoio ? o.teto : APOIO_FRACAO_MAXIMA) + 0.01) return false;
+    if (!apoio && tempoSemApoio + dur > c.duracaoEditado * IMAGENS_FRACAO_MAXIMA + 0.01) return false;
+    const oi = orig(ini);
+    const of = orig(fim);
+    if (oi == null || of == null) return false;
+    usadas.push(janela);
+    tempoComImagem += dur;
+    if (!apoio) tempoSemApoio += dur;
+    let apoioDe = 0;
+    if (apoio) {
+      apoioDe = cursor.get(apoio.id) ?? 0;
+      if (apoioDe + dur > apoio.duracao) apoioDe = 0;
+      cursor.set(apoio.id, r3(apoioDe + dur));
     }
+    imagens.push({
+      id: `i${imagens.length + 1}`,
+      inicio: oi,
+      fim: of,
+      fala: fala(m.de, m.ate),
+      motivo: m.motivo,
+      origem: apoio ? 'apoio' : foto ? 'empresa' : 'gerada',
+      fotoId: foto?.id ?? null,
+      chave: null,
+      descricao: apoio ? apoio.descricao : foto ? foto.descricao || foto.nome : gerar,
+      encaixe: apoio ? 'cheia' : m.encaixe,
+      ...(apoio ? { apoioId: apoio.id, apoioDe: r3(apoioDe) } : {}),
+      usar: true,
+      pedido: null,
+      conferencia: null,
+      posta: null,
+      manual: false,
+    });
+    return true;
+  };
+  if (c.modo !== 'nenhuma' || apoios.length)
+    for (const m of [...d.imagens].sort((a, b) => a.de - b.de))
+      por(m, { distancia: 0.5, teto: APOIO_FRACAO_MAXIMA });
+  // v163: a pessoa mandou vídeo de apoio para ele aparecer. Se a IA usou pouco (ou nada), os trechos
+  // se espalham pelo vídeo, um a cada 5 s de fala, fora dos pontos em que ela pediu o rosto.
+  if (apoios.length && c.espalharApoio !== false) {
+    const rosto: Janela[] = d.semImagem.flatMap((s) => {
+      const a = ed(palavras[s.de]!.i);
+      const b = ed(palavras[s.ate]!.f);
+      return a != null && b != null ? [{ ini: a, fim: b }] : [];
+    });
+    for (const m of trechosDeApoioPelaFala(palavras, ficam, apoios, 5)) {
+      const a = ed(palavras[m.de]!.i);
+      const b = ed(palavras[m.ate]!.f);
+      if (a == null || b == null || rosto.some((r) => encosta(r, { ini: a, fim: b }, 0.2))) continue;
+      por(m, { distancia: 2, teto: APOIO_FRACAO_ESPALHADA });
+    }
+    imagens.sort((x, y) => x.inicio - y.inicio);
+    imagens.forEach((im, k) => {
+      im.id = `i${k + 1}`;
+    });
+  }
   if (c.duracaoEditado > IMAGEM_SEM_NO_COMECO)
     semImagem.push({
       inicio: orig(0) ?? 0,

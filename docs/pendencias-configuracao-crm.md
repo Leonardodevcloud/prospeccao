@@ -389,6 +389,14 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ao. Ajustes do apoio, da editora e das cores (v163)
+1. [ ] Sem migration nova (a 110 da v162 entra junto se ainda não entrou). Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] No vídeo "Aluguel de motos tutts": aba Imagens › **Espalhar o apoio pelo vídeo**, conferir os trechos propostos (tirar ou mover o que não servir) e gerar de novo. O apoio aparece várias vezes? A legenda e as animações ficam legíveis por cima das motos?
+3. [ ] Num vídeo novo com apoio: a IA usou o apoio sozinha? Quantos trechos vieram dela e quantos da rede de segurança (os dela têm a fala citada como motivo; os outros dizem "para dar ritmo")?
+4. [ ] Peça à editora: "as cores dos elementos estão apagadas" (propõe duas cores; aplicar e gerar) e "tira a pausa entre Tutts e motos" (propõe fechar a pausa certa?). Se a cor proposta ficar ruim, pedir outra ou "volta para a cor da marca".
+5. [ ] Conferir se os elementos novos (lista com faixa, etiquetas na cor da marca) agradam; se ainda parecerem apagados, dizer qual elemento e em que vídeo.
+6. [ ] Em aberto: escolher as cores do vídeo por um seletor na tela (hoje só pela editora); transição e zoom no apoio; som do apoio.
+
 ## 4an. Vídeos de apoio (v162)
 1. [ ] **Migration 110** (`110_videos_apoio.sql`: coluna `apoios` em `comercial.videos`; roda sozinha no deploy da api, como as outras).
 2. [ ] Redeploy da **api** e do **worker-videos**; a **web** na Vercel. Sem variável nova.

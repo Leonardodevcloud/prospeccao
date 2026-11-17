@@ -436,8 +436,8 @@ function NovoVideo({
           <span className="campo__rotulo">Vídeos de apoio (opcional)</span>
           <span className="campo__dica">
             Cenas para entrar em flashes por cima da sua fala: a moto passando, a loja, o produto em uso. A
-            sua voz continua e o apoio entra sem som, em tela cheia, por 2 a 4 segundos. Até{' '}
-            {MAX_APOIOS_VIDEO} vídeos de até {fmtDuracao(LIMITE_SEGUNDOS_APOIO)}.
+            sua voz continua e o apoio entra sem som, em tela cheia, por 2 a 6 segundos, várias vezes ao longo
+            do vídeo. Até {MAX_APOIOS_VIDEO} vídeos de até {fmtDuracao(LIMITE_SEGUNDOS_APOIO)}.
           </span>
           {apoios.length > 0 && (
             <ul className="videos__apoios-lista">

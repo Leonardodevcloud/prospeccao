@@ -40,6 +40,8 @@ const EXEMPLOS = [
   'Mais elementos na tela',
   'Refaz as animações do zero',
   'A música está alta',
+  'As cores dos elementos estão apagadas',
+  'Tira a pausa entre duas palavras',
 ];
 
 export function PecaAEditora({
@@ -128,12 +130,22 @@ export function PecaAEditora({
     },
   });
 
+  // Enter e o botão no mesmo instante mandavam o pedido duas vezes (v163).
+  const mandando = useRef(false);
   const mandar = (frase = texto) => {
     const t = frase.trim();
-    if (t.length < 2 || pedir.isPending) return;
+    if (t.length < 2 || pedir.isPending || mandando.current) return;
+    mandando.current = true;
     const historico = falas.slice(-6).map((f) => ({ de: f.de, texto: f.texto.slice(0, 800) }));
     setFalas((x) => [...x, { id: ++vez.current, de: 'voce', texto: t, ...(em != null ? { em } : {}) }]);
-    pedir.mutate({ texto: t, em, historico });
+    pedir.mutate(
+      { texto: t, em, historico },
+      {
+        onSettled: () => {
+          mandando.current = false;
+        },
+      },
+    );
     setTexto('');
     setEm(null);
   };
@@ -190,7 +202,7 @@ export function PecaAEditora({
               </span>
               <p>
                 Assista ao vídeo e me diga o que mudar. Eu mexo nos cortes, nas animações, no título, na
-                chamada, na legenda e na música, e mostro tudo antes de aplicar.
+                chamada, na legenda, nas cores e na música, e mostro tudo antes de aplicar.
               </p>
             </div>
             <div className="editora__exemplos">

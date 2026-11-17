@@ -1745,12 +1745,14 @@ export const ARTIGOS: ArtigoAjuda[] = [
             você conferir.
           </li>
           <li>
-            <b>Usa os seus vídeos de apoio</b>, se você mandou algum junto (até 3, de até 3 minutos cada): a
-            moto passando, a loja, o produto em uso. A IA vê o que cada um mostra e põe trechos de 2 a 4
-            segundos em tela cheia por cima da sua fala, nos pontos em que você cita aquilo e para dar ritmo
-            numa explicação comprida. A sua voz continua, o apoio entra sem som e em corte seco, e a legenda
-            fica por cima. Vídeo deitado é cortado no meio para ficar em pé. Como as imagens, os trechos somam
-            no máximo 30% do vídeo e nunca entram nos 2 primeiros segundos.
+            <b>Usa os seus vídeos de apoio</b>, se você mandou algum junto (até 6, de até 3 minutos cada): a
+            moto passando, a loja, o produto em uso. A IA vê o que cada um mostra e põe trechos de 2 a 6
+            segundos em tela cheia por cima da sua fala, várias vezes ao longo do vídeo; se ela usar pouco, o
+            sistema espalha um trecho a cada 5 segundos de fala, fora dos pontos em que o seu rosto importa (o
+            começo, a frase mais forte, a chamada). A sua voz continua, o apoio entra sem som e em corte seco,
+            e a legenda e as animações ficam por cima. Vídeo deitado é cortado no meio para ficar em pé. Os
+            trechos de apoio podem somar até 60% do vídeo (fotos e imagens geradas, 30%) e nunca entram nos 2
+            primeiros segundos.
           </li>
           <li>
             <b>Mapeia o rosto</b> em cada momento do vídeo. A legenda fica embaixo do queixo, no maior tamanho
@@ -1802,15 +1804,19 @@ export const ARTIGOS: ArtigoAjuda[] = [
             está alta", "refaz as animações"). Para apontar um ponto, pare o vídeo ali e toque em{' '}
             <b>Falar deste momento</b>. A editora responde com as mudanças em itens de marcar, cada uma com{' '}
             <b>Ver no vídeo</b>; nada muda até você clicar em <b>Aplicar</b>, e o <b>Desfazer</b> volta o
-            último pedido aplicado. Ela mexe em cortes, animações, título, chamada, legenda e música; não
-            troca o que você falou por outra frase (aí ela oferece cortar ou pôr um selo). Imagens, efeitos e
+            último pedido aplicado. Ela mexe em cortes, animações, título, chamada, legenda e música, fecha a
+            pausa entre duas palavras ("tira a travada entre Tutts e motos") e muda as{' '}
+            <b>cores dos elementos e da legenda</b> só daquele vídeo ("as cores estão apagadas"); não troca o
+            que você falou por outra frase (aí ela oferece cortar ou pôr um selo). Imagens, efeitos e
             publicação continuam nas abas. A conversa não fica guardada: ao recarregar a página, começa de
             novo (o que foi aplicado continua).
           </li>
           <li>
             Na aba <b>Imagens</b> ficam os <b>vídeos de apoio</b>: dá para mandar outro depois (ele é
             preparado no próximo Gerar de novo), pôr um trecho num momento, trocar uma imagem por um trecho,
-            escolher em que segundo do apoio o trecho começa e tirar. Tirar um apoio tira os trechos dele.
+            escolher em que segundo do apoio o trecho começa e tirar. Tirar um apoio tira os trechos dele. O
+            botão <b>Espalhar o apoio pelo vídeo</b> põe um trecho a cada 5 segundos de fala onde ainda não
+            tem imagem (serve para o vídeo editado antes de o apoio existir).
           </li>
           <li>
             Na aba <b>Cortes</b>, cada dúvida tem <b>Ouvir</b> (toca o trecho do original com um pouco antes e

@@ -757,6 +757,21 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
         })
       ).status,
     ).toBe(422);
+    // v163: espalhar o apoio pelo vídeo (sem a IA) e as cores só deste vídeo.
+    const antesDeEspalhar = (await ler(`/videos/${id}`)).body;
+    const esp = await enviar('post', `/videos/${id}/apoios/espalhar`, { versao: antesDeEspalhar.versao });
+    expect(esp.status).toBe(200);
+    expect(esp.body.imagens.length).toBeGreaterThan(antesDeEspalhar.imagens.length);
+    expect(esp.body.imagens.every((i: { origem: string }) => i.origem === 'apoio')).toBe(true);
+    const cor = await enviar('put', `/videos/${id}/revisao`, {
+      versao: esp.body.versao,
+      cores: { primaria: '#6d28d9', destaque: '#ff7a00' },
+    });
+    expect(cor.body.opcoes.cores).toEqual({ primaria: '#6d28d9', destaque: '#ff7a00' });
+    expect(
+      (await enviar('put', `/videos/${id}/revisao`, { versao: cor.body.versao, cores: null })).body.opcoes
+        .cores,
+    ).toBeNull();
     const fora = await enviar('delete', `/videos/${id}/apoios/${apoioId}`);
     expect(fora.status).toBe(200);
     expect(fora.body).toMatchObject({ apoios: [], imagens: [], mudancasPendentes: true });

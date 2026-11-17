@@ -103,7 +103,17 @@ export function useApoios(id: number) {
       api<DetalheVideo>(`/videos/${id}/apoios/${apoioId}`, { metodo: 'DELETE' }),
     onSuccess: guardar,
   });
-  return { enviar, tirar };
+  const espalhar = useMutation({
+    mutationFn: () => {
+      const atual = cliente.getQueryData<DetalheComFila>(['videos', id]);
+      return api<DetalheVideo>(`/videos/${id}/apoios/espalhar`, {
+        metodo: 'POST',
+        corpo: { versao: atual?.versao ?? 1 },
+      });
+    },
+    onSuccess: guardar,
+  });
+  return { enviar, tirar, espalhar };
 }
 
 export function useFotosDaEmpresa(ligado: boolean) {

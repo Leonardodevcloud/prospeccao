@@ -1,5 +1,6 @@
 import type { Executor } from '@prospeccao/db';
 import {
+  aplicarRegras,
   type ContextoDoPedido,
   cortesDePausa,
   noEditado,
@@ -11,6 +12,7 @@ import type { novoApoioEntrada, novoVideoEntrada } from '@prospeccao/shared/vide
 import {
   type AndamentoVideo,
   type AnimacoesVideo,
+  APOIO_FRACAO_MAXIMA,
   type ApoioGuardado,
   aplicarTrechos,
   apoioParaATela,
@@ -415,6 +417,64 @@ export async function apagarApoio(
   };
 }
 
+/**
+ * v163: espalha trechos dos vídeos de apoio pelo vídeo já editado (um a cada 5 s de fala), sem
+ * mexer nas imagens que já estão lá nem nos pontos em que a IA pediu o rosto. Vale para o vídeo
+ * editado antes de o apoio existir, ou quando a pessoa quer mais trechos.
+ */
+export async function espalharApoio(db: Executor, id: number, versao: number): Promise<DetalheVideo> {
+  const l = await linha(db, id);
+  if (l.versao !== versao)
+    throw new AppError(409, 'conflito', 'Outra pessoa mudou este vídeo agora há pouco. Recarregue para ver.');
+  if (l.situacao !== 'pronto' && l.situacao !== 'revisar')
+    throw AppError.invalido('Espere a edição terminar para espalhar o apoio.');
+  const apoios = (l.apoios ?? [])
+    .filter((a) => a.enviado && !a.erro)
+    .map((a) => ({ id: a.id, descricao: a.descricao || a.nome, duracao: a.duracao ?? 8 }));
+  if (!apoios.length) throw AppError.invalido('Mande um vídeo de apoio primeiro.');
+  const palavras = l.palavras ?? [];
+  const duracao = Number(l.analise?.duracao ?? l.duracao_original ?? 0);
+  const ficam = trechosQueFicam(duracao, l.cortes ?? []);
+  const atuais = l.imagens ?? [];
+  const propostas = aplicarRegras(
+    { momentos: [], imagens: [], semImagem: [], musica: { clima: 'confiante', estilo: '' } },
+    {
+      palavras,
+      ficam,
+      duracaoEditado: duracaoDosTrechos(ficam),
+      comTitulo: !!l.animacoes?.titulo.usar && !!l.animacoes.titulo.texto,
+      modo: 'nenhuma',
+      fotos: [],
+      promocoes: [],
+      apoios,
+    },
+  ).imagens;
+  const livres = propostas.filter(
+    (n) =>
+      !atuais.some((i) => i.usar && i.inicio < n.fim + 2 && n.inicio < i.fim + 2) &&
+      !(l.sem_imagem ?? []).slice(1).some((s) => s.inicio < n.fim && n.inicio < s.fim),
+  );
+  // O total com o que já havia continua dentro do limite do apoio.
+  const teto = duracaoDosTrechos(ficam) * APOIO_FRACAO_MAXIMA;
+  let total = tempoComImagens(atuais, ficam);
+  const novas: ImagemVideo[] = [];
+  for (const n of livres) {
+    const a = noEditado(n.inicio, ficam);
+    const b = noEditado(n.fim, ficam);
+    if (a == null || b == null || total + (b - a) > teto) continue;
+    total += b - a;
+    novas.push({ ...n, id: `ia${Date.now().toString(36)}${novas.length}` });
+  }
+  if (!novas.length)
+    throw AppError.invalido('Não achei espaço livre: o vídeo já tem imagem ou apoio nos pontos possíveis.');
+  const { rows } = await db.query<Linha>(
+    `UPDATE comercial.videos SET imagens = $2, mudancas_pendentes = true, versao = versao + 1, atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
+    [id, JSON.stringify([...atuais, ...novas].sort((x, y) => x.inicio - y.inicio))],
+  );
+  return detalhe(rows[0]!);
+}
+
 /** A fala entre dois instantes do original (para a imagem ou animação posta à mão). */
 function falaEntre(palavras: PalavraVideo[], a: number, b: number) {
   return palavras
@@ -511,9 +571,10 @@ function novaImagemNoMomento(
     return a != null && b != null && a < fimE + 0.3 && em < b + 0.3;
   });
   if (ocupado) throw AppError.invalido('Já tem uma imagem nesse momento.');
-  if (tempoComImagens(imagens, ficam) + (fimE - em) > editado * IMAGENS_FRACAO_MAXIMA + 0.05)
+  const fracao = o.apoio ? APOIO_FRACAO_MAXIMA : IMAGENS_FRACAO_MAXIMA;
+  if (tempoComImagens(imagens, ficam) + (fimE - em) > editado * fracao + 0.05)
     throw AppError.invalido(
-      'O vídeo já tem imagem em quase 30% do tempo. Tire uma antes de pôr outra, para o seu rosto continuar aparecendo.',
+      `O vídeo já tem imagem em quase ${Math.round(fracao * 100)}% do tempo. Tire uma antes de pôr outra, para o seu rosto continuar aparecendo.`,
     );
   return {
     id: `im${Date.now().toString(36)}`,
@@ -649,6 +710,10 @@ export async function revisar(
       (opcoes as Record<string, unknown>)[k] = r[k];
       mudou = true;
     }
+  if (r.cores !== undefined && JSON.stringify(r.cores) !== JSON.stringify(opcoes.cores ?? null)) {
+    opcoes.cores = r.cores;
+    mudou = true;
+  }
   if (r.ritmo && l.analise?.silencios && l.analise.duracao && r.ritmo !== (l.opcoes?.ritmo ?? 'dinamico')) {
     const decididos = cortes.filter((c) => c.tipo !== 'pausa');
     const pausas = cortesDePausa(l.analise.silencios, r.ritmo, l.analise.duracao).filter(
@@ -935,6 +1000,7 @@ export async function contextoDoPedido(
     animacoes: l.animacoes,
     som: l.som,
     estilo: o.success ? o.data.estilo : 'acesa',
+    cores: o.success ? o.data.cores : null,
     musicaLiberada: deps.musicaLiberada,
   };
 }

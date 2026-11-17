@@ -386,6 +386,11 @@ export function rotasVideos(deps: DepsApi): Router {
     res.json(await repo.buscar(pool, id));
   });
 
+  r.post('/:id/apoios/espalhar', async (req, res) => {
+    const { versao } = corpo(req, z.object({ versao: z.number().int().min(1) }));
+    res.json(await repo.espalharApoio(pool, idDaRota(req), versao));
+  });
+
   r.delete('/:id/apoios/:apoioId', async (req, res) => {
     const x = await repo.apagarApoio(pool, idDaRota(req), String(req.params.apoioId));
     const a = arm();

@@ -890,7 +890,7 @@ describe('v162: vídeos de apoio', () => {
         img(90, 95, { apoioId: 'zz' }),
       ],
     });
-    const r = aplicarRegras(d, { ...base, modo: 'nenhuma', apoios });
+    const r = aplicarRegras(d, { ...base, modo: 'nenhuma', apoios, espalharApoio: false });
     expect(r.imagens.map((i) => [i.origem, i.apoioId, i.apoioDe, i.encaixe, i.chave])).toEqual([
       ['apoio', 'a1', 0, 'cheia', null],
       // O primeiro trecho gastou 4 s dos 5: o segundo volta ao começo.
@@ -902,6 +902,34 @@ describe('v162: vídeos de apoio', () => {
     expect(t.fim - t.inicio).toBeLessThanOrEqual(3.01);
     // Sem apoio e sem imagens: nada entra.
     expect(aplicarRegras(d, { ...base, modo: 'nenhuma' }).imagens).toHaveLength(0);
+  });
+  it('v163: a IA não usou o apoio e encheu o vídeo de animações: os trechos se espalham assim mesmo', () => {
+    const selo = (de: number) => ({
+      tipo: 'selo' as const,
+      de,
+      ate: de + 6,
+      titulo: 'DICA',
+      numero: '',
+      itens: [],
+      divulgarId: null,
+    });
+    const d = decisao({
+      momentos: [10, 20, 30, 40, 50, 60, 70, 80].map(selo),
+      semImagem: [{ de: 40, ate: 52, motivo: 'Promessa olhando para quem assiste' }],
+    });
+    const r = aplicarRegras(d, { ...base, apoios });
+    expect(r.momentos.length).toBeGreaterThanOrEqual(6);
+    const trechos = r.imagens.filter((i) => i.origem === 'apoio');
+    expect(trechos.length).toBeGreaterThanOrEqual(4);
+    // Revezam os apoios, respeitam o pedido de rosto (16 a 21 s) e não passam de 40% do vídeo.
+    expect(new Set(trechos.map((i) => i.apoioId)).size).toBe(2);
+    expect(trechos.some((i) => i.inicio < 21 && i.fim > 16)).toBe(false);
+    expect(trechos.reduce((t, i) => t + i.fim - i.inicio, 0)).toBeLessThanOrEqual(40 * 0.4 + 0.01);
+    expect(trechos.every((i, k) => k === 0 || i.inicio - trechos[k - 1]!.fim >= 1.9)).toBe(true);
+    // Foto continua não podendo encostar em animação.
+    expect(
+      aplicarRegras(decisao({ momentos: [selo(10)], imagens: [img(11, 15)] }), base).imagens,
+    ).toHaveLength(0);
   });
   it('sem a IA, um trecho a cada 7 s revezando os apoios', () => {
     const d = enfeitesPelasRegras(opcoesVideoEntrada.parse({}), { palavras, ficam, apoios });
@@ -926,5 +954,59 @@ describe('v162: vídeos de apoio', () => {
     expect(filtro).toContain('[2:v]setpts=PTS-STARTPTS+9.000/TB[a1]');
     expect(a.join(' ')).toContain('-map [v1] -map 0:a? -c:a copy');
     expect(a.slice(a.indexOf('-ss'), a.indexOf('-ss') + 4)).toEqual(['-ss', '0.000', '-t', '2.500']);
+  });
+});
+
+describe('v163: a editora fecha pausas e muda as cores', () => {
+  // "Tutts" e "motos" aparecem duas vezes; só a segunda tem a travada (0,9 s) no meio.
+  const p: PalavraVideo[] = [
+    { t: 'A', i: 0, f: 0.3 },
+    { t: 'Tutts', i: 0.35, f: 0.7 },
+    { t: 'motos', i: 0.75, f: 1.2 },
+    { t: 'chegou.', i: 1.25, f: 1.7 },
+    { t: 'Tutts', i: 2.0, f: 2.4 },
+    { t: 'motos', i: 3.3, f: 3.8 },
+    { t: 'aluga.', i: 3.85, f: 4.3 },
+  ];
+  const c: ContextoDoPedido = {
+    palavras: p,
+    cortes: [],
+    ficam: [{ inicio: 0, fim: 4.5 }],
+    animacoes: null,
+    som: null,
+    estilo: 'acesa',
+    cores: null,
+    musicaLiberada: false,
+  };
+  it('a fala mostra onde ainda há pausa, e a pausa fecha sem tirar palavra', () => {
+    const texto = contextoParaAEditora(c, { texto: 'corte milimétrico entre tutts e motos', historico: [] });
+    expect(texto).toContain('4: Tutts  (2.0 s)  [pausa de 0,9 s depois]');
+    expect(texto).not.toContain('1: Tutts  (0.4 s)  [pausa');
+    expect(texto).toContain('as da marca da empresa');
+    const r = lerPedido(
+      {
+        resposta: 'Achei a travada.',
+        mudancas: [
+          { acao: 'tirar_pausa', resumo: 'Fechar a pausa entre “Tutts” e “motos”', de: 4 },
+          { acao: 'tirar_pausa', resumo: 'Sem pausa para fechar', de: 1 },
+          { acao: 'cores', resumo: 'Cores mais vivas', cor_principal: '#6D28D9', cor_destaque: '#ff7a00' },
+          { acao: 'cores', resumo: 'Cor inválida', cor_principal: 'roxo', cor_destaque: '#ff7a00' },
+          { acao: 'cores', resumo: 'Voltar ao padrão sem ter mudado', padrao: true },
+        ],
+      },
+      c,
+    );
+    expect(r.propostas.map((x) => [x.area, x.titulo])).toEqual([
+      ['corte', 'Fechar a pausa entre “Tutts” e “motos”'],
+      ['animacao', 'Cores mais vivas'],
+    ]);
+    expect(r.propostas[0]!.revisao.trechos).toEqual([{ acao: 'cortar', inicio: 2.43, fim: 3.27 }]);
+    expect(r.propostas[1]!.revisao.cores).toEqual({ primaria: '#6d28d9', destaque: '#ff7a00' });
+    expect(juntarPropostas(r.propostas).cores).toEqual({ primaria: '#6d28d9', destaque: '#ff7a00' });
+    const volta = lerPedido(
+      { resposta: '', mudancas: [{ acao: 'cores', resumo: 'Voltar', padrao: true }] },
+      { ...c, cores: { primaria: '#111111', destaque: '#eeeeee' } },
+    );
+    expect(volta.propostas[0]!.revisao.cores).toBeNull();
   });
 });

@@ -245,20 +245,20 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 .foto-acima { width: 860px; height: 540px; border-radius: 36px; overflow: hidden; border: 6px solid #fff; box-shadow: 0 24px 60px rgba(0,0,0,.4); }
 .cab { font-weight: 900; color: #fff; text-align: center; line-height: 1; letter-spacing: -.01em; margin-bottom: 22px; text-shadow: 0 6px 24px rgba(0,0,0,.5); }
 .itens { width: 100%; display: flex; flex-direction: column; gap: 16px; }
-.item { display: flex; align-items: center; gap: 22px; height: 96px; padding: 0 28px; border-radius: 24px; background: rgba(255,255,255,.62); color: #18181b; font-weight: 900; box-shadow: 0 12px 30px rgba(0,0,0,.25); }
+.item { display: flex; align-items: center; gap: 22px; height: 96px; padding: 0 28px; border-radius: 24px; background: rgba(255,255,255,.9); color: #18181b; border-left: 12px solid ${primaria}; font-weight: 900; box-shadow: 0 12px 30px rgba(0,0,0,.25); }
 .marca { width: 54px; height: 54px; flex: none; border-radius: 50%; border: 5px solid #3f3f3b; display: grid; place-items: center; }
 .marca svg { width: 30px; height: 30px; opacity: 0; }
 .nomes { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.nome { height: 96px; padding: 0 32px; border-radius: 999px; background: #fff; color: #18181b; font-weight: 900; display: grid; place-items: center; white-space: nowrap; overflow: hidden; box-shadow: 0 12px 30px rgba(0,0,0,.28); border-bottom: 8px solid ${destaque}; opacity: 0; }
+.nome { height: 96px; padding: 0 32px; border-radius: 999px; background: ${primaria}; color: #fff; font-weight: 900; display: grid; place-items: center; white-space: nowrap; overflow: hidden; box-shadow: 0 12px 30px rgba(0,0,0,.28); border-bottom: 8px solid ${destaque}; opacity: 0; }
 .nome:last-child:nth-child(odd) { grid-column: 1 / -1; justify-self: center; width: 420px; }
 .compara { width: 100%; display: grid; grid-template-columns: 372px 76px 372px; gap: 20px; align-items: center; font-weight: 900; }
 .lado { height: 210px; border-radius: 32px; display: grid; place-items: center; text-align: center; padding: 0 24px; line-height: 1.05; box-shadow: 0 18px 44px rgba(0,0,0,.35); overflow: hidden; }
-.lado.antes { background: rgba(255,255,255,.9); color: #52524e; }
+.lado.antes { background: #fff; color: #27272a; }
 .lado.depois { background: ${primaria}; color: #fff; opacity: 0; }
 .seta { width: 76px; height: 76px; border-radius: 50%; background: ${destaque}; display: grid; place-items: center; opacity: 0; box-shadow: 0 10px 26px rgba(0,0,0,.35); }
 .seta svg { width: 44px; height: 44px; }
 .troca { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 18px; font-weight: 900; }
-.troca .sai { padding: 20px 40px; border-radius: 24px; background: rgba(255,255,255,.9); color: #52524e; white-space: nowrap; box-shadow: 0 12px 30px rgba(0,0,0,.28); }
+.troca .sai { padding: 20px 40px; border-radius: 24px; background: #fff; color: #27272a; white-space: nowrap; box-shadow: 0 12px 30px rgba(0,0,0,.28); }
 .troca .sai span { position: relative; display: inline-block; }
 .troca .risco { position: absolute; left: -10px; right: -10px; top: 50%; height: 9px; margin-top: -4px; border-radius: 5px; background: ${destaque}; transform-origin: 0 50%; transform: scaleX(0); }
 .troca .entra { padding: 24px 46px; border-radius: 28px; background: ${primaria}; color: #fff; white-space: nowrap; box-shadow: 0 18px 44px rgba(0,0,0,.35); opacity: 0; }

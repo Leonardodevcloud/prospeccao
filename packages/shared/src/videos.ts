@@ -109,7 +109,12 @@ export const IMAGEM_SEM_NO_COMECO = 2;
 export const IMAGEM_MIN_SEGUNDOS = 1.5;
 export const IMAGEM_MAX_SEGUNDOS = 4;
 export const IMAGENS_FRACAO_MAXIMA = 0.3;
-export const MAX_IMAGENS_VIDEO = 8;
+export const MAX_IMAGENS_VIDEO = 16;
+/** v163: os trechos de vídeo de apoio podem tomar mais tempo que as imagens (somados a elas). */
+export const APOIO_FRACAO_MAXIMA = 0.6;
+export const APOIO_MAX_SEGUNDOS = 6;
+/** Sem ninguém dizer onde, o apoio se espalha até ocupar esta fração do vídeo. */
+export const APOIO_FRACAO_ESPALHADA = 0.4;
 export const MAX_FOTO_BYTES = 10 * 1024 * 1024;
 export const TIPOS_FOTO = ['image/jpeg', 'image/png', 'image/webp'] as const;
 
@@ -156,6 +161,11 @@ export const chamadaEntrada = z.object({
 });
 export type ChamadaVideo = z.infer<typeof chamadaEntrada>;
 
+const corHex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Cor no formato #rrggbb.');
+/** Cor principal (selos, etiquetas, palavra acesa da legenda) e de destaque (palavras fortes, marcações). */
+export const coresDoVideoEntrada = z.object({ primaria: corHex, destaque: corHex });
+export type CoresDoVideo = z.infer<typeof coresDoVideoEntrada>;
+
 export const opcoesVideoEntrada = z.object({
   assunto: textoCurto(140).default(''),
   estilo: z.enum(['acesa', 'simples', 'balao']).default('acesa'),
@@ -166,6 +176,8 @@ export const opcoesVideoEntrada = z.object({
   efeitos: z.boolean().default(true),
   chamada: chamadaEntrada.default({ tipo: 'nenhuma', palavra: '', texto: '' }),
   instrucoes: textoCurto(600).default(''),
+  /** v163: as cores dos elementos e da legenda só deste vídeo (null: as da marca). */
+  cores: coresDoVideoEntrada.nullable().default(null),
 });
 export type OpcoesVideo = z.infer<typeof opcoesVideoEntrada>;
 
@@ -297,7 +309,7 @@ export const ROTULO_ORIGEM_IMAGEM: Record<OrigemImagem, string> = {
 
 /* ───────────────────────── v162: vídeos de apoio (b-roll) ───────────────────────── */
 
-export const MAX_APOIOS_VIDEO = 3;
+export const MAX_APOIOS_VIDEO = 6;
 export const LIMITE_SEGUNDOS_APOIO = 180;
 export const LIMITE_BYTES_APOIO = 500 * 1024 * 1024;
 
@@ -555,6 +567,8 @@ export const revisaoEntrada = z.object({
   titulo: z.object({ usar: z.boolean(), texto: textoCurto(60) }).optional(),
   chamada: z.object({ usar: z.boolean() }).merge(chamadaEntrada).optional(),
   estilo: z.enum(['acesa', 'simples', 'balao']).optional(),
+  /** v163: cores só deste vídeo (null: volta às da marca). */
+  cores: coresDoVideoEntrada.nullable().optional(),
   ritmo: z.enum(['dinamico', 'natural', 'pausas']).optional(),
   transicao: z.enum(['alternada', 'seco', 'deslizar']).optional(),
   momentos: z
@@ -711,6 +725,7 @@ export function juntarPropostas(propostas: readonly Pick<PropostaDaEditora, 'rev
     if (p.titulo) r.titulo = p.titulo;
     if (p.chamada) r.chamada = p.chamada;
     if (p.estilo) r.estilo = p.estilo;
+    if (p.cores !== undefined) r.cores = p.cores;
     if (p.transicao) r.transicao = p.transicao;
     if (p.musica) r.musica = { ...r.musica, ...p.musica };
     if (p.efeitos) r.efeitos = { ...r.efeitos, ...p.efeitos };

@@ -11,19 +11,19 @@ import {
   argumentosDeNormalizarApoio,
   descreverFotos,
 } from '@prospeccao/integrations/videos';
-import type { ApoioGuardado } from '@prospeccao/shared/videos';
+import { type ApoioGuardado, LIMITE_SEGUNDOS_APOIO } from '@prospeccao/shared/videos';
 import { duracaoDoVideo, rodar } from './ferramentas.js';
 import * as repo from './repositorio.js';
 
 /**
  * Vídeos de apoio (v162). Na primeira vez, o editor deixa cada apoio no formato do vídeo (em pé,
- * 1080×1920, sem som, no máximo 90 s), tira a capa, pede à IA de visão uma frase do que ele mostra
+ * 1080×1920, sem som), tira a capa, pede à IA de visão uma frase do que ele mostra
  * e guarda tudo; nas seguintes, só baixa o que já está preparado. Apoio que não abre fica com o
  * motivo (a tela mostra) e não entra no vídeo.
  */
 
-/** Só os primeiros 90 s do apoio são preparados: os flashes somam no máximo 30% de um vídeo de 3 min. */
-const MAX_SEGUNDOS_PREPARADO = 90;
+/** O apoio é preparado inteiro (até o limite do envio). */
+const MAX_SEGUNDOS_PREPARADO = LIMITE_SEGUNDOS_APOIO;
 
 async function baixar(arm: Armazenamento, chave: string, destino: string) {
   const url = await arm.urlAssinada(chave, { segundos: 3600 });

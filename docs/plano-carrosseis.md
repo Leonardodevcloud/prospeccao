@@ -99,6 +99,7 @@ Cada ideia na aba Ideias mostra de onde veio (CAMPANHA, CONVERSAS, INSTAGRAM, OB
 22. **v160: vídeo (feita em 17/11, sem migration).** Não mexe em carrosséis nem em cards. No editor de vídeo: cortes mais sensíveis a interrupções de fala e três animações novas (nomes um a um, comparação, troca), com toda enumeração virando lista. O campo para falar com a editora na revisão está em mockup, aguardando aprovação.
 23. **v161: vídeo (feita em 17/11, sem migration).** Não mexe em carrosséis nem em cards; usa o mesmo cliente do Claude e o mesmo medidor de consumo dos carrosséis para o "Peça à editora" da revisão do vídeo.
 24. **v162: vídeo (feita em 17/11, migration 110).** Não mexe em carrosséis nem em cards: vídeos de apoio no editor de vídeo.
+25. **v163: vídeo (feita em 17/11, sem migration nova).** Não mexe em carrosséis nem em cards: ajustes do apoio, da editora e das cores no editor de vídeo.
 
 ## Em aberto
 - Sem limite de carrosséis: acompanhar o custo por conta em Saúde e consumo (Claude). Se algum cliente fugir muito da média, o master pode pôr um limite só para ele em Plano e módulos.

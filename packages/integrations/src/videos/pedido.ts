@@ -42,6 +42,8 @@ export interface ContextoDoPedido {
   animacoes: AnimacoesVideo | null;
   som: SomVideo | null;
   estilo: string;
+  /** As cores só deste vídeo (null: as da marca). */
+  cores?: { primaria: string; destaque: string } | null;
   musicaLiberada: boolean;
 }
 
@@ -56,6 +58,8 @@ const ACOES = [
   'musica',
   'legenda',
   'estilo_legenda',
+  'tirar_pausa',
+  'cores',
 ] as const;
 type Acao = (typeof ACOES)[number];
 type TipoNovo = Exclude<TipoMomento, 'oferta'>;
@@ -93,7 +97,7 @@ const ESQUEMA_PEDIDO = {
           de: {
             type: 'integer',
             description:
-              'cortar e devolver: índice da primeira palavra do trecho; nova_animacao: primeira palavra do momento; legenda: a palavra a corrigir.',
+              'cortar e devolver: índice da primeira palavra do trecho; nova_animacao: primeira palavra do momento; legenda: a palavra a corrigir; tirar_pausa: a palavra logo antes da pausa.',
           },
           ate: {
             type: 'integer',
@@ -148,7 +152,11 @@ O que você pode fazer:
 - devolver: trazer de volta palavras que estão CORTADAS (de/ate nos índices delas).
 - nova_animacao: lista (enumeração), nomes (nomes curtos que aparecem um a um), compara (dois lados), troca (risca um, entra o outro), selo (rótulo curto), numero (número grande), destaque (aproximação do rosto). O texto com as palavras da própria pessoa, curto, sem inventar dado. Cada item com a palavra em que é falado. Se já há uma animação naquele ponto, a nova fica no lugar dela: avise no detalhe.
 - editar_animacao e tirar_animacao: pelo id.
+- tirar_pausa: fechar a pausa (o silêncio, a respirada, a travada) entre duas palavras, sem tirar palavra nenhuma: de = índice da palavra logo antes da pausa. As pausas que ainda estão no vídeo vêm marcadas na fala ("[pausa de 0,4 s depois]"). Quando a pessoa cita as palavras em volta ("quando eu falo Tutts… motos"), ache o par de palavras; se o par aparece mais de uma vez, escolha o que tem a pausa marcada (o maior, se houver mais de um) e diga qual escolheu. É o "corte milimétrico", "corte seco", "tira a travada".
+- cores: mudar as cores dos elementos e da legenda só deste vídeo (cor_principal e cor_destaque em #rrggbb), ou voltar às da marca (padrao = true). "Apagado", "sem vida", "fraco" → cores mais vivas e saturadas, no mesmo tom das de agora quando elas são conhecidas; "mais escuro", "amarelo", "cor da marca" → siga o pedido. Sempre proponha as duas.
 - titulo (abertura), chamada (frase da tela final), musica (ligar, desligar, volume, clima, pedir outra), legenda (corrigir uma palavra escrita errado), estilo_legenda.
+
+Como a pessoa fala: "botões", "caixinhas", "plaquinhas", "etiquetas", "balõezinhos", "textos que aparecem", "elementos", "efeitos" são as animações (selo, lista, nomes, número, comparação, troca) e a legenda que acompanha a fala; "letrinha" e "texto embaixo" são a legenda. Ela não conhece os nomes técnicos: entenda pelo sentido e, se a mensagem traz dois pedidos, responda aos dois.
 - "Mais elementos na tela": proponha de 2 a 4 animações novas onde hoje não há nenhuma, começando pelas enumerações e comparações da fala. "Refazer as animações": tire as de agora e proponha um conjunto novo.
 
 O que você não pode fazer, e o que dizer:
@@ -166,10 +174,17 @@ export const SISTEMA_DA_EDITORA: BlocoSistema[] = [{ texto: SISTEMA_PEDIDO, cach
 
 /** O estado do vídeo, do jeito que a editora lê. */
 export function contextoParaAEditora(c: ContextoDoPedido, pedido: PedidoEditora): string {
+  // v163: a pausa que ainda está no vídeo depois de cada palavra (para o "corte milimétrico").
+  const noVideo = (t: number) => tempoNoEditado(t, c.ficam);
   const fala = c.palavras
     .map((p, k) => {
-      const t = tempoNoEditado(p.i + Math.min(0.05, (p.f - p.i) / 2), c.ficam);
-      return `${k}: ${p.t}  (${t == null ? 'CORTADA' : `${t.toFixed(1)} s`})`;
+      const t = noVideo(p.i + Math.min(0.05, (p.f - p.i) / 2));
+      if (t == null) return `${k}: ${p.t}  (CORTADA)`;
+      const prox = c.palavras[k + 1];
+      const fimDesta = noVideo(p.f - Math.min(0.03, (p.f - p.i) / 2));
+      const comecoDaProxima = prox ? noVideo(prox.i + Math.min(0.03, (prox.f - prox.i) / 2)) : null;
+      const pausa = fimDesta != null && comecoDaProxima != null ? comecoDaProxima - fimDesta - 0.06 : 0;
+      return `${k}: ${p.t}  (${t.toFixed(1)} s)${pausa >= 0.15 ? `  [pausa de ${pausa.toFixed(1).replace('.', ',')} s depois]` : ''}`;
     })
     .join('\n');
   const momentos = c.animacoes ? momentosDe(c.animacoes) : [];
@@ -191,7 +206,7 @@ export function contextoParaAEditora(c: ContextoDoPedido, pedido: PedidoEditora)
     mu
       ? `Música: ${mu.usar ? `ligada, clima ${mu.clima}, volume ${mu.volume} de 100` : 'desligada'}${c.musicaLiberada ? '' : ' (a música não está liberada nesta conta: não proponha ligar)'}.`
       : '',
-    `Estilo da legenda: ${c.estilo}.`,
+    `Estilo da legenda: ${c.estilo}. Cores dos elementos e da legenda: ${c.cores ? `principal ${c.cores.primaria}, destaque ${c.cores.destaque} (só deste vídeo)` : 'as da marca da empresa (o padrão)'}.`,
     pedido.historico.length
       ? `A conversa até aqui:\n${pedido.historico.map((h) => `${h.de === 'voce' ? 'Pessoa' : 'Você'}: ${h.texto}`).join('\n')}`
       : '',
@@ -213,6 +228,8 @@ const AREA: Record<Acao, AreaDaProposta> = {
   musica: 'som',
   legenda: 'texto',
   estilo_legenda: 'texto',
+  tirar_pausa: 'corte',
+  cores: 'animacao',
 };
 
 /**
@@ -381,6 +398,36 @@ export function lerPedido(dados: Record<string, unknown>, c: ContextoDoPedido): 
         ate: null,
         revisao: { palavras: [{ indice: de, texto }] },
       });
+      continue;
+    }
+    if (acao === 'tirar_pausa') {
+      if (!dentro(de) || !viva(de)) continue;
+      const prox = palavras[de + 1];
+      if (!prox) continue;
+      // Fica um respiro de 0,06 s: as palavras encostam sem comer o fim de uma nem o começo da outra.
+      const inicio = palavras[de]!.f + 0.03;
+      const fim = prox.i - 0.03;
+      if (fim - inicio < 0.06) continue;
+      propostas.push({
+        ...base,
+        quando: ed(palavras[de]!.i),
+        ate: null,
+        revisao: { trechos: [{ acao: 'cortar', inicio: r2(inicio), fim: r2(fim) }] },
+      });
+      continue;
+    }
+    if (acao === 'cores') {
+      if (m.padrao === true) {
+        if (!c.cores) continue;
+        propostas.push({ ...base, quando: null, ate: null, revisao: { cores: null } });
+        continue;
+      }
+      const hex = (v: unknown) => (/^#[0-9a-fA-F]{6}$/.test(String(v)) ? String(v).toLowerCase() : null);
+      const primaria = hex(m.cor_principal);
+      const destaque = hex(m.cor_destaque);
+      if (!primaria || !destaque) continue;
+      if (c.cores && c.cores.primaria === primaria && c.cores.destaque === destaque) continue;
+      propostas.push({ ...base, quando: null, ate: null, revisao: { cores: { primaria, destaque } } });
       continue;
     }
     if (acao === 'estilo_legenda') {

@@ -1,4 +1,5 @@
 import {
+  APOIO_FRACAO_MAXIMA,
   type ApoioDoVideo,
   CLIMAS_MUSICA,
   type ClimaMusica,
@@ -138,7 +139,7 @@ function CapaDoApoio({ v, apoio }: { v: DetalheVideo; apoio: ApoioDoVideo | unde
 
 /** Os vídeos de apoio do vídeo: mandar outro, ver o que cada um mostra e tirar. */
 function VideosDeApoio({ v }: { v: DetalheVideo }) {
-  const { enviar, tirar } = useApoios(v.id);
+  const { enviar, tirar, espalhar } = useApoios(v.id);
   const [andamento, setAndamento] = useState<number | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const escolher = (a: File | undefined) => {
@@ -223,8 +224,24 @@ function VideosDeApoio({ v }: { v: DetalheVideo }) {
           </label>
         )
       )}
+      {v.apoios.some((a) => a.enviado && !a.erro) && (
+        <span className="apoios__acoes" style={{ justifyContent: 'flex-start' }}>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="sparkles"
+            onClick={() => espalhar.mutate()}
+            disabled={espalhar.isPending}
+          >
+            Espalhar o apoio pelo vídeo
+          </Button>
+          <span className="campo__dica">
+            Põe um trecho a cada 5 segundos de fala, onde ainda não tem imagem. Depois é só gerar de novo.
+          </span>
+        </span>
+      )}
       {aviso && <Mensagem tipo="aviso">{aviso}</Mensagem>}
-      <ErroDaApi erro={enviar.error ?? tirar.error} />
+      <ErroDaApi erro={enviar.error ?? tirar.error ?? espalhar.error} />
     </section>
   );
 }
@@ -469,7 +486,10 @@ function NovaImagem(props: {
   const revisao = useRevisao(v.id);
   const foto = useFotoPropria(v.id);
   const entrada = useRef<HTMLInputElement>(null);
-  const cheio = props.comImagem >= props.editado * IMAGENS_FRACAO_MAXIMA - 1.4;
+  // Com vídeo de apoio o limite é maior (60%): o botão só trava quando nem o apoio cabe.
+  const temApoio = v.apoios.some((a) => a.enviado && !a.erro);
+  const cheio =
+    props.comImagem >= props.editado * (temApoio ? APOIO_FRACAO_MAXIMA : IMAGENS_FRACAO_MAXIMA) - 1.4;
   const em = () => {
     const t = lerMomento(momento);
     if (t == null) {
