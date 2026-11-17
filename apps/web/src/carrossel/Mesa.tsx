@@ -77,90 +77,93 @@ export function MesaDoTime(props: {
   const comVez = vez >= 0 ? estacoes[vez]! : null;
   // A conversa: quem já falou (o que anotou), quem está com a vez e quem ainda espera.
   return (
-    <div className="mesa" aria-live="polite">
-      <section className="mesa__palco" aria-label={props.titulo}>
-        <h4 className="mesa__titulo">{props.titulo}</h4>
-        <div
-          className="mesa__balao-area"
-          style={{ ['--vez' as string]: Math.max(0, vez), ['--estacoes' as string]: estacoes.length }}
-        >
-          {comVez && (
-            <p className="mesa__balao" key={`${comVez.id}:${comVez.fala ?? ''}`}>
-              <b>{comVez.nome}:</b> {comVez.fala || comVez.funcao}
-              <span className="mesa__pontos" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-              </span>
-            </p>
-          )}
-        </div>
-        <ol className="mesa__estacoes">
-          {estacoes.map((e, k) => (
-            <li key={e.id} className="mesa__estacao" data-estado={e.estado}>
-              {k > 0 && (
-                <span
-                  className="mesa__trilho"
-                  data-estado={
-                    props.parado
-                      ? 'depois'
-                      : e.estado === 'agora'
-                        ? 'agora'
-                        : e.estado === 'feito'
-                          ? 'feito'
-                          : 'depois'
-                  }
-                  aria-hidden="true"
-                >
-                  <span className="mesa__folha">
-                    <Icon name="file-text" size={15} />
-                  </span>
-                  <span className="mesa__entrega">{props.entregas[k - 1] ?? ''}</span>
+    // A caixa de fora mede o espaço que a mesa tem de verdade (um cartão estreito, não a janela).
+    <div className="mesa-caixa">
+      <div className="mesa" aria-live="polite">
+        <section className="mesa__palco" aria-label={props.titulo}>
+          <h4 className="mesa__titulo">{props.titulo}</h4>
+          <div
+            className="mesa__balao-area"
+            style={{ ['--vez' as string]: Math.max(0, vez), ['--estacoes' as string]: estacoes.length }}
+          >
+            {comVez && (
+              <p className="mesa__balao" key={`${comVez.id}:${comVez.fala ?? ''}`}>
+                <b>{comVez.nome}:</b> {comVez.fala || comVez.funcao}
+                <span className="mesa__pontos" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
                 </span>
-              )}
-              <Rosto e={e} tamanho={72} />
-              <b className="mesa__nome">{e.nome}</b>
-              <span className="mesa__funcao">{e.funcao}</span>
-              <span className="mesa__chip" data-estado={e.estado}>
-                {ROTULO[e.estado]}
-              </span>
-            </li>
-          ))}
-        </ol>
-        {props.nota && <p className="mesa__nota">{props.nota}</p>}
-        {props.children}
-      </section>
-      <section className="mesa__conversa" aria-label="Conversa do time">
-        <h4 className="mesa__titulo">Conversa do time</h4>
-        <ol className="mesa__falas">
-          {estacoes.map((e, k) => {
-            const proxima = estacoes[k + 1];
-            return (
-              <li key={e.id} className="mesa__fala" data-estado={props.parado ? 'depois' : e.estado}>
-                <Rosto e={{ ...e, estado: 'depois' }} tamanho={32} />
-                <div>
-                  <div className="mesa__quem">
-                    <b>{e.nome}</b>
-                    {e.estado === 'feito' && proxima && (
-                      <span className="mesa__para">
-                        <Icon name="arrow-right" size={12} /> {proxima.nome}
-                      </span>
-                    )}
-                    <span className="mesa__quando">
-                      {e.estado === 'agora' && !props.parado
-                        ? 'agora'
-                        : e.estado === 'feito'
-                          ? 'feito'
-                          : 'na fila'}
+              </p>
+            )}
+          </div>
+          <ol className="mesa__estacoes">
+            {estacoes.map((e, k) => (
+              <li key={e.id} className="mesa__estacao" data-estado={e.estado}>
+                {k > 0 && (
+                  <span
+                    className="mesa__trilho"
+                    data-estado={
+                      props.parado
+                        ? 'depois'
+                        : e.estado === 'agora'
+                          ? 'agora'
+                          : e.estado === 'feito'
+                            ? 'feito'
+                            : 'depois'
+                    }
+                    aria-hidden="true"
+                  >
+                    <span className="mesa__folha">
+                      <Icon name="file-text" size={15} />
                     </span>
-                  </div>
-                  <p className="mesa__texto">{(e.estado !== 'depois' && e.fala) || e.funcao}</p>
-                </div>
+                    <span className="mesa__entrega">{props.entregas[k - 1] ?? ''}</span>
+                  </span>
+                )}
+                <Rosto e={e} tamanho={72} />
+                <b className="mesa__nome">{e.nome}</b>
+                <span className="mesa__funcao">{e.funcao}</span>
+                <span className="mesa__chip" data-estado={e.estado}>
+                  {ROTULO[e.estado]}
+                </span>
               </li>
-            );
-          })}
-        </ol>
-      </section>
+            ))}
+          </ol>
+          {props.nota && <p className="mesa__nota">{props.nota}</p>}
+          {props.children}
+        </section>
+        <section className="mesa__conversa" aria-label="Conversa do time">
+          <h4 className="mesa__titulo">Conversa do time</h4>
+          <ol className="mesa__falas">
+            {estacoes.map((e, k) => {
+              const proxima = estacoes[k + 1];
+              return (
+                <li key={e.id} className="mesa__fala" data-estado={props.parado ? 'depois' : e.estado}>
+                  <Rosto e={{ ...e, estado: 'depois' }} tamanho={32} />
+                  <div>
+                    <div className="mesa__quem">
+                      <b>{e.nome}</b>
+                      {e.estado === 'feito' && proxima && (
+                        <span className="mesa__para">
+                          <Icon name="arrow-right" size={12} /> {proxima.nome}
+                        </span>
+                      )}
+                      <span className="mesa__quando">
+                        {e.estado === 'agora' && !props.parado
+                          ? 'agora'
+                          : e.estado === 'feito'
+                            ? 'feito'
+                            : 'na fila'}
+                      </span>
+                    </div>
+                    <p className="mesa__texto">{(e.estado !== 'depois' && e.fala) || e.funcao}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      </div>
     </div>
   );
 }

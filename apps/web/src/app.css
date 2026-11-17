@@ -18758,7 +18758,9 @@ fieldset.assinar__formas {
 }
 .video__editando-corpo > .video__editando {
   justify-self: auto;
-  flex: 0 1 560px;
+  /* v159: a ilha de edição precisa de largura; o cartão cresce até 820 px quando a tela deixa. */
+  flex: 1 1 560px;
+  max-width: 820px;
 }
 .video__previa {
   margin: 0;
@@ -20115,23 +20117,44 @@ form.janela-pedido > button[type="submit"] {
     opacity: 1;
   }
 }
-@media (max-width: 900px) {
+/* v159: a mesa se arruma pelo espaço que ela tem (o cartão onde está), não pela largura da janela.
+   Na tela do vídeo ela mora num cartão estreito ao lado do mapa e as estações ficavam umas por cima
+   das outras. */
+.mesa-caixa {
+  container-type: inline-size;
+  min-width: 0;
+}
+.mesa__nome,
+.mesa__funcao {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+@container (max-width: 860px) {
   .mesa {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-@media (max-width: 560px) {
-  .mesa__palco {
+@container (max-width: 520px) {
+  .mesa__palco,
+  .mesa__conversa {
     padding: var(--space-3);
   }
   .mesa__estacao .mesa__rosto {
-    width: 48px !important;
-    height: 48px !important;
+    width: 44px !important;
+    height: 44px !important;
+    border-width: 2px;
+    padding: 2px;
   }
   .mesa__trilho {
-    top: 28px;
-    left: calc(-50% + 36px);
-    right: calc(50% + 36px);
+    top: 25px;
+    left: calc(-50% + 32px);
+    right: calc(50% + 32px);
+  }
+  .mesa__folha {
+    width: 24px;
+    height: 24px;
+    top: -14px;
+    margin-left: -12px;
   }
   .mesa__funcao,
   .mesa__entrega {
@@ -20139,10 +20162,38 @@ form.janela-pedido > button[type="submit"] {
   }
   .mesa__nome {
     font-size: 12px;
+    padding: 0 2px;
   }
   .mesa__chip {
     font-size: 11px;
     padding: 2px 6px;
+  }
+  .mesa__balao {
+    font-size: 13px;
+    padding: 10px 12px;
+  }
+}
+@container (max-width: 340px) {
+  /* Muito estreito: as estações viram uma lista, uma por linha. */
+  .mesa__balao-area {
+    display: none;
+  }
+  .mesa__estacoes {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .mesa__estacao {
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+    gap: 10px;
+  }
+  .mesa__trilho {
+    display: none;
+  }
+  .mesa__nome {
+    flex: 1;
+    font-size: 13px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

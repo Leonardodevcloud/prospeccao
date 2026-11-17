@@ -389,6 +389,9 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ak. Conserto da mesa do time no vídeo (v159)
+1. [ ] Só a **web** (Vercel). Abrir um vídeo em edição e conferir a ilha de edição no computador e no celular: estações lado a lado sem sobrepor, conversa embaixo.
+
 ## 4aj. Arte com texto do sistema e a mesa do time (v158)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
 2. [ ] **Arte da IA nova**: num card pronto, clicar em Arte da IA. Conferir: a cena sem nenhuma letra, a faixa do texto lisa na cor da marca, o texto escrito pelo sistema com a fonte certa; mudar o título no editor e ver a peça mudar na hora. Se a IA insistir em sujar a faixa ou escrever na imagem (a peça reprova e o card fica sem arte), avisar; `CARROSSEIS_ARTE_TEXTO=ia` volta ao jeito antigo.
