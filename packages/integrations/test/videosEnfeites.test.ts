@@ -8,6 +8,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ClienteClaude } from '../src/carrosseis/claude.js';
 import {
+  apararPelosSilencios,
   aplicarRegras,
   argumentosDaMistura,
   argumentosDoApoio,
@@ -20,6 +21,7 @@ import {
   cortesDeTropeco,
   type DecisaoEnfeites,
   efeitosDoVideo,
+  encaixarOuvidas,
   enfeitesNaTela,
   enfeitesPelasRegras,
   falaDoEditado,
@@ -36,6 +38,7 @@ import {
   promptDaImagem,
   promptDaMusica,
   tempoComImagens,
+  trechosSuspeitos,
 } from '../src/videos/index.js';
 
 const medir = (t: string, tam: number) => t.length * tam * 0.62;
@@ -1008,5 +1011,73 @@ describe('v163: a editora fecha pausas e muda as cores', () => {
       { ...c, cores: { primaria: '#111111', destaque: '#eeeeee' } },
     );
     expect(volta.propostas[0]!.revisao.cores).toBeNull();
+  });
+});
+
+describe('v164: a fala que a transcrição perdeu', () => {
+  // "você" cobre 3 s: a frase "você aluga a moto hoje" foi pulada. Depois, um vão com som de 1,2 s.
+  const p: PalavraVideo[] = [
+    { t: 'Se', i: 0.2, f: 0.4 },
+    { t: 'você', i: 0.45, f: 3.45, forte: true },
+    { t: 'mesmo.', i: 3.5, f: 3.9 },
+    { t: 'Chama', i: 5.1, f: 5.5 },
+    { t: 'no', i: 5.55, f: 5.7 },
+    { t: 'zap.', i: 5.75, f: 6.6 },
+  ];
+  const sil = [{ inicio: 6.1, fim: 6.9 }];
+  it('acha a palavra esticada e o vão com som', () => {
+    expect(trechosSuspeitos(p, sil, 7).map((s) => [s.tipo, s.k])).toEqual([
+      ['esticada', 1],
+      ['vao', 2],
+    ]);
+    // Pausa de verdade (silêncio medido) não é suspeita.
+    expect(trechosSuspeitos(p, [...sil, { inicio: 3.95, fim: 5.05 }], 7).map((s) => s.tipo)).toEqual([
+      'esticada',
+    ]);
+  });
+  it('a frase ouvida de novo entra no lugar da palavra esticada, sem passar por cima das vizinhas', () => {
+    const [esticada, vao] = trechosSuspeitos(p, sil, 7);
+    const ouvidas = [
+      { t: 'Se', i: 0.26, f: 0.44 },
+      { t: 'você', i: 0.46, f: 0.8 },
+      { t: 'aluga', i: 0.85, f: 1.3 },
+      { t: 'a', i: 1.35, f: 1.45 },
+      { t: 'moto', i: 1.5, f: 2.0 },
+      { t: 'hoje', i: 2.6, f: 3.6 },
+      { t: 'mesmo.', i: 3.62, f: 3.7 },
+    ];
+    const r = encaixarOuvidas(p, esticada!, ouvidas)!;
+    expect(r.map((x) => x.t).join(' ')).toBe('Se você aluga a moto hoje mesmo. Chama no zap.');
+    expect(r[1]).toEqual({ t: 'você', i: 0.46, f: 0.8, forte: true });
+    expect(r[5]).toEqual({ t: 'hoje', i: 2.6, f: 3.45, conferir: true });
+    // O vão: entra o que foi ouvido dentro dele; o que o Whisper inventa fica de fora.
+    const g = encaixarOuvidas(p, vao!, [
+      { t: 'mesmo.', i: 3.5, f: 3.9 },
+      { t: 'É', i: 4.1, f: 4.3 },
+      { t: 'rápido.', i: 4.35, f: 4.9 },
+    ])!;
+    expect(g.map((x) => x.t).join(' ')).toBe('Se você mesmo. É rápido. Chama no zap.');
+    expect(
+      encaixarOuvidas(p, vao!, [
+        { t: 'Legendas', i: 4.1, f: 4.4 },
+        { t: 'pela', i: 4.4, f: 4.5 },
+        { t: 'comunidade', i: 4.5, f: 4.9 },
+      ]),
+    ).toBeNull();
+    // Só a própria palavra, no tempo curto: ela volta para o lugar dela.
+    const so = encaixarOuvidas(p, esticada!, [{ t: 'Você', i: 2.9, f: 3.4 }])!;
+    expect(so[1]).toEqual({ t: 'você', i: 2.9, f: 3.4, forte: true });
+  });
+  it('apara a palavra pelo silêncio em volta, sem deixar menor que metade do normal', () => {
+    const r = apararPelosSilencios(p, sil);
+    expect(r[5]).toEqual({ t: 'zap.', i: 5.75, f: 6.14 });
+    expect(r[0]).toBe(p[0]);
+    const curta = apararPelosSilencios([{ t: 'entrega', i: 1, f: 2 }], [{ inicio: 1.1, fim: 2.5 }]);
+    expect(curta[0]!.f).toBeGreaterThanOrEqual(1.32);
+    expect(apararPelosSilencios([{ t: 'moto', i: 1, f: 1.8 }], [{ inicio: 0.5, fim: 1.3 }])[0]).toEqual({
+      t: 'moto',
+      i: 1.26,
+      f: 1.8,
+    });
   });
 });

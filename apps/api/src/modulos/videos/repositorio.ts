@@ -1053,6 +1053,24 @@ export async function pedirDeNovo(db: Executor, id: number): Promise<void> {
   );
 }
 
+/**
+ * v164: ouvir a fala de novo e refazer a edição do zero (a transcrição, os cortes, as animações e
+ * as imagens são refeitos; o que foi mudado na revisão se perde). Para o vídeo editado antes de
+ * uma melhoria na escuta, ou quando as palavras saíram no lugar errado.
+ */
+export async function pedirDoZero(db: Executor, id: number): Promise<void> {
+  const l = await linha(db, id);
+  if (!['pronto', 'revisar', 'falhou'].includes(l.situacao))
+    throw AppError.invalido('Este vídeo ainda está sendo editado.');
+  if (!l.original_chave) throw AppError.invalido('O vídeo original não está mais guardado: envie de novo.');
+  await db.query(
+    `UPDATE comercial.videos SET situacao = 'na_fila', etapa = NULL, progresso = 0, erro = NULL, tentativas = 0,
+            mudancas_pendentes = false, analise = analise - 'antesDoPedido', atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()}`,
+    [id],
+  );
+}
+
 export async function vocabulario(db: Executor): Promise<string[]> {
   const { rows } = await db.query<{ v: string[] }>(
     `SELECT vocabulario AS v FROM comercial.video_preferencias WHERE conta_id = ${contaSql()}`,

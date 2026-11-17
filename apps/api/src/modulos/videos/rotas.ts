@@ -562,6 +562,13 @@ export function rotasVideos(deps: DepsApi): Router {
     res.json(await repo.buscar(pool, id));
   });
 
+  r.post('/:id/do-zero', async (req, res) => {
+    const id = idDaRota(req);
+    await repo.pedirDoZero(pool, id);
+    await filas.publicar('video.editar', { videoId: id, modo: 'primeira' });
+    res.json(await repo.buscar(pool, id));
+  });
+
   r.delete('/:id', async (req, res) => {
     const l = await repo.apagar(pool, idDaRota(req));
     const a = arm();

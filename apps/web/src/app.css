@@ -20677,3 +20677,22 @@ form.janela-pedido > button[type="submit"] {
   justify-content: flex-end;
   gap: var(--space-2);
 }
+
+/* ───────────── v164: ouvir a fala de novo ───────────── */
+.video__ouvir-de-novo {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+}
+.video__ouvir-de-novo summary {
+  min-height: 28px;
+  cursor: pointer;
+  color: var(--brand);
+  font-weight: 600;
+}
+.video__ouvir-de-novo[open] summary {
+  margin-bottom: var(--space-2);
+}

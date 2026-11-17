@@ -8,6 +8,7 @@ import type { Executor } from '@prospeccao/db';
 import type { Armazenamento } from '@prospeccao/integrations/reuniao';
 import {
   alturaDoTitulo,
+  apararPelosSilencios,
   argumentosDaMistura,
   argumentosDoApoio,
   blocosDaLegenda,
@@ -18,6 +19,7 @@ import {
   diagramar,
   duracaoTotal,
   efeitosDoVideo,
+  encaixarOuvidas,
   enfeitesNaTela,
   type Grafico,
   marcarFortes,
@@ -33,6 +35,7 @@ import {
   type Silencio,
   silencios,
   tituloEmLinhas,
+  trechosSuspeitos,
 } from '@prospeccao/integrations/videos';
 import type { Logger } from '@prospeccao/shared';
 import {
@@ -439,36 +442,30 @@ export async function editarVideo(
         throw new ErroDoVideo('Não deu para ouvir fala no vídeo: a edição corta e legenda pela fala.');
       const pcm = await lerAudioCru(base);
       const sil = silencios(pcm);
+      // Ouve de novo só um trecho (num trecho curto a transcrição acerta o que pulou no vídeo inteiro).
+      const reouvir = async (a: number, b: number) => {
+        const trecho = join(pasta, `trecho-${Math.round(a * 1000)}.flac`);
+        await rodar(
+          'ffmpeg',
+          ['-v', 'error', '-y', '-ss', a.toFixed(3), '-to', b.toFixed(3), '-i', fala, '-c:a', 'flac', trecho],
+          { timeoutMs: 60_000 },
+        );
+        custos.transcricaoSeg += b - a;
+        return deps.ouvir!(new Uint8Array(await readFile(trecho)) as Uint8Array<ArrayBuffer>, {
+          vocabulario,
+          assunto: v.opcoes.assunto,
+        });
+      };
+      // v164: a fala que a transcrição pulou (a palavra que cobria uma frase, o vão com som) volta
+      // a ter palavras, e cada palavra é aparada pelo silêncio: o corte pega a palavra, não a frase.
+      palavras = await recuperarFala(palavras, sil, duracao, {
+        reouvir,
+        log: (msg) => log.info({ videoId }, msg),
+      });
+      palavras = apararPelosSilencios(palavras, sil);
       // v138: a embolação escondida dentro de uma palavra esticada volta a ser um vão (e é cortada).
       palavras = await ajustarEsticadas(palavras, pcm, {
-        reouvir: deps.ouvir
-          ? async (a, b) => {
-              const trecho = join(pasta, `trecho-${Math.round(a * 1000)}.flac`);
-              await rodar(
-                'ffmpeg',
-                [
-                  '-v',
-                  'error',
-                  '-y',
-                  '-ss',
-                  a.toFixed(3),
-                  '-to',
-                  b.toFixed(3),
-                  '-i',
-                  fala,
-                  '-c:a',
-                  'flac',
-                  trecho,
-                ],
-                { timeoutMs: 60_000 },
-              );
-              custos.transcricaoSeg += b - a;
-              return deps.ouvir!(new Uint8Array(await readFile(trecho)) as Uint8Array<ArrayBuffer>, {
-                vocabulario,
-                assunto: v.opcoes.assunto,
-              });
-            }
-          : null,
+        reouvir,
         log: (msg) => log.info({ videoId }, msg),
       });
       await anotar({
@@ -1038,6 +1035,46 @@ async function fazerPreviaVideo(arm: Armazenamento, base: string, chave: string,
 }
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/* ───────────────────────────── v164: a fala perdida ───────────────────────────── */
+
+/** Quanto de som vem junto antes e depois do trecho ouvido de novo (a palavra não começa cortada). */
+const BORDA_DO_TRECHO = 0.2;
+
+/**
+ * Ouve de novo cada trecho suspeito (palavra esticada, vão com som) e põe na fala o que faltava.
+ * Do fim para o começo, para os índices não mudarem. Uma falha num trecho não derruba a edição.
+ */
+export async function recuperarFala(
+  palavras: PalavraVideo[],
+  sil: Parameters<typeof trechosSuspeitos>[1],
+  duracao: number,
+  o: { reouvir: (a: number, b: number) => Promise<PalavraVideo[]>; log?: (msg: string) => void },
+): Promise<PalavraVideo[]> {
+  let out = palavras;
+  const suspeitos = trechosSuspeitos(palavras, sil, duracao).sort((x, y) => y.a - x.a || y.k - x.k);
+  for (const s of suspeitos) {
+    const a = r3(Math.max(0, s.a - BORDA_DO_TRECHO));
+    const b = r3(Math.min(duracao, s.b + BORDA_DO_TRECHO));
+    const ouvidas = await o.reouvir(a, b).catch(() => [] as PalavraVideo[]);
+    const novo = encaixarOuvidas(
+      out,
+      s,
+      ouvidas.map((p) => ({ ...p, i: r3(a + p.i), f: r3(a + p.f) })),
+    );
+    if (!novo) continue;
+    o.log?.(
+      s.tipo === 'esticada'
+        ? `"${out[s.k]!.t}" cobria ${(s.b - s.a).toFixed(2)} s: a fala ali é "${novo
+            .slice(s.k, s.k + novo.length - out.length + 1)
+            .map((p) => p.t)
+            .join(' ')}"`
+        : `fala sem palavra de ${s.a.toFixed(2)} a ${s.b.toFixed(2)} s recuperada (${novo.length - out.length} palavras)`,
+    );
+    out = novo;
+  }
+  return out;
+}
 
 /* ───────────────────────────── v138: a palavra esticada ───────────────────────────── */
 

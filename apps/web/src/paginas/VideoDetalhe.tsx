@@ -581,6 +581,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
             />
           )}
           {aba === 'som' && <PropostasNaAba propostas={propostas} area={['som']} />}
+          {aba === 'cortes' && <OuvirDeNovo v={v} />}
           {aba === 'cortes' && (
             <AbaCortes
               v={v}
@@ -1301,5 +1302,40 @@ function AbaAnimacoes({ v }: { v: DetalheVideo }) {
         dica={`${TRANSICOES.find((t) => t.id === v.opcoes.transicao)?.dica}.`}
       />
     </div>
+  );
+}
+
+/**
+ * v164: quando as palavras saíram no lugar errado (uma palavra que toca uma frase inteira), o
+ * conserto é ouvir a fala de novo: a edição recomeça do zero e o que foi mudado na revisão se perde.
+ */
+function OuvirDeNovo({ v }: { v: DetalheVideo }) {
+  const cliente = useQueryClient();
+  const doZero = useMutation({
+    mutationFn: () => api<DetalheVideo>(`/videos/${v.id}/do-zero`, { metodo: 'POST' }),
+    onSuccess: () => void cliente.invalidateQueries({ queryKey: ['videos'] }),
+  });
+  return (
+    <details className="video__ouvir-de-novo">
+      <summary>As palavras não batem com o que você fala?</summary>
+      <p className="campo__dica">
+        Se uma palavra toca uma frase inteira ou o corte pega mais do que devia, a escuta da fala errou. Dá
+        para ouvir de novo: a edição recomeça do zero (cortes, legenda, animações e imagens são refeitos) e o
+        que você mudou nesta revisão se perde.
+      </p>
+      <Button
+        size="sm"
+        variant="secondary"
+        icon="refresh-cw"
+        disabled={doZero.isPending}
+        onClick={() => {
+          if (window.confirm('A edição recomeça do zero e as mudanças desta revisão se perdem. Continuar?'))
+            doZero.mutate();
+        }}
+      >
+        Ouvir a fala de novo e refazer a edição
+      </Button>
+      <ErroDaApi erro={doZero.error} />
+    </details>
   );
 }

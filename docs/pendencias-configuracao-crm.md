@@ -389,6 +389,13 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ap. Mapeamento das palavras na fala (v164)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] No vídeo em que "você" tocava a frase inteira: aba Cortes › "As palavras não batem com o que você fala?" › **Ouvir a fala de novo e refazer a edição**. Depois conferir: a palavra agora toca só ela? A frase que faltava apareceu na legenda (as palavras recuperadas vêm marcadas para conferir)?
+3. [ ] Num vídeo novo, ouvir 5 ou 6 cortes de palavra: cada um toca só o que mostra?
+4. [ ] Olhar o log do worker-videos por linhas "cobria … s: a fala ali é …" e "fala sem palavra … recuperada": dizem quantas vezes a transcrição pulou fala.
+5. [ ] Se ainda aparecer palavra fora do lugar, mandar o vídeo e o ponto (minuto e palavra): o próximo passo é alinhamento forçado num serviço próprio.
+
 ## 4ao. Ajustes do apoio, da editora e das cores (v163)
 1. [ ] Sem migration nova (a 110 da v162 entra junto se ainda não entrou). Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
 2. [ ] No vídeo "Aluguel de motos tutts": aba Imagens › **Espalhar o apoio pelo vídeo**, conferir os trechos propostos (tirar ou mover o que não servir) e gerar de novo. O apoio aparece várias vezes? A legenda e as animações ficam legíveis por cima das motos?

@@ -1659,7 +1659,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
     onde: { rotulo: 'Vídeos', para: '/videos' },
     termos:
-      'vídeo de apoio b-roll broll segundo vídeo mais de um vídeo cenas de apoio flashes trecho por cima da fala peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+      'palavra errada palavra toca frase inteira corte pega mais mapeamento das palavras ouvir de novo refazer do zero transcrição errou vídeo de apoio b-roll broll segundo vídeo mais de um vídeo cenas de apoio flashes trecho por cima da fala peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
     corpo: (
       <>
         <p>
@@ -1745,6 +1745,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
             você conferir.
           </li>
           <li>
+            <b>Confere a escuta da fala</b>: quando a transcrição pula um pedaço (uma palavra que cobre uma
+            frase inteira, ou um trecho com som e sem palavra), o editor ouve só aquele trecho de novo e põe
+            as palavras que faltavam, marcadas para você conferir na legenda. Cada palavra também é aparada
+            pelo silêncio em volta dela, para o corte e o botão Ouvir pegarem a palavra, não a pausa.
+          </li>
+          <li>
             <b>Usa os seus vídeos de apoio</b>, se você mandou algum junto (até 6, de até 3 minutos cada): a
             moto passando, a loja, o produto em uso. A IA vê o que cada um mostra e põe trechos de 2 a 6
             segundos em tela cheia por cima da sua fala, várias vezes ao longo do vídeo; se ela usar pouco, o
@@ -1810,6 +1816,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
             que você falou por outra frase (aí ela oferece cortar ou pôr um selo). Imagens, efeitos e
             publicação continuam nas abas. A conversa não fica guardada: ao recarregar a página, começa de
             novo (o que foi aplicado continua).
+          </li>
+          <li>
+            Se uma palavra toca uma frase inteira ou um corte pega mais do que devia, abra{' '}
+            <b>As palavras não batem com o que você fala?</b> na aba Cortes e use{' '}
+            <b>Ouvir a fala de novo e refazer a edição</b>: a edição recomeça do zero (o que você mudou na
+            revisão se perde).
           </li>
           <li>
             Na aba <b>Imagens</b> ficam os <b>vídeos de apoio</b>: dá para mandar outro depois (ele é

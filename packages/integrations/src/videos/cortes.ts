@@ -498,6 +498,116 @@ export function partirPalavraEsticada(
   return null;
 }
 
+/* ───────────────────── v164: a fala que a transcrição perdeu ───────────────────── */
+
+/**
+ * O Whisper às vezes pula um pedaço da fala. O pedaço pulado some de dois jeitos: vira uma palavra
+ * esticada ("você" com 3 s, cobrindo a frase inteira) ou um vão com som entre duas palavras. Nos
+ * dois casos o corte daquela palavra levava a frase junto, e "Ouvir" tocava a frase. Aqui ficam os
+ * trechos suspeitos, para serem ouvidos de novo, sozinhos (num trecho curto o Whisper acerta).
+ */
+export interface TrechoSuspeito {
+  tipo: 'esticada' | 'vao';
+  /** esticada: o índice da palavra; vao: o índice da palavra antes do vão (-1: antes da primeira). */
+  k: number;
+  a: number;
+  b: number;
+}
+
+const somNoTrecho = (a: number, b: number, sil: Silencio[]) =>
+  b - a - sil.reduce((n, s) => n + Math.max(0, Math.min(b, s.fim) - Math.max(a, s.inicio)), 0);
+
+export function trechosSuspeitos(
+  palavras: PalavraVideo[],
+  sil: Silencio[],
+  duracao: number,
+  max = 14,
+): TrechoSuspeito[] {
+  const out: TrechoSuspeito[] = [];
+  palavras.forEach((p, k) => {
+    if (p.f - p.i >= Math.max(0.9, duracaoEsperada(p.t) * 2.2))
+      out.push({ tipo: 'esticada', k, a: p.i, b: p.f });
+  });
+  for (let k = -1; k < palavras.length; k++) {
+    const a = k < 0 ? 0 : palavras[k]!.f;
+    const b = k + 1 < palavras.length ? palavras[k + 1]!.i : duracao;
+    if (b - a >= VAO_EMBOLADO && somNoTrecho(a, b, sil) >= SOM_EMBOLADO) out.push({ tipo: 'vao', k, a, b });
+  }
+  // Os maiores primeiro (o teto existe para a transcrição não ser chamada sem fim num vídeo ruim).
+  return out.sort((x, y) => y.b - y.a - (x.b - x.a)).slice(0, max);
+}
+
+/** O que o Whisper inventa em trecho sem fala. */
+const INVENTADO = /amara\.?org|legendas? (pela|por|da) comunidade|inscreva-se|obrigad[oa] por assistir/i;
+
+/**
+ * Põe na fala o que foi ouvido de novo num trecho suspeito (as palavras já vêm no tempo do vídeo).
+ * - Palavra esticada: se o trecho tem duas ou mais palavras, elas entram no lugar dela; se tem só
+ *   ela, ela fica com o tempo curto e certo.
+ * - Vão com som: as palavras ouvidas entram no vão.
+ * Tudo que entra fica marcado para conferir. null: nada a mudar.
+ */
+export function encaixarOuvidas(
+  palavras: PalavraVideo[],
+  s: TrechoSuspeito,
+  ouvidas: PalavraVideo[],
+): PalavraVideo[] | null {
+  const folga = s.tipo === 'esticada' ? 0.05 : -0.03;
+  const dentro = ouvidas
+    .filter((o) => {
+      const meio = (o.i + o.f) / 2;
+      return meio >= s.a - folga && meio <= s.b + folga && /[\p{L}\p{N}]/u.test(o.t);
+    })
+    .sort((x, y) => x.i - y.i);
+  if (!dentro.length || INVENTADO.test(dentro.map((o) => o.t).join(' '))) return null;
+  const ant = s.tipo === 'esticada' ? palavras[s.k - 1] : palavras[s.k];
+  const prox = palavras[s.k + 1];
+  // Nada passa por cima das vizinhas, e cada palavra começa onde a anterior acabou.
+  let piso = Math.max(s.a, ant?.f ?? 0);
+  const teto = Math.min(s.b, prox?.i ?? s.b);
+  const novas: PalavraVideo[] = [];
+  for (const o of dentro) {
+    const i = Math.max(piso, Math.min(o.i, teto));
+    const f = Math.max(i, Math.min(o.f, teto));
+    if (f - i < 0.04) continue;
+    novas.push({ t: o.t, i: r3(i), f: r3(f), conferir: true });
+    piso = f;
+  }
+  if (!novas.length) return null;
+  if (s.tipo === 'vao') return [...palavras.slice(0, s.k + 1), ...novas, ...palavras.slice(s.k + 1)];
+  const alvo = palavras[s.k]!;
+  if (novas.length === 1) {
+    const n = novas[0]!;
+    // Só a própria palavra, mais curta: ela volta para o lugar dela (o resto vira vão, tratado depois).
+    if (comparavel(n.t) !== comparavel(alvo.t) || n.f - n.i > (alvo.f - alvo.i) * 0.7) return null;
+    return palavras.map((p, k) => (k === s.k ? { ...p, i: n.i, f: n.f } : p));
+  }
+  // A palavra de antes continua sendo ela (com o destaque e a grafia que tinha), no tempo certo.
+  const mesma = novas.findIndex((n) => comparavel(n.t) === comparavel(alvo.t));
+  if (mesma >= 0) novas[mesma] = { ...alvo, i: novas[mesma]!.i, f: novas[mesma]!.f };
+  return [...palavras.slice(0, s.k), ...novas, ...palavras.slice(s.k + 1)];
+}
+
+/**
+ * O Whisper costuma esticar o fim da palavra por cima da pausa que vem depois (e o começo por cima
+ * da pausa de antes). Aqui cada palavra é aparada pelo silêncio medido no som: o corte e o "Ouvir"
+ * passam a pegar a palavra, não a pausa em volta. A palavra nunca fica menor que metade do normal.
+ */
+export function apararPelosSilencios(palavras: PalavraVideo[], sil: Silencio[]): PalavraVideo[] {
+  return palavras.map((p) => {
+    const minimo = Math.max(0.08, duracaoEsperada(p.t) * 0.5);
+    let { i, f } = p;
+    for (const s of sil) {
+      if (s.fim <= i || s.inicio >= f) continue;
+      // Silêncio no fim da palavra (vai até o fim dela ou passa).
+      if (s.fim >= f - 0.03 && s.inicio > i) f = Math.max(i + minimo, s.inicio + 0.04);
+      // Silêncio no começo da palavra.
+      else if (s.inicio <= i + 0.03 && s.fim < f) i = Math.max(i, Math.min(f - minimo, s.fim - 0.04));
+    }
+    return i === p.i && f === p.f ? p : { ...p, i: r3(Math.max(0, i)), f: r3(Math.max(i, f)) };
+  });
+}
+
 /** As palavras sem acento, maiúscula e pontuação (para comparar a repetição). */
 const comparavel = (t: string) =>
   t

@@ -776,6 +776,13 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
     expect(fora.status).toBe(200);
     expect(fora.body).toMatchObject({ apoios: [], imagens: [], mudancasPendentes: true });
     expect(arquivos.has(chaveApoio)).toBe(false);
+
+    // v164: ouvir a fala de novo e refazer a edição do zero.
+    const zero = await enviar('post', `/videos/${id}/do-zero`, {});
+    expect(zero.status).toBe(200);
+    expect(zero.body).toMatchObject({ situacao: 'na_fila', mudancasPendentes: false });
+    expect(publicados.at(-1)).toEqual({ nome: 'video.editar', payload: { videoId: id, modo: 'primeira' } });
+    expect((await enviar('post', `/videos/${id}/do-zero`, {})).status).toBe(422);
     await pool.query('DELETE FROM comercial.videos WHERE id = $1', [id]);
   });
 
