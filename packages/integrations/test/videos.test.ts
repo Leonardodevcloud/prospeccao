@@ -400,6 +400,59 @@ describe('composição do HyperFrames', () => {
     expect(html).toContain('\\u003cB\\u003eOI\\u003c/B\\u003e');
     expect(html).toContain("window.__timelines['main'] = tl");
   });
+
+  it('v166: a legenda leva a fonte, as cores e o lugar que a pessoa escolheu', () => {
+    const palavras = fala('o óleo certo dura mais', 0.35).map((p, k) => ({ ...p, k }));
+    const base = {
+      rostos: rostoParado(3),
+      planos: [{ inicio: 0, fim: 3 }],
+      blocos: blocosDaLegenda(palavras, 'acesa'),
+      graficos: [],
+      estilo: 'acesa' as const,
+      medir,
+    };
+    const d = diagramar(base);
+    // A letra maior entra na conta da diagramação (e nunca passa da largura).
+    const maior = diagramar({ ...base, escalaLegenda: 1.3 });
+    const menor = diagramar({ ...base, escalaLegenda: 0.6 });
+    expect(maior.legendas[0]!.tam).toBeGreaterThan(d.legendas[0]!.tam);
+    expect(menor.legendas[0]!.tam).toBeLessThan(d.legendas[0]!.tam);
+    const arquivos = {
+      video: 'assets/editado.mp4',
+      gsap: 'assets/gsap.min.js',
+      fonte800: 'a.woff2',
+      fonte900: 'b.woff2',
+      ultimoQuadro: 'u.png',
+    };
+    const comum = {
+      diagrama: d,
+      estilo: 'acesa' as const,
+      marca: { primaria: '#123456', destaque: '#facc15' },
+      duracao: 3,
+      titulo: { usar: false, linhas: [], tam: 96 },
+      chamada: { frase: 'Quer saber mais?', botao: 'Comente QUERO' },
+    };
+    const padrao = montarComposicao({ ...comum, arquivos });
+    expect(padrao).not.toContain('LegendaEscolhida"; font-weight');
+    const html = montarComposicao({
+      ...comum,
+      arquivos: { ...arquivos, fonteLegenda800: 'p8.woff2', fonteLegenda900: 'p9.woff2' },
+      legenda: {
+        corTexto: '#fff1f2',
+        corAcesa: '#e11d48',
+        corContorno: '#111827',
+        trechos: d.legendas.map((_, n) => ({ dx: n === 0 ? 120 : 0, escala: n === 0 ? 1.2 : 1 })),
+      },
+      desloc: { titulo: 0, animacoes: -80 },
+    });
+    expect(html).toContain('p9.woff2');
+    expect(html).toContain('#e11d48');
+    expect(html).toContain('#fff1f2');
+    expect(html).toContain('#111827');
+    expect(html).toContain('"dx":120');
+    expect(html).toContain('"esc":1.2');
+    expect(html).toContain('"dxAnimacoes":-80');
+  });
 });
 
 describe('v137: fala embolada', async () => {

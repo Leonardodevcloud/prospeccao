@@ -426,6 +426,7 @@ export function rotasVideos(deps: DepsApi): Router {
             'previa-video',
             'apoio',
             'apoio-capa',
+            'limpo',
           ])
           .default('final'),
         baixar: z.enum(['sim', 'nao']).default('nao'),
@@ -441,21 +442,23 @@ export function rotasVideos(deps: DepsApi): Router {
         ? (doApoio?.video ?? null)
         : tipo === 'apoio-capa'
           ? (doApoio?.capa ?? null)
-          : tipo === 'final'
-            ? f.final
-            : tipo === 'capa'
-              ? f.capa
-              : tipo === 'imagem'
-                ? (f.imagens.find((i) => i.id === imagem)?.chave ?? null)
-                : tipo === 'musica'
-                  ? f.musica
-                  : tipo === 'previa'
-                    ? f.previa
-                    : tipo === 'previa-video'
-                      ? f.previaVideo
-                      : f.situacao === 'enviando'
-                        ? null
-                        : f.original;
+          : tipo === 'limpo'
+            ? f.limpo
+            : tipo === 'final'
+              ? f.final
+              : tipo === 'capa'
+                ? f.capa
+                : tipo === 'imagem'
+                  ? (f.imagens.find((i) => i.id === imagem)?.chave ?? null)
+                  : tipo === 'musica'
+                    ? f.musica
+                    : tipo === 'previa'
+                      ? f.previa
+                      : tipo === 'previa-video'
+                        ? f.previaVideo
+                        : f.situacao === 'enviando'
+                          ? null
+                          : f.original;
     if (!chave) throw AppError.naoEncontrado('Arquivo');
     if (tipo === 'final' && baixar === 'sim') await repo.marcarBaixado(pool, id);
     const nome = `${f.titulo.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'video'}.mp4`;

@@ -187,3 +187,33 @@ describe('v142: cortar e devolver um trecho palavra por palavra', () => {
     expect(r).toEqual([devolvido, longe]);
   });
 });
+
+describe('v166: legenda em camadas', async () => {
+  const {
+    lugarDoTrecho,
+    LEGENDA_PADRAO,
+    legendaDoVideoEntrada,
+    opcoesVideoEntrada: opcoes,
+  } = await import('../src/videos.js');
+  it('o lugar do trecho soma o ajuste do vídeo todo com o do trecho e não sai do quadro', () => {
+    const auto = { topo: 1200, altura: 200 };
+    expect(lugarDoTrecho(LEGENDA_PADRAO, 4, auto)).toEqual({ dx: 0, topo: 1200, escala: 1 });
+    const l = { dx: 30, dy: 100, trechos: { '4': { dx: -50, dy: 60, escala: 1.5 } } };
+    expect(lugarDoTrecho(l, 4, auto)).toEqual({ dx: -20, topo: 1360, escala: 1.5 });
+    // Outro trecho leva só o ajuste do vídeo todo.
+    expect(lugarDoTrecho(l, 9, auto)).toEqual({ dx: 30, topo: 1300, escala: 1 });
+    // Não passa do pé nem do topo do quadro (a altura conta a escala).
+    expect(lugarDoTrecho({ ...l, dy: 900 }, 4, auto).topo).toBe(1920 - 300 - 40);
+    expect(lugarDoTrecho({ ...l, dy: -1900 }, 9, auto).topo).toBe(40);
+    expect(lugarDoTrecho({ dx: 900, dy: 0, trechos: {} }, 0, auto).dx).toBe(400);
+  });
+  it('as opções antigas ganham a legenda padrão; fonte e tamanho fora da lista são recusados', () => {
+    expect(opcoes.parse({}).legenda).toEqual(LEGENDA_PADRAO);
+    expect(legendaDoVideoEntrada.safeParse({ ...LEGENDA_PADRAO, fonte: 'comic' }).success).toBe(false);
+    expect(legendaDoVideoEntrada.safeParse({ ...LEGENDA_PADRAO, tamanho: 3 }).success).toBe(false);
+    expect(legendaDoVideoEntrada.safeParse({ ...LEGENDA_PADRAO, corTexto: 'vermelho' }).success).toBe(false);
+    expect(
+      legendaDoVideoEntrada.parse({ ...LEGENDA_PADRAO, fonte: 'bebas', corAcesa: '#e11d48' }).fonte,
+    ).toBe('bebas');
+  });
+});

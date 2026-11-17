@@ -196,6 +196,105 @@ const corHex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Cor no formato #rrggbb.');
 export const coresDoVideoEntrada = z.object({ primaria: corHex, destaque: corHex });
 export type CoresDoVideo = z.infer<typeof coresDoVideoEntrada>;
 
+/* ───────────────────────── v166: legenda em camadas ───────────────────────── */
+
+/** As fontes da legenda (todas já vêm no sistema; o peso forte é o da palavra acesa). */
+export const FONTES_LEGENDA = [
+  { id: 'montserrat', nome: 'Montserrat', pacote: 'montserrat', forte: 900, normal: 800 },
+  { id: 'poppins', nome: 'Poppins', pacote: 'poppins', forte: 900, normal: 800 },
+  { id: 'inter', nome: 'Inter', pacote: 'inter', forte: 900, normal: 800 },
+  { id: 'archivo', nome: 'Archivo', pacote: 'archivo', forte: 900, normal: 800 },
+  { id: 'bebas', nome: 'Bebas Neue', pacote: 'bebas-neue', forte: 400, normal: 400 },
+  { id: 'jakarta', nome: 'Plus Jakarta', pacote: 'plus-jakarta-sans', forte: 800, normal: 800 },
+] as const;
+export type FonteLegenda = (typeof FONTES_LEGENDA)[number]['id'];
+const IDS_FONTE = FONTES_LEGENDA.map((f) => f.id) as [FonteLegenda, ...FonteLegenda[]];
+
+/** O quadro do vídeo, em que as posições das camadas são medidas. */
+export const TELA_DO_VIDEO = { largura: 1080, altura: 1920 } as const;
+/** Abaixo desta altura os botões do Instagram cobrem o vídeo. */
+export const FAIXA_DO_INSTAGRAM = 1670;
+
+/** O quanto uma camada saiu do lugar automático (em pontos do quadro de 1080×1920). */
+const deslocamento = z.object({
+  dx: z.number().min(-1080).max(1080).default(0),
+  dy: z.number().min(-1920).max(1920).default(0),
+});
+const trechoDaLegenda = deslocamento.extend({ escala: z.number().min(0.5).max(1.8).default(1) });
+
+export const legendaDoVideoEntrada = z.object({
+  fonte: z.enum(IDS_FONTE).default('montserrat'),
+  /** O tamanho da letra em relação ao automático (1 = igual). */
+  tamanho: z.number().min(0.6).max(1.6).default(1),
+  corTexto: corHex.nullable().default(null),
+  corAcesa: corHex.nullable().default(null),
+  corContorno: corHex.nullable().default(null),
+  /** A legenda inteira fora do lugar automático. */
+  dx: z.number().min(-1080).max(1080).default(0),
+  dy: z.number().min(-1920).max(1920).default(0),
+  /** Só um trecho fora do lugar: a chave é o índice da primeira palavra do trecho. */
+  trechos: z.record(z.string().regex(/^\d{1,5}$/), trechoDaLegenda).default({}),
+});
+export type LegendaDoVideo = z.infer<typeof legendaDoVideoEntrada>;
+export const LEGENDA_PADRAO: LegendaDoVideo = {
+  fonte: 'montserrat',
+  tamanho: 1,
+  corTexto: null,
+  corAcesa: null,
+  corContorno: null,
+  dx: 0,
+  dy: 0,
+  trechos: {},
+};
+
+export const camadasDoVideoEntrada = z.object({
+  titulo: deslocamento.default({ dx: 0, dy: 0 }),
+  animacoes: deslocamento.default({ dx: 0, dy: 0 }),
+});
+export type CamadasDoVideo = z.infer<typeof camadasDoVideoEntrada>;
+export const CAMADAS_PADRAO: CamadasDoVideo = { titulo: { dx: 0, dy: 0 }, animacoes: { dx: 0, dy: 0 } };
+
+/** Onde um trecho da legenda fica, somando o ajuste do vídeo todo e o do trecho. */
+export function lugarDoTrecho(
+  l: Pick<LegendaDoVideo, 'dx' | 'dy' | 'trechos'>,
+  k: number,
+  auto: { topo: number; altura: number },
+): { dx: number; topo: number; escala: number } {
+  const t = l.trechos[String(k)];
+  const escala = t?.escala ?? 1;
+  const topo = auto.topo + l.dy + (t?.dy ?? 0);
+  return {
+    dx: Math.max(-400, Math.min(400, l.dx + (t?.dx ?? 0))),
+    topo: Math.round(Math.max(40, Math.min(TELA_DO_VIDEO.altura - auto.altura * escala - 40, topo))),
+    escala,
+  };
+}
+
+/** O que o editor guardou da última edição, para a prévia da legenda desenhar igual. */
+export interface DesenhoDoVideo {
+  /** Há o vídeo cortado sem legenda (a prévia toca ele). */
+  temVideo: boolean;
+  estilo: EstiloLegenda;
+  cores: { primaria: string; destaque: string };
+  /** Os trechos no lugar automático (antes do ajuste da pessoa), já no tamanho escolhido. */
+  legendas: {
+    k: number;
+    ini: number;
+    fim: number;
+    topo: number;
+    tam: number;
+    altura: number;
+    /** Cada palavra: texto, começo, fim, forte. */
+    palavras: [string, number, number, 0 | 1][];
+  }[];
+  titulo: { ini: number; fim: number; topo: number; altura: number; texto: string } | null;
+  animacoes: { id: string; ini: number; fim: number; topo: number; altura: number; rotulo: string }[];
+  /** O rosto ao longo do vídeo editado: t, x0, y0, x1, y1. */
+  rostos: [number, number, number, number, number][];
+  /** O tamanho em que os trechos foram medidos (para a prévia escalar ao mudar o tamanho). */
+  tamanho: number;
+}
+
 export const opcoesVideoEntrada = z.object({
   assunto: textoCurto(140).default(''),
   estilo: z.enum(['acesa', 'simples', 'balao']).default('acesa'),
@@ -211,6 +310,9 @@ export const opcoesVideoEntrada = z.object({
   /** v165: como o apoio entra e sai, e o tratamento de cor da imagem. */
   transicaoApoio: z.enum(['variada', 'zoom', 'deslize', 'clarao', 'fusao', 'corte']).default('variada'),
   imagem: z.enum(['vivo', 'cinema', 'original']).default('vivo'),
+  /** v166: a aparência e a posição da legenda, e a posição do título e das animações. */
+  legenda: legendaDoVideoEntrada.default(LEGENDA_PADRAO),
+  camadas: camadasDoVideoEntrada.default(CAMADAS_PADRAO),
 });
 export type OpcoesVideo = z.infer<typeof opcoesVideoEntrada>;
 
@@ -544,6 +646,8 @@ export interface DetalheVideo extends ResumoVideo {
   podeDesfazerPedido: boolean;
   /** v162: os vídeos de apoio (trechos deles entram em tela cheia por cima da fala). */
   apoios: ApoioDoVideo[];
+  /** v166: o desenho da última edição (null: gere de novo uma vez para liberar o ajuste da legenda). */
+  desenho: DesenhoDoVideo | null;
   /** v145: os silêncios do original (a linha do tempo de corte mostra onde tem fala). */
   silencios: { inicio: number; fim: number }[];
   versao: number;
@@ -606,6 +710,9 @@ export const revisaoEntrada = z.object({
   transicao: z.enum(['alternada', 'seco', 'deslizar']).optional(),
   transicaoApoio: z.enum(['variada', 'zoom', 'deslize', 'clarao', 'fusao', 'corte']).optional(),
   imagem: z.enum(['vivo', 'cinema', 'original']).optional(),
+  /** v166: a legenda e as camadas inteiras (a tela manda o objeto completo). */
+  legenda: legendaDoVideoEntrada.optional(),
+  camadas: camadasDoVideoEntrada.optional(),
   momentos: z
     .array(
       z.object({
@@ -764,6 +871,8 @@ export function juntarPropostas(propostas: readonly Pick<PropostaDaEditora, 'rev
     if (p.transicao) r.transicao = p.transicao;
     if (p.transicaoApoio) r.transicaoApoio = p.transicaoApoio;
     if (p.imagem) r.imagem = p.imagem;
+    if (p.legenda) r.legenda = p.legenda;
+    if (p.camadas) r.camadas = p.camadas;
     if (p.musica) r.musica = { ...r.musica, ...p.musica };
     if (p.efeitos) r.efeitos = { ...r.efeitos, ...p.efeitos };
   }

@@ -18,6 +18,7 @@ import {
   apoioParaATela,
   type ConferenciaVideo,
   type CorteVideo,
+  type DesenhoDoVideo,
   type DetalheVideo,
   duracaoDosTrechos,
   type EtapaVideo,
@@ -67,7 +68,13 @@ interface Linha {
   sem_imagem: TrechoSemImagem[] | null;
   som: SomVideo | null;
   conferencia: ConferenciaVideo | null;
-  analise: { silencios?: Silencio[]; duracao?: number; antesDoPedido?: AntesDoPedido | null } | null;
+  analise: {
+    silencios?: Silencio[];
+    duracao?: number;
+    antesDoPedido?: AntesDoPedido | null;
+    /** v166: o desenho da última edição e o vídeo cortado sem legenda (o worker guarda). */
+    desenho?: (Omit<DesenhoDoVideo, 'temVideo'> & { videoChave: string | null }) | null;
+  } | null;
   erro: string | null;
   capa_chave: string | null;
   final_chave: string | null;
@@ -136,6 +143,9 @@ function detalhe(l: Linha): DetalheVideo {
     mudancasPendentes: l.mudancas_pendentes,
     podeDesfazerPedido: !!l.analise?.antesDoPedido,
     apoios: (l.apoios ?? []).map(apoioParaATela),
+    desenho: l.analise?.desenho
+      ? (({ videoChave, ...d }) => ({ ...d, temVideo: !!videoChave }))(l.analise.desenho)
+      : null,
     silencios: (l.analise?.silencios ?? []).map((x) => ({ inicio: x.inicio, fim: x.fim })),
     versao: l.versao,
     textoPost: l.texto_post ?? '',
@@ -182,6 +192,7 @@ export async function arquivos(db: Executor, id: number) {
     musica: l.som?.musica.chave ?? null,
     previa: l.previa_chave ?? null,
     previaVideo: l.previa_video_chave ?? null,
+    limpo: l.analise?.desenho?.videoChave ?? null,
     apoios: (l.apoios ?? []).map((a) => ({
       id: a.id,
       // Antes de o editor preparar, a tela toca o arquivo enviado.
@@ -201,8 +212,10 @@ export function arquivosDoVideo(l: {
   imagens?: ImagemVideo[] | null;
   som?: SomVideo | null;
   apoios?: ApoioGuardado[] | null;
+  analise?: { desenho?: { videoChave: string | null } | null } | null;
 }): string[] {
   return [
+    l.analise?.desenho?.videoChave,
     ...(l.apoios ?? []).flatMap(arquivosDoApoio),
     l.original_chave,
     l.final_chave,
@@ -710,6 +723,15 @@ export async function revisar(
       (opcoes as Record<string, unknown>)[k] = r[k];
       mudou = true;
     }
+  // v166: a legenda (fonte, tamanho, cores, posição) e a posição do título e das animações.
+  if (r.legenda && JSON.stringify(r.legenda) !== JSON.stringify(opcoes.legenda)) {
+    opcoes.legenda = r.legenda;
+    mudou = true;
+  }
+  if (r.camadas && JSON.stringify(r.camadas) !== JSON.stringify(opcoes.camadas)) {
+    opcoes.camadas = r.camadas;
+    mudou = true;
+  }
   if (r.cores !== undefined && JSON.stringify(r.cores) !== JSON.stringify(opcoes.cores ?? null)) {
     opcoes.cores = r.cores;
     mudou = true;

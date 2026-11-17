@@ -35,6 +35,7 @@ import { type EstacaoDaMesa, MesaDoTime } from '../carrossel/Mesa';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
+import { PainelDaLegenda, PalcoDaLegenda, useAjusteDaLegenda } from '../video/AjustarLegenda';
 import { CortarNoVideo } from '../video/CortarNoVideo';
 import { type DetalheComFila, useArquivo, useRevisao, useSituacaoVideos, useVideo } from '../video/dados';
 import { AbaImagens, AbaSomCompleta, MomentosDaFala } from '../video/Enfeites';
@@ -456,7 +457,9 @@ function Revisao({ v }: { v: DetalheComFila }) {
   const revisao = useRevisao(v.id);
   const situacao = useSituacaoVideos();
   // v145: o palco mostra o vídeo pronto ou o editor de cortes no original (com a prévia dos cortes).
-  const [palco, setPalco] = useState<'pronto' | 'cortar'>('pronto');
+  const [palco, setPalco] = useState<'pronto' | 'cortar' | 'legenda'>('pronto');
+  // v166: a legenda em camadas (o palco e o painel dividem o mesmo ajuste).
+  const ajuste = useAjusteDaLegenda(v);
   const [pedidoCorte, setPedidoCorte] = useState<{ inicio: number; fim: number; vez: number } | null>(null);
   const ajustarCorte = (c: { inicio: number; fim: number }) => {
     setPalco('cortar');
@@ -495,6 +498,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
               [
                 ['pronto', 'Vídeo pronto'],
                 ['cortar', 'Cortar no vídeo'],
+                ['legenda', 'Ajustar a legenda'],
               ] as const
             ).map(([id, rotulo]) => (
               <label key={id} className="segmento">
@@ -503,7 +507,10 @@ function Revisao({ v }: { v: DetalheComFila }) {
                   name={`palco-${v.id}`}
                   className="pp-sr"
                   checked={palco === id}
-                  onChange={() => setPalco(id)}
+                  onChange={() => {
+                    setPalco(id);
+                    if (id === 'legenda') setAba('legenda');
+                  }}
                 />
                 {rotulo}
               </label>
@@ -512,6 +519,8 @@ function Revisao({ v }: { v: DetalheComFila }) {
         )}
         {palco === 'cortar' && original.data ? (
           <CortarNoVideo v={v} url={original.data.url} pedido={pedidoCorte} />
+        ) : palco === 'legenda' ? (
+          <PalcoDaLegenda v={v} ajuste={ajuste} />
         ) : final.data ? (
           // biome-ignore lint/a11y/useMediaCaption: a legenda já vai dentro do vídeo (é o que a IA fez)
           <video
@@ -594,6 +603,12 @@ function Revisao({ v }: { v: DetalheComFila }) {
               podeOuvir={!!original.data}
               aoAjustar={original.data ? ajustarCorte : null}
             />
+          )}
+          {aba === 'legenda' && palco === 'legenda' && <PainelDaLegenda v={v} ajuste={ajuste} />}
+          {aba === 'legenda' && palco !== 'legenda' && (
+            <Button size="sm" variant="secondary" icon="layers" onClick={() => setPalco('legenda')}>
+              Ajustar fonte, cores e posição
+            </Button>
           )}
           {aba === 'legenda' && <AbaLegenda v={v} />}
           {aba === 'imagens' && <AbaImagens v={v} situacao={situacao.data} />}

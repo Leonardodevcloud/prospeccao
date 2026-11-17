@@ -6,6 +6,7 @@ import {
   type ApoioGuardado,
   type ConferenciaVideo,
   type CorteVideo,
+  type DesenhoDoVideo,
   type EtapaVideo,
   type ImagemVideo,
   type OpcoesVideo,
@@ -25,6 +26,19 @@ export interface AnaliseVideo {
   fps: number;
   /** Vídeo gravado deitado: o centro do recorte em pé (px do original na largura). */
   recorteX: number | null;
+  /** v166: o desenho da última edição e o vídeo cortado sem legenda (para a prévia da legenda). */
+  desenho?: DesenhoGuardado | null;
+}
+
+export type DesenhoGuardado = Omit<DesenhoDoVideo, 'temVideo'> & { videoChave: string | null };
+
+/** v166: guarda o desenho sem mexer no resto da análise. */
+export async function salvarDesenho(db: Executor, id: number, desenho: DesenhoGuardado) {
+  await db.query(
+    `UPDATE comercial.videos SET analise = coalesce(analise, '{}'::jsonb) || jsonb_build_object('desenho', $2::jsonb)
+      WHERE id = $1`,
+    [id, JSON.stringify(desenho)],
+  );
 }
 
 export interface LinhaVideo {

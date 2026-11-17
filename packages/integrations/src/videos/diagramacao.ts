@@ -235,8 +235,12 @@ export function diagramar(entrada: {
   graficos: Grafico[];
   estilo: EstiloLegenda;
   medir: Medir;
+  /** v166: o tamanho da letra da legenda em relação ao automático (1 = igual). */
+  escalaLegenda?: number;
 }): Diagrama {
   const { rostos, estilo, medir } = entrada;
+  // Os tamanhos possíveis da letra, já na escala pedida (a quebra de linha acompanha).
+  const tamanhos = TAMANHOS[estilo].map((t) => Math.round(t * (entrada.escalaLegenda ?? 1)));
 
   // 1. Gráficos: acima da cabeça; se não couber nem reduzindo, o vídeo vira cartão.
   const cartoes: Cartao[] = entrada.graficos.map((g) => {
@@ -305,7 +309,7 @@ export function diagramar(entrada: {
   }
   const legendas: LegendaPosta[] = [];
   const cabe = (blocos: BlocoLegenda[], livre: number) => {
-    for (const tam of TAMANHOS[estilo]) {
+    for (const tam of tamanhos) {
       const ok = blocos.every((b) => {
         const l = quebrarLinhas(medir, b.palavras, tam, estilo);
         return l.length <= 2 && alturaDoBloco(l.length, tam, estilo) <= livre;
@@ -314,7 +318,7 @@ export function diagramar(entrada: {
     }
     return null;
   };
-  const minimoBom = TAMANHOS[estilo][2]!;
+  const minimoBom = tamanhos[2]!;
   /** Uma altura e um tamanho para o grupo (o plano inteiro ou um bloco só). */
   const posicionar = (inteiros: BlocoLegenda[]) => {
     const a = Math.min(...inteiros.map((b) => b.ini));
@@ -341,7 +345,7 @@ export function diagramar(entrada: {
       }
     }
     const postas: LegendaPosta[] = blocos.map((b) => {
-      const t = tam ?? TAMANHOS[estilo].at(-1)!;
+      const t = tam ?? tamanhos.at(-1)!;
       const linhas = quebrarLinhas(medir, b.palavras, t, estilo);
       const altura = alturaDoBloco(linhas.length, t, estilo);
       return {

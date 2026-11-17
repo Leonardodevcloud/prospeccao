@@ -47,13 +47,16 @@ import {
   type ImagemPosta,
   type ImagemVideo,
   LIMITE_SEGUNDOS_VIDEO,
+  lugarDoTrecho,
   type MomentoVideo,
   momentosDe,
   type OpcoesVideo,
   type PalavraVideo,
+  ROTULO_MOMENTO,
   SEGUNDOS_PREVIA,
   type SomVideo,
   TAMANHO_PARTE_ENVIO,
+  TELA_DO_VIDEO,
   type TrechoSemImagem,
   transicaoDoTrecho,
   trechosQueFicam,
@@ -72,7 +75,7 @@ import {
   sonsPresentes,
 } from './enfeitar.js';
 import { duracaoDoVideo, ErroDoVideo, lerAudioCru, lerInfo, pedacos, rodar } from './ferramentas.js';
-import { ARQUIVOS_FONTE, regua } from './fontes.js';
+import { ARQUIVOS_FONTE, arquivosDaLegenda, regua } from './fontes.js';
 import * as repo from './repositorio.js';
 import { centroDoRosto, mapearRosto, remendarBuracos } from './rosto.js';
 
@@ -610,7 +613,7 @@ export async function editarVideo(
 
     // 6. Diagramação e render.
     await etapa('montando', 64);
-    const medirLegenda = regua(900, -0.01);
+    const medirLegenda = regua(900, -0.01, v.opcoes.legenda.fonte);
     const medirTitulo = regua(900, -0.02);
     const naTela = palavrasNoEditado(palavras, planos);
     const rostosEditado = rostosNoEditado(analise.rostos, planos);
@@ -646,7 +649,61 @@ export async function editarVideo(
       graficos,
       estilo: v.opcoes.estilo,
       medir: medirLegenda,
+      escalaLegenda: v.opcoes.legenda.tamanho,
     });
+    // v166: o desenho no lugar automático fica guardado (a prévia da legenda parte dele); depois
+    // entra o ajuste da pessoa: a legenda, o título e as animações onde ela pôs.
+    const desenhoAutomatico = {
+      legendas: diagrama.legendas.map((l) => ({
+        k: l.palavras[0]!.k,
+        ini: r3(l.ini),
+        fim: r3(l.fim),
+        topo: l.topo,
+        tam: l.tam,
+        altura: l.altura,
+        palavras: l.palavras.map(
+          (p) => [p.t, r3(p.i), r3(p.f), p.forte ? 1 : 0] as [string, number, number, 0 | 1],
+        ),
+      })),
+      titulo: (() => {
+        const c = diagrama.cartoes.find((x) => x.id === 'abertura');
+        return c && c.escala > 0 && titulo
+          ? {
+              ini: 0,
+              fim: r3(c.fim),
+              topo: c.topo,
+              altura: Math.round(c.altura * c.escala),
+              texto: animacoes.titulo.texto,
+            }
+          : null;
+      })(),
+      animacoes: tela.momentos.flatMap((m) => {
+        const c = diagrama.cartoes.find((x) => x.id === m.id);
+        return c && c.escala > 0
+          ? [
+              {
+                id: m.id,
+                ini: r3(m.ini),
+                fim: r3(m.fim),
+                topo: c.topo,
+                altura: Math.round(c.altura * c.escala),
+                rotulo: [ROTULO_MOMENTO[m.tipo], m.titulo || m.numero].filter(Boolean).join(': '),
+              },
+            ]
+          : [];
+      }),
+    };
+    const ajusteDaLegenda = diagrama.legendas.map((l) => {
+      const lugar = lugarDoTrecho(v.opcoes.legenda, l.palavras[0]!.k, l);
+      l.topo = lugar.topo;
+      return { dx: lugar.dx, escala: lugar.escala };
+    });
+    for (const c of diagrama.cartoes) {
+      const d = c.id === 'abertura' ? v.opcoes.camadas.titulo : v.opcoes.camadas.animacoes;
+      if (d.dy) c.topo = Math.round(Math.max(40, Math.min(TELA_DO_VIDEO.altura - 200, c.topo + d.dy)));
+    }
+    const fonteDaLegenda =
+      v.opcoes.legenda.fonte === 'montserrat' ? null : arquivosDaLegenda(v.opcoes.legenda.fonte);
     // v162: os trechos dos vídeos de apoio entram no vídeo cortado, antes do render: a legenda e
     // as animações são desenhadas por cima e a voz continua. Em corte seco (o "flash").
     const deApoio = new Map(imagens.filter((im) => im.origem === 'apoio').map((im) => [im.id, im]));
@@ -717,6 +774,13 @@ export async function editarVideo(
       momentos: tela.momentos,
       imagens: imagensDesenhadas,
       apoios: trechosDeApoio.map((t) => ({ ini: t.ini, fim: t.fim, estilo: t.estilo })),
+      legenda: {
+        corTexto: v.opcoes.legenda.corTexto,
+        corAcesa: v.opcoes.legenda.corAcesa,
+        corContorno: v.opcoes.legenda.corContorno,
+        trechos: ajusteDaLegenda,
+      },
+      desloc: { titulo: v.opcoes.camadas.titulo.dx, animacoes: v.opcoes.camadas.animacoes.dx },
       transicao: v.opcoes.transicao,
       medir: regua(900, 0),
       arquivos: {
@@ -725,8 +789,72 @@ export async function editarVideo(
         fonte800: 'assets/legenda-800.woff2',
         fonte900: 'assets/legenda-900.woff2',
         ultimoQuadro: 'assets/ultimo.png',
+        ...(fonteDaLegenda
+          ? {
+              fonteLegenda800: 'assets/legenda-escolhida-800.woff2',
+              fonteLegenda900: 'assets/legenda-escolhida-900.woff2',
+            }
+          : {}),
       },
     });
+    // v166: o vídeo cortado sem legenda, pequeno, para a prévia da legenda na revisão.
+    const limpo = join(pasta, 'limpo.mp4');
+    const limpoChave = `videos/${v.conta_id}/${videoId}/limpo-${Date.now().toString(36)}.mp4`;
+    const temLimpo = await rodar(
+      'ffmpeg',
+      [
+        '-v',
+        'error',
+        '-y',
+        '-i',
+        editado,
+        '-vf',
+        'scale=540:960',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '28',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '64k',
+        '-movflags',
+        '+faststart',
+        limpo,
+      ],
+      { timeoutMs: 10 * 60_000 },
+    )
+      .then(() => subirArquivo(arm, limpoChave, limpo, 'video/mp4'))
+      .then(() => true)
+      .catch((erro) => {
+        log.warn({ err: erro, videoId }, 'a prévia sem legenda não foi guardada');
+        return false;
+      });
+    const desenho: repo.DesenhoGuardado = {
+      ...desenhoAutomatico,
+      estilo: v.opcoes.estilo,
+      cores: { primaria: marca.primaria, destaque: marca.destaque },
+      tamanho: v.opcoes.legenda.tamanho,
+      // O rosto a cada meio segundo (a guia da prévia).
+      rostos: rostosEditado
+        .filter((q, n) => q.caixas.length && n % Math.max(1, Math.round((analise.fps || 4) / 2)) === 0)
+        .map((q) => {
+          const x0 = Math.min(...q.caixas.map((c) => c.x0));
+          const y0 = Math.min(...q.caixas.map((c) => c.y0));
+          const x1 = Math.max(...q.caixas.map((c) => c.x1));
+          const y1 = Math.max(...q.caixas.map((c) => c.y1));
+          return [r3(q.t), Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1)] as [
+            number,
+            number,
+            number,
+            number,
+            number,
+          ];
+        }),
+      videoChave: temLimpo ? limpoChave : null,
+    };
     await etapa('gerando', 70);
     const renderizado = join(pasta, 'renderizado.mp4');
     const total = duracaoTotal({ duracao: duracaoEditado, chamada: chamadaFinal });
@@ -751,10 +879,15 @@ export async function editarVideo(
       {
         editado,
         ultimo,
-        extras: imagensDesenhadas.map((i) => ({
-          origem: preparo.arquivos.get(i.id)!,
-          nome: `img-${i.id}.jpg`,
-        })),
+        extras: [
+          ...imagensDesenhadas.map((i) => ({ origem: preparo.arquivos.get(i.id)!, nome: `img-${i.id}.jpg` })),
+          ...(fonteDaLegenda
+            ? [
+                { origem: fonteDaLegenda[800], nome: 'legenda-escolhida-800.woff2' },
+                { origem: fonteDaLegenda[900], nome: 'legenda-escolhida-900.woff2' },
+              ]
+            : []),
+        ],
       },
       renderizado,
     );
@@ -857,7 +990,9 @@ export async function editarVideo(
     const capaChave = `${prefixo}/capa-${sufixo}.jpg`;
     await subirArquivo(arm, finalChave, pronto, 'video/mp4');
     await arm.enviar(capaChave, new Uint8Array(await readFile(capa)), 'image/jpeg');
-    const antigos = [v.final_chave, v.capa_chave].filter((c): c is string => !!c);
+    const antigos = [v.final_chave, v.capa_chave, v.analise?.desenho?.videoChave].filter(
+      (c): c is string => !!c,
+    );
 
     const segundosServidor = (Date.now() - comeco) / 1000;
     const custoUsd =
@@ -867,6 +1002,7 @@ export async function editarVideo(
       (custos.transcricaoSeg / 3600) * deps.custoTranscricaoHora +
       (segundosServidor / 3600) * deps.custoServidorHora;
     const enfeites = await repo.mesclarComAtual(db, videoId, versaoLida, { animacoes, imagens, som });
+    await repo.salvarDesenho(db, videoId, desenho);
     const { contouAgora } = await repo.concluir(db, videoId, {
       finalChave,
       capaChave,

@@ -389,12 +389,20 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ar. Legenda em camadas e zoom (v166)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos** (o build instala cinco pacotes de fonte novos); a **web** na Vercel.
+2. [ ] Em um vídeo já editado, clicar em **Gerar de novo** uma vez: só depois disso o modo "Ajustar a legenda" tem o vídeo sem legenda e o lugar de cada trecho.
+3. [ ] No modo **Ajustar a legenda**: trocar a fonte, o tamanho e a cor da palavra acesa; arrastar um trecho que bate no ombro ("Só este trecho") e depois a legenda toda ("O vídeo todo"); arrastar o título e as animações. Gerar de novo e comparar o vídeo com a prévia.
+4. [ ] Conferir se a quebra das linhas da prévia bate com a do vídeo em fonte grande (a prévia quebra pelo navegador; o vídeo, pela medida da fonte no editor). Se diferir muito, avisar.
+5. [ ] Conferir os três jeitos de aproximação no rosto (eles se revezam a cada destaque): algum ficou exagerado?
+6. [ ] Em aberto: voz de estúdio com IA (DeepFilterNet: precisa ser testado dentro do Docker do worker antes de entrar), texto atrás da pessoa.
+
 ## 4aq. Transições do apoio e tratamento da imagem (v165)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
 2. [ ] Gerar de novo um vídeo com apoio e conferir as quatro transições (elas se revezam): alguma ficou exagerada? Dá para fixar uma só na aba Animações › Transição do vídeo de apoio.
 3. [ ] Conferir a imagem em **Vivo** (o padrão novo) contra Original e Cinema no mesmo vídeo: a pele ficou natural? Se preferir outro padrão, avisar.
 4. [ ] Conferir o tempo de edição: a passada da imagem recodifica o vídeo cortado uma vez a mais.
-5. [ ] **Aprovar o mockup** "Legenda em camadas: ajustar e arrastar". Só depois do ok ele é codado.
+5. [x] Mockup "Legenda em camadas" aprovado e codado na v166.
 6. [ ] Em aberto: voz de estúdio com DeepFilterNet (precisa testar o binário no Docker do worker), texto atrás da pessoa, estilos novos de zoom no rosto.
 
 ## 4ap. Mapeamento das palavras na fala (v164)

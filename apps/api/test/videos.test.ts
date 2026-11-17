@@ -786,6 +786,67 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
     await pool.query('DELETE FROM comercial.videos WHERE id = $1', [id]);
   });
 
+  it('v166: a revisão guarda a fonte, as cores e o lugar da legenda e das camadas', async () => {
+    await pool.query(`UPDATE comercial.videos SET situacao = 'pronto' WHERE id = $1`, [videoId]);
+    const antes = await ler(`/videos/${videoId}`);
+    expect(antes.body.opcoes.legenda).toMatchObject({ fonte: 'montserrat', tamanho: 1, dx: 0, dy: 0 });
+    // Vídeo editado antes da v166: ainda não há o desenho para a prévia.
+    expect(antes.body.desenho).toBeNull();
+    const legenda = {
+      fonte: 'poppins',
+      tamanho: 1.2,
+      corTexto: null,
+      corAcesa: '#e11d48',
+      corContorno: null,
+      dx: 0,
+      dy: 80,
+      trechos: { '4': { dx: 0, dy: 120, escala: 1.1 } },
+    };
+    const camadas = { titulo: { dx: 0, dy: 40 }, animacoes: { dx: -60, dy: 0 } };
+    const r = await enviar('put', `/videos/${videoId}/revisao`, {
+      versao: antes.body.versao,
+      legenda,
+      camadas,
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.opcoes.legenda).toEqual(legenda);
+    expect(r.body.opcoes.camadas).toEqual(camadas);
+    expect(r.body.mudancasPendentes).toBe(true);
+    const ruim = await enviar('put', `/videos/${videoId}/revisao`, {
+      versao: r.body.versao,
+      legenda: { ...legenda, fonte: 'comic' },
+    });
+    expect(ruim.status).toBe(422);
+    // Com o desenho guardado pelo editor, a tela recebe o desenho e o link do vídeo sem legenda.
+    await pool.query(
+      `UPDATE comercial.videos SET analise = COALESCE(analise, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
+      [
+        videoId,
+        JSON.stringify({
+          desenho: {
+            videoChave: 'videos/1/x/limpo-1.mp4',
+            estilo: 'acesa',
+            cores: { primaria: '#7c3aed', destaque: '#facc15' },
+            legendas: [
+              { k: 0, ini: 0, fim: 1, topo: 1200, tam: 84, altura: 120, palavras: [['OI', 0, 1, 0]] },
+            ],
+            titulo: null,
+            animacoes: [],
+            rostos: [],
+            tamanho: 1.2,
+          },
+        }),
+      ],
+    );
+    arquivos.set('videos/1/x/limpo-1.mp4', new Uint8Array([1]));
+    const d = await ler(`/videos/${videoId}`);
+    expect(d.body.desenho).toMatchObject({ temVideo: true, tamanho: 1.2 });
+    expect(d.body.desenho.videoChave).toBeUndefined();
+    const link = await ler(`/videos/${videoId}/arquivo?tipo=limpo`);
+    expect(link.status).toBe(200);
+    expect(typeof link.body.url).toBe('string');
+  });
+
   it('palavras sempre escritas assim e apagar o vídeo com os arquivos', async () => {
     const v = await enviar('put', '/videos/preferencias/vocabulario', {
       palavras: ['Horizonte', '5W30', 'Horizonte'],

@@ -25,6 +25,18 @@ export interface EntradaComposicao {
    * fica estático e a legenda (embaixo do queixo) não se mexe.
    */
   empurroes?: { ini: number; fim: number; ox: number; oy: number }[];
+  /**
+   * v166: o ajuste da pessoa na legenda. As cores (null: as do estilo) e, para cada trecho na ordem
+   * do diagrama, o deslocamento para o lado e a escala (o topo já vem ajustado no diagrama).
+   */
+  legenda?: {
+    corTexto: string | null;
+    corAcesa: string | null;
+    corContorno: string | null;
+    trechos: { dx: number; escala: number }[];
+  };
+  /** v166: o quanto o título e as animações saíram para o lado (o topo já vem no diagrama). */
+  desloc?: { titulo: number; animacoes: number };
   /** v165: os trechos de vídeo de apoio (já no vídeo): a aproximação e o clarão são desenhados aqui. */
   apoios?: { ini: number; fim: number; estilo: string }[];
   estilo: EstiloLegenda;
@@ -34,7 +46,16 @@ export interface EntradaComposicao {
   titulo: { usar: boolean; linhas: string[]; tam: number } | null;
   chamada: { frase: string; botao: string } | null;
   /** Caminhos dentro do projeto (assets/…). */
-  arquivos: { video: string; gsap: string; fonte800: string; fonte900: string; ultimoQuadro: string };
+  arquivos: {
+    video: string;
+    gsap: string;
+    fonte800: string;
+    fonte900: string;
+    ultimoQuadro: string;
+    /** v166: a fonte escolhida para a legenda (o título e as animações seguem na Montserrat). */
+    fonteLegenda800?: string;
+    fonteLegenda900?: string;
+  };
   momentos?: MomentoNaTela[];
   imagens?: ImagemNaTela[];
   transicao?: TransicaoCortes;
@@ -154,10 +175,18 @@ export function montarComposicao(e: EntradaComposicao): string {
     estilo: e.estilo,
     cores: { primaria, destaque },
     cartoes: e.diagrama.cartoes,
-    legendas: e.diagrama.legendas.map((l) => ({
+    legenda: {
+      texto: e.legenda?.corTexto ?? null,
+      contorno: e.legenda?.corContorno ?? null,
+    },
+    dxAnimacoes: Math.round(e.desloc?.animacoes ?? 0),
+    dxTitulo: Math.round(e.desloc?.titulo ?? 0),
+    legendas: e.diagrama.legendas.map((l, n) => ({
       ini: l.ini,
       fim: l.fim,
       topo: l.topo,
+      dx: Math.round(e.legenda?.trechos[n]?.dx ?? 0),
+      esc: e.legenda?.trechos[n]?.escala ?? 1,
       tam: l.tam,
       gap: espacoEntre(l.tam),
       linhas: l.linhas.map((ln) =>
@@ -207,6 +236,13 @@ export function montarComposicao(e: EntradaComposicao): string {
 <style>
 @font-face { font-family: "Legenda"; font-weight: 800; src: url("${esc(a.fonte800)}") format("woff2"); }
 @font-face { font-family: "Legenda"; font-weight: 900; src: url("${esc(a.fonte900)}") format("woff2"); }
+${
+  a.fonteLegenda800 && a.fonteLegenda900
+    ? `@font-face { font-family: "LegendaEscolhida"; font-weight: 800; src: url("${esc(a.fonteLegenda800)}") format("woff2"); }
+@font-face { font-family: "LegendaEscolhida"; font-weight: 900; src: url("${esc(a.fonteLegenda900)}") format("woff2"); }
+#legendas { font-family: "LegendaEscolhida", "Legenda", sans-serif; }`
+    : ''
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
 #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; font-family: "Legenda", sans-serif; }
@@ -223,7 +259,7 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 .pal { position: relative; display: inline-block; line-height: 1.12; color: #fff; isolation: isolate; }
 .e-acesa .pal { font-weight: 900; text-transform: uppercase; letter-spacing: -.01em; padding: 0 14px; paint-order: stroke fill; filter: drop-shadow(0 8px 16px rgba(0,0,0,.45)); }
 .e-acesa .pal.forte { color: ${destaque}; }
-.e-acesa .fundo { position: absolute; inset: 4px 0 4px 0; border-radius: 16px; background: ${primaria}; z-index: -1; transform: scale(.6); opacity: 0; }
+.e-acesa .fundo { position: absolute; inset: 4px 0 4px 0; border-radius: 16px; background: ${cor(e.legenda?.corAcesa ?? '', primaria)}; z-index: -1; transform: scale(.6); opacity: 0; }
 .e-acesa .pal.forte .fundo { background: ${destaque}; }
 .e-simples .pal { font-weight: 800; line-height: 1.18; paint-order: stroke fill; filter: drop-shadow(0 6px 12px rgba(0,0,0,.5)); }
 .e-simples .pal.forte { color: ${destaque}; }
@@ -352,7 +388,12 @@ for (const L of DADOS.legendas) {
   const b = document.createElement('div');
   b.className = 'bloco e-' + DADOS.estilo;
   b.style.top = L.topo + 'px';
+  if (L.dx && DADOS.estilo !== 'balao') b.style.left = (110 + L.dx) + 'px';
+  if (L.dx && DADOS.estilo === 'balao') b.style.left = 'calc(50% + ' + L.dx + 'px)';
   caixa.appendChild(b);
+  // v166: a cor do texto e do contorno escolhidas (o balão tem a letra escura dele).
+  const corTexto = DADOS.estilo !== 'balao' && DADOS.legenda.texto ? DADOS.legenda.texto : '#ffffff';
+  const corContorno = DADOS.legenda.contorno || 'rgba(10,0,25,.92)';
   const els = [];
   for (const linha of L.linhas) {
     const ln = document.createElement('div');
@@ -363,8 +404,9 @@ for (const L of DADOS.legendas) {
       const s = document.createElement('span');
       s.className = 'pal' + (forte ? ' forte' : '');
       s.style.fontSize = L.tam + 'px';
-      if (DADOS.estilo === 'acesa') s.style.webkitTextStroke = Math.round(L.tam * 0.13) + 'px rgba(10,0,25,.92)';
-      if (DADOS.estilo === 'simples') s.style.webkitTextStroke = Math.round(L.tam * 0.09) + 'px rgba(10,0,25,.9)';
+      if (DADOS.estilo === 'acesa') s.style.webkitTextStroke = Math.round(L.tam * 0.13) + 'px ' + corContorno;
+      if (DADOS.estilo === 'simples') s.style.webkitTextStroke = Math.round(L.tam * 0.09) + 'px ' + corContorno;
+      if (DADOS.estilo !== 'balao' && !forte) s.style.color = corTexto;
       s.textContent = txt;
       const fundo = document.createElement('span');
       fundo.className = 'fundo';
@@ -374,16 +416,16 @@ for (const L of DADOS.legendas) {
     }
   }
   const centro = DADOS.estilo === 'balao' ? { xPercent: -50 } : {};
-  tl.fromTo(b, { opacity: 0, y: 22, scale: 0.92, ...centro }, { opacity: 1, y: 0, scale: 1, ...centro, duration: 0.14, ease: 'back.out(2)' }, L.ini);
+  tl.fromTo(b, { opacity: 0, y: 22, scale: 0.92 * L.esc, ...centro }, { opacity: 1, y: 0, scale: L.esc, ...centro, duration: 0.14, ease: 'back.out(2)' }, L.ini);
   tl.set(b, { opacity: 0 }, L.fim);
   if (DADOS.estilo !== 'acesa') continue;
   for (const { s, fundo, i, f, forte } of els) {
     tl.to(fundo, { opacity: 1, scale: 1, duration: 0.09, ease: 'back.out(3)' }, i);
     tl.fromTo(s, { scale: 1 }, { scale: forte ? 1.12 : 1.06, duration: 0.09, ease: 'power2.out' }, i);
-    tl.set(s, { color: '#ffffff' }, i);
+    tl.set(s, { color: corTexto }, i);
     tl.to(s, { scale: 1, duration: 0.12, ease: 'power2.inOut' }, Math.max(i + 0.09, f - 0.06));
     tl.to(fundo, { opacity: 0, scale: 0.85, duration: 0.08 }, f);
-    tl.set(s, { color: forte ? DADOS.cores.destaque : '#ffffff' }, f);
+    tl.set(s, { color: forte ? DADOS.cores.destaque : corTexto }, f);
   }
 }
 
@@ -391,7 +433,7 @@ for (const L of DADOS.legendas) {
 if (DADOS.titulo) {
   const c = DADOS.cartoes.find((x) => x.id === 'abertura');
   if (c && c.escala <= 0) gsap.set('#abertura', { display: 'none' });
-  else if (c) gsap.set('#abertura', { top: c.topo, scale: c.escala });
+  else if (c) gsap.set('#abertura', { top: c.topo, scale: c.escala, left: DADOS.dxTitulo, right: -DADOS.dxTitulo });
   tl.from('#abertura .titulo span', { opacity: 0, y: 36, duration: 0.45, ease: 'power3.out', stagger: 0.12 }, 0.1);
   tl.to('#abertura .traco', { width: 340, duration: 0.45, ease: 'power3.inOut' }, 0.45);
   // Sai antes do cartão voltar para a tela cheia, para nunca encostar na cabeça.
@@ -410,6 +452,8 @@ function porNoLugar(sel, id, ini, fim, deslizar) {
     return null;
   }
   if (c) gsap.set(el, { top: c.topo, scale: c.escala });
+  // v166: as animações arrastadas para o lado (as imagens e a oferta acompanham).
+  if (DADOS.dxAnimacoes) gsap.set(el, { left: 110 + DADOS.dxAnimacoes });
   const entra = ini + (c && c.s < 1 ? T * 0.7 : 0);
   const sai = c && c.s < 1 ? Math.max(entra + 0.4, fim - T - 0.3) : Math.max(entra + 0.4, fim - 0.25);
   if (deslizar) tl.fromTo(el, { opacity: 1, x: 1080 }, { x: 0, duration: 0.45, ease: 'power3.out' }, entra);
@@ -419,12 +463,23 @@ function porNoLugar(sel, id, ini, fim, deslizar) {
   return { el, entra, sai };
 }
 const comCartao = (a, b) => DADOS.cartoes.some((c) => c.s < 1 && c.ini < b && a < c.fim);
+let zooms = 0;
 for (const m of DADOS.momentos) {
   if (m.tipo === 'destaque') {
     if (comCartao(m.ini, m.fim) || !m.ancora) continue;
     tl.set('#fala', { transformOrigin: m.ancora.x + 'px ' + m.ancora.y + 'px' }, m.ini);
-    tl.to('#fala', { scale: 1.1, duration: 0.35, ease: 'power2.out' }, m.ini);
-    tl.to('#fala', { scale: 1, duration: 0.3, ease: 'power2.inOut' }, Math.max(m.ini + 0.4, m.fim - 0.3));
+    // v166: três jeitos de aproximar, revezando: o impulso seco, o empurrão lento e os dois degraus.
+    const jeito = zooms++ % 3;
+    const volta = Math.max(m.ini + 0.4, m.fim - 0.3);
+    if (jeito === 0) {
+      tl.to('#fala', { scale: 1.15, duration: 0.16, ease: 'power3.out' }, m.ini);
+    } else if (jeito === 1) {
+      tl.to('#fala', { scale: 1.13, duration: Math.max(0.4, volta - m.ini), ease: 'none' }, m.ini);
+    } else {
+      tl.to('#fala', { scale: 1.08, duration: 0.14, ease: 'power2.out' }, m.ini);
+      tl.to('#fala', { scale: 1.17, duration: 0.14, ease: 'power2.out' }, Math.min(volta - 0.15, m.ini + Math.max(0.3, (volta - m.ini) / 2)));
+    }
+    tl.to('#fala', { scale: 1, duration: 0.3, ease: 'power2.inOut' }, volta);
     continue;
   }
   const lugar = porNoLugar('#g-' + m.id, m.id, m.ini, m.fim, false);
