@@ -389,13 +389,22 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4an. Vídeos de apoio (v162)
+1. [ ] **Migration 110** (`110_videos_apoio.sql`: coluna `apoios` em `comercial.videos`; roda sozinha no deploy da api, como as outras).
+2. [ ] Redeploy da **api** e do **worker-videos**; a **web** na Vercel. Sem variável nova.
+3. [ ] Editar um vídeo novo mandando 1 ou 2 vídeos de apoio junto. Conferir: os trechos entram onde a fala cita o que o apoio mostra? A voz continua limpa (sem som do apoio)? A legenda fica por cima? O corte para o apoio e de volta fica seco, sem quadro preto?
+4. [ ] Apoio gravado deitado: conferir se o corte no centro mostra o que importa (se não, gravar em pé).
+5. [ ] Na revisão, aba Imagens: mandar outro apoio, pôr um trecho num momento, mudar o segundo em que começa, trocar uma imagem por apoio, tirar o apoio. Gerar de novo e conferir.
+6. [ ] Olhar o tempo de edição (preparar o apoio e a passada extra do ffmpeg somam de 20 s a 1 min) e o espaço no armazenamento (cada apoio guarda o original e a versão preparada).
+7. [ ] Em aberto: pedir trecho de apoio pela conversa com a editora; transição suave e zoom leve no apoio; usar o som do apoio (ex.: ronco da moto) baixinho.
+
 ## 4am. Peça à editora na revisão do vídeo (v161)
 1. [ ] Sem migration. Redeploy da **api** (e do **worker-videos**, se a v160 ainda não subiu); a **web** na Vercel. Precisa da `ANTHROPIC_CHAVE` na api (a mesma dos carrosséis); sem ela a tela avisa que a editora não está ligada.
 2. [ ] Abrir um vídeo pronto e pedir: um corte citando a fala, uma lista ou nomes num ponto (com "Falar deste momento"), volume da música e um pedido impossível ("troca minha fala por…"). Conferir se as propostas fazem sentido, se "Ver no vídeo" leva ao ponto, se Aplicar muda as abas e se Desfazer volta.
 3. [ ] Gerar de novo e conferir o vídeo: o corte ficou limpo? A animação nova entrou na hora da fala?
 4. [ ] Olhar a tela no computador (largo e médio) e no celular.
 5. [ ] Acompanhar o custo em Saúde e consumo (cada pedido é uma chamada ao modelo principal; entra no consumo dos carrosséis).
-6. [ ] Em aberto: a conversa não fica guardada; o tempo do "Falar deste momento" é o do vídeo já gerado (com mudanças pendentes de corte pode haver diferença de 1 a 2 s); **vídeo de apoio (b-roll)** pedido em 17/11, a desenhar com mockup.
+6. [ ] Em aberto: a conversa não fica guardada; o tempo do "Falar deste momento" é o do vídeo já gerado (com mudanças pendentes de corte pode haver diferença de 1 a 2 s); o vídeo de apoio pedido em 17/11 saiu na v162.
 
 ## 4al. Editor de vídeo: cortes mais sensíveis e mais elementos (v160)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.

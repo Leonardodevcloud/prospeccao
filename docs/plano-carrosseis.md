@@ -98,6 +98,7 @@ Cada ideia na aba Ideias mostra de onde veio (CAMPANHA, CONVERSAS, INSTAGRAM, OB
 21. **v158: arte com texto do sistema e a mesa do time (feita em 12/11, sem migration).** A Arte da IA passa a ser a cena da IA mais o texto escrito pelo código; card de frase maior; título quebrado pelo código em todos os modelos; camadas em até 2 slides do miolo com recorte local; visão ilustrada do time trabalhando em carrosséis, cards e vídeos.
 22. **v160: vídeo (feita em 17/11, sem migration).** Não mexe em carrosséis nem em cards. No editor de vídeo: cortes mais sensíveis a interrupções de fala e três animações novas (nomes um a um, comparação, troca), com toda enumeração virando lista. O campo para falar com a editora na revisão está em mockup, aguardando aprovação.
 23. **v161: vídeo (feita em 17/11, sem migration).** Não mexe em carrosséis nem em cards; usa o mesmo cliente do Claude e o mesmo medidor de consumo dos carrosséis para o "Peça à editora" da revisão do vídeo.
+24. **v162: vídeo (feita em 17/11, migration 110).** Não mexe em carrosséis nem em cards: vídeos de apoio no editor de vídeo.
 
 ## Em aberto
 - Sem limite de carrosséis: acompanhar o custo por conta em Saúde e consumo (Claude). Se algum cliente fugir muito da média, o master pode pôr um limite só para ele em Plano e módulos.

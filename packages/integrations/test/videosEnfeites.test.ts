@@ -10,6 +10,7 @@ import type { ClienteClaude } from '../src/carrosseis/claude.js';
 import {
   aplicarRegras,
   argumentosDaMistura,
+  argumentosDoApoio,
   type ContextoDoPedido,
   comporMusica,
   conferirImagem,
@@ -20,6 +21,7 @@ import {
   type DecisaoEnfeites,
   efeitosDoVideo,
   enfeitesNaTela,
+  enfeitesPelasRegras,
   falaDoEditado,
   ganhoDaMusica,
   gerarImagem,
@@ -871,5 +873,58 @@ describe('v161: peça à editora', () => {
     expect(
       lerPedido({ resposta: 'Qual trecho?', opcoes: ['O começo', 'O fim'], mudancas: [] }, c),
     ).toMatchObject({ resposta: 'Qual trecho?', opcoes: ['O começo', 'O fim'], propostas: [] });
+  });
+});
+
+describe('v162: vídeos de apoio', () => {
+  const apoios = [
+    { id: 'a1', descricao: 'Moto passando na rua', duracao: 5 },
+    { id: 'a2', descricao: 'Fachada da loja', duracao: 3 },
+  ];
+  it('entram mesmo com "sem imagens", em tela cheia, cada vez num pedaço diferente do apoio', () => {
+    const d = decisao({
+      imagens: [
+        img(10, 20, { apoioId: 'a1' }),
+        img(40, 50, { apoioId: 'a1' }),
+        img(70, 80, { apoioId: 'a2', encaixe: 'acima' }),
+        img(90, 95, { apoioId: 'zz' }),
+      ],
+    });
+    const r = aplicarRegras(d, { ...base, modo: 'nenhuma', apoios });
+    expect(r.imagens.map((i) => [i.origem, i.apoioId, i.apoioDe, i.encaixe, i.chave])).toEqual([
+      ['apoio', 'a1', 0, 'cheia', null],
+      // O primeiro trecho gastou 4 s dos 5: o segundo volta ao começo.
+      ['apoio', 'a1', 0, 'cheia', null],
+      ['apoio', 'a2', 0, 'cheia', null],
+    ]);
+    // O apoio de 3 s não estica além do que tem.
+    const t = r.imagens[2]!;
+    expect(t.fim - t.inicio).toBeLessThanOrEqual(3.01);
+    // Sem apoio e sem imagens: nada entra.
+    expect(aplicarRegras(d, { ...base, modo: 'nenhuma' }).imagens).toHaveLength(0);
+  });
+  it('sem a IA, um trecho a cada 7 s revezando os apoios', () => {
+    const d = enfeitesPelasRegras(opcoesVideoEntrada.parse({}), { palavras, ficam, apoios });
+    expect(d.imagens.length).toBeGreaterThanOrEqual(4);
+    expect(d.imagens.slice(0, 3).map((i) => i.apoioId)).toEqual(['a1', 'a2', 'a1']);
+    expect(aplicarRegras(d, { ...base, apoios }).imagens.every((i) => i.origem === 'apoio')).toBe(true);
+    expect(enfeitesPelasRegras(opcoesVideoEntrada.parse({})).imagens).toHaveLength(0);
+  });
+  it('monta o ffmpeg que põe os trechos por cima do vídeo cortado, sem mexer no som', () => {
+    const a = argumentosDoApoio({
+      editado: 'e.mp4',
+      saida: 's.mp4',
+      trechos: [
+        { arquivo: 'a1.mp4', de: 0, ini: 3, fim: 5.5 },
+        { arquivo: 'a1.mp4', de: 2.5, ini: 9, fim: 11 },
+        { arquivo: 'a2.mp4', de: 0, ini: 12, fim: 12.1 },
+      ],
+    });
+    expect(a.filter((x) => x === '-i')).toHaveLength(3);
+    const filtro = a[a.indexOf('-filter_complex') + 1]!;
+    expect(filtro).toContain("[0:v][a0]overlay=enable='between(t,3.000,5.500)'");
+    expect(filtro).toContain('[2:v]setpts=PTS-STARTPTS+9.000/TB[a1]');
+    expect(a.join(' ')).toContain('-map [v1] -map 0:a? -c:a copy');
+    expect(a.slice(a.indexOf('-ss'), a.indexOf('-ss') + 4)).toEqual(['-ss', '0.000', '-t', '2.500']);
   });
 });

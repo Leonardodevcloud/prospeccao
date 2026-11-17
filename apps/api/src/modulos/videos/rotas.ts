@@ -14,6 +14,7 @@ import {
   LIMITE_BYTES_VIDEO,
   LIMITE_SEGUNDOS_VIDEO,
   MAX_FOTO_BYTES,
+  novoApoioEntrada,
   novoVideoEntrada,
   pedidoEditoraEntrada,
   revisaoEntrada,
@@ -329,6 +330,72 @@ export function rotasVideos(deps: DepsApi): Router {
     res.json(await repo.buscar(pool, id));
   });
 
+  /* ── v162: vídeos de apoio (b-roll), enviados em partes como o principal ── */
+
+  r.post('/:id/apoios', async (req, res) => {
+    const id = idDaRota(req);
+    const d = corpo(req, novoApoioEntrada);
+    const a = exigirArmazenamento();
+    const novo = await repo.criarApoio(
+      pool,
+      id,
+      d,
+      (apoioId) => `videos/${conta()}/${id}/apoio-${apoioId}-${Date.now().toString(36)}`,
+    );
+    const envioId = await a.iniciarEmPartes(novo.chave, d.tipo);
+    await repo.mudarApoio(pool, id, novo.id, (x) => ({ ...x, envioId }));
+    res.status(201).json({ apoioId: novo.id, tamanhoParte: TAMANHO_PARTE_ENVIO });
+  });
+
+  r.put(
+    '/:id/apoios/:apoioId/partes/:numero',
+    express.raw({ type: () => true, limit: TAMANHO_PARTE_ENVIO + 1024 }),
+    async (req, res) => {
+      const id = idDaRota(req);
+      const apoioId = String(req.params.apoioId);
+      const numero = z.coerce.number().int().min(1).max(200).parse(req.params.numero);
+      const bytes = req.body as Buffer;
+      if (!Buffer.isBuffer(bytes) || !bytes.length) throw AppError.invalido('Parte vazia.');
+      const ap = await repo.apoio(pool, id, apoioId);
+      if (ap.enviado || !ap.envioId) throw AppError.invalido('Este vídeo de apoio já foi enviado.');
+      const etag = await exigirArmazenamento().enviarParte(
+        ap.chave,
+        ap.envioId,
+        numero,
+        new Uint8Array(bytes),
+      );
+      await repo.mudarApoio(pool, id, apoioId, (x) => ({
+        ...x,
+        partes: [...x.partes.filter((p) => p.numero !== numero), { numero, etag }],
+      }));
+      res.json({ ok: true });
+    },
+  );
+
+  r.post('/:id/apoios/:apoioId/concluir', async (req, res) => {
+    const id = idDaRota(req);
+    const apoioId = String(req.params.apoioId);
+    const { partes } = corpo(req, z.object({ partes: z.number().int().min(1).max(200) }));
+    const ap = await repo.apoio(pool, id, apoioId);
+    if (ap.enviado || !ap.envioId) throw AppError.invalido('Este vídeo de apoio já foi enviado.');
+    const lista = [...ap.partes].sort((a, b) => a.numero - b.numero);
+    if (lista.length !== partes || lista.some((p, k) => p.numero !== k + 1))
+      throw AppError.invalido('O envio não chegou inteiro. Tente enviar de novo.');
+    await exigirArmazenamento().concluirEmPartes(ap.chave, ap.envioId, lista);
+    await repo.mudarApoio(pool, id, apoioId, (x) => ({ ...x, enviado: true, envioId: null, partes: [] }));
+    res.json(await repo.buscar(pool, id));
+  });
+
+  r.delete('/:id/apoios/:apoioId', async (req, res) => {
+    const x = await repo.apagarApoio(pool, idDaRota(req), String(req.params.apoioId));
+    const a = arm();
+    if (a) {
+      if (x.envioId) await a.cancelarEmPartes(x.chave, x.envioId).catch(() => undefined);
+      if (x.arquivos.length) await a.apagar(x.arquivos).catch(() => undefined);
+    }
+    res.json(x.detalhe);
+  });
+
   /* ── O vídeo ── */
 
   r.get('/:id', async (req, res) => {
@@ -340,34 +407,50 @@ export function rotasVideos(deps: DepsApi): Router {
   /** Link temporário: o vídeo pronto (para tocar ou baixar), a capa ou o original. */
   r.get('/:id/arquivo', async (req, res) => {
     const id = idDaRota(req);
-    const { tipo, baixar, imagem } = consulta(
+    const { tipo, baixar, imagem, apoio } = consulta(
       req,
       z.object({
         tipo: z
-          .enum(['final', 'capa', 'original', 'imagem', 'musica', 'previa', 'previa-video'])
+          .enum([
+            'final',
+            'capa',
+            'original',
+            'imagem',
+            'musica',
+            'previa',
+            'previa-video',
+            'apoio',
+            'apoio-capa',
+          ])
           .default('final'),
         baixar: z.enum(['sim', 'nao']).default('nao'),
         imagem: z.string().max(40).optional(),
+        apoio: z.string().max(40).optional(),
       }),
     );
     const a = exigirArmazenamento();
     const f = await repo.arquivos(pool, id);
+    const doApoio = f.apoios.find((x) => x.id === apoio);
     const chave =
-      tipo === 'final'
-        ? f.final
-        : tipo === 'capa'
-          ? f.capa
-          : tipo === 'imagem'
-            ? (f.imagens.find((i) => i.id === imagem)?.chave ?? null)
-            : tipo === 'musica'
-              ? f.musica
-              : tipo === 'previa'
-                ? f.previa
-                : tipo === 'previa-video'
-                  ? f.previaVideo
-                  : f.situacao === 'enviando'
-                    ? null
-                    : f.original;
+      tipo === 'apoio'
+        ? (doApoio?.video ?? null)
+        : tipo === 'apoio-capa'
+          ? (doApoio?.capa ?? null)
+          : tipo === 'final'
+            ? f.final
+            : tipo === 'capa'
+              ? f.capa
+              : tipo === 'imagem'
+                ? (f.imagens.find((i) => i.id === imagem)?.chave ?? null)
+                : tipo === 'musica'
+                  ? f.musica
+                  : tipo === 'previa'
+                    ? f.previa
+                    : tipo === 'previa-video'
+                      ? f.previaVideo
+                      : f.situacao === 'enviando'
+                        ? null
+                        : f.original;
     if (!chave) throw AppError.naoEncontrado('Arquivo');
     if (tipo === 'final' && baixar === 'sim') await repo.marcarBaixado(pool, id);
     const nome = `${f.titulo.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'video'}.mp4`;

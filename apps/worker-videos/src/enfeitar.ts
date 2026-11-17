@@ -6,6 +6,7 @@ import type { Executor } from '@prospeccao/db';
 import type { ClienteClaude } from '@prospeccao/integrations/carrosseis';
 import type { Armazenamento } from '@prospeccao/integrations/reuniao';
 import {
+  type ApoioParaIa,
   aplicarRegras,
   BIBLIOTECA_EFEITOS,
   conferirImagem,
@@ -220,6 +221,7 @@ export async function planejar(
     comTitulo: boolean;
     fotos: FotoParaIa[];
     promocoes: PromocaoParaIa[];
+    apoios?: ApoioParaIa[];
   },
   custos: CustosEnfeites,
 ): Promise<{
@@ -229,15 +231,19 @@ export async function planejar(
   som: SomVideo;
 }> {
   const claude = medidor(deps, custos);
+  // Sem a IA, os vídeos de apoio entram assim mesmo (um trecho a cada 7 s de fala).
+  const apoioSemIa = e.apoios?.length
+    ? { palavras: e.palavras, ficam: e.ficam, apoios: e.apoios }
+    : undefined;
   let d: DecisaoEnfeites;
   if (claude) {
     try {
       d = await pedirEnfeites(claude, { ...e, fotos: e.opcoes.imagens === 'nenhuma' ? [] : e.fotos });
     } catch (erro) {
       deps.log.warn({ err: erro }, 'a IA não propôs os enfeites; seguindo sem animações e imagens');
-      d = enfeitesPelasRegras(e.opcoes);
+      d = enfeitesPelasRegras(e.opcoes, apoioSemIa);
     }
-  } else d = enfeitesPelasRegras(e.opcoes);
+  } else d = enfeitesPelasRegras(e.opcoes, apoioSemIa);
   const r = aplicarRegras(d, {
     palavras: e.palavras,
     ficam: e.ficam,
@@ -246,6 +252,7 @@ export async function planejar(
     modo: deps.gerarImagem ? e.opcoes.imagens : e.opcoes.imagens === 'ia' ? 'fotos' : e.opcoes.imagens,
     fotos: e.fotos,
     promocoes: e.promocoes,
+    apoios: e.apoios,
   });
   const som = somPadrao(e.opcoes, { liberada: deps.musicaLiberada(e.contaId), antigo: false });
   som.musica.clima = climaDasOpcoes(e.opcoes) ?? d.musica.clima;
@@ -266,6 +273,8 @@ export async function prepararImagens(
     opcoes: OpcoesVideo;
     imagens: ImagemVideo[];
     fotos: (FotoParaIa & { chave: string })[];
+    /** v162: os vídeos de apoio já no disco (id → arquivo). */
+    apoios?: Map<string, string>;
     pasta: string;
     aoGuardar: (imagens: ImagemVideo[]) => Promise<void>;
   },
@@ -278,6 +287,13 @@ export async function prepararImagens(
   for (const im of imagens) {
     if (!im.usar) continue;
     try {
+      if (im.origem === 'apoio') {
+        const local = im.apoioId ? e.apoios?.get(im.apoioId) : undefined;
+        if (!local) throw new Error('o vídeo de apoio não está mais neste vídeo');
+        arquivos.set(im.id, local);
+        im.conferencia = null;
+        continue;
+      }
       if (im.pedido === 'escolher') {
         if (!claude) throw new Error('sem a IA para escolher');
         const ok = await pedirImagemPara(claude, {

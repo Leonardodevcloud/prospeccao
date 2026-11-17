@@ -7,11 +7,13 @@ import {
   tempoComImagens,
 } from '@prospeccao/integrations/videos';
 import { AppError } from '@prospeccao/shared';
-import type { novoVideoEntrada } from '@prospeccao/shared/videos';
+import type { novoApoioEntrada, novoVideoEntrada } from '@prospeccao/shared/videos';
 import {
   type AndamentoVideo,
   type AnimacoesVideo,
+  type ApoioGuardado,
   aplicarTrechos,
+  apoioParaATela,
   type ConferenciaVideo,
   type CorteVideo,
   type DetalheVideo,
@@ -21,6 +23,8 @@ import {
   IMAGEM_SEM_NO_COMECO,
   IMAGENS_FRACAO_MAXIMA,
   type ImagemVideo,
+  LIMITE_SEGUNDOS_APOIO,
+  MAX_APOIOS_VIDEO,
   MAX_IMAGENS_VIDEO,
   MAX_VIDEOS_CONTA,
   MOMENTOS_COM_ITENS,
@@ -69,6 +73,7 @@ interface Linha {
   envio_id: string | null;
   envio_partes: { numero: number; etag: string }[];
   mudancas_pendentes: boolean;
+  apoios?: ApoioGuardado[] | null;
   versao: number;
   criado_em: string;
   pronto_em: string | null;
@@ -128,6 +133,7 @@ function detalhe(l: Linha): DetalheVideo {
     conferencia: l.conferencia,
     mudancasPendentes: l.mudancas_pendentes,
     podeDesfazerPedido: !!l.analise?.antesDoPedido,
+    apoios: (l.apoios ?? []).map(apoioParaATela),
     silencios: (l.analise?.silencios ?? []).map((x) => ({ inicio: x.inicio, fim: x.fim })),
     versao: l.versao,
     textoPost: l.texto_post ?? '',
@@ -174,6 +180,12 @@ export async function arquivos(db: Executor, id: number) {
     musica: l.som?.musica.chave ?? null,
     previa: l.previa_chave ?? null,
     previaVideo: l.previa_video_chave ?? null,
+    apoios: (l.apoios ?? []).map((a) => ({
+      id: a.id,
+      // Antes de o editor preparar, a tela toca o arquivo enviado.
+      video: a.chaveNorm ?? (a.enviado ? a.chave : null),
+      capa: a.capaChave,
+    })),
   };
 }
 
@@ -186,8 +198,10 @@ export function arquivosDoVideo(l: {
   previa_video_chave?: string | null;
   imagens?: ImagemVideo[] | null;
   som?: SomVideo | null;
+  apoios?: ApoioGuardado[] | null;
 }): string[] {
   return [
+    ...(l.apoios ?? []).flatMap(arquivosDoApoio),
     l.original_chave,
     l.final_chave,
     l.capa_chave,
@@ -294,6 +308,113 @@ export async function paraFila(db: Executor, id: number) {
   );
 }
 
+/* ───────────────────────── v162: vídeos de apoio ───────────────────────── */
+
+const arquivosDoApoio = (a: ApoioGuardado): string[] =>
+  [a.chave, a.chaveNorm, a.capaChave].filter((c): c is string => !!c);
+
+async function salvarApoios(db: Executor, id: number, apoios: ApoioGuardado[], pendente = false) {
+  const { rows } = await db.query<Linha>(
+    `UPDATE comercial.videos SET apoios = $2, mudancas_pendentes = mudancas_pendentes OR $3, atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
+    [id, JSON.stringify(apoios), pendente],
+  );
+  return rows[0]!;
+}
+
+/** Começa o envio de um vídeo de apoio: vale enquanto o principal sobe e depois, na revisão. */
+export async function criarApoio(
+  db: Executor,
+  id: number,
+  d: z.infer<typeof novoApoioEntrada>,
+  chave: (apoioId: string) => string,
+): Promise<ApoioGuardado> {
+  const l = await linha(db, id);
+  if (l.situacao === 'na_fila' || l.situacao === 'editando')
+    throw AppError.invalido('Espere a edição terminar para mandar um vídeo de apoio.');
+  if (d.duracao != null && d.duracao > LIMITE_SEGUNDOS_APOIO + 1)
+    throw AppError.invalido(
+      `O vídeo de apoio passa de ${Math.round(LIMITE_SEGUNDOS_APOIO / 60)} minutos. Corte um trecho antes de enviar.`,
+    );
+  const apoios = l.apoios ?? [];
+  if (apoios.length >= MAX_APOIOS_VIDEO)
+    throw AppError.invalido(
+      `Até ${MAX_APOIOS_VIDEO} vídeos de apoio por vídeo: tire um antes de mandar outro.`,
+    );
+  const apoioId = `a${Date.now().toString(36)}${apoios.length}`;
+  const novo: ApoioGuardado = {
+    id: apoioId,
+    nome: d.nome.slice(0, 200),
+    tipo: d.tipo,
+    bytes: d.bytes,
+    chave: chave(apoioId),
+    envioId: null,
+    partes: [],
+    enviado: false,
+    chaveNorm: null,
+    capaChave: null,
+    duracao: d.duracao,
+    descricao: '',
+    erro: null,
+  };
+  await salvarApoios(db, id, [...apoios, novo]);
+  return novo;
+}
+
+/** Muda um apoio (o envio anda uma parte por vez: o navegador manda em fila). */
+export async function mudarApoio(
+  db: Executor,
+  id: number,
+  apoioId: string,
+  mudar: (a: ApoioGuardado) => ApoioGuardado,
+): Promise<ApoioGuardado> {
+  const l = await linha(db, id);
+  const atual = (l.apoios ?? []).find((a) => a.id === apoioId);
+  if (!atual) throw AppError.naoEncontrado('Vídeo de apoio');
+  const novo = mudar(atual);
+  await salvarApoios(
+    db,
+    id,
+    (l.apoios ?? []).map((a) => (a.id === apoioId ? novo : a)),
+  );
+  return novo;
+}
+
+export async function apoio(db: Executor, id: number, apoioId: string): Promise<ApoioGuardado> {
+  const l = await linha(db, id);
+  const a = (l.apoios ?? []).find((x) => x.id === apoioId);
+  if (!a) throw AppError.naoEncontrado('Vídeo de apoio');
+  return a;
+}
+
+/** Tira um apoio: os trechos dele saem do vídeo; devolve os arquivos para apagar. */
+export async function apagarApoio(
+  db: Executor,
+  id: number,
+  apoioId: string,
+): Promise<{ detalhe: DetalheVideo; arquivos: string[]; envioId: string | null; chave: string }> {
+  const l = await linha(db, id);
+  if (l.situacao === 'na_fila' || l.situacao === 'editando')
+    throw AppError.invalido('Espere a edição terminar para tirar o vídeo de apoio.');
+  const a = (l.apoios ?? []).find((x) => x.id === apoioId);
+  if (!a) throw AppError.naoEncontrado('Vídeo de apoio');
+  const antes = l.imagens ?? [];
+  const imagens = antes.filter((i) => i.apoioId !== apoioId);
+  const usado = antes.some((i) => i.apoioId === apoioId && i.usar);
+  const { rows } = await db.query<Linha>(
+    `UPDATE comercial.videos SET apoios = $2, imagens = $3, mudancas_pendentes = mudancas_pendentes OR $4,
+            versao = versao + 1, atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
+    [id, JSON.stringify((l.apoios ?? []).filter((x) => x.id !== apoioId)), JSON.stringify(imagens), usado],
+  );
+  return {
+    detalhe: detalhe(rows[0]!),
+    arquivos: a.enviado ? arquivosDoApoio(a) : arquivosDoApoio(a).filter((c) => c !== a.chave),
+    envioId: a.enviado ? null : a.envioId,
+    chave: a.chave,
+  };
+}
+
 /** A fala entre dois instantes do original (para a imagem ou animação posta à mão). */
 function falaEntre(palavras: PalavraVideo[], a: number, b: number) {
   return palavras
@@ -345,12 +466,28 @@ export async function usarFotoPropria(
 
 const DURACAO_IMAGEM_MANUAL = 3;
 
+/** Onde o próximo trecho de um apoio começa: depois do último já usado (volta ao começo se acabar). */
+function proximoTrechoDoApoio(
+  imagens: ImagemVideo[],
+  a: { id: string; duracao: number | null },
+  segundos: number,
+): number {
+  const fimDoUltimo = Math.max(
+    0,
+    ...imagens.filter((i) => i.apoioId === a.id).map((i) => (i.apoioDe ?? 0) + (i.fim - i.inicio)),
+  );
+  return a.duracao != null && fimDoUltimo + segundos <= a.duracao ? Math.round(fimDoUltimo * 100) / 100 : 0;
+}
+
 /** Uma imagem nova no momento `em` (tempo do editado), conferindo as regras. */
 function novaImagemNoMomento(
   l: Linha,
   imagens: ImagemVideo[],
   em: number,
-  o: Pick<ImagemVideo, 'origem' | 'chave' | 'fotoId'> & { descricao?: string },
+  o: Pick<ImagemVideo, 'origem' | 'chave' | 'fotoId'> & {
+    descricao?: string;
+    apoio?: { id: string; duracao: number | null };
+  },
 ): ImagemVideo {
   if (imagens.filter((i) => i.usar).length >= MAX_IMAGENS_VIDEO)
     throw AppError.invalido(`Até ${MAX_IMAGENS_VIDEO} imagens por vídeo: tire uma antes de pôr outra.`);
@@ -359,7 +496,10 @@ function novaImagemNoMomento(
   const editado = duracaoDosTrechos(ficam);
   if (em < IMAGEM_SEM_NO_COMECO)
     throw AppError.invalido('Nos 2 primeiros segundos fica o seu rosto: escolha um momento depois.');
-  const fimE = Math.min(editado - 0.6, em + DURACAO_IMAGEM_MANUAL);
+  const fimE = Math.min(
+    editado - 0.6,
+    em + Math.min(DURACAO_IMAGEM_MANUAL, o.apoio?.duracao ?? DURACAO_IMAGEM_MANUAL),
+  );
   if (fimE - em < 1.4) throw AppError.invalido('Esse momento está muito perto do fim do vídeo.');
   const ini = tempoNoOriginal(em, ficam);
   const fim = tempoNoOriginal(fimE, ficam);
@@ -385,12 +525,13 @@ function novaImagemNoMomento(
     fotoId: o.fotoId,
     chave: o.chave,
     descricao: o.descricao ?? '',
-    encaixe: 'acima',
+    encaixe: o.apoio ? 'cheia' : 'acima',
     usar: true,
-    pedido: o.chave ? null : 'escolher',
+    pedido: o.chave || o.apoio ? null : 'escolher',
     conferencia: null,
     posta: null,
     manual: true,
+    ...(o.apoio ? { apoioId: o.apoio.id, apoioDe: proximoTrechoDoApoio(imagens, o.apoio, fimE - em) } : {}),
   };
 }
 
@@ -650,24 +791,52 @@ export async function revisar(
         pedido: null,
         conferencia: null,
         usar: true,
+        apoioId: null,
       };
+    }
+    // v162: trocar por um trecho de um vídeo de apoio, ou mudar onde o trecho começa.
+    if (e.apoioId != null && e.apoioId !== atual.apoioId) {
+      const a = (l.apoios ?? []).find((x) => x.id === e.apoioId);
+      if (!a?.enviado) throw AppError.invalido('Esse vídeo de apoio não está mais neste vídeo.');
+      novo = {
+        ...novo,
+        origem: 'apoio',
+        fotoId: null,
+        chave: null,
+        descricao: a.descricao,
+        encaixe: 'cheia',
+        pedido: null,
+        conferencia: null,
+        usar: true,
+        apoioId: a.id,
+        apoioDe: proximoTrechoDoApoio(imagens, a, atual.fim - atual.inicio),
+      };
+    }
+    if (e.apoioDe != null && novo.origem === 'apoio') {
+      const a = (l.apoios ?? []).find((x) => x.id === novo.apoioId);
+      const sobra = (a?.duracao ?? LIMITE_SEGUNDOS_APOIO) - (novo.fim - novo.inicio);
+      novo = { ...novo, apoioDe: Math.max(0, Math.min(e.apoioDe, Math.max(0, sobra))) };
     }
     if (e.pedido === 'gerar_outra') {
       if (!deps.imagensGeradas)
         throw AppError.invalido(
           'A geração de imagens não está ligada. Troque por uma foto da empresa ou sua.',
         );
-      novo = { ...novo, origem: 'gerada', fotoId: null, pedido: 'gerar_outra', usar: true };
+      novo = { ...novo, origem: 'gerada', fotoId: null, pedido: 'gerar_outra', usar: true, apoioId: null };
     } else if (e.pedido === null && atual.pedido === 'gerar_outra') novo = { ...novo, pedido: null };
     if (JSON.stringify(novo) !== JSON.stringify(atual)) mudou = true;
     imagens[k] = novo;
   }
   if (r.novaImagem) {
     const f = r.novaImagem.fotoId != null ? await fotoDaEmpresa(db, r.novaImagem.fotoId) : null;
+    const ap = r.novaImagem.apoioId ? (l.apoios ?? []).find((x) => x.id === r.novaImagem!.apoioId) : null;
+    if (r.novaImagem.apoioId && !ap?.enviado)
+      throw AppError.invalido('Esse vídeo de apoio não está mais neste vídeo.');
     imagens = [
       ...imagens,
       novaImagemNoMomento({ ...l, cortes }, imagens, r.novaImagem.em, {
-        origem: f ? 'empresa' : 'gerada',
+        ...(ap ? { apoio: { id: ap.id, duracao: ap.duracao } } : {}),
+        origem: ap ? 'apoio' : f ? 'empresa' : 'gerada',
         chave: f?.chave ?? null,
         fotoId: f?.id ?? null,
         descricao: f ? (f.descricao_ia ?? f.nome) : '',

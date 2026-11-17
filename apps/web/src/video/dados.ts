@@ -72,6 +72,40 @@ export function useArquivo(
   });
 }
 
+/** v162: link temporário de um vídeo de apoio (o vídeo ou a capa). */
+export function useArquivoDoApoio(
+  id: number,
+  apoioId: string,
+  tipo: 'apoio' | 'apoio-capa',
+  ligado: boolean,
+) {
+  return useQuery({
+    queryKey: ['videos', id, 'arquivo', tipo, apoioId],
+    queryFn: () =>
+      api<{ url: string }>(`/videos/${id}/arquivo?tipo=${tipo}&apoio=${encodeURIComponent(apoioId)}`),
+    enabled: ligado,
+    staleTime: 40 * 60_000,
+  });
+}
+
+/** v162: manda ou tira um vídeo de apoio na revisão (a tela mostra o andamento do envio). */
+export function useApoios(id: number) {
+  const cliente = useQueryClient();
+  const guardar = (d: DetalheVideo) => {
+    cliente.setQueryData<DetalheComFila>(['videos', id], (x) => (x ? { ...x, ...d } : { ...d, naFrente: 0 }));
+  };
+  const enviar = useMutation({
+    mutationFn: (p: { arquivo: File; aoAndar: (f: number) => void }) => enviarApoio(id, p.arquivo, p.aoAndar),
+    onSuccess: guardar,
+  });
+  const tirar = useMutation({
+    mutationFn: (apoioId: string) =>
+      api<DetalheVideo>(`/videos/${id}/apoios/${apoioId}`, { metodo: 'DELETE' }),
+    onSuccess: guardar,
+  });
+  return { enviar, tirar };
+}
+
 export function useFotosDaEmpresa(ligado: boolean) {
   return useQuery({
     queryKey: ['videos', 'fotos'],
@@ -175,10 +209,45 @@ async function enviarParte(caminho: string, corpo: Blob): Promise<void> {
 }
 
 /** Manda o vídeo em partes e põe na fila de edição. `aoAndar` recebe de 0 a 1. */
+/** v162: manda um vídeo de apoio em partes (uma por vez). Devolve o vídeo com o apoio na lista. */
+export async function enviarApoio(
+  videoId: number,
+  arquivo: File,
+  aoAndar: (fracao: number) => void = () => undefined,
+): Promise<DetalheVideo> {
+  const duracao = await duracaoDoArquivo(arquivo);
+  const { apoioId, tamanhoParte } = await api<{ apoioId: string; tamanhoParte: number }>(
+    `/videos/${videoId}/apoios`,
+    {
+      metodo: 'POST',
+      corpo: { nome: arquivo.name, tipo: arquivo.type || 'video/mp4', bytes: arquivo.size, duracao },
+    },
+  );
+  const total = Math.max(1, Math.ceil(arquivo.size / tamanhoParte));
+  try {
+    for (let n = 0; n < total; n++) {
+      await enviarParte(
+        `/videos/${videoId}/apoios/${apoioId}/partes/${n + 1}`,
+        arquivo.slice(n * tamanhoParte, (n + 1) * tamanhoParte),
+      );
+      aoAndar((n + 1) / total);
+    }
+    return await api<DetalheVideo>(`/videos/${videoId}/apoios/${apoioId}/concluir`, {
+      metodo: 'POST',
+      corpo: { partes: total },
+    });
+  } catch (erro) {
+    await api(`/videos/${videoId}/apoios/${apoioId}`, { metodo: 'DELETE' }).catch(() => undefined);
+    throw erro;
+  }
+}
+
 export async function enviarVideo(
   arquivo: File,
   dados: { titulo: string; opcoes: OpcoesVideo; duracao: number | null },
   aoAndar: (fracao: number) => void,
+  /** v162: vídeos de apoio, enviados antes de o principal entrar na fila. */
+  apoios: File[] = [],
 ): Promise<DetalheVideo> {
   const { id, tamanhoParte } = await api<{ id: number; tamanhoParte: number }>('/videos', {
     metodo: 'POST',
@@ -186,12 +255,18 @@ export async function enviarVideo(
   });
   const total = Math.max(1, Math.ceil(arquivo.size / tamanhoParte));
   try {
+    // O andamento conta os bytes de tudo (o principal e os apoios).
+    const bytes = arquivo.size + apoios.reduce((s, a) => s + a.size, 0) || 1;
+    let feitos = 0;
     for (let n = 0; n < total; n++) {
-      await enviarParte(
-        `/videos/${id}/partes/${n + 1}`,
-        arquivo.slice(n * tamanhoParte, (n + 1) * tamanhoParte),
-      );
-      aoAndar((n + 1) / total);
+      const parte = arquivo.slice(n * tamanhoParte, (n + 1) * tamanhoParte);
+      await enviarParte(`/videos/${id}/partes/${n + 1}`, parte);
+      feitos += parte.size;
+      aoAndar(feitos / bytes);
+    }
+    for (const a of apoios) {
+      await enviarApoio(id, a, (f) => aoAndar((feitos + a.size * f) / bytes));
+      feitos += a.size;
     }
     return await api<DetalheVideo>(`/videos/${id}/concluir`, { metodo: 'POST', corpo: { partes: total } });
   } catch (erro) {

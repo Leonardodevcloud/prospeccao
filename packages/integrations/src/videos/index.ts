@@ -1,3 +1,4 @@
+export * from './apoio.js';
 export * from './cena.js';
 export * from './composicao.js';
 export * from './cortes.js';

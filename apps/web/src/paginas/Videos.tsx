@@ -3,6 +3,9 @@ import {
   ESTILOS_LEGENDA,
   type EstiloLegenda,
   fmtDuracao,
+  LIMITE_BYTES_APOIO,
+  LIMITE_SEGUNDOS_APOIO,
+  MAX_APOIOS_VIDEO,
   MODOS_IMAGENS,
   type ModoImagens,
   type MusicaDoVideo,
@@ -267,6 +270,9 @@ function NovoVideo({
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [duracao, setDuracao] = useState<number | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  // v162: vídeos de apoio (trechos entram em tela cheia por cima da fala).
+  const [apoios, setApoios] = useState<File[]>([]);
+  const [avisoApoio, setAvisoApoio] = useState<string | null>(null);
   const [f, setF] = useState<FormNovo>(FORM_INICIAL);
   const [andamento, setAndamento] = useState<number | null>(null);
   const [arrastando, setArrastando] = useState(false);
@@ -304,6 +310,37 @@ function NovoVideo({
     setDuracao(d);
   };
 
+  const juntarApoios = async (novos: File[]) => {
+    setAvisoApoio(null);
+    const lista = [...apoios];
+    for (const a of novos) {
+      if (lista.length >= MAX_APOIOS_VIDEO) {
+        setAvisoApoio(`Até ${MAX_APOIOS_VIDEO} vídeos de apoio por vídeo.`);
+        break;
+      }
+      if (
+        !(TIPOS_VIDEO as readonly string[]).includes(a.type) &&
+        !/\.(mp4|mov|m4v|webm|mkv|3gp)$/i.test(a.name)
+      ) {
+        setAvisoApoio(`"${a.name}" não é um vídeo que dê para usar. Use MP4 ou MOV.`);
+        continue;
+      }
+      if (a.size > LIMITE_BYTES_APOIO) {
+        setAvisoApoio(`"${a.name}" passa de 500 MB. Envie um trecho menor.`);
+        continue;
+      }
+      const d = await duracaoDoArquivo(a);
+      if (d != null && d > LIMITE_SEGUNDOS_APOIO + 1) {
+        setAvisoApoio(
+          `"${a.name}" tem ${fmtDuracao(d)}. O limite do apoio é ${fmtDuracao(LIMITE_SEGUNDOS_APOIO)}.`,
+        );
+        continue;
+      }
+      lista.push(a);
+    }
+    setApoios(lista);
+  };
+
   const enviar = useMutation({
     mutationFn: async () => {
       if (!arquivo) throw new Error('Escolha o vídeo.');
@@ -319,11 +356,12 @@ function NovoVideo({
         efeitos: f.efeitos,
       });
       setAndamento(0);
-      return enviarVideo(arquivo, { titulo: f.assunto, opcoes, duracao }, setAndamento);
+      return enviarVideo(arquivo, { titulo: f.assunto, opcoes, duracao }, setAndamento, apoios);
     },
     onSuccess: (v) => {
       void cliente.invalidateQueries({ queryKey: ['videos'] });
       setArquivo(null);
+      setApoios([]);
       setF(FORM_INICIAL);
       setAndamento(null);
       navegar(`/videos/${v.id}`);
@@ -393,6 +431,50 @@ function NovoVideo({
           />
         </label>
         {aviso && <Mensagem tipo="aviso">{aviso}</Mensagem>}
+
+        <div className="campo videos__apoios">
+          <span className="campo__rotulo">Vídeos de apoio (opcional)</span>
+          <span className="campo__dica">
+            Cenas para entrar em flashes por cima da sua fala: a moto passando, a loja, o produto em uso. A
+            sua voz continua e o apoio entra sem som, em tela cheia, por 2 a 4 segundos. Até{' '}
+            {MAX_APOIOS_VIDEO} vídeos de até {fmtDuracao(LIMITE_SEGUNDOS_APOIO)}.
+          </span>
+          {apoios.length > 0 && (
+            <ul className="videos__apoios-lista">
+              {apoios.map((a, n) => (
+                <li key={`${a.name}-${a.size}`}>
+                  <Icon name="video" size={16} />
+                  <span className="videos__apoios-nome">{a.name}</span>
+                  <span className="quieto mono">{(a.size / 1024 / 1024).toFixed(0)} MB</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    icon="x"
+                    aria-label={`Tirar ${a.name}`}
+                    onClick={() => setApoios((x) => x.filter((_, k) => k !== n))}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+          {apoios.length < MAX_APOIOS_VIDEO && (
+            <label className="videos__apoios-mais">
+              <Icon name="plus" size={16} /> Adicionar vídeo de apoio
+              <input
+                type="file"
+                accept="video/*"
+                multiple
+                className="pp-sr"
+                onChange={(e) => {
+                  void juntarApoios([...(e.target.files ?? [])]);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          )}
+          {avisoApoio && <Mensagem tipo="aviso">{avisoApoio}</Mensagem>}
+        </div>
 
         <div className="campo">
           <label htmlFor={`${id}-assunto`}>Sobre o que é o vídeo</label>

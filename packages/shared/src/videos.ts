@@ -287,12 +287,80 @@ export interface AnimacoesVideo {
   momentos?: MomentoVideo[];
 }
 
-export type OrigemImagem = 'empresa' | 'gerada' | 'propria';
+export type OrigemImagem = 'empresa' | 'gerada' | 'propria' | 'apoio';
 export const ROTULO_ORIGEM_IMAGEM: Record<OrigemImagem, string> = {
   empresa: 'Foto da empresa',
   gerada: 'Gerada pela IA',
   propria: 'Foto sua',
+  apoio: 'Vídeo de apoio',
 };
+
+/* ───────────────────────── v162: vídeos de apoio (b-roll) ───────────────────────── */
+
+export const MAX_APOIOS_VIDEO = 3;
+export const LIMITE_SEGUNDOS_APOIO = 180;
+export const LIMITE_BYTES_APOIO = 500 * 1024 * 1024;
+
+/** Um vídeo de apoio como fica guardado (o envio em partes e os arquivos preparados pelo editor). */
+export interface ApoioGuardado {
+  id: string;
+  nome: string;
+  tipo: string;
+  bytes: number;
+  /** O arquivo enviado. */
+  chave: string;
+  envioId: string | null;
+  partes: { numero: number; etag: string }[];
+  /** O envio terminou. */
+  enviado: boolean;
+  /** Preparado pelo editor: 1080×1920, sem som (null: ainda não, ou não deu). */
+  chaveNorm: string | null;
+  capaChave: string | null;
+  duracao: number | null;
+  /** O que o vídeo mostra (a IA de visão olha três quadros). */
+  descricao: string;
+  erro: string | null;
+}
+
+/** O que a tela sabe de um vídeo de apoio. */
+export interface ApoioDoVideo {
+  id: string;
+  nome: string;
+  duracao: number | null;
+  descricao: string;
+  enviado: boolean;
+  /** O editor já preparou (dá para usar no próximo gerar mesmo sem isso: ele prepara na hora). */
+  preparado: boolean;
+  temCapa: boolean;
+  erro: string | null;
+}
+export const apoioParaATela = (a: ApoioGuardado): ApoioDoVideo => ({
+  id: a.id,
+  nome: a.nome,
+  duracao: a.duracao,
+  descricao: a.descricao,
+  enviado: a.enviado,
+  preparado: !!a.chaveNorm,
+  temCapa: !!a.capaChave,
+  erro: a.erro,
+});
+
+/** Começa o envio de um vídeo de apoio (em partes, como o principal). */
+export const novoApoioEntrada = z.object({
+  nome: z.string().trim().min(1).max(200),
+  tipo: z.enum(TIPOS_VIDEO),
+  bytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(LIMITE_BYTES_APOIO, 'O vídeo de apoio passa de 500 MB. Corte um trecho antes de enviar.'),
+  duracao: z
+    .number()
+    .min(0)
+    .max(24 * 3600)
+    .nullable()
+    .default(null),
+});
 export type EncaixeImagem = 'acima' | 'cheia';
 /** Como a imagem entrou no último vídeo gerado. */
 export type ImagemPosta = 'acima' | 'cartao' | 'cheia';
@@ -324,6 +392,9 @@ export interface ImagemVideo {
   conferencia: string | null;
   posta: ImagemPosta | null;
   manual: boolean;
+  /** v162: o vídeo de apoio de onde sai o trecho e o segundo dele em que o trecho começa. */
+  apoioId?: string | null;
+  apoioDe?: number;
 }
 
 /** Onde a IA preferiu não pôr imagem (tempos do original). */
@@ -426,6 +497,8 @@ export interface DetalheVideo extends ResumoVideo {
   mudancasPendentes: boolean;
   /** v161: há um pedido à editora aplicado que ainda dá para desfazer. */
   podeDesfazerPedido: boolean;
+  /** v162: os vídeos de apoio (trechos deles entram em tela cheia por cima da fala). */
+  apoios: ApoioDoVideo[];
   /** v145: os silêncios do original (a linha do tempo de corte mostra onde tem fala). */
   silencios: { inicio: number; fim: number }[];
   versao: number;
@@ -540,6 +613,9 @@ export const revisaoEntrada = z.object({
         encaixe: z.enum(['acima', 'cheia']).optional(),
         /** Trocar por uma foto da empresa. */
         fotoId: z.number().int().positive().optional(),
+        /** v162: trocar por um trecho de um vídeo de apoio, e onde o trecho começa nele. */
+        apoioId: z.string().min(1).max(40).optional(),
+        apoioDe: z.number().min(0).max(LIMITE_SEGUNDOS_APOIO).optional(),
         pedido: z.enum(['gerar_outra']).nullable().optional(),
       }),
     )
@@ -550,6 +626,8 @@ export const revisaoEntrada = z.object({
     .object({
       em: z.number().min(0).max(LIMITE_SEGUNDOS_VIDEO),
       fotoId: z.number().int().positive().nullable().default(null),
+      /** v162: um trecho de um vídeo de apoio (em tela cheia). */
+      apoioId: z.string().min(1).max(40).optional(),
     })
     .optional(),
   musica: z

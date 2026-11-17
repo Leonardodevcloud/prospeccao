@@ -684,6 +684,83 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
     const vazio = await enviar('post', `/videos/${id}/pedido`, { texto: 'corta aquilo' });
     expect(vazio.body.propostas).toHaveLength(0);
     expect(vazio.body.resposta).toContain('Falar deste momento');
+
+    // v162: vídeo de apoio na revisão: envia em partes, põe um trecho num momento, troca, tira.
+    const ap = await enviar('post', `/videos/${id}/apoios`, {
+      nome: 'moto-passando.mp4',
+      tipo: 'video/mp4',
+      bytes: 9,
+      duracao: 8,
+    });
+    expect(ap.status).toBe(201);
+    const apoioId = ap.body.apoioId as string;
+    const parte = (n: number, corpo: Buffer) =>
+      request(app)
+        .put(`/videos/${id}/apoios/${apoioId}/partes/${n}`)
+        .set('Origin', ORIGEM)
+        .set('Cookie', cookie)
+        .set('Content-Type', 'application/octet-stream')
+        .send(corpo);
+    expect((await parte(1, Buffer.from('apoio')))?.status).toBe(200);
+    expect((await enviar('post', `/videos/${id}/apoios/${apoioId}/concluir`, { partes: 2 })).status).toBe(
+      422,
+    );
+    expect((await parte(2, Buffer.from('fim!')))?.status).toBe(200);
+    const pronto = await enviar('post', `/videos/${id}/apoios/${apoioId}/concluir`, { partes: 2 });
+    expect(pronto.status).toBe(200);
+    expect(pronto.body.apoios).toEqual([
+      expect.objectContaining({
+        id: apoioId,
+        nome: 'moto-passando.mp4',
+        enviado: true,
+        preparado: false,
+        duracao: 8,
+      }),
+    ]);
+    const { rows: g } = await pool.query<{ apoios: { chave: string }[] }>(
+      'SELECT apoios FROM comercial.videos WHERE id = $1',
+      [id],
+    );
+    const chaveApoio = g[0]!.apoios[0]!.chave;
+    expect(Buffer.from(arquivos.get(chaveApoio)!).toString()).toBe('apoiofim!');
+    expect((await parte(3, Buffer.from('x')))?.status).toBe(422);
+    expect((await ler(`/videos/${id}/arquivo?tipo=apoio&apoio=${apoioId}`)).body.url).toContain(chaveApoio);
+
+    let versao = pronto.body.versao as number;
+    let r2 = await enviar('put', `/videos/${id}/revisao`, { versao, novaImagem: { em: 5, apoioId } });
+    expect(r2.status).toBe(200);
+    expect(r2.body.imagens).toEqual([
+      expect.objectContaining({
+        origem: 'apoio',
+        apoioId,
+        apoioDe: 0,
+        encaixe: 'cheia',
+        pedido: null,
+        chave: null,
+      }),
+    ]);
+    versao = r2.body.versao;
+    // O segundo trecho continua de onde o primeiro parou; mexer no começo respeita o tamanho do apoio.
+    r2 = await enviar('put', `/videos/${id}/revisao`, { versao, novaImagem: { em: 12, apoioId } });
+    expect(r2.body.imagens[1]).toMatchObject({ apoioId, apoioDe: 3 });
+    versao = r2.body.versao;
+    r2 = await enviar('put', `/videos/${id}/revisao`, {
+      versao,
+      imagens: [{ id: r2.body.imagens[1].id, apoioDe: 99 }],
+    });
+    expect(r2.body.imagens[1].apoioDe).toBe(5);
+    expect(
+      (
+        await enviar('put', `/videos/${id}/revisao`, {
+          versao: r2.body.versao,
+          novaImagem: { em: 17, apoioId: 'zz' },
+        })
+      ).status,
+    ).toBe(422);
+    const fora = await enviar('delete', `/videos/${id}/apoios/${apoioId}`);
+    expect(fora.status).toBe(200);
+    expect(fora.body).toMatchObject({ apoios: [], imagens: [], mudancasPendentes: true });
+    expect(arquivos.has(chaveApoio)).toBe(false);
     await pool.query('DELETE FROM comercial.videos WHERE id = $1', [id]);
   });
 

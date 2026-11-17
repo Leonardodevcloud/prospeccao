@@ -20576,3 +20576,104 @@ form.janela-pedido > button[type="submit"] {
   font-size: 11px;
   font-weight: 700;
 }
+
+/* ───────────── v162: vídeos de apoio ───────────── */
+.videos__apoios {
+  display: grid;
+  gap: var(--space-2);
+}
+.videos__apoios-lista,
+.apoios__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.videos__apoios-lista li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 4px 4px var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: 14px;
+}
+.videos__apoios-nome {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.videos__apoios-mais {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.campo label.videos__apoios-mais {
+  padding: 0 var(--space-4);
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 600;
+}
+.videos__apoios-mais:hover,
+.videos__apoios-mais:focus-within {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.videos__apoios-mais[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+.apoios {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.apoios__item {
+  display: grid;
+  grid-template-columns: 54px 1fr auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+.apoios__capa {
+  width: 54px;
+  height: 96px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--surface-sunken);
+  display: grid;
+  place-items: center;
+  color: var(--ink-muted);
+}
+.apoios__texto {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 13.5px;
+}
+.apoios__texto b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apoios__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

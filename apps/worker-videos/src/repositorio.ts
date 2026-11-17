@@ -3,6 +3,7 @@ import type { FotoParaIa, PromocaoParaIa, QuadroRosto, Silencio } from '@prospec
 import {
   type AndamentoVideo,
   type AnimacoesVideo,
+  type ApoioGuardado,
   type ConferenciaVideo,
   type CorteVideo,
   type EtapaVideo,
@@ -42,6 +43,7 @@ export interface LinhaVideo {
   imagens: ImagemVideo[];
   sem_imagem: TrechoSemImagem[];
   som: SomVideo | null;
+  apoios: ApoioGuardado[];
   final_chave: string | null;
   capa_chave: string | null;
   previa_chave: string | null;
@@ -55,7 +57,7 @@ export interface LinhaVideo {
 export async function carregar(db: Executor, id: number): Promise<LinhaVideo | null> {
   const { rows } = await db.query<LinhaVideo & { duracao_original: string | null }>(
     `SELECT id, conta_id, titulo, situacao, opcoes, original_chave, original_tipo, duracao_original, analise,
-            cortes, palavras, animacoes, imagens, sem_imagem, som, final_chave, capa_chave, previa_chave, previa_video_chave, contou_em, criado_por, versao, tentativas
+            cortes, palavras, animacoes, imagens, sem_imagem, som, apoios, final_chave, capa_chave, previa_chave, previa_video_chave, contou_em, criado_por, versao, tentativas
        FROM comercial.videos WHERE id = $1`,
     [id],
   );
@@ -66,9 +68,15 @@ export async function carregar(db: Executor, id: number): Promise<LinhaVideo | n
     ...l,
     opcoes: o.success ? o.data : opcoesVideoEntrada.parse({}),
     imagens: l.imagens ?? [],
+    apoios: l.apoios ?? [],
     sem_imagem: l.sem_imagem ?? [],
     duracao_original: l.duracao_original == null ? null : Number(l.duracao_original),
   };
+}
+
+/** v162: os vídeos de apoio depois de preparados (a api não mexe neles enquanto o vídeo edita). */
+export async function salvarApoios(db: Executor, id: number, apoios: ApoioGuardado[]) {
+  await db.query('UPDATE comercial.videos SET apoios = $2 WHERE id = $1', [id, JSON.stringify(apoios)]);
 }
 
 export async function marcarEtapa(db: Executor, id: number, etapa: EtapaVideo, progresso: number) {

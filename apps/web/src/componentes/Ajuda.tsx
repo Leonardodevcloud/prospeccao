@@ -1659,7 +1659,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
     onde: { rotulo: 'Vídeos', para: '/videos' },
     termos:
-      'peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+      'vídeo de apoio b-roll broll segundo vídeo mais de um vídeo cenas de apoio flashes trecho por cima da fala peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
     corpo: (
       <>
         <p>
@@ -1745,6 +1745,14 @@ export const ARTIGOS: ArtigoAjuda[] = [
             você conferir.
           </li>
           <li>
+            <b>Usa os seus vídeos de apoio</b>, se você mandou algum junto (até 3, de até 3 minutos cada): a
+            moto passando, a loja, o produto em uso. A IA vê o que cada um mostra e põe trechos de 2 a 4
+            segundos em tela cheia por cima da sua fala, nos pontos em que você cita aquilo e para dar ritmo
+            numa explicação comprida. A sua voz continua, o apoio entra sem som e em corte seco, e a legenda
+            fica por cima. Vídeo deitado é cortado no meio para ficar em pé. Como as imagens, os trechos somam
+            no máximo 30% do vídeo e nunca entram nos 2 primeiros segundos.
+          </li>
+          <li>
             <b>Mapeia o rosto</b> em cada momento do vídeo. A legenda fica embaixo do queixo, no maior tamanho
             que cabe, e o título fica acima da cabeça. Quando não cabe, o vídeo vira um cartão na cor da marca
             por alguns segundos para abrir espaço.
@@ -1798,6 +1806,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
             troca o que você falou por outra frase (aí ela oferece cortar ou pôr um selo). Imagens, efeitos e
             publicação continuam nas abas. A conversa não fica guardada: ao recarregar a página, começa de
             novo (o que foi aplicado continua).
+          </li>
+          <li>
+            Na aba <b>Imagens</b> ficam os <b>vídeos de apoio</b>: dá para mandar outro depois (ele é
+            preparado no próximo Gerar de novo), pôr um trecho num momento, trocar uma imagem por um trecho,
+            escolher em que segundo do apoio o trecho começa e tirar. Tirar um apoio tira os trechos dele.
           </li>
           <li>
             Na aba <b>Cortes</b>, cada dúvida tem <b>Ouvir</b> (toca o trecho do original com um pouco antes e

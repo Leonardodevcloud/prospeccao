@@ -9,6 +9,7 @@ import type { Armazenamento } from '@prospeccao/integrations/reuniao';
 import {
   alturaDoTitulo,
   argumentosDaMistura,
+  argumentosDoApoio,
   blocosDaLegenda,
   conferirJuncoes,
   conferirSobreposicao,
@@ -53,6 +54,7 @@ import {
   type TrechoSemImagem,
   trechosQueFicam,
 } from '@prospeccao/shared/videos';
+import { prepararApoios } from './apoios.js';
 import {
   type CustosEnfeites,
   type DepsEnfeites,
@@ -393,6 +395,18 @@ export async function editarVideo(
         .catch((erro) => log.warn({ err: erro, videoId }, 'a prévia em loop não saiu'));
     const anotar = (parte: Parameters<typeof repo.anotar>[2]) =>
       repo.anotar(db, videoId, parte).catch(() => undefined);
+    // v162: os vídeos de apoio no formato do vídeo (preparados uma vez; depois só baixados).
+    const apoio = await prepararApoios(
+      {
+        db,
+        arm,
+        log,
+        claude: deps.claude ? deps.claude((usd) => (custos.claudeUsd += usd)) : null,
+        subir: (chave, arquivo, tipo) => subirArquivo(arm, chave, arquivo, tipo),
+      },
+      { id: videoId, conta_id: v.conta_id, apoios: v.apoios },
+      pasta,
+    );
 
     let palavras: PalavraVideo[];
     let cortes: CorteVideo[];
@@ -520,6 +534,7 @@ export async function editarVideo(
           comTitulo: animacoes.titulo.usar && !!animacoes.titulo.texto,
           fotos,
           promocoes: await repo.promocoesDaConta(db, v.conta_id),
+          apoios: apoio.paraIa,
         },
         custos,
       );
@@ -564,6 +579,7 @@ export async function editarVideo(
         opcoes: v.opcoes,
         imagens,
         fotos: fotos ?? [],
+        apoios: apoio.locais,
         pasta,
         aoGuardar: (atual) => repo.salvarEnfeites(db, videoId, { animacoes, imagens: atual, semImagem, som }),
       },
@@ -583,7 +599,7 @@ export async function editarVideo(
       join(pasta, 'editado.mp4'),
     );
     await rm(base, { force: true });
-    const editado = join(pasta, 'editado.mp4');
+    let editado = join(pasta, 'editado.mp4');
     const duracaoEditado = (await duracaoDoVideo(editado)) || planos.at(-1)!.editadoFim;
     const ultimo = join(pasta, 'ultimo.png');
     await rodar(
@@ -633,6 +649,26 @@ export async function editarVideo(
       estilo: v.opcoes.estilo,
       medir: medirLegenda,
     });
+    // v162: os trechos dos vídeos de apoio entram no vídeo cortado, antes do render: a legenda e
+    // as animações são desenhadas por cima e a voz continua. Em corte seco (o "flash").
+    const deApoio = new Map(imagens.filter((im) => im.origem === 'apoio').map((im) => [im.id, im]));
+    const trechosDeApoio = tela.imagens
+      .filter((i) => deApoio.has(i.id))
+      .map((i) => ({
+        arquivo: preparo.arquivos.get(i.id)!,
+        de: deApoio.get(i.id)!.apoioDe ?? 0,
+        ini: i.ini,
+        fim: i.fim,
+      }));
+    if (trechosDeApoio.length) {
+      const comApoio = join(pasta, 'editado-apoio.mp4');
+      await rodar('ffmpeg', argumentosDoApoio({ editado, saida: comApoio, trechos: trechosDeApoio }), {
+        timeoutMs: 15 * 60_000,
+      });
+      await rm(editado, { force: true });
+      editado = comApoio;
+    }
+    const imagensDesenhadas = tela.imagens.filter((i) => !deApoio.has(i.id));
     const chamada =
       animacoes.chamada.usar && animacoes.chamada.tipo !== 'nenhuma'
         ? fraseDaChamada(animacoes.chamada)
@@ -668,7 +704,7 @@ export async function editarVideo(
       titulo: titulo ? { usar: true, ...titulo } : null,
       chamada: chamadaFinal,
       momentos: tela.momentos,
-      imagens: tela.imagens,
+      imagens: imagensDesenhadas,
       transicao: v.opcoes.transicao,
       medir: regua(900, 0),
       arquivos: {
@@ -703,7 +739,10 @@ export async function editarVideo(
       {
         editado,
         ultimo,
-        extras: tela.imagens.map((i) => ({ origem: preparo.arquivos.get(i.id)!, nome: `img-${i.id}.jpg` })),
+        extras: imagensDesenhadas.map((i) => ({
+          origem: preparo.arquivos.get(i.id)!,
+          nome: `img-${i.id}.jpg`,
+        })),
       },
       renderizado,
     );

@@ -51,6 +51,12 @@ export interface FotoParaIa {
   nome: string;
   descricao: string;
 }
+/** v162: um vídeo de apoio que a pessoa subiu (trechos dele entram em tela cheia por cima da fala). */
+export interface ApoioParaIa {
+  id: string;
+  descricao: string;
+  duracao: number;
+}
 export interface PromocaoParaIa extends OfertaDoVideo {
   id: number;
   titulo: string;
@@ -138,6 +144,11 @@ const ESQUEMA_ENFEITES = {
             description: 'O que a pessoa falou que pede a imagem, em uma frase curta.',
           },
           foto_id: { type: 'integer', description: 'A foto da empresa que mostra isso (se houver).' },
+          apoio_id: {
+            type: 'string',
+            description:
+              'O vídeo de apoio que mostra isso (se a pessoa mandou algum): entra em tela cheia, sem som, com a voz por cima.',
+          },
           gerar: {
             type: 'string',
             description:
@@ -193,6 +204,7 @@ Proponha o que entra em cima da fala para o vídeo prender e explicar melhor, se
 Imagens:
 - Só onde a fala cita algo concreto que a imagem mostra (produto, número, comparação, lugar, situação). Frase de opinião, emoção ou conversa direta com quem assiste fica sem imagem: o rosto é o que convence.
 - Use primeiro as fotos da empresa (foto_id) quando a descrição bate com a fala. Gere (gerar) só cenas genéricas que a empresa não tem: estrada, oficina, carro na chuva, mãos trabalhando. Nunca gere o produto que a empresa vende como se fosse real, nem marca, embalagem ou texto. Pessoas podem aparecer quando combinam com a fala (nunca pessoa real ou famosa nem criança).
+- Vídeos de apoio (v162): quando a pessoa mandou vídeos de apoio, eles vêm antes de foto e de imagem gerada. São os "flashes" do vídeo: ponha um trecho (apoio_id) de 1,5 a 4 segundos sempre que a fala citar o que o apoio mostra, e também para dar respiro numa explicação comprida; espalhe pelo vídeo (não junte tudo no começo), deixando o rosto voltar entre um e outro. O mesmo apoio pode entrar mais de uma vez (cada vez mostra um pedaço diferente dele). A frase mais forte e a chamada continuam com o rosto.
 - Nada nos 2 primeiros segundos. Cada imagem de 1,5 a 4 segundos, no total no máximo 30% do vídeo.
 - encaixe "cheia" para cenas (tela cheia por pouco tempo, a voz continua); "acima" para produto e detalhe.
 - Animações e imagens não se sobrepõem.
@@ -215,6 +227,7 @@ export interface EntradaEnfeites {
   promocoes: PromocaoParaIa[];
   /** Título de abertura em uso (as animações esperam ele sair). */
   comTitulo: boolean;
+  apoios?: ApoioParaIa[];
 }
 
 export interface DecisaoEnfeites {
@@ -234,6 +247,7 @@ export interface DecisaoEnfeites {
     fotoId: number | null;
     gerar: string;
     encaixe: EncaixeImagem;
+    apoioId?: string | null;
   }[];
   semImagem: { de: number; ate: number; motivo: string }[];
   musica: { clima: ClimaMusica; estilo: string };
@@ -276,6 +290,7 @@ export function lerEnfeites(dados: Record<string, unknown>, total: number): Deci
       fotoId: inteiro(m.foto_id),
       gerar: curto(m.gerar, 300),
       encaixe: m.encaixe === 'cheia' ? 'cheia' : 'acima',
+      apoioId: curto(m.apoio_id, 40) || null,
     });
   }
   const semImagem: DecisaoEnfeites['semImagem'] = [];
@@ -314,6 +329,11 @@ export async function pedirEnfeites(claude: ClienteClaude, e: EntradaEnfeites): 
     e.fotos.length && opcoes.imagens !== 'nenhuma'
       ? `Fotos da empresa:\n${e.fotos.map((f) => `- foto_id ${f.id}: ${f.descricao || f.nome}`).join('\n')}`
       : 'A empresa não tem fotos cadastradas.',
+    e.apoios?.length
+      ? `Vídeos de apoio que a pessoa mandou para este vídeo (use-os):\n${e.apoios
+          .map((a) => `- apoio_id ${a.id}: ${a.descricao || 'cenas de apoio'} (${a.duracao.toFixed(0)} s)`)
+          .join('\n')}`
+      : '',
     e.promocoes.length
       ? `Promoções cadastradas:\n${e.promocoes
           .map(
@@ -342,10 +362,36 @@ export async function pedirEnfeites(claude: ClienteClaude, e: EntradaEnfeites): 
   return lerEnfeites(r.dados, e.palavras.length);
 }
 
-/** Sem a IA: nenhuma animação nem imagem; a música no clima escolhido (ou confiante). */
-export function enfeitesPelasRegras(opcoes: OpcoesVideo): DecisaoEnfeites {
+/**
+ * Sem a IA: nenhuma animação nem imagem; a música no clima escolhido (ou confiante). Com vídeos de
+ * apoio (v162), um trecho a cada 7 s de fala, revezando os apoios: os flashes não dependem da IA.
+ */
+export function enfeitesPelasRegras(
+  opcoes: OpcoesVideo,
+  apoio?: { palavras: PalavraVideo[]; ficam: Trecho[]; apoios: ApoioParaIa[] },
+): DecisaoEnfeites {
   const clima = opcoes.musica !== 'ia' && opcoes.musica !== 'nenhuma' ? opcoes.musica : 'confiante';
-  return { momentos: [], imagens: [], semImagem: [], musica: { clima, estilo: '' } };
+  const imagens: DecisaoEnfeites['imagens'] = [];
+  if (apoio?.apoios.length) {
+    let proximo = 4;
+    apoio.palavras.forEach((p, k) => {
+      const t = tempoNoEditado(p.i + 0.02, apoio.ficam);
+      if (t == null || t < proximo) return;
+      let ate = k;
+      while (ate + 1 < apoio.palavras.length && apoio.palavras[ate + 1]!.f - p.i < 2.6) ate++;
+      imagens.push({
+        de: k,
+        ate,
+        motivo: 'Trecho do vídeo de apoio para dar ritmo.',
+        fotoId: null,
+        gerar: '',
+        encaixe: 'cheia',
+        apoioId: apoio.apoios[imagens.length % apoio.apoios.length]!.id,
+      });
+      proximo = t + 7;
+    });
+  }
+  return { momentos: [], imagens, semImagem: [], musica: { clima, estilo: '' } };
 }
 
 /* ───────────────────── v160: a enumeração que a IA deixou passar ───────────────────── */
@@ -502,6 +548,7 @@ export function aplicarRegras(
     modo: ModoImagens;
     fotos: FotoParaIa[];
     promocoes: PromocaoParaIa[];
+    apoios?: ApoioParaIa[];
   },
 ): ResultadoEnfeites {
   const { palavras, ficam } = c;
@@ -596,17 +643,29 @@ export function aplicarRegras(
   const usadas: Janela[] = [];
   let tempoComImagem = 0;
   const orcamento = c.duracaoEditado * IMAGENS_FRACAO_MAXIMA;
-  if (c.modo !== 'nenhuma')
+  const apoios = (c.apoios ?? []).filter((a) => a.duracao >= IMAGEM_MIN_SEGUNDOS);
+  // Onde o próximo trecho de cada apoio começa (cada entrada mostra um pedaço diferente dele).
+  const cursor = new Map<string, number>();
+  if (c.modo !== 'nenhuma' || apoios.length)
     for (const m of [...d.imagens].sort((a, b) => a.de - b.de)) {
       if (imagens.length >= MAX_IMAGENS_VIDEO) break;
-      const foto = m.fotoId != null ? c.fotos.find((f) => f.id === m.fotoId) : undefined;
-      const gerar = c.modo === 'ia' && !foto ? m.gerar : '';
-      if (!foto && !gerar) continue;
+      const apoio = m.apoioId ? apoios.find((a) => a.id === m.apoioId) : undefined;
+      // "Sem imagens" vale para foto e imagem gerada; o apoio que a pessoa mandou entra.
+      const foto =
+        !apoio && c.modo !== 'nenhuma' && m.fotoId != null
+          ? c.fotos.find((f) => f.id === m.fotoId)
+          : undefined;
+      const gerar = c.modo === 'ia' && !foto && !apoio ? m.gerar : '';
+      if (!apoio && !foto && !gerar) continue;
       let ini = ed(palavras[m.de]!.i);
       let fim = ed(palavras[m.ate]!.f);
       if (ini == null || fim == null) continue;
       ini = Math.max(ini, IMAGEM_SEM_NO_COMECO, titulo ? titulo.fim + 0.25 : 0);
-      fim = Math.min(Math.max(fim, ini + IMAGEM_MIN_SEGUNDOS), ini + IMAGEM_MAX_SEGUNDOS, fimLivre);
+      fim = Math.min(
+        Math.max(fim, ini + IMAGEM_MIN_SEGUNDOS),
+        ini + Math.min(IMAGEM_MAX_SEGUNDOS, apoio ? apoio.duracao : IMAGEM_MAX_SEGUNDOS),
+        fimLivre,
+      );
       if (fim - ini < IMAGEM_MIN_SEGUNDOS - 0.05) continue;
       const janela = { ini, fim };
       // "acima" disputa o espaço acima da cabeça com as animações; "cheia" cobre tudo, inclusive elas.
@@ -618,17 +677,24 @@ export function aplicarRegras(
       if (oi == null || of == null) continue;
       usadas.push(janela);
       tempoComImagem += fim - ini;
+      let apoioDe = 0;
+      if (apoio) {
+        apoioDe = cursor.get(apoio.id) ?? 0;
+        if (apoioDe + (fim - ini) > apoio.duracao) apoioDe = 0;
+        cursor.set(apoio.id, r3(apoioDe + (fim - ini)));
+      }
       imagens.push({
         id: `i${imagens.length + 1}`,
         inicio: oi,
         fim: of,
         fala: fala(m.de, m.ate),
         motivo: m.motivo,
-        origem: foto ? 'empresa' : 'gerada',
+        origem: apoio ? 'apoio' : foto ? 'empresa' : 'gerada',
         fotoId: foto?.id ?? null,
         chave: null,
-        descricao: foto ? foto.descricao || foto.nome : gerar,
-        encaixe: m.encaixe,
+        descricao: apoio ? apoio.descricao : foto ? foto.descricao || foto.nome : gerar,
+        encaixe: apoio ? 'cheia' : m.encaixe,
+        ...(apoio ? { apoioId: apoio.id, apoioDe: r3(apoioDe) } : {}),
         usar: true,
         pedido: null,
         conferencia: null,

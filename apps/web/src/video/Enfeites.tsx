@@ -1,4 +1,5 @@
 import {
+  type ApoioDoVideo,
   CLIMAS_MUSICA,
   type ClimaMusica,
   type DetalheVideo,
@@ -8,6 +9,8 @@ import {
   fmtDuracao,
   IMAGENS_FRACAO_MAXIMA,
   type ImagemVideo,
+  LIMITE_BYTES_APOIO,
+  MAX_APOIOS_VIDEO,
   MOMENTOS_COM_ITENS,
   type MomentoVideo,
   momentosDe,
@@ -26,7 +29,15 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../api';
 import { enviarImagem } from '../carrossel/dados';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { type SituacaoVideos, useArquivo, useFotoPropria, useFotosDaEmpresa, useRevisao } from './dados';
+import {
+  type SituacaoVideos,
+  useApoios,
+  useArquivo,
+  useArquivoDoApoio,
+  useFotoPropria,
+  useFotosDaEmpresa,
+  useRevisao,
+} from './dados';
 
 /**
  * As abas da revisão que a v129 trouxe: as imagens (onde a IA pôs e por quê, trocar, gerar outra,
@@ -78,16 +89,18 @@ export function AbaImagens({ v, situacao }: { v: DetalheVideo; situacao: Situaca
     return s + (a != null && b != null ? Math.max(0, b - a) : 0);
   }, 0);
   const geradas = usadas.filter((i) => i.origem === 'gerada').length;
+  const deApoio = usadas.filter((i) => i.origem === 'apoio').length;
   return (
     <div className="video__imagens">
       <p className="quieto">
         {usadas.length
-          ? `A IA pôs ${usadas.length} ${usadas.length === 1 ? 'imagem' : 'imagens'} onde você cita produto, número ou lugar (${Math.round(comImagem)} s de ${Math.round(editado)} s). ${geradas ? `Fotos da empresa primeiro; gerou ${geradas === 1 ? 'só a que faltava' : `${geradas} que faltavam`}.` : 'Todas são fotos.'}`
+          ? `A IA pôs ${usadas.length} ${usadas.length === 1 ? 'imagem' : 'imagens'} onde você cita produto, número ou lugar (${Math.round(comImagem)} s de ${Math.round(editado)} s). ${deApoio ? `${deApoio === 1 ? '1 é trecho' : `${deApoio} são trechos`} dos seus vídeos de apoio. ` : ''}${geradas ? `Fotos da empresa primeiro; gerou ${geradas === 1 ? 'só a que faltava' : `${geradas} que faltavam`}.` : deApoio === usadas.length ? '' : 'As outras são fotos.'}`
           : v.opcoes.imagens === 'nenhuma'
             ? 'Este vídeo foi feito sem imagens. Dá para pôr uma num momento.'
             : 'A IA não achou momento em que uma imagem ajudasse. Dá para pôr uma num momento.'}
       </p>
       <ErroDaApi erro={revisao.error} />
+      <VideosDeApoio v={v} />
       <ul className="video__lista-imagens">
         {v.imagens.map((im) => (
           <CartaoImagem key={im.id} v={v} im={im} ficam={ficam} situacao={situacao} />
@@ -110,8 +123,136 @@ export function AbaImagens({ v, situacao }: { v: DetalheVideo; situacao: Situaca
   );
 }
 
+/* ───────────────────────────── v162: vídeos de apoio ───────────────────────────── */
+
+function CapaDoApoio({ v, apoio }: { v: DetalheVideo; apoio: ApoioDoVideo | undefined }) {
+  const capa = useArquivoDoApoio(v.id, apoio?.id ?? '', 'apoio-capa', !!apoio?.temCapa);
+  return capa.data ? (
+    <img className="apoios__capa" src={capa.data.url} alt="" />
+  ) : (
+    <span className="apoios__capa" aria-hidden="true">
+      <Icon name="video" size={20} />
+    </span>
+  );
+}
+
+/** Os vídeos de apoio do vídeo: mandar outro, ver o que cada um mostra e tirar. */
+function VideosDeApoio({ v }: { v: DetalheVideo }) {
+  const { enviar, tirar } = useApoios(v.id);
+  const [andamento, setAndamento] = useState<number | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const escolher = (a: File | undefined) => {
+    setAviso(null);
+    if (!a) return;
+    if (a.size > LIMITE_BYTES_APOIO) {
+      setAviso('O vídeo de apoio passa de 500 MB. Envie um trecho menor.');
+      return;
+    }
+    setAndamento(0);
+    enviar.mutate({ arquivo: a, aoAndar: setAndamento }, { onSettled: () => setAndamento(null) });
+  };
+  const usados = (id: string) => v.imagens.filter((i) => i.usar && i.apoioId === id).length;
+  return (
+    <section className="apoios" aria-label="Vídeos de apoio">
+      <span>
+        <b>Vídeos de apoio</b>
+        <span className="campo__dica">
+          {' '}
+          Cenas que entram em tela cheia por cima da sua fala (a voz continua, o apoio sem som).
+        </span>
+      </span>
+      {v.apoios.length > 0 && (
+        <ul className="apoios__lista">
+          {v.apoios.map((a) => (
+            <li key={a.id} className="apoios__item">
+              <CapaDoApoio v={v} apoio={a} />
+              <span className="apoios__texto">
+                <b>{a.nome}</b>
+                <span className="campo__dica">
+                  {[
+                    a.duracao != null ? fmtDuracao(a.duracao) : null,
+                    usados(a.id)
+                      ? `${usados(a.id)} ${usados(a.id) === 1 ? 'trecho' : 'trechos'} no vídeo`
+                      : 'ainda não entrou no vídeo',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+                {a.erro ? (
+                  <span className="campo__dica video__erro">{a.erro}</span>
+                ) : a.descricao ? (
+                  <span className="campo__dica">{a.descricao}</span>
+                ) : !a.preparado ? (
+                  <span className="campo__dica video__pendente">
+                    Fica pronto no próximo "Gerar de novo". Já dá para pôr um trecho num momento.
+                  </span>
+                ) : null}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="trash-2"
+                aria-label={`Tirar o apoio ${a.nome}`}
+                disabled={tirar.isPending}
+                onClick={() => {
+                  if (!usados(a.id) || window.confirm('Os trechos deste apoio saem do vídeo. Tirar?'))
+                    tirar.mutate(a.id);
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      {andamento != null ? (
+        <span className="campo__dica" aria-live="polite">
+          Enviando o vídeo de apoio… {Math.round(andamento * 100)}%
+        </span>
+      ) : (
+        v.apoios.length < MAX_APOIOS_VIDEO && (
+          <label className="videos__apoios-mais">
+            <Icon name="plus" size={16} /> Adicionar vídeo de apoio
+            <input
+              type="file"
+              accept="video/*"
+              className="pp-sr"
+              onChange={(e) => {
+                escolher(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+          </label>
+        )
+      )}
+      {aviso && <Mensagem tipo="aviso">{aviso}</Mensagem>}
+      <ErroDaApi erro={enviar.error ?? tirar.error} />
+    </section>
+  );
+}
+
+/** Os apoios que dá para usar, como botões (trocar a imagem por um trecho, ou pôr um trecho novo). */
+function EscolherApoio({ v, aoEscolher }: { v: DetalheVideo; aoEscolher: (apoioId: string) => void }) {
+  return (
+    <fieldset className="apoios__lista">
+      <legend className="pp-sr">Vídeos de apoio</legend>
+      {v.apoios
+        .filter((a) => a.enviado && !a.erro)
+        .map((a) => (
+          <button key={a.id} type="button" className="editora__chip" onClick={() => aoEscolher(a.id)}>
+            <Icon name="video" size={14} /> {a.nome}
+          </button>
+        ))}
+    </fieldset>
+  );
+}
+
 function Miniatura({ v, im }: { v: DetalheVideo; im: ImagemVideo }) {
   const arq = useArquivo(v.id, 'imagem', !!im.chave, im.chave ?? undefined, im.id);
+  if (im.origem === 'apoio')
+    return (
+      <span className="video__mini">
+        <CapaDoApoio v={v} apoio={v.apoios.find((a) => a.id === im.apoioId)} />
+      </span>
+    );
   if (!im.chave)
     return (
       <span className="video__mini video__mini--vazia" aria-hidden="true">
@@ -137,12 +278,18 @@ function CartaoImagem(props: {
   const revisao = useRevisao(v.id);
   const foto = useFotoPropria(v.id);
   const [trocando, setTrocando] = useState(false);
+  const [trocandoApoio, setTrocandoApoio] = useState(false);
+  const [apoioDe, setApoioDe] = useState(String(im.apoioDe ?? 0));
+  useEffect(() => setApoioDe(String(im.apoioDe ?? 0)), [im.apoioDe]);
+  const temApoio = v.apoios.some((a) => a.enviado && !a.erro);
   const entrada = useRef<HTMLInputElement>(null);
   const muda = (m: {
     usar?: boolean;
     encaixe?: EncaixeImagem;
     fotoId?: number;
     pedido?: 'gerar_outra' | null;
+    apoioId?: string;
+    apoioDe?: number;
   }) => revisao.mutate({ imagens: [{ id: im.id, ...m }] });
   const naoEntrou = im.conferencia?.startsWith('Não entrou');
   const podeGerar = !!props.situacao?.recursos.imagensGeradas;
@@ -192,6 +339,11 @@ function CartaoImagem(props: {
               <button type="button" className="video__link" onClick={() => entrada.current?.click()}>
                 Usar foto minha
               </button>
+              {temApoio && (
+                <button type="button" className="video__link" onClick={() => setTrocandoApoio((x) => !x)}>
+                  {im.origem === 'apoio' ? 'Trocar o apoio' : 'Trocar por vídeo de apoio'}
+                </button>
+              )}
               <button type="button" className="video__link" onClick={() => muda({ usar: false })}>
                 Tirar
               </button>
@@ -215,7 +367,33 @@ function CartaoImagem(props: {
             }}
           />
         </div>
-        {im.usar && (
+        {im.usar && im.origem === 'apoio' && (
+          <div className="campo">
+            <label htmlFor={`apoio-de-${im.id}`}>O trecho começa em que segundo do apoio</label>
+            <input
+              id={`apoio-de-${im.id}`}
+              className="filtro mono"
+              style={{ maxWidth: 120 }}
+              inputMode="decimal"
+              value={apoioDe}
+              onChange={(e) => setApoioDe(e.target.value)}
+              onBlur={() => {
+                const t = lerMomento(apoioDe);
+                if (t != null && t !== (im.apoioDe ?? 0)) muda({ apoioDe: t });
+              }}
+            />
+          </div>
+        )}
+        {trocandoApoio && (
+          <EscolherApoio
+            v={v}
+            aoEscolher={(apoioId) => {
+              setTrocandoApoio(false);
+              muda({ apoioId });
+            }}
+          />
+        )}
+        {im.usar && im.origem !== 'apoio' && (
           <fieldset className="video__encaixe">
             <legend className="pp-sr">Onde a imagem entra</legend>
             {(['acima', 'cheia'] as const).map((e) => (
@@ -286,6 +464,7 @@ function NovaImagem(props: {
   const [aberto, setAberto] = useState(false);
   const [momento, setMomento] = useState('');
   const [comFoto, setComFoto] = useState(false);
+  const [comApoio, setComApoio] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const revisao = useRevisao(v.id);
   const foto = useFotoPropria(v.id);
@@ -304,7 +483,7 @@ function NovaImagem(props: {
     return (
       <div className="video__nova-botao">
         <Button variant="secondary" icon="plus" onClick={() => setAberto(true)} disabled={cheio}>
-          Pôr uma imagem num momento
+          Pôr uma imagem ou um trecho de apoio num momento
         </Button>
         {cheio && (
           <span className="campo__dica">
@@ -347,6 +526,11 @@ function NovaImagem(props: {
         <Button variant="secondary" onClick={() => em() != null && entrada.current?.click()}>
           Foto minha
         </Button>
+        {v.apoios.some((a) => a.enviado && !a.erro) && (
+          <Button variant="secondary" icon="video" onClick={() => setComApoio((x) => !x)}>
+            Trecho do vídeo de apoio
+          </Button>
+        )}
         <Button variant="ghost" onClick={() => setAberto(false)}>
           Cancelar
         </Button>
@@ -365,6 +549,19 @@ function NovaImagem(props: {
           if (a && t != null) foto.mutate({ arquivo: a, em: t }, { onSuccess: () => setAberto(false) });
         }}
       />
+      {comApoio && (
+        <EscolherApoio
+          v={v}
+          aoEscolher={(apoioId) => {
+            const t = em();
+            if (t != null)
+              revisao.mutate(
+                { novaImagem: { em: t, fotoId: null, apoioId } },
+                { onSuccess: () => setAberto(false) },
+              );
+          }}
+        />
+      )}
       {comFoto && (
         <EscolherFoto
           aoEscolher={(fotoId) => {
