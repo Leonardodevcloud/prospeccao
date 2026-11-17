@@ -1659,7 +1659,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
     onde: { rotulo: 'Vídeos', para: '/videos' },
     termos:
-      'cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+      'gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
     corpo: (
       <>
         <p>
@@ -1738,7 +1738,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
             <b>Corta</b> as pausas longas (deixa uma respiração curta), os "éé", "né" e "hã" soltos, a frase
             que você começou e recomeçou (fica a última, a mais completa) e o que foi dito para quem está
             gravando ou antes e depois do vídeo de verdade. No ritmo <b>Natural</b> a IA deixa respirar mais;
-            em <b>Só pausas longas</b> nenhuma palavra sai.
+            em <b>Só pausas longas</b> nenhuma palavra sai. As <b>interrupções de fala</b> também saem:
+            palavra pela metade ("entre- entrega"), expressão dita duas vezes em seguida ("a gente a gente"),
+            o começo de frase que você largou e a correção ("cinquenta, quer dizer, quarenta": fica só o
+            certo). Quando o pedaço cortado pode ser uma palavra de verdade, o corte entra como dúvida para
+            você conferir.
           </li>
           <li>
             <b>Mapeia o rosto</b> em cada momento do vídeo. A legenda fica embaixo do queixo, no maior tamanho
@@ -1746,11 +1750,14 @@ export const ARTIGOS: ArtigoAjuda[] = [
             por alguns segundos para abrir espaço.
           </li>
           <li>
-            <b>Anima o que você fala</b>: uma <b>lista que se marca</b> quando você enumera ("três sinais…"),
-            um <b>número grande</b> ("dura o dobro" vira 2×), um <b>selo</b> num momento-chave, a{' '}
-            <b>aproximação</b> do rosto na frase mais forte e, quando você fala de uma promoção cadastrada em
-            Carrosséis › O que divulgar, a <b>oferta</b> com o produto e os preços exatamente como foram
-            digitados (a IA nunca escreve preço).
+            <b>Anima o que você fala</b>, com um elemento a cada 3 ou 4 segundos: uma{' '}
+            <b>lista que se marca</b> sempre que você enumera ("três sinais…", "primeiro… segundo…"),{' '}
+            <b>nomes que aparecem um a um</b> quando você cita cidades, marcas ou "sem taxa, sem fidelidade,
+            sem burocracia", a <b>comparação</b> de dois lados ("comprar ou alugar"), a <b>troca</b> que risca
+            uma coisa e põe a outra ("não é gasto, é investimento"), um <b>número grande</b> ("dura o dobro"
+            vira 2×), um <b>selo</b> num momento-chave, a <b>aproximação</b> do rosto na frase mais forte e,
+            quando você fala de uma promoção cadastrada em Carrosséis › O que divulgar, a <b>oferta</b> com o
+            produto e os preços exatamente como foram digitados (a IA nunca escreve preço).
           </li>
           <li>
             <b>Põe imagens</b> onde a fala cita algo concreto (um produto, um número, uma comparação, um

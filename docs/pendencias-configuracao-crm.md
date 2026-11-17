@@ -389,6 +389,14 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4al. Editor de vídeo: cortes mais sensíveis e mais elementos (v160)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] Editar um vídeo falado de improviso (com gagueira e recomeço) no ritmo Dinâmico e conferir na aba Cortes: os tropeços saíram? Algum corte comeu palavra boa? Os que entraram como dúvida fazem sentido? Se o vídeo ficar picotado demais, avisar (dá para voltar a pausa mínima de 0,22 para 0,28 s).
+3. [ ] Num vídeo em que a fala lista coisas (cidades, vantagens, "sem isso, sem aquilo"), conferir se a lista ou os nomes aparecem, cada item na hora em que é falado, e se o vídeo tem um elemento a cada 3 ou 4 segundos sem poluir.
+4. [ ] Olhar os tipos novos na tela (nomes, comparação, troca) e editar o texto deles na aba Animações.
+5. [ ] **Aprovar o mockup** "Revisão do vídeo: peça à editora" (campo para falar com a IA na revisão). Só depois do ok ele é codado.
+6. [ ] Não foi testado com a IA de verdade (sem chave aqui): a obediência do editor de motion às regras novas e a quantidade de cortes com dúvida só aparecem em produção.
+
 ## 4ak. Conserto da mesa do time no vídeo (v159)
 1. [ ] Só a **web** (Vercel). Abrir um vídeo em edição e conferir a ilha de edição no computador e no celular: estações lado a lado sem sobrepor, conversa embaixo.
 

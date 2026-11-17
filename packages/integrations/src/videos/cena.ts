@@ -1,9 +1,10 @@
-import type {
-  EncaixeImagem,
-  ImagemVideo,
-  MomentoVideo,
-  OfertaDoVideo,
-  TipoMomento,
+import {
+  type EncaixeImagem,
+  type ImagemVideo,
+  MOMENTOS_COM_ITENS,
+  type MomentoVideo,
+  type OfertaDoVideo,
+  type TipoMomento,
 } from '@prospeccao/shared/videos';
 import type { Caixa, Grafico, QuadroRosto } from './diagramacao.js';
 import type { Plano } from './montagem.js';
@@ -40,6 +41,10 @@ export interface ImagemNaTela {
 /** Altura (px) de cada gráfico acima da cabeça. */
 export const ALTURA_GRAFICO = {
   lista: (itens: number) => 130 + itens * 112,
+  /** Etiquetas em duas colunas (v160). */
+  nomes: (itens: number, comTitulo: boolean) => (comTitulo ? 96 : 0) + Math.ceil(itens / 2) * 116,
+  compara: 250,
+  troca: 290,
   numero: 360,
   selo: 150,
   oferta: 470,
@@ -82,7 +87,7 @@ export function enfeitesNaTela(e: {
       .map((i) => ({ texto: i.texto, em: ed(i.em) }))
       .filter((i): i is { texto: string; em: number } => i.em != null)
       .map((i) => ({ ...i, em: Math.max(ini, Math.min(fim - 0.3, i.em)) }));
-    if (m.tipo === 'lista' && itens.length < 2) continue;
+    if (MOMENTOS_COM_ITENS.includes(m.tipo) && itens.length < 2) continue;
     momentos.push({
       id: m.id,
       tipo: m.tipo,
@@ -113,11 +118,17 @@ export function enfeitesNaTela(e: {
         altura:
           m.tipo === 'lista'
             ? ALTURA_GRAFICO.lista(m.itens.length)
-            : m.tipo === 'numero'
-              ? ALTURA_GRAFICO.numero
-              : m.tipo === 'selo'
-                ? ALTURA_GRAFICO.selo
-                : ALTURA_GRAFICO.oferta,
+            : m.tipo === 'nomes'
+              ? ALTURA_GRAFICO.nomes(m.itens.length, !!m.titulo)
+              : m.tipo === 'compara'
+                ? ALTURA_GRAFICO.compara
+                : m.tipo === 'troca'
+                  ? ALTURA_GRAFICO.troca
+                  : m.tipo === 'numero'
+                    ? ALTURA_GRAFICO.numero
+                    : m.tipo === 'selo'
+                      ? ALTURA_GRAFICO.selo
+                      : ALTURA_GRAFICO.oferta,
       })),
     ...imagens
       .filter((i) => i.encaixe === 'acima')

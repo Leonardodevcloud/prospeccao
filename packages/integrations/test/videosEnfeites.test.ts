@@ -12,6 +12,8 @@ import {
   comporMusica,
   conferirImagem,
   conferirSobreposicao,
+  cortesDePausa,
+  cortesDeTropeco,
   type DecisaoEnfeites,
   efeitosDoVideo,
   enfeitesNaTela,
@@ -20,7 +22,9 @@ import {
   gerarImagem,
   htmlDoMomento,
   lerEnfeites,
+  listasDaFala,
   montarComposicao,
+  montarCortes,
   noEditado,
   type Plano,
   promptDaImagem,
@@ -541,5 +545,161 @@ describe('v138: biblioteca de efeitos (ElevenLabs Sound Effects)', () => {
     expect(corpos[0]).toMatchObject({ model_id: 'eleven_text_to_sound_v2', duration_seconds: 0.8 });
     expect(String(corpos[0]!.text)).toMatch(/subtle/i);
     expect(Math.max(...Object.values(GANHO_EFEITO))).toBeLessThanOrEqual(0.16);
+  });
+});
+
+/* ───────────────────────────── v160 ───────────────────────────── */
+
+const fala = (texto: string, passo = 0.4): PalavraVideo[] =>
+  texto.split(' ').map((t, k) => ({
+    t,
+    i: Math.round(k * passo * 100) / 100,
+    f: Math.round((k * passo + passo * 0.8) * 100) / 100,
+  }));
+
+describe('v160: tropeços de fala que o código acha', () => {
+  it('tira a palavra pela metade e a expressão repetida, sem mexer em ênfase nem em palavra curta', () => {
+    const p = fala('a gente a gente faz entre- entrega de moto motorista muito muito bom de dezembro');
+    const c = cortesDeTropeco(p, 10);
+    expect(c.map((x) => x.trecho)).toEqual(['a gente', 'entre-', 'moto']);
+    expect(c.map((x) => x.duvida)).toEqual([false, false, true]);
+    expect(c.every((x) => x.tipo === 'recomeco')).toBe(true);
+  });
+  it('entra na lista final de cortes sem duplicar o que a IA já tirou', () => {
+    const p = fala('oi para o para o cliente chega rápido');
+    const d = {
+      inicio: 0,
+      fim: p.length - 1,
+      motivoInicio: '',
+      motivoFim: '',
+      cortes: [],
+      fortes: [],
+      titulo: '',
+    };
+    const cortes = montarCortes(p, [], d, 'dinamico', 4);
+    expect(cortes.filter((c) => c.tipo === 'recomeco').map((c) => c.trecho)).toEqual(['para o']);
+    expect(montarCortes(p, [], d, 'pausas', 4).some((c) => c.tipo === 'recomeco')).toBe(false);
+  });
+  it('pausa curta já é encurtada no ritmo dinâmico', () => {
+    expect(cortesDePausa([{ inicio: 2, fim: 2.24 }], 'dinamico', 10)).toHaveLength(1);
+    expect(cortesDePausa([{ inicio: 2, fim: 2.24 }], 'natural', 10)).toHaveLength(0);
+  });
+});
+
+describe('v160: enumeração vira gráfico', () => {
+  const p = fala(
+    'aqui você aluga sem taxa, sem fidelidade e sem burocracia nenhuma, fala com a gente hoje mesmo pelo zap',
+  );
+  const f = [{ inicio: 0, fim: 9 }];
+  it('acha "sem X, sem Y, sem Z" e "primeiro, segundo" só pelas palavras', () => {
+    const l = listasDaFala(p, f);
+    expect(l).toHaveLength(1);
+    expect(l[0]!.tipo).toBe('nomes');
+    expect(l[0]!.itens.map((i) => i.texto)).toEqual(['sem taxa', 'sem fidelidade', 'sem burocracia']);
+    const o = listasDaFala(
+      fala('primeiro você chama no zap, segundo a gente separa a peça, terceiro o motoboy leva'),
+      [{ inicio: 0, fim: 9 }],
+    );
+    expect(o[0]!.itens).toHaveLength(3);
+    expect(o[0]!.tipo).toBe('lista');
+  });
+  it('entra mesmo quando a IA só propôs um selo ali, e não entra quando ela já fez a lista', () => {
+    const selo = {
+      tipo: 'selo' as const,
+      de: 3,
+      ate: 5,
+      titulo: 'SEM TAXA',
+      numero: '',
+      itens: [],
+      divulgarId: null,
+    };
+    const r = aplicarRegras(decisao({ momentos: [selo] }), {
+      ...base,
+      palavras: p,
+      ficam: f,
+      duracaoEditado: 9,
+      comTitulo: false,
+    });
+    expect(r.momentos.map((m) => m.tipo)).toEqual(['nomes']);
+    expect(r.momentos[0]!.itens.map((i) => i.texto)).toEqual(
+      ['SEM TAXA', 'SEM FIDELIDADE', 'SEM BUROCRACIA'].slice(0, 3),
+    );
+    const lista = {
+      ...selo,
+      tipo: 'lista' as const,
+      titulo: '',
+      itens: [
+        { texto: 'Sem taxa', palavra: 3 },
+        { texto: 'Sem fidelidade', palavra: 5 },
+      ],
+    };
+    const r2 = aplicarRegras(decisao({ momentos: [lista] }), {
+      ...base,
+      palavras: p,
+      ficam: f,
+      duracaoEditado: 9,
+      comTitulo: false,
+    });
+    expect(r2.momentos.map((m) => m.tipo)).toEqual(['lista']);
+  });
+  it('nome comprido vira lista; compara e troca levam exatamente dois itens', () => {
+    const m = (tipo: 'nomes' | 'compara' | 'troca', textos: string[]) => ({
+      tipo,
+      de: 10,
+      ate: 20,
+      titulo: 'X',
+      numero: '',
+      itens: textos.map((texto, n) => ({ texto, palavra: 10 + n * 3 })),
+      divulgarId: null,
+    });
+    const r = aplicarRegras(
+      decisao({
+        momentos: [
+          m('nomes', ['Entrega no mesmo dia garantida', 'Salvador']),
+          {
+            ...m('compara', ['Antes', 'Agora', 'Sobra']),
+            de: 40,
+            ate: 50,
+            itens: [40, 43, 46].map((k, n) => ({ texto: ['Antes', 'Agora', 'Sobra'][n]!, palavra: k })),
+          },
+          { ...m('troca', ['Gasto']), de: 70, ate: 75, itens: [{ texto: 'Gasto', palavra: 70 }] },
+        ],
+      }),
+      base,
+    );
+    expect(r.momentos.map((x) => [x.tipo, x.itens.length, x.titulo])).toEqual([
+      ['lista', 2, 'X'],
+      ['compara', 2, ''],
+    ]);
+  });
+  it('desenha os três tipos novos e dá som a cada entrada', () => {
+    const tela = (tipo: 'nomes' | 'compara' | 'troca', textos: string[]) => ({
+      id: 'm1',
+      tipo,
+      ini: 3,
+      fim: 7,
+      titulo: '',
+      numero: '',
+      itens: textos.map((texto, n) => ({ texto, em: 3.5 + n })),
+      oferta: null,
+      ancora: null,
+    });
+    expect(
+      htmlDoMomento(tela('nomes', ['SALVADOR', 'RECIFE', 'NATAL']), medir).match(/class="nome"/g),
+    ).toHaveLength(3);
+    expect(htmlDoMomento(tela('compara', ['ANTES', 'AGORA']), medir)).toContain('class="lado depois"');
+    expect(htmlDoMomento(tela('troca', ['GASTO', 'INVESTIMENTO']), medir)).toContain('class="risco"');
+    const sons = efeitosDoVideo({
+      titulo: false,
+      momentos: [tela('nomes', ['A', 'B', 'C']), { ...tela('troca', ['A', 'B']), id: 'm2' }],
+      imagens: [],
+      chamadaEm: null,
+    });
+    expect(sons.map((s) => s.id)).toEqual(
+      ['m1:0', 'm2', 'm1:1', 'm2:1', 'm1:2'].sort(
+        (a, b) => sons.findIndex((s) => s.id === a) - sons.findIndex((s) => s.id === b),
+      ),
+    );
+    expect(sons).toHaveLength(5);
   });
 });

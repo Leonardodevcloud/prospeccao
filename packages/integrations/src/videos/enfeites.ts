@@ -6,8 +6,11 @@ import {
   IMAGEM_SEM_NO_COMECO,
   IMAGENS_FRACAO_MAXIMA,
   type ImagemVideo,
+  ITENS_DO_MOMENTO,
   type ItemDaLista,
   MAX_IMAGENS_VIDEO,
+  MAX_LETRAS_NOME,
+  MOMENTOS_COM_ITENS,
   type ModoImagens,
   type MomentoVideo,
   type OfertaDoVideo,
@@ -83,17 +86,21 @@ const ESQUEMA_ENFEITES = {
   properties: {
     momentos: {
       type: 'array',
-      description: 'Animações que acompanham a fala. Poucas e certeiras: 0 a 5 num vídeo de 30 s.',
+      description:
+        'Animações que acompanham a fala: uma a cada 3 a 4 segundos; toda enumeração vira lista ou nomes.',
       items: {
         type: 'object',
         properties: {
-          tipo: { type: 'string', enum: ['lista', 'numero', 'selo', 'destaque', 'oferta'] },
+          tipo: {
+            type: 'string',
+            enum: ['lista', 'nomes', 'compara', 'troca', 'numero', 'selo', 'destaque', 'oferta'],
+          },
           de: { type: 'integer', description: 'Índice da primeira palavra do momento.' },
           ate: { type: 'integer', description: 'Índice da última palavra do momento.' },
           titulo: {
             type: 'string',
             description:
-              'lista: título curto em maiúsculas ("3 SINAIS DE TROCA"); numero: a linha embaixo do número ("MAIS DURABILIDADE"); selo: 1 a 3 palavras ("DICA", "SÓ ATÉ SÁBADO"). Vazio em destaque e oferta.',
+              'lista e nomes: título curto em maiúsculas ("3 SINAIS DE TROCA", "ONDE ATENDEMOS"), pode ficar vazio; numero: a linha embaixo do número ("MAIS DURABILIDADE"); selo: 1 a 3 palavras ("DICA", "SÓ ATÉ SÁBADO"). Vazio em compara, troca, destaque e oferta.',
           },
           numero: {
             type: 'string',
@@ -102,7 +109,7 @@ const ESQUEMA_ENFEITES = {
           itens: {
             type: 'array',
             description:
-              'Só em lista: 2 a 5 itens, cada um com o índice da palavra em que a pessoa fala dele.',
+              'lista: 2 a 5 itens; nomes: 2 a 6 itens de até 20 letras; compara: exatamente 2 (um lado e o outro, na ordem da fala); troca: exatamente 2 (o que sai riscado e o que entra). Cada item com o índice da palavra em que a pessoa fala dele.',
             items: {
               type: 'object',
               properties: { texto: { type: 'string' }, palavra: { type: 'integer' } },
@@ -174,7 +181,10 @@ const ESQUEMA_ENFEITES = {
 const SISTEMA_ENFEITES = `Você é o editor de motion de vídeos curtos (Reels, TikTok) de uma empresa brasileira. Recebe a fala que ficou no vídeo, palavra por palavra (índice, palavra e o segundo em que ela aparece no vídeo editado), as fotos que a empresa tem e as promoções cadastradas.
 
 Proponha o que entra em cima da fala para o vídeo prender e explicar melhor, sem poluir:
-- lista: quando a pessoa enumera ("três sinais", "primeiro… segundo…"). Cada item marca quando ela fala dele.
+- lista: SEMPRE que a pessoa enumera duas ou mais coisas parecidas, com ou sem aviso: passos ("primeiro… depois…"), motivos, vantagens, o que está incluso, o que precisa levar, "sem isso, sem aquilo", "tem A, tem B e tem C". Enumeração na fala sem lista na tela é erro. Cada item em 1 a 4 palavras, com as palavras da pessoa, marcando quando ela fala dele.
+- nomes: enumeração de coisas curtas que são nomes ou rótulos (cidades, bairros, marcas, produtos, serviços, dias, "sem taxa, sem fidelidade, sem burocracia"): cada um aparece numa etiqueta quando é falado. 2 a 6 itens de até 20 letras; mais comprido que isso, use lista.
+- compara: a pessoa põe dois lados frente a frente ("antes… agora", "na concorrência… aqui", "de moto… de carro", "comprar… alugar"): os dois lados lado a lado, o segundo entra quando ela fala dele. Exatamente 2 itens curtos.
+- troca: a pessoa nega uma coisa e afirma outra ("não é gasto, é investimento", "esquece planilha, usa o sistema"): o primeiro aparece e é riscado, o segundo entra por cima. Exatamente 2 itens curtos.
 - numero: um número que impressiona ("dura o dobro" → "2×", "50% mais barato").
 - selo: um rótulo curto num momento-chave ("DICA", "SÓ ATÉ SÁBADO").
 - destaque: aproximação do rosto na frase mais forte do vídeo (1 ou 2 por vídeo, nunca mais de 3).
@@ -187,7 +197,7 @@ Imagens:
 - encaixe "cheia" para cenas (tela cheia por pouco tempo, a voz continua); "acima" para produto e detalhe.
 - Animações e imagens não se sobrepõem.
 
-Ritmo (v138): o vídeo não pode ficar só com a legenda. Ponha um elemento (selo, número, lista, destaque ou imagem) a cada 4 a 6 segundos do vídeo editado, começando depois dos 2 primeiros segundos: num vídeo de 15 s, 2 a 3 elementos; num de 60 s, 8 a 12. Sem lista nem número na fala, use selo com as palavras-chave da própria fala ("GESTÃO COMERCIAL", "TUDO NUM LUGAR SÓ") e um destaque na frase mais forte. O pedido da empresa sobre elementos gráficos manda: se ela pedir mais ou menos, siga.
+Ritmo (v160): o vídeo não pode ficar só com a legenda. Ponha um elemento (lista, nomes, compara, troca, número, selo, destaque ou imagem) a cada 3 a 4 segundos do vídeo editado, começando depois dos 2 primeiros segundos: num vídeo de 15 s, 3 a 4 elementos; num de 30 s, 6 a 9; num de 60 s, 12 a 16. Antes de escolher, leia a fala inteira procurando, nesta ordem: enumerações (lista ou nomes), comparações (compara), negação seguida de afirmação (troca), números (numero) e a promoção cadastrada (oferta); só depois complete os vazios com selo e destaque. Varie os tipos: nunca três selos seguidos. Sem lista nem número na fala, use selo com as palavras-chave da própria fala ("GESTÃO COMERCIAL", "TUDO NUM LUGAR SÓ") e um destaque na frase mais forte. O pedido da empresa sobre elementos gráficos manda: se ela pedir mais ou menos, siga.
 
 Música: o clima pelo assunto (promoção → animada ou confiante; explicação → calma; institucional → corporativa) e o estilo em inglês, sempre instrumental, sem citar artista.`;
 
@@ -229,7 +239,7 @@ export interface DecisaoEnfeites {
   musica: { clima: ClimaMusica; estilo: string };
 }
 
-const TIPOS: TipoMomento[] = ['lista', 'numero', 'selo', 'destaque', 'oferta'];
+const TIPOS: TipoMomento[] = ['lista', 'nomes', 'compara', 'troca', 'numero', 'selo', 'destaque', 'oferta'];
 const CLIMAS: ClimaMusica[] = ['animada', 'confiante', 'calma', 'corporativa'];
 
 /** Confere o que a IA mandou (índices dentro da fala, tipos conhecidos). */
@@ -338,6 +348,119 @@ export function enfeitesPelasRegras(opcoes: OpcoesVideo): DecisaoEnfeites {
   return { momentos: [], imagens: [], semImagem: [], musica: { clima, estilo: '' } };
 }
 
+/* ───────────────────── v160: a enumeração que a IA deixou passar ───────────────────── */
+
+type MomentoProposto = DecisaoEnfeites['momentos'][number];
+const semAcento = (t: string) =>
+  t
+    .normalize('NFD')
+    .replace(/[^\p{L}\p{N}]/gu, '')
+    .toLowerCase();
+/** Palavra que se repete na frente de cada coisa enumerada ("sem taxa, sem fidelidade, sem multa"). */
+const MARCADORES = new Set(['sem', 'com', 'mais', 'menos', 'zero', 'nada']);
+const ORDINAIS = ['primeir', 'segund', 'terceir', 'quart', 'quint'];
+const LIGA = new Set(
+  'a o e é as os um uma de da do das dos em na no nas nos que se por para pra pro ou mas também tambem ainda aí ai então entao'.split(
+    ' ',
+  ),
+);
+const fimDeFrase = (t: string) => /[.!?;:,]$/.test(t.trim());
+
+/** As palavras do item: do índice em diante, até a pontuação, sem ligação nas pontas. */
+function textoDoItem(palavras: PalavraVideo[], de: number, max: number, parar: (k: number) => boolean) {
+  const usadas: string[] = [];
+  let k = de;
+  while (k < palavras.length && usadas.length < max && !(k > de && parar(k))) {
+    usadas.push(palavras[k]!.t.replace(/[.,;:!?…]+$/g, ''));
+    if (fimDeFrase(palavras[k]!.t)) break;
+    k++;
+  }
+  while (usadas.length && LIGA.has(semAcento(usadas.at(-1)!))) usadas.pop();
+  while (usadas.length > 1 && LIGA.has(semAcento(usadas[0]!))) usadas.shift();
+  return usadas.join(' ');
+}
+
+/**
+ * Enumerações que dá para ver só nas palavras: a mesma palavra abrindo três coisas seguidas
+ * ("sem X, sem Y, sem Z") e "primeiro… segundo…". Entra como nomes (ou lista, se o texto é comprido).
+ */
+export function listasDaFala(palavras: PalavraVideo[], ficam: Trecho[]): MomentoProposto[] {
+  const vivo = (k: number) => tempoNoEditado(palavras[k]!.i + 0.02, ficam) != null;
+  const c = palavras.map((p) => semAcento(p.t));
+  const out: MomentoProposto[] = [];
+  const montar = (pontos: number[], comMarcador: boolean) => {
+    const itens = pontos
+      .map((k, n) => {
+        const prox = pontos[n + 1] ?? palavras.length;
+        const texto = textoDoItem(palavras, comMarcador ? k : k + 1, comMarcador ? 3 : 4, (j) => j >= prox);
+        // Com a palavra que se repete, o nome curto basta ("sem burocracia nenhuma" → "sem burocracia").
+        const enxuto =
+          comMarcador && texto.length > MAX_LETRAS_NOME ? texto.split(' ').slice(0, 2).join(' ') : texto;
+        return { texto: curto(enxuto, 32), palavra: k };
+      })
+      .filter((i) => i.texto.split(' ').length >= (comMarcador ? 2 : 1) && i.texto.length >= 3);
+    if (itens.length < (comMarcador ? 3 : 2)) return;
+    const ultimo = pontos.at(-1)!;
+    // Passos em ordem são lista; coisas com a mesma palavra na frente, etiquetas.
+    const tipo: TipoMomento =
+      comMarcador && itens.every((i) => i.texto.length <= MAX_LETRAS_NOME) ? 'nomes' : 'lista';
+    out.push({
+      tipo,
+      de: pontos[0]!,
+      ate: Math.min(palavras.length - 1, ultimo + 3),
+      titulo: '',
+      numero: '',
+      itens: itens.slice(0, tipo === 'nomes' ? 6 : 5),
+      divulgarId: null,
+    });
+  };
+  // 1. A mesma palavra abrindo três ou mais coisas, a no máximo 5 palavras uma da outra.
+  let k = 0;
+  while (k < palavras.length) {
+    if (!MARCADORES.has(c[k]!) || !vivo(k)) {
+      k++;
+      continue;
+    }
+    const pontos = [k];
+    let j = k + 1;
+    while (j < palavras.length && j - pontos.at(-1)! <= 5) {
+      if (c[j] === c[k] && vivo(j)) pontos.push(j);
+      j++;
+    }
+    if (pontos.length >= 3) montar(pontos, true);
+    k = pontos.length >= 3 ? pontos.at(-1)! + 1 : k + 1;
+  }
+  // 2. "Primeiro… segundo… terceiro…", em ordem, a no máximo 25 s um do outro.
+  const pontos: number[] = [];
+  for (let n = 0; n < palavras.length; n++) {
+    const esperado = ORDINAIS[pontos.length];
+    if (!esperado || !vivo(n) || !c[n]!.startsWith(esperado)) continue;
+    if (pontos.length && palavras[n]!.i - palavras[pontos.at(-1)!]!.i > 25) break;
+    pontos.push(n);
+  }
+  if (pontos.length >= 2) montar(pontos, false);
+  return out;
+}
+
+/** O que a IA propôs mais as enumerações que ela deixou passar (o selo que estava ali dá lugar). */
+export function comListasDaFala(
+  propostos: MomentoProposto[],
+  palavras: PalavraVideo[],
+  ficam: Trecho[],
+): MomentoProposto[] {
+  const cruza = (a: MomentoProposto, b: MomentoProposto) => a.de <= b.ate && b.de <= a.ate;
+  const novas = listasDaFala(palavras, ficam).filter(
+    (n) => !propostos.some((p) => MOMENTOS_COM_ITENS.includes(p.tipo) && cruza(p, n)),
+  );
+  if (!novas.length) return [...propostos];
+  return [
+    ...propostos.filter(
+      (p) => !((p.tipo === 'selo' || p.tipo === 'numero') && novas.some((n) => cruza(p, n))),
+    ),
+    ...novas,
+  ];
+}
+
 /* ───────────────────────────── As regras ───────────────────────────── */
 
 interface Janela {
@@ -348,13 +471,16 @@ const encosta = (a: Janela, b: Janela, folga = 0) => a.ini < b.fim + folga && b.
 
 const DURACAO_MOMENTO: Record<TipoMomento, [number, number]> = {
   lista: [2.5, 12],
+  nomes: [2, 10],
+  compara: [2.4, 6],
+  troca: [2.4, 6],
   numero: [1.8, 3.5],
   selo: [1.5, 3],
   destaque: [0.8, 3],
   oferta: [2.5, 4.5],
 };
 const MAX_DESTAQUES = 3;
-const MAX_MOMENTOS = 8;
+const MAX_MOMENTOS = 16;
 
 export interface ResultadoEnfeites {
   momentos: MomentoVideo[];
@@ -395,7 +521,7 @@ export function aplicarRegras(
   const graficos: Janela[] = titulo ? [titulo] : [];
   const momentos: MomentoVideo[] = [];
   let destaques = 0;
-  for (const m of [...d.momentos].sort((a, b) => a.de - b.de)) {
+  for (const m of comListasDaFala(d.momentos, palavras, ficam).sort((a, b) => a.de - b.de)) {
     if (momentos.length >= MAX_MOMENTOS) break;
     const p0 = palavras[m.de]!;
     const p1 = palavras[m.ate]!;
@@ -404,15 +530,19 @@ export function aplicarRegras(
     if (ini == null || fim == null) continue;
     let itens: ItemDaLista[] = [];
     let oferta: OfertaDoVideo | null = null;
-    if (m.tipo === 'lista') {
+    let tipo = m.tipo;
+    if (MOMENTOS_COM_ITENS.includes(tipo)) {
+      // Nome comprido não cabe na etiqueta: vira lista.
+      if (tipo === 'nomes' && m.itens.some((i) => i.texto.length > MAX_LETRAS_NOME)) tipo = 'lista';
+      const [min, max] = ITENS_DO_MOMENTO[tipo]!;
       itens = m.itens
-        .slice(0, 5)
         .map((i) => ({ texto: i.texto.toUpperCase(), em: palavras[i.palavra]!.i }))
         .filter((i) => tempoNoEditado(i.em + 0.02, ficam) != null)
-        .sort((a, b) => a.em - b.em);
-      if (itens.length < 2) continue;
+        .sort((a, b) => a.em - b.em)
+        .slice(0, max);
+      if (itens.length < min) continue;
       ini = Math.min(ini, ed(itens[0]!.em)! - 0.4);
-      fim = Math.max(fim, ed(itens.at(-1)!.em)! + 1.2);
+      fim = Math.max(fim, ed(itens.at(-1)!.em)! + (tipo === 'lista' || tipo === 'nomes' ? 1.2 : 1.8));
     }
     if (m.tipo === 'numero' && !m.numero) continue;
     if (m.tipo === 'selo' && !m.titulo) continue;
@@ -427,8 +557,10 @@ export function aplicarRegras(
       };
     }
     if (m.tipo === 'destaque' && destaques >= MAX_DESTAQUES) continue;
-    const [min, max] = DURACAO_MOMENTO[m.tipo];
+    const [min, max] = DURACAO_MOMENTO[tipo];
     ini = Math.max(0, ini);
+    // v160: a enumeração que começa junto com o título de abertura espera ele sair (não some).
+    if (titulo && MOMENTOS_COM_ITENS.includes(tipo) && ini < titulo.fim + 0.3) ini = titulo.fim + 0.31;
     fim = Math.min(Math.max(fim, ini + min), ini + max, fimLivre);
     if (fim - ini < min * 0.8) continue;
     const janela = { ini, fim };
@@ -441,12 +573,15 @@ export function aplicarRegras(
     if (oi == null || of == null) continue;
     momentos.push({
       id: `m${momentos.length + 1}`,
-      tipo: m.tipo,
+      tipo,
       inicio: oi,
       fim: of,
       fala: fala(m.de, m.ate),
       usar: true,
-      titulo: m.tipo === 'destaque' || m.tipo === 'oferta' ? '' : m.titulo.toUpperCase().slice(0, 30),
+      titulo:
+        tipo === 'destaque' || tipo === 'oferta' || tipo === 'compara' || tipo === 'troca'
+          ? ''
+          : m.titulo.toUpperCase().slice(0, 30),
       numero: m.tipo === 'numero' ? m.numero.slice(0, 7) : '',
       itens,
       divulgarId: m.tipo === 'oferta' ? m.divulgarId : null,

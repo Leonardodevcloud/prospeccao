@@ -8,6 +8,7 @@ import {
   fmtDuracao,
   IMAGENS_FRACAO_MAXIMA,
   type ImagemVideo,
+  MOMENTOS_COM_ITENS,
   type MomentoVideo,
   momentosDe,
   type ParteMusica,
@@ -408,9 +409,11 @@ function CartaoMomento({ v, m, ficam }: { v: DetalheVideo; m: MomentoVideo; fica
   const rotuloTitulo =
     m.tipo === 'lista'
       ? 'Título da lista'
-      : m.tipo === 'numero'
-        ? 'Linha embaixo do número'
-        : 'Texto do selo';
+      : m.tipo === 'nomes'
+        ? 'Título em cima dos nomes (pode ficar vazio)'
+        : m.tipo === 'numero'
+          ? 'Linha embaixo do número'
+          : 'Texto do selo';
   return (
     <div className="video__animacao" data-fora={!m.usar || undefined}>
       <span className="video__corte-cabeca">
@@ -424,7 +427,7 @@ function CartaoMomento({ v, m, ficam }: { v: DetalheVideo; m: MomentoVideo; fica
         </label>
       </span>
       {m.fala && <span className="campo__dica">Você falou "{semPonto(m.fala)}".</span>}
-      {(m.tipo === 'lista' || m.tipo === 'numero' || m.tipo === 'selo') && (
+      {(m.tipo === 'lista' || m.tipo === 'nomes' || m.tipo === 'numero' || m.tipo === 'selo') && (
         <div className="campo">
           <label htmlFor={`${id}-t`}>{rotuloTitulo}</label>
           <input
@@ -450,9 +453,17 @@ function CartaoMomento({ v, m, ficam }: { v: DetalheVideo; m: MomentoVideo; fica
           />
         </div>
       )}
-      {m.tipo === 'lista' && (
+      {MOMENTOS_COM_ITENS.includes(m.tipo) && (
         <fieldset className="campo">
-          <legend>Itens (cada um marca quando você fala dele)</legend>
+          <legend>
+            {m.tipo === 'lista'
+              ? 'Itens (cada um marca quando você fala dele)'
+              : m.tipo === 'nomes'
+                ? 'Nomes (cada um aparece quando você fala dele)'
+                : m.tipo === 'compara'
+                  ? 'Os dois lados (o segundo entra quando você fala dele)'
+                  : 'O que sai riscado e o que entra no lugar'}
+          </legend>
           {itens.map((t, n) => (
             <input
               // biome-ignore lint/suspicious/noArrayIndexKey: a lista tem tamanho fixo

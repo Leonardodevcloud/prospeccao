@@ -92,6 +92,32 @@ export function htmlDoMomento(m: MomentoNaTela, medir: Medir): string {
       .join('');
     return `<div class="grafico" id="${id}">${cab}<div class="itens">${itens}</div></div>`;
   }
+  if (m.tipo === 'nomes') {
+    const tam = Math.min(...m.itens.map((i) => caber(medir, i.texto, 420 - 64, [44, 40, 36, 32, 28, 24])));
+    const cab = m.titulo
+      ? `<div class="cab" style="font-size: ${caber(medir, m.titulo, 860, [62, 56, 50, 44])}px">${esc(m.titulo)}</div>`
+      : '';
+    const nomes = m.itens
+      .map((i) => `<div class="nome" style="font-size: ${tam}px"><span>${esc(i.texto)}</span></div>`)
+      .join('');
+    return `<div class="grafico" id="${id}">${cab}<div class="nomes">${nomes}</div></div>`;
+  }
+  if (m.tipo === 'compara' || m.tipo === 'troca') {
+    const [a, b] = m.itens;
+    if (!a || !b) return '';
+    if (m.tipo === 'compara') {
+      const tam = Math.min(...[a, b].map((i) => caber(medir, i.texto, 372 - 48, [52, 46, 40, 34, 28, 24])));
+      return `<div class="grafico" id="${id}"><div class="compara" style="font-size: ${tam}px">
+    <div class="lado antes"><span>${esc(a.texto)}</span></div>
+    <div class="seta"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="lado depois"><span>${esc(b.texto)}</span></div>
+  </div></div>`;
+    }
+    return `<div class="grafico" id="${id}"><div class="troca">
+    <div class="sai" style="font-size: ${caber(medir, a.texto, 860 - 80, [56, 50, 44, 38, 32])}px"><span>${esc(a.texto)}<i class="risco"></i></span></div>
+    <div class="entra" style="font-size: ${caber(medir, b.texto, 860 - 92, [76, 68, 60, 52, 44, 36])}px">${esc(b.texto)}</div>
+  </div></div>`;
+  }
   if (m.tipo === 'numero') {
     const tamValor = caber(medir, m.numero, 860, [250, 220, 190, 160, 130]);
     const linha = m.titulo
@@ -222,6 +248,20 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 .item { display: flex; align-items: center; gap: 22px; height: 96px; padding: 0 28px; border-radius: 24px; background: rgba(255,255,255,.62); color: #18181b; font-weight: 900; box-shadow: 0 12px 30px rgba(0,0,0,.25); }
 .marca { width: 54px; height: 54px; flex: none; border-radius: 50%; border: 5px solid #3f3f3b; display: grid; place-items: center; }
 .marca svg { width: 30px; height: 30px; opacity: 0; }
+.nomes { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.nome { height: 96px; padding: 0 32px; border-radius: 999px; background: #fff; color: #18181b; font-weight: 900; display: grid; place-items: center; white-space: nowrap; overflow: hidden; box-shadow: 0 12px 30px rgba(0,0,0,.28); border-bottom: 8px solid ${destaque}; opacity: 0; }
+.nome:last-child:nth-child(odd) { grid-column: 1 / -1; justify-self: center; width: 420px; }
+.compara { width: 100%; display: grid; grid-template-columns: 372px 76px 372px; gap: 20px; align-items: center; font-weight: 900; }
+.lado { height: 210px; border-radius: 32px; display: grid; place-items: center; text-align: center; padding: 0 24px; line-height: 1.05; box-shadow: 0 18px 44px rgba(0,0,0,.35); overflow: hidden; }
+.lado.antes { background: rgba(255,255,255,.9); color: #52524e; }
+.lado.depois { background: ${primaria}; color: #fff; opacity: 0; }
+.seta { width: 76px; height: 76px; border-radius: 50%; background: ${destaque}; display: grid; place-items: center; opacity: 0; box-shadow: 0 10px 26px rgba(0,0,0,.35); }
+.seta svg { width: 44px; height: 44px; }
+.troca { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 18px; font-weight: 900; }
+.troca .sai { padding: 20px 40px; border-radius: 24px; background: rgba(255,255,255,.9); color: #52524e; white-space: nowrap; box-shadow: 0 12px 30px rgba(0,0,0,.28); }
+.troca .sai span { position: relative; display: inline-block; }
+.troca .risco { position: absolute; left: -10px; right: -10px; top: 50%; height: 9px; margin-top: -4px; border-radius: 5px; background: ${destaque}; transform-origin: 0 50%; transform: scaleX(0); }
+.troca .entra { padding: 24px 46px; border-radius: 28px; background: ${primaria}; color: #fff; white-space: nowrap; box-shadow: 0 18px 44px rgba(0,0,0,.35); opacity: 0; }
 .valor { font-weight: 900; line-height: .9; color: ${destaque}; letter-spacing: -.04em; -webkit-text-stroke: 10px rgba(10,0,25,.9); paint-order: stroke fill; filter: drop-shadow(0 12px 30px rgba(0,0,0,.45)); }
 .linha-num { font-weight: 900; color: #fff; text-align: center; margin-top: 10px; text-shadow: 0 6px 24px rgba(0,0,0,.5); }
 .selo { padding: 22px 46px; border-radius: 999px; background: ${primaria}; color: #fff; font-weight: 900; transform: rotate(-4deg); box-shadow: 0 18px 44px rgba(0,0,0,.35); white-space: nowrap; }
@@ -386,6 +426,26 @@ for (const m of DADOS.momentos) {
       tl.fromTo(item.querySelector('.marca svg'), { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.25, ease: 'back.out(3)' }, t);
       tl.fromTo(item, { scale: 1 }, { scale: 1.04, duration: 0.12, yoyo: true, repeat: 1, ease: 'sine.inOut' }, t);
     });
+  } else if (m.tipo === 'nomes') {
+    // Cada etiqueta salta para a tela na hora em que o nome é falado.
+    const nomes = el.querySelectorAll('.nome');
+    m.itens.forEach((it, n) => {
+      const nome = nomes[n];
+      if (!nome) return;
+      const t = Math.max(entra + 0.1 + n * 0.06, it.em - 0.05);
+      tl.fromTo(nome, { opacity: 0, scale: 0.5, y: 26 }, { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: 'back.out(2.4)' }, t);
+    });
+  } else if (m.tipo === 'compara') {
+    const t2 = Math.max(entra + 0.5, m.itens[1] ? m.itens[1].em - 0.05 : entra + 0.9);
+    tl.from(el.querySelector('.antes'), { x: -60, opacity: 0, duration: 0.3, ease: 'power3.out' }, entra + 0.05);
+    tl.fromTo(el.querySelector('.seta'), { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.25, ease: 'back.out(3)' }, t2 - 0.12);
+    tl.fromTo(el.querySelector('.depois'), { opacity: 0, x: 60, scale: 0.9 }, { opacity: 1, x: 0, scale: 1, duration: 0.35, ease: 'back.out(1.8)' }, t2);
+    tl.to(el.querySelector('.antes'), { scale: 0.94, opacity: 0.75, duration: 0.3, ease: 'power2.out' }, t2);
+  } else if (m.tipo === 'troca') {
+    const t2 = Math.max(entra + 0.6, m.itens[1] ? m.itens[1].em - 0.05 : entra + 1);
+    tl.to(el.querySelector('.risco'), { scaleX: 1, duration: 0.22, ease: 'power2.inOut' }, t2 - 0.25);
+    tl.to(el.querySelector('.sai'), { scale: 0.86, opacity: 0.7, duration: 0.25, ease: 'power2.out' }, t2 - 0.05);
+    tl.fromTo(el.querySelector('.entra'), { opacity: 0, scale: 0.5, y: 20 }, { opacity: 1, scale: 1, y: 0, duration: 0.38, ease: 'back.out(2.2)' }, t2);
   } else if (m.tipo === 'numero') {
     tl.fromTo(el.querySelector('.valor'), { scale: 0.4 }, { scale: 1, duration: 0.45, ease: 'back.out(2.2)' }, entra);
     tl.from(el.querySelector('.linha-num'), { opacity: 0, y: 20, duration: 0.3, ease: 'power2.out' }, entra + 0.25);

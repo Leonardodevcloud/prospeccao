@@ -85,9 +85,9 @@ export const RITMOS: { id: RitmoCortes; nome: string; dica: string }[] = [
   { id: 'pausas', nome: 'Só pausas longas', dica: 'Não tira palavras, só encurta silêncios grandes' },
 ];
 /** Pausa que fica entre duas falas depois do corte, por ritmo (segundos). */
-export const PAUSA_QUE_FICA: Record<RitmoCortes, number> = { dinamico: 0.15, natural: 0.35, pausas: 0.5 };
+export const PAUSA_QUE_FICA: Record<RitmoCortes, number> = { dinamico: 0.12, natural: 0.3, pausas: 0.5 };
 /** Silêncio a partir do qual o ritmo encurta (segundos). */
-export const PAUSA_MINIMA: Record<RitmoCortes, number> = { dinamico: 0.28, natural: 0.6, pausas: 1.0 };
+export const PAUSA_MINIMA: Record<RitmoCortes, number> = { dinamico: 0.22, natural: 0.5, pausas: 1.0 };
 
 export type TransicaoCortes = 'alternada' | 'seco' | 'deslizar';
 export const TRANSICOES: { id: TransicaoCortes; nome: string; dica: string }[] = [
@@ -224,9 +224,23 @@ export interface PalavraVideo {
   conferir?: boolean;
 }
 
-export type TipoMomento = 'lista' | 'numero' | 'selo' | 'destaque' | 'oferta';
+export type TipoMomento = 'lista' | 'nomes' | 'compara' | 'troca' | 'numero' | 'selo' | 'destaque' | 'oferta';
+/** v160: os tipos que levam itens, cada um entrando quando a pessoa fala dele. */
+export const MOMENTOS_COM_ITENS: TipoMomento[] = ['lista', 'nomes', 'compara', 'troca'];
+/** Quantos itens cada tipo aceita (mínimo e máximo). */
+export const ITENS_DO_MOMENTO: Partial<Record<TipoMomento, [number, number]>> = {
+  lista: [2, 5],
+  nomes: [2, 6],
+  compara: [2, 2],
+  troca: [2, 2],
+};
+/** O texto de um nome (etiqueta) cabe em meia largura: mais comprido que isso, vira lista. */
+export const MAX_LETRAS_NOME = 20;
 export const ROTULO_MOMENTO: Record<TipoMomento, string> = {
   lista: 'Lista que se marca',
+  nomes: 'Nomes que aparecem um a um',
+  compara: 'Comparação (um lado e o outro)',
+  troca: 'Troca (risca um, entra o outro)',
   numero: 'Número grande',
   selo: 'Selo',
   destaque: 'Aproximação na frase forte',
@@ -475,7 +489,7 @@ export const revisaoEntrada = z.object({
         usar: z.boolean().optional(),
         titulo: textoCurto(40).optional(),
         numero: textoCurto(8).optional(),
-        itens: z.array(z.string().trim().min(1).max(32)).min(1).max(5).optional(),
+        itens: z.array(z.string().trim().min(1).max(32)).min(1).max(6).optional(),
       }),
     )
     .max(60)

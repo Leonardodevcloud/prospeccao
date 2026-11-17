@@ -147,11 +147,19 @@ const SISTEMA_CORTES = `Você é o editor de vídeos curtos (Reels, TikTok) de u
 Decida o que sai para o vídeo ficar ágil e profissional, sem mudar o que a pessoa quis dizer:
 - muleta: "é", "éé", "hã", "hum", "né" e "tipo" soltos, que não fazem parte da frase.
 - recomeco: a pessoa começou uma frase, parou e falou de novo. Tire a primeira tentativa e fique com a última, a mais completa. Se as duas versões dizem coisas diferentes, marque duvida.
+- Interrupções de fala também são recomeco, mesmo as pequenas. Procure uma por uma, a fala inteira:
+  · palavra pela metade ou gaguejada ("entre- entrega", "mo… moto", "a a gente"): sai o pedaço, fica a palavra inteira;
+  · palavra ou expressão repetida em seguida sem ser ênfase ("a gente a gente", "que que", "para o para o cliente"): sai a primeira;
+  · falso começo de 1 a 4 palavras que a pessoa larga e troca por outro ("a gente vai… nós entregamos"): sai o que foi largado;
+  · autocorreção ("custa cinquenta, quer dizer, quarenta", "ou melhor", "aliás", "digo", "não, pera"): sai o que estava errado junto com a expressão de correção, fica só o certo;
+  · frase que a pessoa não termina e deixa no ar antes de começar outra: sai o pedaço sem fim;
+  · palavra de enrolação no meio da frase ("assim", "tipo assim", "sabe", "então" solto, "né" a cada frase) quando a frase fica inteira sem ela.
+  Uma pausa marcada logo antes de uma palavra repetida é sinal de recomeço. Repetição de ênfase ("muito, muito bom") fica.
 - fora: fala dirigida a quem está gravando ou a outra pessoa ("pode gravar?", "pera aí", "ficou bom?"), pedido para quem vai editar, ou algo fora do assunto do vídeo.
 - outro: fala embolada ou que não forma palavra (sílabas soltas, "blé blé", "ãhn ãhn", palavra que não existe em português, a pessoa "pensando alto" sem dizer nada). Corte; se não tiver certeza de que não é uma palavra da empresa (marca, produto), marque duvida.
 - inicio/fim: fala antes do vídeo começar de verdade (combinação, contagem, "tá gravando?") ou depois que terminou ("é isso", "corta", "faz aí").
 - Nunca corte no meio de uma ideia, número, preço, nome de produto ou chamada para a ação.
-- Na dúvida, não corte; se cortar com dúvida, marque duvida = true.
+- Um vídeo falado de improviso quase sempre tem interrupções: se você não achou nenhuma, releia. Prefira cortar e marcar duvida = true (a pessoa devolve com um toque) a deixar o tropeço no vídeo.
 - Pausas não entram nos cortes: elas são encurtadas à parte.
 
 Destaques (fortes): as palavras que carregam a mensagem (preço, produto, benefício, número), no máximo uma a cada 6 palavras, nunca artigos ou preposições.
@@ -381,6 +389,10 @@ export function montarCortes(
           colado.trecho = c.trecho;
         } else lista.push(c);
       }
+  // v160: palavra pela metade e expressão repetida em seguida, que a IA deixou passar.
+  if (palavras.length && ritmo !== 'pausas')
+    for (const c of cortesDeTropeco(palavras, duracao))
+      if (!lista.some((x) => c.inicio < x.fim && x.inicio < c.fim)) lista.push(c);
   const palavrasCortadas = lista.filter((c) => c.tipo !== 'pausa');
   for (const p of cortesDePausa(sil, ritmo, duracao))
     if (!palavrasCortadas.some((c) => p.inicio >= c.inicio - 0.05 && p.fim <= c.fim + 0.05)) lista.push(p);
@@ -533,6 +545,91 @@ export function cortesDeRepeticao(
       duvida: false,
       conferido: true,
     });
+  }
+  return out;
+}
+
+/* ───────────────────── v160: os tropeços que o código acha sozinho ───────────────────── */
+
+/** Palavras curtas que também são começo de outra ("de" + "dezembro", "a" + "amiga"): não são gagueira. */
+const PALAVRA_CURTA = new Set(
+  'a o e é as os um uma de da do das dos em na no nas nos que se com por para pra pro me te lhe eu tu ele ela nós já não sim ou mas mais sem só tem vai foi ser há aí lá cá meu sua seu bem mal'
+    .split(' ')
+    .map(comparavel),
+);
+/** Repetição que é ênfase, não tropeço ("muito muito", "não, não"). */
+const ENFASE = new Set(
+  'muito muita mais bem tão super sim não nunca nada tudo já vai vem bora'.split(' ').map(comparavel),
+);
+const cortada = (t: string) => /[-–—…]$|\.\.\.$/.test(t.trim());
+
+/**
+ * Interrupções de fala que dá para ver só nas palavras (a IA olha o resto):
+ * - palavra pela metade antes da palavra inteira ("entre- entrega", "mo moto");
+ * - expressão de 1 a 4 palavras repetida em seguida ("a gente a gente", "para o para o cliente").
+ * Sai a primeira; a que fica é a completa. Ênfase ("muito muito") e número repetido ficam.
+ */
+export function cortesDeTropeco(palavras: PalavraVideo[], duracao: number): Omit<CorteVideo, 'id'>[] {
+  const out: Omit<CorteVideo, 'id'>[] = [];
+  const c = palavras.map((p) => comparavel(p.t));
+  const corte = (de: number, ate: number, motivo: string, duvida: boolean) => {
+    const [a, b] = bordas(palavras, de, ate, duracao);
+    if (b - a < 0.06) return;
+    out.push({
+      decisao: 'cortar',
+      inicio: a,
+      fim: b,
+      tipo: 'recomeco',
+      motivo,
+      trecho: trechoDe(palavras, de, ate),
+      duvida,
+      conferido: !duvida,
+    });
+  };
+  let k = 0;
+  while (k < palavras.length - 1) {
+    // Expressão repetida: a maior primeiro.
+    let achou = 0;
+    for (let n = Math.min(4, Math.floor((palavras.length - k) / 2)); n >= 1; n--) {
+      const a = c.slice(k, k + n);
+      const b = c.slice(k + n, k + 2 * n);
+      if (!a.every((x, j) => x && x === b[j])) continue;
+      if (a.some((x) => /\d/.test(x))) continue;
+      if (n === 1 && (ENFASE.has(a[0]!) || a[0]!.length < 2)) continue;
+      // A segunda vez tem que vir logo (a pessoa recomeçou ali).
+      if (palavras[k + n]!.i - palavras[k + n - 1]!.f > 1.5) continue;
+      achou = n;
+      break;
+    }
+    if (achou) {
+      corte(
+        k,
+        k + achou - 1,
+        achou === 1 ? `"${palavras[k]!.t}" repetido` : 'Começou a frase duas vezes: fica a segunda',
+        false,
+      );
+      k += achou;
+      continue;
+    }
+    // Palavra pela metade.
+    const a = c[k]!;
+    const b = c[k + 1]!;
+    const marcada = cortada(palavras[k]!.t);
+    if (
+      a.length >= (marcada ? 1 : 2) &&
+      b.length >= a.length + 2 &&
+      b.startsWith(a) &&
+      (marcada || !PALAVRA_CURTA.has(a)) &&
+      palavras[k + 1]!.i - palavras[k]!.f < 0.9
+    )
+      // Pedaço comprido pode ser uma palavra de verdade ("moto motorista"): a pessoa confere.
+      corte(
+        k,
+        k,
+        `"${palavras[k]!.t}" pela metade antes de "${palavras[k + 1]!.t}"`,
+        !marcada && a.length >= 4,
+      );
+    k++;
   }
   return out;
 }

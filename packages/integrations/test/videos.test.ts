@@ -65,9 +65,9 @@ describe('silêncios e pausas', () => {
       10,
     );
     expect(cortes).toHaveLength(1);
-    expect(cortes[0]).toMatchObject({ tipo: 'pausa', inicio: 4.09, fim: 4.74 });
-    // Natural deixa respirar mais e só encurta pausa a partir de 0,6 s.
-    expect(cortesDePausa([{ inicio: 4, fim: 4.5 }], 'natural', 10)).toHaveLength(0);
+    expect(cortes[0]).toMatchObject({ tipo: 'pausa', inicio: 4.072, fim: 4.752 });
+    // Natural deixa respirar mais e só encurta pausa a partir de 0,5 s (v160).
+    expect(cortesDePausa([{ inicio: 4, fim: 4.45 }], 'natural', 10)).toHaveLength(0);
   });
 });
 

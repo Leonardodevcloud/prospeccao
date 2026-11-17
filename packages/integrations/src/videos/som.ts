@@ -315,7 +315,20 @@ export function efeitosDoVideo(e: {
     if (m.tipo === 'lista')
       for (const [n, i] of m.itens.entries())
         lista.push({ id: `${m.id}:${n}`, tipo: 'tique', em: i.em, onde: `Item ${n + 1} da lista` });
-    else if (m.tipo === 'numero') lista.push({ id: m.id, tipo: 'sopro', em: m.ini, onde: 'Número grande' });
+    else if (m.tipo === 'nomes')
+      for (const [n, i] of m.itens.entries())
+        lista.push({ id: `${m.id}:${n}`, tipo: 'estalo', em: i.em, onde: `Nome ${n + 1}` });
+    else if (m.tipo === 'compara' || m.tipo === 'troca') {
+      lista.push({ id: m.id, tipo: 'sopro', em: m.ini, onde: m.tipo === 'compara' ? 'Comparação' : 'Troca' });
+      const segundo = m.itens[1];
+      if (segundo)
+        lista.push({
+          id: `${m.id}:1`,
+          tipo: 'estalo',
+          em: segundo.em,
+          onde: m.tipo === 'compara' ? 'O outro lado' : 'O que entra no lugar',
+        });
+    } else if (m.tipo === 'numero') lista.push({ id: m.id, tipo: 'sopro', em: m.ini, onde: 'Número grande' });
     else if (m.tipo === 'selo') lista.push({ id: m.id, tipo: 'estalo', em: m.ini, onde: 'Selo' });
     else if (m.tipo === 'oferta') lista.push({ id: m.id, tipo: 'estalo', em: m.ini, onde: 'Oferta' });
   }

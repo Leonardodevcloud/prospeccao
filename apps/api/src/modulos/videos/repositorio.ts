@@ -17,6 +17,7 @@ import {
   type ImagemVideo,
   MAX_IMAGENS_VIDEO,
   MAX_VIDEOS_CONTA,
+  MOMENTOS_COM_ITENS,
   type MomentoVideo,
   momentosDe,
   type OpcoesVideo,
@@ -530,7 +531,7 @@ export async function revisar(
         titulo: e.titulo != null ? e.titulo.toUpperCase() : m.titulo,
         numero: e.numero ?? m.numero,
         itens:
-          e.itens && m.tipo === 'lista'
+          e.itens && MOMENTOS_COM_ITENS.includes(m.tipo)
             ? m.itens.map((it, n) => ({ ...it, texto: (e.itens![n] ?? it.texto).toUpperCase() }))
             : m.itens,
       };
