@@ -1,4 +1,4 @@
-import type { DetalheVideo, OpcoesVideo, ResumoVideo, RevisaoVideo } from '@prospeccao/shared/videos';
+import type { DetalheVideo, OpcoesVideo, PedacoDaRevisao, ResumoVideo } from '@prospeccao/shared/videos';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ErroApi } from '../api';
 import { enviarImagem } from '../carrossel/dados';
@@ -100,10 +100,7 @@ export function useFotoPropria(id: number) {
 export function useRevisao(id: number) {
   const cliente = useQueryClient();
   return useMutation({
-    mutationFn: (
-      r: Omit<RevisaoVideo, 'versao' | 'cortes' | 'palavras' | 'momentos' | 'imagens' | 'trechos'> &
-        Partial<Pick<RevisaoVideo, 'cortes' | 'palavras' | 'momentos' | 'imagens' | 'trechos'>>,
-    ) => {
+    mutationFn: (r: PedacoDaRevisao & { doPedido?: boolean }) => {
       const atual = cliente.getQueryData<DetalheComFila>(['videos', id]);
       return api<DetalheVideo>(`/videos/${id}/revisao`, {
         metodo: 'PUT',

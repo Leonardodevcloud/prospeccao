@@ -1,5 +1,11 @@
 import type { Executor } from '@prospeccao/db';
-import { cortesDePausa, noEditado, type Silencio, tempoComImagens } from '@prospeccao/integrations/videos';
+import {
+  type ContextoDoPedido,
+  cortesDePausa,
+  noEditado,
+  type Silencio,
+  tempoComImagens,
+} from '@prospeccao/integrations/videos';
 import { AppError } from '@prospeccao/shared';
 import type { novoVideoEntrada } from '@prospeccao/shared/videos';
 import {
@@ -55,7 +61,7 @@ interface Linha {
   sem_imagem: TrechoSemImagem[] | null;
   som: SomVideo | null;
   conferencia: ConferenciaVideo | null;
-  analise: { silencios?: Silencio[]; duracao?: number } | null;
+  analise: { silencios?: Silencio[]; duracao?: number; antesDoPedido?: AntesDoPedido | null } | null;
   erro: string | null;
   capa_chave: string | null;
   final_chave: string | null;
@@ -97,6 +103,17 @@ function resumo(l: Linha): ResumoVideo {
   };
 }
 
+/** v161: o que a revisão tinha antes do último pedido à editora aplicado (para o Desfazer). */
+interface AntesDoPedido {
+  cortes: CorteVideo[];
+  palavras: PalavraVideo[];
+  animacoes: AnimacoesVideo | null;
+  opcoes: unknown;
+  som: SomVideo | null;
+  situacao: SituacaoVideo;
+  pendentes: boolean;
+}
+
 function detalhe(l: Linha): DetalheVideo {
   const o = opcoesVideoEntrada.safeParse(l.opcoes ?? {});
   return {
@@ -110,6 +127,7 @@ function detalhe(l: Linha): DetalheVideo {
     som: l.som,
     conferencia: l.conferencia,
     mudancasPendentes: l.mudancas_pendentes,
+    podeDesfazerPedido: !!l.analise?.antesDoPedido,
     silencios: (l.analise?.silencios ?? []).map((x) => ({ inicio: x.inicio, fim: x.fim })),
     versao: l.versao,
     textoPost: l.texto_post ?? '',
@@ -521,7 +539,7 @@ export async function revisar(
     }
   }
   // v129: as animações que acompanham a fala.
-  if (animacoes && (r.momentos.length || r.novoMomento)) {
+  if (animacoes && (r.momentos.length || r.novoMomento || r.novosMomentos.length)) {
     let momentos: MomentoVideo[] = momentosDe(animacoes).map((m) => {
       const e = r.momentos.find((x) => x.id === m.id);
       if (!e) return m;
@@ -566,6 +584,49 @@ export async function revisar(
           manual: true,
         },
       ].sort((a, b) => a.inicio - b.inicio);
+      mudou = true;
+    }
+    // v161: as animações pedidas à editora (com itens, cada um no momento em que é falado).
+    if (r.novosMomentos.length) {
+      const duracao = Number(l.analise?.duracao ?? l.duracao_original ?? 0);
+      const ficam = trechosQueFicam(duracao, cortes);
+      const fimDoVideo = duracaoDosTrechos(ficam) - 0.6;
+      for (const [k, n] of r.novosMomentos.entries()) {
+        const itens = n.itens
+          .map((i) => ({
+            texto: i.texto.toUpperCase(),
+            em: tempoNoOriginal(Math.min(i.em, fimDoVideo), ficam),
+          }))
+          .filter((i): i is { texto: string; em: number } => i.em != null);
+        if (MOMENTOS_COM_ITENS.includes(n.tipo) && itens.length < 2) continue;
+        const fimE = Math.min(fimDoVideo, Math.max(n.ate ?? 0, n.em + (n.tipo === 'destaque' ? 2 : 2.8)));
+        const ini = tempoNoOriginal(n.em, ficam);
+        const fim = tempoNoOriginal(fimE, ficam);
+        if (ini == null || fim == null || fimE - n.em < 0.8) continue;
+        // A nova fica no lugar da que já estava ali (duas não cabem acima da cabeça ao mesmo tempo).
+        if (n.tipo !== 'destaque')
+          momentos = momentos.map((m) =>
+            m.usar && m.tipo !== 'destaque' && m.inicio < fim + 0.3 && ini < m.fim + 0.3
+              ? { ...m, usar: false }
+              : m,
+          );
+        momentos.push({
+          id: `me${Date.now().toString(36)}${k}`,
+          tipo: n.tipo,
+          inicio: ini,
+          fim,
+          fala: falaEntre(palavras, ini, fim),
+          usar: true,
+          titulo:
+            n.tipo === 'compara' || n.tipo === 'troca' || n.tipo === 'destaque' ? '' : n.titulo.toUpperCase(),
+          numero: n.tipo === 'numero' ? n.numero : '',
+          itens: MOMENTOS_COM_ITENS.includes(n.tipo) ? itens : [],
+          divulgarId: null,
+          oferta: null,
+          manual: true,
+        });
+      }
+      momentos.sort((a, b) => a.inicio - b.inicio);
       mudou = true;
     }
     animacoes = { ...animacoes, momentos };
@@ -647,9 +708,24 @@ export async function revisar(
   }
 
   const situacao = l.situacao === 'revisar' && duvidas(cortes) === 0 ? 'pronto' : l.situacao;
+  // v161: o pedido à editora guarda o estado de antes (um nível de Desfazer).
+  const antes: AntesDoPedido | null =
+    r.doPedido && mudou
+      ? {
+          cortes: l.cortes ?? [],
+          palavras: l.palavras ?? [],
+          animacoes: l.animacoes,
+          opcoes: l.opcoes ?? {},
+          som: l.som,
+          situacao: l.situacao,
+          pendentes: l.mudancas_pendentes,
+        }
+      : null;
   const { rows } = await db.query<Linha>(
     `UPDATE comercial.videos SET cortes = $2, palavras = $3, animacoes = $4, opcoes = $5, situacao = $6,
             mudancas_pendentes = mudancas_pendentes OR $7, imagens = $8, som = $9,
+            analise = CASE WHEN $10::jsonb IS NULL THEN analise
+                           ELSE coalesce(analise, '{}'::jsonb) || jsonb_build_object('antesDoPedido', $10::jsonb) END,
             versao = versao + 1, atualizado_em = now()
       WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
     [
@@ -662,6 +738,66 @@ export async function revisar(
       mudou,
       JSON.stringify(imagens),
       som ? JSON.stringify(som) : null,
+      antes ? JSON.stringify(antes) : null,
+    ],
+  );
+  return detalhe(rows[0]!);
+}
+
+/** v161: o que a editora precisa saber do vídeo para responder a um pedido. */
+export async function contextoDoPedido(
+  db: Executor,
+  id: number,
+  deps: { musicaLiberada: boolean },
+): Promise<ContextoDoPedido> {
+  const l = await linha(db, id);
+  if (l.situacao !== 'pronto' && l.situacao !== 'revisar')
+    throw AppError.invalido('Espere a edição terminar para pedir mudanças.');
+  const palavras = l.palavras ?? [];
+  if (!palavras.length)
+    throw AppError.invalido('Este vídeo não tem a fala guardada: a editora não tem o que ler.');
+  const cortes = l.cortes ?? [];
+  const duracao = Number(l.analise?.duracao ?? l.duracao_original ?? 0);
+  const o = opcoesVideoEntrada.safeParse(l.opcoes ?? {});
+  return {
+    palavras,
+    cortes,
+    ficam: trechosQueFicam(duracao, cortes),
+    animacoes: l.animacoes,
+    som: l.som,
+    estilo: o.success ? o.data.estilo : 'acesa',
+    musicaLiberada: deps.musicaLiberada,
+  };
+}
+
+/** v161: volta a revisão para como estava antes do último pedido à editora aplicado. */
+export async function desfazerPedido(db: Executor, id: number, versao: number): Promise<DetalheVideo> {
+  const l = await linha(db, id);
+  if (l.versao !== versao)
+    throw new AppError(409, 'conflito', 'Outra pessoa mudou este vídeo agora há pouco. Recarregue para ver.');
+  if (l.situacao === 'enviando' || l.situacao === 'na_fila' || l.situacao === 'editando')
+    throw AppError.invalido('Espere a edição terminar para desfazer.');
+  const a = l.analise?.antesDoPedido;
+  if (!a) throw AppError.invalido('Não há pedido para desfazer.');
+  const { rows } = await db.query<Linha>(
+    `UPDATE comercial.videos SET cortes = $2, palavras = $3, animacoes = $4, opcoes = $5, som = $6, situacao = $7,
+            mudancas_pendentes = $8, analise = analise - 'antesDoPedido',
+            versao = versao + 1, atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
+    [
+      id,
+      JSON.stringify(a.cortes),
+      JSON.stringify(a.palavras),
+      a.animacoes ? JSON.stringify(a.animacoes) : null,
+      JSON.stringify(a.opcoes ?? {}),
+      a.som ? JSON.stringify(a.som) : null,
+      // O vídeo pode ter sido gerado de novo depois do pedido: aí desfazer é uma mudança a gerar.
+      l.situacao === 'pronto' || l.situacao === 'revisar'
+        ? duvidas(a.cortes)
+          ? 'revisar'
+          : 'pronto'
+        : l.situacao,
+      a.pendentes || !l.mudancas_pendentes,
     ],
   );
   return detalhe(rows[0]!);

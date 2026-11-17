@@ -10,6 +10,7 @@ import {
   linhaDoAndamento,
   mapaDaPrevia,
   type PalavraVideo,
+  type PropostaDaEditora,
   quantoFalta,
   RITMOS,
   type RitmoCortes,
@@ -33,6 +34,7 @@ import { useEhAdmin } from '../componentes/Sessao';
 import { CortarNoVideo } from '../video/CortarNoVideo';
 import { type DetalheComFila, useArquivo, useRevisao, useSituacaoVideos, useVideo } from '../video/dados';
 import { AbaImagens, AbaSomCompleta, MomentosDaFala } from '../video/Enfeites';
+import { PecaAEditora, PropostasNaAba } from '../video/PecaAEditora';
 import { AbaPublicacao, SeloPublicacao } from '../video/Publicacao';
 
 /**
@@ -426,6 +428,10 @@ function Revisao({ v }: { v: DetalheComFila }) {
   const final = useArquivo(v.id, 'final', true, v.prontoEm ?? undefined);
   const original = useArquivo(v.id, 'original', true);
   const ouvinte = useRef<HTMLVideoElement>(null);
+  // v161: a editora sabe em que ponto o vídeo pronto está parado e leva a pessoa até uma proposta.
+  const pronto = useRef<HTMLVideoElement>(null);
+  const [propostas, setPropostas] = useState<PropostaDaEditora[]>([]);
+  const comEditora = (v.situacao === 'pronto' || v.situacao === 'revisar') && v.palavras.length > 0;
   const [ouvindo, setOuvindo] = useState<string | null>(null);
   const ouvir = (c: CorteVideo) => {
     const el = ouvinte.current;
@@ -452,6 +458,18 @@ function Revisao({ v }: { v: DetalheComFila }) {
     setPalco('cortar');
     setPedidoCorte({ inicio: c.inicio, fim: c.fim, vez: Date.now() });
   };
+  const tempoDoVideo = () => (palco === 'pronto' && pronto.current ? pronto.current.currentTime : null);
+  const verNoVideo = (segundo: number) => {
+    setPalco('pronto');
+    // O vídeo pronto pode ainda não estar na tela (estava no modo de cortar): espera um quadro.
+    requestAnimationFrame(() => {
+      const el = pronto.current;
+      if (!el) return;
+      el.pause();
+      el.currentTime = Math.max(0, Math.min(segundo, (el.duration || segundo + 1) - 0.1));
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  };
   const abas: { id: Aba; rotulo: string; aviso?: boolean }[] = [
     { id: 'cortes', rotulo: 'Cortes', aviso: v.duvidas > 0 },
     { id: 'legenda', rotulo: 'Legenda', aviso: v.palavras.some((p) => p.conferir) },
@@ -465,7 +483,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
     { id: 'publicacao', rotulo: 'Publicação' },
   ];
   return (
-    <div className="video__corpo">
+    <div className="video__corpo" data-editora={comEditora || undefined}>
       <section className="video__palco" aria-label="Vídeo">
         {original.data && (
           <div className="segmentos video__modo-palco" role="radiogroup" aria-label="O que mostrar">
@@ -492,7 +510,14 @@ function Revisao({ v }: { v: DetalheComFila }) {
           <CortarNoVideo v={v} url={original.data.url} pedido={pedidoCorte} />
         ) : final.data ? (
           // biome-ignore lint/a11y/useMediaCaption: a legenda já vai dentro do vídeo (é o que a IA fez)
-          <video className="video__player" src={final.data.url} controls playsInline preload="metadata" />
+          <video
+            ref={pronto}
+            className="video__player"
+            src={final.data.url}
+            controls
+            playsInline
+            preload="metadata"
+          />
         ) : (
           <div className="video__player video__player--vazio">
             {final.error ? <ErroDaApi erro={final.error} /> : null}
@@ -512,6 +537,14 @@ function Revisao({ v }: { v: DetalheComFila }) {
           </p>
         )}
       </section>
+      {comEditora && (
+        <PecaAEditora
+          v={v}
+          tempoDoVideo={tempoDoVideo}
+          verNoVideo={verNoVideo}
+          aoMudarPropostas={setPropostas}
+        />
+      )}
       <aside className="video__painel" aria-label="Revisão">
         <div className="pipelines video__abas" role="tablist" aria-label="Revisão">
           {abas.map((a) => (
@@ -540,6 +573,14 @@ function Revisao({ v }: { v: DetalheComFila }) {
               As mudanças estão salvas. Clique em "Gerar de novo com as mudanças" para o vídeo mudar.
             </Mensagem>
           )}
+          {aba === 'cortes' && <PropostasNaAba propostas={propostas} area={['corte']} />}
+          {(aba === 'animacoes' || aba === 'legenda') && (
+            <PropostasNaAba
+              propostas={propostas}
+              area={aba === 'animacoes' ? ['animacao', 'texto'] : ['texto']}
+            />
+          )}
+          {aba === 'som' && <PropostasNaAba propostas={propostas} area={['som']} />}
           {aba === 'cortes' && (
             <AbaCortes
               v={v}

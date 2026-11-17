@@ -1,4 +1,5 @@
 import {
+  juntarPropostas,
   opcoesVideoEntrada,
   type PalavraVideo,
   tempoNoOriginal,
@@ -9,9 +10,11 @@ import type { ClienteClaude } from '../src/carrosseis/claude.js';
 import {
   aplicarRegras,
   argumentosDaMistura,
+  type ContextoDoPedido,
   comporMusica,
   conferirImagem,
   conferirSobreposicao,
+  contextoParaAEditora,
   cortesDePausa,
   cortesDeTropeco,
   type DecisaoEnfeites,
@@ -22,6 +25,7 @@ import {
   gerarImagem,
   htmlDoMomento,
   lerEnfeites,
+  lerPedido,
   listasDaFala,
   montarComposicao,
   montarCortes,
@@ -701,5 +705,171 @@ describe('v160: enumeração vira gráfico', () => {
       ),
     );
     expect(sons).toHaveLength(5);
+  });
+});
+
+describe('v161: peça à editora', () => {
+  const p = fala('oi a gente a gente atende Salvador Recife e Natal com entrega rápida todo dia');
+  const corte = {
+    id: 'c1',
+    inicio: 0.38,
+    fim: 1.18,
+    tipo: 'manual' as const,
+    motivo: '',
+    trecho: 'a gente',
+    duvida: false,
+    decisao: 'cortar' as const,
+    conferido: true,
+  };
+  const ctx = (extra: Partial<ContextoDoPedido> = {}): ContextoDoPedido => ({
+    palavras: p,
+    cortes: [],
+    ficam: [{ inicio: 0, fim: 6 }],
+    animacoes: {
+      titulo: { usar: true, texto: 'T' },
+      chamada: { usar: true, tipo: 'comente', palavra: 'MOTO', texto: '' },
+      momentos: [
+        {
+          id: 'm1',
+          tipo: 'lista',
+          inicio: 2,
+          fim: 4,
+          fala: '',
+          usar: true,
+          titulo: 'ONDE',
+          numero: '',
+          itens: [
+            { texto: 'A', em: 2 },
+            { texto: 'B', em: 3 },
+          ],
+          divulgarId: null,
+          oferta: null,
+          manual: false,
+        },
+      ],
+    },
+    som: {
+      musica: {
+        usar: false,
+        clima: 'confiante',
+        descricao: '',
+        estiloIa: '',
+        volume: 35,
+        chave: null,
+        segundos: null,
+        pedirOutra: false,
+        erro: null,
+      },
+      efeitos: { ligados: true, desligados: [], lista: [] },
+    },
+    estilo: 'acesa',
+    musicaLiberada: false,
+    ...extra,
+  });
+  it('monta cada mudança no formato da revisão e descarta o que não fecha', () => {
+    const r = lerPedido(
+      {
+        resposta: 'Pronto.',
+        mudancas: [
+          { acao: 'cortar', resumo: 'Tirar o repetido', de: 1, ate: 2 },
+          {
+            acao: 'editar_animacao',
+            resumo: 'Trocar os itens',
+            animacao_id: 'm1',
+            itens: [{ texto: 'Salvador' }, { texto: 'Recife' }],
+          },
+          {
+            acao: 'editar_animacao',
+            resumo: 'Quantidade errada',
+            animacao_id: 'm1',
+            itens: [{ texto: 'Um só' }],
+          },
+          {
+            acao: 'nova_animacao',
+            resumo: 'Nome comprido vira lista',
+            tipo: 'nomes',
+            de: 5,
+            ate: 8,
+            itens: [
+              { texto: 'Salvador e região metropolitana', palavra: 5 },
+              { texto: 'Recife', palavra: 6 },
+            ],
+          },
+          {
+            acao: 'nova_animacao',
+            resumo: 'Comparação com um lado só',
+            tipo: 'compara',
+            de: 5,
+            ate: 8,
+            itens: [{ texto: 'Antes', palavra: 5 }],
+          },
+          { acao: 'musica', resumo: 'Ligar a música', usar: true },
+          { acao: 'musica', resumo: 'Volume', volume: 250 },
+          { acao: 'chamada', resumo: 'Frase da chamada', texto: 'Chama no zap' },
+          { acao: 'legenda', resumo: 'Corrigir palavra', de: 6, texto: 'Salvador' },
+          { acao: 'legenda', resumo: 'Corrigir palavra', de: 6, texto: 'Salvadô' },
+          { acao: 'estilo_legenda', resumo: 'Mesmo estilo', estilo: 'acesa' },
+        ],
+      },
+      ctx(),
+    );
+    expect(r.propostas.map((x) => x.titulo)).toEqual([
+      'Tirar o repetido',
+      'Trocar os itens',
+      'Nome comprido vira lista',
+      'Volume',
+      'Frase da chamada',
+      'Corrigir palavra',
+    ]);
+    expect(r.propostas[0]!.revisao.trechos![0]).toMatchObject({ acao: 'cortar', inicio: 0.38, fim: 1.16 });
+    expect(r.propostas[1]!.revisao.momentos![0]).toEqual({
+      id: 'm1',
+      usar: true,
+      itens: ['Salvador', 'Recife'],
+    });
+    expect(r.propostas[2]!.revisao.novosMomentos![0]!.tipo).toBe('lista');
+    expect(r.propostas[3]!.revisao.musica).toEqual({ volume: 100 });
+    expect(r.propostas[4]!.revisao.chamada).toEqual({
+      usar: true,
+      tipo: 'comente',
+      palavra: 'MOTO',
+      texto: 'Chama no zap',
+    });
+    expect(r.propostas[5]!.revisao.palavras).toEqual([{ indice: 6, texto: 'Salvadô' }]);
+    expect(juntarPropostas(r.propostas).momentos).toHaveLength(1);
+  });
+  it('devolve só o que está cortado e conta o contexto para a IA', () => {
+    const c = ctx({
+      cortes: [corte],
+      ficam: [
+        { inicio: 0, fim: 0.38 },
+        { inicio: 1.18, fim: 6 },
+      ],
+    });
+    const r = lerPedido(
+      {
+        resposta: '',
+        mudancas: [
+          { acao: 'devolver', resumo: 'Devolver', de: 0, ate: 4 },
+          { acao: 'cortar', resumo: 'Já cortado', de: 1, ate: 2 },
+        ],
+      },
+      c,
+    );
+    expect(r.propostas).toHaveLength(1);
+    expect(r.propostas[0]!.revisao.trechos![0]!.acao).toBe('devolver');
+    expect(r.resposta).toContain('Marque');
+    const texto = contextoParaAEditora(c, {
+      texto: 'devolve',
+      em: 1.5,
+      historico: [{ de: 'voce', texto: 'oi' }],
+    });
+    expect(texto).toContain('1: a  (CORTADA)');
+    expect(texto).toContain('id m1: Lista que se marca');
+    expect(texto).toContain('não está liberada');
+    expect(texto).toContain('Pessoa: oi');
+    expect(
+      lerPedido({ resposta: 'Qual trecho?', opcoes: ['O começo', 'O fim'], mudancas: [] }, c),
+    ).toMatchObject({ resposta: 'Qual trecho?', opcoes: ['O começo', 'O fim'], propostas: [] });
   });
 });

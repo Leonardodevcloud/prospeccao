@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prepararImagem } from '@prospeccao/integrations/slides';
+import { pedirAEditora } from '@prospeccao/integrations/videos';
 import { AppError } from '@prospeccao/shared';
 import { MAX_FOTOS_CONTA } from '@prospeccao/shared/carrosseis';
 import {
@@ -14,6 +15,7 @@ import {
   LIMITE_SEGUNDOS_VIDEO,
   MAX_FOTO_BYTES,
   novoVideoEntrada,
+  pedidoEditoraEntrada,
   revisaoEntrada,
   TAMANHO_PARTE_ENVIO,
   TIPOS_FOTO,
@@ -38,6 +40,11 @@ import * as repo from './repositorio.js';
  * em partes de 8 MB (a api repassa para o armazenamento, sem guardar tudo na memória); ao concluir,
  * o vídeo entra na fila do worker-videos, que edita e avisa no sino.
  */
+
+/** v161: no máximo 30 pedidos à editora a cada 10 minutos por conta (cada um é uma chamada à IA). */
+const JANELA_PEDIDOS_MS = 10 * 60_000;
+const MAX_PEDIDOS_JANELA = 30;
+const pedidosRecentes = new Map<number, number[]>();
 
 export function rotasVideos(deps: DepsApi): Router {
   const { pool, filas } = deps;
@@ -379,6 +386,48 @@ export function rotasVideos(deps: DepsApi): Router {
         musicaLiberada: rc.musica,
       }),
     );
+  });
+
+  /**
+   * v161: peça à editora. A IA lê o pedido e devolve as mudanças propostas, no formato da revisão;
+   * nada é salvo aqui (a pessoa marca e aplica pelo PUT /revisao com doPedido).
+   */
+  r.post('/:id/pedido', async (req, res) => {
+    const id = idDaRota(req);
+    const pedido = corpo(req, pedidoEditoraEntrada);
+    const ia = deps.carrosseisIa;
+    if (!ia)
+      throw new AppError(
+        503,
+        'indisponivel',
+        'A editora não está ligada nesta instalação (falta a chave da IA). Use as abas da revisão.',
+      );
+    const agora = Date.now();
+    const usados = (pedidosRecentes.get(conta()) ?? []).filter((t) => agora - t < JANELA_PEDIDOS_MS);
+    if (usados.length >= MAX_PEDIDOS_JANELA)
+      throw new AppError(
+        429,
+        'muitos_pedidos',
+        'Muitos pedidos em pouco tempo. Espere uns minutos e tente de novo.',
+      );
+    pedidosRecentes.set(conta(), [...usados, agora]);
+    const rc = await recursos();
+    const contexto = await repo.contextoDoPedido(pool, id, { musicaLiberada: rc.musica });
+    try {
+      res.json(await pedirAEditora(ia.cliente(pool, conta()), contexto, pedido));
+    } catch (erro) {
+      deps.log.warn({ err: erro, videoId: id }, 'a editora não respondeu ao pedido');
+      throw new AppError(
+        502,
+        'ia_falhou',
+        'A editora não conseguiu responder agora. Tente de novo em instantes.',
+      );
+    }
+  });
+
+  r.post('/:id/pedido/desfazer', async (req, res) => {
+    const { versao } = corpo(req, z.object({ versao: z.number().int().min(1) }));
+    res.json(await repo.desfazerPedido(pool, idDaRota(req), versao));
   });
 
   /** Foto sua para uma imagem do vídeo (?imagem=id) ou para pôr uma imagem nova (?em=segundos). */

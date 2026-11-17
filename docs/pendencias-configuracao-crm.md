@@ -389,12 +389,20 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4am. Peça à editora na revisão do vídeo (v161)
+1. [ ] Sem migration. Redeploy da **api** (e do **worker-videos**, se a v160 ainda não subiu); a **web** na Vercel. Precisa da `ANTHROPIC_CHAVE` na api (a mesma dos carrosséis); sem ela a tela avisa que a editora não está ligada.
+2. [ ] Abrir um vídeo pronto e pedir: um corte citando a fala, uma lista ou nomes num ponto (com "Falar deste momento"), volume da música e um pedido impossível ("troca minha fala por…"). Conferir se as propostas fazem sentido, se "Ver no vídeo" leva ao ponto, se Aplicar muda as abas e se Desfazer volta.
+3. [ ] Gerar de novo e conferir o vídeo: o corte ficou limpo? A animação nova entrou na hora da fala?
+4. [ ] Olhar a tela no computador (largo e médio) e no celular.
+5. [ ] Acompanhar o custo em Saúde e consumo (cada pedido é uma chamada ao modelo principal; entra no consumo dos carrosséis).
+6. [ ] Em aberto: a conversa não fica guardada; o tempo do "Falar deste momento" é o do vídeo já gerado (com mudanças pendentes de corte pode haver diferença de 1 a 2 s); **vídeo de apoio (b-roll)** pedido em 17/11, a desenhar com mockup.
+
 ## 4al. Editor de vídeo: cortes mais sensíveis e mais elementos (v160)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
 2. [ ] Editar um vídeo falado de improviso (com gagueira e recomeço) no ritmo Dinâmico e conferir na aba Cortes: os tropeços saíram? Algum corte comeu palavra boa? Os que entraram como dúvida fazem sentido? Se o vídeo ficar picotado demais, avisar (dá para voltar a pausa mínima de 0,22 para 0,28 s).
 3. [ ] Num vídeo em que a fala lista coisas (cidades, vantagens, "sem isso, sem aquilo"), conferir se a lista ou os nomes aparecem, cada item na hora em que é falado, e se o vídeo tem um elemento a cada 3 ou 4 segundos sem poluir.
 4. [ ] Olhar os tipos novos na tela (nomes, comparação, troca) e editar o texto deles na aba Animações.
-5. [ ] **Aprovar o mockup** "Revisão do vídeo: peça à editora" (campo para falar com a IA na revisão). Só depois do ok ele é codado.
+5. [x] Mockup "Revisão do vídeo: peça à editora" aprovado em 17/11 e codado na v161.
 6. [ ] Não foi testado com a IA de verdade (sem chave aqui): a obediência do editor de motion às regras novas e a quantidade de cortes com dúvida só aparecem em produção.
 
 ## 4ak. Conserto da mesa do time no vídeo (v159)

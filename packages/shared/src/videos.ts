@@ -424,6 +424,8 @@ export interface DetalheVideo extends ResumoVideo {
   conferencia: ConferenciaVideo | null;
   /** Mudanças da revisão ainda não geradas (o botão "Gerar de novo" acende). */
   mudancasPendentes: boolean;
+  /** v161: há um pedido à editora aplicado que ainda dá para desfazer. */
+  podeDesfazerPedido: boolean;
   /** v145: os silêncios do original (a linha do tempo de corte mostra onde tem fala). */
   silencios: { inicio: number; fim: number }[];
   versao: number;
@@ -503,6 +505,33 @@ export const revisaoEntrada = z.object({
       numero: textoCurto(8).default(''),
     })
     .optional(),
+  /**
+   * v161: animações novas pedidas à editora (tempos do vídeo editado; cada item com o momento em que
+   * é falado). A que encosta numa animação que já está em uso fica no lugar dela.
+   */
+  novosMomentos: z
+    .array(
+      z.object({
+        tipo: z.enum(['lista', 'nomes', 'compara', 'troca', 'selo', 'numero', 'destaque']),
+        em: z.number().min(0).max(LIMITE_SEGUNDOS_VIDEO),
+        ate: z.number().min(0).max(LIMITE_SEGUNDOS_VIDEO).optional(),
+        titulo: textoCurto(40).default(''),
+        numero: textoCurto(8).default(''),
+        itens: z
+          .array(
+            z.object({
+              texto: z.string().trim().min(1).max(32),
+              em: z.number().min(0).max(LIMITE_SEGUNDOS_VIDEO),
+            }),
+          )
+          .max(6)
+          .default([]),
+      }),
+    )
+    .max(16)
+    .default([]),
+  /** v161: a mudança veio de um pedido à editora (guarda o estado de antes, para o Desfazer). */
+  doPedido: z.boolean().optional(),
   imagens: z
     .array(
       z.object({
@@ -540,6 +569,76 @@ export const revisaoEntrada = z.object({
     .optional(),
 });
 export type RevisaoVideo = z.infer<typeof revisaoEntrada>;
+
+/* ───────────────────────── v161: peça à editora ───────────────────────── */
+
+/** O que a pessoa escreve para a editora na revisão. */
+export const pedidoEditoraEntrada = z.object({
+  texto: z.string().trim().min(2, 'Escreva o que você quer mudar.').max(600),
+  /** O momento do vídeo editado em que a pessoa parou ("Falar deste momento"). */
+  em: z.number().min(0).max(LIMITE_SEGUNDOS_VIDEO).optional(),
+  /** As últimas falas da conversa (a editora não guarda nada entre um pedido e outro). */
+  historico: z
+    .array(z.object({ de: z.enum(['voce', 'editora']), texto: z.string().trim().min(1).max(800) }))
+    .max(8)
+    .default([]),
+});
+export type PedidoEditora = z.infer<typeof pedidoEditoraEntrada>;
+
+/** Um pedaço da revisão que uma proposta muda (o mesmo formato do PUT /revisao, sem a versão). */
+export type PedacoDaRevisao = Partial<Omit<z.input<typeof revisaoEntrada>, 'versao' | 'doPedido'>>;
+
+export type AreaDaProposta = 'corte' | 'animacao' | 'som' | 'texto';
+export const ROTULO_AREA_PROPOSTA: Record<AreaDaProposta, string> = {
+  corte: 'Corte',
+  animacao: 'Animação',
+  som: 'Som',
+  texto: 'Texto',
+};
+
+/** Uma mudança que a editora propõe: nada muda até a pessoa aplicar. */
+export interface PropostaDaEditora {
+  id: string;
+  area: AreaDaProposta;
+  titulo: string;
+  detalhe: string;
+  /** Onde fica no vídeo editado (para o "Ver no vídeo"); null: vale para o vídeo todo. */
+  quando: number | null;
+  ate: number | null;
+  revisao: PedacoDaRevisao;
+}
+
+export interface RespostaDaEditora {
+  resposta: string;
+  propostas: PropostaDaEditora[];
+  /** Respostas prontas quando a editora precisa que a pessoa escolha. */
+  opcoes: string[];
+}
+
+/** Onde a proposta cai no vídeo, para a tela ("0:08 – 0:13", "vídeo todo"). */
+export function quandoDaProposta(p: Pick<PropostaDaEditora, 'quando' | 'ate'>): string {
+  const relogio = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  if (p.quando == null) return 'vídeo todo';
+  return p.ate != null && p.ate - p.quando >= 1
+    ? `${relogio(p.quando)} – ${relogio(p.ate)}`
+    : relogio(p.quando);
+}
+
+/** Junta as propostas marcadas numa revisão só (listas somam; o resto, a última vale). */
+export function juntarPropostas(propostas: readonly Pick<PropostaDaEditora, 'revisao'>[]): PedacoDaRevisao {
+  const r: PedacoDaRevisao = {};
+  for (const { revisao: p } of propostas) {
+    for (const k of ['cortes', 'palavras', 'trechos', 'momentos', 'novosMomentos', 'imagens'] as const)
+      if (p[k]?.length) (r[k] as unknown[] | undefined) = [...((r[k] as unknown[]) ?? []), ...p[k]];
+    if (p.titulo) r.titulo = p.titulo;
+    if (p.chamada) r.chamada = p.chamada;
+    if (p.estilo) r.estilo = p.estilo;
+    if (p.transicao) r.transicao = p.transicao;
+    if (p.musica) r.musica = { ...r.musica, ...p.musica };
+    if (p.efeitos) r.efeitos = { ...r.efeitos, ...p.efeitos };
+  }
+  return r;
+}
 
 export const vocabularioEntrada = z.object({
   palavras: z

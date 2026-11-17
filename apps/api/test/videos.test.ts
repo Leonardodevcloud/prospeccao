@@ -2,6 +2,7 @@ import { criarPool, migrar, type Pool } from '@prospeccao/db';
 import { bancoDeTeste } from '@prospeccao/db/teste';
 import type { Armazenamento } from '@prospeccao/integrations/reuniao';
 import { criarLogger } from '@prospeccao/shared';
+import { juntarPropostas } from '@prospeccao/shared/videos';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -47,6 +48,8 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
   let cookie = '';
   const log = criarLogger('teste', (process.env.LOG_TESTE as 'error') ?? 'silent');
   const publicados: { nome: string; payload: unknown }[] = [];
+  const pedidosDaIa: string[] = [];
+  let respostaDaIa: Record<string, unknown> = {};
   const enviar = (metodo: 'post' | 'put' | 'delete', caminho: string, corpo?: unknown) =>
     request(app)
       [metodo](caminho)
@@ -96,6 +99,19 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
       credenciais: { chave: 'c'.repeat(32), ambiente: {}, invalidar() {} },
       reunioes: { armazenamento } as never,
       videos: { imagensGeradas: true, musicaLiberada: () => true },
+      carrosseisIa: {
+        modelo: 'teste',
+        cliente: () => ({
+          modelo: 'teste',
+          async pedir(p: { mensagem: string }) {
+            pedidosDaIa.push(p.mensagem);
+            return { dados: respostaDaIa, custoUsd: 0 } as never;
+          },
+        }),
+        async testar() {
+          return 'ok';
+        },
+      } as never,
     });
     const ok = await request(app)
       .post('/auth/login')
@@ -541,6 +557,134 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
     expect(arquivos.has(propria.chave)).toBe(false);
     expect(arquivos.has('videos/x/musica.mp3')).toBe(false);
     expect(arquivos.has('carrosseis/x/fotos/f.jpg')).toBe(true);
+  });
+
+  it('v161: peça à editora propõe, a revisão aplica e o Desfazer volta', async () => {
+    const { rows: c } = await pool.query<{ conta_id: number }>(
+      'SELECT conta_id FROM comercial.videos WHERE id = $1',
+      [videoId],
+    );
+    const palavras =
+      'oi gente a gente a gente atende em Salvador Recife e Natal todo dia com entrega rápida fala com a gente'
+        .split(' ')
+        .map((t, k) => ({ t, i: k, f: k + 0.8 }));
+    const { rows: v } = await pool.query<{ id: number }>(
+      `INSERT INTO comercial.videos (conta_id, titulo, situacao, opcoes, original_chave, original_nome, original_tipo,
+              original_bytes, duracao_original, analise, cortes, palavras, animacoes, imagens, som, final_chave)
+       VALUES ($1, 'Pedido', 'pronto', '{}', 'videos/p/original', 'v.mp4', 'video/mp4', 1, 22,
+               '{"duracao": 22, "silencios": []}', '[]', $2, $3, '[]', $4, 'videos/p/final.mp4') RETURNING id`,
+      [
+        c[0]!.conta_id,
+        JSON.stringify(palavras),
+        JSON.stringify({
+          titulo: { usar: true, texto: 'T' },
+          chamada: { usar: false, tipo: 'nenhuma', palavra: '', texto: '' },
+          momentos: [
+            {
+              id: 'm1',
+              tipo: 'selo',
+              inicio: 7.5,
+              fim: 10,
+              fala: 'x',
+              usar: true,
+              titulo: 'NORDESTE',
+              numero: '',
+              itens: [],
+              divulgarId: null,
+              oferta: null,
+              manual: false,
+            },
+          ],
+        }),
+        JSON.stringify({
+          musica: {
+            usar: true,
+            clima: 'confiante',
+            descricao: '',
+            estiloIa: '',
+            volume: 35,
+            chave: null,
+            segundos: null,
+            pedirOutra: false,
+            erro: null,
+          },
+          efeitos: { ligados: true, desligados: [], lista: [] },
+        }),
+      ],
+    );
+    const id = v[0]!.id;
+    respostaDaIa = {
+      resposta: 'Achei os três pontos.',
+      mudancas: [
+        { acao: 'cortar', resumo: 'Tirar “a gente” repetido', detalhe: 'Fica uma vez só.', de: 2, ate: 3 },
+        {
+          acao: 'nova_animacao',
+          resumo: 'Nomes das 3 cidades',
+          tipo: 'nomes',
+          de: 7,
+          ate: 10,
+          titulo: 'Onde atendemos',
+          itens: [
+            { texto: 'Salvador', palavra: 7 },
+            { texto: 'Recife', palavra: 8 },
+            { texto: 'Natal', palavra: 10 },
+          ],
+        },
+        { acao: 'musica', resumo: 'Música mais baixa', volume: 22 },
+        { acao: 'cortar', resumo: 'Índice fora da fala', de: 900, ate: 901 },
+        { acao: 'tirar_animacao', resumo: 'Animação que não existe', animacao_id: 'zz' },
+      ],
+    };
+    const p = await enviar('post', `/videos/${id}/pedido`, {
+      texto: 'corta o gaguejo e bota as cidades',
+      em: 7.5,
+    });
+    expect(p.status).toBe(200);
+    expect(pedidosDaIa.at(-1)).toContain('parou o vídeo em 7.5 s');
+    expect(pedidosDaIa.at(-1)).toContain('id m1');
+    expect(p.body.propostas.map((x: { area: string }) => x.area)).toEqual(['corte', 'animacao', 'som']);
+    // Pedir não muda nada.
+    expect((await ler(`/videos/${id}`)).body).toMatchObject({
+      versao: 1,
+      mudancasPendentes: false,
+      podeDesfazerPedido: false,
+    });
+
+    const revisao = juntarPropostas(p.body.propostas);
+    const r = await enviar('put', `/videos/${id}/revisao`, { versao: 1, ...revisao, doPedido: true });
+    expect(r.status).toBe(200);
+    expect(r.body.cortes).toHaveLength(1);
+    expect(r.body.cortes[0]).toMatchObject({ tipo: 'manual', trecho: 'a gente' });
+    const momentos = r.body.animacoes.momentos as {
+      tipo: string;
+      usar: boolean;
+      itens: { texto: string }[];
+    }[];
+    expect(momentos.map((m) => [m.tipo, m.usar])).toEqual([
+      ['selo', false],
+      ['nomes', true],
+    ]);
+    expect(momentos[1]!.itens.map((i) => i.texto)).toEqual(['SALVADOR', 'RECIFE', 'NATAL']);
+    expect(r.body.som.musica.volume).toBe(22);
+    expect(r.body).toMatchObject({ mudancasPendentes: true, podeDesfazerPedido: true });
+
+    const d = await enviar('post', `/videos/${id}/pedido/desfazer`, { versao: 2 });
+    expect(d.status).toBe(200);
+    expect(d.body.cortes).toHaveLength(0);
+    expect(d.body.animacoes.momentos).toHaveLength(1);
+    expect(d.body.som.musica.volume).toBe(35);
+    expect(d.body).toMatchObject({ mudancasPendentes: false, podeDesfazerPedido: false });
+    expect((await enviar('post', `/videos/${id}/pedido/desfazer`, { versao: 3 })).status).toBe(422);
+
+    // A IA não propôs nada que feche: a pessoa recebe a orientação, não uma lista vazia.
+    respostaDaIa = {
+      resposta: 'Vou cortar.',
+      mudancas: [{ acao: 'cortar', resumo: 'x', de: 500, ate: 501 }],
+    };
+    const vazio = await enviar('post', `/videos/${id}/pedido`, { texto: 'corta aquilo' });
+    expect(vazio.body.propostas).toHaveLength(0);
+    expect(vazio.body.resposta).toContain('Falar deste momento');
+    await pool.query('DELETE FROM comercial.videos WHERE id = $1', [id]);
   });
 
   it('palavras sempre escritas assim e apagar o vídeo com os arquivos', async () => {

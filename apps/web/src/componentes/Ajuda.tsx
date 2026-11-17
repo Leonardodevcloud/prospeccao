@@ -1659,7 +1659,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
     onde: { rotulo: 'Vídeos', para: '/videos' },
     termos:
-      'gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+      'peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
     corpo: (
       <>
         <p>
@@ -1788,6 +1788,17 @@ export const ARTIGOS: ArtigoAjuda[] = [
           vídeo aparece como <b>Para revisar</b>. Abra o vídeo:
         </p>
         <Passos>
+          <li>
+            O jeito mais rápido é o <b>Peça à editora</b>, ao lado do vídeo: escreva com as suas palavras o
+            que quer mudar ("corta o trecho que eu gaguejei", "bota os nomes das cidades na tela", "a música
+            está alta", "refaz as animações"). Para apontar um ponto, pare o vídeo ali e toque em{' '}
+            <b>Falar deste momento</b>. A editora responde com as mudanças em itens de marcar, cada uma com{' '}
+            <b>Ver no vídeo</b>; nada muda até você clicar em <b>Aplicar</b>, e o <b>Desfazer</b> volta o
+            último pedido aplicado. Ela mexe em cortes, animações, título, chamada, legenda e música; não
+            troca o que você falou por outra frase (aí ela oferece cortar ou pôr um selo). Imagens, efeitos e
+            publicação continuam nas abas. A conversa não fica guardada: ao recarregar a página, começa de
+            novo (o que foi aplicado continua).
+          </li>
           <li>
             Na aba <b>Cortes</b>, cada dúvida tem <b>Ouvir</b> (toca o trecho do original com um pouco antes e
             depois), <b>Devolver</b> (o trecho volta para o vídeo) e <b>Está certo</b>. Os outros cortes ficam
