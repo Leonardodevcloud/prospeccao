@@ -39,8 +39,15 @@ export function Login() {
     onSuccess: () => void seguir(),
   });
 
-  const enviar = (e: FormEvent) => {
+  const enviar = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // v172: o botão fica sempre na cor da marca; faltando um campo, o foco vai para ele.
+    if (!email || !senha) {
+      e.currentTarget
+        .querySelector<HTMLInputElement>(email ? 'input[type="password"]' : 'input[type="email"]')
+        ?.focus();
+      return;
+    }
     entrar.mutate();
   };
 
@@ -124,12 +131,7 @@ export function Login() {
           </Link>
         </div>
         <ErroDaApi erro={entrar.error} />
-        <Button
-          className="login__entrar"
-          variant="primary"
-          type="submit"
-          disabled={entrar.isPending || !email || !senha}
-        >
+        <Button className="login__entrar" variant="primary" type="submit" disabled={entrar.isPending}>
           {entrar.isPending ? 'Entrando…' : 'Entrar'}
           {!entrar.isPending && (
             <span className="login__seta">

@@ -9607,61 +9607,77 @@ button.tempo-reuniao:focus-visible {
 .acesso--esperando {
   background: #fff;
 }
+/* v172: o painel do cliente. A logo uma vez só, grande e no centro, sobre a cor da marca em tom
+   fechado (do quase preto até a cor; nunca clareia). */
 .acesso__marca--cliente {
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
   background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--marca-cor) 55%, black) 0%,
-    var(--marca-cor) 55%,
-    color-mix(in srgb, var(--marca-cor) 65%, white) 100%
+    160deg,
+    color-mix(in srgb, var(--marca-cor) 42%, black) 0%,
+    color-mix(in srgb, var(--marca-cor) 72%, black) 45%,
+    var(--marca-cor) 100%
   );
   color: #fff;
 }
-.acesso__imagem {
-  display: block;
-  width: 100%;
-  max-width: 640px;
-  margin: auto 0;
-  aspect-ratio: 1200 / 630;
-  object-fit: cover;
-  border-radius: 18px;
-  box-shadow: 0 30px 60px -30px #000c;
+/* Cor clara (amarelo, pastel): escurece mais, para a letra branca continuar legível. */
+.acesso__marca--cliente[data-clara] {
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--marca-cor) 22%, black) 0%,
+    color-mix(in srgb, var(--marca-cor) 36%, black) 45%,
+    color-mix(in srgb, var(--marca-cor) 50%, black) 100%
+  );
+}
+/* Anéis finos em volta da logo: dão profundidade sem competir com ela. */
+.acesso__aneis {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: repeating-radial-gradient(circle at 50% 48%, transparent 0 139px, #ffffff12 139px 140px);
+  mask-image: radial-gradient(circle at 50% 48%, #000 0 240px, transparent 720px);
+  -webkit-mask-image: radial-gradient(circle at 50% 48%, #000 0 240px, transparent 720px);
 }
 .acesso__cliente {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  font-size: 22px;
+  gap: 28px;
+  max-width: 100%;
+  font-size: 30px;
   letter-spacing: -0.02em;
+  text-align: center;
+}
+.acesso__cliente p {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0.01em;
+  color: #ffffffd1;
 }
 .acesso__cliente-logo {
   display: inline-flex;
   align-items: center;
-  padding: 10px 14px;
-  border-radius: 12px;
+  padding: 22px 30px;
+  border-radius: 20px;
   background: #fff;
-  box-shadow: 0 10px 30px -18px #000;
+  box-shadow: 0 24px 50px -28px #000;
 }
 .acesso__cliente-logo img {
   display: block;
-  max-height: 40px;
-  max-width: 220px;
+  max-height: 120px;
+  max-width: min(320px, 60vw);
   object-fit: contain;
 }
-.acesso__marca--cliente .acesso__chamada {
-  margin-top: 0;
-  margin-bottom: auto;
-  padding-top: 18vh;
-}
-.acesso__marca--cliente .acesso__chamada p {
-  color: #ffffffcc;
+.acesso__endereco {
+  position: absolute;
+  left: 48px;
+  bottom: 36px;
+  font-size: 13px;
+  color: #ffffffb8;
 }
 .acesso--cliente .acesso__lado {
   position: relative;
-}
-.acesso__selo {
-  width: min(400px, 100%);
-  margin-bottom: -12px;
 }
 .acesso__tecnologia {
   position: absolute;
@@ -9671,15 +9687,31 @@ button.tempo-reuniao:focus-visible {
   text-align: center;
 }
 @media (max-width: 900px) {
+  /* No celular: uma faixa com a logo no alto e o formulário logo abaixo. */
   .acesso__marca--cliente {
-    min-height: 120px;
+    min-height: 196px;
+    padding: 28px 24px;
   }
-  .acesso__marca--cliente .acesso__chamada,
-  .acesso__imagem {
+  .acesso__cliente {
+    gap: 0;
+  }
+  .acesso__cliente p,
+  .acesso__endereco {
     display: none;
   }
-  .acesso__selo {
-    display: none;
+  .acesso__cliente-logo-escuro {
+    max-width: 150px;
+    max-height: 110px;
+  }
+  .acesso__cliente-logo {
+    padding: 12px 16px;
+    border-radius: 14px;
+  }
+  .acesso__cliente-logo img {
+    max-height: 56px;
+  }
+  .acesso__aneis {
+    background: repeating-radial-gradient(circle at 50% 50%, transparent 0 99px, #ffffff12 99px 100px);
   }
   .acesso__tecnologia {
     position: static;
@@ -10432,8 +10464,8 @@ button.tempo-reuniao:focus-visible {
 }
 .acesso__cliente-logo-escuro {
   display: block;
-  max-width: 260px;
-  max-height: 52px;
+  max-width: min(340px, 70%);
+  max-height: 220px;
   object-fit: contain;
 }
 /* Aba Marca (v88) */
@@ -10794,21 +10826,19 @@ button.tempo-reuniao:focus-visible {
   display: flex;
   flex: 1.1;
   flex-direction: column;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
   gap: 10px;
   padding: 14px;
   color: #fff;
 }
+.pv-login__marca > span:last-child {
+  font-size: 10px;
+  color: #ffffffd1;
+}
 .pv-login__marca b {
   font-size: 18px;
   letter-spacing: -0.02em;
-}
-.pv-login__imagem {
-  width: 100%;
-  aspect-ratio: 1200 / 630;
-  object-fit: cover;
-  border-radius: 8px;
-  box-shadow: 0 12px 24px -16px #000;
 }
 .pv-login__form {
   display: flex;

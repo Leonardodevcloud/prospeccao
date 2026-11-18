@@ -316,7 +316,7 @@ export function MarcaCompleta(props: { dados: MarcaDados; endereco: string }) {
           <CartaoImagem
             id="mk-imagem"
             titulo="1200×630 (ajustamos sozinhos)"
-            texto="Ao lado do login e na prévia quando alguém manda um link do sistema no WhatsApp (convite, reunião). Sem ela, usamos a cor secundária com a logo."
+            texto="Na prévia quando alguém manda um link do sistema no WhatsApp (convite, reunião). Sem ela, usamos a cor secundária com a logo. Na tela de entrada vai só a logo."
             banner
             {...arquivo('imagem')}
           />
@@ -547,7 +547,7 @@ const LUGARES: { id: Lugar; nome: string; legenda: string }[] = [
   {
     id: 'login',
     nome: 'Login',
-    legenda: 'No seu domínio: painel na secundária com a logo para fundo escuro (ou a imagem de divulgação).',
+    legenda: 'No seu domínio: a logo para fundo escuro, grande e no centro, sobre a cor secundária.',
   },
   {
     id: 'celular',
@@ -691,15 +691,17 @@ function Previa(props: { v: Visual }) {
   else if (lugar === 'login')
     tela = (
       <div className="pv-login">
+        {/* v172: a logo uma vez só, grande e no centro, sobre a cor em tom fechado. */}
         <div
           className="pv-login__marca"
-          style={{ background: `linear-gradient(135deg, ${v.sec}, ${v.sec} 55%, ${v.cor})` }}
+          style={{
+            background: `linear-gradient(160deg, color-mix(in srgb, ${v.sec} 42%, black), color-mix(in srgb, ${v.sec} 72%, black) 45%, ${v.sec})`,
+          }}
         >
-          <LogoNoEscuro v={v} tamanho={20} />
-          {v.imagem ? <img className="pv-login__imagem" src={v.imagem} alt="" /> : <b>{v.nome}</b>}
+          <LogoNoEscuro v={v} tamanho={34} />
+          <span>Acesso da equipe comercial</span>
         </div>
         <div className="pv-login__form">
-          <Selo v={v} tamanho={26} />
           <b>Bom te ver de novo</b>
           <i />
           <i />

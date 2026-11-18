@@ -178,7 +178,20 @@ export function TecnologiaProspectTeam(props: { className?: string }) {
   );
 }
 
-/** Painel da esquerda com a marca do cliente: a imagem de divulgação ou a cor dele com o logo. */
+/** A cor é clara (amarelo, branco, tons pastel)? Aí o painel escurece mais, para a letra branca ler. */
+function corClara(cor: string): boolean {
+  const m = /^#?([0-9a-f]{6})$/i.exec(cor.trim());
+  if (!m) return false;
+  const n = Number.parseInt(m[1]!, 16);
+  return (((n >> 16) & 255) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 150;
+}
+
+/**
+ * Painel da esquerda com a marca do cliente (v172): a logo uma vez só, grande e no centro, sobre a
+ * cor da marca em tom fechado, com o endereço no rodapé. Antes a logo aparecia três vezes (no canto,
+ * no cartão da imagem de divulgação e no selo do formulário) e o fundo desbotava para um lilás.
+ * A imagem de divulgação fica só para a prévia de link.
+ */
 function PainelDoCliente(props: { marca: MarcaPublica }) {
   const m = props.marca;
   // O painel fica na cor secundária (ou na primária); a logo para fundo escuro vai direto nele.
@@ -187,8 +200,10 @@ function PainelDoCliente(props: { marca: MarcaPublica }) {
     <section
       className="acesso__marca acesso__marca--cliente"
       aria-label={m.nome}
+      data-clara={corClara(fundo) || undefined}
       style={{ '--marca-cor': fundo } as React.CSSProperties}
     >
+      <div className="acesso__aneis" aria-hidden="true" />
       <div className="acesso__cliente">
         {m.logoEscuro ? (
           <img className="acesso__cliente-logo-escuro" src={`/api${m.logoEscuro}`} alt={m.nome} />
@@ -198,19 +213,13 @@ function PainelDoCliente(props: { marca: MarcaPublica }) {
           </span>
         ) : (
           <>
-            <SeloDaMarca marca={{ ...m, cor: m.cor }} tamanho={44} claro />
+            <SeloDaMarca marca={{ ...m, cor: m.cor }} tamanho={72} claro />
             <b>{m.nome}</b>
           </>
         )}
+        <p>Acesso da equipe comercial</p>
       </div>
-      {m.imagem ? (
-        <img className="acesso__imagem" src={`/api${m.imagem}`} alt="" />
-      ) : (
-        <div className="acesso__chamada">
-          <h2>{m.nome}</h2>
-          <p>Acesso da equipe comercial.</p>
-        </div>
-      )}
+      <span className="acesso__endereco">{window.location.hostname}</span>
     </section>
   );
 }
@@ -228,9 +237,6 @@ export function TelaAcesso(props: { children: ReactNode; chamada?: ReactNode; la
       <main className="acesso acesso--cliente">
         <PainelDoCliente marca={marca} />
         <section className="acesso__lado">
-          <div className="acesso__selo">
-            <SeloDaMarca marca={marca} tamanho={48} />
-          </div>
           {props.children}
           <TecnologiaProspectTeam className="acesso__tecnologia" />
         </section>

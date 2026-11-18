@@ -2087,7 +2087,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'O sistema com o nome, a cor, o logo e o endereço da sua empresa (crm.suaempresa.com.br). Você mesmo configura.',
     onde: { rotulo: 'Marca e domínio', para: '/marca' },
     termos:
-      'marca white label logo logotipo cor ícone icone favicon imagem divulgação fundo fundos reunião desfoque cenário foto domínio dominio próprio endereço subdomínio crm dns cname registro.br cloudflare hostinger godaddy whatsapp prévia link personalizar',
+      'tela de entrada tela de login login feio logo repetida marca white label logo logotipo cor ícone icone favicon imagem divulgação fundo fundos reunião desfoque cenário foto domínio dominio próprio endereço subdomínio crm dns cname registro.br cloudflare hostinger godaddy whatsapp prévia link personalizar',
     corpo: (
       <>
         <p>
@@ -2123,6 +2123,12 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>
             <b>Menu lateral na cor secundária</b>: liga o menu escuro, com a logo para fundo escuro.
+          </li>
+          <li>
+            <b>Tela de entrada no seu domínio</b>: mostra a logo para fundo escuro uma vez só, grande e no
+            centro, sobre a cor secundária em tom fechado, com o endereço no rodapé. Sem essa logo, entra a de
+            fundo claro numa placa branca; sem nenhuma, o nome da marca. A imagem de divulgação não aparece
+            ali: ela vale para a prévia quando alguém manda um link.
           </li>
           <li>
             <b>Imagem de divulgação</b>: aparece ao lado do login e na prévia quando alguém manda um link do
