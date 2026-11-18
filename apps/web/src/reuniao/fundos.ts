@@ -1,6 +1,5 @@
 import {
-  BackgroundProcessor,
-  type BackgroundProcessorWrapper,
+  BackgroundProcessorWrapper,
   type SwitchBackgroundProcessorOptions,
   supportsBackgroundProcessors,
 } from '@livekit/track-processors';
@@ -8,6 +7,7 @@ import { CENAS_FUNDO, type ConfigFundos, EFEITOS_FUNDO, nomeDoFundo } from '@pro
 import type { LocalVideoTrack } from 'livekit-client';
 import { useSyncExternalStore } from 'react';
 import { imagemDoFundo, type MarcaDoFundo } from './fundosImagem';
+import { TransformadorDeRecorte } from './recorte';
 
 export { imagemDoFundo, type MarcaDoFundo } from './fundosImagem';
 
@@ -121,6 +121,21 @@ export function useFundoAtual(): string {
 /** Qual fundo cada processador está mostrando. */
 const usado = new WeakMap<object, string>();
 
+/**
+ * O processador da câmera com o nosso recorte (ver `recorte.ts`). A casca é a da biblioteca — é ela
+ * que conversa com a câmera e com a sala —, só quem separa a pessoa do fundo é que mudou.
+ */
+function novoProcessador(opcoes: SwitchBackgroundProcessorOptions): BackgroundProcessorWrapper {
+  const transformador = new TransformadorDeRecorte(
+    opcoes.mode === 'background-blur'
+      ? { blurRadius: opcoes.blurRadius }
+      : opcoes.mode === 'virtual-background'
+        ? { imagePath: opcoes.imagePath }
+        : { backgroundDisabled: true },
+  );
+  return new BackgroundProcessorWrapper(transformador as never, 'fundo');
+}
+
 async function opcoesDoFundo(id: string, m: MarcaDoFundo | null): Promise<SwitchBackgroundProcessorOptions> {
   return id.startsWith('desfoque')
     ? { mode: 'background-blur', blurRadius: id === 'desfoque-forte' ? 18 : 7 }
@@ -132,7 +147,7 @@ export async function criarProcessador(
   id: string,
   m: MarcaDoFundo | null,
 ): Promise<BackgroundProcessorWrapper> {
-  const p = BackgroundProcessor(await opcoesDoFundo(id, m), 'fundo');
+  const p = novoProcessador(await opcoesDoFundo(id, m));
   usado.set(p, id);
   definirAtual(id);
   return p;
@@ -162,7 +177,7 @@ export async function aplicarFundo(
     await processador.switchTo(opcoes);
     usado.set(processador, id);
   } else {
-    const novo = BackgroundProcessor(opcoes, 'fundo');
+    const novo = novoProcessador(opcoes);
     await faixa.setProcessor(novo);
     usado.set(novo, id);
   }

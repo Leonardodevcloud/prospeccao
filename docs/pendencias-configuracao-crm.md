@@ -389,6 +389,13 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4ay. Recorte da pessoa nas reuniões (v173)
+1. [ ] Só a **web** (Vercel). Sem migration, sem redeploy no Railway.
+2. [ ] Entrar numa reunião com **imagem de fundo** e com **desfoque**, no computador e no celular, e conferir a borda (ombro, cabelo, braço) e se a imagem continua fluida.
+3. [ ] Se travar em algum aparelho, dizer qual: dá para aliviar em `AJUSTE` (`apps/web/src/reuniao/recorte.ts`), por exemplo baixando `ladoDoRefino` de 640 para 480.
+4. [ ] Testar também no Safari (iPhone) e no Firefox: esse caminho não foi aberto aqui.
+5. [ ] Se cabelo solto ainda incomodar, pedir o teste do modelo maior (multiclasse, 16 MB).
+
 ## 4ax. Tela de entrada no domínio do cliente (v172)
 1. [ ] Só a **web** (Vercel). Sem migration, sem redeploy no Railway.
 2. [ ] Abrir o domínio do cliente e conferir a tela de entrada no computador e no celular.

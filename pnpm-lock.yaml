@@ -215,6 +215,9 @@ importers:
       '@livekit/track-processors':
         specifier: 0.8.2
         version: 0.8.2(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.4(@types/dom-mediacapture-record@1.0.22))
+      '@mediapipe/tasks-vision':
+        specifier: 0.10.14
+        version: 0.10.14
       '@prospeccao/shared':
         specifier: workspace:*
         version: link:../../packages/shared

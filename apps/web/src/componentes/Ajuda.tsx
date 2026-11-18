@@ -650,6 +650,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
           </li>
           <li>Com logo ou foto no fundo, você vê a sua imagem sem o espelho, do jeito que os outros veem.</li>
           <li>
+            O recorte acompanha o contorno da pessoa e fica parado quando ela está parada. Ele erra menos com
+            boa luz no rosto e quando a roupa não é da cor do que está atrás. Cabelo solto e mão passando
+            rápido ainda podem falhar um pouco.
+          </li>
+          <li>
             Separar a pessoa do fundo pesa um pouco no computador. Em aparelho mais fraco ou navegador antigo,
             o sistema avisa e a reunião segue sem efeito.
           </li>
