@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
+import { filtroParaSdr } from '@prospeccao/integrations/videos';
 
 /** Programas de fora (ffmpeg, ffprobe, HyperFrames) com saída de erro curta no log. */
 
@@ -106,6 +107,44 @@ export async function duracaoDoVideo(arquivo: string): Promise<number> {
     { timeoutMs: 30_000 },
   );
   return Number(stdout.toString().trim()) || 0;
+}
+
+let temZscale: Promise<boolean> | null = null;
+/** O ffmpeg desta máquina tem o filtro zscale (o que converte HDR em imagem comum)? */
+function ffmpegTemZscale(): Promise<boolean> {
+  temZscale ??= rodar('ffmpeg', ['-hide_banner', '-filters'], { timeoutMs: 30_000 })
+    .then(({ stdout }) => /\szscale\s/.test(stdout.toString()))
+    .catch(() => false);
+  return temZscale;
+}
+
+/**
+ * v168: o filtro que transforma o vídeo HDR (iPhone) em imagem comum, ou null quando o vídeo já é
+ * comum. `semFiltro` vem true quando o vídeo é HDR e o ffmpeg não tem como converter (o vídeo sai
+ * como saía antes, lavado, e isso vai para o log).
+ */
+export async function sdrDoVideo(
+  arquivo: string,
+): Promise<{ filtro: string | null; hdr: boolean; semFiltro: boolean }> {
+  const { stdout } = await rodar(
+    'ffprobe',
+    [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=color_transfer',
+      '-of',
+      'csv=p=0',
+      arquivo,
+    ],
+    { timeoutMs: 30_000 },
+  );
+  const filtro = filtroParaSdr(stdout.toString().trim().split(/[\s,]/)[0]);
+  if (!filtro) return { filtro: null, hdr: false, semFiltro: false };
+  const tem = await ffmpegTemZscale();
+  return { filtro: tem ? filtro : null, hdr: true, semFiltro: !tem };
 }
 
 /** Áudio cru (mono, 16 kHz, 16 bits) para medir os silêncios. */

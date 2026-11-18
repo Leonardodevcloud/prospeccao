@@ -389,6 +389,13 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4at. Vídeo acinzentado: HDR do iPhone (v168)
+1. [ ] Sem migration. Redeploy do **worker-videos** (e da web, pela Ajuda).
+2. [ ] No vídeo "aluguel de motos Tutts", clicar em **Gerar de novo com as mudanças** (há mudanças pendentes) e comparar o vídeo pronto com o anterior: a pele e as cores devem voltar.
+3. [ ] Olhar o log do worker nessa edição: deve aparecer "vídeo em HDR convertido para imagem comum". Se aparecer "o ffmpeg sem zscale", avisar: o ffmpeg do Docker não tem o filtro e é preciso trocar o pacote.
+4. [ ] Se a pele ficar saturada demais ou de menos, avisar (hoje a conversão reduz a saturação para 0,86 antes da cor do editor).
+5. [ ] Vídeo de apoio gravado no iPhone e já enviado: apagar e enviar de novo para converter.
+
 ## 4as. Estilos, transições, filme, tarja e cores (v167)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
 2. [ ] **Cores**: em Ajustar a legenda, pôr "Palavras em destaque" em branco; em Animações, trocar as "Cores das animações"; clicar em Gerar de novo e conferir no vídeo pronto. A cor salva ao fechar a paleta (aparece o aviso "As mudanças estão salvas").

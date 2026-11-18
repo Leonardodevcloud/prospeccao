@@ -75,7 +75,15 @@ import {
   somPadrao,
   sonsPresentes,
 } from './enfeitar.js';
-import { duracaoDoVideo, ErroDoVideo, lerAudioCru, lerInfo, pedacos, rodar } from './ferramentas.js';
+import {
+  duracaoDoVideo,
+  ErroDoVideo,
+  lerAudioCru,
+  lerInfo,
+  pedacos,
+  rodar,
+  sdrDoVideo,
+} from './ferramentas.js';
 import { ARQUIVOS_FONTE, arquivosDaLegenda, regua } from './fontes.js';
 import * as repo from './repositorio.js';
 import { centroDoRosto, mapearRosto, remendarBuracos } from './rosto.js';
@@ -216,7 +224,14 @@ async function emPe(
 }
 
 /** Monta o vídeo editado: cada plano com o seu enquadramento, juntos, cor e som tratados. */
-async function montarEditado(base: string, planos: Plano[], pasta: string, saida: string): Promise<Plano[]> {
+async function montarEditado(
+  base: string,
+  planos: Plano[],
+  pasta: string,
+  saida: string,
+  /** v168: o filtro que tira o HDR do vídeo do iPhone (antes de tudo), ou null. */
+  sdr: string | null = null,
+): Promise<Plano[]> {
   const lista: string[] = [];
   const reais: Plano[] = [];
   let acc = 0;
@@ -239,7 +254,7 @@ async function montarEditado(base: string, planos: Plano[], pasta: string, saida
         '-t',
         d.toFixed(4),
         '-vf',
-        `crop=${c.w}:${c.h}:${c.x}:${c.y},scale=1080:1920:flags=lanczos,setsar=1,${COR_E_NITIDEZ}`,
+        `${sdr ? `${sdr},` : ''}crop=${c.w}:${c.h}:${c.x}:${c.y},scale=1080:1920:flags=lanczos,setsar=1,${COR_E_NITIDEZ}`,
         '-af',
         `afade=t=in:d=0.012,afade=t=out:st=${fadeOut}:d=0.015`,
         '-c:v',
@@ -594,11 +609,22 @@ export async function editarVideo(
     const ficam = trechosQueFicam(duracao, cortes);
     if (!ficam.length)
       throw new ErroDoVideo('Os cortes tiraram o vídeo inteiro. Devolva algum trecho na revisão.', true);
+    // v168: vídeo gravado em HDR (iPhone) vira imagem comum antes de editar; sem isso o vídeo pronto
+    // saía acinzentado.
+    const sdr = await sdrDoVideo(base);
+    if (sdr.hdr)
+      log.info(
+        { videoId, convertido: !sdr.semFiltro },
+        sdr.semFiltro
+          ? 'vídeo em HDR e o ffmpeg sem zscale: a cor sai lavada'
+          : 'vídeo em HDR convertido para imagem comum',
+      );
     const planos = await montarEditado(
       base,
       planosDoVideo(ficam, analise.rostos, v.opcoes.transicao),
       pasta,
       join(pasta, 'editado.mp4'),
+      sdr.filtro,
     );
     await rm(base, { force: true });
     let editado = join(pasta, 'editado.mp4');

@@ -3,6 +3,7 @@ import { trechosQueFicam } from '@prospeccao/shared/videos';
 import { describe, expect, it } from 'vitest';
 import {
   aplicarVocabulario,
+  argumentosDeNormalizarApoio,
   blocosDaLegenda,
   conferirJuncoes,
   conferirSobreposicao,
@@ -10,6 +11,7 @@ import {
   decisaoPelasRegras,
   diagramar,
   falaNumerada,
+  filtroParaSdr,
   lerDecisao,
   lerPalavras,
   montarComposicao,
@@ -399,6 +401,25 @@ describe('composição do HyperFrames', () => {
     expect(html).not.toContain('<b>OI</b>');
     expect(html).toContain('\\u003cB\\u003eOI\\u003c/B\\u003e');
     expect(html).toContain("window.__timelines['main'] = tl");
+  });
+
+  it('v168: vídeo gravado em HDR (iPhone) vira imagem comum antes de editar', () => {
+    // HLG (o padrão do iPhone) e PQ pedem a conversão; vídeo comum e vídeo sem a informação, não.
+    expect(filtroParaSdr('arib-std-b67')).toContain('tonemap');
+    expect(filtroParaSdr('smpte2084')).toContain('p=bt709');
+    expect(filtroParaSdr('bt709')).toBeNull();
+    expect(filtroParaSdr('')).toBeNull();
+    expect(filtroParaSdr(undefined)).toBeNull();
+    const semHdr = argumentosDeNormalizarApoio({ entrada: 'a.mov', saida: 'b.mp4', maxSegundos: 60 });
+    expect(semHdr.join(' ')).not.toContain('zscale');
+    const comHdr = argumentosDeNormalizarApoio({
+      entrada: 'a.mov',
+      saida: 'b.mp4',
+      maxSegundos: 60,
+      sdr: filtroParaSdr('arib-std-b67'),
+    });
+    // A conversão vem antes de tudo (o corte e a escala já trabalham na imagem comum).
+    expect(comHdr[comHdr.indexOf('-vf') + 1]).toMatch(/^zscale=t=linear.*,scale=1080:1920/);
   });
 
   it('v167: estilos novos, tarja só acima da cabeça, acabamento de filme e transições desenhadas', () => {

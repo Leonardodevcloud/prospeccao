@@ -12,7 +12,7 @@ import {
   descreverFotos,
 } from '@prospeccao/integrations/videos';
 import { type ApoioGuardado, LIMITE_SEGUNDOS_APOIO } from '@prospeccao/shared/videos';
-import { duracaoDoVideo, rodar } from './ferramentas.js';
+import { duracaoDoVideo, rodar, sdrDoVideo } from './ferramentas.js';
 import * as repo from './repositorio.js';
 
 /**
@@ -60,7 +60,13 @@ export async function prepararApoios(
         await baixar(d.arm, a.chave, bruto);
         await rodar(
           'ffmpeg',
-          argumentosDeNormalizarApoio({ entrada: bruto, saida: local, maxSegundos: MAX_SEGUNDOS_PREPARADO }),
+          argumentosDeNormalizarApoio({
+            entrada: bruto,
+            saida: local,
+            maxSegundos: MAX_SEGUNDOS_PREPARADO,
+            // v168: o apoio gravado em HDR (iPhone) também vira imagem comum.
+            sdr: (await sdrDoVideo(bruto)).filtro,
+          }),
           { timeoutMs: 10 * 60_000 },
         );
         const duracao = await duracaoDoVideo(local);

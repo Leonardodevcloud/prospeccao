@@ -100,11 +100,26 @@ export function argumentosDoApoio(e: {
   return args;
 }
 
+/**
+ * v168: o vídeo gravado em HDR (o padrão do iPhone: HLG; ou PQ) precisa virar imagem comum (SDR,
+ * BT.709) antes de editar. Sem isso o render lê os números do HDR como se fossem de imagem comum e
+ * o vídeo pronto sai lavado, acinzentado, com a pele sem cor. Devolve o começo do filtro do ffmpeg
+ * (precisa do zscale), ou null quando o vídeo já é comum.
+ */
+export function filtroParaSdr(transferencia: string | null | undefined): string | null {
+  if (transferencia !== 'arib-std-b67' && transferencia !== 'smpte2084') return null;
+  // A saturação cai um pouco no fim porque a cor do vídeo (e o tratamento "vivo") sobe depois: sem
+  // isso a pele do vídeo convertido ficava alaranjada.
+  return 'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,eq=saturation=0.86';
+}
+
 /** Deixa o apoio no formato do vídeo (em pé, 1080×1920, 30 quadros, sem som), cortando as sobras. */
 export function argumentosDeNormalizarApoio(e: {
   entrada: string;
   saida: string;
   maxSegundos: number;
+  /** v168: o filtro que tira o HDR (de `filtroParaSdr`), quando o apoio foi gravado em HDR. */
+  sdr?: string | null;
 }): string[] {
   return [
     '-v',
@@ -116,7 +131,7 @@ export function argumentosDeNormalizarApoio(e: {
     String(e.maxSegundos),
     '-an',
     '-vf',
-    'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p',
+    `${e.sdr ? `${e.sdr},` : ''}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p`,
     '-c:v',
     'libx264',
     '-preset',
