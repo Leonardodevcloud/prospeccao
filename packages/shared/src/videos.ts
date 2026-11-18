@@ -142,6 +142,81 @@ export const TRATAMENTOS_IMAGEM: { id: TratamentoImagem; nome: string; dica: str
   { id: 'original', nome: 'Original', dica: 'A imagem como foi gravada' },
 ];
 
+const corHex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Cor no formato #rrggbb.');
+
+/* ───────────────────────────── v170: a capa do vídeo ───────────────────────────── */
+
+export type ModeloCapa = 'embaixo' | 'alto' | 'faixa' | 'foto';
+export const MODELOS_CAPA: { id: ModeloCapa; nome: string }[] = [
+  { id: 'embaixo', nome: 'Embaixo' },
+  { id: 'alto', nome: 'No alto' },
+  { id: 'faixa', nome: 'Faixa' },
+  { id: 'foto', nome: 'Só a foto' },
+];
+/** Quantos quadros o editor guarda para a capa a cada edição. */
+export const QUADROS_DA_CAPA = 10;
+/** A capa tem o tamanho do vídeo; no perfil o Instagram mostra só o meio (3:4). */
+export const CAPA = { largura: 1080, altura: 1920, perfilTopo: 240, perfilAltura: 1440 } as const;
+export const LIMITE_BYTES_CAPA = 3 * 1024 * 1024;
+
+export const capaDoVideoEntrada = z.object({
+  /** O quadro guardado escolhido (o índice) ou, com `segundo`, um ponto qualquer do vídeo. */
+  quadro: z
+    .number()
+    .int()
+    .min(0)
+    .max(QUADROS_DA_CAPA - 1)
+    .nullable()
+    .default(null),
+  segundo: z.number().min(0).max(LIMITE_SEGUNDOS_VIDEO).nullable().default(null),
+  titulo: z.string().trim().max(48).default(''),
+  destaque: z.string().trim().max(40).default(''),
+  modelo: z.enum(['embaixo', 'alto', 'faixa', 'foto']).default('embaixo'),
+  corTexto: corHex.nullable().default(null),
+  corDestaque: corHex.nullable().default(null),
+  /** Deslocamento do texto, em pontos da capa de 1080 × 1920. */
+  dx: z.number().min(-400).max(400).default(0),
+  dy: z.number().min(-1400).max(1400).default(0),
+});
+export type CapaDoVideo = z.infer<typeof capaDoVideoEntrada>;
+export const CAPA_PADRAO: CapaDoVideo = {
+  quadro: null,
+  segundo: null,
+  titulo: '',
+  destaque: '',
+  modelo: 'embaixo',
+  corTexto: null,
+  corDestaque: null,
+  dx: 0,
+  dy: 0,
+};
+
+/**
+ * Os segundos (do vídeo editado) dos quadros guardados para a capa: espalhados pelo vídeo, fora dos
+ * trechos de apoio e longe do começo e do fim.
+ */
+export function segundosDosQuadros(
+  duracao: number,
+  apoios: { ini: number; fim: number }[],
+  n = QUADROS_DA_CAPA,
+): number[] {
+  const saida: number[] = [];
+  for (let k = 0; k < n; k++) {
+    let t = ((k + 0.5) / n) * duracao;
+    const dentro = apoios.find((a) => t >= a.ini - 0.15 && t <= a.fim + 0.15);
+    if (dentro) {
+      // Sai do apoio pelo lado mais perto que ainda cabe no vídeo.
+      const antes = dentro.ini - 0.4;
+      const depois = dentro.fim + 0.4;
+      t = t - dentro.ini < dentro.fim - t && antes > 0.2 ? antes : depois;
+      if (t > duracao - 0.2 || apoios.some((a) => t >= a.ini - 0.15 && t <= a.fim + 0.15)) continue;
+    }
+    t = Math.round(Math.max(0.2, Math.min(duracao - 0.2, t)) * 100) / 100;
+    if (!saida.some((x) => Math.abs(x - t) < 0.3)) saida.push(t);
+  }
+  return saida.sort((a, b) => a - b);
+}
+
 /** v167: o acabamento por cima da imagem do vídeo (a legenda e as animações ficam nítidas). */
 export type AcabamentoVideo = 'limpo' | 'filme';
 export const ACABAMENTOS_VIDEO: { id: AcabamentoVideo; nome: string; dica: string }[] = [
@@ -247,7 +322,6 @@ export const chamadaEntrada = z.object({
 });
 export type ChamadaVideo = z.infer<typeof chamadaEntrada>;
 
-const corHex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Cor no formato #rrggbb.');
 /** Cor principal (selos, etiquetas, palavra acesa da legenda) e de destaque (palavras fortes, marcações). */
 export const coresDoVideoEntrada = z.object({ primaria: corHex, destaque: corHex });
 export type CoresDoVideo = z.infer<typeof coresDoVideoEntrada>;
@@ -352,6 +426,10 @@ export interface DesenhoDoVideo {
   rostos: [number, number, number, number, number][];
   /** O tamanho em que os trechos foram medidos (para a prévia escalar ao mudar o tamanho). */
   tamanho: number;
+  /** v170: os quadros do vídeo cortado (sem legenda) guardados para a capa, com o segundo de cada um. */
+  quadros?: { t: number }[];
+  /** v170: a duração do vídeo cortado (sem a tela final), em segundos. */
+  duracao?: number;
 }
 
 export const opcoesVideoEntrada = z.object({
@@ -374,6 +452,8 @@ export const opcoesVideoEntrada = z.object({
   /** v167: granulação e vinheta por cima da imagem, e a tarja com o nome de quem fala. */
   acabamento: z.enum(['limpo', 'filme']).default('limpo'),
   tarja: tarjaDoVideoEntrada.default(TARJA_PADRAO),
+  /** v170: a capa (o quadro, o texto, o modelo e as cores). */
+  capa: capaDoVideoEntrada.default(CAPA_PADRAO),
   /** v166: a aparência e a posição da legenda, e a posição do título e das animações. */
   legenda: legendaDoVideoEntrada.default(LEGENDA_PADRAO),
   camadas: camadasDoVideoEntrada.default(CAMADAS_PADRAO),
@@ -708,6 +788,8 @@ export interface DetalheVideo extends ResumoVideo {
   mudancasPendentes: boolean;
   /** v161: há um pedido à editora aplicado que ainda dá para desfazer. */
   podeDesfazerPedido: boolean;
+  /** v170: a capa foi feita pela pessoa (o "Gerar de novo" não troca). */
+  capaPropria: boolean;
   /** v162: os vídeos de apoio (trechos deles entram em tela cheia por cima da fala). */
   apoios: ApoioDoVideo[];
   /** v166: o desenho da última edição (null: gere de novo uma vez para liberar o ajuste da legenda). */

@@ -25,6 +25,11 @@ const armazenamento = {
   async enviar(chave: string, corpo: Uint8Array) {
     arquivos.set(chave, new Uint8Array(corpo));
   },
+  async ler(chave: string) {
+    const a = arquivos.get(chave);
+    if (!a) throw new Error('não existe');
+    return a;
+  },
   async iniciarEmPartes(chave: string) {
     partes.set(chave, new Map());
     return `envio-${chave}`;
@@ -930,6 +935,83 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
     const link = await ler(`/videos/${videoId}/arquivo?tipo=limpo`);
     expect(link.status).toBe(200);
     expect(typeof link.body.url).toBe('string');
+
+    // v170: a capa. Os quadros guardados chegam pela api; o ajuste e a capa pronta ficam guardados
+    // sem pedir para gerar o vídeo de novo; a capa da pessoa substitui a automática.
+    await pool.query(
+      `UPDATE comercial.videos SET mudancas_pendentes = false, capa_chave = 'videos/1/x/capa-auto.jpg',
+              analise = jsonb_set(analise, '{desenho,quadros}', $2::jsonb) WHERE id = $1`,
+      [
+        videoId,
+        JSON.stringify([
+          { t: 1.5, chave: 'videos/1/x/capaq-0.jpg' },
+          { t: 4.5, chave: 'videos/1/x/capaq-1.jpg' },
+        ]),
+      ],
+    );
+    arquivos.set('videos/1/x/capaq-1.jpg', new Uint8Array([0xff, 0xd8, 0xff, 7, 7]));
+    arquivos.set('videos/1/x/capa-auto.jpg', new Uint8Array([1]));
+    const comQuadros = await ler(`/videos/${videoId}`);
+    expect(comQuadros.body.desenho.quadros).toEqual([{ t: 1.5 }, { t: 4.5 }]);
+    expect(comQuadros.body.capaPropria).toBe(false);
+    const quadro = await request(app)
+      .get(`/videos/${videoId}/capa/quadro?n=1`)
+      .set('Cookie', cookie)
+      .buffer(true)
+      .parse((r, fim) => {
+        const partes: Buffer[] = [];
+        r.on('data', (p: Buffer) => partes.push(p));
+        r.on('end', () => fim(null, Buffer.concat(partes)));
+      });
+    expect(quadro.status).toBe(200);
+    expect(quadro.headers['content-type']).toContain('image/jpeg');
+    expect([...(quadro.body as Buffer)]).toEqual([0xff, 0xd8, 0xff, 7, 7]);
+    expect((await ler(`/videos/${videoId}/capa/quadro?n=5`)).status).toBe(404);
+    const ajuste = await enviar('put', `/videos/${videoId}/capa/ajuste`, {
+      quadro: 1,
+      titulo: 'Moto pra trabalhar',
+      destaque: 'Sem consulta ao SPC',
+      modelo: 'faixa',
+      dy: -120,
+    });
+    expect(ajuste.status).toBe(200);
+    expect(ajuste.body.opcoes.capa).toMatchObject({
+      quadro: 1,
+      titulo: 'Moto pra trabalhar',
+      modelo: 'faixa',
+      dy: -120,
+    });
+    expect(ajuste.body.mudancasPendentes).toBe(false);
+    expect((await enviar('put', `/videos/${videoId}/capa/ajuste`, { modelo: 'lado' })).status).toBe(422);
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2000, 9)]);
+    const naoJpeg = await request(app)
+      .put(`/videos/${videoId}/capa`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie)
+      .set('content-type', 'image/jpeg')
+      .send(Buffer.alloc(2000, 1));
+    expect(naoJpeg.status).toBe(422);
+    const capa = await request(app)
+      .put(`/videos/${videoId}/capa`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie)
+      .set('content-type', 'image/jpeg')
+      .send(jpeg);
+    expect(capa.status).toBe(200);
+    expect(capa.body).toMatchObject({ capaPropria: true, mudancasPendentes: false });
+    // A automática foi apagada e a nova é a capa do vídeo.
+    expect(arquivos.has('videos/1/x/capa-auto.jpg')).toBe(false);
+    const { rows: comCapa } = await pool.query<{ capa_chave: string }>(
+      'SELECT capa_chave FROM comercial.videos WHERE id = $1',
+      [videoId],
+    );
+    expect(comCapa[0]!.capa_chave).toContain('capa-propria-');
+    expect([...arquivos.get(comCapa[0]!.capa_chave)!].slice(0, 3)).toEqual([0xff, 0xd8, 0xff]);
+    const solta = await request(app)
+      .delete(`/videos/${videoId}/capa`)
+      .set('Origin', ORIGEM)
+      .set('Cookie', cookie);
+    expect(solta.body).toMatchObject({ capaPropria: false, mudancasPendentes: true });
   });
 
   it('palavras sempre escritas assim e apagar o vídeo com os arquivos', async () => {

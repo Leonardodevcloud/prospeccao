@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { prepararImagem } from '@prospeccao/integrations/slides';
 import { pedirAEditora } from '@prospeccao/integrations/videos';
 import { AppError } from '@prospeccao/shared';
@@ -11,12 +14,15 @@ import {
   TIPOS_ARQUIVO_DIRECT,
 } from '@prospeccao/shared/carrosseis-publicacao';
 import {
+  capaDoVideoEntrada,
+  LIMITE_BYTES_CAPA,
   LIMITE_BYTES_VIDEO,
   LIMITE_SEGUNDOS_VIDEO,
   MAX_FOTO_BYTES,
   novoApoioEntrada,
   novoVideoEntrada,
   pedidoEditoraEntrada,
+  QUADROS_DA_CAPA,
   revisaoEntrada,
   TAMANHO_PARTE_ENVIO,
   TIPOS_FOTO,
@@ -33,8 +39,40 @@ import { contratoDaConta, rotaComModulo, temModulo } from '../../recursos.js';
 import * as pub from '../carrosseis/publicacao.js';
 import * as fotos from '../carrosseis/repositorio.js';
 import * as publicar from '../instagram/publicar.js';
+import { rodar } from '../reunioes/montar.js';
 import * as publicacao from './publicacao.js';
 import * as repo from './repositorio.js';
+
+/** Um quadro do vídeo, em tamanho de capa (o ffmpeg lê só o trecho que precisa, pelo link). */
+async function quadroDoVideo(url: string, t: number): Promise<Uint8Array> {
+  const pasta = await mkdtemp(join(tmpdir(), 'capa-'));
+  const arquivo = join(pasta, 'q.jpg');
+  try {
+    await rodar('ffmpeg', [
+      '-v',
+      'error',
+      '-y',
+      '-ss',
+      t.toFixed(2),
+      '-i',
+      url,
+      '-frames:v',
+      '1',
+      '-vf',
+      'scale=1080:1920:flags=lanczos',
+      '-q:v',
+      '3',
+      '-update',
+      '1',
+      arquivo,
+    ]);
+    return new Uint8Array(await readFile(arquivo));
+  } catch {
+    throw AppError.invalido('Não deu para tirar esse quadro do vídeo. Escolha um dos quadros sugeridos.');
+  } finally {
+    await rm(pasta, { recursive: true, force: true });
+  }
+}
 
 /**
  * Vídeos com IA (módulo à parte, só o administrador, como os Carrosséis). O navegador manda o vídeo
@@ -407,6 +445,75 @@ export function rotasVideos(deps: DepsApi): Router {
     const id = idDaRota(req);
     const v = await repo.buscar(pool, id);
     res.json({ ...v, naFrente: v.situacao === 'na_fila' ? await repo.naFrente(pool, id) : 0 });
+  });
+
+  /* ───────── v170: a capa do vídeo ───────── */
+
+  /**
+   * A imagem de um quadro para a capa: um dos guardados na edição (`n`) ou um ponto qualquer do
+   * vídeo cortado sem legenda (`t`, tirado na hora com o ffmpeg; menos nítido). Vem pela api para a
+   * tela poder desenhar a capa em cima dele.
+   */
+  r.get('/:id/capa/quadro', async (req, res) => {
+    const id = idDaRota(req);
+    const { n, t } = consulta(
+      req,
+      z.object({
+        n: z.coerce
+          .number()
+          .int()
+          .min(0)
+          .max(QUADROS_DA_CAPA - 1)
+          .optional(),
+        t: z.coerce.number().min(0).max(LIMITE_SEGUNDOS_VIDEO).optional(),
+      }),
+    );
+    const arm = exigirArmazenamento();
+    const q = await repo.quadrosDaCapa(pool, id);
+    let bytes: Uint8Array;
+    if (n != null) {
+      const quadro = q.quadros[n];
+      if (!quadro) throw AppError.naoEncontrado('Quadro');
+      bytes = await arm.ler(quadro.chave);
+    } else {
+      if (t == null) throw AppError.invalido('Diga qual quadro.');
+      if (!q.limpo) throw AppError.invalido('Gere o vídeo de novo uma vez para liberar a capa.');
+      bytes = await quadroDoVideo(await arm.urlAssinada(q.limpo, { segundos: 300 }), t);
+    }
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(Buffer.from(bytes));
+  });
+
+  /** Guarda o ajuste da capa (não pede para gerar o vídeo de novo). */
+  r.put('/:id/capa/ajuste', async (req, res) => {
+    res.json(await repo.salvarAjusteDaCapa(pool, idDaRota(req), corpo(req, capaDoVideoEntrada)));
+  });
+
+  /** A capa pronta (JPEG de 1080 × 1920 desenhado na tela): passa a ser a capa do vídeo. */
+  r.put('/:id/capa', express.raw({ type: () => true, limit: LIMITE_BYTES_CAPA }), async (req, res) => {
+    const id = idDaRota(req);
+    const bytes = req.body as Buffer;
+    if (!Buffer.isBuffer(bytes) || bytes.length < 1000) throw AppError.invalido('A capa veio vazia.');
+    // JPEG de verdade: começa com FF D8 FF.
+    if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff)
+      throw AppError.invalido('A capa precisa ser uma imagem JPEG.');
+    const arm = exigirArmazenamento();
+    const chave = `videos/${conta()}/${id}/capa-propria-${Date.now().toString(36)}.jpg`;
+    // Confere o vídeo (e a conta) antes de guardar o arquivo.
+    await repo.quadrosDaCapa(pool, id);
+    await arm.enviar(chave, new Uint8Array(bytes), 'image/jpeg');
+    const r2 = await repo.guardarCapaPropria(pool, id, chave).catch(async (erro) => {
+      await arm.apagar([chave]).catch(() => undefined);
+      throw erro;
+    });
+    if (r2.antiga) await arm.apagar([r2.antiga]).catch(() => undefined);
+    res.json(r2.detalhe);
+  });
+
+  /** Volta à capa automática (um quadro do vídeo, na próxima edição). */
+  r.delete('/:id/capa', async (req, res) => {
+    res.json(await repo.soltarCapaPropria(pool, idDaRota(req)));
   });
 
   /** Link temporário: o vídeo pronto (para tocar ou baixar), a capa ou o original. */

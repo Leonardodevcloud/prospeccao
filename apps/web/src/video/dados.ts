@@ -189,6 +189,48 @@ export function duracaoDoArquivo(arquivo: File): Promise<number | null> {
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** v170: manda a capa desenhada na tela (JPEG) e devolve o vídeo atualizado. */
+export async function enviarCapa(id: number, capa: Blob): Promise<DetalheVideo> {
+  const r = await fetch(`/api/videos/${id}/capa`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'image/jpeg' },
+    body: capa,
+  });
+  const dados = await r.json().catch(() => null);
+  if (!r.ok)
+    throw new ErroApi(
+      r.status,
+      dados?.erro?.codigo ?? 'erro',
+      dados?.erro?.mensagem ?? `Não deu para salvar a capa (erro ${r.status}).`,
+    );
+  return dados as DetalheVideo;
+}
+
+/** v170: a imagem de um quadro do vídeo para a capa (vem pela api, para a tela poder desenhar nela). */
+export function useQuadroDaCapa(id: number, qual: { n: number } | { t: number } | null) {
+  const chave = qual ? ('n' in qual ? `n=${qual.n}` : `t=${qual.t.toFixed(2)}`) : '';
+  return useQuery({
+    queryKey: ['videos', id, 'capa-quadro', chave],
+    enabled: !!qual,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 10 * 60_000,
+    retry: 1,
+    queryFn: async () => {
+      const r = await fetch(`/api/videos/${id}/capa/quadro?${chave}`, { credentials: 'same-origin' });
+      if (!r.ok) {
+        const dados = await r.json().catch(() => null);
+        throw new ErroApi(
+          r.status,
+          dados?.erro?.codigo ?? 'erro',
+          dados?.erro?.mensagem ?? 'Não deu para abrir o quadro.',
+        );
+      }
+      return URL.createObjectURL(await r.blob());
+    },
+  });
+}
+
 async function enviarParte(caminho: string, corpo: Blob): Promise<void> {
   for (let tentativa = 0; ; tentativa++) {
     try {

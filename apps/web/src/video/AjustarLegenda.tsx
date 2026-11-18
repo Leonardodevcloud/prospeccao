@@ -44,7 +44,7 @@ import { useArquivo, useRevisao } from './dados';
 
 export type Camada = 'legenda' | 'titulo' | 'animacoes';
 
-const FAMILIA: Record<FonteLegenda, string> = {
+export const FAMILIA: Record<FonteLegenda, string> = {
   montserrat: '"Montserrat"',
   poppins: '"Poppins"',
   inter: '"Inter"',

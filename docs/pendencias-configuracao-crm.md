@@ -389,6 +389,15 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4av. Capa do vídeo (v170)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] Em um vídeo já editado, clicar em **Gerar de novo** uma vez (o editor passa a guardar os quadros da capa).
+3. [ ] Na aba **Capa**: escolher o quadro, escrever o título e o destaque, trocar o modelo, arrastar o texto. Conferir que aparece "Capa salva".
+4. [ ] **Baixar a capa** e **Baixar no recorte do perfil** e abrir as duas imagens.
+5. [ ] Publicar um Reels por aqui e conferir no Instagram se a capa foi a nova, e como ela ficou na grade do perfil.
+6. [ ] Gerar o vídeo de novo e conferir que a capa feita continua a mesma.
+7. [ ] Dizer se faz falta: a IA sugerir títulos, e escolher uma foto sua (fora do vídeo) como fundo da capa.
+
 ## 4au. Pedidos que se perdem e tempo do apoio (v169)
 1. [ ] Sem migration. Redeploy da **api**; a **web** na Vercel.
 2. [ ] **Para achar a causa da perda**: dizer qual pedido sumiu e o que foi feito entre aplicar e perceber (gerou de novo? clicou em Desfazer? recarregou?). O caminho do "Gerar de novo" foi conferido e guarda tudo; a perda não foi reproduzida.

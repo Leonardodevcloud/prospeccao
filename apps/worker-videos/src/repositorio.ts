@@ -28,9 +28,15 @@ export interface AnaliseVideo {
   recorteX: number | null;
   /** v166: o desenho da última edição e o vídeo cortado sem legenda (para a prévia da legenda). */
   desenho?: DesenhoGuardado | null;
+  /** v170: a capa foi feita pela pessoa: a edição não troca. */
+  capaPropria?: boolean;
 }
 
-export type DesenhoGuardado = Omit<DesenhoDoVideo, 'temVideo'> & { videoChave: string | null };
+export type DesenhoGuardado = Omit<DesenhoDoVideo, 'temVideo' | 'quadros'> & {
+  videoChave: string | null;
+  /** v170: os quadros guardados para a capa (o segundo e o arquivo de cada um). */
+  quadros?: { t: number; chave: string }[];
+};
 
 /** v166: guarda o desenho sem mexer no resto da análise. */
 export async function salvarDesenho(db: Executor, id: number, desenho: DesenhoGuardado) {

@@ -56,6 +56,7 @@ import {
   ROTULO_MOMENTO,
   SEGUNDOS_PREVIA,
   type SomVideo,
+  segundosDosQuadros,
   TAMANHO_PARTE_ENVIO,
   TELA_DO_VIDEO,
   type TrechoSemImagem,
@@ -532,7 +533,15 @@ export async function editarVideo(
           aoAndar: (f) => void etapa('rosto', 42 + f * 14).catch(() => undefined),
         }),
       );
-      analise = { duracao, silencios: sil, rostos, fps: FPS_ROSTO, recorteX };
+      // A capa feita pela pessoa atravessa o "editar do zero".
+      analise = {
+        duracao,
+        silencios: sil,
+        rostos,
+        fps: FPS_ROSTO,
+        recorteX,
+        ...(v.analise?.capaPropria ? { capaPropria: true } : {}),
+      };
       await anotar({ rosto: { caixa: rostoEm(rostos, tPrevia), t: tPrevia }, trilha: trilhaDoRosto(rostos) });
       await repo.salvarAnalise(db, videoId, { duracao, analise, cortes, palavras, animacoes });
 
@@ -889,6 +898,16 @@ export async function editarVideo(
           ];
         }),
       videoChave: temLimpo ? limpoChave : null,
+      duracao: r3(duracaoEditado),
+      quadros: await guardarQuadrosDaCapa(arm, {
+        editado,
+        pasta,
+        prefixo: `videos/${v.conta_id}/${videoId}/capaq-${Date.now().toString(36)}`,
+        segundos: segundosDosQuadros(duracaoEditado, trechosDeApoio),
+      }).catch((erro) => {
+        log.warn({ err: erro, videoId }, 'os quadros da capa não foram guardados');
+        return [];
+      }),
     };
     await etapa('gerando', 70);
     const renderizado = join(pasta, 'renderizado.mp4');
@@ -1022,12 +1041,17 @@ export async function editarVideo(
     const prefixo = `videos/${v.conta_id}/${videoId}`;
     const sufixo = Date.now().toString(36);
     const finalChave = `${prefixo}/editado-${sufixo}.mp4`;
-    const capaChave = `${prefixo}/capa-${sufixo}.jpg`;
+    // v170: a capa feita pela pessoa fica; só a automática é trocada a cada edição.
+    const capaPropria = !!v.analise?.capaPropria && !!v.capa_chave;
+    const capaChave = capaPropria ? v.capa_chave! : `${prefixo}/capa-${sufixo}.jpg`;
     await subirArquivo(arm, finalChave, pronto, 'video/mp4');
-    await arm.enviar(capaChave, new Uint8Array(await readFile(capa)), 'image/jpeg');
-    const antigos = [v.final_chave, v.capa_chave, v.analise?.desenho?.videoChave].filter(
-      (c): c is string => !!c,
-    );
+    if (!capaPropria) await arm.enviar(capaChave, new Uint8Array(await readFile(capa)), 'image/jpeg');
+    const antigos = [
+      v.final_chave,
+      capaPropria ? null : v.capa_chave,
+      v.analise?.desenho?.videoChave,
+      ...(v.analise?.desenho?.quadros ?? []).map((q) => q.chave),
+    ].filter((c): c is string => !!c);
 
     const segundosServidor = (Date.now() - comeco) / 1000;
     const custoUsd =
@@ -1220,6 +1244,41 @@ async function fazerPreviaVideo(arm: Armazenamento, base: string, chave: string,
 }
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/** v170: guarda os quadros do vídeo cortado (sem legenda, em tamanho cheio) que a capa pode usar. */
+async function guardarQuadrosDaCapa(
+  arm: Armazenamento,
+  e: { editado: string; pasta: string; prefixo: string; segundos: number[] },
+): Promise<{ t: number; chave: string }[]> {
+  const saida: { t: number; chave: string }[] = [];
+  for (const [k, t] of e.segundos.entries()) {
+    const arquivo = join(e.pasta, `capaq-${k}.jpg`);
+    await rodar(
+      'ffmpeg',
+      [
+        '-v',
+        'error',
+        '-y',
+        '-ss',
+        t.toFixed(2),
+        '-i',
+        e.editado,
+        '-frames:v',
+        '1',
+        '-q:v',
+        '3',
+        '-update',
+        '1',
+        arquivo,
+      ],
+      { timeoutMs: 60_000 },
+    );
+    const chave = `${e.prefixo}-${k}.jpg`;
+    await arm.enviar(chave, new Uint8Array(await readFile(arquivo)), 'image/jpeg');
+    saida.push({ t, chave });
+  }
+  return saida;
+}
 
 /* ───────────────────────────── v164: a fala perdida ───────────────────────────── */
 

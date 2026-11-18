@@ -20996,3 +20996,220 @@ form.janela-pedido > button[type="submit"] {
   min-width: 56px;
   text-align: center;
 }
+
+/* ───────── v170: a capa do vídeo ───────── */
+.capa {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  width: 100%;
+}
+.capa__palco {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.capa__moldura {
+  position: relative;
+  width: min(340px, 100%);
+  aspect-ratio: 9 / 16;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #26262a;
+  flex: none;
+}
+.capa__tela {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.capa__tela[data-arrasta] {
+  cursor: grab;
+}
+.capa__tela[data-arrasta]:active {
+  cursor: grabbing;
+}
+/* O que o perfil mostra: o meio da capa (3:4). */
+.capa__perfil {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 12.5%;
+  bottom: 12.5%;
+  border-top: 1.5px dashed rgba(255, 255, 255, 0.85);
+  border-bottom: 1.5px dashed rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+}
+.capa__perfil span,
+.capa__carregando {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.capa__carregando {
+  top: auto;
+  bottom: 8px;
+}
+.capa__quadros {
+  display: grid;
+  gap: var(--space-2);
+}
+.capa__rotulo {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.capa__minis {
+  display: grid;
+  grid-template-columns: repeat(2, 54px);
+  gap: 10px 12px;
+}
+.capa__mini {
+  position: relative;
+  width: 54px;
+  height: 96px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #3f3f46;
+  cursor: pointer;
+}
+.capa__mini img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.capa__mini span {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.capa__mini[aria-pressed="true"] {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+.capa__momento {
+  width: min(480px, 100%);
+}
+.capa__momento-linha {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.capa__momento-linha input {
+  flex: 1;
+  min-width: 0;
+}
+.capa__aviso[data-alerta] {
+  color: var(--warning);
+  font-weight: 600;
+}
+.capa__painel fieldset {
+  display: grid;
+  gap: var(--space-2);
+}
+.capa__modelos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.capa__modelo {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 96px;
+  padding: 8px 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.capa__modelo[aria-pressed="true"] {
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+  font-weight: 600;
+}
+.capa__modelo-desenho {
+  position: relative;
+  display: block;
+  width: 54px;
+  height: 80px;
+  border-radius: 6px;
+  background: #52525b;
+  overflow: hidden;
+}
+.capa__modelo-desenho i {
+  position: absolute;
+  left: 6px;
+  height: 5px;
+  border-radius: 2px;
+  background: #fff;
+}
+.capa__modelo-desenho i:nth-child(1) {
+  width: 36px;
+}
+.capa__modelo-desenho i:nth-child(2) {
+  width: 28px;
+}
+.capa__modelo-desenho i:nth-child(3) {
+  width: 30px;
+  height: 6px;
+  background: #facc15;
+}
+.capa__modelo-desenho[data-modelo="embaixo"] i:nth-child(1) {
+  top: 48px;
+}
+.capa__modelo-desenho[data-modelo="embaixo"] i:nth-child(2) {
+  top: 56px;
+}
+.capa__modelo-desenho[data-modelo="embaixo"] i:nth-child(3) {
+  top: 65px;
+}
+.capa__modelo-desenho[data-modelo="alto"] i:nth-child(1) {
+  top: 12px;
+}
+.capa__modelo-desenho[data-modelo="alto"] i:nth-child(2) {
+  top: 20px;
+}
+.capa__modelo-desenho[data-modelo="alto"] i:nth-child(3) {
+  top: 29px;
+}
+.capa__modelo-desenho[data-modelo="faixa"] {
+  background: linear-gradient(#52525b 0 44px, var(--brand) 44px 72px, #52525b 72px);
+}
+.capa__modelo-desenho[data-modelo="faixa"] i:nth-child(1) {
+  top: 48px;
+}
+.capa__modelo-desenho[data-modelo="faixa"] i:nth-child(2) {
+  top: 56px;
+}
+.capa__modelo-desenho[data-modelo="faixa"] i:nth-child(3) {
+  top: 64px;
+  height: 5px;
+}
+.capa__modelo-desenho[data-modelo="foto"] i {
+  display: none;
+}
+.capa__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

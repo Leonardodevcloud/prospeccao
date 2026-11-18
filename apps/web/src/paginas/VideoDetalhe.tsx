@@ -38,6 +38,7 @@ import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
 import { Cor, PainelDaLegenda, PalcoDaLegenda, useAjusteDaLegenda } from '../video/AjustarLegenda';
+import { PainelDaCapa, PalcoDaCapa, useCapa } from '../video/Capa';
 import { CortarNoVideo } from '../video/CortarNoVideo';
 import { type DetalheComFila, useArquivo, useRevisao, useSituacaoVideos, useVideo } from '../video/dados';
 import { AbaImagens, AbaSomCompleta, MomentosDaFala } from '../video/Enfeites';
@@ -416,7 +417,7 @@ function Falhou({ v }: { v: DetalheComFila }) {
 
 /* ───────────────────────────── Revisão ───────────────────────────── */
 
-type Aba = 'cortes' | 'legenda' | 'imagens' | 'animacoes' | 'som' | 'publicacao';
+type Aba = 'cortes' | 'legenda' | 'imagens' | 'animacoes' | 'som' | 'capa' | 'publicacao';
 
 function Revisao({ v }: { v: DetalheComFila }) {
   // O aviso de "o vídeo está no Instagram" abre direto na aba Publicação (?aba=publicacao).
@@ -462,7 +463,9 @@ function Revisao({ v }: { v: DetalheComFila }) {
   const revisao = useRevisao(v.id);
   const situacao = useSituacaoVideos();
   // v145: o palco mostra o vídeo pronto ou o editor de cortes no original (com a prévia dos cortes).
-  const [palco, setPalco] = useState<'pronto' | 'cortar' | 'legenda'>('pronto');
+  const [palco, setPalco] = useState<'pronto' | 'cortar' | 'legenda' | 'capa'>('pronto');
+  // v170: a capa do vídeo (o palco desenha, a aba ajusta).
+  const capa = useCapa(v);
   // v166: a legenda em camadas (o palco e o painel dividem o mesmo ajuste).
   const ajuste = useAjusteDaLegenda(v);
   const [pedidoCorte, setPedidoCorte] = useState<{ inicio: number; fim: number; vez: number } | null>(null);
@@ -492,6 +495,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
     },
     { id: 'animacoes', rotulo: 'Animações' },
     { id: 'som', rotulo: 'Som' },
+    { id: 'capa', rotulo: 'Capa' },
     { id: 'publicacao', rotulo: 'Publicação' },
   ];
   return (
@@ -504,6 +508,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
                 ['pronto', 'Vídeo pronto'],
                 ['cortar', 'Cortar no vídeo'],
                 ['legenda', 'Ajustar a legenda'],
+                ['capa', 'Capa'],
               ] as const
             ).map(([id, rotulo]) => (
               <label key={id} className="segmento">
@@ -515,6 +520,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
                   onChange={() => {
                     setPalco(id);
                     if (id === 'legenda') setAba('legenda');
+                    if (id === 'capa') setAba('capa');
                   }}
                 />
                 {rotulo}
@@ -524,6 +530,8 @@ function Revisao({ v }: { v: DetalheComFila }) {
         )}
         {palco === 'cortar' && original.data ? (
           <CortarNoVideo v={v} url={original.data.url} pedido={pedidoCorte} />
+        ) : palco === 'capa' ? (
+          <PalcoDaCapa v={v} ajuste={capa} />
         ) : palco === 'legenda' ? (
           <PalcoDaLegenda v={v} ajuste={ajuste} />
         ) : final.data ? (
@@ -572,7 +580,12 @@ function Revisao({ v }: { v: DetalheComFila }) {
               role="tab"
               className="pipelines__aba"
               aria-selected={aba === a.id}
-              onClick={() => setAba(a.id)}
+              onClick={() => {
+                setAba(a.id);
+                // A capa é desenhada no palco: a aba e o palco andam juntos.
+                if (a.id === 'capa') setPalco('capa');
+                else if (palco === 'capa') setPalco('pronto');
+              }}
             >
               {a.rotulo}
               {a.aviso && (
@@ -619,6 +632,7 @@ function Revisao({ v }: { v: DetalheComFila }) {
           {aba === 'imagens' && <AbaImagens v={v} situacao={situacao.data} />}
           {aba === 'animacoes' && <AbaAnimacoes v={v} />}
           {aba === 'som' && <AbaSomCompleta v={v} situacao={situacao.data} />}
+          {aba === 'capa' && <PainelDaCapa v={v} ajuste={capa} />}
           {aba === 'publicacao' && <AbaPublicacao v={v} aoBaixar={() => baixar.mutate()} />}
           {aba === 'publicacao' && <ErroDaApi erro={baixar.error} />}
         </div>

@@ -312,3 +312,39 @@ describe('v169: desfazer só o que o pedido mudou', async () => {
     ).toEqual([m('x', 1, 'A'), m('y', 4, 'Em breve')]);
   });
 });
+
+describe('v170: a capa do vídeo', async () => {
+  const {
+    segundosDosQuadros,
+    opcoesVideoEntrada: opcoes,
+    capaDoVideoEntrada,
+    CAPA_PADRAO,
+  } = await import('../src/videos.js');
+  it('os quadros da capa se espalham pelo vídeo e ficam fora dos trechos de apoio', () => {
+    const livres = segundosDosQuadros(30, []);
+    expect(livres).toHaveLength(10);
+    expect(livres[0]).toBeCloseTo(1.5, 1);
+    expect(livres.at(-1)).toBeCloseTo(28.5, 1);
+    const apoios = [
+      { ini: 4, fim: 6 },
+      { ini: 12, fim: 20 },
+    ];
+    const t = segundosDosQuadros(30, apoios);
+    expect(t.length).toBeGreaterThan(4);
+    expect(t.every((x) => !apoios.some((a) => x >= a.ini - 0.15 && x <= a.fim + 0.15))).toBe(true);
+    expect(t.every((x, k) => k === 0 || x - t[k - 1]! >= 0.3)).toBe(true);
+    // Vídeo todo coberto por apoio: nenhum quadro (a capa avisa que precisa de quadro).
+    expect(segundosDosQuadros(10, [{ ini: 0, fim: 10 }])).toEqual([]);
+  });
+  it('as opções antigas ganham a capa padrão; modelo e cor errados são recusados', () => {
+    expect(opcoes.parse({}).capa).toEqual(CAPA_PADRAO);
+    expect(capaDoVideoEntrada.parse({ titulo: '  Moto pra trabalhar ', quadro: 3 })).toMatchObject({
+      titulo: 'Moto pra trabalhar',
+      quadro: 3,
+      modelo: 'embaixo',
+    });
+    expect(capaDoVideoEntrada.safeParse({ modelo: 'lado' }).success).toBe(false);
+    expect(capaDoVideoEntrada.safeParse({ corTexto: 'branco' }).success).toBe(false);
+    expect(capaDoVideoEntrada.safeParse({ quadro: 10 }).success).toBe(false);
+  });
+});

@@ -8,7 +8,7 @@ import {
   tempoComImagens,
 } from '@prospeccao/integrations/videos';
 import { AppError } from '@prospeccao/shared';
-import type { novoApoioEntrada, novoVideoEntrada } from '@prospeccao/shared/videos';
+import type { CapaDoVideo, novoApoioEntrada, novoVideoEntrada } from '@prospeccao/shared/videos';
 import {
   type AndamentoVideo,
   type AnimacoesVideo,
@@ -74,8 +74,15 @@ interface Linha {
     silencios?: Silencio[];
     duracao?: number;
     antesDoPedido?: AntesDoPedido | null;
+    /** v170: a capa foi feita pela pessoa (a edição não troca). */
+    capaPropria?: boolean;
     /** v166: o desenho da última edição e o vídeo cortado sem legenda (o worker guarda). */
-    desenho?: (Omit<DesenhoDoVideo, 'temVideo'> & { videoChave: string | null }) | null;
+    desenho?:
+      | (Omit<DesenhoDoVideo, 'temVideo' | 'quadros'> & {
+          videoChave: string | null;
+          quadros?: { t: number; chave: string }[];
+        })
+      | null;
   } | null;
   erro: string | null;
   capa_chave: string | null;
@@ -157,9 +164,14 @@ function detalhe(l: Linha): DetalheVideo {
     conferencia: l.conferencia,
     mudancasPendentes: l.mudancas_pendentes,
     podeDesfazerPedido: !!l.analise?.antesDoPedido,
+    capaPropria: !!l.analise?.capaPropria && !!l.capa_chave,
     apoios: (l.apoios ?? []).map(apoioParaATela),
     desenho: l.analise?.desenho
-      ? (({ videoChave, ...d }) => ({ ...d, temVideo: !!videoChave }))(l.analise.desenho)
+      ? (({ videoChave, quadros, ...d }) => ({
+          ...d,
+          temVideo: !!videoChave,
+          quadros: (quadros ?? []).map((q) => ({ t: q.t })),
+        }))(l.analise.desenho)
       : null,
     silencios: (l.analise?.silencios ?? []).map((x) => ({ inicio: x.inicio, fim: x.fim })),
     versao: l.versao,
@@ -227,10 +239,11 @@ export function arquivosDoVideo(l: {
   imagens?: ImagemVideo[] | null;
   som?: SomVideo | null;
   apoios?: ApoioGuardado[] | null;
-  analise?: { desenho?: { videoChave: string | null } | null } | null;
+  analise?: { desenho?: { videoChave: string | null; quadros?: { chave: string }[] } | null } | null;
 }): string[] {
   return [
     l.analise?.desenho?.videoChave,
+    ...(l.analise?.desenho?.quadros ?? []).map((q) => q.chave),
     ...(l.apoios ?? []).flatMap(arquivosDoApoio),
     l.original_chave,
     l.final_chave,
@@ -1190,4 +1203,58 @@ export async function naFrente(db: Executor, id: number): Promise<number> {
     [id],
   );
   return rows[0]!.n;
+}
+
+/* ───────────────────────────── v170: a capa do vídeo ───────────────────────────── */
+
+/** O arquivo de um quadro guardado para a capa, e o vídeo cortado sem legenda (para um ponto qualquer). */
+export async function quadrosDaCapa(
+  db: Executor,
+  id: number,
+): Promise<{ quadros: { t: number; chave: string }[]; limpo: string | null }> {
+  const l = await linha(db, id);
+  return { quadros: l.analise?.desenho?.quadros ?? [], limpo: l.analise?.desenho?.videoChave ?? null };
+}
+
+/** Guarda o ajuste da capa (o quadro, o texto, o modelo). Não pede para gerar o vídeo de novo. */
+export async function salvarAjusteDaCapa(db: Executor, id: number, capa: CapaDoVideo): Promise<DetalheVideo> {
+  const l = await linha(db, id);
+  const { rows } = await db.query<Linha>(
+    `UPDATE comercial.videos SET opcoes = coalesce(opcoes, '{}'::jsonb) || jsonb_build_object('capa', $2::jsonb),
+            atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
+    [l.id, JSON.stringify(capa)],
+  );
+  return detalhe(rows[0]!);
+}
+
+/** A capa pronta, feita pela pessoa: passa a ser a capa do vídeo (e a que vai ao publicar). */
+export async function guardarCapaPropria(
+  db: Executor,
+  id: number,
+  chave: string,
+): Promise<{ detalhe: DetalheVideo; antiga: string | null }> {
+  const l = await linha(db, id);
+  if (!['pronto', 'revisar'].includes(l.situacao))
+    throw AppError.invalido('Espere a edição terminar para salvar a capa.');
+  const { rows } = await db.query<Linha>(
+    `UPDATE comercial.videos SET capa_chave = $2,
+            analise = coalesce(analise, '{}'::jsonb) || jsonb_build_object('capaPropria', true),
+            atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
+    [l.id, chave],
+  );
+  return { detalhe: detalhe(rows[0]!), antiga: l.capa_chave && l.capa_chave !== chave ? l.capa_chave : null };
+}
+
+/** Volta à capa automática: a que existe fica até a próxima edição, que tira um quadro do vídeo. */
+export async function soltarCapaPropria(db: Executor, id: number): Promise<DetalheVideo> {
+  const l = await linha(db, id);
+  const { rows } = await db.query<Linha>(
+    `UPDATE comercial.videos SET analise = coalesce(analise, '{}'::jsonb) - 'capaPropria',
+            mudancas_pendentes = true, atualizado_em = now()
+      WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
+    [l.id],
+  );
+  return detalhe(rows[0]!);
 }
