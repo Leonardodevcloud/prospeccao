@@ -20,6 +20,7 @@ import {
   type CorteVideo,
   type DesenhoDoVideo,
   type DetalheVideo,
+  desfazerSoOPedido,
   duracaoDosTrechos,
   type EtapaVideo,
   falaQueFica,
@@ -30,6 +31,7 @@ import {
   MAX_APOIOS_VIDEO,
   MAX_IMAGENS_VIDEO,
   MAX_VIDEOS_CONTA,
+  MIN_SEGUNDOS_NA_TELA,
   MOMENTOS_COM_ITENS,
   type MomentoVideo,
   momentosDe,
@@ -96,6 +98,7 @@ interface Linha {
 }
 
 const num = (v: string | null) => (v == null ? null : Number(v));
+const arred = (n: number) => Math.round(n * 1000) / 1000;
 const duvidas = (c: CorteVideo[]) =>
   c.filter((x) => x.duvida && !x.conferido && x.decisao === 'cortar').length;
 
@@ -126,6 +129,18 @@ interface AntesDoPedido {
   som: SomVideo | null;
   situacao: SituacaoVideo;
   pendentes: boolean;
+  /**
+   * v169: como a revisão ficou logo depois do pedido. Com isso o Desfazer tira só o que o pedido
+   * mudou e deixa o que a pessoa mexeu depois (antes voltava tudo, e levava junto cor, legenda,
+   * cortes e animações feitos depois do pedido).
+   */
+  depois?: {
+    cortes: CorteVideo[];
+    palavras: PalavraVideo[];
+    animacoes: AnimacoesVideo | null;
+    opcoes: unknown;
+    som: SomVideo | null;
+  };
 }
 
 function detalhe(l: Linha): DetalheVideo {
@@ -909,6 +924,28 @@ export async function revisar(
       const sobra = (a?.duracao ?? LIMITE_SEGUNDOS_APOIO) - (novo.fim - novo.inicio);
       novo = { ...novo, apoioDe: Math.max(0, Math.min(e.apoioDe, Math.max(0, sobra))) };
     }
+    // v169: aumentar ou diminuir o tempo na tela. Os limites são só os físicos: não entrar na
+    // próxima imagem, não passar do fim do vídeo e, no apoio, não passar do que o apoio tem.
+    if (e.segundos != null && novo.usar) {
+      const seguinte = imagens
+        .filter((x) => x.usar && x.id !== novo.id && x.inicio > novo.inicio)
+        .sort((x, y) => x.inicio - y.inicio)[0];
+      let segundos = e.segundos;
+      if (novo.origem === 'apoio') {
+        const a = (l.apoios ?? []).find((x) => x.id === novo.apoioId);
+        if (a?.duracao) {
+          segundos = Math.min(segundos, a.duracao);
+          // O trecho começa mais cedo no apoio quando o que sobra dele não cobre o tempo pedido.
+          novo = { ...novo, apoioDe: arred(Math.max(0, Math.min(novo.apoioDe ?? 0, a.duracao - segundos))) };
+        }
+      }
+      const teto = Math.min(
+        (l.analise?.duracao ?? num(l.duracao_original) ?? Number.POSITIVE_INFINITY) - 0.2,
+        seguinte ? seguinte.inicio - 0.2 : Number.POSITIVE_INFINITY,
+      );
+      const fim = Math.max(novo.inicio + MIN_SEGUNDOS_NA_TELA, Math.min(novo.inicio + segundos, teto));
+      novo = { ...novo, fim: arred(fim) };
+    }
     if (e.pedido === 'gerar_outra') {
       if (!deps.imagensGeradas)
         throw AppError.invalido(
@@ -980,6 +1017,7 @@ export async function revisar(
           som: l.som,
           situacao: l.situacao,
           pendentes: l.mudancas_pendentes,
+          depois: { cortes, palavras, animacoes: animacoes ?? null, opcoes, som: som ?? null },
         }
       : null;
   const { rows } = await db.query<Linha>(
@@ -1041,6 +1079,21 @@ export async function desfazerPedido(db: Executor, id: number, versao: number): 
     throw AppError.invalido('Espere a edição terminar para desfazer.');
   const a = l.analise?.antesDoPedido;
   if (!a) throw AppError.invalido('Não há pedido para desfazer.');
+  // v169: só o que o pedido mudou volta; o que foi mexido depois dele fica.
+  const d = a.depois;
+  const volta = d
+    ? {
+        cortes: desfazerSoOPedido(a.cortes, d.cortes, l.cortes ?? []),
+        palavras: desfazerSoOPedido(a.palavras, d.palavras, l.palavras ?? []),
+        animacoes: desfazerSoOPedido(a.animacoes, d.animacoes, l.animacoes),
+        opcoes: desfazerSoOPedido(a.opcoes ?? {}, d.opcoes ?? {}, l.opcoes ?? {}),
+        som: desfazerSoOPedido(a.som, d.som, l.som),
+      }
+    : a;
+  const ficouAlgo =
+    !!d &&
+    JSON.stringify([volta.cortes, volta.palavras, volta.animacoes, volta.opcoes, volta.som]) !==
+      JSON.stringify([a.cortes, a.palavras, a.animacoes, a.opcoes ?? {}, a.som]);
   const { rows } = await db.query<Linha>(
     `UPDATE comercial.videos SET cortes = $2, palavras = $3, animacoes = $4, opcoes = $5, som = $6, situacao = $7,
             mudancas_pendentes = $8, analise = analise - 'antesDoPedido',
@@ -1048,18 +1101,19 @@ export async function desfazerPedido(db: Executor, id: number, versao: number): 
       WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
     [
       id,
-      JSON.stringify(a.cortes),
-      JSON.stringify(a.palavras),
-      a.animacoes ? JSON.stringify(a.animacoes) : null,
-      JSON.stringify(a.opcoes ?? {}),
-      a.som ? JSON.stringify(a.som) : null,
+      JSON.stringify(volta.cortes),
+      JSON.stringify(volta.palavras),
+      volta.animacoes ? JSON.stringify(volta.animacoes) : null,
+      JSON.stringify(volta.opcoes ?? {}),
+      volta.som ? JSON.stringify(volta.som) : null,
       // O vídeo pode ter sido gerado de novo depois do pedido: aí desfazer é uma mudança a gerar.
       l.situacao === 'pronto' || l.situacao === 'revisar'
-        ? duvidas(a.cortes)
+        ? duvidas(volta.cortes)
           ? 'revisar'
           : 'pronto'
         : l.situacao,
-      a.pendentes || !l.mudancas_pendentes,
+      // Ficou alguma mudança feita depois do pedido? Continua havendo o que gerar.
+      a.pendentes || !l.mudancas_pendentes || ficouAlgo,
     ],
   );
   return detalhe(rows[0]!);

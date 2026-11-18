@@ -389,6 +389,13 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4au. Pedidos que se perdem e tempo do apoio (v169)
+1. [ ] Sem migration. Redeploy da **api**; a **web** na Vercel.
+2. [ ] **Para achar a causa da perda**: dizer qual pedido sumiu e o que foi feito entre aplicar e perceber (gerou de novo? clicou em Desfazer? recarregou?). O caminho do "Gerar de novo" foi conferido e guarda tudo; a perda não foi reproduzida.
+3. [ ] Conferir: pedir algo à editora, aplicar, mexer em outra coisa (uma cor), gerar de novo. Tudo deve continuar. A conversa deve continuar na tela depois de gerar.
+4. [ ] Conferir o Desfazer: depois de aplicar um pedido e mexer em outra coisa, o Desfazer tira só o pedido.
+5. [ ] Em Imagens, aumentar o **Tempo na tela** de um trecho de apoio com "+1 s" e gerar de novo.
+
 ## 4at. Vídeo acinzentado: HDR do iPhone (v168)
 1. [ ] Sem migration. Redeploy do **worker-videos** (e da web, pela Ajuda).
 2. [ ] No vídeo "aluguel de motos Tutts", clicar em **Gerar de novo com as mudanças** (há mudanças pendentes) e comparar o vídeo pronto com o anterior: a pele e as cores devem voltar.

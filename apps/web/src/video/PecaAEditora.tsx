@@ -17,8 +17,21 @@ import { type DetalheComFila, useRevisao } from './dados';
 /**
  * Peça à editora (v161): a conversa da revisão. A pessoa escreve o que quer cortar, refazer ou
  * mudar; a editora devolve as mudanças em itens de marcar. Nada muda até aplicar, e o vídeo só
- * muda ao gerar de novo. A conversa vive na tela (não é guardada): ao recarregar, começa do zero.
+ * muda ao gerar de novo. v169: a conversa fica guardada neste navegador, por vídeo (as últimas 40
+ * falas): gerar de novo ou recarregar a página não apaga o que foi pedido nem as propostas em aberto.
  */
+
+const chaveDaConversa = (id: number) => `prospect.video.${id}.editora`;
+function conversaGuardada(id: number): Fala[] {
+  try {
+    const lista = JSON.parse(localStorage.getItem(chaveDaConversa(id)) ?? '[]') as Fala[];
+    return Array.isArray(lista)
+      ? lista.filter((f) => f && typeof f.id === 'number' && typeof f.texto === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 export type FalaDaEditora = Fala;
 interface Fala {
@@ -62,12 +75,20 @@ export function PecaAEditora({
 }) {
   const id = useId();
   const cliente = useQueryClient();
-  const [falas, setFalas] = useState<Fala[]>(conversaInicial ?? []);
+  const [falas, setFalas] = useState<Fala[]>(() => conversaInicial ?? conversaGuardada(v.id));
+  useEffect(() => {
+    if (conversaInicial) return;
+    try {
+      localStorage.setItem(chaveDaConversa(v.id), JSON.stringify(falas.slice(-40)));
+    } catch {
+      // Sem espaço ou navegação privada: a conversa só não fica guardada.
+    }
+  }, [falas, v.id, conversaInicial]);
   const [texto, setTexto] = useState('');
   const [em, setEm] = useState<number | null>(null);
   const [aplicadas, setAplicadas] = useState(0);
   const fim = useRef<HTMLDivElement>(null);
-  const vez = useRef(conversaInicial?.length ?? 0);
+  const vez = useRef(Math.max(0, ...falas.map((f) => f.id)) + 1);
   const revisao = useRevisao(v.id);
 
   const abertas = falas.findLast((f) => f.estado === 'aberta');

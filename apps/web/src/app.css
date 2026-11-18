@@ -20985,3 +20985,14 @@ form.janela-pedido > button[type="submit"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* v169: o tempo na tela de uma imagem ou de um trecho de apoio. */
+.video__tempo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.video__tempo .mono {
+  min-width: 56px;
+  text-align: center;
+}

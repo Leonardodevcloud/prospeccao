@@ -676,6 +676,35 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
     expect(d.body).toMatchObject({ mudancasPendentes: false, podeDesfazerPedido: false });
     expect((await enviar('post', `/videos/${id}/pedido/desfazer`, { versao: 3 })).status).toBe(422);
 
+    // v169: desfazer tira só o que o pedido mudou. O que a pessoa mexeu depois dele fica.
+    const p2 = await enviar('put', `/videos/${id}/revisao`, { versao: 3, ...revisao, doPedido: true });
+    expect(p2.body.cortes).toHaveLength(1);
+    const manual = await enviar('put', `/videos/${id}/revisao`, {
+      versao: p2.body.versao,
+      estilo: 'balao',
+      cores: { primaria: '#0f766e', destaque: '#22d3ee' },
+      musica: { volume: 50 },
+    });
+    expect(manual.body).toMatchObject({ podeDesfazerPedido: true });
+    const d2 = await enviar('post', `/videos/${id}/pedido/desfazer`, { versao: manual.body.versao });
+    expect(d2.status).toBe(200);
+    // O corte e a animação do pedido saíram…
+    expect(d2.body.cortes).toHaveLength(0);
+    expect(d2.body.animacoes.momentos).toHaveLength(1);
+    // …e o estilo, as cores e o volume mexidos depois ficaram.
+    expect(d2.body.opcoes).toMatchObject({
+      estilo: 'balao',
+      cores: { primaria: '#0f766e', destaque: '#22d3ee' },
+    });
+    expect(d2.body.som.musica.volume).toBe(50);
+    expect(d2.body.mudancasPendentes).toBe(true);
+    await enviar('put', `/videos/${id}/revisao`, {
+      versao: d2.body.versao,
+      estilo: 'acesa',
+      cores: null,
+      musica: { volume: 35 },
+    });
+
     // A IA não propôs nada que feche: a pessoa recebe a orientação, não uma lista vazia.
     respostaDaIa = {
       resposta: 'Vou cortar.',
@@ -749,6 +778,31 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
       imagens: [{ id: r2.body.imagens[1].id, apoioDe: 99 }],
     });
     expect(r2.body.imagens[1].apoioDe).toBe(5);
+    // v169: aumentar o tempo na tela do trecho de apoio (até a próxima imagem e até o apoio acabar).
+    const primeiro = r2.body.imagens[0] as { id: string; inicio: number; fim: number };
+    let r3 = await enviar('put', `/videos/${id}/revisao`, {
+      versao: r2.body.versao,
+      imagens: [{ id: primeiro.id, segundos: 6 }],
+    });
+    expect(r3.status).toBe(200);
+    expect(r3.body.imagens[0].fim - r3.body.imagens[0].inicio).toBeCloseTo(6, 2);
+    expect(r3.body.mudancasPendentes).toBe(true);
+    r3 = await enviar('put', `/videos/${id}/revisao`, {
+      versao: r3.body.versao,
+      imagens: [{ id: primeiro.id, segundos: 60 }],
+    });
+    // Não entra na próxima imagem nem passa do tamanho do apoio (8 s).
+    expect(r3.body.imagens[0].fim).toBeLessThanOrEqual(r3.body.imagens[1].inicio - 0.2 + 0.001);
+    expect(r3.body.imagens[0].fim - r3.body.imagens[0].inicio).toBeLessThanOrEqual(8);
+    expect(
+      r3.body.imagens[0].apoioDe + (r3.body.imagens[0].fim - r3.body.imagens[0].inicio),
+    ).toBeLessThanOrEqual(8.001);
+    r3 = await enviar('put', `/videos/${id}/revisao`, {
+      versao: r3.body.versao,
+      imagens: [{ id: primeiro.id, segundos: 2 }],
+    });
+    expect(r3.body.imagens[0].fim - r3.body.imagens[0].inicio).toBeCloseTo(2, 2);
+    r2 = r3;
     expect(
       (
         await enviar('put', `/videos/${id}/revisao`, {

@@ -263,3 +263,52 @@ describe('v167: transições novas, acabamento e tarja', async () => {
     expect(revisao.safeParse({ versao: 1, acabamento: 'sepia' }).success).toBe(false);
   });
 });
+
+describe('v169: desfazer só o que o pedido mudou', async () => {
+  const { desfazerSoOPedido } = await import('../src/videos.js');
+  it('o que o pedido mudou volta; o que foi mexido depois dele fica', () => {
+    const antes: Record<string, unknown> = {
+      estilo: 'acesa',
+      cores: null,
+      legenda: { fonte: 'montserrat', dy: 0 },
+      acabamento: 'limpo',
+    };
+    // O pedido trocou o estilo.
+    const depois = { ...antes, estilo: 'balao' };
+    // Depois a pessoa mexeu na legenda, nas cores e no acabamento.
+    const atual = {
+      ...depois,
+      cores: { primaria: '#111111' },
+      legenda: { fonte: 'poppins', dy: 80 },
+      acabamento: 'filme',
+    };
+    expect(desfazerSoOPedido(antes, depois, atual)).toEqual({ ...atual, estilo: 'acesa' });
+    // Nada mexido depois: volta tudo.
+    expect(desfazerSoOPedido(antes, depois, depois)).toEqual(antes);
+    // A pessoa mudou de novo a mesma coisa que o pedido mudou: vale a escolha dela.
+    expect(desfazerSoOPedido(antes, depois, { ...depois, estilo: 'impacto' }).estilo).toBe('impacto');
+  });
+  it('listas com id: item criado pelo pedido sai, item tirado volta, e o resto fica como está', () => {
+    const c = (id: string, inicio: number, decisao: string) => ({ id, inicio, decisao });
+    const antes = [c('a', 1, 'cortar'), c('b', 5, 'cortar'), c('c', 9, 'manter')];
+    // O pedido devolveu o "a", criou o "p" e tirou o "c".
+    const depois = [c('a', 1, 'manter'), c('p', 3, 'cortar'), c('b', 5, 'cortar')];
+    // Depois a pessoa devolveu o "b" e criou o "m".
+    const atual = [c('a', 1, 'manter'), c('p', 3, 'cortar'), c('b', 5, 'manter'), c('m', 7, 'cortar')];
+    expect(desfazerSoOPedido(antes, depois, atual)).toEqual([
+      c('a', 1, 'cortar'),
+      c('b', 5, 'manter'),
+      c('m', 7, 'cortar'),
+      c('c', 9, 'manter'),
+    ]);
+    // A animação criada pelo pedido e editada depois pela pessoa fica.
+    const m = (id: string, ini: number, texto: string) => ({ id, ini, texto });
+    expect(
+      desfazerSoOPedido(
+        [m('x', 1, 'A')],
+        [m('x', 1, 'A'), m('y', 4, 'B')],
+        [m('x', 1, 'A'), m('y', 4, 'Em breve')],
+      ),
+    ).toEqual([m('x', 1, 'A'), m('y', 4, 'Em breve')]);
+  });
+});

@@ -307,7 +307,10 @@ function CartaoImagem(props: {
     pedido?: 'gerar_outra' | null;
     apoioId?: string;
     apoioDe?: number;
+    segundos?: number;
   }) => revisao.mutate({ imagens: [{ id: im.id, ...m }] });
+  // v169: o tempo na tela (a pessoa aumenta ou diminui de 1 em 1 segundo).
+  const naTela = Math.round((im.fim - im.inicio) * 10) / 10;
   const naoEntrou = im.conferencia?.startsWith('Não entrou');
   const podeGerar = !!props.situacao?.recursos.imagensGeradas;
   return (
@@ -384,6 +387,39 @@ function CartaoImagem(props: {
             }}
           />
         </div>
+        {im.usar && (
+          <fieldset className="campo">
+            <legend>Tempo na tela</legend>
+            <div className="video__tempo">
+              <Button
+                size="sm"
+                variant="secondary"
+                aria-label="Diminuir 1 segundo"
+                disabled={revisao.isPending || naTela <= 1}
+                onClick={() => muda({ segundos: Math.max(1, naTela - 1) })}
+              >
+                −1 s
+              </Button>
+              <span className="mono" aria-live="polite">
+                {String(naTela).replace('.', ',')} s
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                aria-label="Aumentar 1 segundo"
+                disabled={revisao.isPending}
+                onClick={() => muda({ segundos: naTela + 1 })}
+              >
+                +1 s
+              </Button>
+            </div>
+            <span className="campo__dica">
+              {im.origem === 'apoio'
+                ? 'Vai até a próxima imagem ou até o apoio acabar. Se não aumentar mais, chegou num desses limites.'
+                : 'Vai até a próxima imagem. Se não aumentar mais, chegou nela.'}
+            </span>
+          </fieldset>
+        )}
         {im.usar && im.origem === 'apoio' && (
           <div className="campo">
             <label htmlFor={`apoio-de-${im.id}`}>O trecho começa em que segundo do apoio</label>

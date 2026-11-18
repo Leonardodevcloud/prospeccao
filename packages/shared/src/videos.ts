@@ -190,6 +190,8 @@ export const MODOS_IMAGENS: { id: ModoImagens; nome: string; dica: string }[] = 
 ];
 /** Regras das imagens, conferidas pelo código (não só pelo critério da IA). */
 export const IMAGEM_SEM_NO_COMECO = 2;
+/** v169: o menor tempo na tela que a pessoa pode pedir para uma imagem ou um trecho de apoio. */
+export const MIN_SEGUNDOS_NA_TELA = 1;
 export const IMAGEM_MIN_SEGUNDOS = 1.5;
 export const IMAGEM_MAX_SEGUNDOS = 4;
 export const IMAGENS_FRACAO_MAXIMA = 0.3;
@@ -838,6 +840,8 @@ export const revisaoEntrada = z.object({
         /** v162: trocar por um trecho de um vídeo de apoio, e onde o trecho começa nele. */
         apoioId: z.string().min(1).max(40).optional(),
         apoioDe: z.number().min(0).max(LIMITE_SEGUNDOS_APOIO).optional(),
+        /** v169: quanto tempo a imagem ou o trecho de apoio fica na tela (a pessoa aumenta ou diminui). */
+        segundos: z.number().min(MIN_SEGUNDOS_NA_TELA).max(LIMITE_SEGUNDOS_APOIO).optional(),
         pedido: z.enum(['gerar_outra']).nullable().optional(),
       }),
     )
@@ -1267,3 +1271,61 @@ export function caixaNaTrilha(
 
 /** Quantos segundos do começo a prévia em loop mostra. */
 export const SEGUNDOS_PREVIA = 6;
+
+/* ───────────────────────────── v169: desfazer só o pedido ───────────────────────────── */
+
+const igual = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const ehObjeto = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+const comId = (v: unknown): v is { id: string | number }[] =>
+  Array.isArray(v) &&
+  v.every((x) => ehObjeto(x) && (typeof x.id === 'string' || typeof x.id === 'number')) &&
+  new Set(v.map((x) => (x as { id: unknown }).id)).size === v.length;
+
+/**
+ * Desfaz só o que um pedido mudou. `antes` é como estava antes do pedido, `depois` como ficou logo
+ * depois dele e `atual` como está agora. O que continua igual ao `depois` volta ao `antes`; o que a
+ * pessoa mexeu depois do pedido (outra cor, outro corte, outra animação) fica como está. Listas de
+ * itens com `id` (cortes, animações) são tratadas item a item; objetos, chave a chave.
+ */
+export function desfazerSoOPedido<T>(antes: T, depois: T, atual: T): T {
+  if (igual(atual, depois)) return antes;
+  // O pedido não tocou nisto: a diferença é toda de depois dele.
+  if (igual(antes, depois)) return atual;
+  if (comId(antes) && comId(depois) && comId(atual)) {
+    const a = new Map(antes.map((x) => [x.id, x]));
+    const d = new Map(depois.map((x) => [x.id, x]));
+    const saida: unknown[] = [];
+    for (const item of atual) {
+      const [ia, id] = [a.get(item.id), d.get(item.id)];
+      // Criado pelo pedido e não mexido depois: sai. Mexido depois: fica.
+      if (!ia && id) {
+        if (!igual(item, id)) saida.push(item);
+        continue;
+      }
+      saida.push(ia && id ? desfazerSoOPedido(ia, id, item) : item);
+    }
+    // Tirado pelo pedido (e ainda fora): volta.
+    const tem = new Set(atual.map((x) => x.id));
+    for (const item of antes) if (!d.has(item.id) && !tem.has(item.id)) saida.push(item);
+    const tempo = (x: unknown) =>
+      ehObjeto(x) && typeof x.inicio === 'number'
+        ? x.inicio
+        : ehObjeto(x) && typeof x.ini === 'number'
+          ? x.ini
+          : null;
+    if (saida.every((x) => tempo(x) != null))
+      saida.sort((x, y) => (tempo(x) as number) - (tempo(y) as number));
+    return saida as T;
+  }
+  if (ehObjeto(antes) && ehObjeto(depois) && ehObjeto(atual)) {
+    const saida: Record<string, unknown> = {};
+    for (const k of new Set([...Object.keys(antes), ...Object.keys(depois), ...Object.keys(atual)])) {
+      const v = desfazerSoOPedido(antes[k], depois[k], atual[k]);
+      if (v !== undefined) saida[k] = v;
+    }
+    return saida as T;
+  }
+  // Mexido depois do pedido (ou formatos diferentes): fica como está.
+  return atual;
+}
