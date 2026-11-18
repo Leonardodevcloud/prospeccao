@@ -590,6 +590,21 @@ export function PainelDaCapa({ v, ajuste }: { v: DetalheVideo; ajuste: AjusteDaC
           </span>
         </fieldset>
       )}
+      <label className="capa__no-video">
+        <input
+          type="checkbox"
+          checked={capa.noVideo}
+          onChange={(e) => ajuste.mudar({ noVideo: e.target.checked })}
+        />
+        <span>
+          <b>Começar o vídeo pela capa</b>
+          <small>
+            A capa aparece por um instante no começo do vídeo. Assim ela é a miniatura no WhatsApp e na
+            galeria, e dá para escolher esse quadro como capa ao postar pelo aplicativo do Instagram. Vale no
+            próximo "Gerar de novo".
+          </small>
+        </span>
+      </label>
       <div className="capa__acoes">
         <Button variant="primary" icon="download" onClick={() => void baixarCapa(false)}>
           Baixar a capa
@@ -602,7 +617,11 @@ export function PainelDaCapa({ v, ajuste }: { v: DetalheVideo; ajuste: AjusteDaC
         {ajuste.estado === 'salvando'
           ? 'Salvando a capa…'
           : v.capaPropria
-            ? 'Capa salva. Ao publicar o Reels por aqui, ela vai junto. A imagem baixada tem 1080 × 1920; a do recorte do perfil, 1080 × 1440.'
+            ? `Capa salva. Ao publicar o Reels por aqui, ela vai junto.${
+                capa.noVideo && v.mudancasPendentes
+                  ? ' Para ela entrar no começo do vídeo, clique em "Gerar de novo com as mudanças".'
+                  : ''
+              } A imagem baixada tem 1080 × 1920; a do recorte do perfil, 1080 × 1440.`
             : 'A capa é salva sozinha quando você muda alguma coisa. Hoje o vídeo usa um quadro do começo como capa.'}
       </p>
       {v.capaPropria && (

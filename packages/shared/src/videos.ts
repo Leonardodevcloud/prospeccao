@@ -177,6 +177,8 @@ export const capaDoVideoEntrada = z.object({
   /** Deslocamento do texto, em pontos da capa de 1080 × 1920. */
   dx: z.number().min(-400).max(400).default(0),
   dy: z.number().min(-1400).max(1400).default(0),
+  /** v171: a capa entra também nos primeiros instantes do vídeo (vale ao gerar de novo). */
+  noVideo: z.boolean().default(true),
 });
 export type CapaDoVideo = z.infer<typeof capaDoVideoEntrada>;
 export const CAPA_PADRAO: CapaDoVideo = {
@@ -189,6 +191,7 @@ export const CAPA_PADRAO: CapaDoVideo = {
   corDestaque: null,
   dx: 0,
   dy: 0,
+  noVideo: true,
 };
 
 /**

@@ -58,6 +58,9 @@ export interface EntradaComposicao {
     fonte800: string;
     fonte900: string;
     ultimoQuadro: string;
+    /** v171: a capa feita pela pessoa, mostrada nos primeiros instantes do vídeo (a miniatura no
+     * WhatsApp e na galeria, e o quadro que dá para escolher como capa no Instagram). */
+    capaNoComeco?: string;
     /** v166: a fonte escolhida para a legenda (o título e as animações seguem na Montserrat). */
     fonteLegenda800?: string;
     fonteLegenda900?: string;
@@ -166,6 +169,9 @@ export function htmlDoMomento(m: MomentoNaTela, medir: Medir): string {
     ${o.validade ? `<div class="validade">${esc(o.validade)}</div>` : ''}
   </div></div>`;
 }
+
+/** v171: por quanto tempo a capa aparece no começo do vídeo (o bastante para ser o primeiro quadro). */
+export const SEGUNDOS_DA_CAPA_NO_COMECO = 0.2;
 
 export function montarComposicao(e: EntradaComposicao): string {
   const primaria = cor(e.marca.primaria, '#7c3aed');
@@ -407,12 +413,15 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
   </div>`
       : ''
   }
+  ${a.capaNoComeco ? `<img id="capa-comeco" class="clip" src="${esc(a.capaNoComeco)}" alt="" data-start="0" data-duration="${SEGUNDOS_DA_CAPA_NO_COMECO}" data-track-index="9" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 60">` : ''}
 </div>
 <script id="dados" type="application/json">${jsonNoScript(dados)}</script>
 <script>
 const DADOS = JSON.parse(document.getElementById('dados').textContent);
 const T = DADOS.T;
 const tl = gsap.timeline({ paused: true });
+// v171: a capa fica na tela só nos primeiros instantes.
+if (document.getElementById('capa-comeco')) tl.set('#capa-comeco', { display: 'none' }, ${SEGUNDOS_DA_CAPA_NO_COMECO});
 
 // O vídeo vira cartão quando o gráfico precisa de espaço.
 gsap.set('#camada-video', { x: 0, y: 0, scale: 1, borderRadius: 0 });

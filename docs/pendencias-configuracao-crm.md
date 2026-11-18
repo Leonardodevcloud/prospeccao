@@ -389,6 +389,12 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4aw. A capa no começo do vídeo (v171)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] Com uma capa feita e "Começar o vídeo pela capa" ligado, clicar em **Gerar de novo** e baixar o vídeo: o primeiro instante deve ser a capa.
+3. [ ] Mandar o vídeo no WhatsApp e olhar a miniatura; ao postar pelo aplicativo do Instagram, conferir se dá para escolher o primeiro quadro como capa.
+4. [ ] Se o piscar da capa no começo incomodar, desligar a opção na aba Capa e gerar de novo.
+
 ## 4av. Capa do vídeo (v170)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
 2. [ ] Em um vídeo já editado, clicar em **Gerar de novo** uma vez (o editor passa a guardar os quadros da capa).

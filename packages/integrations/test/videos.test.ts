@@ -22,6 +22,7 @@ import {
   type QuadroRosto,
   recorteDoPlano,
   rostosNoEditado,
+  SEGUNDOS_DA_CAPA_NO_COMECO,
   silencios,
   tituloEmLinhas,
 } from '../src/videos/index.js';
@@ -470,6 +471,15 @@ describe('composição do HyperFrames', () => {
     expect(limpo).not.toContain('id="grao"');
     expect(limpo).not.toContain('id="g-tarja"');
     expect(limpo).not.toContain('id="luz"');
+    // v171: a capa feita pela pessoa abre o vídeo por um instante (e some na linha do tempo).
+    expect(limpo).not.toContain('<img id="capa-comeco"');
+    const comCapa = montarComposicao({
+      ...comum,
+      arquivos: { ...comum.arquivos, capaNoComeco: 'assets/capa-comeco.jpg' },
+    });
+    expect(comCapa).toContain('<img id="capa-comeco" class="clip" src="assets/capa-comeco.jpg"');
+    expect(comCapa).toContain(`data-duration="${SEGUNDOS_DA_CAPA_NO_COMECO}"`);
+    expect(comCapa).toContain(`tl.set('#capa-comeco', { display: 'none' }, ${SEGUNDOS_DA_CAPA_NO_COMECO})`);
     const html = montarComposicao({
       ...comum,
       acabamento: 'filme',

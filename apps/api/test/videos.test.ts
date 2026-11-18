@@ -998,7 +998,22 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
       .set('content-type', 'image/jpeg')
       .send(jpeg);
     expect(capa.status).toBe(200);
-    expect(capa.body).toMatchObject({ capaPropria: true, mudancasPendentes: false });
+    // v171: a capa entra no começo do vídeo por padrão, então capa nova é uma mudança a gerar.
+    expect(capa.body).toMatchObject({ capaPropria: true, mudancasPendentes: true });
+    expect(capa.body.opcoes.capa.noVideo).toBe(true);
+    await pool.query('UPDATE comercial.videos SET mudancas_pendentes = false WHERE id = $1', [videoId]);
+    // Mexer só no texto não pede para gerar; desligar a capa no começo do vídeo, pede.
+    const soTexto = await enviar('put', `/videos/${videoId}/capa/ajuste`, {
+      ...ajuste.body.opcoes.capa,
+      titulo: 'Outra',
+    });
+    expect(soTexto.body.mudancasPendentes).toBe(false);
+    const semCapaNoVideo = await enviar('put', `/videos/${videoId}/capa/ajuste`, {
+      ...ajuste.body.opcoes.capa,
+      noVideo: false,
+    });
+    expect(semCapaNoVideo.body).toMatchObject({ mudancasPendentes: true });
+    expect(semCapaNoVideo.body.opcoes.capa.noVideo).toBe(false);
     // A automática foi apagada e a nova é a capa do vídeo.
     expect(arquivos.has('videos/1/x/capa-auto.jpg')).toBe(false);
     const { rows: comCapa } = await pool.query<{ capa_chave: string }>(

@@ -745,6 +745,17 @@ export async function editarVideo(
     }
     const fonteDaLegenda =
       v.opcoes.legenda.fonte === 'montserrat' ? null : arquivosDaLegenda(v.opcoes.legenda.fonte);
+    // v171: a capa feita pela pessoa abre o vídeo (os primeiros instantes), se ela deixou ligado.
+    let capaNoComeco: string | null = null;
+    if (v.analise?.capaPropria && v.capa_chave && v.opcoes.capa.noVideo) {
+      const local = join(pasta, 'capa-comeco.jpg');
+      capaNoComeco = await baixar(arm, v.capa_chave, local)
+        .then(() => local)
+        .catch((erro) => {
+          log.warn({ err: erro, videoId }, 'a capa não entrou no começo do vídeo');
+          return null;
+        });
+    }
     // v162: os trechos dos vídeos de apoio entram no vídeo cortado, antes do render: a legenda e
     // as animações são desenhadas por cima e a voz continua. Em corte seco (o "flash").
     const deApoio = new Map(imagens.filter((im) => im.origem === 'apoio').map((im) => [im.id, im]));
@@ -833,6 +844,7 @@ export async function editarVideo(
         fonte800: 'assets/legenda-800.woff2',
         fonte900: 'assets/legenda-900.woff2',
         ultimoQuadro: 'assets/ultimo.png',
+        ...(capaNoComeco ? { capaNoComeco: 'assets/capa-comeco.jpg' } : {}),
         ...(fonteDaLegenda
           ? {
               fonteLegenda800: 'assets/legenda-escolhida-800.woff2',
@@ -935,6 +947,7 @@ export async function editarVideo(
         ultimo,
         extras: [
           ...imagensDesenhadas.map((i) => ({ origem: preparo.arquivos.get(i.id)!, nome: `img-${i.id}.jpg` })),
+          ...(capaNoComeco ? [{ origem: capaNoComeco, nome: 'capa-comeco.jpg' }] : []),
           ...(fonteDaLegenda
             ? [
                 { origem: fonteDaLegenda[800], nome: 'legenda-escolhida-800.woff2' },

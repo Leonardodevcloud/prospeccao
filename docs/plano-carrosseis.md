@@ -107,6 +107,7 @@ Cada ideia na aba Ideias mostra de onde veio (CAMPANHA, CONVERSAS, INSTAGRAM, OB
 30. **v168: vídeo (feita em 18/11, sem migration).** Não mexe em carrosséis nem em cards: cor do vídeo gravado em HDR.
 31. **v169: vídeo (feita em 18/11, sem migration).** Não mexe em carrosséis nem em cards.
 32. **v170: vídeo (feita em 18/11, sem migration).** Não mexe em carrosséis nem em cards: capa do vídeo.
+33. **v171: vídeo (feita em 18/11, sem migration).** Não mexe em carrosséis nem em cards.
 
 ## Em aberto
 - Sem limite de carrosséis: acompanhar o custo por conta em Saúde e consumo (Claude). Se algum cliente fugir muito da média, o master pode pôr um limite só para ele em Plano e módulos.

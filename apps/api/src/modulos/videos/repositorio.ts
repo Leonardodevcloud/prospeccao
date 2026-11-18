@@ -1219,11 +1219,13 @@ export async function quadrosDaCapa(
 /** Guarda o ajuste da capa (o quadro, o texto, o modelo). Não pede para gerar o vídeo de novo. */
 export async function salvarAjusteDaCapa(db: Executor, id: number, capa: CapaDoVideo): Promise<DetalheVideo> {
   const l = await linha(db, id);
+  const antes = ((l.opcoes ?? {}) as { capa?: { noVideo?: boolean } }).capa?.noVideo ?? true;
   const { rows } = await db.query<Linha>(
     `UPDATE comercial.videos SET opcoes = coalesce(opcoes, '{}'::jsonb) || jsonb_build_object('capa', $2::jsonb),
-            atualizado_em = now()
+            mudancas_pendentes = mudancas_pendentes OR $3, atualizado_em = now()
       WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
-    [l.id, JSON.stringify(capa)],
+    // v171: ligar ou desligar a capa no começo do vídeo muda o vídeo (vale ao gerar de novo).
+    [l.id, JSON.stringify(capa), !!l.analise?.capaPropria && capa.noVideo !== antes],
   );
   return detalhe(rows[0]!);
 }
@@ -1240,9 +1242,10 @@ export async function guardarCapaPropria(
   const { rows } = await db.query<Linha>(
     `UPDATE comercial.videos SET capa_chave = $2,
             analise = coalesce(analise, '{}'::jsonb) || jsonb_build_object('capaPropria', true),
-            atualizado_em = now()
+            mudancas_pendentes = mudancas_pendentes OR $3, atualizado_em = now()
       WHERE id = $1 AND conta_id = ${contaSql()} RETURNING *`,
-    [l.id, chave],
+    // v171: com a capa no começo do vídeo ligada, capa nova é uma mudança a gerar.
+    [l.id, chave, (((l.opcoes ?? {}) as { capa?: { noVideo?: boolean } }).capa?.noVideo ?? true) === true],
   );
   return { detalhe: detalhe(rows[0]!), antiga: l.capa_chave && l.capa_chave !== chave ? l.capa_chave : null };
 }
