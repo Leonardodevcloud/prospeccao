@@ -389,6 +389,17 @@ Em 01/11 nem "prospect team crm" achava o site: o Google ainda não indexou o do
 4. [ ] Pedir 1 card com 3 variações: conferir as perguntas da estrategista, os 3 fundos (principal, destaque, claro), o selo, a palavra colorida, o botão e a prévia grande.
 5. [ ] Imagens em **qualidade alta** (cerca de US$ 0,20 cada, contra US$ 0,05 da média). Para voltar: `CARROSSEIS_IMAGEM_QUALIDADE=medium` na api. Para um time ainda mais forte nos textos: `CARROSSEIS_MODELO=claude-opus-5-5` (cada pedido fica algumas vezes mais caro).
 
+## 4as. Estilos, transições, filme, tarja e cores (v167)
+1. [ ] Sem migration. Redeploy da **api** e do **worker-videos**; a **web** na Vercel.
+2. [ ] **Cores**: em Ajustar a legenda, pôr "Palavras em destaque" em branco; em Animações, trocar as "Cores das animações"; clicar em Gerar de novo e conferir no vídeo pronto. A cor salva ao fechar a paleta (aparece o aviso "As mudanças estão salvas").
+3. [ ] Trocar o estilo da legenda para **Karaokê** e depois **Impacto**, gerar de novo e conferir a leitura. O Impacto é para vídeo curto e direto; em fala longa cansa.
+4. [ ] Em um vídeo com apoio, escolher **Chicote**, **Vazamento de luz** e **Falha digital** (um por vez) e dizer se algum ficou exagerado. A "Variada" já reveza chicote e luz.
+5. [ ] Ligar o **Acabamento Filme** e comparar com o Limpo no celular: a granulação aparece sem sujar a pele?
+6. [ ] Preencher a **tarja** (nome e cargo) e conferir onde ela entra. Se a cabeça estiver muito no alto do quadro, ela não aparece (é o esperado).
+7. [ ] Conferir um vídeo antigo com legenda **Balão**: a caixa agora abraça a frase inteira.
+8. [ ] Conferir o tempo de edição no Railway com Filme e Chicote ligados (aqui não mudou, mas a máquina é outra).
+9. [ ] Próxima leva: ritmo da trilha, nota do gancho, voz de estúdio, texto atrás da pessoa, tarja como padrão da conta.
+
 ## 4ar. Legenda em camadas e zoom (v166)
 1. [ ] Sem migration. Redeploy da **api** e do **worker-videos** (o build instala cinco pacotes de fonte novos); a **web** na Vercel.
 2. [ ] Em um vídeo já editado, clicar em **Gerar de novo** uma vez: só depois disso o modo "Ajustar a legenda" tem o vídeo sem legenda e o lugar de cada trecho.

@@ -2,6 +2,7 @@ import {
   type AnimacoesVideo,
   type AreaDaProposta,
   type CorteVideo,
+  type EstiloLegenda,
   ITENS_DO_MOMENTO,
   MAX_LETRAS_NOME,
   MOMENTOS_COM_ITENS,
@@ -132,8 +133,9 @@ const ESQUEMA_PEDIDO = {
           outra: { type: 'boolean', description: 'musica: compor outra música no próximo gerar.' },
           estilo: {
             type: 'string',
-            enum: ['acesa', 'simples', 'balao'],
-            description: 'Só em estilo_legenda.',
+            enum: ['acesa', 'simples', 'balao', 'pilula', 'impacto'],
+            description:
+              'Só em estilo_legenda (acesa: palavra acesa; simples; balao; pilula: karaokê numa faixa escura; impacto: palavras gigantes uma a uma).',
           },
         },
         required: ['acao', 'resumo'],
@@ -432,12 +434,13 @@ export function lerPedido(dados: Record<string, unknown>, c: ContextoDoPedido): 
     }
     if (acao === 'estilo_legenda') {
       const estilo = String(m.estilo);
-      if (!['acesa', 'simples', 'balao'].includes(estilo) || estilo === c.estilo) continue;
+      if (!['acesa', 'simples', 'balao', 'pilula', 'impacto'].includes(estilo) || estilo === c.estilo)
+        continue;
       propostas.push({
         ...base,
         quando: null,
         ate: null,
-        revisao: { estilo: estilo as 'acesa' | 'simples' | 'balao' },
+        revisao: { estilo: estilo as EstiloLegenda },
       });
     }
   }

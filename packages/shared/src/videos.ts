@@ -71,11 +71,13 @@ export const ETAPAS_VIDEO: { id: EtapaVideo; nome: string; dica: string }[] = [
   { id: 'conferindo', nome: 'Conferindo', dica: 'Quadro a quadro, que nenhum texto encostou no rosto' },
 ];
 
-export type EstiloLegenda = 'acesa' | 'simples' | 'balao';
+export type EstiloLegenda = 'acesa' | 'simples' | 'balao' | 'pilula' | 'impacto';
 export const ESTILOS_LEGENDA: { id: EstiloLegenda; nome: string; dica: string }[] = [
   { id: 'acesa', nome: 'Palavra acesa', dica: 'A palavra falada acende na cor da marca' },
   { id: 'simples', nome: 'Simples', dica: 'A frase inteira, sem destaque' },
   { id: 'balao', nome: 'Balão', dica: 'A frase num balão branco' },
+  { id: 'pilula', nome: 'Karaokê', dica: 'A frase numa faixa escura; cada palavra acende quando é falada' },
+  { id: 'impacto', nome: 'Impacto', dica: 'Uma ou duas palavras gigantes, batendo na tela uma a uma' },
 ];
 
 export type RitmoCortes = 'dinamico' | 'natural' | 'pausas';
@@ -99,20 +101,34 @@ export const TRANSICOES: { id: TransicaoCortes; nome: string; dica: string }[] =
 /* ───────────────────────── v165: transição do apoio e tratamento da imagem ───────────────────────── */
 
 /** Como o trecho de vídeo de apoio entra e sai. */
-export type TransicaoApoio = 'variada' | 'zoom' | 'deslize' | 'clarao' | 'fusao' | 'corte';
+export type TransicaoApoio =
+  | 'variada'
+  | 'zoom'
+  | 'deslize'
+  | 'clarao'
+  | 'fusao'
+  | 'chicote'
+  | 'luz'
+  | 'glitch'
+  | 'corte';
 export const TRANSICOES_APOIO: { id: TransicaoApoio; nome: string; dica: string }[] = [
-  { id: 'variada', nome: 'Variada', dica: 'Reveza aproximação, deslize, clarão e fusão' },
+  { id: 'variada', nome: 'Variada', dica: 'Reveza aproximação, deslize, chicote, clarão, luz e fusão' },
   { id: 'zoom', nome: 'Aproximação', dica: 'Entra num impulso de zoom com leve desfoque' },
   { id: 'deslize', nome: 'Deslize', dica: 'Entra pela direita e sai pela esquerda' },
   { id: 'clarao', nome: 'Clarão', dica: 'Um flash de luz no corte' },
   { id: 'fusao', nome: 'Fusão', dica: 'Uma imagem se dissolve na outra' },
+  { id: 'chicote', nome: 'Chicote', dica: 'A câmera vira de lado num borrão rápido' },
+  { id: 'luz', nome: 'Vazamento de luz', dica: 'Uma luz quente atravessa a tela no corte' },
+  { id: 'glitch', nome: 'Falha digital', dica: 'As cores se separam e a imagem treme por um instante' },
   { id: 'corte', nome: 'Corte seco', dica: 'Sem efeito' },
 ];
 /** A ordem em que a "variada" reveza. */
 export const RODIZIO_DO_APOIO: Exclude<TransicaoApoio, 'variada' | 'corte'>[] = [
   'zoom',
   'deslize',
+  'chicote',
   'clarao',
+  'luz',
   'fusao',
 ];
 export const transicaoDoTrecho = (t: TransicaoApoio, k: number): Exclude<TransicaoApoio, 'variada'> =>
@@ -125,6 +141,44 @@ export const TRATAMENTOS_IMAGEM: { id: TratamentoImagem; nome: string; dica: str
   { id: 'cinema', nome: 'Cinema', dica: 'Contraste forte, sombras frias, pele quente e bordas escurecidas' },
   { id: 'original', nome: 'Original', dica: 'A imagem como foi gravada' },
 ];
+
+/** v167: o acabamento por cima da imagem do vídeo (a legenda e as animações ficam nítidas). */
+export type AcabamentoVideo = 'limpo' | 'filme';
+export const ACABAMENTOS_VIDEO: { id: AcabamentoVideo; nome: string; dica: string }[] = [
+  { id: 'limpo', nome: 'Limpo', dica: 'Sem nada por cima da imagem' },
+  { id: 'filme', nome: 'Filme', dica: 'Granulação leve de película e bordas escurecidas' },
+];
+
+/** v167: a tarja com o nome e o cargo de quem fala (vazia: não aparece). */
+export const tarjaDoVideoEntrada = z.object({
+  nome: z.string().trim().max(32).default(''),
+  cargo: z.string().trim().max(48).default(''),
+});
+export type TarjaDoVideo = z.infer<typeof tarjaDoVideoEntrada>;
+export const TARJA_PADRAO: TarjaDoVideo = { nome: '', cargo: '' };
+/** Quanto tempo a tarja fica na tela e até quando ela ainda pode entrar. */
+export const SEGUNDOS_DA_TARJA = 3.6;
+export const TARJA_ATE = 14;
+
+/**
+ * Onde a tarja entra: a primeira janela livre (sem título nem animação) depois da abertura. Sem
+ * janela nos primeiros segundos, ela não aparece.
+ */
+export function janelaDaTarja(
+  ocupados: { ini: number; fim: number }[],
+  duracao: number,
+): { ini: number; fim: number } | null {
+  const fila = [...ocupados].sort((a, b) => a.ini - b.ini);
+  let ini = 0.6;
+  for (let volta = 0; volta <= fila.length; volta++) {
+    const fim = ini + SEGUNDOS_DA_TARJA;
+    if (ini > TARJA_ATE || fim > duracao - 0.4) return null;
+    const bate = fila.find((o) => o.ini < fim + 0.3 && ini < o.fim + 0.3);
+    if (!bate) return { ini: Math.round(ini * 1000) / 1000, fim: Math.round(fim * 1000) / 1000 };
+    ini = bate.fim + 0.4;
+  }
+  return null;
+}
 
 /* ───────────────────────────── Imagens, música e efeitos (v129) ───────────────────────────── */
 
@@ -229,6 +283,8 @@ export const legendaDoVideoEntrada = z.object({
   corTexto: corHex.nullable().default(null),
   corAcesa: corHex.nullable().default(null),
   corContorno: corHex.nullable().default(null),
+  /** v167: a cor das palavras em destaque (null: a cor de destaque da marca). */
+  corForte: corHex.nullable().default(null),
   /** A legenda inteira fora do lugar automático. */
   dx: z.number().min(-1080).max(1080).default(0),
   dy: z.number().min(-1920).max(1920).default(0),
@@ -242,6 +298,7 @@ export const LEGENDA_PADRAO: LegendaDoVideo = {
   corTexto: null,
   corAcesa: null,
   corContorno: null,
+  corForte: null,
   dx: 0,
   dy: 0,
   trechos: {},
@@ -297,7 +354,7 @@ export interface DesenhoDoVideo {
 
 export const opcoesVideoEntrada = z.object({
   assunto: textoCurto(140).default(''),
-  estilo: z.enum(['acesa', 'simples', 'balao']).default('acesa'),
+  estilo: z.enum(['acesa', 'simples', 'balao', 'pilula', 'impacto']).default('acesa'),
   ritmo: z.enum(['dinamico', 'natural', 'pausas']).default('dinamico'),
   transicao: z.enum(['alternada', 'seco', 'deslizar']).default('alternada'),
   imagens: z.enum(['ia', 'fotos', 'nenhuma']).default('ia'),
@@ -308,8 +365,13 @@ export const opcoesVideoEntrada = z.object({
   /** v163: as cores dos elementos e da legenda só deste vídeo (null: as da marca). */
   cores: coresDoVideoEntrada.nullable().default(null),
   /** v165: como o apoio entra e sai, e o tratamento de cor da imagem. */
-  transicaoApoio: z.enum(['variada', 'zoom', 'deslize', 'clarao', 'fusao', 'corte']).default('variada'),
+  transicaoApoio: z
+    .enum(['variada', 'zoom', 'deslize', 'clarao', 'fusao', 'chicote', 'luz', 'glitch', 'corte'])
+    .default('variada'),
   imagem: z.enum(['vivo', 'cinema', 'original']).default('vivo'),
+  /** v167: granulação e vinheta por cima da imagem, e a tarja com o nome de quem fala. */
+  acabamento: z.enum(['limpo', 'filme']).default('limpo'),
+  tarja: tarjaDoVideoEntrada.default(TARJA_PADRAO),
   /** v166: a aparência e a posição da legenda, e a posição do título e das animações. */
   legenda: legendaDoVideoEntrada.default(LEGENDA_PADRAO),
   camadas: camadasDoVideoEntrada.default(CAMADAS_PADRAO),
@@ -703,13 +765,17 @@ export const revisaoEntrada = z.object({
     .default([]),
   titulo: z.object({ usar: z.boolean(), texto: textoCurto(60) }).optional(),
   chamada: z.object({ usar: z.boolean() }).merge(chamadaEntrada).optional(),
-  estilo: z.enum(['acesa', 'simples', 'balao']).optional(),
+  estilo: z.enum(['acesa', 'simples', 'balao', 'pilula', 'impacto']).optional(),
   /** v163: cores só deste vídeo (null: volta às da marca). */
   cores: coresDoVideoEntrada.nullable().optional(),
   ritmo: z.enum(['dinamico', 'natural', 'pausas']).optional(),
   transicao: z.enum(['alternada', 'seco', 'deslizar']).optional(),
-  transicaoApoio: z.enum(['variada', 'zoom', 'deslize', 'clarao', 'fusao', 'corte']).optional(),
+  transicaoApoio: z
+    .enum(['variada', 'zoom', 'deslize', 'clarao', 'fusao', 'chicote', 'luz', 'glitch', 'corte'])
+    .optional(),
   imagem: z.enum(['vivo', 'cinema', 'original']).optional(),
+  acabamento: z.enum(['limpo', 'filme']).optional(),
+  tarja: tarjaDoVideoEntrada.optional(),
   /** v166: a legenda e as camadas inteiras (a tela manda o objeto completo). */
   legenda: legendaDoVideoEntrada.optional(),
   camadas: camadasDoVideoEntrada.optional(),

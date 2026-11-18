@@ -1659,7 +1659,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'Suba o vídeo que você gravou falando para a câmera; a IA corta as pausas e as muletas, legenda palavra por palavra, põe animações, imagens e som, e o título e a chamada no fim, sem nada em cima do rosto.',
     onde: { rotulo: 'Vídeos', para: '/videos' },
     termos:
-      'ajustar a legenda legenda em camadas arrastar legenda mover legenda posição da legenda legenda no ombro fonte da legenda tamanho da legenda cor da legenda prévia da legenda mover título mover animação transição do apoio aproximação deslize clarão flash fusão tratamento da imagem cor cinema vivo nitidez palavra errada palavra toca frase inteira corte pega mais mapeamento das palavras ouvir de novo refazer do zero transcrição errou vídeo de apoio b-roll broll segundo vídeo mais de um vídeo cenas de apoio flashes trecho por cima da fala peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
+      'cor da animação cores das animações mudar cor trocar cor palavra em destaque cor laranja cor não aplicou cor da legenda não mudou tarja de nome nome de quem fala cargo lower third karaokê impacto palavras gigantes chicote vazamento de luz falha digital glitch granulação filme vinheta acabamento ajustar a legenda legenda em camadas arrastar legenda mover legenda posição da legenda legenda no ombro fonte da legenda tamanho da legenda cor da legenda prévia da legenda mover título mover animação transição do apoio aproximação deslize clarão flash fusão tratamento da imagem cor cinema vivo nitidez palavra errada palavra toca frase inteira corte pega mais mapeamento das palavras ouvir de novo refazer do zero transcrição errou vídeo de apoio b-roll broll segundo vídeo mais de um vídeo cenas de apoio flashes trecho por cima da fala peça à editora pedir à ia conversar com a ia chat da revisão falar deste momento aplicar mudanças desfazer pedido proposta gagueira gaguejar interrupção tropeço palavra pela metade repetida autocorreção nomes um a um etiquetas comparação troca riscar enumeração listar cidades cortar no vídeo linha do tempo prévia dos cortes marcar início marcar fim trecho cortar este trecho devolver este trecho zoom vídeo vídeos reels publicar publicação texto do post comente e receba direct regra tiktok shorts edição editar cortar cortes pausas muleta né éé frase recomeçada legenda legendas palavra acesa balão título abertura chamada comente whatsapp seguir imagem imagens foto fotos da empresa foto minha gerar imagem gerada tela cheia lista número selo oferta promoção preço animação animações música trilha efeito efeitos sonoros transição deslizar rosto cara texto em cima enquadramento aproximação zoom cartão som voz chiado volume revisar devolver ouvir gerar de novo baixar mp4 vocabulário palavras escritas assim franquia limite 3 minutos',
     corpo: (
       <>
         <p>
@@ -1760,6 +1760,22 @@ export const ARTIGOS: ArtigoAjuda[] = [
             na faixa que o Instagram cobre. Vale a partir da próxima vez que o vídeo for gerado: em vídeo
             antigo, clique em Gerar de novo uma vez para liberar. As aproximações no rosto agora se revezam em
             três jeitos (impulso seco, empurrão lento e dois degraus).
+          </li>
+          <li>
+            <b>Tem mais estilos, transições e acabamento</b>: a legenda ganhou o estilo <b>Karaokê</b> (a
+            frase numa faixa escura, cada palavra acende quando é falada) e o <b>Impacto</b> (uma ou duas
+            palavras gigantes batendo na tela). O vídeo de apoio ganhou as transições <b>Chicote</b> (a câmera
+            vira num borrão), <b>Vazamento de luz</b> e <b>Falha digital</b>. Em Animações há o{' '}
+            <b>Acabamento Filme</b> (granulação leve e bordas escurecidas) e a <b>tarja com o nome</b> e o
+            cargo de quem fala, que aparece por uns 4 segundos no começo, acima da cabeça. Sem espaço acima da
+            cabeça a tarja não entra: ela nunca toma o lugar da legenda.
+          </li>
+          <li>
+            <b>Deixa você trocar todas as cores</b>: na legenda (Ajustar a legenda) há quatro cores: o texto,
+            a palavra acesa, as <b>palavras em destaque</b> (as palavras-chave, que vêm na cor de destaque da
+            marca) e o contorno. Em Animações há as <b>cores das animações só deste vídeo</b> (a principal e a
+            de destaque), que valem para as listas, os selos, os números, o título, a tarja e a tela final. A
+            cor é salva quando você fecha a paleta; o vídeo muda ao clicar em Gerar de novo.
           </li>
           <li>
             <b>Confere a escuta da fala</b>: quando a transcrição pula um pedaço (uma palavra que cobre uma

@@ -144,6 +144,8 @@ export function useFotoPropria(id: number) {
 export function useRevisao(id: number) {
   const cliente = useQueryClient();
   return useMutation({
+    // v167: a chave deixa o "Gerar de novo" esperar uma mudança que ainda está sendo salva.
+    mutationKey: ['videos', id, 'revisao'],
     mutationFn: (r: PedacoDaRevisao & { doPedido?: boolean }) => {
       const atual = cliente.getQueryData<DetalheComFila>(['videos', id]);
       return api<DetalheVideo>(`/videos/${id}/revisao`, {

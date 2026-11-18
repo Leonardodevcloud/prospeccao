@@ -401,6 +401,83 @@ describe('composição do HyperFrames', () => {
     expect(html).toContain("window.__timelines['main'] = tl");
   });
 
+  it('v167: estilos novos, tarja só acima da cabeça, acabamento de filme e transições desenhadas', () => {
+    const palavras = fala('você aluga a moto e roda no mesmo dia sem entrada', 0.35).map((p, k) => ({
+      ...p,
+      k,
+    }));
+    // Impacto: uma ou duas palavras por vez, em maiúsculas; karaokê: frases médias, como foram ditas.
+    const impacto = blocosDaLegenda(palavras, 'impacto');
+    expect(impacto.every((b) => b.palavras.length <= 2)).toBe(true);
+    expect(impacto[0]!.palavras[0]!.t).toBe('VOCÊ');
+    const karaoke = blocosDaLegenda(palavras, 'pilula');
+    expect(karaoke.every((b) => b.palavras.length <= 5)).toBe(true);
+    expect(karaoke[0]!.palavras[0]!.t).toBe('você');
+    const base = { planos: [{ inicio: 0, fim: 5 }], blocos: karaoke, estilo: 'pilula' as const, medir };
+    const tarja = { id: 'tarja', ini: 0.6, fim: 4.2, altura: 170, soAcima: true };
+    // Cabeça no alto da tela: a tarja não cabe acima e fica de fora, sem tomar o lugar da legenda.
+    const apertado = diagramar({
+      ...base,
+      rostos: rostoParado(5, { x0: 260, x1: 860, y0: 200, y1: 900 }),
+      graficos: [tarja],
+    });
+    expect(apertado.cartoes[0]).toMatchObject({ id: 'tarja', escala: 0, lugar: 'fora' });
+    expect(apertado.legendas[0]!.ini).toBeLessThan(1);
+    const d = diagramar({
+      ...base,
+      rostos: rostoParado(5, { x0: 260, x1: 860, y0: 600, y1: 1100 }),
+      graficos: [tarja],
+    });
+    expect(d.cartoes[0]).toMatchObject({ id: 'tarja', lugar: 'acima', escala: 1 });
+    expect(d.legendas[0]!.ini).toBeLessThan(1);
+    const comum = {
+      diagrama: d,
+      estilo: 'pilula' as const,
+      marca: { primaria: '#123456', destaque: '#facc15' },
+      duracao: 5,
+      titulo: null,
+      chamada: null,
+      arquivos: {
+        video: 'v.mp4',
+        gsap: 'g.js',
+        fonte800: 'a.woff2',
+        fonte900: 'b.woff2',
+        ultimoQuadro: 'u.png',
+      },
+    };
+    const limpo = montarComposicao(comum);
+    expect(limpo).not.toContain('id="grao"');
+    expect(limpo).not.toContain('id="g-tarja"');
+    expect(limpo).not.toContain('id="luz"');
+    const html = montarComposicao({
+      ...comum,
+      acabamento: 'filme',
+      tarja: { nome: 'Ana <b>Souza</b>', cargo: 'Gerente', ini: 0.6, fim: 4.2 },
+      apoios: [
+        { ini: 1, fim: 2, estilo: 'chicote' },
+        { ini: 2.5, fim: 3, estilo: 'luz' },
+        { ini: 3.5, fim: 4, estilo: 'glitch' },
+        { ini: 4.2, fim: 4.6, estilo: 'deslize' },
+      ],
+    });
+    expect(html).toContain('id="grao"');
+    expect(html).toContain('id="vinheta"');
+    expect(html).toContain('id="luz"');
+    expect(html).toContain('id="riscas"');
+    expect(html).toContain('Ana &lt;b&gt;Souza&lt;/b&gt;');
+    expect(html).toContain('"filme":true');
+    // O deslize é feito no ffmpeg: não entra na lista do render.
+    expect(html).toContain('"estilo":"chicote"');
+    expect(html).not.toContain('"estilo":"deslize"');
+    // A tarja sem lugar acima da cabeça continua no HTML, mas o render a esconde (escala 0 no diagrama).
+    const sem = montarComposicao({
+      ...comum,
+      diagrama: apertado,
+      tarja: { nome: 'Ana', cargo: '', ini: 0.6, fim: 4.2 },
+    });
+    expect(sem).toContain('id="g-tarja"');
+  });
+
   it('v166: a legenda leva a fonte, as cores e o lugar que a pessoa escolheu', () => {
     const palavras = fala('o óleo certo dura mais', 0.35).map((p, k) => ({ ...p, k }));
     const base = {
@@ -441,6 +518,7 @@ describe('composição do HyperFrames', () => {
         corTexto: '#fff1f2',
         corAcesa: '#e11d48',
         corContorno: '#111827',
+        corForte: '#00ff88',
         trechos: d.legendas.map((_, n) => ({ dx: n === 0 ? 120 : 0, escala: n === 0 ? 1.2 : 1 })),
       },
       desloc: { titulo: 0, animacoes: -80 },
@@ -449,6 +527,9 @@ describe('composição do HyperFrames', () => {
     expect(html).toContain('#e11d48');
     expect(html).toContain('#fff1f2');
     expect(html).toContain('#111827');
+    // v167: a cor das palavras em destaque (sem ela, vale a de destaque da marca).
+    expect(html).toContain('.e-acesa .pal.forte { color: #00ff88; }');
+    expect(padrao).toContain('.e-acesa .pal.forte { color: #facc15; }');
     expect(html).toContain('"dx":120');
     expect(html).toContain('"esc":1.2');
     expect(html).toContain('"dxAnimacoes":-80');

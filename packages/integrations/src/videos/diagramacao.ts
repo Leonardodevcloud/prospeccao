@@ -65,6 +65,8 @@ export interface Grafico {
   ini: number;
   fim: number;
   altura: number;
+  /** v167: só pode ficar acima da cabeça (nunca no lugar da legenda). */
+  soAcima?: boolean;
 }
 
 export interface Cartao {
@@ -104,7 +106,7 @@ const PONTUACAO_FIM = /[.,;:!…]+$/;
 /** Como a palavra aparece na tela (sem a pontuação do fim; a pergunta fica). */
 export function textoNaTela(t: string, estilo: EstiloLegenda): string {
   const limpo = t.replace(PONTUACAO_FIM, '').replace(/^["“”']+|["“”']+$/g, '');
-  return estilo === 'acesa' ? limpo.toUpperCase() : limpo;
+  return estilo === 'acesa' || estilo === 'impacto' ? limpo.toUpperCase() : limpo;
 }
 
 /**
@@ -115,8 +117,9 @@ export function blocosDaLegenda(
   palavras: (PalavraVideo & { k: number })[],
   estilo: EstiloLegenda,
 ): BlocoLegenda[] {
-  const maxPal = estilo === 'acesa' ? 3 : 6;
-  const maxLetras = estilo === 'acesa' ? 18 : 34;
+  // v167: o karaokê leva frases médias; o impacto, uma ou duas palavras por vez.
+  const maxPal = estilo === 'acesa' ? 3 : estilo === 'impacto' ? 2 : estilo === 'pilula' ? 5 : 6;
+  const maxLetras = estilo === 'acesa' ? 18 : estilo === 'impacto' ? 13 : estilo === 'pilula' ? 26 : 34;
   const blocos: PalavraNaTela[][] = [];
   let atual: PalavraNaTela[] = [];
   let letras = 0;
@@ -167,18 +170,35 @@ function uniao(cs: Caixa[]): Caixa | null {
 
 /* ───────────────────────────── Medir e quebrar ───────────────────────────── */
 
-const ESCALA_ATIVA: Record<EstiloLegenda, number> = { acesa: 1.12, simples: 1, balao: 1 };
-const ALTURA_LINHA: Record<EstiloLegenda, number> = { acesa: 1.12, simples: 1.18, balao: 1.25 };
+const ESCALA_ATIVA: Record<EstiloLegenda, number> = {
+  acesa: 1.12,
+  simples: 1,
+  balao: 1,
+  pilula: 1,
+  impacto: 1,
+};
+const ALTURA_LINHA: Record<EstiloLegenda, number> = {
+  acesa: 1.12,
+  simples: 1.18,
+  balao: 1.25,
+  pilula: 1.3,
+  impacto: 1.02,
+};
+/** Estilos em que a frase vai dentro de uma caixa (o balão branco e a faixa do karaokê). */
+export const estiloEmCaixa = (e: EstiloLegenda) => e === 'balao' || e === 'pilula';
 const TAMANHOS: Record<EstiloLegenda, number[]> = {
   acesa: [84, 80, 76, 72, 68, 64, 60, 56],
   simples: [66, 62, 58, 54, 50, 46],
   balao: [58, 54, 50, 46, 42],
+  pilula: [60, 56, 52, 48, 44],
+  impacto: [132, 120, 108, 96, 84, 72],
 };
 /** Espaço entre palavras (proporcional ao tamanho). */
 export const espacoEntre = (tam: number) => Math.round(tam * 0.32);
 
 function larguraPalavra(medir: Medir, t: string, tam: number, estilo: EstiloLegenda) {
-  const enfeite = estilo === 'acesa' ? 28 + tam * 0.15 : 4;
+  const enfeite =
+    estilo === 'acesa' ? 28 + tam * 0.15 : estilo === 'pilula' ? 24 : estilo === 'impacto' ? tam * 0.14 : 4;
   return (medir(t, tam) + enfeite) * ESCALA_ATIVA[estilo];
 }
 
@@ -192,7 +212,7 @@ export function quebrarLinhas(
   let atual: number[] = [];
   let w = 0;
   const gap = espacoEntre(tam);
-  const largura = estilo === 'balao' ? LARGURA_LEGENDA - 56 : LARGURA_LEGENDA;
+  const largura = estiloEmCaixa(estilo) ? LARGURA_LEGENDA - 56 : LARGURA_LEGENDA;
   palavras.forEach((p, n) => {
     const lp = larguraPalavra(medir, p.t, tam, estilo);
     if (atual.length && w + gap + lp > largura) {
@@ -208,7 +228,7 @@ export function quebrarLinhas(
 }
 
 export function alturaDoBloco(linhas: number, tam: number, estilo: EstiloLegenda) {
-  return Math.round(linhas * tam * ALTURA_LINHA[estilo] + (estilo === 'balao' ? 40 : 12));
+  return Math.round(linhas * tam * ALTURA_LINHA[estilo] + (estiloEmCaixa(estilo) ? 40 : 12));
 }
 
 /** Cada bloco com mais de uma palavra vira dois (metade das palavras em cada), com os tempos certos. */
@@ -266,6 +286,12 @@ export function diagramar(entrada: {
     const embaixo = Math.max(LEGENDA_MAIS_ALTA, u.y1 + FOLGA);
     const escAbaixo = Math.min(1, (BASE - embaixo) / g.altura);
     const r3e = (n: number) => Math.round(n * 1000) / 1000;
+    // v167: a tarja de nome só vai acima da cabeça; sem espaço lá, não aparece (ela nunca toma o
+    // lugar da legenda).
+    if (g.soAcima)
+      return escAcima >= ESCALA_MINIMA
+        ? { ...base, topo: TOPO, escala: r3e(escAcima), lugar: 'acima' as const }
+        : { ...base, topo: TOPO, escala: 0, lugar: 'fora' as const };
     if (escAcima >= 0.85 || (escAcima >= ESCALA_MINIMA && escAcima >= escAbaixo))
       return { ...base, topo: TOPO, escala: r3e(escAcima), lugar: 'acima' as const };
     if (escAbaixo >= ESCALA_MINIMA)

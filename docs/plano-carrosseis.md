@@ -103,6 +103,7 @@ Cada ideia na aba Ideias mostra de onde veio (CAMPANHA, CONVERSAS, INSTAGRAM, OB
 26. **v164: vídeo (feita em 17/11, sem migration).** Não mexe em carrosséis nem em cards: mapeamento das palavras na fala do vídeo.
 27. **v165: vídeo (feita em 17/11, sem migration).** Não mexe em carrosséis nem em cards: transições do apoio e tratamento da imagem do vídeo.
 28. **v166: vídeo (feita em 17/11, sem migration).** Não mexe em carrosséis nem em cards: legenda em camadas e zoom no vídeo.
+29. **v167: vídeo (feita em 17/11, sem migration).** Não mexe em carrosséis nem em cards: estilos de legenda, transições, acabamento, tarja e cores no vídeo.
 
 ## Em aberto
 - Sem limite de carrosséis: acompanhar o custo por conta em Saúde e consumo (Claude). Se algum cliente fugir muito da média, o master pode pôr um limite só para ele em Plano e módulos.

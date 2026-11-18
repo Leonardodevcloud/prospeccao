@@ -46,6 +46,7 @@ import {
   fraseDaChamada,
   type ImagemPosta,
   type ImagemVideo,
+  janelaDaTarja,
   LIMITE_SEGUNDOS_VIDEO,
   lugarDoTrecho,
   type MomentoVideo,
@@ -642,6 +643,11 @@ export async function editarVideo(
         ]
       : [];
     graficos.push(...tela.graficos);
+    // v167: a tarja com o nome de quem fala entra na primeira janela livre depois da abertura.
+    const tarjaPedida = v.opcoes.tarja.nome ? v.opcoes.tarja : null;
+    const janelaTarja = tarjaPedida ? janelaDaTarja(graficos, duracaoEditado) : null;
+    if (tarjaPedida && janelaTarja)
+      graficos.push({ id: 'tarja', ...janelaTarja, altura: tarjaPedida.cargo ? 170 : 96, soAcima: true });
     const diagrama = diagramar({
       rostos: rostosEditado,
       planos: planos.map((p) => ({ inicio: p.editadoIni, fim: p.editadoFim })),
@@ -774,10 +780,13 @@ export async function editarVideo(
       momentos: tela.momentos,
       imagens: imagensDesenhadas,
       apoios: trechosDeApoio.map((t) => ({ ini: t.ini, fim: t.fim, estilo: t.estilo })),
+      acabamento: v.opcoes.acabamento,
+      tarja: tarjaPedida && janelaTarja ? { ...tarjaPedida, ...janelaTarja } : null,
       legenda: {
         corTexto: v.opcoes.legenda.corTexto,
         corAcesa: v.opcoes.legenda.corAcesa,
         corContorno: v.opcoes.legenda.corContorno,
+        corForte: v.opcoes.legenda.corForte,
         trechos: ajusteDaLegenda,
       },
       desloc: { titulo: v.opcoes.camadas.titulo.dx, animacoes: v.opcoes.camadas.animacoes.dx },

@@ -217,3 +217,49 @@ describe('v166: legenda em camadas', async () => {
     ).toBe('bebas');
   });
 });
+
+describe('v167: transições novas, acabamento e tarja', async () => {
+  const {
+    janelaDaTarja,
+    opcoesVideoEntrada: opcoes,
+    transicaoDoTrecho,
+    RODIZIO_DO_APOIO,
+    revisaoEntrada: revisao,
+  } = await import('../src/videos.js');
+  it('a tarja entra na primeira janela livre depois da abertura, ou não entra', () => {
+    expect(janelaDaTarja([], 30)).toEqual({ ini: 0.6, fim: 4.2 });
+    // Depois do título (0 a 2,3 s).
+    expect(janelaDaTarja([{ ini: 0, fim: 2.3 }], 30)).toEqual({ ini: 2.7, fim: 6.3 });
+    // Uma animação logo depois do título empurra a tarja para depois dela.
+    expect(
+      janelaDaTarja(
+        [
+          { ini: 0, fim: 2.3 },
+          { ini: 3, fim: 7 },
+        ],
+        30,
+      ),
+    ).toEqual({ ini: 7.4, fim: 11 });
+    // Começo todo ocupado ou vídeo curto demais: sem tarja.
+    expect(janelaDaTarja([{ ini: 0, fim: 16 }], 30)).toBeNull();
+    expect(janelaDaTarja([], 3)).toBeNull();
+  });
+  it('as opções antigas ganham acabamento limpo e tarja vazia; a variada reveza as transições novas', () => {
+    const o = opcoes.parse({});
+    expect(o.acabamento).toBe('limpo');
+    expect(o.tarja).toEqual({ nome: '', cargo: '' });
+    expect(RODIZIO_DO_APOIO).toContain('chicote');
+    expect(RODIZIO_DO_APOIO).toContain('luz');
+    expect(transicaoDoTrecho('variada', 2)).toBe('chicote');
+    expect(transicaoDoTrecho('glitch', 5)).toBe('glitch');
+    expect(
+      revisao.safeParse({
+        versao: 1,
+        estilo: 'impacto',
+        acabamento: 'filme',
+        tarja: { nome: ' Ana ', cargo: '' },
+      }).success,
+    ).toBe(true);
+    expect(revisao.safeParse({ versao: 1, acabamento: 'sepia' }).success).toBe(false);
+  });
+});

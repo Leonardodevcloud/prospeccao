@@ -33,10 +33,16 @@ export interface EntradaComposicao {
     corTexto: string | null;
     corAcesa: string | null;
     corContorno: string | null;
+    /** v167: a cor das palavras em destaque (null: a de destaque da marca). */
+    corForte?: string | null;
     trechos: { dx: number; escala: number }[];
   };
   /** v166: o quanto o título e as animações saíram para o lado (o topo já vem no diagrama). */
   desloc?: { titulo: number; animacoes: number };
+  /** v167: granulação de película e vinheta por cima da imagem do vídeo. */
+  acabamento?: 'limpo' | 'filme';
+  /** v167: a tarja com o nome e o cargo de quem fala (o lugar vem do cartão "tarja" do diagrama). */
+  tarja?: { nome: string; cargo: string; ini: number; fim: number } | null;
   /** v165: os trechos de vídeo de apoio (já no vídeo): a aproximação e o clarão são desenhados aqui. */
   apoios?: { ini: number; fim: number; estilo: string }[];
   estilo: EstiloLegenda;
@@ -169,6 +175,10 @@ export function montarComposicao(e: EntradaComposicao): string {
   const total = duracaoTotal(e);
   const titulo = e.titulo?.usar && e.titulo.linhas.length ? e.titulo : null;
   const cartaoTitulo = e.diagrama.cartoes.find((c) => c.id === 'abertura');
+  const tarja = e.tarja?.nome && e.diagrama.cartoes.some((c) => c.id === 'tarja') ? e.tarja : null;
+  const usa = (estilo: string) => (e.apoios ?? []).some((x) => x.estilo === estilo);
+  // v167: a cor das palavras em destaque da legenda (escolhida na revisão, ou a de destaque da marca).
+  const forte = cor(e.legenda?.corForte ?? '', destaque);
   const dados = {
     D,
     T: e.diagrama.transicao,
@@ -178,6 +188,7 @@ export function montarComposicao(e: EntradaComposicao): string {
     legenda: {
       texto: e.legenda?.corTexto ?? null,
       contorno: e.legenda?.corContorno ?? null,
+      forte: forte,
     },
     dxAnimacoes: Math.round(e.desloc?.animacoes ?? 0),
     dxTitulo: Math.round(e.desloc?.titulo ?? 0),
@@ -206,7 +217,9 @@ export function montarComposicao(e: EntradaComposicao): string {
     imagens: (e.imagens ?? []).map((i) => ({ id: i.id, ini: i.ini, fim: i.fim, encaixe: i.encaixe })),
     deslizar: e.transicao === 'deslizar',
     empurroes: e.empurroes ?? [],
-    apoios: (e.apoios ?? []).filter((x) => x.estilo === 'zoom' || x.estilo === 'clarao'),
+    apoios: (e.apoios ?? []).filter((x) => ['zoom', 'clarao', 'chicote', 'luz', 'glitch'].includes(x.estilo)),
+    filme: e.acabamento === 'filme',
+    tarja: tarja ? { ini: tarja.ini, fim: tarja.fim } : null,
   };
   const medir = e.medir ?? estimar;
   const graficos = (e.momentos ?? [])
@@ -258,14 +271,36 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 .linha { display: flex; justify-content: center; }
 .pal { position: relative; display: inline-block; line-height: 1.12; color: #fff; isolation: isolate; }
 .e-acesa .pal { font-weight: 900; text-transform: uppercase; letter-spacing: -.01em; padding: 0 14px; paint-order: stroke fill; filter: drop-shadow(0 8px 16px rgba(0,0,0,.45)); }
-.e-acesa .pal.forte { color: ${destaque}; }
+.e-acesa .pal.forte { color: ${forte}; }
 .e-acesa .fundo { position: absolute; inset: 4px 0 4px 0; border-radius: 16px; background: ${cor(e.legenda?.corAcesa ?? '', primaria)}; z-index: -1; transform: scale(.6); opacity: 0; }
-.e-acesa .pal.forte .fundo { background: ${destaque}; }
+.e-acesa .pal.forte .fundo { background: ${forte}; }
 .e-simples .pal { font-weight: 800; line-height: 1.18; paint-order: stroke fill; filter: drop-shadow(0 6px 12px rgba(0,0,0,.5)); }
-.e-simples .pal.forte { color: ${destaque}; }
-.e-balao { background: #fff; border-radius: 28px; padding: 20px 28px; width: auto; max-width: 860px; left: 50%; transform: translateX(-50%); box-shadow: 0 16px 40px rgba(0,0,0,.3); }
+.e-simples .pal.forte { color: ${forte}; }
+/* v167: a caixa do balão e do karaokê é um elemento de dentro (o bloco tem a largura da legenda): antes a frase larga saía da caixa. */
+.e-balao .caixa { background: #fff; border-radius: 28px; padding: 20px 28px; box-shadow: 0 16px 40px rgba(0,0,0,.3); }
 .e-balao .pal { font-weight: 800; color: #18181b; line-height: 1.25; }
-.e-balao .pal.forte { color: ${primaria}; }
+.e-balao .pal.forte { color: ${e.legenda?.corForte ? forte : primaria}; }
+.e-pilula .caixa { background: rgba(12,10,20,.84); border-radius: 30px; padding: 20px 28px; box-shadow: 0 16px 40px rgba(0,0,0,.35); }
+.e-pilula .pal { font-weight: 800; line-height: 1.3; padding: 0 12px; opacity: .55; }
+.e-pilula .pal.forte { color: ${forte}; }
+.e-pilula .fundo { position: absolute; inset: 5px 0 5px 0; border-radius: 14px; background: ${cor(e.legenda?.corAcesa ?? '', primaria)}; z-index: -1; opacity: 0; }
+.e-impacto .pal { font-weight: 900; text-transform: uppercase; letter-spacing: -.02em; line-height: 1.02; paint-order: stroke fill; opacity: 0; filter: drop-shadow(0 10px 20px rgba(0,0,0,.5)); }
+.e-impacto .pal.forte { color: ${forte}; }
+#vinheta { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 46%, transparent 52%, rgba(0,0,0,.5) 100%); }
+#grao { position: absolute; inset: 0; overflow: hidden; pointer-events: none; mix-blend-mode: overlay; opacity: .34; }
+#grao div { position: absolute; left: -50%; top: -50%; width: 200%; height: 200%; background: url("data:image/svg+xml,%3Csvg viewBox='0 0 320 320' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-size: 320px 320px; }
+#luz { position: absolute; inset: -16%; opacity: 0; overflow: hidden; pointer-events: none; mix-blend-mode: screen; }
+#luz div { position: absolute; inset: -20%; }
+#luz .l1 { background: radial-gradient(ellipse 52% 110% at 10% 58%, rgba(255,241,197,.92), transparent 45%), radial-gradient(ellipse 72% 120% at 24% 54%, rgba(255,126,57,.78), transparent 66%); filter: blur(30px); }
+#luz .l2 { background: radial-gradient(ellipse 58% 105% at 78% 34%, rgba(255,79,61,.72), rgba(255,44,92,.28) 48%, transparent 76%); filter: blur(44px); }
+#luz .l3 { background: linear-gradient(104deg, transparent 24%, rgba(255,144,62,.3) 40%, rgba(255,247,205,.72) 51%, rgba(255,124,48,.22) 62%, transparent 78%); filter: blur(22px); }
+#riscas { position: absolute; inset: 0; opacity: 0; pointer-events: none; mix-blend-mode: difference; background: repeating-linear-gradient(0deg, rgba(255,255,255,.16) 0 6px, transparent 6px 22px); }
+.filtros { position: absolute; width: 0; height: 0; }
+.tarja { align-self: flex-start; display: flex; align-items: stretch; gap: 16px; }
+.tarja-barra { width: 12px; border-radius: 6px; background: ${destaque}; transform-origin: 50% 100%; }
+.tarja-textos { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; overflow: hidden; }
+.tarja-nome { padding: 12px 26px 14px; border-radius: 16px; background: rgba(12,10,20,.92); color: #fff; font-weight: 900; line-height: 1; white-space: nowrap; letter-spacing: -.01em; box-shadow: 0 12px 30px rgba(0,0,0,.3); }
+.tarja-cargo { padding: 9px 22px 10px; border-radius: 12px; background: ${primaria}; color: #fff; font-weight: 800; line-height: 1; white-space: nowrap; box-shadow: 0 12px 30px rgba(0,0,0,.3); }
 #abertura { position: absolute; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 18px; transform-origin: 50% 0; }
 .titulo { display: flex; flex-direction: column; align-items: center; gap: .12em; font-weight: 900; line-height: .95; color: #fff; text-align: center; letter-spacing: -.02em; }
 /* v138: cada linha numa placa (lê em qualquer fundo: azulejo branco, céu, loja clara). */
@@ -314,10 +349,23 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 </style>
 </head>
 <body>
+<svg class="filtros" aria-hidden="true"><defs>
+  <filter id="f-chicote" x="-20%" y="0" width="140%" height="100%"><feGaussianBlur id="f-chicote-b" stdDeviation="0 0" /></filter>
+  <filter id="f-rgb" x="-5%" y="0" width="110%" height="100%" color-interpolation-filters="sRGB">
+    <feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r" />
+    <feOffset id="f-rgb-r" in="r" dx="0" dy="0" result="r2" />
+    <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="gb" />
+    <feOffset id="f-rgb-gb" in="gb" dx="0" dy="0" result="gb2" />
+    <feBlend in="r2" in2="gb2" mode="screen" />
+  </filter>
+</defs></svg>
 <div id="root" data-composition-id="main" data-start="0" data-duration="${total}" data-width="1080" data-height="1920">
   <div id="fundo-marca" class="clip" data-start="0" data-duration="${D}" data-track-index="0"></div>
   <div id="camada-video">
     <div id="pulso"><video id="fala" src="${esc(a.video)}" data-start="0" data-duration="${D}" data-has-audio="true"></video></div>
+    ${usa('luz') ? '<div id="luz"><div class="l1"></div><div class="l2"></div><div class="l3"></div></div>' : ''}
+    ${usa('glitch') ? '<div id="riscas"></div>' : ''}
+    ${e.acabamento === 'filme' ? '<div id="vinheta"></div><div id="grao"><div></div></div>' : ''}
     <div id="clarao"></div>
     <div id="sombra-baixo"></div>
   </div>
@@ -330,6 +378,17 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
       : ''
   }
   ${fotosCheias ? `<div id="cheias" data-start="0" data-duration="${D}" data-track-index="3">\n${fotosCheias}\n</div>` : ''}
+  ${
+    tarja
+      ? `<div id="camada-tarja" style="position: absolute; inset: 0" data-start="0" data-duration="${D}" data-track-index="3"><div class="grafico" id="g-tarja"><div class="tarja">
+      <div class="tarja-barra"></div>
+      <div class="tarja-textos">
+        <div class="tarja-nome" style="font-size: ${caber(medir, tarja.nome, 760, [64, 58, 52, 46, 40])}px">${esc(tarja.nome)}</div>
+        ${tarja.cargo ? `<div class="tarja-cargo" style="font-size: ${caber(medir, tarja.cargo, 780, [40, 36, 32, 28])}px">${esc(tarja.cargo)}</div>` : ''}
+      </div>
+    </div></div></div>`
+      : ''
+  }
   ${graficos || fotosAcima ? `<div id="enfeites" data-start="0" data-duration="${D}" data-track-index="3">\n${graficos}\n${fotosAcima}\n</div>` : ''}
   <div id="legendas" data-start="0" data-duration="${D}" data-track-index="4"></div>
   ${
@@ -374,8 +433,42 @@ for (const a of DADOS.apoios) {
     if (t >= DADOS.D - 0.2) continue;
     if (a.estilo === 'zoom')
       tl.fromTo('#pulso', { scale: 1.16, filter: 'blur(7px)' }, { scale: 1, filter: 'blur(0px)', duration: 0.3, ease: 'power3.out', immediateRender: false }, t);
-    else tl.fromTo('#clarao', { opacity: 0.85 }, { opacity: 0, duration: 0.28, ease: 'power2.out', immediateRender: false }, t);
+    else if (a.estilo === 'chicote') {
+      // v167: a câmera "vira" de lado: borrão horizontal forte que assenta em 0,34 s (entra por um
+      // lado e sai pelo outro).
+      const lado = t === a.ini ? 1 : -1;
+      tl.set('#pulso', { filter: 'url(#f-chicote)' }, t);
+      tl.fromTo('#f-chicote-b', { attr: { stdDeviation: '70 0' } }, { attr: { stdDeviation: '0 0' }, duration: 0.34, ease: 'power3.out', immediateRender: false }, t);
+      tl.fromTo('#pulso', { x: lado * 150, scale: 1.3 }, { x: 0, scale: 1, duration: 0.34, ease: 'power4.out', immediateRender: false }, t);
+      tl.set('#pulso', { filter: 'none' }, t + 0.35);
+    } else if (a.estilo === 'luz') {
+      // v167: uma luz quente atravessa a tela e o corte acontece no auge dela.
+      const antes = Math.max(0, t - 0.22);
+      tl.fromTo('#luz', { opacity: 0 }, { opacity: 0.95, duration: t - antes || 0.01, ease: 'sine.out', immediateRender: false }, antes);
+      tl.to('#luz', { opacity: 0, duration: 0.5, ease: 'sine.in' }, t);
+      tl.fromTo('#luz .l1', { xPercent: -24, rotation: -4 }, { xPercent: 20, rotation: 2, duration: 0.72, ease: 'sine.inOut', immediateRender: false }, antes);
+      tl.fromTo('#luz .l2', { xPercent: 22, yPercent: -8 }, { xPercent: -16, yPercent: 8, duration: 0.72, ease: 'sine.inOut', immediateRender: false }, antes);
+      tl.fromTo('#luz .l3', { xPercent: -30 }, { xPercent: 26, duration: 0.72, ease: 'sine.inOut', immediateRender: false }, antes);
+    } else if (a.estilo === 'glitch') {
+      // v167: por 0,2 s as cores se separam, a imagem treme e aparecem riscas.
+      const passos = [[34, 0], [-26, 5], [18, -3], [-10, 2], [0, 0]];
+      tl.set('#pulso', { filter: 'url(#f-rgb)' }, t);
+      passos.forEach(([dx, inclina], n) => {
+        const em = t + n * 0.045;
+        tl.set('#f-rgb-r', { attr: { dx: dx } }, em);
+        tl.set('#f-rgb-gb', { attr: { dx: -dx } }, em);
+        tl.set('#pulso', { x: dx * 0.5, skewX: inclina }, em);
+      });
+      tl.fromTo('#riscas', { opacity: 1 }, { opacity: 0, duration: 0.2, ease: 'steps(4)', immediateRender: false }, t);
+      tl.set('#pulso', { filter: 'none', x: 0, skewX: 0 }, t + 0.2);
+    } else tl.fromTo('#clarao', { opacity: 0.85 }, { opacity: 0, duration: 0.28, ease: 'power2.out', immediateRender: false }, t);
   }
+}
+// v167: a granulação muda de lugar 12 vezes por segundo (sorteio fixo: o render sai sempre igual).
+if (DADOS.filme) {
+  let semente = 20261117;
+  const sorte = () => ((semente = (semente * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (let t = 0; t < DADOS.D; t += 1 / 12) tl.set('#grao div', { x: Math.round(sorte() * 300 - 150), y: Math.round(sorte() * 300 - 150) }, t);
 }
 for (const p of DADOS.empurroes) {
   tl.set('#camada-video', { transformOrigin: p.ox + 'px ' + p.oy + 'px', scale: 1 }, p.ini);
@@ -388,8 +481,9 @@ for (const L of DADOS.legendas) {
   const b = document.createElement('div');
   b.className = 'bloco e-' + DADOS.estilo;
   b.style.top = L.topo + 'px';
-  if (L.dx && DADOS.estilo !== 'balao') b.style.left = (110 + L.dx) + 'px';
-  if (L.dx && DADOS.estilo === 'balao') b.style.left = 'calc(50% + ' + L.dx + 'px)';
+  const emCaixa = DADOS.estilo === 'balao' || DADOS.estilo === 'pilula';
+  if (L.dx) b.style.left = (110 + L.dx) + 'px';
+  const dentro = emCaixa ? b.appendChild(Object.assign(document.createElement('div'), { className: 'caixa' })) : b;
   caixa.appendChild(b);
   // v166: a cor do texto e do contorno escolhidas (o balão tem a letra escura dele).
   const corTexto = DADOS.estilo !== 'balao' && DADOS.legenda.texto ? DADOS.legenda.texto : '#ffffff';
@@ -399,12 +493,13 @@ for (const L of DADOS.legendas) {
     const ln = document.createElement('div');
     ln.className = 'linha';
     ln.style.columnGap = L.gap + 'px';
-    b.appendChild(ln);
+    dentro.appendChild(ln);
     for (const [txt, i, f, forte] of linha) {
       const s = document.createElement('span');
       s.className = 'pal' + (forte ? ' forte' : '');
       s.style.fontSize = L.tam + 'px';
       if (DADOS.estilo === 'acesa') s.style.webkitTextStroke = Math.round(L.tam * 0.13) + 'px ' + corContorno;
+      if (DADOS.estilo === 'impacto') s.style.webkitTextStroke = Math.round(L.tam * 0.1) + 'px ' + corContorno;
       if (DADOS.estilo === 'simples') s.style.webkitTextStroke = Math.round(L.tam * 0.09) + 'px ' + corContorno;
       if (DADOS.estilo !== 'balao' && !forte) s.style.color = corTexto;
       s.textContent = txt;
@@ -415,9 +510,23 @@ for (const L of DADOS.legendas) {
       els.push({ s, fundo, i, f, forte });
     }
   }
-  const centro = DADOS.estilo === 'balao' ? { xPercent: -50 } : {};
-  tl.fromTo(b, { opacity: 0, y: 22, scale: 0.92 * L.esc, ...centro }, { opacity: 1, y: 0, scale: L.esc, ...centro, duration: 0.14, ease: 'back.out(2)' }, L.ini);
+  tl.fromTo(b, { opacity: 0, y: 22, scale: 0.92 * L.esc }, { opacity: 1, y: 0, scale: L.esc, duration: 0.14, ease: 'back.out(2)' }, L.ini);
   tl.set(b, { opacity: 0 }, L.fim);
+  // v167: karaokê (a palavra falada acende e as já ditas ficam claras) e impacto (cada palavra bate
+  // na tela quando é falada).
+  if (DADOS.estilo === 'pilula') {
+    for (const { s, fundo, i, f } of els) {
+      tl.to(s, { opacity: 1, duration: 0.06 }, i);
+      tl.to(fundo, { opacity: 1, duration: 0.08 }, i);
+      tl.to(fundo, { opacity: 0, duration: 0.1 }, f);
+    }
+    continue;
+  }
+  if (DADOS.estilo === 'impacto') {
+    for (const { s, i, forte } of els)
+      tl.fromTo(s, { opacity: 0, scale: forte ? 2.1 : 1.7 }, { opacity: 1, scale: 1, duration: 0.13, ease: 'power4.out', immediateRender: false }, Math.max(L.ini, i - 0.02));
+    continue;
+  }
   if (DADOS.estilo !== 'acesa') continue;
   for (const { s, fundo, i, f, forte } of els) {
     tl.to(fundo, { opacity: 1, scale: 1, duration: 0.09, ease: 'back.out(3)' }, i);
@@ -425,7 +534,7 @@ for (const L of DADOS.legendas) {
     tl.set(s, { color: corTexto }, i);
     tl.to(s, { scale: 1, duration: 0.12, ease: 'power2.inOut' }, Math.max(i + 0.09, f - 0.06));
     tl.to(fundo, { opacity: 0, scale: 0.85, duration: 0.08 }, f);
-    tl.set(s, { color: forte ? DADOS.cores.destaque : corTexto }, f);
+    tl.set(s, { color: forte ? DADOS.legenda.forte : corTexto }, f);
   }
 }
 
@@ -543,6 +652,17 @@ for (const im of DADOS.imagens) {
     tl.to(el, { opacity: 0, duration: 0.2, ease: 'power1.in' }, Math.max(im.ini + 0.3, im.fim - 0.2));
   }
   tl.fromTo(el.querySelector('img'), { scale: 1.02 }, { scale: 1.1, duration: im.fim - im.ini, ease: 'none' }, im.ini);
+}
+
+// v167: a tarja com o nome de quem fala: a barra sobe, o nome e o cargo deslizam de trás dela.
+if (DADOS.tarja) {
+  const lugar = porNoLugar('#g-tarja', 'tarja', DADOS.tarja.ini, DADOS.tarja.fim, false);
+  if (lugar) {
+    tl.fromTo('#g-tarja .tarja-barra', { scaleY: 0 }, { scaleY: 1, duration: 0.3, ease: 'power3.out' }, lugar.entra);
+    tl.fromTo('#g-tarja .tarja-nome', { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: 'power3.out' }, lugar.entra + 0.12);
+    if (document.querySelector('#g-tarja .tarja-cargo'))
+      tl.fromTo('#g-tarja .tarja-cargo', { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: 'power3.out' }, lugar.entra + 0.26);
+  }
 }
 
 // Tela final com a chamada.

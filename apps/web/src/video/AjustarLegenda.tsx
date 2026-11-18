@@ -124,11 +124,21 @@ export function useAjusteDaLegenda(v: DetalheVideo): AjusteDaLegenda {
 
 function estiloDaPalavra(
   estilo: EstiloLegenda,
-  o: { tam: number; forte: boolean; acesa: boolean; legenda: LegendaDoVideo; cores: DesenhoDoVideo['cores'] },
+  o: {
+    tam: number;
+    forte: boolean;
+    acesa: boolean;
+    /** A palavra já começou a ser falada (fora do tempo do trecho, todas contam como ditas). */
+    dita: boolean;
+    legenda: LegendaDoVideo;
+    cores: DesenhoDoVideo['cores'];
+  },
 ): React.CSSProperties {
   const f = fonteDe(o.legenda.fonte);
   const texto = o.legenda.corTexto ?? '#ffffff';
   const contorno = o.legenda.corContorno ?? 'rgba(10,0,25,.92)';
+  // v167: a cor das palavras em destaque (escolhida, ou a de destaque da marca).
+  const forte = o.legenda.corForte ?? o.cores.destaque;
   const base: React.CSSProperties = {
     fontFamily: `${FAMILIA[o.legenda.fonte]}, sans-serif`,
     fontSize: o.tam,
@@ -136,13 +146,43 @@ function estiloDaPalavra(
     display: 'inline-block',
   };
   if (estilo === 'balao')
-    return { ...base, fontWeight: f.normal, lineHeight: 1.25, color: o.forte ? o.cores.primaria : '#18181b' };
+    return {
+      ...base,
+      fontWeight: f.normal,
+      lineHeight: 1.25,
+      color: o.forte ? (o.legenda.corForte ?? o.cores.primaria) : '#18181b',
+    };
+  // v167: karaokê (a palavra falada acende; as que ainda não foram ditas ficam apagadas) e impacto
+  // (palavras gigantes, que só aparecem quando são faladas).
+  if (estilo === 'pilula')
+    return {
+      ...base,
+      fontWeight: f.normal,
+      lineHeight: 1.3,
+      padding: '0 12px',
+      borderRadius: 14,
+      color: o.forte ? forte : texto,
+      background: o.acesa ? (o.legenda.corAcesa ?? o.cores.primaria) : 'transparent',
+      opacity: o.dita ? 1 : 0.55,
+    };
+  if (estilo === 'impacto')
+    return {
+      ...base,
+      fontWeight: f.forte,
+      textTransform: 'uppercase',
+      letterSpacing: '-.02em',
+      lineHeight: 1.02,
+      color: o.forte ? forte : texto,
+      WebkitTextStroke: `${Math.round(o.tam * 0.1)}px ${contorno}`,
+      paintOrder: 'stroke fill',
+      opacity: o.dita ? 1 : 0.25,
+    };
   if (estilo === 'simples')
     return {
       ...base,
       fontWeight: f.normal,
       lineHeight: 1.18,
-      color: o.forte ? o.cores.destaque : texto,
+      color: o.forte ? forte : texto,
       WebkitTextStroke: `${Math.round(o.tam * 0.09)}px ${contorno}`,
       paintOrder: 'stroke fill',
     };
@@ -153,12 +193,8 @@ function estiloDaPalavra(
     letterSpacing: '-.01em',
     padding: '0 14px',
     borderRadius: 16,
-    color: o.acesa ? texto : o.forte ? o.cores.destaque : texto,
-    background: o.acesa
-      ? o.forte
-        ? o.cores.destaque
-        : (o.legenda.corAcesa ?? o.cores.primaria)
-      : 'transparent',
+    color: o.acesa ? texto : o.forte ? forte : texto,
+    background: o.acesa ? (o.forte ? forte : (o.legenda.corAcesa ?? o.cores.primaria)) : 'transparent',
     WebkitTextStroke: `${Math.round(o.tam * 0.13)}px ${contorno}`,
     paintOrder: 'stroke fill',
     transform: o.acesa ? 'scale(1.06)' : undefined,
@@ -397,8 +433,9 @@ export function PalcoDaLegenda({ v, ajuste }: { v: DetalheVideo; ajuste: AjusteD
                     tam: Math.round(atual.tam * fator),
                     forte: !!forte,
                     acesa: !!noTempo && t >= i && t < f,
+                    dita: !noTempo || t >= i,
                     legenda,
-                    cores: d.cores,
+                    cores: v.opcoes.cores ?? d.cores,
                   })}
                 >
                   {texto}
@@ -447,24 +484,44 @@ export function PalcoDaLegenda({ v, ajuste }: { v: DetalheVideo; ajuste: AjusteD
 
 /* ───────────────────────────── O painel ───────────────────────────── */
 
-function Cor(props: {
+/**
+ * Um seletor de cor. Salva quando a pessoa fecha a paleta (o evento "change" do navegador) e, por
+ * garantia, ao sair do campo. v167: antes só salvava ao sair do campo, e quem escolhia a cor e ia
+ * direto em "Gerar de novo" gerava sem ela.
+ */
+export function Cor(props: {
   rotulo: string;
   valor: string | null;
   padrao: string;
   aoMudar: (c: string | null) => void;
 }) {
   const id = useId();
+  const campo = useRef<HTMLInputElement>(null);
   const [cor, setCor] = useState(props.valor ?? props.padrao);
   useEffect(() => setCor(props.valor ?? props.padrao), [props.valor, props.padrao]);
+  const atual = useRef({ salva: props.valor ?? props.padrao, aoMudar: props.aoMudar });
+  atual.current = { salva: props.valor ?? props.padrao, aoMudar: props.aoMudar };
+  useEffect(() => {
+    const el = campo.current;
+    if (!el) return;
+    // A paleta fechando e a saída do campo podem vir juntas: a mesma cor só é enviada uma vez.
+    let enviada = '';
+    const salvar = () => {
+      const cor = el.value.toLowerCase();
+      if (cor === atual.current.salva.toLowerCase() || cor === enviada) return;
+      enviada = cor;
+      atual.current.aoMudar(el.value);
+    };
+    el.addEventListener('change', salvar);
+    el.addEventListener('blur', salvar);
+    return () => {
+      el.removeEventListener('change', salvar);
+      el.removeEventListener('blur', salvar);
+    };
+  }, []);
   return (
     <label htmlFor={id} className="lg-cor">
-      <input
-        id={id}
-        type="color"
-        value={cor}
-        onChange={(e) => setCor(e.target.value)}
-        onBlur={() => cor !== (props.valor ?? props.padrao) && props.aoMudar(cor)}
-      />
+      <input ref={campo} id={id} type="color" value={cor} onChange={(e) => setCor(e.target.value)} />
       <span>{props.rotulo}</span>
       <span className="mono quieto">{props.valor ?? 'padrão'}</span>
     </label>
@@ -478,6 +535,8 @@ export function PainelDaLegenda({ v, ajuste }: { v: DetalheVideo; ajuste: Ajuste
   const [tamanho, setTamanho] = useState(legenda.tamanho);
   useEffect(() => setTamanho(legenda.tamanho), [legenda.tamanho]);
   if (!d) return null;
+  // As cores só deste vídeo (v163) valem mais que as da última edição.
+  const cores = v.opcoes.cores ?? d.cores;
   const movidos = Object.keys(legenda.trechos).length;
   const legendaMovida = legenda.dx !== 0 || legenda.dy !== 0 || movidos > 0;
   const camadasDaTela: { id: Camada; nome: string; detalhe: string; tem: boolean }[] = [
@@ -601,15 +660,21 @@ export function PainelDaLegenda({ v, ajuste }: { v: DetalheVideo; ajuste: Ajuste
               aoMudar={(c) => ajuste.salvar({ ...legenda, corTexto: c })}
             />
           )}
-          {d.estilo === 'acesa' && (
+          {(d.estilo === 'acesa' || d.estilo === 'pilula') && (
             <Cor
               rotulo="Palavra acesa"
               valor={legenda.corAcesa}
-              padrao={d.cores.primaria}
+              padrao={cores.primaria}
               aoMudar={(c) => ajuste.salvar({ ...legenda, corAcesa: c })}
             />
           )}
-          {d.estilo !== 'balao' && (
+          <Cor
+            rotulo="Palavras em destaque"
+            valor={legenda.corForte}
+            padrao={d.estilo === 'balao' ? cores.primaria : cores.destaque}
+            aoMudar={(c) => ajuste.salvar({ ...legenda, corForte: c })}
+          />
+          {d.estilo !== 'balao' && d.estilo !== 'pilula' && (
             <Cor
               rotulo="Contorno"
               valor={legenda.corContorno}
@@ -618,11 +683,13 @@ export function PainelDaLegenda({ v, ajuste }: { v: DetalheVideo; ajuste: Ajuste
             />
           )}
         </div>
-        {(legenda.corTexto || legenda.corAcesa || legenda.corContorno) && (
+        {(legenda.corTexto || legenda.corAcesa || legenda.corContorno || legenda.corForte) && (
           <button
             type="button"
             className="video__link"
-            onClick={() => ajuste.salvar({ ...legenda, corTexto: null, corAcesa: null, corContorno: null })}
+            onClick={() =>
+              ajuste.salvar({ ...legenda, corTexto: null, corAcesa: null, corContorno: null, corForte: null })
+            }
           >
             Usar as cores da marca
           </button>

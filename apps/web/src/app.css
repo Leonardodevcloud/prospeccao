@@ -20753,13 +20753,24 @@ form.janela-pedido > button[type="submit"] {
   transform-origin: 50% 0;
   filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.45));
 }
-.lg-bloco[data-estilo="balao"] {
-  width: auto;
+/* A caixa do balão e do karaokê abraça a frase, centrada na largura da legenda. */
+.lg-bloco[data-estilo="balao"],
+.lg-bloco[data-estilo="pilula"] {
+  width: max-content;
   max-width: 860px;
-  left: 50%;
-  padding: 18px 34px;
-  border-radius: 34px;
+  margin-left: 430px;
+  translate: -50% 0;
+  padding: 20px 28px;
+  border-radius: 28px;
   background: #fff;
+}
+.lg-bloco[data-estilo="pilula"] {
+  border-radius: 30px;
+  background: rgba(12, 10, 20, 0.84);
+}
+.video__tarja {
+  display: grid;
+  gap: var(--space-2);
 }
 .lg-bloco[data-fora] {
   opacity: 0.72;

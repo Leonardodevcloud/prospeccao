@@ -1,4 +1,6 @@
 import {
+  ACABAMENTOS_VIDEO,
+  type AcabamentoVideo,
   type CorteVideo,
   caixaNaTrilha,
   type DetalheVideo,
@@ -27,7 +29,7 @@ import {
   trechosQueFicam,
 } from '@prospeccao/shared/videos';
 import { Badge, Button, Icon } from '@prospeccao/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api';
@@ -35,7 +37,7 @@ import { type EstacaoDaMesa, MesaDoTime } from '../carrossel/Mesa';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin } from '../componentes/Sessao';
-import { PainelDaLegenda, PalcoDaLegenda, useAjusteDaLegenda } from '../video/AjustarLegenda';
+import { Cor, PainelDaLegenda, PalcoDaLegenda, useAjusteDaLegenda } from '../video/AjustarLegenda';
 import { CortarNoVideo } from '../video/CortarNoVideo';
 import { type DetalheComFila, useArquivo, useRevisao, useSituacaoVideos, useVideo } from '../video/dados';
 import { AbaImagens, AbaSomCompleta, MomentosDaFala } from '../video/Enfeites';
@@ -81,6 +83,9 @@ function Topo({ v }: { v: DetalheComFila }) {
       window.location.href = url;
     },
   });
+  // v167: enquanto uma mudança da revisão está sendo salva, o "Gerar de novo" espera (antes dava
+  // para gerar sem a última cor escolhida).
+  const salvando = useIsMutating({ mutationKey: ['videos', v.id, 'revisao'] }) > 0;
   const gerar = useMutation({
     mutationFn: () => api<DetalheVideo>(`/videos/${v.id}/gerar`, { metodo: 'POST' }),
     onSuccess: () => void cliente.invalidateQueries({ queryKey: ['videos'] }),
@@ -136,7 +141,7 @@ function Topo({ v }: { v: DetalheComFila }) {
             variant={v.mudancasPendentes || v.situacao === 'falhou' ? 'primary' : 'secondary'}
             icon="refresh-cw"
             onClick={() => gerar.mutate()}
-            disabled={gerar.isPending || (!v.mudancasPendentes && v.situacao !== 'falhou')}
+            disabled={gerar.isPending || salvando || (!v.mudancasPendentes && v.situacao !== 'falhou')}
             title={v.mudancasPendentes ? undefined : 'Mude algo na revisão para gerar de novo'}
           >
             {v.situacao === 'falhou' ? 'Tentar de novo' : 'Gerar de novo com as mudanças'}
@@ -1336,7 +1341,100 @@ function AbaAnimacoes({ v }: { v: DetalheVideo }) {
         aoMudar={(t) => revisao.mutate({ imagem: t as TratamentoImagem })}
         dica={`${TRATAMENTOS_IMAGEM.find((t) => t.id === v.opcoes.imagem)?.dica}. A legenda e as animações não mudam de cor.`}
       />
+      <Seletor
+        rotulo="Acabamento"
+        valor={v.opcoes.acabamento}
+        opcoes={ACABAMENTOS_VIDEO.map((t) => ({ id: t.id, nome: t.nome }))}
+        aoMudar={(t) => revisao.mutate({ acabamento: t as AcabamentoVideo })}
+        dica={`${ACABAMENTOS_VIDEO.find((t) => t.id === v.opcoes.acabamento)?.dica}.`}
+      />
+      <CoresDoVideo v={v} />
+      <TarjaDeNome v={v} />
     </div>
+  );
+}
+
+/**
+ * v167: as cores das animações só deste vídeo (as listas, os selos, os números, o título, a tarja e a
+ * tela final). Antes só dava para pedir à editora.
+ */
+function CoresDoVideo({ v }: { v: DetalheVideo }) {
+  const revisao = useRevisao(v.id);
+  const base = v.opcoes.cores ?? v.desenho?.cores ?? { primaria: '#7c3aed', destaque: '#f97316' };
+  return (
+    <fieldset className="campo">
+      <legend>Cores das animações (só deste vídeo)</legend>
+      <div className="lg-cores">
+        <Cor
+          rotulo="Cor principal (fundos, etiquetas, selos)"
+          valor={v.opcoes.cores?.primaria ?? null}
+          padrao={base.primaria}
+          aoMudar={(c) => c && revisao.mutate({ cores: { ...base, primaria: c } })}
+        />
+        <Cor
+          rotulo="Cor de destaque (marcações, números, traços)"
+          valor={v.opcoes.cores?.destaque ?? null}
+          padrao={base.destaque}
+          aoMudar={(c) => c && revisao.mutate({ cores: { ...base, destaque: c } })}
+        />
+      </div>
+      {v.opcoes.cores && (
+        <button type="button" className="video__link" onClick={() => revisao.mutate({ cores: null })}>
+          Usar as cores da marca
+        </button>
+      )}
+      <span className="campo__dica">
+        Valem para as animações, o título, a tarja e a tela final. A legenda tem as cores dela na aba Legenda,
+        em "Ajustar fonte, cores e posição".
+      </span>
+    </fieldset>
+  );
+}
+
+/** v167: a tarja com o nome e o cargo de quem fala (salva ao sair do campo). */
+function TarjaDeNome({ v }: { v: DetalheVideo }) {
+  const id = useId();
+  const revisao = useRevisao(v.id);
+  const [nome, setNome] = useState(v.opcoes.tarja.nome);
+  const [cargo, setCargo] = useState(v.opcoes.tarja.cargo);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: só a versão dispara
+  useEffect(() => {
+    setNome(v.opcoes.tarja.nome);
+    setCargo(v.opcoes.tarja.cargo);
+  }, [v.versao]);
+  const salvar = () => {
+    const tarja = { nome: nome.trim(), cargo: nome.trim() ? cargo.trim() : '' };
+    if (tarja.nome !== v.opcoes.tarja.nome || tarja.cargo !== v.opcoes.tarja.cargo) revisao.mutate({ tarja });
+  };
+  return (
+    <fieldset className="campo video__tarja">
+      <legend>Tarja com o nome de quem fala</legend>
+      <label htmlFor={`${id}-nome`}>Nome</label>
+      <input
+        id={`${id}-nome`}
+        className="filtro"
+        value={nome}
+        maxLength={32}
+        placeholder="Ex.: Ana Souza"
+        onChange={(e) => setNome(e.target.value)}
+        onBlur={salvar}
+      />
+      <label htmlFor={`${id}-cargo`}>Cargo ou apresentação (opcional)</label>
+      <input
+        id={`${id}-cargo`}
+        className="filtro"
+        value={cargo}
+        maxLength={48}
+        placeholder="Ex.: Gerente da loja"
+        disabled={!nome.trim()}
+        onChange={(e) => setCargo(e.target.value)}
+        onBlur={salvar}
+      />
+      <span className="campo__dica">
+        Aparece por uns 4 segundos no começo, acima da cabeça, depois do título. Sem espaço acima da cabeça,
+        ou com animações ocupando os primeiros segundos, ela não entra. Deixe o nome vazio para tirar.
+      </span>
+    </fieldset>
   );
 }
 

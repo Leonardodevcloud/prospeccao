@@ -718,7 +718,7 @@ export async function revisar(
     mudou = true;
   }
   const opcoes = opcoesVideoEntrada.parse({ ...(l.opcoes ?? {}) });
-  for (const k of ['estilo', 'ritmo', 'transicao', 'transicaoApoio', 'imagem'] as const)
+  for (const k of ['estilo', 'ritmo', 'transicao', 'transicaoApoio', 'imagem', 'acabamento'] as const)
     if (r[k] && r[k] !== opcoes[k]) {
       (opcoes as Record<string, unknown>)[k] = r[k];
       mudou = true;
@@ -730,6 +730,11 @@ export async function revisar(
   }
   if (r.camadas && JSON.stringify(r.camadas) !== JSON.stringify(opcoes.camadas)) {
     opcoes.camadas = r.camadas;
+    mudou = true;
+  }
+  // v167: a tarja com o nome e o cargo de quem fala.
+  if (r.tarja && JSON.stringify(r.tarja) !== JSON.stringify(opcoes.tarja)) {
+    opcoes.tarja = r.tarja;
     mudou = true;
   }
   if (r.cores !== undefined && JSON.stringify(r.cores) !== JSON.stringify(opcoes.cores ?? null)) {

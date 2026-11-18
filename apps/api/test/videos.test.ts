@@ -798,6 +798,7 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
       corTexto: null,
       corAcesa: '#e11d48',
       corContorno: null,
+      corForte: '#ffffff',
       dx: 0,
       dy: 80,
       trechos: { '4': { dx: 0, dy: 120, escala: 1.1 } },
@@ -817,6 +818,36 @@ describe.skipIf(!URL_TESTE)('vídeos com IA (com Postgres)', () => {
       legenda: { ...legenda, fonte: 'comic' },
     });
     expect(ruim.status).toBe(422);
+    // v167: estilo novo, acabamento de filme, transição nova e a tarja de nome.
+    const v167 = await enviar('put', `/videos/${videoId}/revisao`, {
+      versao: r.body.versao,
+      estilo: 'pilula',
+      acabamento: 'filme',
+      transicaoApoio: 'chicote',
+      tarja: { nome: 'Ana Souza', cargo: 'Gerente da loja' },
+    });
+    expect(v167.status).toBe(200);
+    expect(v167.body.opcoes).toMatchObject({
+      estilo: 'pilula',
+      acabamento: 'filme',
+      transicaoApoio: 'chicote',
+      tarja: { nome: 'Ana Souza', cargo: 'Gerente da loja' },
+    });
+    expect(
+      (await enviar('put', `/videos/${videoId}/revisao`, { versao: v167.body.versao, acabamento: 'sepia' }))
+        .status,
+    ).toBe(422);
+    // As cores das animações só deste vídeo, e a volta às da marca.
+    const cores = await enviar('put', `/videos/${videoId}/revisao`, {
+      versao: v167.body.versao,
+      cores: { primaria: '#0f766e', destaque: '#22d3ee' },
+    });
+    expect(cores.body.opcoes.cores).toEqual({ primaria: '#0f766e', destaque: '#22d3ee' });
+    const volta = await enviar('put', `/videos/${videoId}/revisao`, {
+      versao: cores.body.versao,
+      cores: null,
+    });
+    expect(volta.body.opcoes.cores).toBeNull();
     // Com o desenho guardado pelo editor, a tela recebe o desenho e o link do vídeo sem legenda.
     await pool.query(
       `UPDATE comercial.videos SET analise = COALESCE(analise, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
