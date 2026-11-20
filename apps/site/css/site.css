@@ -3016,7 +3016,12 @@ p {
   font-size: 20px;
   margin: 32px 0 8px;
 }
-.documento ul {
+.documento h3 {
+  font-size: 17px;
+  margin: 24px 0 6px;
+}
+.documento ul,
+.documento ol {
   padding-left: 20px;
 }
 .documento li + li {

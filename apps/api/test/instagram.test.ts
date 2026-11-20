@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
 import { comConta } from '../src/contexto.js';
 import { enviarConversoes } from '../src/modulos/instagram/conversoes.js';
-import { type ClienteMeta, clienteMeta } from '../src/modulos/instagram/meta.js';
+import { type ClienteMeta, clienteMeta, lerPedidoAssinado } from '../src/modulos/instagram/meta.js';
 import { esquecerRecursos } from '../src/recursos.js';
 import type { ServicosConta } from '../src/servicos.js';
 
@@ -17,6 +17,31 @@ const ORIGEM = 'http://localhost:5173';
 const SEGREDO = 's'.repeat(32);
 const IG = '17841400000000001';
 const PAGINA = '100000000000001';
+const PESSOA_META = '999000111';
+
+/** O `signed_request` como a Meta manda (HMAC-SHA256 com a chave secreta do app). */
+function pedidoAssinado(segredo: string, dados: Record<string, unknown>): string {
+  const corpo = Buffer.from(JSON.stringify(dados)).toString('base64url');
+  return `${createHmac('sha256', segredo).update(corpo).digest('base64url')}.${corpo}`;
+}
+
+describe('signed_request da Meta (exclusão de dados e desautorização)', () => {
+  const ok = { algorithm: 'HMAC-SHA256', user_id: PESSOA_META, issued_at: 1_700_000_000 };
+  it('lê a pessoa quando a assinatura bate', () => {
+    expect(lerPedidoAssinado(SEGREDO, pedidoAssinado(SEGREDO, ok))).toEqual({
+      usuarioId: PESSOA_META,
+      emitidoEm: 1_700_000_000,
+    });
+  });
+  it('recusa assinatura de outro segredo, algoritmo diferente, sem pessoa ou formato quebrado', () => {
+    expect(lerPedidoAssinado(SEGREDO, pedidoAssinado('x'.repeat(32), ok))).toBeNull();
+    expect(lerPedidoAssinado(SEGREDO, pedidoAssinado(SEGREDO, { ...ok, algorithm: 'none' }))).toBeNull();
+    expect(lerPedidoAssinado(SEGREDO, pedidoAssinado(SEGREDO, { algorithm: 'HMAC-SHA256' }))).toBeNull();
+    expect(lerPedidoAssinado(SEGREDO, pedidoAssinado(SEGREDO, { ...ok, user_id: '1 OR 1=1' }))).toBeNull();
+    expect(lerPedidoAssinado(SEGREDO, 'sem-ponto')).toBeNull();
+    expect(lerPedidoAssinado(SEGREDO, '')).toBeNull();
+  });
+});
 
 describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e formulários', () => {
   let pool: Pool;
@@ -49,6 +74,8 @@ describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e for
     },
     desassinarPagina: async () => undefined,
     conferirAssinatura: (corpo, a) => assinatura.conferirAssinatura(corpo, a),
+    idDaPessoa: async () => PESSOA_META,
+    lerPedidoAssinado: (p) => assinatura.lerPedidoAssinado!(p),
     contaInstagram: async (id) => ({
       id,
       usuario: 'nexosistemas',
@@ -629,6 +656,66 @@ describe.skipIf(!URL_TESTE)('Instagram: conexão, comente e receba, direct e for
     expect((await ler('/instagram/regras')).status).toBe(200);
     await pool.query(`UPDATE cadastro.organizacoes SET plano = NULL`);
     esquecerRecursos();
+  });
+
+  it('a Meta pede para apagar os dados: desconecta, apaga o conteúdo guardado e mostra o pedido', async () => {
+    const { rows: guardado } = await pool.query(
+      'SELECT meta_usuario_id FROM comercial.instagram_contas WHERE ig_id = $1',
+      [IG],
+    );
+    expect(guardado[0].meta_usuario_id).toBe(PESSOA_META);
+    // Assinatura errada: nada muda.
+    const falso = await request(app)
+      .post('/meta/exclusao')
+      .type('form')
+      .send({
+        signed_request: pedidoAssinado('y'.repeat(32), { algorithm: 'HMAC-SHA256', user_id: PESSOA_META }),
+      });
+    expect(falso.status).toBe(400);
+    expect((await ler('/instagram')).body.conexao).not.toBeNull();
+
+    const r = await request(app)
+      .post('/meta/exclusao')
+      .type('form')
+      .send({ signed_request: pedidoAssinado(SEGREDO, { algorithm: 'HMAC-SHA256', user_id: PESSOA_META }) });
+    expect(r.status).toBe(200);
+    expect(r.body.confirmation_code).toMatch(/^EX-[0-9A-F]{16}$/);
+    expect(r.body.url).toBe(`${ORIGEM}/api/meta/exclusao/${r.body.confirmation_code}`);
+    expect((await ler('/instagram')).body.conexao).toBeNull();
+    const { rows } = await pool.query(
+      `SELECT (SELECT count(*) FROM comercial.instagram_midias)::int AS midias,
+              (SELECT count(*) FROM comercial.instagram_comentarios)::int AS comentarios,
+              (SELECT count(*) FROM comercial.instagram_regras)::int AS regras`,
+    );
+    expect(rows[0]).toEqual({ midias: 0, comentarios: 0, regras: 2 });
+    const pagina = await request(app).get(`/meta/exclusao/${r.body.confirmation_code}`);
+    expect(pagina.status).toBe(200);
+    expect(pagina.text).toContain(r.body.confirmation_code);
+    expect(pagina.text).toContain('Concluído');
+    expect((await request(app).get('/meta/exclusao/EX-0000000000000000')).status).toBe(404);
+    expect((await request(app).get('/meta/exclusao/<script>')).status).toBe(404);
+  });
+
+  it('a pessoa tira o app no Facebook: só desconecta', async () => {
+    const estado = new URL((await enviar('post', '/instagram/conexao')).body.url).searchParams.get('state')!;
+    await request(app).get(`/meta/retorno?code=CODIGO&state=${encodeURIComponent(estado)}`);
+    expect((await ler('/instagram')).body.conexao).not.toBeNull();
+    const r = await request(app)
+      .post('/meta/desautorizar')
+      .type('form')
+      .send({ signed_request: pedidoAssinado(SEGREDO, { algorithm: 'HMAC-SHA256', user_id: PESSOA_META }) });
+    expect(r.status).toBe(200);
+    expect((await ler('/instagram')).body.conexao).toBeNull();
+    const { rows } = await pool.query(
+      `SELECT tipo, conexoes FROM comercial.meta_exclusoes ORDER BY criado_em`,
+    );
+    expect(rows).toEqual([
+      { tipo: 'exclusao', conexoes: 1 },
+      { tipo: 'desautorizacao', conexoes: 1 },
+    ]);
+    // Reconecta para o teste seguinte.
+    const e2 = new URL((await enviar('post', '/instagram/conexao')).body.url).searchParams.get('state')!;
+    await request(app).get(`/meta/retorno?code=CODIGO&state=${encodeURIComponent(e2)}`);
   });
 
   it('desconectar apaga a conexão (as regras ficam)', async () => {

@@ -192,6 +192,13 @@ export async function concluirLogin(
   const m = exigirMeta();
   if (!chaveAtual) throw AppError.invalido('Configure CHAVE_CREDENCIAIS na api para guardar a conexão.');
   const tokenPessoa = await m.trocarCodigo(codigo, redirect);
+  // Quem fez o login (id com escopo do app): é por ele que a Meta pede para apagar ou avisa que tirou o app.
+  const metaUsuarioId = m.idDaPessoa
+    ? await m.idDaPessoa(tokenPessoa).catch((e) => {
+        deps.log.warn({ err: e }, 'instagram: não consegui ler o id de quem conectou');
+        return null;
+      })
+    : null;
   const paginas = (await m.paginas(tokenPessoa)).filter((p) => p.instagram);
   if (!paginas.length)
     throw AppError.invalido(
@@ -210,15 +217,17 @@ export async function concluirLogin(
     },
   }));
   if (opcoes.length === 1) {
-    await salvarConexao(deps, opcoes[0]!, usuarioId);
+    await salvarConexao(deps, opcoes[0]!, usuarioId, metaUsuarioId);
     return 'conectado';
   }
   await deps.pool.query(
-    `INSERT INTO comercial.instagram_contas (conta_id, opcoes_cifradas, conectado_por)
-     VALUES (${contaSql()}, $1, $2)
+    `INSERT INTO comercial.instagram_contas (conta_id, opcoes_cifradas, conectado_por, meta_usuario_id)
+     VALUES (${contaSql()}, $1, $2, $3)
      ON CONFLICT (conta_id) DO UPDATE SET opcoes_cifradas = EXCLUDED.opcoes_cifradas,
-       conectado_por = EXCLUDED.conectado_por, atualizado_em = now()`,
-    [cifrar(chaveAtual, JSON.stringify(opcoes)), usuarioId],
+       conectado_por = EXCLUDED.conectado_por,
+       meta_usuario_id = coalesce(EXCLUDED.meta_usuario_id, comercial.instagram_contas.meta_usuario_id),
+       atualizado_em = now()`,
+    [cifrar(chaveAtual, JSON.stringify(opcoes)), usuarioId, metaUsuarioId],
   );
   return 'escolher';
 }
@@ -229,7 +238,12 @@ export async function escolherPagina(deps: { pool: Pool; log: Logger }, paginaId
   await salvarConexao(deps, o, usuarioAtual()?.id ?? null);
 }
 
-async function salvarConexao(deps: { pool: Pool; log: Logger }, o: OpcaoPagina, usuarioId: number | null) {
+async function salvarConexao(
+  deps: { pool: Pool; log: Logger },
+  o: OpcaoPagina,
+  usuarioId: number | null,
+  metaUsuarioId: string | null = null,
+) {
   const m = exigirMeta();
   // O mesmo Instagram já está em outra conta do sistema: não liga em duas (os avisos iriam para uma só).
   const { rows: outra } = await deps.pool.query<{ nome: string }>(
@@ -251,13 +265,15 @@ async function salvarConexao(deps: { pool: Pool; log: Logger }, o: OpcaoPagina, 
   await deps.pool.query(
     `INSERT INTO comercial.instagram_contas
        (conta_id, ig_id, ig_usuario, ig_nome, ig_seguidores, ig_foto, pagina_id, pagina_nome, token_cifrado,
-        opcoes_cifradas, conectado_em, conectado_por, mensagens_bloqueadas, erro, erro_em)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, NULL, now(), $9, false, $10, CASE WHEN $10::text IS NOT NULL THEN now() END)
+        opcoes_cifradas, conectado_em, conectado_por, mensagens_bloqueadas, erro, erro_em, meta_usuario_id)
+     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7, $8, NULL, now(), $9, false, $10, CASE WHEN $10::text IS NOT NULL THEN now() END, $11)
      ON CONFLICT (conta_id) DO UPDATE SET ig_id = EXCLUDED.ig_id, ig_usuario = EXCLUDED.ig_usuario,
        ig_nome = EXCLUDED.ig_nome, ig_seguidores = EXCLUDED.ig_seguidores, ig_foto = EXCLUDED.ig_foto,
        pagina_id = EXCLUDED.pagina_id, pagina_nome = EXCLUDED.pagina_nome, token_cifrado = EXCLUDED.token_cifrado,
        opcoes_cifradas = NULL, conectado_em = now(), conectado_por = EXCLUDED.conectado_por,
-       mensagens_bloqueadas = false, erro = EXCLUDED.erro, erro_em = EXCLUDED.erro_em, atualizado_em = now()`,
+       mensagens_bloqueadas = false, erro = EXCLUDED.erro, erro_em = EXCLUDED.erro_em,
+       meta_usuario_id = coalesce(EXCLUDED.meta_usuario_id, comercial.instagram_contas.meta_usuario_id),
+       atualizado_em = now()`,
     [
       o.ig.id,
       o.ig.usuario,
@@ -269,6 +285,7 @@ async function salvarConexao(deps: { pool: Pool; log: Logger }, o: OpcaoPagina, 
       cifrar(chaveAtual!, o.token),
       usuarioId,
       erro,
+      metaUsuarioId,
     ],
   );
 }
@@ -280,6 +297,108 @@ export async function desconectar(deps: { pool: Pool; log: Logger }): Promise<vo
       .desassinarPagina(c.paginaId, c.token)
       .catch((e) => deps.log.warn({ err: e }, 'instagram: não consegui desligar os avisos da página'));
   await deps.pool.query(`DELETE FROM comercial.instagram_contas WHERE conta_id = ${contaSql()}`);
+}
+
+/* ───────────── v174: exclusão de dados e desautorização pedidas pela Meta ───────────── */
+
+export type PedidoDaMeta = 'exclusao' | 'desautorizacao';
+
+export interface SituacaoExclusao {
+  codigo: string;
+  tipo: PedidoDaMeta;
+  conexoes: number;
+  publicacoes: number;
+  comentarios: number;
+  criadoEm: string;
+  concluidoEm: string | null;
+}
+
+/**
+ * A pessoa que conectou o Instagram tirou o app do Facebook (desautorização) ou pediu para apagar os
+ * dados (exclusão). Em todas as contas em que ela conectou:
+ *  • desautorização: desconecta (como o botão Desconectar; o token já não vale);
+ *  • exclusão: desconecta e apaga o que veio da Meta e ficou guardado (publicações com os números e
+ *    os comentários). Leads, conversas e regras são do cliente (o CRM dele) e ficam; o titular de um
+ *    lead pede a exclusão ao cliente, que apaga em "O contato pediu para ser esquecido".
+ * Os administradores da conta recebem um aviso. Devolve o código para a pessoa acompanhar.
+ */
+export async function atenderPedidoDaMeta(
+  deps: { pool: Pool; log: Logger },
+  tipo: PedidoDaMeta,
+  metaUsuarioId: string,
+): Promise<string> {
+  const codigo = `${tipo === 'exclusao' ? 'EX' : 'DA'}-${randomBytes(8).toString('hex').toUpperCase()}`;
+  await deps.pool.query(
+    `INSERT INTO comercial.meta_exclusoes (codigo, tipo, meta_usuario_id) VALUES ($1, $2, $3)`,
+    [codigo, tipo, metaUsuarioId],
+  );
+  const { rows: contas } = await deps.pool.query<{ conta_id: number }>(
+    `SELECT conta_id FROM comercial.instagram_contas WHERE meta_usuario_id = $1`,
+    [metaUsuarioId],
+  );
+  let publicacoes = 0;
+  let comentarios = 0;
+  for (const { conta_id } of contas) {
+    await comConta(conta_id, async () => {
+      await desconectar(deps);
+      if (tipo === 'exclusao') {
+        const c = await deps.pool.query(
+          `DELETE FROM comercial.instagram_comentarios WHERE conta_id = ${contaSql()}`,
+        );
+        const p = await deps.pool.query(
+          `DELETE FROM comercial.instagram_midias WHERE conta_id = ${contaSql()}`,
+        );
+        comentarios += c.rowCount ?? 0;
+        publicacoes += p.rowCount ?? 0;
+      }
+      const aviso = {
+        tipo: 'sistema' as const,
+        titulo: 'O Instagram foi desconectado',
+        texto:
+          tipo === 'exclusao'
+            ? 'Quem conectou pediu à Meta para apagar os dados. A conexão e o conteúdo guardado do Instagram foram apagados; leads e conversas continuam.'
+            : 'Quem conectou tirou o acesso do Prospect Team no Facebook. Para voltar a usar, conecte de novo.',
+        link: '/instagram?aba=conexao',
+      };
+      for (const u of await admins(deps.pool)) await notificar(deps.pool, u, aviso).catch(() => undefined);
+    }).catch((e) =>
+      deps.log.error({ err: e, conta: conta_id }, 'instagram: pedido da Meta falhou numa conta'),
+    );
+  }
+  await deps.pool.query(
+    `UPDATE comercial.meta_exclusoes SET conexoes = $2, publicacoes = $3, comentarios = $4, concluido_em = now()
+      WHERE codigo = $1`,
+    [codigo, contas.length, publicacoes, comentarios],
+  );
+  deps.log.info({ codigo, tipo, conexoes: contas.length }, 'instagram: pedido da Meta atendido');
+  return codigo;
+}
+
+export async function situacaoExclusao(db: Executor, codigo: string): Promise<SituacaoExclusao | null> {
+  const { rows } = await db.query<{
+    codigo: string;
+    tipo: PedidoDaMeta;
+    conexoes: number;
+    publicacoes: number;
+    comentarios: number;
+    criado_em: Date;
+    concluido_em: Date | null;
+  }>(
+    `SELECT codigo, tipo, conexoes, publicacoes, comentarios, criado_em, concluido_em
+       FROM comercial.meta_exclusoes WHERE codigo = $1`,
+    [codigo],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    codigo: r.codigo,
+    tipo: r.tipo,
+    conexoes: r.conexoes,
+    publicacoes: r.publicacoes,
+    comentarios: r.comentarios,
+    criadoEm: r.criado_em.toISOString(),
+    concluidoEm: r.concluido_em?.toISOString() ?? null,
+  };
 }
 
 export async function salvarDirectNovo(db: Executor, modo: 'lead' | 'ignorar'): Promise<void> {

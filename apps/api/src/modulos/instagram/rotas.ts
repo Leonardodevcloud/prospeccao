@@ -485,6 +485,52 @@ export function rotasMeta(deps: DepsApi): Router {
     res.sendStatus(200);
   });
 
+  /**
+   * v174: exclusão de dados (Configurações do app › Básico › "URL de callback de exclusão de dados")
+   * e desautorização (Login do Facebook para Empresas › "URL de callback para cancelar autorização").
+   * A Meta manda um formulário com `signed_request`, assinado com a chave secreta do app.
+   */
+  const pedidoDaMeta =
+    (tipo: servico.PedidoDaMeta) =>
+    async (req: Request, res: Response): Promise<void> => {
+      const m = servico.meta();
+      if (!m?.lerPedidoAssinado) {
+        res.sendStatus(404);
+        return;
+      }
+      const corpoForm = (req.body ?? {}) as Record<string, unknown>;
+      const pedido = m.lerPedidoAssinado(String(corpoForm.signed_request ?? ''));
+      if (!pedido) {
+        res
+          .status(400)
+          .json({ erro: { codigo: 'pedido_invalido', mensagem: 'Pedido sem assinatura válida.' } });
+        return;
+      }
+      const codigo = await servico.atenderPedidoDaMeta(deps, tipo, pedido.usuarioId);
+      if (tipo === 'desautorizacao') {
+        res.sendStatus(200);
+        return;
+      }
+      // O formato que a Meta pede: onde acompanhar e o código de confirmação.
+      res.json({ url: `${deps.origens[0]}/api/meta/exclusao/${codigo}`, confirmation_code: codigo });
+    };
+  const formulario = express.urlencoded({ extended: false, limit: '16kb' });
+  r.post('/exclusao', formulario, pedidoDaMeta('exclusao'));
+  r.post('/desautorizar', formulario, pedidoDaMeta('desautorizacao'));
+
+  /** Página pública para acompanhar o pedido de exclusão (o link que a Meta mostra para a pessoa). */
+  r.get('/exclusao/:codigo', async (req: Request, res: Response) => {
+    res.set('Cache-Control', 'no-store');
+    const codigo = String(req.params.codigo ?? '').slice(0, 40);
+    const s = /^[A-Z]{2}-[0-9A-F]{16}$/.test(codigo)
+      ? await servico.situacaoExclusao(deps.pool, codigo)
+      : null;
+    res
+      .status(s ? 200 : 404)
+      .type('html')
+      .send(paginaDaExclusao(s));
+  });
+
   /** Volta do login: guarda a conexão e leva a pessoa de volta para a tela do Instagram. */
   r.get('/retorno', async (req: Request, res: Response) => {
     const q = req.query as Record<string, string | undefined>;
@@ -515,6 +561,38 @@ export function rotasMeta(deps: DepsApi): Router {
   });
 
   return r;
+}
+
+/* ───────────────────────── Página do pedido de exclusão ───────────────────────── */
+
+const EMAIL_PRIVACIDADE = 'prospectteam@gmail.com';
+
+const escapar = (t: string) =>
+  t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+const dataBrasilia = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+
+export function paginaDaExclusao(s: servico.SituacaoExclusao | null): string {
+  const corpo = !s
+    ? `<h1>Pedido não encontrado</h1><p>Confira o código que a Meta mostrou. Dúvidas: <a href="mailto:${EMAIL_PRIVACIDADE}">${EMAIL_PRIVACIDADE}</a>.</p>`
+    : `<h1>${s.tipo === 'exclusao' ? 'Pedido de exclusão de dados' : 'Acesso removido'}</h1>
+       <p class="codigo">Código: <strong>${escapar(s.codigo)}</strong></p>
+       <p><strong>${s.concluidoEm ? 'Concluído' : 'Em andamento'}</strong> · recebido em ${dataBrasilia(s.criadoEm)}${
+         s.concluidoEm ? `, concluído em ${dataBrasilia(s.concluidoEm)}` : ''
+       }.</p>
+       <ul>
+         <li>Conexões do Instagram removidas: ${s.conexoes}</li>
+         ${s.tipo === 'exclusao' ? `<li>Publicações guardadas apagadas: ${s.publicacoes}</li><li>Comentários guardados apagados: ${s.comentarios}</li>` : ''}
+       </ul>
+       <p>Os tokens de acesso da Meta foram apagados e o Prospect Team não acessa mais o Instagram nem a página ligados a essa conexão.
+       Leads e conversas que a empresa cliente registrou no CRM dela continuam com ela; para pedir a exclusão desses dados,
+       fale com a empresa que entrou em contato ou escreva para <a href="mailto:${EMAIL_PRIVACIDADE}">${EMAIL_PRIVACIDADE}</a>.</p>`;
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Exclusão de dados · Prospect Team</title></head><body style="font-family:system-ui,sans-serif;max-width:560px;margin:56px auto;padding:0 20px;color:#18181b;line-height:1.55"><p style="font-weight:600;color:#5b5b56">Prospect Team · PROSPECT LTDA · CNPJ 70.193.281/0001-21</p>${corpo}<p style="margin-top:32px;font-size:14px"><a href="https://prospectteam.com.br/privacidade#dados-da-meta">Política de privacidade</a></p></body></html>`;
 }
 
 /* ───────────────────────── Link contado do botão do direct (sem login) ───────────────────────── */

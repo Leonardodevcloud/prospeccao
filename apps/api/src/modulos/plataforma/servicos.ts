@@ -290,7 +290,7 @@ export async function servicosDaPlataforma(deps: DepsApi): Promise<ServicoPlataf
       ? `${n(ig[0]?.contas ?? 0)} ${ig[0]?.contas === 1 ? 'conta conectada' : 'contas conectadas'} · ${n(ig[0]?.directs ?? 0)} directs e ${n(ig[0]?.cadastros ?? 0)} cadastros em 30 dias`
       : 'Sem o app da Meta: a tela do Instagram explica que a integração ainda não foi liberada.',
     comoFazer: !temMeta
-      ? `No developers.facebook.com: crie um app do tipo Empresa, adicione "Login do Facebook para Empresas", "Instagram" e "Webhooks". Coloque META_APP_ID e META_APP_SECRET na api do Railway e META_TOKEN_WEBHOOK (uma senha que você inventa). Em Login › URIs de redirecionamento: ${retorno}. Em Webhooks (objetos Instagram: comments e messages; Page: leadgen): ${webhook} com a mesma senha. Para os clientes usarem, o app precisa passar pela Análise do app da Meta.`
+      ? `No developers.facebook.com: crie um app do tipo Empresa, adicione "Login do Facebook para Empresas", "Instagram" e "Webhooks". Coloque META_APP_ID e META_APP_SECRET na api do Railway e META_TOKEN_WEBHOOK (uma senha que você inventa). Em Login › URIs de redirecionamento: ${retorno}. Em Webhooks (objetos Instagram: comments e messages; Page: leadgen): ${webhook} com a mesma senha. Em Configurações › Básico: política de privacidade https://prospectteam.com.br/privacidade, termos https://prospectteam.com.br/termos e exclusão de dados ${deps.origens[0]}/api/meta/exclusao; no Login para Empresas, cancelar autorização: ${deps.origens[0]}/api/meta/desautorizar. Para os clientes usarem, o app precisa passar pela Análise do app da Meta.`
       : amb.metaTokenVerificacao
         ? null
         : `Falta META_TOKEN_WEBHOOK: sem ela não dá para cadastrar o webhook (${webhook}) na Meta.`,

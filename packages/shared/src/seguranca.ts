@@ -3,7 +3,7 @@ import { z } from 'zod';
 /* ───────────────────────────── Segurança, LGPD e marca ───────────────────────────── */
 
 /** Versão dos termos de uso e da política de privacidade em vigor (muda → todos aceitam de novo). */
-export const TERMOS_VERSAO = '2026-10';
+export const TERMOS_VERSAO = '2026-11';
 
 export const codigoDuasEtapas = z.object({
   codigo: z

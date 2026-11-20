@@ -115,6 +115,37 @@ export interface ClienteMeta {
   limitePublicacao?(igId: string, token: string): Promise<{ usadas: number; limite: number } | null>;
   /** v134: números públicos de outro perfil profissional (Business Discovery), para referência. */
   descobrir?(igId: string, token: string, usuario: string): Promise<PerfilDescoberto | null>;
+  /* ── v174: exclusão de dados e desautorização (Configurações do app na Meta) ── */
+  /** O id (com escopo do app) de quem fez o login, para achar a conexão quando a Meta pedir para apagar. */
+  idDaPessoa?(tokenPessoa: string): Promise<string | null>;
+  /**
+   * Lê o `signed_request` que a Meta manda na exclusão de dados e na desautorização (assinado com a
+   * chave secreta do app). Assinatura errada, algoritmo diferente ou sem `user_id`: null.
+   */
+  lerPedidoAssinado?(pedido: string): { usuarioId: string; emitidoEm: number | null } | null;
+}
+
+/** `signed_request` da Meta: <assinatura base64url>.<dados base64url>, HMAC-SHA256 com a chave secreta. */
+export function lerPedidoAssinado(
+  segredo: string,
+  pedido: string,
+): { usuarioId: string; emitidoEm: number | null } | null {
+  const partes = String(pedido ?? '').split('.');
+  if (partes.length !== 2 || !partes[0] || !partes[1]) return null;
+  const [assinatura, dados] = partes as [string, string];
+  const recebida = Buffer.from(assinatura, 'base64url');
+  const esperada = createHmac('sha256', segredo).update(dados).digest();
+  if (recebida.length !== esperada.length || !timingSafeEqual(recebida, esperada)) return null;
+  let corpo: { algorithm?: string; user_id?: string | number; issued_at?: number };
+  try {
+    corpo = JSON.parse(Buffer.from(dados, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+  if (String(corpo.algorithm ?? '').toUpperCase() !== 'HMAC-SHA256') return null;
+  const usuarioId = corpo.user_id == null ? '' : String(corpo.user_id);
+  if (!/^\d{1,30}$/.test(usuarioId)) return null;
+  return { usuarioId, emitidoEm: typeof corpo.issued_at === 'number' ? corpo.issued_at : null };
 }
 
 export interface PerfilDescoberto {
@@ -483,6 +514,15 @@ export function clienteMeta(cfg: ConfigMeta): ClienteMeta {
 
     async desassinarPagina(paginaId, token) {
       await chamar(`/${paginaId}/subscribed_apps`, { token, metodo: 'DELETE' });
+    },
+
+    async idDaPessoa(tokenPessoa) {
+      const r = await chamar<{ id?: string }>('/me', { token: tokenPessoa, params: { fields: 'id' } });
+      return r.id ?? null;
+    },
+
+    lerPedidoAssinado(pedido) {
+      return lerPedidoAssinado(cfg.appSecret, pedido);
     },
 
     conferirAssinatura(corpo, assinatura) {

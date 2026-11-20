@@ -1074,6 +1074,13 @@ export const ARTIGOS: ArtigoAjuda[] = [
             ligue <b>“Permitir acesso às mensagens”</b>. Sem isso, o direct não sai.
           </li>
         </Passos>
+        <p>
+          <b>Desconectar:</b> na aba Conexão, <b>Desconectar</b> apaga o acesso na hora (regras, leads e
+          conversas ficam). Se quem conectou tirar o Prospect Team no Facebook (Configurações › Integrações
+          comerciais), a Meta avisa o CRM, a conexão cai sozinha e os administradores recebem um aviso no
+          sino. Se ele pedir lá a exclusão dos dados, também apagamos as publicações e os comentários
+          guardados da aba Conteúdo. Para usar de novo, é só conectar outra vez.
+        </p>
         <h3>2. Conteúdo: o que cada post trouxe</h3>
         <p>
           A aba <b>Conteúdo</b> mostra as publicações do período com os números do Instagram (alcance,

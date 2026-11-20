@@ -3980,9 +3980,9 @@ describe.skipIf(!URL_TESTE)('API (com Postgres)', () => {
         request(app)[metodo](rota).set('Origin', ORIGEM).set('Cookie', ck).send(corpo),
     };
     const eu = (await sol.ler('/auth/eu')).body;
-    expect(eu.termos).toEqual({ versao: '2026-10', aceitos: false });
+    expect(eu.termos).toEqual({ versao: '2026-11', aceitos: false });
     expect(eu.duasEtapas).toEqual({ ativo: false, exigido: false });
-    expect((await sol.enviar('post', '/auth/termos', { versao: '2026-10' })).status).toBe(200);
+    expect((await sol.enviar('post', '/auth/termos', { versao: '2026-11' })).status).toBe(200);
     expect((await sol.ler('/auth/eu')).body.termos.aceitos).toBe(true);
 
     // Sessões: a do convite aparece como a atual.

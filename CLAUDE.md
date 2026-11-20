@@ -14,8 +14,9 @@
   Mudou uma dúvida, um preço ou um plano no site: atualize os dois com o mesmo texto. Seção nova na página
   inicial com `id`: inclua em `SECOES_DO_SITE` (`packages/shared/src/site.ts`) para aparecer em Visitas do site.
 - **Docs do projeto em `docs/`**: `continuidade-prospect-team.md` (contexto, combinados, histórico de versões),
-  `pendencias-configuracao-crm.md` (variáveis e cadastros a fazer), `plano-proximas-versoes.md` e
-  `plano-carrosseis.md`. Toda versão atualiza o que mudou neles (linha nova no histórico, migration, serviços
+  `pendencias-configuracao-crm.md` (variáveis e cadastros a fazer), `plano-proximas-versoes.md`,
+  `plano-carrosseis.md` e `guia-app-meta.md` (app da Meta, Análise do app e Tech Provider). Mudou o uso de dados da Meta:
+  atualize a política de privacidade (`apps/site/privacidade.html#dados-da-meta`) e o guia. Toda versão atualiza o que mudou neles (linha nova no histórico, migration, serviços
   para redeploy, configuração nova), com o mesmo texto dos docs `claude/*.md` do projeto no claude.ai.
 - **Carrosséis (slides desenhados pelo Satori)**: toda div com `display: flex`; nada de largura/altura em % com
   padding; nada de `marginTop: 'auto'`. Mudou fonte ou par de fontes: rode
