@@ -1,6 +1,6 @@
 # Prospect Team
 
-Oferecido por PROSPECT LTDA (CNPJ 70.193.281/0001-21), Contendas do Sincorá/BA. Contato: prospectteam@gmail.com · (71) 99363-5290.
+Oferecido por PROSPECT LTDA (CNPJ 70.193.281/0001-21), Contendas do Sincorá/BA. Contato: prospectteamcrm@gmail.com · (71) 99363-5290.
 
 > CRM de prospecção B2B brasileiro. Encontra as empresas do nicho do cliente em qualquer cidade do Brasil (base de CNPJ da Receita Federal e Google Maps), mostra os possíveis decisores (quadro de sócios) e os contatos com a fonte de cada dado, e organiza a abordagem por e-mail, WhatsApp com agente de IA, ligação e Instagram num funil só.
 
@@ -33,4 +33,4 @@ Oferecido por PROSPECT LTDA (CNPJ 70.193.281/0001-21), Contendas do Sincorá/BA.
 - [Documentação da API](https://prospectteam.com.br/api): leads, etapas e avisos (webhooks) para ERP, Make e Zapier.
 - [Privacidade (LGPD)](https://prospectteam.com.br/privacidade): como os dados são tratados.
 - [Termos de uso](https://prospectteam.com.br/termos)
-- Contato: prospectteam@gmail.com · WhatsApp (71) 99363-5290
+- Contato: prospectteamcrm@gmail.com · WhatsApp (71) 99363-5290

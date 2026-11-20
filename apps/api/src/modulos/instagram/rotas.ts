@@ -565,7 +565,7 @@ export function rotasMeta(deps: DepsApi): Router {
 
 /* ───────────────────────── Página do pedido de exclusão ───────────────────────── */
 
-const EMAIL_PRIVACIDADE = 'prospectteam@gmail.com';
+const EMAIL_PRIVACIDADE = 'prospectteamcrm@gmail.com';
 
 const escapar = (t: string) =>
   t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

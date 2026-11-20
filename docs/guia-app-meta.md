@@ -19,16 +19,14 @@ domínio de onde ela saiu. A tela de autorização da Meta mostra o nome e o íc
 | Atividade | 62.02-3-00, desenvolvimento e licenciamento de programas de computador customizáveis |
 | Endereço | R 8 de Julho, 18, Sala Lex e Fisco, Centro, Contendas do Sincorá/BA, CEP 46620-000 |
 | Site | https://prospectteam.com.br (rodapé, termos e privacidade já mostram razão social, CNPJ e endereço desde a v174) |
-
-**Duas diferenças entre o cartão e o site, para resolver antes da verificação:**
-- [ ] **E-mail:** o cartão tem `prospectteamcrm@gmail.com`; o site usa `prospectteam@gmail.com`. A Meta confere o contato pelo que está no documento ou no domínio. O ideal é ter um e-mail no domínio (ex.: `contato@prospectteam.com.br`) e usar o mesmo no portfólio, no site e no app.
-- [ ] **Telefone:** o cartão tem `(71) 9363-5290` (sem o 9 da frente); o site usa `(71) 99363-5290`. Se a Meta oferecer ligação ou SMS para o número do cartão, ele não vai chegar. Dá para corrigir o telefone na Receita (alteração cadastral pela REDESIM/contador) ou escolher outro método de contato na verificação (e-mail do domínio ou o próprio domínio).
+| E-mail | prospectteamcrm@gmail.com (o do cartão; desde a v175 é o mesmo no site, nos termos, na privacidade e na apresentação) |
+| Telefone | (71) 99363-5290 (o cartão tem (71) 9363-5290, sem o 9 da frente; na Meta use o número com o 9, decidido em 20/11) |
 
 ## 1. Portfólio empresarial e verificação da empresa
 
 1. [ ] business.facebook.com › criar o portfólio **Prospect Team** com o nome legal **PROSPECT LTDA**, o endereço e o site acima (escritos igual ao cartão).
 2. [ ] Configurações do negócio › **Segurança da marca › Domínios** › adicionar `prospectteam.com.br` › verificar pelo **registro TXT** no DNS (Registro.br ou Vercel › Domains). Ajuda a Meta a ligar o site à empresa.
-3. [ ] Configurações do negócio › **Central de segurança › Verificação da empresa** › Iniciar. Documento: o **cartão CNPJ** (o PDF de 18/11). Contato: e-mail do domínio (melhor), telefone ou o domínio verificado.
+3. [ ] Configurações do negócio › **Central de segurança › Verificação da empresa** › Iniciar. Documento: o **cartão CNPJ** (o PDF de 18/11). Contato: o e-mail do cartão (`prospectteamcrm@gmail.com`), o telefone com o 9 ou o domínio verificado.
 4. [ ] Esperar o "Verificado" (dias a algumas semanas). Sem ele, a Meta não aprova o acesso avançado de nenhuma permissão.
 
 ## 2. Criar o app
@@ -37,7 +35,7 @@ domínio de onde ela saiu. A tela de autorização da Meta mostra o nome e o íc
 2. [ ] Casos de uso / produtos: **Login do Facebook para Empresas**, **Instagram (API com Login do Facebook)**, **Webhooks** e, para o Tech Provider, **WhatsApp** (seção 7).
 3. [ ] **Configurações do app › Básico:**
    - Nome de exibição: `Prospect Team`
-   - E-mail de contato: o do item 0 (de preferência no domínio)
+   - E-mail de contato: `prospectteamcrm@gmail.com`
    - Domínios do app: `prospectteam.com.br` e `app.prospectteam.com.br`
    - URL da Política de Privacidade: `https://prospectteam.com.br/privacidade`
    - URL dos Termos de Serviço: `https://prospectteam.com.br/termos`
