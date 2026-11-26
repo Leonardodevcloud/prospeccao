@@ -218,7 +218,7 @@ export const resultadoLigacaoEntrada = z.object({
 });
 export type ResultadoLigacaoEntrada = z.infer<typeof resultadoLigacaoEntrada>;
 
-/** Gestão › Telefonia (administrador da conta). */
+/** Configurações › Telefonia (administrador da conta). */
 export const telefoniaConfigEntrada = z.object({
   gravar: z.boolean(),
   avisoGravacao: z.string().trim().min(10).max(300),

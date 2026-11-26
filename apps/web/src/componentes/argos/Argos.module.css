@@ -1,29 +1,31 @@
-/* ── Botão flutuante (presente em todas as telas) ── */
+/* ── Botão flutuante (presente em todas as telas) ──
+   v176: mais discreto (44 px, sombra leve, um pouco apagado até passar o mouse); o discador fica em cima. */
 .lancador {
   position: fixed;
-  right: 22px;
-  bottom: 22px;
+  right: 20px;
+  bottom: 20px;
   z-index: 40;
-  width: 60px;
-  height: 60px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 50%;
   background: radial-gradient(circle at 50% 40%, #1c1726, #0e0d12 70%);
-  box-shadow:
-    0 10px 30px rgba(76, 29, 149, 0.35),
-    0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 12px rgba(24, 24, 27, 0.18);
+  opacity: 0.88;
   cursor: pointer;
   transition:
     transform var(--medio) var(--curva),
-    box-shadow var(--medio) var(--curva);
+    box-shadow var(--medio) var(--curva),
+    opacity var(--medio) var(--curva);
 }
 .lancador:hover {
-  transform: translateY(-2px) scale(1.04);
+  opacity: 1;
+  transform: translateY(-1px);
   box-shadow:
-    0 14px 36px color-mix(in srgb, var(--brand) 45%, transparent),
-    0 2px 6px rgba(0, 0, 0, 0.25);
+    0 8px 20px color-mix(in srgb, var(--brand) 30%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.2);
 }
 .lancador:focus-visible {
   box-shadow: var(--foco);

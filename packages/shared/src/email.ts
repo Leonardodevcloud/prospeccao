@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { conferirVersoes, versoesExtras } from './porteiro.js';
 
 /* ───────────────────────────── Montagem do e-mail ───────────────────────────── */
 
@@ -300,6 +301,8 @@ export const passoEmail = z
     canal: z.enum(CANAIS_SEQUENCIA).default('email'),
     modeloId: z.number().int().positive().optional(),
     texto: z.string().trim().max(2000).optional(),
+    /** WhatsApp: até mais 2 versões do texto (a cada lead o sistema sorteia uma). */
+    versoes: versoesExtras.optional(),
     /** Dias depois do passo anterior, sem resposta (o 1º passo usa 0). */
     dias: z.number().int().min(0).max(60),
   })
@@ -308,6 +311,13 @@ export const passoEmail = z
       ctx.addIssue({ code: 'custom', message: 'Escolha o modelo do e-mail.', path: ['modeloId'] });
     if (p.canal === 'whatsapp' && !p.texto)
       ctx.addIssue({ code: 'custom', message: 'Escreva a mensagem do WhatsApp.', path: ['texto'] });
+    if (p.canal === 'whatsapp' && p.versoes?.length)
+      conferirVersoes(
+        ctx,
+        p.texto,
+        p.versoes.filter((v) => v.trim()),
+        ['versoes'],
+      );
   });
 export type PassoSequencia = z.infer<typeof passoEmail>;
 

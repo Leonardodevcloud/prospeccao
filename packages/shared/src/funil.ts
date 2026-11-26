@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { conferirVersoes, versoesExtras } from './porteiro.js';
 
 /** Etapas do funil, na ordem em que o lead avança. "descartado" fica fora do quadro. */
 export const ETAPAS_FUNIL = [
@@ -176,22 +177,35 @@ export interface ConfigCadencia {
   /** Seu nome nas mensagens ("Aqui é {remetente}, da sua empresa"). */
   remetente: string;
   modelos: Record<ModeloMensagem, string>;
+  /** Até mais 2 versões de cada modelo: a cada envio o sistema sorteia uma. */
+  versoes: Partial<Record<ModeloMensagem, string[]>>;
 }
 
 const listaDeDias = (max: number) => z.array(z.number().int().min(1).max(60)).max(max);
 
-export const configCadenciaEntrada = z.object({
-  diasFollowup: listaDeDias(6),
-  diasEncerrar: z.number().int().min(1).max(60),
-  encerrarSemResposta: z.boolean(),
-  diasCobrarProposta: listaDeDias(4),
-  remetente: z.string().trim().max(60),
-  modelos: z.object(
-    Object.fromEntries(
-      MODELOS_MENSAGEM.map((m) => [m, z.string().trim().min(1, 'Mensagem vazia.').max(1000)]),
-    ) as Record<ModeloMensagem, z.ZodString>,
-  ),
-});
+export const configCadenciaEntrada = z
+  .object({
+    diasFollowup: listaDeDias(6),
+    diasEncerrar: z.number().int().min(1).max(60),
+    encerrarSemResposta: z.boolean(),
+    diasCobrarProposta: listaDeDias(4),
+    remetente: z.string().trim().max(60),
+    modelos: z.object(
+      Object.fromEntries(
+        MODELOS_MENSAGEM.map((m) => [m, z.string().trim().min(1, 'Mensagem vazia.').max(1000)]),
+      ) as Record<ModeloMensagem, z.ZodString>,
+    ),
+    versoes: z.partialRecord(z.enum(MODELOS_MENSAGEM), versoesExtras).default({}),
+  })
+  .superRefine((d, ctx) => {
+    for (const m of MODELOS_MENSAGEM)
+      conferirVersoes(
+        ctx,
+        d.modelos[m],
+        (d.versoes[m] ?? []).filter((v) => v.trim()),
+        ['versoes', m],
+      );
+  });
 
 /** Total de mensagens que a cadência manda antes de desistir (a primeira + os follow-ups). */
 export const totalTentativas = (c: Pick<ConfigCadencia, 'diasFollowup'>) => c.diasFollowup.length + 1;

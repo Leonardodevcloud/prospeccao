@@ -20,6 +20,7 @@ import { consulta, corpo, idDaRota } from '../../middlewares/http.js';
 import { exigirAdmin } from '../../middlewares/seguranca.js';
 import { exigirRecurso, temRecurso } from '../../recursos.js';
 import * as agenteRepo from '../agente/repositorio.js';
+import { protocoloParaPrimeira } from '../carteira/repositorio.js';
 import * as contatos from '../contatos/repositorio.js';
 import * as motorEmail from '../email/motor.js';
 import { dadosDoLead } from '../funil/cadencia.js';
@@ -183,7 +184,10 @@ export function rotasConversas(deps: DepsApi): Router {
   r.post('/:empresaId/mensagens', async (req, res) => {
     const id = idDaRota(req, 'empresaId');
     const d = corpo(req, enviarMensagemEntrada);
-    await repo.enviarTexto(deps, id, d.texto, { mesmoAssim: d.mesmoAssim });
+    // Atendimento com carteira: a conta quer o protocolo na primeira resposta de cada atendimento.
+    const protocolo = await protocoloParaPrimeira(pool, id);
+    const texto = protocolo ? `${d.texto}\n\nProtocolo do atendimento: ${protocolo}` : d.texto;
+    await repo.enviarTexto(deps, id, texto, { mesmoAssim: d.mesmoAssim });
     res.status(201).json(await repo.abrir(pool, id));
   });
 

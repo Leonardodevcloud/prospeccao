@@ -21,6 +21,8 @@ function medidas(tamanho: number) {
   const fator = celular() ? 0.6 : 1;
   if (tamanho >= 120) return { particulas: Math.round(6500 * fator), ponto: 1.5 };
   if (tamanho >= 48) return { particulas: Math.round(1600 * fator), ponto: 2.1 };
+  // O atalho discreto (36 px, v176): menos pontos, para não virar uma bola cheia.
+  if (tamanho < 40) return { particulas: Math.round(650 * fator), ponto: 2.2 };
   return { particulas: Math.round(1100 * fator), ponto: 2.6 };
 }
 

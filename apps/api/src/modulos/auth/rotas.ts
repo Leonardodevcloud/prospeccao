@@ -24,6 +24,7 @@ import { contratoDaConta, temRecurso } from '../../recursos.js';
 import { situacaoDaConta } from '../assinatura/servico.js';
 import { ipDe } from '../auditoria/middleware.js';
 import * as auditoria from '../auditoria/repositorio.js';
+import { situacaoDoAtendimento } from '../carteira/repositorio.js';
 import { conferirSegundaEtapa, desafioDuasEtapas, lerDesafio, rotasContaSegura } from './contaSegura.js';
 import { iniciarSessao, opcoesCookie, sessaoDoCookie } from './sessao.js';
 
@@ -515,6 +516,13 @@ export function rotasAuth(deps: DepsApi): Router {
       soPropriaBase: u.soPropriaBase,
       // Carteira com fila: o time vê os leads sem dono e puxa para a própria carteira.
       filaSemDono: !!u.filaSemDono,
+      // Atendimento com carteira (plano Escala): as Conversas viram filas com protocolo.
+      atendimento: await situacaoDoAtendimento(
+        pool,
+        u.contaId,
+        u.id,
+        contrato?.recursos.includes('carteira') ?? true,
+      ),
       duasEtapas: { ativo: !!rows[0]?.totpAtivo, exigido: !!c[0]?.exigir_2fa },
       termos: { versao: TERMOS_VERSAO, aceitos: rows[0]?.termosVersao === TERMOS_VERSAO },
       // Tour do sistema: o convite aparece até a pessoa assistir, pular ou fechar.

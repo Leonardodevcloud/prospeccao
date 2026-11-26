@@ -5,8 +5,12 @@ import { useSearchParams } from 'react-router';
 import { api } from '../api';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Modal } from '../componentes/Drawer';
+import { ForaDoPlano } from '../componentes/ForaDoPlano';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
+import { useRecurso, useSessao } from '../componentes/Sessao';
 import { fmtQuando } from '../formatar';
+import { useVisaoEmail } from './Email';
+import { Marcas as IdentidadesDosEmails } from './EmailMarca';
 import { FundosDasReunioes } from './FundosReuniao';
 import { MarcaCompleta, type MarcaDados } from './MarcaPainel';
 
@@ -14,6 +18,9 @@ import { MarcaCompleta, type MarcaDados } from './MarcaPainel';
  * Marca e domínio (white label): o cliente coloca o nome, a cor, o logo, o ícone e a imagem de
  * divulgação, e escolhe o endereço próprio (crm.empresa.com.br). Ele mesmo faz tudo: a tela mostra o
  * registro de DNS, o passo a passo de cada provedor, e confere sozinha até ativar.
+ * v176: a identidade dos e-mails (cores, logo, capa, remetente e assinatura) também fica aqui, numa
+ * aba própria, para a marca ser configurada num lugar só. Ela vale em qualquer plano com o módulo de
+ * e-mail; marca, domínio e fundos continuam do plano Escala (recurso `marca`).
  */
 
 interface RegistroDns {
@@ -45,17 +52,24 @@ function useDadosMarca() {
   });
 }
 
-type Aba = 'marca' | 'dominio' | 'fundos';
+type Aba = 'marca' | 'dominio' | 'fundos' | 'email';
 const ABAS: { id: Aba; rotulo: string }[] = [
   { id: 'marca', rotulo: 'Marca' },
   { id: 'dominio', rotulo: 'Domínio próprio' },
   { id: 'fundos', rotulo: 'Fundos das reuniões' },
+  { id: 'email', rotulo: 'E-mails' },
 ];
 
 export function MarcaEDominio() {
   const q = useDadosMarca();
   const [params, setParams] = useSearchParams();
-  const aba: Aba = ABAS.some((a) => a.id === params.get('aba')) ? (params.get('aba') as Aba) : 'marca';
+  const temMarca = useRecurso('marca');
+  const modulos = useSessao().data?.conta.modulos;
+  const temEmail = !modulos || modulos.includes('email');
+  const abas = ABAS.filter((a) => a.id !== 'email' || temEmail);
+  // Sem o white label no plano, a tela abre direto nos e-mails (o resto mostra como liberar).
+  const padrao: Aba = !temMarca && temEmail ? 'email' : 'marca';
+  const aba: Aba = abas.some((a) => a.id === params.get('aba')) ? (params.get('aba') as Aba) : padrao;
   return (
     <>
       <div className="topo">
@@ -66,7 +80,7 @@ export function MarcaEDominio() {
         <LinkAjuda artigo="marca-dominio">Como funciona</LinkAjuda>
       </div>
       <div className="pipelines" role="tablist" aria-label="Seções de Marca e domínio">
-        {ABAS.map((a) => (
+        {abas.map((a) => (
           <button
             key={a.id}
             type="button"
@@ -86,7 +100,11 @@ export function MarcaEDominio() {
           </button>
         ))}
       </div>
-      {q.isPending ? (
+      {aba === 'email' ? (
+        <AbaEmails />
+      ) : !temMarca ? (
+        <ForaDoPlano recurso="marca" compacto />
+      ) : q.isPending ? (
         <div className="esqueleto" style={{ height: 320 }} />
       ) : q.error || !q.data ? (
         <ErroDaApi erro={q.error} />
@@ -94,6 +112,20 @@ export function MarcaEDominio() {
         <Conteudo dados={q.data} aba={aba} />
       )}
     </>
+  );
+}
+
+/** As identidades dos e-mails das sequências (antes em E-mail › Identidade visual). */
+function AbaEmails() {
+  const visao = useVisaoEmail();
+  return (
+    <div className="pilha">
+      <p className="quieto" style={{ margin: 0 }}>
+        Cores, logo, capa, remetente e assinatura dos e-mails das sequências. Dá para ter mais de uma (uma por
+        campanha ou nicho); a escolha fica em cada sequência, em Atendimento › E-mails.
+      </p>
+      <IdentidadesDosEmails remetenteConta={visao.data?.status.remetente ?? null} />
+    </div>
   );
 }
 

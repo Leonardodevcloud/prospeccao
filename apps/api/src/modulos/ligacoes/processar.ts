@@ -227,7 +227,7 @@ async function fecharEsquecidas(d: DepsProcessarLigacoes): Promise<void> {
   );
 }
 
-/** Gravações mais velhas que o prazo de cada conta (Gestão › Telefonia): apaga os arquivos. */
+/** Gravações mais velhas que o prazo de cada conta (Configurações › Telefonia): apaga os arquivos. */
 async function apagarVelhas(d: DepsProcessarLigacoes): Promise<void> {
   const arm = d.telefonia.armazenamento;
   if (!arm) return;

@@ -41,7 +41,13 @@ import {
 import { type ConfigIa, configIa, conversarJson, type PedidoConversa } from '@prospeccao/integrations/ia';
 import { extrairLeadsDoTexto, mapearColunasComIa } from '@prospeccao/integrations/importacao';
 import * as ors from '@prospeccao/integrations/ors';
-import { type EntradaVariar, variarTexto } from '@prospeccao/integrations/porteiro';
+import {
+  type EntradaVariar,
+  gerarVersoes,
+  type ModoMelhorar,
+  melhorarTexto,
+  variarTexto,
+} from '@prospeccao/integrations/porteiro';
 import { type EntradaGatilhos, lerGatilhos, type MovimentoConferido } from '@prospeccao/integrations/quadros';
 import { type EntradaResumoReuniao, resumirReuniao } from '@prospeccao/integrations/reuniao';
 import { type EntradaResumoLigacao, resumirLigacao } from '@prospeccao/integrations/telefonia';
@@ -170,7 +176,13 @@ export interface ServicosConta {
   /** IA que dá a nota do atendimento (conversas paradas e ligações transcritas). */
   atendimento?: { avaliar(e: EntradaAtendimento): Promise<AvaliacaoAtendimento | null> } | null;
   /** IA que reescreve a mensagem repetida (porteiro do WhatsApp). */
-  porteiro?: { variar(e: EntradaVariar): Promise<string | null> } | null;
+  porteiro?: {
+    variar(e: EntradaVariar): Promise<string | null>;
+    /** Versões de uma mensagem pronta (respostas rápidas, cadência, sequência). */
+    versoes?(e: { texto: string; evitar: string[]; quantas: number }): Promise<string[]>;
+    /** "Melhorar com IA": corrigir, mais claro, mais cordial, mais curto. */
+    melhorar?(texto: string, modo: ModoMelhorar): Promise<string | null>;
+  } | null;
   /** Endereço → coordenadas (bases de operação). */
   geocodificar: ((endereco: string) => Promise<{ lat: number; lng: number } | null>) | null;
   /**
@@ -278,7 +290,13 @@ export function servicosDe(c: CredenciaisEfetivas, db?: Executor, chave?: string
     reuniao: iaCfg ? { resumir: (e) => resumirReuniao(iaCfg, e) } : null,
     ligacao: iaCfg ? { resumir: (e) => resumirLigacao(iaCfg, e) } : null,
     quadros: iaCfg ? { ler: (e) => lerGatilhos(iaCfg, e) } : null,
-    porteiro: iaCfg ? { variar: (e) => variarTexto(iaCfg, e) } : null,
+    porteiro: iaCfg
+      ? {
+          variar: (e) => variarTexto(iaCfg, e),
+          versoes: (e) => gerarVersoes(iaCfg, e),
+          melhorar: (texto, modo) => melhorarTexto(iaCfg, texto, modo),
+        }
+      : null,
     atendimento: iaCfg ? { avaliar: (e) => avaliarAtendimento(iaCfg, e) } : null,
     geocodificar: c.ors
       ? async (endereco) => {

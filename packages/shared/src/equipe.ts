@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { conferirVersoes, versoesExtras } from './porteiro.js';
 import { opcoesSala } from './reunioes.js';
 
 /* ───────────────────────────── Equipe ───────────────────────────── */
@@ -118,16 +119,20 @@ export const midiaEntrada = z.object({
 });
 export type MidiaEntrada = z.infer<typeof midiaEntrada>;
 
-export const respostaRapidaEntrada = z.object({
-  atalho: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(1)
-    .max(30)
-    .regex(/^[\p{L}\d_-]+$/u, 'Atalho sem espaços (ex.: preco, reuniao).'),
-  texto: z.string().trim().min(1).max(2000),
-});
+export const respostaRapidaEntrada = z
+  .object({
+    atalho: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(1)
+      .max(30)
+      .regex(/^[\p{L}\d_-]+$/u, 'Atalho sem espaços (ex.: preco, reuniao).'),
+    texto: z.string().trim().min(1).max(2000),
+    /** Até mais 2 versões: a cada uso o sistema sorteia uma (o mesmo texto para muita gente derruba número). */
+    versoes: versoesExtras,
+  })
+  .superRefine((d, ctx) => conferirVersoes(ctx, d.texto, d.versoes, ['versoes']));
 
 export const filtrosConversas = z.object({
   filtro: z.enum(['todas', 'nao_lidas', 'minhas', 'sem_dono']).default('todas'),

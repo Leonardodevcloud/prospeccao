@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { api, type ConfigCadencia, type DetalheFunil, type MensagemPronta, MODELOS_MENSAGEM } from '../api';
 import { fmtNome, formatarTelefone } from '../formatar';
 import { Drawer } from './Drawer';
+import { VersoesDoTexto } from './Escrever';
 import { ForaDoPlano } from './ForaDoPlano';
 import { ErroDaApi, Mensagem } from './Formulario';
 import { useRecurso } from './Sessao';
@@ -168,6 +169,7 @@ export function ConfigurarCadencia(props: { aoFechar: () => void }) {
     diasCobrarProposta: string;
     remetente: string;
     modelos: ConfigCadencia['modelos'];
+    versoes: NonNullable<ConfigCadencia['versoes']>;
   } | null>(null);
   useEffect(() => {
     if (q.data && !f)
@@ -178,6 +180,7 @@ export function ConfigurarCadencia(props: { aoFechar: () => void }) {
         diasCobrarProposta: q.data.diasCobrarProposta.join(', '),
         remetente: q.data.remetente,
         modelos: q.data.modelos,
+        versoes: q.data.versoes ?? {},
       });
   }, [q.data, f]);
 
@@ -192,6 +195,7 @@ export function ConfigurarCadencia(props: { aoFechar: () => void }) {
           diasCobrarProposta: lerDias(f?.diasCobrarProposta ?? ''),
           remetente: f?.remetente ?? '',
           modelos: f?.modelos,
+          versoes: f?.versoes ?? {},
         },
       }),
     onSuccess: (d) => {
@@ -295,8 +299,16 @@ export function ConfigurarCadencia(props: { aoFechar: () => void }) {
                 <textarea
                   id={`cad-${m.id}`}
                   rows={4}
+                  spellCheck
+                  lang="pt-BR"
                   value={f.modelos[m.id]}
                   onChange={(e) => mudar('modelos', { ...f.modelos, [m.id]: e.target.value })}
+                />
+                <VersoesDoTexto
+                  id={`cad-${m.id}`}
+                  texto={f.modelos[m.id]}
+                  versoes={f.versoes[m.id] ?? []}
+                  aoMudar={(v) => mudar('versoes', { ...f.versoes, [m.id]: v })}
                 />
               </div>
             ))}

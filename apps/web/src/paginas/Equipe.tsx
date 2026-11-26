@@ -760,7 +760,7 @@ function GruposAtendimento(props: { equipe: TEquipe }) {
           <p className="quieto" style={{ margin: '4px 0 0', fontSize: 13 }}>
             Lojas ou departamentos e quem atende cada um (uma pessoa pode estar em mais de um). São as opções
             do menu de voz das ligações recebidas, na ordem da lista (o primeiro é a tecla 1); o menu se liga
-            em Gestão › Telefonia.
+            em Configurações › Telefonia.
           </p>
         </div>
         {!editando && (

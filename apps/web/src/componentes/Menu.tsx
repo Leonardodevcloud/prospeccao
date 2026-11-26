@@ -39,7 +39,7 @@ export interface GrupoMenu {
 export type EntradaMenu = ItemMenu | GrupoMenu;
 const ehGrupo = (e: EntradaMenu): e is GrupoMenu => 'grupo' in e;
 
-/** O CRM, na ordem do trabalho: o dia, achar os leads, vender, automatizar, o Argos e a gestão. */
+/** O CRM, na ordem do trabalho: o dia, achar e levar os leads, atender, automatizar, o Argos, a gestão e as configurações. */
 export const MENU_CRM: EntradaMenu[] = [
   { para: '/hoje', rotulo: 'Meu dia', icone: 'calendar' },
   {
@@ -63,22 +63,22 @@ export const MENU_CRM: EntradaMenu[] = [
     icone: 'users',
     itens: [
       { para: '/', rotulo: 'Leads', icone: 'users', fim: true },
+      { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
+      { para: '/rua', rotulo: 'Vendas na rua', icone: 'route', recurso: 'rua' },
       { para: '/campanhas', rotulo: 'Campanhas', icone: 'layers' },
       { para: '/nichos', rotulo: 'Nichos', icone: 'store', admin: true },
-      { para: '/atividade', rotulo: 'Atividade', icone: 'clock', admin: true, recurso: 'relatorios' },
     ],
   },
   {
-    grupo: 'vendas',
-    rotulo: 'Vendas',
-    icone: 'kanban',
+    grupo: 'atendimento',
+    rotulo: 'Atendimento',
+    icone: 'message-circle',
     itens: [
-      { para: '/funil', rotulo: 'Funil', icone: 'kanban' },
-      { para: '/quadros', rotulo: 'Quadros', icone: 'layout-grid' },
       { para: '/conversas', rotulo: 'Conversas', icone: 'message-circle' },
+      { para: '/quadros', rotulo: 'Quadros', icone: 'layout-grid' },
       { para: '/ligacoes', rotulo: 'Ligações', icone: 'phone', modulos: ['ligacoes'] },
       { para: '/reunioes', rotulo: 'Reuniões', icone: 'video' },
-      { para: '/rua', rotulo: 'Na rua', icone: 'route', recurso: 'rua' },
+      { para: '/email', rotulo: 'E-mails', icone: 'mail', modulos: ['email'] },
     ],
   },
   {
@@ -86,7 +86,6 @@ export const MENU_CRM: EntradaMenu[] = [
     rotulo: 'Automação',
     icone: 'send',
     itens: [
-      { para: '/email', rotulo: 'E-mail', icone: 'mail', modulos: ['email'] },
       {
         para: '/agente',
         rotulo: 'Agente de IA',
@@ -135,12 +134,22 @@ export const MENU_CRM: EntradaMenu[] = [
         recurso: 'atendimento',
       },
       { para: '/equipe', rotulo: 'Equipe', icone: 'id-card' },
-      { para: '/telefonia', rotulo: 'Telefonia', icone: 'phone', admin: true, modulos: ['ligacoes'] },
+    ],
+  },
+  {
+    grupo: 'configuracoes',
+    rotulo: 'Configurações',
+    icone: 'settings',
+    itens: [
       // Sem cadeado: o segundo cérebro vale para qualquer plano (as abas da API mostram o cadeado lá dentro).
       { para: '/integracoes', rotulo: 'Integrações', icone: 'plug', admin: true },
-      { para: '/marca', rotulo: 'Marca e domínio', icone: 'image', admin: true, recurso: 'marca' },
-      { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', comPlano: true },
+      // Atendimento com carteira (plano Escala): filas, protocolo, etiquetas e encerramento.
+      { para: '/atendimento', rotulo: 'Atendimento', icone: 'inbox', admin: true, recurso: 'carteira' },
+      // Sem cadeado no item: a aba E-mails vale em qualquer plano com e-mail; marca, domínio e fundos travam lá dentro.
+      { para: '/marca', rotulo: 'Marca e domínio', icone: 'image', admin: true },
+      { para: '/telefonia', rotulo: 'Telefonia', icone: 'phone', admin: true, modulos: ['ligacoes'] },
       { para: '/auditoria', rotulo: 'Auditoria', icone: 'list-filter', admin: true, recurso: 'seguranca' },
+      { para: '/plano', rotulo: 'Meu plano', icone: 'badge-check', comPlano: true },
     ],
   },
   { para: '/plataforma', rotulo: 'Painel da plataforma', icone: 'layout-dashboard', master: true, fim: true },

@@ -314,7 +314,7 @@ async function entregar(pool: Pool, log: Logger, o: OpcoesAvisos, e: Pendente): 
       avisarAdmins(
         pool,
         `Aviso "${e.nome}" pausado`,
-        `Faz ${DIAS_PARA_PAUSAR_AVISO} dias que o endereço não recebe os avisos (último erro: ${erro}). Confira em Gestão › Integrações e ative de novo.`,
+        `Faz ${DIAS_PARA_PAUSAR_AVISO} dias que o endereço não recebe os avisos (último erro: ${erro}). Confira em Configurações › Integrações e ative de novo.`,
       ),
     ).catch((x) => log.warn({ err: x }, 'avisos: não deu para avisar os administradores'));
   }

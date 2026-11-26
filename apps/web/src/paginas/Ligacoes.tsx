@@ -24,7 +24,7 @@ import {
 import { ComprarMinutos } from './Assinar';
 
 /**
- * Vendas › Ligações: a lista de ligação (o CRM disca um lead depois do outro), tudo o que foi
+ * Atendimento › Ligações: a lista de ligação (o CRM disca um lead depois do outro), tudo o que foi
  * ligado e recebido (com o resultado, a gravação e o resumo de cada uma), as perdidas, o relatório
  * e o atalho para ligar para um número avulso.
  */

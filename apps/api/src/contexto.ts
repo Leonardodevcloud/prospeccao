@@ -78,13 +78,24 @@ export function donoDaBase(): number | null {
   return u?.soPropriaBase ? u.id : null;
 }
 
+/**
+ * Atendimento com carteira: o cliente de um colega aparece enquanto o atendimento em aberto estiver
+ * com quem está logado (foi transferido) ou na Fila geral (o dono entrou em pausa), para ser atendido.
+ */
+function atendendo(empresa: string, d: number): string {
+  return `EXISTS (SELECT 1 FROM comercial.atendimentos atx
+                   WHERE atx.conta_id = ${contaSql()} AND atx.empresa_id = ${empresa}
+                     AND atx.situacao <> 'encerrado'
+                     AND (atx.atendente_id = ${d} OR (atx.situacao = 'aberto' AND atx.atendente_id IS NULL)))`;
+}
+
 /** Filtro SQL: a negociação (alias de comercial.oportunidades) está na base de quem está logado. */
 export function naBase(alias = 'o'): string {
   const d = donoDaBase();
   if (!d) return 'true';
   return usuarioAtual()?.filaSemDono
-    ? `(${alias}.responsavel_id = ${d} OR ${alias}.responsavel_id IS NULL)`
-    : `${alias}.responsavel_id = ${d}`;
+    ? `(${alias}.responsavel_id = ${d} OR ${alias}.responsavel_id IS NULL OR ${atendendo(`${alias}.empresa_id`, d)})`
+    : `(${alias}.responsavel_id = ${d} OR ${atendendo(`${alias}.empresa_id`, d)})`;
 }
 
 /**
@@ -95,9 +106,10 @@ export function naBase(alias = 'o'): string {
 export function empresaVisivel(coluna: string): string {
   const d = donoDaBase();
   return d
-    ? `NOT EXISTS (SELECT 1 FROM comercial.oportunidades rb
-                    WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna} AND rb.etapa <> 'descartado'
-                      AND ${usuarioAtual()?.filaSemDono ? `rb.responsavel_id <> ${d}` : `rb.responsavel_id IS DISTINCT FROM ${d}`})`
+    ? `(NOT EXISTS (SELECT 1 FROM comercial.oportunidades rb
+                     WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna} AND rb.etapa <> 'descartado'
+                       AND ${usuarioAtual()?.filaSemDono ? `rb.responsavel_id <> ${d}` : `rb.responsavel_id IS DISTINCT FROM ${d}`})
+        OR ${atendendo(coluna, d)})`
     : 'true';
 }
 
@@ -105,9 +117,10 @@ export function empresaVisivel(coluna: string): string {
 export function empresaNaBase(coluna: string): string {
   const d = donoDaBase();
   return d
-    ? `EXISTS (SELECT 1 FROM comercial.oportunidades rb
-                WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna}
-                  AND ${usuarioAtual()?.filaSemDono ? `(rb.responsavel_id = ${d} OR rb.responsavel_id IS NULL)` : `rb.responsavel_id = ${d}`})`
+    ? `(EXISTS (SELECT 1 FROM comercial.oportunidades rb
+                 WHERE rb.conta_id = ${contaSql()} AND rb.empresa_id = ${coluna}
+                   AND ${usuarioAtual()?.filaSemDono ? `(rb.responsavel_id = ${d} OR rb.responsavel_id IS NULL)` : `rb.responsavel_id = ${d}`})
+        OR ${atendendo(coluna, d)})`
     : 'true';
 }
 

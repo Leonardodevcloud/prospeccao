@@ -3,14 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { type Alerta, api, ErroApi, ROTULO_PAPEL_QUALQUER, ROTULO_PAPEL_USUARIO } from '../api';
+import { BotaoDisponivel } from '../carteira/Atendimento';
 import { useAgentePendente } from '../paginas/Agente';
-import { temAtividade, useAtividade } from '../paginas/Atividade';
 import { useVisaoEmail } from '../paginas/Email';
 import { useFollowupsPendentes } from '../paginas/Funil';
 import { useMeuDiaResumo } from '../paginas/MeuDia';
 import { useEntrarNaUnidade, useOrganizacao } from '../paginas/Organizacao';
 import { useNovosPedidos } from '../paginas/Vendas';
 import { ChamadaEntrando } from '../telefone/ChamadaEntrando';
+import { Discador } from '../telefone/Discador';
 import { PainelLigacao } from '../telefone/PainelLigacao';
 import { BotaoAvisos, PainelAvisos, useAvisos, useAvisosNoNavegador } from './Avisos';
 import { Argos } from './argos/Argos';
@@ -127,9 +128,7 @@ export function Shell() {
   const naoLidas = useConversasNaoLidas().data?.naoLidas ?? 0;
   const doDia = useMeuDiaResumo().data ?? 0;
   const respostasEmail = useVisaoEmail().data?.resumo.respostasNaoLidas ?? 0;
-  // Ponto pulsando em "Atividade" enquanto o motor trabalha, em qualquer tela.
   const recursos = sessao.data?.conta.recursos ?? [];
-  const ativo = temAtividade(useAtividade(60_000, recursos.includes('relatorios')).data);
   const pendentes = useFollowupsPendentes().data?.pendentes ?? 0;
   const doAgente = useAgentePendente().data ?? 0;
   const pedidosNovos = useNovosPedidos(!!sessao.data?.master).data?.novos ?? 0;
@@ -177,6 +176,9 @@ export function Shell() {
     return <Navigate to="/plataforma" replace />;
   const plataforma = soPainel;
   const soLeitura = sessao.data?.papelOrganizacao === 'leitura';
+  // O Argos flutuante: na tela do Argos ele já está na página (senão os dois ouviriam o Espaço).
+  const argosVisivel =
+    !!sessao.data?.termos.aceitos && !plataforma && local.pathname !== '/argos' && recursos.includes('argos');
   // Tela de um recurso que o plano não tem: no lugar dela, o cartão de como liberar.
   const recursoTela = plataforma ? null : recursoDaTela(local.pathname);
   const telaFora = recursoTela && !recursos.includes(recursoTela) ? recursoTela : null;
@@ -197,7 +199,6 @@ export function Shell() {
     '/agente': { n: doAgente, titulo: 'Mensagens para revisar e leads que a IA passou para você' },
     '/plataforma': { n: pedidosNovos, marca: true, titulo: 'Pedidos de demonstração novos' },
     '/plataforma/vendas': { n: pedidosNovos, marca: true, titulo: 'Pedidos de demonstração novos' },
-    '/atividade': { vivo: ativo },
   };
   const ctxMenu: ContextoMenu = {
     entradas: plataforma ? MENU_PLATAFORMA : MENU_CRM,
@@ -285,6 +286,7 @@ export function Shell() {
               </span>
             </button>
           </div>
+          {!plataforma && <BotaoDisponivel />}
           <div className="nav__icones">
             <NavLink to="/ajuda" className="nav__icone" title="Ajuda" aria-label="Ajuda">
               <Icon name="circle-help" size={18} />
@@ -318,6 +320,7 @@ export function Shell() {
           }
           rodape={
             <>
+              {!plataforma && <BotaoDisponivel />}
               <NavLink to="/ajuda" className="folha-mais__acao">
                 <Icon name="circle-help" size={18} />
                 Ajuda
@@ -395,10 +398,9 @@ export function Shell() {
       {sessao.data && !sessao.data.termos.aceitos && <AceitarTermos versao={sessao.data.termos.versao} />}
       {/* Argos: o assistente (segundo cérebro), em qualquer tela. Só vê o que a pessoa pode ver. */}
       {/* Na tela do Argos ele já está na página: o botão flutuante sai (senão os dois ouviriam o Espaço). */}
-      {sessao.data?.termos.aceitos &&
-        !plataforma &&
-        local.pathname !== '/argos' &&
-        recursos.includes('argos') && <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />}
+      {argosVisivel && sessao.data && <Argos dono={`${sessao.data.id}-${sessao.data.conta.id}`} />}
+      {/* Discador (v176): o atalho do telefone, em cima do Argos (ou no lugar dele, sem o Argos). */}
+      {sessao.data?.termos.aceitos && !plataforma && <Discador acimaDoArgos={argosVisivel} />}
       {/* Tour do sistema: convite no primeiro acesso; depois, em Ajuda › Tour do sistema. */}
       {sessao.data?.termos.aceitos && !plataforma && !soLeitura && (
         <TourDoSistema

@@ -9,8 +9,8 @@ export const RECURSO_DA_TELA: { prefixo: string; recurso: Recurso }[] = [
   { prefixo: '/argos', recurso: 'argos' },
   { prefixo: '/atividade', recurso: 'relatorios' },
   { prefixo: '/qualidade', recurso: 'atendimento' },
+  { prefixo: '/atendimento', recurso: 'carteira' },
   { prefixo: '/auditoria', recurso: 'seguranca' },
-  { prefixo: '/marca', recurso: 'marca' },
 ];
 
 export function recursoDaTela(caminho: string): Recurso | null {

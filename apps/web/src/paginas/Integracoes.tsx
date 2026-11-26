@@ -24,7 +24,7 @@ import { fmtNumero, fmtQuando } from '../formatar';
 import { SITE_PROSPECT_TEAM } from '../marcaPublica';
 
 /**
- * Gestão › Integrações: as chaves da API, os formulários do site (direto no funil) e os avisos
+ * Configurações › Integrações: as chaves da API, os formulários do site (direto no funil) e os avisos
  * (webhooks) para o ERP, a loja virtual e o Make/Zapier. Só o administrador.
  */
 

@@ -17,7 +17,7 @@ import {
 import { ComprarMinutos } from './Assinar';
 
 /**
- * Gestão › Telefonia: os números da empresa (cadastrados pelo Prospect Team), os minutos do mês e
+ * Configurações › Telefonia: os números da empresa (cadastrados pelo Prospect Team), os minutos do mês e
  * como as ligações funcionam (gravação, aviso, transcrição, quanto tempo deixa tocar).
  */
 export function Telefonia() {

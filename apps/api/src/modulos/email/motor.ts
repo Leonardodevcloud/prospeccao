@@ -3,6 +3,7 @@ import {
   AppError,
   type ClasseResposta,
   classificarRespostaSimples,
+  escolherVersao,
   montarEmail,
   montarMensagem,
 } from '@prospeccao/shared';
@@ -373,7 +374,7 @@ export async function processarOutrosCanais(
     canal: 'whatsapp' | 'ligacao';
     campanha: number;
     campanha_nome: string;
-    passos: { canal?: string; texto?: string }[];
+    passos: { canal?: string; texto?: string; versoes?: string[] }[];
   }>(
     `SELECT en.id::int, en.empresa_id::int, en.email, en.passo, en.canal, ce.id AS campanha,
             ce.nome AS campanha_nome, ce.passos
@@ -422,7 +423,8 @@ export async function processarOutrosCanais(
         await pular(deps, en.id, 'Sem WhatsApp');
         continue;
       }
-      const texto = montarMensagem(passo.texto ?? '', lead.variaveis);
+      // Uma das versões do passo, sorteada (o mesmo texto para muita gente derruba número).
+      const texto = montarMensagem(escolherVersao([passo.texto, ...(passo.versoes ?? [])]), lead.variaveis);
       if (!texto) {
         await pular(deps, en.id, 'Passo sem mensagem');
         continue;

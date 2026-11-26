@@ -12,7 +12,7 @@ import {
   type PreviaEmail,
 } from '../api';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
-import { useEhAdmin } from '../componentes/Sessao';
+import { useEhAdmin, useSessao } from '../componentes/Sessao';
 import { fmtCidade, fmtNome } from '../formatar';
 
 /* ───────────────────────── Comum ───────────────────────── */
@@ -323,12 +323,23 @@ function EditorMarca(props: {
   const cliente = useQueryClient();
   const admin = useEhAdmin();
   const m = props.marca;
-  const [f, setF] = useState<FormMarca>(m ?? MARCA_NOVA);
+  // v176: a identidade nova já nasce com o nome e a cor da marca da conta (Marca e domínio), quando há.
+  const marcaConta = useSessao().data?.marca;
+  const nova = useMemo<FormMarca>(
+    () => ({
+      ...MARCA_NOVA,
+      nome: marcaConta?.nome ?? '',
+      remetenteNome: marcaConta?.nome ?? '',
+      corPrimaria: marcaConta?.cor ?? MARCA_NOVA.corPrimaria,
+    }),
+    [marcaConta?.nome, marcaConta?.cor],
+  );
+  const [f, setF] = useState<FormMarca>(m ?? nova);
   const [confirmar, setConfirmar] = useState(false);
   useEffect(() => {
-    setF(m ?? MARCA_NOVA);
+    setF(m ?? nova);
     setConfirmar(false);
-  }, [m]);
+  }, [m, nova]);
 
   const salvar = useMutation({
     mutationFn: () => {
@@ -614,7 +625,7 @@ function EditorMarca(props: {
   );
 }
 
-/** Aba "Identidade visual": cores, logo, capa, remetente e assinatura (white label por campanha). */
+/** Marca e domínio › E-mails (antes a aba "Identidade visual" do E-mail): cores, logo, capa, remetente e assinatura (por campanha). */
 export function Marcas(props: { remetenteConta: string | null }) {
   const [params, setParams] = useSearchParams();
   const admin = useEhAdmin();

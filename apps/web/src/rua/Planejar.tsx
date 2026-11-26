@@ -192,8 +192,8 @@ export function Planejar() {
       cliente.invalidateQueries({ queryKey: ['rua', 'equipe'] });
       setAviso(
         enviar
-          ? `Roteiro enviado: ${primeiroNome(r.vendedorNome)} recebe o aviso no celular e abre em Vendas › Na rua.`
-          : 'Roteiro salvo. No celular, ele aparece em Vendas › Na rua.',
+          ? `Roteiro enviado: ${primeiroNome(r.vendedorNome)} recebe o aviso no celular e abre em Prospecção › Vendas na rua.`
+          : 'Roteiro salvo. No celular, ele aparece em Prospecção › Vendas na rua.',
       );
     },
   });

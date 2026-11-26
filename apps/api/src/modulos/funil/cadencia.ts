@@ -5,6 +5,7 @@ import {
   dataDoPasso,
   type EtapaFunil,
   type EventoCadencia,
+  escolherVersao,
   MODELOS_MENSAGEM,
   type ModeloMensagem,
   modeloDoPasso,
@@ -37,8 +38,8 @@ export async function obterConfig(db: Executor): Promise<ConfigCadencia> {
               remetente
          FROM comercial.config_cadencia WHERE conta_id = ${C}`,
     ),
-    db.query<{ chave: ModeloMensagem; texto: string }>(
-      `SELECT chave, texto FROM comercial.modelos_mensagem WHERE conta_id = ${C}`,
+    db.query<{ chave: ModeloMensagem; texto: string; versoes: string[] }>(
+      `SELECT chave, texto, versoes FROM comercial.modelos_mensagem WHERE conta_id = ${C}`,
     ),
   ]);
   const c = cfg.rows[0] ?? {
@@ -49,11 +50,16 @@ export async function obterConfig(db: Executor): Promise<ConfigCadencia> {
     remetente: '',
   };
   const textos = Object.fromEntries(modelos.rows.map((m) => [m.chave, m.texto]));
+  const versoes = Object.fromEntries(modelos.rows.map((m) => [m.chave, m.versoes ?? []]));
   return {
     ...c,
     modelos: Object.fromEntries(MODELOS_MENSAGEM.map((m) => [m, textos[m] ?? ''])) as Record<
       ModeloMensagem,
       string
+    >,
+    versoes: Object.fromEntries(MODELOS_MENSAGEM.map((m) => [m, versoes[m] ?? []])) as Record<
+      ModeloMensagem,
+      string[]
     >,
   };
 }
@@ -69,9 +75,17 @@ export async function salvarConfig(db: Executor, c: ConfigCadencia): Promise<voi
   );
   for (const chave of MODELOS_MENSAGEM)
     await db.query(
-      `INSERT INTO comercial.modelos_mensagem (conta_id, chave, texto) VALUES (${C}, $1, $2)
-       ON CONFLICT (conta_id, chave) DO UPDATE SET texto = EXCLUDED.texto, atualizado_em = now()`,
-      [chave, c.modelos[chave]],
+      `INSERT INTO comercial.modelos_mensagem (conta_id, chave, texto, versoes) VALUES (${C}, $1, $2, $3)
+       ON CONFLICT (conta_id, chave) DO UPDATE SET texto = EXCLUDED.texto, versoes = EXCLUDED.versoes,
+                                                  atualizado_em = now()`,
+      [
+        chave,
+        c.modelos[chave],
+        (c.versoes?.[chave] ?? [])
+          .map((v) => v.trim())
+          .filter(Boolean)
+          .slice(0, 2),
+      ],
     );
 }
 
@@ -190,7 +204,10 @@ export async function mensagemDoLead(db: Executor, empresaId: number): Promise<M
   return {
     modelo,
     rotulo: modelo ? ROTULOS[modelo] : null,
-    texto: modelo ? montarMensagem(l.cfg.modelos[modelo], l.variaveis) : '',
+    // Uma das versões do modelo, sorteada (o mesmo texto para muita gente derruba número).
+    texto: modelo
+      ? montarMensagem(escolherVersao([l.cfg.modelos[modelo], ...(l.cfg.versoes[modelo] ?? [])]), l.variaveis)
+      : '',
     telefone: l.telefone,
     tentativa: l.etapa === 'abordado' ? l.tentativas + 1 : l.etapa === 'a_abordar' ? 1 : 0,
     totalTentativas: totalTentativas(l.cfg),

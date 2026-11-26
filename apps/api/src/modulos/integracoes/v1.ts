@@ -68,7 +68,7 @@ const exigir =
         : new AppError(
             403,
             'sem_permissao',
-            `Esta chave não tem a permissão "${p}". Ajuste em Gestão › Integrações.`,
+            `Esta chave não tem a permissão "${p}". Ajuste em Configurações › Integrações.`,
           ),
     );
   };

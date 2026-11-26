@@ -54,7 +54,7 @@ export function documentoOpenApi(base: string) {
     info: {
       title: 'Prospect Team — API v1',
       version: '1.0.0',
-      description: `Ligue o CRM ao site, ao ERP, à loja virtual e ao Make/Zapier. Crie a chave em Gestão › Integrações e mande no cabeçalho \`Authorization: Bearer <chave>\`. Limites: ${LIMITES_API.porMinuto} chamadas por minuto por chave e ${LIMITES_API.porDia} por dia por conta. Erros sempre no formato { "erro": { "codigo", "mensagem", "detalhes" } }.`,
+      description: `Ligue o CRM ao site, ao ERP, à loja virtual e ao Make/Zapier. Crie a chave em Configurações › Integrações e mande no cabeçalho \`Authorization: Bearer <chave>\`. Limites: ${LIMITES_API.porMinuto} chamadas por minuto por chave e ${LIMITES_API.porDia} por dia por conta. Erros sempre no formato { "erro": { "codigo", "mensagem", "detalhes" } }.`,
     },
     servers: [{ url: base }],
     security: [{ chave: [] }],
@@ -181,7 +181,7 @@ export function documentoOpenApi(base: string) {
           tags: ['Formulários'],
           summary: 'Entrada de formulário',
           description:
-            'Sem chave da API: o endereço de cada formulário aparece em Gestão › Integrações › Formulários do site. Aceita JSON ou formulário HTML (application/x-www-form-urlencoded), do jeito que o construtor mandar (Elementor, RD Station, Typeform…). Campo escondido "pt_confirmar" vazio protege contra robôs.',
+            'Sem chave da API: o endereço de cada formulário aparece em Configurações › Integrações › Formulários do site. Aceita JSON ou formulário HTML (application/x-www-form-urlencoded), do jeito que o construtor mandar (Elementor, RD Station, Typeform…). Campo escondido "pt_confirmar" vazio protege contra robôs.',
           security: [],
           parameters: [{ name: 'chave', in: 'path', required: true, schema: { type: 'string' } }],
           requestBody: {
@@ -226,7 +226,11 @@ export function documentoOpenApi(base: string) {
     },
     components: {
       securitySchemes: {
-        chave: { type: 'http', scheme: 'bearer', description: 'Chave pt_live_… (Gestão › Integrações).' },
+        chave: {
+          type: 'http',
+          scheme: 'bearer',
+          description: 'Chave pt_live_… (Configurações › Integrações).',
+        },
       },
       schemas: {
         Erro: {

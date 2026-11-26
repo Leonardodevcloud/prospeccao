@@ -1,3 +1,5 @@
+import type { EventoAtendimento, FilaAtendimento } from '@prospeccao/shared/carteira';
+import { escolherVersao } from '@prospeccao/shared/porteiro';
 import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -14,8 +16,27 @@ import {
   type TipoMidia,
 } from '../api';
 import { NotasDoLead, SeloNota } from '../atendimento/Atendimento';
+import {
+  AbasDasFilas,
+  AbasDoCompositor,
+  AvisoFilaGeral,
+  BarraDoAtendimento,
+  CompositorDeNota,
+  FiltroEtiquetas,
+  ItemDaFila,
+  LinhaDoEvento,
+  PainelDoCliente,
+} from '../carteira/Atendimento';
+import {
+  useAtendimentoLigado,
+  useAtendimentos,
+  useClienteAtendimento,
+  useConfigAtendimento,
+  useFilas,
+} from '../carteira/dados';
 import { EnviarPara, FaixaIndicacoes, PainelContatos } from '../componentes/ContatosNegociacao';
 import { Drawer } from '../componentes/Drawer';
+import { AvisoAoEscrever, MelhorarComIa, VersoesDoTexto } from '../componentes/Escrever';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { IconeInstagram } from '../componentes/IconeInstagram';
@@ -224,20 +245,42 @@ function participante(m: MensagemConversa): string | null {
   return m.direcao === 'enviada' ? `Para ${quem}` : quem;
 }
 
-function Bolhas(props: { mensagens: MensagemConversa[]; variasPessoas: boolean }) {
+function Bolhas(props: {
+  mensagens: MensagemConversa[];
+  variasPessoas: boolean;
+  /** Atendimento com carteira: aberto, transferido, notas internas, encerrado (entre as mensagens). */
+  eventos?: EventoAtendimento[];
+}) {
   const fim = useRef<HTMLDivElement>(null);
-  const ultima = props.mensagens.at(-1)?.id;
+  const ultima = `${props.mensagens.at(-1)?.id}-${props.eventos?.at(-1)?.id ?? ''}`;
   // biome-ignore lint/correctness/useExhaustiveDependencies: rola só quando chega mensagem nova
   useEffect(() => {
     fim.current?.scrollIntoView({ block: 'end' });
   }, [ultima]);
+  const linhas = useMemo(() => {
+    const l: (
+      | { tipo: 'm'; m: MensagemConversa; em: string }
+      | { tipo: 'e'; e: EventoAtendimento; em: string }
+    )[] = props.mensagens.map((m) => ({ tipo: 'm' as const, m, em: m.em }));
+    for (const e of props.eventos ?? []) l.push({ tipo: 'e', e, em: e.em });
+    // O evento que acontece junto com a mensagem (abriu com a mensagem do cliente) vem antes dela.
+    return l.sort((a, b) => a.em.localeCompare(b.em) || (a.tipo === 'e' ? -1 : 1));
+  }, [props.mensagens, props.eventos]);
   let diaAnterior = '';
   return (
     <div className="bolhas" aria-live="polite">
-      {props.mensagens.map((m) => {
-        const dia = diaSP.format(new Date(m.em));
+      {linhas.map((linha) => {
+        const dia = diaSP.format(new Date(linha.em));
         const separador = dia !== diaAnterior;
         diaAnterior = dia;
+        if (linha.tipo === 'e')
+          return (
+            <div key={`ev${linha.e.id}`} className="bolhas__grupo">
+              {separador && <div className="bolhas__dia">{dia}</div>}
+              <LinhaDoEvento e={linha.e} />
+            </div>
+          );
+        const m = linha.m;
         const soRotulo = m.midiaTipo && /^\[(foto|figurinha|áudio|vídeo|documento)\]/.test(m.texto);
         return (
           <div key={m.id} className="bolhas__grupo">
@@ -404,7 +447,8 @@ function Compositor(props: {
     [filtro, respostas.data],
   );
   const usar = (r: RespostaRapida) => {
-    setTexto(aplicarVariaveis(r.texto, conversa.variaveis));
+    // Uma das versões, sorteada: a mesma resposta para muita gente igual derruba número.
+    setTexto(aplicarVariaveis(escolherVersao([r.texto, ...(r.versoes ?? [])]), conversa.variaveis));
     setEscolhida(0);
     campo.current?.focus();
   };
@@ -589,6 +633,14 @@ function Compositor(props: {
       )}
       <ErroDaApi erro={variar.error} />
       {erroLocal && <Mensagem tipo="erro">{erroLocal}</Mensagem>}
+      {canal === 'whatsapp' && !porteiro && !gravando && filtro === null && (
+        <AvisoAoEscrever
+          empresaId={conversa.empresaId}
+          texto={texto}
+          variando={variar.isPending}
+          aoVariar={() => texto.trim() && variar.mutate(texto.trim())}
+        />
+      )}
       <div className="compositor__linha">
         <input
           ref={arquivo}
@@ -610,6 +662,17 @@ function Compositor(props: {
         >
           <Icon name="paperclip" size={18} />
         </button>
+        {!gravando && (
+          <MelhorarComIa
+            texto={texto}
+            desligado={ocupado}
+            aoUsar={(novo) => {
+              setTexto(novo);
+              enviarTexto.reset();
+              campo.current?.focus();
+            }}
+          />
+        )}
         {gravando ? (
           <div className="compositor__gravando" role="status">
             <span className="vivo" aria-hidden="true" /> Gravando {Math.floor(segundos / 60)}:
@@ -632,6 +695,8 @@ function Compositor(props: {
               }
               value={texto}
               maxLength={4000}
+              spellCheck
+              lang="pt-BR"
               onChange={(e) => {
                 setTexto(e.target.value);
                 setEscolhida(0);
@@ -678,21 +743,22 @@ function RespostasRapidas(props: { aoFechar: () => void }) {
     queryKey: ['respostas-rapidas'],
     queryFn: () => api<RespostaRapida[]>('/conversas/respostas'),
   });
-  const [edit, setEdit] = useState<{ id?: number; atalho: string; texto: string }>({ atalho: '', texto: '' });
+  const vazio = { atalho: '', texto: '', versoes: [] as string[] };
+  const [edit, setEdit] = useState<{ id?: number; atalho: string; texto: string; versoes: string[] }>(vazio);
   const salvar = useMutation({
     mutationFn: () =>
       edit.id
         ? api<RespostaRapida[]>(`/conversas/respostas/${edit.id}`, {
             metodo: 'PUT',
-            corpo: { atalho: edit.atalho, texto: edit.texto },
+            corpo: { atalho: edit.atalho, texto: edit.texto, versoes: edit.versoes },
           })
         : api<RespostaRapida[]>('/conversas/respostas', {
             metodo: 'POST',
-            corpo: { atalho: edit.atalho, texto: edit.texto },
+            corpo: { atalho: edit.atalho, texto: edit.texto, versoes: edit.versoes },
           }),
     onSuccess: (d) => {
       cliente.setQueryData(['respostas-rapidas'], d);
-      setEdit({ atalho: '', texto: '' });
+      setEdit(vazio);
     },
   });
   const apagar = useMutation({
@@ -715,9 +781,18 @@ function RespostasRapidas(props: { aoFechar: () => void }) {
                   <p className="quieto" style={{ margin: '2px 0 0' }}>
                     {r.texto}
                   </p>
+                  {!!r.versoes?.length && (
+                    <small className="quieto">
+                      + {r.versoes.length === 1 ? '1 versão' : `${r.versoes.length} versões`}
+                    </small>
+                  )}
                 </div>
                 <div className="acoes">
-                  <Button size="sm" variant="ghost" onClick={() => setEdit(r)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEdit({ ...r, versoes: r.versoes ?? [] })}
+                  >
                     Editar
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => apagar.mutate(r.id)}>
@@ -754,10 +829,19 @@ function RespostasRapidas(props: { aoFechar: () => void }) {
                 id="rr-texto"
                 rows={4}
                 maxLength={2000}
+                spellCheck
+                lang="pt-BR"
                 value={edit.texto}
                 onChange={(e) => setEdit({ ...edit, texto: e.target.value })}
               />
             </div>
+            <VersoesDoTexto
+              id="rr-texto"
+              texto={edit.texto}
+              versoes={edit.versoes}
+              aoMudar={(versoes) => setEdit({ ...edit, versoes })}
+              dica="As variáveis valem em todas as versões."
+            />
             <ErroDaApi erro={salvar.error} />
             <div className="acoes">
               <Button
@@ -768,7 +852,7 @@ function RespostasRapidas(props: { aoFechar: () => void }) {
                 {edit.id ? 'Salvar' : 'Adicionar'}
               </Button>
               {edit.id && (
-                <Button variant="ghost" onClick={() => setEdit({ atalho: '', texto: '' })}>
+                <Button variant="ghost" onClick={() => setEdit(vazio)}>
                   Cancelar
                 </Button>
               )}
@@ -827,8 +911,13 @@ function Conversa(props: {
   abrirPessoas?: boolean;
   aoVoltar: () => void;
   aoAbrirFicha: () => void;
+  /** Atendimento com carteira ligado: protocolo, ações, notas internas e o painel do cliente. */
+  atendimento?: boolean;
 }) {
   const cliente = useQueryClient();
+  const atendimento = useClienteAtendimento(props.empresaId, !!props.atendimento);
+  const [escrever, setEscrever] = useState<'cliente' | 'nota'>('cliente');
+  const [painelCliente, setPainelCliente] = useState(false);
   const soLeitura = useSoLeitura();
   const [marcando, setMarcando] = useState(false);
   const [respostas, setRespostas] = useState(false);
@@ -890,7 +979,7 @@ function Conversa(props: {
     c.mensagens.filter((m) => m.canal === 'whatsapp' && m.telefone).map((m) => m.telefone!.slice(-8)),
   );
   const variasPessoas = numeros.size > 1 || c.mensagens.some((m) => m.contatoId);
-  return (
+  const chat = (
     <div className="chat">
       <header className="chat__topo">
         <button
@@ -945,6 +1034,13 @@ function Conversa(props: {
           <Button size="sm" variant="ghost" icon="id-card" onClick={props.aoAbrirFicha}>
             Ficha
           </Button>
+          {props.atendimento && atendimento.data && (
+            <span className="so-estreito">
+              <Button size="sm" variant="ghost" icon="user-round" onClick={() => setPainelCliente(true)}>
+                Cliente
+              </Button>
+            </span>
+          )}
           {temNotas && (
             <Button size="sm" variant="ghost" icon="badge-check" onClick={() => setNotas(true)}>
               Nota do atendimento
@@ -957,7 +1053,10 @@ function Conversa(props: {
           )}
         </div>
       </header>
-      {c.responsavelId == null && !soLeitura && (
+      {props.atendimento && atendimento.data && !soLeitura && (
+        <BarraDoAtendimento cliente={atendimento.data} />
+      )}
+      {!props.atendimento && c.responsavelId == null && !soLeitura && (
         <div className="chat__aviso-carteira" role="status">
           <span>Este lead ainda não é de ninguém. Quem puxar (ou responder primeiro) fica com ele.</span>
           <Button
@@ -1007,8 +1106,8 @@ function Conversa(props: {
       {!soLeitura && (
         <FaixaIndicacoes conversa={c} aoRevisar={(x) => setPessoas({ editar: x })} aoMudar={atualizar} />
       )}
-      {c.mensagens.length ? (
-        <Bolhas mensagens={c.mensagens} variasPessoas={variasPessoas} />
+      {c.mensagens.length || atendimento.data?.eventos.length ? (
+        <Bolhas mensagens={c.mensagens} variasPessoas={variasPessoas} eventos={atendimento.data?.eventos} />
       ) : (
         <div className="bolhas">
           <EmptyState
@@ -1025,15 +1124,25 @@ function Conversa(props: {
           Acesso só de leitura: você acompanha a conversa, a equipe responde.
         </p>
       ) : (
-        <Compositor
-          conversa={c}
-          aoEnviado={(nova) => {
-            cliente.setQueryData(chave, nova);
-            cliente.invalidateQueries({ queryKey: ['conversas'] });
-            cliente.invalidateQueries({ queryKey: ['quadro'] });
-          }}
-          aoGerenciarRespostas={() => setRespostas(true)}
-        />
+        <>
+          {props.atendimento && atendimento.data && (
+            <AbasDoCompositor modo={escrever} aoMudar={setEscrever} />
+          )}
+          {props.atendimento && escrever === 'nota' ? (
+            <CompositorDeNota empresaId={c.empresaId} />
+          ) : (
+            <Compositor
+              conversa={c}
+              aoEnviado={(nova) => {
+                cliente.setQueryData(chave, nova);
+                cliente.invalidateQueries({ queryKey: ['conversas'] });
+                cliente.invalidateQueries({ queryKey: ['quadro'] });
+                cliente.invalidateQueries({ queryKey: ['carteira'] });
+              }}
+              aoGerenciarRespostas={() => setRespostas(true)}
+            />
+          )}
+        </>
       )}
       {marcando && (
         <FormTarefa
@@ -1062,6 +1171,20 @@ function Conversa(props: {
           aoMudar={atualizar}
           aoFechar={() => setPessoas(null)}
         />
+      )}
+    </div>
+  );
+  if (!props.atendimento || !atendimento.data) return chat;
+  return (
+    <div className="atend-layout">
+      {chat}
+      <PainelDoCliente cliente={atendimento.data} aoAbrirFicha={props.aoAbrirFicha} />
+      {painelCliente && (
+        <Drawer titulo="Cliente" barra={fmtNome(c.nome)} aoFechar={() => setPainelCliente(false)}>
+          <div className="drawer__corpo">
+            <PainelDoCliente cliente={atendimento.data} aoAbrirFicha={props.aoAbrirFicha} />
+          </div>
+        </Drawer>
       )}
     </div>
   );
@@ -1094,10 +1217,20 @@ export function Conversas() {
     setParams(p, { replace: true });
   };
 
+  // Atendimento com carteira: a lista vira as filas (Minha carteira, Fila geral, Aguardando, Encerrados).
+  const ligado = useAtendimentoLigado();
+  const filaParam = params.get('fila') as FilaAtendimento | 'todas' | null;
+  const fila: FilaAtendimento | null =
+    ligado && filaParam !== 'todas' && !soltos ? ((filaParam as FilaAtendimento | null) ?? 'minha') : null;
+  const etiqueta = params.get('etiqueta');
+  const contagem = useFilas(ligado);
+  const catalogo = useConfigAtendimento(ligado).data?.etiquetas ?? [];
+  const atendimentos = useAtendimentos(!!fila, { fila: fila ?? 'minha', etiqueta, busca: buscaFeita });
+
   const lista = useQuery({
     queryKey: ['conversas', filtro, buscaFeita, canal],
     queryFn: () => api<ConversaResumo[]>(`/conversas${qs({ filtro, busca: buscaFeita || null, canal })}`),
-    enabled: !soltos,
+    enabled: !soltos && !fila,
     refetchInterval: 10_000,
     placeholderData: keepPreviousData,
   });
@@ -1118,27 +1251,63 @@ export function Conversas() {
       <div className="inbox" data-aberta={aberta || undefined}>
         <aside className="inbox__lista" aria-label="Conversas">
           <div className="inbox__cabeca">
-            <h1>Conversas</h1>
-            <div className="segmentos" role="tablist" aria-label="Filtro">
-              {FILTROS.map((f) => (
+            <div className="inbox__titulo">
+              <h1>Conversas</h1>
+              {ligado && (
                 <button
-                  key={f.id}
                   type="button"
-                  role="tab"
-                  aria-selected={filtro === f.id}
-                  className="segmento"
-                  data-ativo={filtro === f.id || undefined}
-                  title={
-                    f.id === 'nao_identificados'
-                      ? 'Mensagens de números que não são de nenhum lead (ex.: a pessoa indicada que escreveu primeiro)'
-                      : undefined
+                  className="link-botao"
+                  onClick={() =>
+                    mudar({
+                      fila: fila ? 'todas' : null,
+                      filtro: null,
+                      lead: null,
+                      numero: null,
+                      etiqueta: null,
+                    })
                   }
-                  onClick={() => mudar({ filtro: f.id === 'todas' ? null : f.id, lead: null, numero: null })}
                 >
-                  {f.rotulo}
+                  {fila ? 'Todas as conversas' : 'Voltar às filas'}
                 </button>
-              ))}
+              )}
             </div>
+            {fila ? (
+              <>
+                <AbasDasFilas
+                  fila={fila}
+                  contagem={contagem.data}
+                  aoMudar={(f) => mudar({ fila: f === 'minha' ? null : f, lead: null })}
+                />
+                <FiltroEtiquetas
+                  catalogo={catalogo}
+                  ativa={etiqueta}
+                  aoMudar={(e) => mudar({ etiqueta: e })}
+                />
+              </>
+            ) : (
+              <div className="segmentos" role="tablist" aria-label="Filtro">
+                {FILTROS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={filtro === f.id}
+                    className="segmento"
+                    data-ativo={filtro === f.id || undefined}
+                    title={
+                      f.id === 'nao_identificados'
+                        ? 'Mensagens de números que não são de nenhum lead (ex.: a pessoa indicada que escreveu primeiro)'
+                        : undefined
+                    }
+                    onClick={() =>
+                      mudar({ filtro: f.id === 'todas' ? null : f.id, lead: null, numero: null })
+                    }
+                  >
+                    {f.rotulo}
+                  </button>
+                ))}
+              </div>
+            )}
             {!soltos && (
               <>
                 <label className="pp-sr" htmlFor="conversas-busca">
@@ -1148,31 +1317,69 @@ export function Conversas() {
                   <input
                     id="conversas-busca"
                     className="filtro"
-                    placeholder="Buscar por empresa, pessoa ou telefone"
+                    placeholder={
+                      fila
+                        ? 'Buscar contato, protocolo ou telefone'
+                        : 'Buscar por empresa, pessoa ou telefone'
+                    }
                     value={busca}
                     onChange={(e) => setBusca(e.target.value)}
                   />
-                  <label className="pp-sr" htmlFor="conversas-canal">
-                    Canal
-                  </label>
-                  <select
-                    id="conversas-canal"
-                    className="filtro"
-                    value={canal ?? ''}
-                    onChange={(e) => mudar({ canal: e.target.value || null, lead: null })}
-                  >
-                    <option value="">Todos os canais</option>
-                    <option value="whatsapp">WhatsApp</option>
-                    <option value="instagram">Instagram</option>
-                    <option value="email">E-mail</option>
-                  </select>
+                  {!fila && (
+                    <>
+                      <label className="pp-sr" htmlFor="conversas-canal">
+                        Canal
+                      </label>
+                      <select
+                        id="conversas-canal"
+                        className="filtro"
+                        value={canal ?? ''}
+                        onChange={(e) => mudar({ canal: e.target.value || null, lead: null })}
+                      >
+                        <option value="">Todos os canais</option>
+                        <option value="whatsapp">WhatsApp</option>
+                        <option value="instagram">Instagram</option>
+                        <option value="email">E-mail</option>
+                      </select>
+                    </>
+                  )}
                 </div>
               </>
             )}
           </div>
-          <ErroDaApi erro={lista.error} />
+          <ErroDaApi erro={fila ? atendimentos.error : lista.error} />
+          {fila && fila !== 'geral' && (
+            <AvisoFilaGeral contagem={contagem.data} aoVer={() => mudar({ fila: 'geral', lead: null })} />
+          )}
           {soltos ? (
             <ListaNaoIdentificados ativo={numero} aoAbrir={(t) => mudar({ numero: t })} />
+          ) : fila ? (
+            atendimentos.isPending ? (
+              <div className="esqueleto" />
+            ) : !atendimentos.data?.length ? (
+              <p className="quieto inbox__vazia">
+                {buscaFeita || etiqueta
+                  ? 'Nenhum atendimento com esse filtro.'
+                  : {
+                      minha: 'Nenhum cliente da sua carteira esperando resposta.',
+                      geral: 'Ninguém esperando na Fila geral.',
+                      aguardando: 'Nenhum atendimento esperando o cliente responder.',
+                      encerrados: 'Nenhum atendimento encerrado nos últimos 30 dias.',
+                    }[fila]}
+              </p>
+            ) : (
+              <ul className="conversas">
+                {atendimentos.data.map((a) => (
+                  <ItemDaFila
+                    key={a.id}
+                    a={a}
+                    catalogo={catalogo}
+                    ativo={a.empresaId === lead}
+                    aoAbrir={() => mudar({ lead: String(a.empresaId) })}
+                  />
+                ))}
+              </ul>
+            )
           ) : lista.isPending ? (
             <div className="esqueleto" />
           ) : !lista.data?.length ? (
@@ -1216,6 +1423,7 @@ export function Conversas() {
             <Conversa
               key={lead}
               empresaId={lead}
+              atendimento={ligado}
               abrirPessoas={params.get('pessoas') === '1'}
               aoVoltar={() => mudar({ lead: null })}
               aoAbrirFicha={() => mudar({ empresa: String(lead) })}

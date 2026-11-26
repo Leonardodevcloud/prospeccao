@@ -402,6 +402,8 @@ export interface ConfigCadencia {
   diasCobrarProposta: number[];
   remetente: string;
   modelos: Record<ModeloMensagem, string>;
+  /** Mais até 2 versões de cada modelo (a cada envio o sistema sorteia uma). */
+  versoes?: Partial<Record<ModeloMensagem, string[]>>;
 }
 
 export interface MensagemPronta {
@@ -942,6 +944,8 @@ export interface Sessao {
   soPropriaBase: boolean;
   /** Carteira com fila: o time vê os leads sem dono e puxa para a própria carteira. */
   filaSemDono?: boolean;
+  /** Atendimento com carteira (plano Escala): ligado na conta e a pessoa disponível ou em pausa. */
+  atendimento?: { ativo: boolean; disponivel: boolean; pausaDesde: string | null };
   /** O cliente (organização) e quantas unidades ativas ele tem. */
   organizacao: { id: number; nome: string; unidades: number } | null;
   /** Master (ou gestor) dentro de outra conta/unidade. */
@@ -1173,6 +1177,8 @@ export interface RespostaRapida {
   id: number;
   atalho: string;
   texto: string;
+  /** Mais até 2 versões (a cada uso o sistema sorteia uma). */
+  versoes?: string[];
 }
 
 /* ───────────────────────────── Agenda ───────────────────────────── */
@@ -1399,6 +1405,8 @@ export interface PassoSequencia {
   modeloId?: number;
   texto?: string;
   dias: number;
+  /** WhatsApp: mais até 2 versões do texto (a cada lead o sistema sorteia uma). */
+  versoes?: string[];
 }
 
 export interface EnvioEmail {

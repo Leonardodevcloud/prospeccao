@@ -1,7 +1,7 @@
 import { Badge, Button, EmptyState, Icon } from '@prospeccao/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, Navigate, useSearchParams } from 'react-router';
 import {
   type ArquivoEmail,
   api,
@@ -22,19 +22,12 @@ import {
 } from '../api';
 import { DominioEmail } from '../componentes/DominioEmail';
 import { Drawer } from '../componentes/Drawer';
+import { VersoesDoTexto } from '../componentes/Escrever';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin, useEhMaster, useSessao } from '../componentes/Sessao';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, fmtPct, fmtQuando } from '../formatar';
-import {
-  EscolherLead,
-  fmtTamanho,
-  JanelaEmail,
-  lerBase64,
-  Marcas,
-  PreviaCampanha,
-  useMarcas,
-} from './EmailMarca';
+import { EscolherLead, fmtTamanho, JanelaEmail, lerBase64, PreviaCampanha, useMarcas } from './EmailMarca';
 
 type Aba = 'campanhas' | 'modelos' | 'marca' | 'enviados' | 'respostas' | 'config';
 const ABAS: { id: Aba; rotulo: string; admin?: boolean }[] = [
@@ -42,7 +35,6 @@ const ABAS: { id: Aba; rotulo: string; admin?: boolean }[] = [
   { id: 'respostas', rotulo: 'Respostas' },
   { id: 'enviados', rotulo: 'Enviados' },
   { id: 'modelos', rotulo: 'Modelos' },
-  { id: 'marca', rotulo: 'Identidade visual' },
   { id: 'config', rotulo: 'Configuração', admin: true },
 ];
 
@@ -181,8 +173,18 @@ function EditorPassos(props: { passos: Passo[]; modelos: ModeloEmail[]; aoMudar:
     mudar(
       i,
       canal === 'email'
-        ? { canal, modeloId: passos[i]?.modeloId ?? props.modelos[0]?.id, texto: undefined }
-        : { canal, texto: passos[i]?.texto || TEXTO_PADRAO[canal], modeloId: undefined },
+        ? {
+            canal,
+            modeloId: passos[i]?.modeloId ?? props.modelos[0]?.id,
+            texto: undefined,
+            versoes: undefined,
+          }
+        : {
+            canal,
+            texto: passos[i]?.texto || TEXTO_PADRAO[canal],
+            modeloId: undefined,
+            versoes: canal === 'whatsapp' ? passos[i]?.versoes : undefined,
+          },
     );
   return (
     <fieldset className="opcoes opcoes--pilha">
@@ -268,6 +270,8 @@ function EditorPassos(props: { passos: Passo[]; modelos: ModeloEmail[]; aoMudar:
                       canal === 'whatsapp' ? 'Mensagem do WhatsApp' : 'Roteiro da ligação (opcional)'
                     }
                     value={p.texto ?? ''}
+                    spellCheck
+                    lang="pt-BR"
                     onChange={(e) => mudar(i, { texto: e.target.value })}
                   />
                   <span className="campo__dica">
@@ -275,6 +279,14 @@ function EditorPassos(props: { passos: Passo[]; modelos: ModeloEmail[]; aoMudar:
                       ? 'Sai pelo chip do lead, no horário e no limite do WhatsApp (tela Agente). Vale {saudacao}, {nome}, {empresa}, {cidade} e {remetente}.'
                       : 'Vira uma tarefa de ligação para o dono do lead, com o telefone e este roteiro.'}
                   </span>
+                  {canal === 'whatsapp' && (
+                    <VersoesDoTexto
+                      id={`passo-texto-${i}`}
+                      texto={p.texto ?? ''}
+                      versoes={p.versoes ?? []}
+                      aoMudar={(versoes) => mudar(i, { versoes })}
+                    />
+                  )}
                 </>
               )}
             </li>
@@ -359,7 +371,7 @@ function EditorMarcaIa(props: {
           value={v.marcaId || ''}
           onChange={(e) => props.aoMudar({ ...v, marcaId: Number(e.target.value) })}
         >
-          {!marcas.data?.length && <option value="">Crie uma na aba Identidade visual</option>}
+          {!marcas.data?.length && <option value="">Crie uma em Marca e domínio › E-mails</option>}
           {marcas.data?.map((m) => (
             <option key={m.id} value={m.id}>
               {m.nome} · {m.remetenteNome}
@@ -1821,7 +1833,9 @@ function Configuracao(props: { v: VisaoEmail }) {
             <b>Envio automático ligado</b>
           </label>
           <p className="quieto" style={{ margin: 0, fontSize: 13 }}>
-            Remetente, assinatura, cores e logo ficam na aba Identidade visual (cada campanha escolhe a sua).
+            Remetente, assinatura, cores e logo ficam em{' '}
+            <Link to="/marca?aba=email">Configurações › Marca e domínio › E-mails</Link> (cada campanha
+            escolhe a sua).
           </p>
           <h3 className="subtitulo">Ritmo</h3>
           <div className="form__duas">
@@ -2127,7 +2141,8 @@ export function Email() {
           iaLigada={!!visao.data?.status.ia}
         />
       )}
-      {aba === 'marca' && <Marcas remetenteConta={visao.data?.status.remetente ?? null} />}
+      {/* v176: a identidade visual dos e-mails mudou para Configurações › Marca e domínio › E-mails. */}
+      {aba === 'marca' && <Navigate to="/marca?aba=email" replace />}
       {aba === 'modelos' && <Modelos modelos={modelos.data ?? []} carregando={modelos.isPending} />}
       {aba === 'enviados' && <Enviados aoAbrirLead={(id) => mudar('empresa', String(id))} />}
       {aba === 'respostas' && <Respostas aoAbrirLead={(id) => mudar('empresa', String(id))} />}

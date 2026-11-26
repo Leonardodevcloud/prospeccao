@@ -83,6 +83,11 @@ export const RECURSOS = {
     descricao:
       'A IA dá nota a cada conversa e ligação da equipe com a mesma régua, e o gestor vê onde cada um vai bem e o que treinar.',
   },
+  carteira: {
+    nome: 'Atendimento com carteira',
+    descricao:
+      'Cada cliente cai na fila do vendedor dono dele; quem não tem dono vai para a Fila geral. Protocolo, encerrar e reabrir, transferir, notas internas e pesquisa de satisfação.',
+  },
   reunioes: {
     nome: 'Reuniões por vídeo',
     descricao: 'Sala própria com link para o lead, gravação, transcrição e resumo da IA.',

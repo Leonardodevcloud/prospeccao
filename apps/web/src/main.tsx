@@ -129,6 +129,10 @@ const roteador = createBrowserRouter([
         lazy: async () => ({ Component: (await import('./paginas/Telefonia')).Telefonia }),
       },
       {
+        path: 'atendimento',
+        lazy: async () => ({ Component: (await import('./paginas/RegrasAtendimento')).RegrasAtendimento }),
+      },
+      {
         path: 'integracoes',
         lazy: async () => ({ Component: (await import('./paginas/Integracoes')).Integracoes }),
       },

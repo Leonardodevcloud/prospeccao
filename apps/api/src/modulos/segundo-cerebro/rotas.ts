@@ -7,7 +7,7 @@ import { oQueAprendeu } from '../carrosseis/aprender.js';
 import * as servico from './servico.js';
 
 /**
- * Gestão › Integrações › Segundo cérebro (v147): qualquer conta liga, só o administrador mexe.
+ * Configurações › Integrações › Segundo cérebro (v147): qualquer conta liga, só o administrador mexe.
  * O token do Cérebro entra uma vez, fica cifrado e nunca volta para a tela (só os 4 últimos).
  */
 export function rotasSegundoCerebro(deps: DepsApi): Router {

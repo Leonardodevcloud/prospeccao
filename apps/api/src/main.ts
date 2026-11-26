@@ -14,6 +14,7 @@ import { prepararAssistente } from './modulos/assistente/preparar.js';
 import { iniciarAtendimento } from './modulos/atendimento/avaliacao.js';
 import { oQueAprendeu } from './modulos/carrosseis/aprender.js';
 import { iniciarTimeCarrosseis, prepararCarrosseisIa } from './modulos/carrosseis/time.js';
+import { iniciarCarteira } from './modulos/carteira/rotina.js';
 import { iniciarEmail } from './modulos/email/motor.js';
 import { iniciarAutomacaoFunil } from './modulos/funil/automacao.js';
 import { iniciarImportacaoLeads } from './modulos/importacao-leads/rotina.js';
@@ -128,6 +129,8 @@ const servidor = createServer(app);
 servidor.listen(env.PORT, () => log.info({ porta: env.PORT }, 'api pronta'));
 // Follow-up: encerra sozinho quem esgotou a cadência sem responder (conta por conta).
 const pararAutomacao = iniciarAutomacaoFunil(pool, log);
+// Atendimento com carteira: encerra sozinho o que ficou aguardando o cliente.
+const pararCarteira = iniciarCarteira(pool, log);
 // Agente de abordagem: envia, lê respostas e responde (só faz algo onde estiver ligado na tela).
 const pararAgente = iniciarAgente({ pool, log, servicos }, log);
 // Agenda: lembrete da reunião para o lead (WhatsApp) e aviso para o vendedor.
@@ -182,6 +185,7 @@ encerrarAoReceberSinal(log, async () => {
   pararAvisos();
   pararAssinaturas();
   pararAutomacao();
+  pararCarteira();
   pararAgente();
   pararPlanos();
   pararImportacao();

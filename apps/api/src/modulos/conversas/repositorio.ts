@@ -383,23 +383,32 @@ export async function resumo(db: Executor, usuarioId: number | null): Promise<{ 
 
 export async function respostas(db: Executor) {
   const { rows } = await db.query(
-    `SELECT id, atalho, texto FROM comercial.respostas_rapidas WHERE conta_id = ${contaSql()} ORDER BY atalho`,
+    `SELECT id, atalho, texto, versoes FROM comercial.respostas_rapidas WHERE conta_id = ${contaSql()} ORDER BY atalho`,
   );
   return rows;
 }
 
-export async function salvarResposta(db: Executor, d: { atalho: string; texto: string }, id?: number) {
+export async function salvarResposta(
+  db: Executor,
+  d: { atalho: string; texto: string; versoes?: string[] },
+  id?: number,
+) {
+  const versoes = (d.versoes ?? [])
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .slice(0, 2);
   if (id) {
     const { rowCount } = await db.query(
-      `UPDATE comercial.respostas_rapidas SET atalho = $2, texto = $3 WHERE id = $1 AND conta_id = ${contaSql()}`,
-      [id, d.atalho, d.texto],
+      `UPDATE comercial.respostas_rapidas SET atalho = $2, texto = $3, versoes = $4
+        WHERE id = $1 AND conta_id = ${contaSql()}`,
+      [id, d.atalho, d.texto, versoes],
     );
     if (!rowCount) throw AppError.naoEncontrado('Resposta rápida');
     return;
   }
   await db.query(
-    `INSERT INTO comercial.respostas_rapidas (conta_id, atalho, texto) VALUES (${contaSql()}, $1, $2)`,
-    [d.atalho, d.texto],
+    `INSERT INTO comercial.respostas_rapidas (conta_id, atalho, texto, versoes) VALUES (${contaSql()}, $1, $2, $3)`,
+    [d.atalho, d.texto, versoes],
   );
 }
 

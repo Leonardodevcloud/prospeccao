@@ -11,7 +11,7 @@ import * as chaves from './chaves.js';
 import * as formularios from './formularios.js';
 
 /**
- * Gestão › Integrações (só o administrador): chaves da API, formulários do site e avisos.
+ * Configurações › Integrações (só o administrador): chaves da API, formulários do site e avisos.
  * O resumo (GET /) vale sempre (a tela mostra o cadeado quando o plano não tem); o resto precisa
  * do recurso "api" (a trava fica no app.ts).
  */

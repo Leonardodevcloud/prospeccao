@@ -12,6 +12,8 @@ import {
   usePainelAtendimento,
   useResumoAtendimento,
 } from '../atendimento/dados';
+import { useAtendimentoLigado } from '../carteira/dados';
+import { PainelDoAtendimento } from '../carteira/Painel';
 import { LinkAjuda } from '../componentes/Ajuda';
 import { Drawer } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
@@ -25,6 +27,9 @@ import { fmtNumero } from '../formatar';
 export function Qualidade() {
   const admin = useEhAdmin();
   const [params, setParams] = useSearchParams();
+  // Atendimento com carteira ligado: o painel da fila em tempo real vem primeiro.
+  const atendimento = useAtendimentoLigado();
+  const aba = params.get('aba') === 'qualidade' ? 'qualidade' : 'painel';
   const atual = inicioDaSemana(new Date());
   const semana = params.get('semana') ?? atual;
   const opcoes = semanasRecentes(atual);
@@ -57,16 +62,42 @@ export function Qualidade() {
         <div>
           <h1>{admin ? 'Qualidade do atendimento' : 'Seu atendimento'}</h1>
           <p>
-            {admin
-              ? 'A IA avalia cada conversa e ligação com a mesma régua. Você vê onde a equipe vai bem e onde treinar.'
-              : 'A nota que a IA dá aos seus atendimentos, com o que foi bem e o que treinar.'}
+            {admin && atendimento && aba === 'painel'
+              ? 'A fila agora, os tempos de resposta, quem está atendendo e como os atendimentos terminaram.'
+              : admin
+                ? 'A IA avalia cada conversa e ligação com a mesma régua. Você vê onde a equipe vai bem e onde treinar.'
+                : 'A nota que a IA dá aos seus atendimentos, com o que foi bem e o que treinar.'}
           </p>
         </div>
         <div className="acoes">
           <LinkAjuda artigo="atendimento">Como funciona</LinkAjuda>
         </div>
       </div>
-      {admin ? (
+      {admin && atendimento && (
+        <div className="segmentos" role="tablist" aria-label="Painel">
+          {(
+            [
+              ['painel', 'Painel do atendimento'],
+              ['qualidade', 'Nota da IA'],
+            ] as const
+          ).map(([id, nome]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={aba === id}
+              className="segmento"
+              data-ativo={aba === id || undefined}
+              onClick={() => mudar({ aba: id === 'painel' ? null : id })}
+            >
+              {nome}
+            </button>
+          ))}
+        </div>
+      )}
+      {admin && atendimento && aba === 'painel' ? (
+        <PainelDoAtendimento />
+      ) : admin ? (
         <PainelDaEquipe
           semana={semana}
           seletorSemana={seletorSemana}

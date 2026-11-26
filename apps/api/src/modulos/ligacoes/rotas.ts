@@ -24,7 +24,7 @@ import * as servico from './servico.js';
 
 /**
  * Ligações: preparar e discar, o que o navegador viu (tocou, atendeu, desligou), os arquivos da
- * gravação, o "Como foi?", o histórico e a configuração (Gestão › Telefonia). Os números da empresa
+ * gravação, o "Como foi?", o histórico e a configuração (Configurações › Telefonia). Os números da empresa
  * são cadastrados pela plataforma (painel master).
  */
 

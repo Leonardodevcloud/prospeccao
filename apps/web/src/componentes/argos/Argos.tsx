@@ -717,7 +717,7 @@ export function Argos({
           onClick={() => void ouvir('continuo')}
           aria-label="Falar com o Argos (segure Espaço)"
         >
-          <Orbe estado="parado" nivel={nivel} tamanho={52} movimento={movimento} />
+          <Orbe estado="parado" nivel={nivel} tamanho={36} movimento={movimento} />
           <span className={css.dicaLancador} role="tooltip">
             Falar com o Argos <kbd>Segure Espaço</kbd>
           </span>

@@ -33,6 +33,7 @@
     "./carrosseis-time": "./src/carrosseisTime.ts",
     "./carrosseis-publicacao": "./src/carrosseisPublicacao.ts",
     "./atendimento": "./src/atendimento.ts",
+    "./carteira": "./src/carteira.ts",
     "./videos": "./src/videos.ts"
   },
   "scripts": {

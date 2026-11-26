@@ -218,3 +218,11 @@ Com o CNPJ (PROSPECT LTDA, v174), o app da Meta pode ser verificado e a Prospect
 3. **Envio e recebimento pela Cloud API** no mesmo motor de Conversas e do agente de IA (provedor novo ao lado da Z-API em `packages/integrations/src/whatsapp`), com a **janela de 24 h** e o status das mensagens.
 4. **Modelos de mensagem** (criar, mandar para aprovação, usar fora da janela) e o aviso de custo por mensagem (cobrado pela Meta direto do cartão do cliente).
 5. Regra de uso: a API oficial exige que a pessoa tenha autorizado receber mensagens da empresa. Serve para leads de anúncio/formulário, quem chama primeiro e clientes que já conversam; a abordagem fria continua pela Z-API.
+
+## Atendimento com carteira e proteção do número — v176 a v178 (26/11/2026, feitas)
+
+- **v176**: menu reorganizado (Prospecção, Atendimento, Gestão, Configurações), identidade visual dos e-mails dentro de Marca e domínio, Argos discreto e discador no canto.
+- **v177**: atendimento com carteira (plano Escala): filas Minha carteira, Fila geral, Aguardando e Encerrados; protocolo; assumir, transferir, encerrar com motivo, etiquetas e pesquisa de 1 a 5; reabrir; nota interna; disponível/em pausa; painel do cliente; regras em Configurações › Atendimento; importar e passar carteira; painel do atendimento.
+- **v178**: proteção do número sempre ligada (rígida para contato frio, aviso para quem conversa, automáticos na fila), aviso enquanto escreve, versões das mensagens prontas e Melhorar com IA (todos os planos).
+- **Depois**: fila geral por grupo do número (cada loja a sua), horário de atendimento nos tempos do painel, encerramento pelo Instagram com mensagem, WhatsApp oficial (seção acima).
+

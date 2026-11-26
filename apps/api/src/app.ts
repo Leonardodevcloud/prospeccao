@@ -30,6 +30,7 @@ import { rotasAuth } from './modulos/auth/rotas.js';
 import { rotasBases } from './modulos/bases/rotas.js';
 import { rotasCampanhas } from './modulos/campanhas/rotas.js';
 import { rotasCarrosseis } from './modulos/carrosseis/rotas.js';
+import { rotasCarteira } from './modulos/carteira/rotas.js';
 import { rotasConversas } from './modulos/conversas/rotas.js';
 import { rotasDominioEmail } from './modulos/email/dominio.js';
 import { rotasEmailPublico, rotasWebhookResend } from './modulos/email/publico.js';
@@ -185,6 +186,8 @@ export function criarApp(deps: DepsApi): Express {
   // Vídeos com IA (módulo à parte): só o administrador; quem edita é o worker-videos.
   protegidas.use('/videos', rotasVideos(deps));
   protegidas.use('/atendimento', rotasAtendimento(deps));
+  // Atendimento com carteira (plano Escala): filas, protocolo, encerrar, transferir.
+  protegidas.use('/carteira', rotasCarteira(deps));
   // Meu plano › Assinar (cobrança recorrente no Asaas).
   protegidas.use('/assinatura', rotasAssinatura(deps));
   // Segundo cérebro (v147): ligar o Cérebro da empresa vale para qualquer conta (fica em Integrações).

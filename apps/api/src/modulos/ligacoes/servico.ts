@@ -380,7 +380,7 @@ export async function iniciar(db: Executor, deps: DepsTelefonia, d: IniciarLigac
     throw AppError.invalido(
       pelo === 'whatsapp'
         ? 'A conta ainda não tem número de WhatsApp para ligação. Peça ao suporte do Prospect Team.'
-        : 'A conta ainda não tem número de telefone para ligar. Peça ao suporte do Prospect Team em Gestão › Telefonia.',
+        : 'A conta ainda não tem número de telefone para ligar. Peça ao suporte do Prospect Team em Configurações › Telefonia.',
     );
   let lead: string | null = null;
   if (d.empresaId) {

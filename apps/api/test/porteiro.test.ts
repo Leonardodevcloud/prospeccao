@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarApp } from '../src/app.js';
 import { comConta } from '../src/contexto.js';
 import { chipParaAutomatica, emUso } from '../src/modulos/agente/chips.js';
+import { seguraAutomatica } from '../src/modulos/porteiro/regras.js';
 import { rodadaRisco } from '../src/modulos/porteiro/risco.js';
 import type { ServicosConta } from '../src/servicos.js';
 
@@ -130,10 +131,10 @@ describe.skipIf(!URL_TESTE)('porteiro do WhatsApp', () => {
       )
     ).rows[0].id;
     await ana.enviar('post', '/nichos', { nome: 'Oficinas', cnaes: ['4520-0/01'], termosMaps: ['oficina'] });
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 24; i++) {
       const l = await ana.enviar('post', '/funil/leads', {
         empresa: `Oficina ${i + 1}`,
-        telefone: `7199999010${i}`,
+        telefone: `719999${String(1000 + i).padStart(5, '0')}`,
       });
       expect(l.status).toBe(201);
       leads.push(l.body.empresaId);
@@ -144,26 +145,55 @@ describe.skipIf(!URL_TESTE)('porteiro do WhatsApp', () => {
     await pool?.end();
   });
 
-  it('desligado, não segura nada; ligado só pelo administrador', async () => {
-    expect((await ana.get('/porteiro')).body.config.ativo).toBe(false);
-    for (const l of leads.slice(0, 3))
-      expect(
-        (await mandar(l, 'Bom dia! Temos pastilha de freio do Gol com 20% de desconto hoje')).status,
-      ).toBe(201);
-    const r = await ana.enviar('put', '/porteiro', config);
+  /** O que já saiu (direto no banco, sem número: não conta como contato novo de nenhum número). */
+  const jaFoi = async (lista: number[], texto: string) => {
+    for (const l of lista)
+      await pool.query(
+        `INSERT INTO comercial.mensagens (conta_id, empresa_id, direcao, texto, status, origem, enviado_em)
+         VALUES ($1, $2, 'enviada', $3, 'enviada', 'humano', now())`,
+        [contaId, l, texto],
+      );
+  };
+  const respondeu = (l: number) =>
+    pool.query(
+      `INSERT INTO comercial.mensagens (conta_id, empresa_id, direcao, texto, status, origem)
+       VALUES ($1, $2, 'recebida', 'Oi, pode mandar', 'recebida', 'lead')`,
+      [contaId, l],
+    );
+
+  it('sempre ligada: o que estava desligado não vale, e desligar não grava', async () => {
+    await pool.query(
+      `INSERT INTO comercial.porteiro (conta_id, ativo) VALUES ($1, false)
+       ON CONFLICT (conta_id) DO UPDATE SET ativo = false`,
+      [contaId],
+    );
+    expect((await ana.get('/porteiro')).body.config.ativo).toBe(true);
+    const r = await ana.enviar('put', '/porteiro', { ...config, ativo: false });
     expect(r.status).toBe(200);
-    expect(r.body.numeros[0]).toMatchObject({ nome: 'Loja Centro', novosHoje: 3, limiteHoje: 4 });
-    await pool.query('DELETE FROM comercial.mensagens WHERE conta_id = $1', [contaId]);
-    enviados.length = 0;
+    expect(r.body.config.ativo).toBe(true);
+    const { rows } = await pool.query('SELECT ativo FROM comercial.porteiro WHERE conta_id = $1', [contaId]);
+    expect(rows[0].ativo).toBe(true);
   });
 
-  it('o mesmo texto para muitos contatos é segurado; a IA varia e passa', async () => {
+  it('contato frio: o mesmo texto para muitos é segurado sem "mandar mesmo assim"; a IA varia e passa', async () => {
     const texto = 'Bom dia! Temos pastilha de freio do Gol com 20% de desconto hoje';
+    // A prévia avisa antes de mandar.
+    expect((await ana.enviar('post', '/porteiro/previa', { empresaId: leads[0], texto })).body).toMatchObject(
+      {
+        nivel: 'ok',
+        frio: true,
+      },
+    );
     expect((await mandar(leads[0]!, texto)).status).toBe(201);
-    // Quase igual (outro número, outro nome) também conta.
+    const pre = await ana.enviar('post', '/porteiro/previa', { empresaId: leads[1], texto });
+    expect(pre.body).toMatchObject({ nivel: 'atencao', contatos: 1, limite: 3, frio: true });
+    // Quase igual (outro número, outra saudação) também conta.
     expect(
       (await mandar(leads[1]!, 'Boa tarde! Temos pastilha de freio do Gol com 15% de desconto hoje')).status,
     ).toBe(201);
+    expect((await ana.enviar('post', '/porteiro/previa', { empresaId: leads[2], texto })).body.nivel).toBe(
+      'segura',
+    );
     const r = await mandar(leads[2]!, texto);
     expect(r.status).toBe(409);
     expect(r.body.erro.codigo).toBe('porteiro_repetida');
@@ -174,10 +204,10 @@ describe.skipIf(!URL_TESTE)('porteiro do WhatsApp', () => {
       podeForcar: false,
     });
     expect(enviados).toHaveLength(2);
-    // No modo "segurar", "mandar mesmo assim" não passa.
+    // Para contato frio, "mandar mesmo assim" não passa.
     expect((await mandar(leads[2]!, texto, true)).status).toBe(409);
     // Mensagem curta se repete naturalmente: não conta.
-    for (const l of leads.slice(0, 3)) await mandar(l, 'Ok, obrigado!');
+    for (const l of leads.slice(0, 2)) expect((await mandar(l, 'Ok, obrigado!')).status).toBe(201);
     // A IA reescreve; a versão nova passa.
     variacao =
       'Oi! Hoje a pastilha de freio do Gol está com 20% de desconto aqui na loja, quer que eu separe?';
@@ -186,13 +216,25 @@ describe.skipIf(!URL_TESTE)('porteiro do WhatsApp', () => {
     expect((await mandar(leads[2]!, variacao)).status).toBe(201);
   });
 
-  it('modo avisar: pergunta e deixa mandar mesmo assim (fica registrado)', async () => {
-    await ana.enviar('put', '/porteiro', { ...config, repetidasAcao: 'avisar' });
-    const texto = 'Bom dia! Temos pastilha de freio do Gol com 20% de desconto hoje';
-    const r = await mandar(leads[3]!, texto);
+  it('quem já conversa: aviso a partir de 15 na mesma hora, e dá para mandar mesmo assim', async () => {
+    const texto = 'Chegou o lote novo de amortecedores Cofap para Onix e HB20, quer que eu reserve um par?';
+    const conversa = leads[3]!;
+    await respondeu(conversa);
+    await jaFoi(leads.slice(8, 21), texto);
+    // 13 antes: abaixo de 15, passa (é quem conversa, não a régua dos frios).
+    expect((await ana.enviar('post', '/porteiro/previa', { empresaId: conversa, texto })).body).toMatchObject(
+      {
+        nivel: 'atencao',
+        contatos: 13,
+        limite: 15,
+        frio: false,
+      },
+    );
+    await jaFoi([leads[21]!], texto);
+    const r = await mandar(conversa, texto);
     expect(r.status).toBe(409);
-    expect(r.body.erro.detalhes.podeForcar).toBe(true);
-    expect((await mandar(leads[3]!, texto, true)).status).toBe(201);
+    expect(r.body.erro.detalhes).toMatchObject({ contatos: 14, podeForcar: true });
+    expect((await mandar(conversa, texto, true)).status).toBe(201);
     const p = await ana.get('/porteiro');
     expect(p.body.hoje).toMatchObject({ repetida: 3, mesmo_assim: 1, variou: 1 });
     expect(p.body.eventos[0]).toMatchObject({
@@ -203,16 +245,69 @@ describe.skipIf(!URL_TESTE)('porteiro do WhatsApp', () => {
     });
   });
 
+  it('envio automático (cadência, sequência): o texto repetido fica na fila, com um registro só', async () => {
+    const texto =
+      'Somos a Distribuidora Horizonte, entregamos autopeças em 2 horas em toda Salvador e região';
+    await jaFoi(leads.slice(8, 10), texto);
+    await comConta(contaId, async () => {
+      const m1 = await seguraAutomatica(pool, {
+        empresaId: leads[22]!,
+        chipId: chipId,
+        texto,
+        mensagemId: 9001,
+      });
+      expect(m1).toMatch(/Envio automático segurado/);
+      await seguraAutomatica(pool, { empresaId: leads[22]!, chipId: chipId, texto, mensagemId: 9001 });
+      expect(
+        await seguraAutomatica(pool, {
+          empresaId: leads[22]!,
+          chipId,
+          texto: 'Bom dia, aqui é da Horizonte: posso te mandar nossa tabela de peças para linha leve?',
+          mensagemId: 9002,
+        }),
+      ).toBeNull();
+    });
+    const { rows } = await pool.query(
+      `SELECT count(*)::int AS n FROM comercial.porteiro_eventos WHERE conta_id = $1 AND tipo = 'automatica'`,
+      [contaId],
+    );
+    expect(rows[0].n).toBe(1);
+  });
+
+  it('respostas rápidas com versões: parecidas demais não passam', async () => {
+    const base =
+      'Bom dia! O prazo de entrega para a sua região é de 2 horas depois da confirmação do pedido.';
+    const igual = await ana.enviar('post', '/conversas/respostas', {
+      atalho: 'prazo',
+      texto: base,
+      versoes: [
+        'Boa tarde! O prazo de entrega para a sua região é de 2 horas depois da confirmação do pedido.',
+      ],
+    });
+    expect(igual.status).toBe(422);
+    expect(igual.body.erro.mensagem).toMatch(/parecida demais/);
+    const ok = await ana.enviar('post', '/conversas/respostas', {
+      atalho: 'prazo',
+      texto: base,
+      versoes: ['Oi! Confirmando o pedido, a gente entrega aí em até 2 horas.', ''],
+    });
+    expect(ok.status).toBe(201);
+    expect(ok.body.find((r: { atalho: string }) => r.atalho === 'prazo').versoes).toEqual([
+      'Oi! Confirmando o pedido, a gente entrega aí em até 2 horas.',
+    ]);
+  });
+
   it('contatos novos: limite do dia e espera entre um e outro; responder quem conversa passa', async () => {
-    // Já foram 4 contatos novos hoje (o limite).
-    const r = await mandar(leads[4]!, 'Olá, tudo bem?');
+    // Já foram 3 contatos novos hoje por este número; o 4º passa e o 5º bate no limite.
+    expect((await mandar(leads[4]!, 'Olá, tudo bem?')).status).toBe(201);
+    const r = await mandar(leads[5]!, 'Olá, tudo bem?');
     expect(r.status).toBe(409);
     expect(r.body.erro.codigo).toBe('porteiro_limite');
     // Quem já conversa continua recebendo.
     expect((await mandar(leads[0]!, 'Separei a peça para você.')).status).toBe(201);
     // Espera: com limite folgado e 60 s entre um contato novo e outro.
     await ana.enviar('put', '/porteiro', { ...config, novosDia: 50, novosIntervaloSeg: 60 });
-    const e = await mandar(leads[4]!, 'Olá, tudo bem?');
+    const e = await mandar(leads[5]!, 'Olá, tudo bem?');
     expect(e.body.erro.codigo).toBe('porteiro_espera');
     expect(e.body.erro.detalhes.segundos).toBeGreaterThan(0);
     await pool.query(
@@ -220,7 +315,7 @@ describe.skipIf(!URL_TESTE)('porteiro do WhatsApp', () => {
         WHERE conta_id = $1`,
       [contaId],
     );
-    expect((await mandar(leads[4]!, 'Olá, tudo bem?')).status).toBe(201);
+    expect((await mandar(leads[5]!, 'Olá, tudo bem?')).status).toBe(201);
   });
 
   it('pedidos para parar pausam os contatos novos do número (equipe e automáticos) e o administrador libera', async () => {
@@ -240,15 +335,15 @@ describe.skipIf(!URL_TESTE)('porteiro do WhatsApp', () => {
       [contaId, `porteiro:${chipId}`],
     );
     expect(alerta[0].titulo).toMatch(/parou de abordar contatos novos/);
-    const r = await mandar(leads[5]!, 'Olá, tudo bem?');
+    const r = await mandar(leads[6]!, 'Olá, tudo bem?');
     expect(r.body.erro.codigo).toBe('porteiro_pausado');
     expect((await mandar(leads[1]!, 'Combinado, até amanhã.')).status).toBe(201);
     // O automático também não aborda contato novo por este número (responder continua).
     await comConta(contaId, async () => {
       const chips = await emUso(pool);
-      expect(await chipParaAutomatica(pool, leads[6]!, chips, { limiteDia: 40, intervaloSeg: 0 })).toBeNull();
+      expect(await chipParaAutomatica(pool, leads[7]!, chips, { limiteDia: 40, intervaloSeg: 0 })).toBeNull();
       expect(
-        await chipParaAutomatica(pool, leads[6]!, chips, { limiteDia: 40, intervaloSeg: 0 }, Date.now(), {
+        await chipParaAutomatica(pool, leads[7]!, chips, { limiteDia: 40, intervaloSeg: 0 }, Date.now(), {
           resposta: true,
         }),
       ).not.toBeNull();
@@ -257,6 +352,6 @@ describe.skipIf(!URL_TESTE)('porteiro do WhatsApp', () => {
     const liberado = await ana.enviar('post', `/porteiro/numeros/${chipId}/liberar`);
     expect(liberado.body.numeros[0].friosAte).toBeNull();
     expect(await rodadaRisco(pool, log)).toBe(0);
-    expect((await mandar(leads[5]!, 'Olá, tudo bem?')).status).toBe(201);
+    expect((await mandar(leads[6]!, 'Olá, tudo bem?')).status).toBe(201);
   });
 });

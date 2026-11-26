@@ -57,7 +57,8 @@ export async function carregarUsuario(
   }>(
     `SELECT u.id, u.nome, u.email, u.papel, u.master, u.conta_id, (c.ativa AND o.ativa) AS conta_ativa,
             c.organizacao_id, u.totp_ativo, o.exigir_2fa, u.alcance, coalesce(o.assinatura = 'so_leitura', false) AS so_leitura,
-            coalesce((SELECT ce.distribuicao_sdr = 'fila' FROM comercial.config_equipe ce WHERE ce.conta_id = u.conta_id), false) AS fila
+            (coalesce((SELECT ce.distribuicao_sdr = 'fila' FROM comercial.config_equipe ce WHERE ce.conta_id = u.conta_id), false)
+              OR EXISTS (SELECT 1 FROM comercial.config_atendimento ca WHERE ca.conta_id = u.conta_id AND ca.ativo)) AS fila
        FROM cadastro.usuarios u JOIN cadastro.contas c ON c.id = u.conta_id
        JOIN cadastro.organizacoes o ON o.id = c.organizacao_id
       WHERE u.id = $1 AND u.ativo`,
@@ -110,7 +111,7 @@ export async function carregarUsuario(
       !daOrganizacao &&
       contaId === u.conta_id &&
       (u.papel === 'sdr' || u.papel === 'closer'),
-    // Carteira com fila: os sem dono aparecem para todo o time puxar.
+    // Carteira com fila (ou o atendimento com carteira ligado): os sem dono aparecem para todo o time.
     filaSemDono: u.fila,
     // O master continua mexendo (para ajudar o cliente).
     contaSoLeitura: u.so_leitura && !u.master && conta.organizacao_id === u.organizacao_id,

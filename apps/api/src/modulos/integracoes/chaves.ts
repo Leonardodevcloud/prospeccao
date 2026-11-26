@@ -153,11 +153,16 @@ export async function autenticar(
     [hashDaChave(m[1]!)],
   );
   const c = rows[0];
-  if (!c) throw new AppError(401, 'chave_invalida', 'Chave inválida. Confira em Gestão › Integrações.');
+  if (!c)
+    throw new AppError(401, 'chave_invalida', 'Chave inválida. Confira em Configurações › Integrações.');
   if (c.revogada_em)
-    throw new AppError(401, 'chave_revogada', 'Esta chave foi revogada. Crie outra em Gestão › Integrações.');
+    throw new AppError(
+      401,
+      'chave_revogada',
+      'Esta chave foi revogada. Crie outra em Configurações › Integrações.',
+    );
   if (c.vencida)
-    throw new AppError(401, 'chave_vencida', 'Esta chave venceu. Crie outra em Gestão › Integrações.');
+    throw new AppError(401, 'chave_vencida', 'Esta chave venceu. Crie outra em Configurações › Integrações.');
   if (!ipPermitido(ip, c.ips))
     throw new AppError(403, 'ip_nao_permitido', `Esta chave não pode ser usada do endereço ${ip}.`);
 

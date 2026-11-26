@@ -9,6 +9,7 @@ import { emSequenciaSql } from '../email/sequencia.js';
 import { mensagemDoLead } from '../funil/cadencia.js';
 import * as funil from '../funil/repositorio.js';
 import { enviarDirectsPendentes } from '../instagram/servico.js';
+import * as porteiro from '../porteiro/regras.js';
 import { aprenderComEquipe, type DepsAtendimento, responderLead, retomarCombinados } from './atendimento.js';
 import * as chips from './chips.js';
 import { dentroDoHorario } from './horario.js';
@@ -119,8 +120,13 @@ export async function enviarProxima(
   const disponiveis = await chips.emUso(deps.pool, whatsapp);
   if (!disponiveis.length) return false;
 
-  const { rows: fila } = await deps.pool.query<{ id: number; empresa_id: number; origem: string }>(
-    `SELECT id::int, empresa_id::int, origem FROM comercial.mensagens
+  const { rows: fila } = await deps.pool.query<{
+    id: number;
+    empresa_id: number;
+    origem: string;
+    texto: string;
+  }>(
+    `SELECT id::int, empresa_id::int, origem, texto FROM comercial.mensagens
       WHERE conta_id = ${C} AND status = 'aprovada' AND canal = 'whatsapp'
         ${opcoes.soSequencia ? `AND origem IN ('sequencia', 'automatico')` : ''}
       ORDER BY (origem = 'agente') DESC, criado_em, id LIMIT 30`,
@@ -136,6 +142,18 @@ export async function enviarProxima(
       { resposta },
     );
     if (!chip) continue; // o chip deste lead está no limite ou no intervalo: tenta o próximo lead
+    // Proteção do número (sempre ligada): o mesmo texto automático para muita gente fica na fila
+    // até a janela liberar (as respostas da IA são escritas para cada conversa e não passam aqui).
+    if (
+      !resposta &&
+      (await porteiro.seguraAutomatica(deps.pool, {
+        empresaId: candidata.empresa_id,
+        chipId: chip.id,
+        texto: candidata.texto,
+        mensagemId: candidata.id,
+      }))
+    )
+      continue;
     const { rows } = await deps.pool.query<{
       id: number;
       empresa_id: number;

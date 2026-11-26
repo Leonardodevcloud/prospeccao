@@ -6,7 +6,10 @@ import {
   MIN_PALAVRAS_REPETICAO,
   PORTEIRO_PADRAO,
   type PorteiroEntrada,
+  type PreviaPorteiro,
   palavrasDoTexto,
+  REPETIDAS_CONVERSA,
+  REPETIDAS_CONVERSA_JANELA_MIN,
   SEMELHANCA_REPETICAO,
   semelhanca,
 } from '@prospeccao/shared';
@@ -15,10 +18,12 @@ import { tetoDeAquecimento } from '../agente/chips.js';
 import { HOJE_SP } from '../agente/repositorio.js';
 
 /**
- * Porteiro do WhatsApp: antes de a equipe mandar uma mensagem pelo número da conta, confere o que
- * mais derruba número (sobretudo em API não oficial): o mesmo texto indo para muita gente em pouco
- * tempo, contatos novos demais no dia e em sequência rápida, e o número em pausa por sinal de risco.
- * Responder quem já conversa só passa pela conferência de texto repetido.
+ * Porteiro do WhatsApp (sempre ligado desde a v178): antes de a equipe mandar uma mensagem pelo
+ * número da conta, confere o que mais derruba número (sobretudo em API não oficial): o mesmo texto
+ * indo para muita gente em pouco tempo, contatos novos demais no dia e em sequência rápida, e o
+ * número em pausa por sinal de risco. O texto repetido tem duas réguas: rígida para quem nunca
+ * respondeu (não deixa mandar) e um aviso para quem já conversa (15 na mesma hora, dá para mandar).
+ * Os envios automáticos (cadência e sequência) passam pela régua rígida antes de sair.
  */
 
 export async function config(db: Executor): Promise<PorteiroEntrada> {
@@ -28,25 +33,19 @@ export async function config(db: Executor): Promise<PorteiroEntrada> {
             pausar_risco AS "pausarRisco"
        FROM comercial.porteiro WHERE conta_id = ${contaSql()}`,
   );
-  return rows[0] ?? PORTEIRO_PADRAO;
+  // Sempre ligado: o que estiver gravado como desligado (de antes da v178) não vale.
+  return { ...(rows[0] ?? PORTEIRO_PADRAO), ativo: true };
 }
 
 export async function salvarConfig(db: Executor, c: PorteiroEntrada): Promise<void> {
+  // A proteção fica sempre ligada; "repetidas_acao" é legado (a régua depende do contato).
   await db.query(
     `INSERT INTO comercial.porteiro
        (conta_id, ativo, repetidas_contatos, repetidas_janela_min, repetidas_acao, novos_dia, novos_intervalo_seg, pausar_risco)
-     VALUES (${contaSql()}, $1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (conta_id) DO UPDATE SET ativo = $1, repetidas_contatos = $2, repetidas_janela_min = $3,
-       repetidas_acao = $4, novos_dia = $5, novos_intervalo_seg = $6, pausar_risco = $7, atualizado_em = now()`,
-    [
-      c.ativo,
-      c.repetidasContatos,
-      c.repetidasJanelaMin,
-      c.repetidasAcao,
-      c.novosDia,
-      c.novosIntervaloSeg,
-      c.pausarRisco,
-    ],
+     VALUES (${contaSql()}, true, $1, $2, 'segurar', $3, $4, $5)
+     ON CONFLICT (conta_id) DO UPDATE SET ativo = true, repetidas_contatos = $1, repetidas_janela_min = $2,
+       novos_dia = $3, novos_intervalo_seg = $4, pausar_risco = $5, atualizado_em = now()`,
+    [c.repetidasContatos, c.repetidasJanelaMin, c.novosDia, c.novosIntervaloSeg, c.pausarRisco],
   );
 }
 
@@ -134,16 +133,64 @@ async function amanha(db: Executor): Promise<string> {
   return new Date(rows[0]!.em).toISOString();
 }
 
+/** O lead já respondeu alguma vez (conversa)? Quem nunca respondeu é contato frio: régua rígida. */
+async function jaRespondeu(db: Executor, empresaId: number): Promise<boolean> {
+  const { rows } = await db.query<{ ok: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM comercial.mensagens WHERE conta_id = ${contaSql()} AND empresa_id = $1
+                       AND direcao = 'recebida') AS ok`,
+    [empresaId],
+  );
+  return !!rows[0]?.ok;
+}
+
 /**
- * Confere antes de mandar. Lança 409 com o código do porteiro (a tela mostra o que fazer); passa
- * sem fazer nada com o porteiro desligado.
+ * Para quantos contatos (fora este) um texto igual ou quase igual já foi, por janela. Por contato, a
+ * última vez (é quando ele sai da janela).
+ */
+async function parecidas(
+  db: Executor,
+  p: { empresaId: number; chipId: number | null; texto: string; janelaMin: number },
+): Promise<Map<string, number> | null> {
+  const palavras = palavrasDoTexto(p.texto);
+  if (new Set(palavras).size < MIN_PALAVRAS_REPETICAO) return null;
+  const { rows } = await db.query<{ empresa_id: string; texto: string; em: Date }>(
+    `SELECT empresa_id, texto, coalesce(enviado_em, criado_em) AS em
+       FROM comercial.mensagens
+      WHERE conta_id = ${contaSql()} AND direcao = 'enviada' AND status = 'enviada' AND empresa_id <> $1
+        AND ($2::int IS NULL OR chip_id = $2 OR chip_id IS NULL)
+        AND coalesce(enviado_em, criado_em) > now() - make_interval(mins => $3)
+      ORDER BY id DESC LIMIT 1500`,
+    [p.empresaId, p.chipId, p.janelaMin],
+  );
+  const m = new Map<string, number>();
+  for (const r of rows)
+    if (semelhanca(palavras, palavrasDoTexto(r.texto)) >= SEMELHANCA_REPETICAO)
+      m.set(r.empresa_id, Math.max(m.get(r.empresa_id) ?? 0, new Date(r.em).getTime()));
+  return m;
+}
+
+/** Quantos dentro de uma janela menor (a régua de quem conversa usa 1 hora). */
+function dentroDe(m: Map<string, number>, janelaMin: number): number[] {
+  const desde = Date.now() - janelaMin * 60_000;
+  return [...m.values()].filter((t) => t > desde).sort((a, b) => a - b);
+}
+
+/** A régua do texto repetido para este destinatário. */
+function regua(cfg: PorteiroEntrada, frio: boolean) {
+  return frio
+    ? { limite: cfg.repetidasContatos, janelaMin: cfg.repetidasJanelaMin, rigida: true }
+    : { limite: REPETIDAS_CONVERSA, janelaMin: REPETIDAS_CONVERSA_JANELA_MIN, rigida: false };
+}
+
+/**
+ * Confere antes de mandar. Lança 409 com o código do porteiro (a tela mostra o que fazer). Sempre
+ * ligado.
  */
 export async function conferirEnvio(
   db: Executor,
   p: { empresaId: number; chipId: number | null; texto: string | null; mesmoAssim?: boolean },
 ): Promise<void> {
   const cfg = await config(db);
-  if (!cfg.ativo) return;
   const C = contaSql();
   const alvo = { chipId: p.chipId, empresaId: p.empresaId };
 
@@ -191,25 +238,19 @@ export async function conferirEnvio(
 
   // 2. O mesmo texto para muitos contatos dentro da janela.
   if (!p.texto) return;
-  const palavras = palavrasDoTexto(p.texto);
-  if (new Set(palavras).size < MIN_PALAVRAS_REPETICAO) return;
-  const { rows: antes } = await db.query<{ empresa_id: string; texto: string; em: Date }>(
-    `SELECT empresa_id, texto, coalesce(enviado_em, criado_em) AS em
-       FROM comercial.mensagens
-      WHERE conta_id = ${C} AND direcao = 'enviada' AND status = 'enviada' AND empresa_id <> $1
-        AND ($2::int IS NULL OR chip_id = $2 OR chip_id IS NULL)
-        AND coalesce(enviado_em, criado_em) > now() - make_interval(mins => $3)
-      ORDER BY id DESC LIMIT 1500`,
-    [p.empresaId, p.chipId, cfg.repetidasJanelaMin],
-  );
-  // Por lead, a última vez que recebeu um texto parecido (é quando ele sai da janela).
-  const parecidas = new Map<string, number>();
-  for (const m of antes)
-    if (semelhanca(palavras, palavrasDoTexto(m.texto)) >= SEMELHANCA_REPETICAO)
-      parecidas.set(m.empresa_id, Math.max(parecidas.get(m.empresa_id) ?? 0, new Date(m.em).getTime()));
-  const n = parecidas.size;
-  if (n + 1 < cfg.repetidasContatos) return;
-  if (cfg.repetidasAcao === 'avisar' && p.mesmoAssim) {
+  const frio = !(await jaRespondeu(db, p.empresaId));
+  const r = regua(cfg, frio);
+  const mapa = await parecidas(db, {
+    empresaId: p.empresaId,
+    chipId: p.chipId,
+    texto: p.texto,
+    janelaMin: r.janelaMin,
+  });
+  if (!mapa) return;
+  const tempos = dentroDe(mapa, r.janelaMin);
+  const n = tempos.length;
+  if (n + 1 < r.limite) return;
+  if (!r.rigida && p.mesmoAssim) {
     await registrar(db, {
       tipo: 'mesmo_assim',
       ...alvo,
@@ -218,20 +259,89 @@ export async function conferirEnvio(
     return;
   }
   // Libera quando sair da janela gente bastante para este envio ficar abaixo do limite.
-  const tempos = [...parecidas.values()].sort((a, b) => a - b);
-  const sai = tempos[n - cfg.repetidasContatos + 1] ?? tempos[0]!;
+  const sai = tempos[n - r.limite + 1] ?? tempos[0]!;
   await segurar(
     db,
     'porteiro_repetida',
-    `Esta mensagem já foi, igual ou quase igual, para ${n} ${n === 1 ? 'contato' : 'contatos'} ${janela(cfg.repetidasJanelaMin)}. O mesmo texto para muita gente é o que mais derruba número no WhatsApp: varie as palavras (a IA ajuda) ou espere.`,
+    r.rigida
+      ? `Esta mensagem já foi, igual ou quase igual, para ${n} ${n === 1 ? 'contato' : 'contatos'} ${janela(r.janelaMin)}, e este contato ainda não respondeu. O mesmo texto para muita gente que não conversa com você é o que mais derruba número no WhatsApp: varie as palavras (a IA ajuda) ou espere.`
+      : `Esta mensagem já foi, igual ou quase igual, para ${n} contatos ${janela(r.janelaMin)}. Mesmo com quem já conversa, texto igual em série chama a atenção do WhatsApp: varie as palavras (a IA ajuda) ou mande assim mesmo.`,
     {
       contatos: n,
-      janelaMin: cfg.repetidasJanelaMin,
-      podeForcar: cfg.repetidasAcao === 'avisar',
-      liberaEm: new Date(sai + cfg.repetidasJanelaMin * 60_000).toISOString(),
+      janelaMin: r.janelaMin,
+      podeForcar: !r.rigida,
+      liberaEm: new Date(sai + r.janelaMin * 60_000).toISOString(),
     },
     alvo,
   );
+}
+
+/**
+ * Prévia para a tela (o aviso enquanto escreve): o que acontece se mandar este texto agora para
+ * este contato. Não registra nada.
+ */
+export async function previa(
+  db: Executor,
+  p: { empresaId: number; chipId: number | null; texto: string },
+): Promise<PreviaPorteiro> {
+  const cfg = await config(db);
+  const frio = !(await jaRespondeu(db, p.empresaId));
+  const r = regua(cfg, frio);
+  const mapa = await parecidas(db, { ...p, janelaMin: r.janelaMin });
+  const n = mapa ? dentroDe(mapa, r.janelaMin).length : 0;
+  const base = { contatos: n, limite: r.limite, janelaMin: r.janelaMin, frio };
+  if (!mapa || n === 0) return { ...base, nivel: 'ok', mensagem: null };
+  if (n + 1 >= r.limite)
+    return {
+      ...base,
+      nivel: r.rigida ? 'segura' : 'aviso',
+      mensagem: r.rigida
+        ? `Este texto já foi para ${n} ${n === 1 ? 'contato' : 'contatos'} ${janela(r.janelaMin)} e este contato ainda não respondeu: a proteção do número vai segurar. Varie as palavras antes de mandar.`
+        : `Este texto já foi para ${n} contatos ${janela(r.janelaMin)}. Varie as palavras para não chamar a atenção do WhatsApp.`,
+    };
+  const faltam = r.limite - 1 - n;
+  return {
+    ...base,
+    nivel: 'atencao',
+    mensagem: `Texto parecido já foi para ${n} ${n === 1 ? 'contato' : 'contatos'} ${janela(r.janelaMin)}.${
+      faltam <= 2
+        ? ` Mais ${faltam === 1 ? '1 envio' : `${faltam} envios`} e ${r.rigida ? 'a proteção segura' : 'vem o aviso'}.`
+        : ''
+    } Variar as palavras protege o número.`,
+  };
+}
+
+/**
+ * Envio automático (cadência e sequência): passa pela régua do texto repetido antes de sair (para
+ * contato frio e para quem conversa, sem "mandar mesmo assim"). Devolve o motivo para segurar, ou
+ * null. A mensagem fica na fila e sai quando a janela liberar.
+ */
+export async function seguraAutomatica(
+  db: Executor,
+  p: { empresaId: number; chipId: number | null; texto: string; mensagemId: number },
+): Promise<string | null> {
+  const cfg = await config(db);
+  const frio = !(await jaRespondeu(db, p.empresaId));
+  const r = regua(cfg, frio);
+  const mapa = await parecidas(db, { ...p, janelaMin: r.janelaMin });
+  if (!mapa) return null;
+  const n = dentroDe(mapa, r.janelaMin).length;
+  if (n + 1 < r.limite) return null;
+  const motivo = `Envio automático segurado: o mesmo texto já foi para ${n} contatos ${janela(r.janelaMin)}. Sai quando a janela liberar; para não esperar, crie versões da mensagem.`;
+  // Um registro por mensagem segurada (ela volta a ser conferida a cada rodada).
+  const { rows } = await db.query<{ ja: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM comercial.porteiro_eventos
+                     WHERE conta_id = ${contaSql()} AND tipo = 'automatica' AND detalhe LIKE $1) AS ja`,
+    [`%#${p.mensagemId})`],
+  );
+  if (!rows[0]?.ja)
+    await registrar(db, {
+      tipo: 'automatica',
+      chipId: p.chipId,
+      empresaId: p.empresaId,
+      detalhe: `${motivo} (mensagem #${p.mensagemId})`,
+    });
+  return motivo;
 }
 
 const janela = (min: number) =>

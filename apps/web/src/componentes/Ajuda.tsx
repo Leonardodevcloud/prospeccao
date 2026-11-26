@@ -11,7 +11,15 @@ import { abrirTour } from './tour/abrir';
  */
 export interface ArtigoAjuda {
   id: string;
-  area: 'Começo' | 'Prospecção' | 'Vendas' | 'WhatsApp e IA' | 'Gestão' | 'Argos' | 'Painel da plataforma';
+  area:
+    | 'Começo'
+    | 'Prospecção'
+    | 'Atendimento'
+    | 'WhatsApp e IA'
+    | 'Argos'
+    | 'Gestão'
+    | 'Configurações'
+    | 'Painel da plataforma';
   /** Só quem administra a plataforma vê (o painel master). */
   soMaster?: boolean;
   titulo: string;
@@ -112,19 +120,22 @@ export const ARTIGOS: ArtigoAjuda[] = [
             <b>Meu dia</b>: o que fazer hoje.
           </li>
           <li>
-            <b>Prospecção</b>: Leads, Campanhas, Nichos e Atividade.
+            <b>Prospecção</b>: Leads, Funil, Vendas na rua, Campanhas e Nichos.
           </li>
           <li>
-            <b>Vendas</b>: Funil, Conversas, Reuniões e Na rua.
+            <b>Atendimento</b>: Conversas, Quadros, Ligações, Reuniões e E-mails.
           </li>
           <li>
-            <b>Automação</b>: E-mail, Agente de IA e Instagram.
+            <b>Automação</b>: Agente de IA, Instagram, Carrosséis e Vídeos.
           </li>
           <li>
             <b>Argos</b>: o assistente e o mapa do conhecimento.
           </li>
           <li>
-            <b>Gestão</b>: Relatórios, Equipe, Integrações, Marca e domínio, Meu plano e Auditoria.
+            <b>Gestão</b>: Relatórios, Qualidade do atendimento e Equipe.
+          </li>
+          <li>
+            <b>Configurações</b>: Integrações, Marca e domínio, Telefonia, Auditoria e Meu plano.
           </li>
         </ul>
         <p>
@@ -254,7 +265,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'funil',
-    area: 'Vendas',
+    area: 'Prospecção',
     titulo: 'Funil',
     resumo: 'As etapas da venda e o que fazer em cada uma.',
     onde: { rotulo: 'Funil', para: '/funil' },
@@ -288,7 +299,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'quadros',
-    area: 'Vendas',
+    area: 'Atendimento',
     titulo: 'Quadros com gatilhos da IA',
     resumo:
       'Quadros com as colunas que você quiser (achou caro, sem estoque, vai pensar); a IA lê as conversas e põe cada lead na coluna certa, com o trecho que mostra isso.',
@@ -306,8 +317,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>Montar o quadro (administrador)</h3>
         <ul>
           <li>
-            Em <b>Vendas › Quadros</b>, clique em <b>Criar o primeiro quadro</b> (ou <b>Novo quadro</b>). Dá
-            para começar de um modelo e mudar tudo.
+            Em <b>Atendimento › Quadros</b>, clique em <b>Criar o primeiro quadro</b> (ou <b>Novo quadro</b>).
+            Dá para começar de um modelo e mudar tudo.
           </li>
           <li>
             Cada coluna pode ter um <b>gatilho</b>: a situação que põe o lead nela, escrita como você
@@ -360,7 +371,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'ligacoes',
-    area: 'Vendas',
+    area: 'Atendimento',
     titulo: 'Ligações pelo CRM',
     resumo:
       'Ligue e receba ligações pelo navegador com o número da empresa, monte listas de ligação e veja o relatório; a IA resume e sugere o próximo passo.',
@@ -389,6 +400,14 @@ export const ARTIGOS: ArtigoAjuda[] = [
             anotações que você fizer vão para a nota da ligação.
           </li>
         </Passos>
+        <h3>O discador do canto da tela</h3>
+        <p>
+          Em qualquer tela, o botão com o telefone no canto de baixo (em cima do Argos) abre o <b>discador</b>
+          . Digite o número com DDD e clique em <b>Ligar</b> (ou <b>WhatsApp</b>, se a conta liga pelo
+          WhatsApp). Digitando o <b>nome do lead</b>, o discador mostra os leads e os números de cada um:
+          assim a ligação fica na ficha e a IA sugere o próximo passo. Uma ligação para um número solto pode
+          ser ligada a um lead no “Como foi?”.
+        </p>
         <h3>Vários números no lead</h3>
         <p>
           Na ficha, o quadro <b>Ligações</b> mostra todos os números do lead (do enriquecimento, do WhatsApp,
@@ -418,14 +437,14 @@ export const ARTIGOS: ArtigoAjuda[] = [
         </ul>
         <p>
           Tudo fica no histórico do lead: a gravação (com velocidade), o resumo e a transcrição com o tempo de
-          cada fala. A tela <b>Vendas › Ligações</b> mostra as ligações de todo mundo, com filtros por pessoa,
-          resultado e período.
+          cada fala. A tela <b>Atendimento › Ligações</b> mostra as ligações de todo mundo, com filtros por
+          pessoa, resultado e período.
         </p>
         <h3>Lista de ligação</h3>
         <p>
-          Em <b>Vendas › Ligações › Lista de ligação</b>, escolha os leads (por etapa e responsável; desmarque
-          os que não quiser) e clique em <b>Começar a ligar</b>. O CRM liga para um, você conversa, salva o
-          “Como foi?” e, depois da pausa que você escolheu, ele liga para o próximo sozinho.
+          Em <b>Atendimento › Ligações › Lista de ligação</b>, escolha os leads (por etapa e responsável;
+          desmarque os que não quiser) e clique em <b>Começar a ligar</b>. O CRM liga para um, você conversa,
+          salva o “Como foi?” e, depois da pausa que você escolheu, ele liga para o próximo sozinho.
         </p>
         <ul>
           <li>
@@ -471,7 +490,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
         </ul>
         <p>
           As abas <b>Recebidas</b> e <b>Perdidas</b> mostram essas ligações. O administrador liga e desliga o
-          receber pelo CRM, o tempo de cada etapa e o siga-me em <b>Gestão › Telefonia</b>.
+          receber pelo CRM, o tempo de cada etapa e o siga-me em <b>Configurações › Telefonia</b>.
         </p>
         <h3>Ligação pelo WhatsApp</h3>
         <p>
@@ -489,11 +508,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
         </ul>
         <h3>Menu de voz (uma loja ou setor por tecla)</h3>
         <p>
-          Com várias lojas ou setores no mesmo número, ligue o <b>Menu de voz</b> em <b>Gestão › Telefonia</b>
-          . Quem liga ouve a primeira frase que você escrever e as opções (“Para a Loja Centro, digite 1. Para
-          a Loja Norte, digite 2.”) e escolhe pela tecla do telefone. Aí toca ao mesmo tempo para todos
-          daquele grupo; quem atender primeiro leva. A pessoa ouve “Um momento, estamos chamando a Loja
-          Centro” e o sinal de chamada até alguém atender.
+          Com várias lojas ou setores no mesmo número, ligue o <b>Menu de voz</b> em{' '}
+          <b>Configurações › Telefonia</b>. Quem liga ouve a primeira frase que você escrever e as opções
+          (“Para a Loja Centro, digite 1. Para a Loja Norte, digite 2.”) e escolhe pela tecla do telefone. Aí
+          toca ao mesmo tempo para todos daquele grupo; quem atender primeiro leva. A pessoa ouve “Um momento,
+          estamos chamando a Loja Centro” e o sinal de chamada até alguém atender.
         </p>
         <ul>
           <li>
@@ -523,7 +542,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
           A ligação é gravada no navegador de quem liga e a pessoa do outro lado é avisada no começo: o
           sistema toca o aviso com voz ou, se preferir, o comercial lê a frase que aparece na tela. O
           administrador muda o texto, liga e desliga a gravação e escolhe por quanto tempo guardar em{' '}
-          <b>Gestão › Telefonia</b>.
+          <b>Configurações › Telefonia</b>.
         </p>
         <Nota>
           Não feche a aba durante a ligação: a gravação sobe para o CRM quando a ligação termina (leva
@@ -534,8 +553,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Os números da empresa são cadastrados pelo Prospect Team (escolha o DDD ou traga o número que já
           usa). Com mais de um número, o CRM liga com o do mesmo DDD do lead. O módulo vem com uma franquia de
           minutos por mês para a empresa toda; cada ligação atendida conta arredondada para cima, as que não
-          atendem não contam. Em Gestão › Telefonia você acompanha o uso; os administradores recebem um aviso
-          quando o mês passa de 80% e de 100% da franquia. Quem assina pelo sistema compra um pacote de
+          atendem não contam. Em Configurações › Telefonia você acompanha o uso; os administradores recebem um
+          aviso quando o mês passa de 80% e de 100% da franquia. Quem assina pelo sistema compra um pacote de
           minutos quando a franquia acaba (as ligações param até comprar; o que sobrar do pacote não vence;
           veja <Link to="/ajuda/assinatura">Teste grátis, assinatura e pagamento</Link>). Contrato combinado
           com a gente: as ligações continuam e o excedente vem na fatura.
@@ -545,7 +564,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'reunioes',
-    area: 'Vendas',
+    area: 'Atendimento',
     titulo: 'Reuniões por vídeo',
     resumo: 'Sala de vídeo com link para o lead, gravação, transcrição e resumo da IA.',
     onde: { rotulo: 'Reuniões', para: '/reunioes' },
@@ -720,7 +739,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'vendas-na-rua',
-    area: 'Vendas',
+    area: 'Prospecção',
     titulo: 'Vendas na rua (roteiro de visitas)',
     resumo: 'Monte o dia de visitas pelos leads da campanha, siga no celular e registre cada visita.',
     onde: { rotulo: 'Na rua', para: '/rua' },
@@ -737,8 +756,8 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>Planejar o dia (no computador)</h3>
         <Passos>
           <li>
-            Em <b>Vendas › Na rua › Planejar o dia</b>, escolha o dia e, se você é administrador, de quem é o
-            roteiro.
+            Em <b>Prospecção › Vendas na rua › Planejar o dia</b>, escolha o dia e, se você é administrador,
+            de quem é o roteiro.
           </li>
           <li>
             Em <b>Quais leads entram</b>, escolha a campanha, as notas (A, B, C) e a situação: nunca
@@ -808,12 +827,127 @@ export const ARTIGOS: ArtigoAjuda[] = [
     ),
   },
   {
+    id: 'atendimento-carteira',
+    area: 'Atendimento',
+    titulo: 'Atendimento com carteira: filas, protocolo e encerramento',
+    resumo:
+      'Cada cliente cai na fila do vendedor dono dele; quem não tem dono vai para a Fila geral. Com protocolo, transferir, encerrar, reabrir e pesquisa de 1 a 5.',
+    onde: { rotulo: 'Configurações › Atendimento', para: '/atendimento' },
+    termos:
+      'atendimento carteira carteirizar fila geral minha carteira aguardando encerrados protocolo encerrar reabrir transferir nota interna pesquisa satisfação etiqueta tag disponível pausa dono vendedor importar carteira planilha painel do atendimento sac central de atendimento',
+    corpo: (
+      <>
+        <p>
+          Para empresas que atendem os clientes pelo WhatsApp com uma equipe (balcão, televendas, SAC). Vem no
+          plano <b>Escala</b> e é ligado pelo administrador em <b>Configurações › Atendimento</b>. Ligado, as{' '}
+          <b>Conversas</b> viram filas.
+        </p>
+        <h3>Para onde vai quem chama</h3>
+        <ul>
+          <li>
+            <b>O cliente tem dono</b> (está na carteira de um vendedor): cai na fila <b>Minha carteira</b>{' '}
+            dele, com aviso no sino e no celular.
+          </li>
+          <li>
+            <b>Não tem dono:</b> cai na <b>Fila geral</b>, que todos veem. Quem responder (ou apertar{' '}
+            <b>Assumir</b>) fica com o atendimento e, se a conta quiser, vira o dono do cliente.
+          </li>
+          <li>
+            <b>O dono não respondeu</b> em X minutos (a conta escolhe): o atendimento aparece também na Fila
+            geral, com o selo “carteira de fulano, sem resposta”. O cliente continua na carteira dele.
+          </li>
+          <li>
+            <b>Em pausa:</b> cada pessoa marca <b>Disponível</b> ou <b>Em pausa</b> embaixo do próprio nome,
+            no menu. Entrando em pausa, os clientes que estão esperando resposta vão para a Fila geral.
+          </li>
+        </ul>
+        <h3>As filas</h3>
+        <ul>
+          <li>
+            <b>Minha carteira:</b> o que está com você esperando resposta.
+          </li>
+          <li>
+            <b>Fila geral:</b> ninguém pegou ainda (e os grupos de que você faz parte, quando alguém transfere
+            para o grupo).
+          </li>
+          <li>
+            <b>Aguardando:</b> você respondeu e o cliente ainda não. Quando ele escrever, volta para a Minha
+            carteira.
+          </li>
+          <li>
+            <b>Encerrados:</b> os últimos 30 dias.
+          </li>
+        </ul>
+        <p>
+          Dá para filtrar por etiqueta e buscar por nome, telefone ou protocolo. <b>Todas as conversas</b>, no
+          topo, mostra a caixa de entrada sem as filas.
+        </p>
+        <h3>Na conversa</h3>
+        <ul>
+          <li>
+            <b>Protocolo:</b> cada atendimento tem um número (ano, mês e dia, e a ordem do dia). A conta pode
+            mandar o protocolo no fim da primeira resposta.
+          </li>
+          <li>
+            <b>Transferir</b> para uma pessoa (com quem está disponível e quantos atendimentos cada um tem) ou
+            para um grupo, com uma nota para quem recebe. O cliente não vê a nota. Passar também a carteira é
+            só do administrador; para os outros, vira um pedido para ele.
+          </li>
+          <li>
+            <b>Nota interna:</b> na caixa de escrever, a aba <b>Nota interna</b> grava um recado que só a
+            equipe vê, no meio da conversa.
+          </li>
+          <li>
+            <b>Encerrar:</b> escolha como terminou (os motivos são do administrador) e as etiquetas. Pode
+            mandar a mensagem de encerramento e pedir a nota de 1 a 5, na mesma mensagem. O cliente responde
+            só com o número; se escrever outra coisa, o atendimento reabre normalmente.
+          </li>
+          <li>
+            <b>Reabrir:</b> no atendimento encerrado, o botão <b>Reabrir</b> traz ele de volta para você.
+            Quando o cliente volta a escrever, abre um atendimento novo sozinho.
+          </li>
+          <li>
+            No painel da direita: os dados do cliente, de quem é a carteira (o administrador troca ali), as
+            etiquetas do cliente e os atendimentos anteriores.
+          </li>
+        </ul>
+        <h3>Configurações › Atendimento</h3>
+        <ul>
+          <li>As regras acima, os motivos de encerramento e a mensagem de encerramento.</li>
+          <li>
+            <b>Encerrar sozinho</b> o que ficou esperando o cliente por X horas (motivo “Cliente não
+            respondeu”, sem mandar mensagem).
+          </li>
+          <li>
+            <b>Importar a carteira</b> por planilha (Excel ou CSV): uma linha por cliente, com CNPJ ou
+            telefone e o e-mail do vendedor. Cliente que ainda não está no CRM é criado; o que já está só
+            ganha o dono.
+          </li>
+          <li>
+            <b>Passar a carteira</b> de uma pessoa para outra (férias, saída): todos os clientes ou só os de
+            uma etiqueta.
+          </li>
+          <li>
+            <b>Etiquetas</b> com cor, que valem no atendimento e no cliente.
+          </li>
+        </ul>
+        <h3>Painel do atendimento</h3>
+        <p>
+          Em <b>Gestão › Qualidade do atendimento</b>, o administrador vê a Fila geral agora, quem está
+          atendendo, a primeira resposta (mediana), o tempo de atendimento, os encerrados, a nota dos
+          clientes, como terminaram e de onde vieram. A nota da IA continua na aba <b>Nota da IA</b>.
+        </p>
+      </>
+    ),
+  },
+  {
     id: 'conversas',
-    area: 'Vendas',
+    area: 'Atendimento',
     titulo: 'Conversas e “Sem lead”',
     resumo: 'Onde ficam as conversas do WhatsApp e o que acontece com quem não é lead.',
     onde: { rotulo: 'Conversas', para: '/conversas' },
-    termos: 'whatsapp inbox sem lead não identificado número desconhecido',
+    termos:
+      'whatsapp inbox sem lead não identificado número desconhecido corretor ortográfico corrigir melhorar com ia reescrever texto mais curto cordial claro',
     corpo: (
       <>
         <p>
@@ -834,6 +968,19 @@ export const ARTIGOS: ArtigoAjuda[] = [
           existiam não entram (<Link to="/ajuda/whatsapp-uso-diario">veja como funciona</Link>).
         </p>
         <Nota>Quem só vê a própria base enxerga em “Sem lead” apenas o que chegou pelo próprio número.</Nota>
+        <h3>Escrever melhor</h3>
+        <ul>
+          <li>
+            <b>Corretor:</b> a caixa de escrever usa o corretor do navegador em português (a palavra errada
+            fica sublinhada; clique com o botão direito para ver a correção).
+          </li>
+          <li>
+            <b>Melhorar com IA</b> (a varinha ao lado do clipe), em todos os planos: <b>Corrigir</b> (só
+            ortografia, acentos e pontuação), <b>Mais claro</b>, <b>Mais cordial</b> ou <b>Mais curto</b>. A
+            IA não mexe em números, preços, prazos e links. Antes de usar, você vê o que mudou: o que saiu
+            riscado em vermelho e o que entrou em verde. Nada é mandado sem você apertar enviar.
+          </li>
+        </ul>
       </>
     ),
   },
@@ -845,7 +992,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
       'QR Code, limite por dia, aquecimento, número de cada comercial e a proteção do número (porteiro).',
     onde: { rotulo: 'Agente › Atendimento', para: '/agente' },
     termos:
-      'qr code chip conectar desconectar limite aquecimento bloqueio dono comercial porteiro proteção banimento ban banido mensagem repetida variar texto contatos novos pausa denunciar spam',
+      'qr code chip conectar desconectar limite aquecimento bloqueio dono comercial porteiro proteção banimento ban banido mensagem repetida variar texto contatos novos pausa denunciar spam versões versão sempre ligada',
     corpo: (
       <>
         <h3>Conectar</h3>
@@ -886,17 +1033,29 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <p>
           Quando a equipe toda usa o mesmo número (e ainda mais por uma API que não é a oficial do WhatsApp),
           o que mais derruba o número é: o mesmo texto para muita gente em pouco tempo, muitos contatos novos
-          seguidos e continuar abordando quem pede para parar. Em{' '}
-          <b>Agente › Atendimento › Proteção do número</b>, o administrador liga a proteção e escolhe os
-          limites:
+          seguidos e continuar abordando quem pede para parar. Por isso a proteção fica <b>sempre ligada</b>,
+          em todos os planos, sem opção de desligar. Em <b>Agente › Atendimento › Proteção do número</b>, o
+          administrador ajusta os limites:
         </p>
         <ul>
           <li>
-            <b>Mesmo texto para muita gente</b>: a mensagem que já foi, igual ou quase igual (trocar só o “bom
-            dia” ou o nome não engana), para vários contatos dentro do tempo escolhido é segurada. Na conversa
-            aparece o aviso com <b>Variar com a IA</b>: a IA reescreve com outras palavras e os mesmos preços,
-            prazos e links, e você confere antes de mandar. No modo <b>Avisar</b>, dá para{' '}
-            <b>Mandar mesmo assim</b> (fica registrado). Mensagem curta (“bom dia”, “ok, obrigado”) não conta.
+            <b>O mesmo texto para quem nunca respondeu</b>: a mensagem que já foi, igual ou quase igual
+            (trocar só o “bom dia” ou o nome não engana), para vários contatos dentro do tempo escolhido é
+            segurada, sem “mandar mesmo assim”. Na conversa aparece o aviso com <b>Variar com a IA</b>: a IA
+            reescreve com outras palavras e os mesmos preços, prazos e links, e você confere antes de mandar.
+          </li>
+          <li>
+            <b>O mesmo texto para quem já conversa</b>: a partir de 15 contatos na mesma hora, aparece um
+            aviso e dá para <b>Mandar mesmo assim</b> (fica registrado).
+          </li>
+          <li>
+            <b>Antes de mandar</b>: enquanto você escreve, se o texto já foi para outras pessoas, aparece um
+            aviso amarelo (falta pouco para segurar) ou vermelho (vai ser segurado), com{' '}
+            <b>Variar com a IA</b>.
+          </li>
+          <li>
+            <b>Cadência e sequência</b>: o envio automático com texto repetido espera na fila até a janela
+            liberar. Para não esperar, crie <b>versões</b> das mensagens (abaixo).
           </li>
           <li>
             <b>Contatos novos</b> (a primeira mensagem para quem nunca conversou): até tantos por número por
@@ -908,8 +1067,16 @@ export const ARTIGOS: ArtigoAjuda[] = [
             respondendo os contatos novos do dia, o número fica 6 horas sem abordar contatos novos (equipe e
             automáticos) e os administradores recebem um alerta. O administrador pode <b>Liberar agora</b>.
           </li>
-          <li>Responder quem já conversa nunca é segurado (só a conferência de texto repetido vale).</li>
+          <li>Mensagem curta (“bom dia”, “ok, obrigado”) não conta como texto repetido.</li>
         </ul>
+        <h3>Versões das mensagens</h3>
+        <p>
+          As <b>respostas rápidas</b>, as mensagens da <b>cadência</b> e os passos de WhatsApp das{' '}
+          <b>sequências</b> aceitam até 3 versões (a principal e mais 2). A cada envio o sistema sorteia uma.
+          As versões precisam ser diferentes de verdade: se uma ficar parecida demais com outra, o sistema
+          avisa na hora e não salva. <b>Gerar com a IA</b> escreve as versões que faltam, com os mesmos
+          números e links.
+        </p>
         <p>
           O painel mostra quantos contatos novos cada número já abordou hoje e o que a proteção segurou nos
           últimos 7 dias, com quem e para qual lead.
@@ -1994,10 +2161,10 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'email',
-    area: 'Vendas',
+    area: 'Atendimento',
     titulo: 'Sequências de e-mail',
     resumo: 'Passos, modelos e teste antes de ligar.',
-    onde: { rotulo: 'E-mail', para: '/email' },
+    onde: { rotulo: 'E-mails', para: '/email' },
     termos: 'email sequência modelos domínio identidade visual',
     corpo: (
       <>
@@ -2005,6 +2172,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
           Uma sequência é uma série de passos (e-mail e outros canais) que os leads recebem com intervalos.
           Configure a identidade visual, escreva os modelos (os do nicho da campanha aparecem primeiro) e
           monte os passos.
+        </p>
+        <p>
+          A identidade visual dos e-mails (cores, logo, capa, remetente e assinatura) fica em{' '}
+          <b>Configurações › Marca e domínio › E-mails</b>, junto com o resto da marca. Dá para ter mais de
+          uma; cada sequência escolhe a sua. A identidade nova já vem com o nome e a cor da marca da conta.
         </p>
         <Nota>Mande um teste para você antes de ligar a sequência.</Nota>
         <p>
@@ -2016,7 +2188,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'email-dominio',
-    area: 'Vendas',
+    area: 'Configurações',
     titulo: 'Domínio de e-mail: como configurar',
     resumo:
       'Os e-mails saem com o domínio da sua empresa. Passo a passo do DNS, sem criar conta em outro serviço.',
@@ -2093,7 +2265,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'marca-dominio',
-    area: 'Gestão',
+    area: 'Configurações',
     titulo: 'Marca e domínio próprio',
     resumo:
       'O sistema com o nome, a cor, o logo e o endereço da sua empresa (crm.suaempresa.com.br). Você mesmo configura.',
@@ -2112,6 +2284,11 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>Marca</h3>
         <p>
           Tudo fica na aba <b>Marca</b>, com a prévia ao lado mostrando cada lugar antes de salvar.
+        </p>
+        <p>
+          A aba <b>E-mails</b> guarda a identidade visual dos e-mails das sequências (cores, logo, capa,
+          remetente e assinatura). Ela vale em qualquer plano com o módulo de e-mail; marca, domínio próprio e
+          fundos das reuniões são do plano Escala.
         </p>
         <ul>
           <li>
@@ -2225,7 +2402,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'integracoes',
-    area: 'Gestão',
+    area: 'Configurações',
     titulo: 'Integrações: API, formulários do site, avisos e segundo cérebro',
     resumo:
       'Ligue o CRM ao site, ao ERP, à loja virtual e ao Make/Zapier (chaves da API, formulários e avisos) e ao Cérebro da empresa (segundo cérebro).',
@@ -2235,9 +2412,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
     corpo: (
       <>
         <p>
-          Em <b>Gestão › Integrações</b> (só o administrador) você liga o CRM aos outros sistemas da empresa,
-          sem depender de ninguém. Os formulários, as chaves e os avisos são do plano Time em diante; o
-          segundo cérebro (no fim deste artigo) vale para qualquer plano. Os três caminhos da API:
+          Em <b>Configurações › Integrações</b> (só o administrador) você liga o CRM aos outros sistemas da
+          empresa, sem depender de ninguém. Os formulários, as chaves e os avisos são do plano Time em diante;
+          o segundo cérebro (no fim deste artigo) vale para qualquer plano. Os três caminhos da API:
         </p>
         <h3>Formulários do site (sem programar)</h3>
         <Passos>
@@ -2355,7 +2532,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'meu-plano',
-    area: 'Gestão',
+    area: 'Configurações',
     titulo: 'Planos, módulos e limites',
     resumo: 'O que cada plano libera, os módulos à parte, os números de WhatsApp e as franquias do mês.',
     onde: { rotulo: 'Meu plano', para: '/plano' },
@@ -2419,7 +2596,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
   },
   {
     id: 'assinatura',
-    area: 'Gestão',
+    area: 'Configurações',
     titulo: 'Teste grátis, assinatura e pagamento',
     resumo:
       'Os 7 dias de teste, assinar pelo sistema, pagar cada mês com Pix, boleto ou cartão, mudar de plano, minutos de ligação e o que acontece quando vence.',
@@ -2524,9 +2701,9 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>Minutos de ligação</h3>
         <p>
           O módulo Ligações vem com uma franquia de minutos por mês. Quando ela acaba, as ligações param até
-          comprar um <b>pacote de minutos</b> (em Meu plano, em Gestão › Telefonia ou na tela de Ligações):
-          com Pix, entra na hora. O que sobrar do pacote <b>não vence</b> e fica para os meses seguintes.
-          Avisamos quando o mês passa de 80%.
+          comprar um <b>pacote de minutos</b> (em Meu plano, em Configurações › Telefonia ou na tela de
+          Ligações): com Pix, entra na hora. O que sobrar do pacote <b>não vence</b> e fica para os meses
+          seguintes. Avisamos quando o mês passa de 80%.
         </p>
         <Nota>
           Só quem administra a conta vê os valores e pode assinar, pagar, mudar ou comprar minutos. Um teste

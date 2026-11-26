@@ -112,6 +112,7 @@ const ROTULO_EVENTO: Record<string, string> = {
   mesmo_assim: 'Mandou mesmo assim',
   variou: 'Variou com a IA',
   risco: 'Sinal de risco',
+  automatica: 'Envio automático segurado',
 };
 
 /** Painel "Proteção do número" (Agente › Atendimento): todos veem; o administrador configura. */
@@ -144,10 +145,13 @@ export function ProtecaoDoNumero() {
   return (
     <Panel titulo="Proteção do número" acoes={<LinkAjuda artigo="whatsapp-numeros" />}>
       <div className="porteiro">
-        <p className="quieto" style={{ margin: 0 }}>
-          Segura o que mais derruba número no WhatsApp: o mesmo texto para muita gente, contatos novos demais
-          e em sequência, e continuar abordando quando os contatos pedem para parar. Responder quem já
-          conversa é sempre livre.
+        <p className="porteiro__sempre">
+          <Icon name="lock" size={14} />
+          <span>
+            <b>Sempre ligada.</b> Segura o que mais derruba número no WhatsApp: o mesmo texto para muita
+            gente, contatos novos demais e em sequência, e continuar abordando quando os contatos pedem para
+            parar. Vale para a equipe e para os envios automáticos (cadência e sequência).
+          </span>
         </p>
         <ErroDaApi erro={q.error} />
         {!d || !f ? (
@@ -183,21 +187,10 @@ export function ProtecaoDoNumero() {
               </ul>
             )}
             <form className="form" onSubmit={enviar}>
-              <label className="opcao">
-                <input
-                  type="checkbox"
-                  checked={f.ativo}
-                  disabled={!admin}
-                  onChange={(e) => set('ativo', e.target.checked)}
-                />
-                <span>
-                  <b>Ligar a proteção do número</b> nas conversas desta conta
-                </span>
-              </label>
-              {f.ativo && (
+              {
                 <>
                   <fieldset className="porteiro__grupo" disabled={!admin}>
-                    <legend>Mesmo texto para muita gente</legend>
+                    <legend>Mesmo texto para muita gente que não respondeu</legend>
                     <div className="form__duas">
                       <div className="campo">
                         <label htmlFor="port-contatos">Segurar a partir de</label>
@@ -234,29 +227,20 @@ export function ProtecaoDoNumero() {
                         </select>
                       </div>
                     </div>
-                    <label className="opcao">
-                      <input
-                        type="radio"
-                        name="port-acao"
-                        checked={f.repetidasAcao === 'segurar'}
-                        onChange={() => set('repetidasAcao', 'segurar')}
-                      />
-                      <span>
-                        <b>Segurar</b>: não manda; sugere variar o texto com a IA (recomendado com API não
-                        oficial)
-                      </span>
-                    </label>
-                    <label className="opcao">
-                      <input
-                        type="radio"
-                        name="port-acao"
-                        checked={f.repetidasAcao === 'avisar'}
-                        onChange={() => set('repetidasAcao', 'avisar')}
-                      />
-                      <span>
-                        <b>Avisar</b>: pergunta e deixa mandar mesmo assim (fica registrado)
-                      </span>
-                    </label>
+                    <ul className="porteiro__reguas">
+                      <li>
+                        <b>Quem nunca respondeu:</b> a partir do número acima, a mensagem é segurada e não dá
+                        para mandar mesmo assim. A tela sugere variar o texto com a IA.
+                      </li>
+                      <li>
+                        <b>Quem já conversa:</b> a partir de 15 contatos na mesma hora, aparece um aviso e dá
+                        para mandar mesmo assim (fica registrado).
+                      </li>
+                      <li>
+                        <b>Cadência e sequência:</b> o texto repetido espera na fila até a janela liberar. Com
+                        versões das mensagens (até 3), o sistema sorteia uma a cada envio e não trava.
+                      </li>
+                    </ul>
                     <span className="campo__dica">Mensagem curta (“bom dia”, “ok, obrigado”) não conta.</span>
                   </fieldset>
                   <fieldset className="porteiro__grupo" disabled={!admin}>
@@ -307,7 +291,7 @@ export function ProtecaoDoNumero() {
                     </span>
                   </label>
                 </>
-              )}
+              }
               <ErroDaApi erro={salvar.error ?? liberar.error} />
               {salvar.isSuccess && <Mensagem tipo="ok">Salvo. Vale a partir da próxima mensagem.</Mensagem>}
               {admin && (
