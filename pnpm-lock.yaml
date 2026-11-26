@@ -227,6 +227,9 @@ importers:
       '@tanstack/react-query':
         specifier: 5.104.1
         version: 5.104.1(react@19.3.0)
+      hunspell-asm:
+        specifier: 4.0.2
+        version: 4.0.2
       leaflet:
         specifier: 1.9.4
         version: 1.9.4
@@ -2240,6 +2243,10 @@ packages:
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
 
+  emscripten-wasm-loader@3.0.3:
+    resolution: {integrity: sha512-fyq2maBt5LOou27LEBlL5H6G04BxgSamXkvmMsAuIT6rd8ioH4BxNQhuyl6jVPeODh6U8Wk1BoFZxzHpg3o8wA==}
+    engines: {node: '>=10'}
+
   encodeurl@2.0.0:
     resolution: {integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==}
     engines: {node: '>= 0.8'}
@@ -2405,6 +2412,10 @@ packages:
     resolution: {integrity: sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==}
     engines: {node: '>= 0.4'}
 
+  getroot@1.0.0:
+    resolution: {integrity: sha512-W9Q31kOv921dQuZBeAbK4R/dAPbC0WkhZD3alLcdVwjSkEtS1aX8twrzG3I5yo0sQ88M/d4JOqVbRiCuI/XPNA==}
+    engines: {node: '>=4.2.4', npm: '>=3.0.0'}
+
   giget@3.3.1:
     resolution: {integrity: sha512-r+mvuDjrjMpsdw46Kmeydb8bdHm7wOKw8wNBtTndkjbPjgAp5oUJUxRE76wZFknxIPokfWvep2qSXK37aXE6zg==}
     hasBin: true
@@ -2486,6 +2497,10 @@ packages:
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
+
+  hunspell-asm@4.0.2:
+    resolution: {integrity: sha512-u3ZuEYKGYnLZlIs+k5S+KdY+Q57mYD46fTwZJCiSXdES+fhxcLNF5mJ0nxjqrPAgE/8Kow6XLxRdRd/HDUPQZg==}
+    engines: {node: '>=4'}
 
   hyperframes@0.9.31:
     resolution: {integrity: sha512-i9xdUcV22Tm66B6me4/piwzmqofS9UVCZiBbHvK5HUyV4Z+nzlRXhvxi01JF5kvkjn9/9r1hzay6vrZhCk3gbQ==}
@@ -2806,6 +2821,9 @@ packages:
   nan@2.30.0:
     resolution: {integrity: sha512-P5mokDkSvCGBz6mZDD/2l+w9QoICRXdCyZ9ONGmTePr40oihJg3Kpn0YU3twKd6PJnwSlLBWNQeOT6yWEV2c4A==}
 
+  nanoid@2.1.11:
+    resolution: {integrity: sha512-s/snB+WGm6uwi0WjsZdaVcuf3KJXlfGl2LcxgwkEwJF0D/BWzVWAZW/XY4bFaiR7s0Jk3FPvlnepg1H1b1UwlA==}
+
   nanoid@3.3.20:
     resolution: {integrity: sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -2844,6 +2862,10 @@ packages:
     resolution: {integrity: sha512-Tbj67rffqceeLpcRXrT7vKAN8CwfPeIBgM7E6iBkmKLV7bEMwpGgYLGv0jACUsECaa/vuxP0IjEont6umdMgtQ==}
     engines: {node: '>=6'}
     hasBin: true
+
+  normalize-path@2.1.1:
+    resolution: {integrity: sha512-3pKJwH184Xo/lnH6oyP1q2pMd7HcypqqmRs91/6/i2CGtWwIKGCkOOMTm/zXbgTEWHw1uNpNi/igc3ePOYHb6w==}
+    engines: {node: '>=0.10.0'}
 
   npmlog@5.0.1:
     resolution: {integrity: sha512-AqZtDUWOMKs1G/8lwylVjrdYgqA4d9nu8hc+0gzRxlDb1I10+FHBGMXs6aiQHFdCUUlqH99MUMuLfzWDNDtfxw==}
@@ -3139,6 +3161,9 @@ packages:
   regenerator-runtime@0.13.11:
     resolution: {integrity: sha512-kY1AZVr2Ra+t+piVaJ4gxaFaReZVH40AKNo7UCX6W+dEwBo/2oZJzqfuN1qLq1oL45o56cPaTXELwrTh8Fpggg==}
 
+  remove-trailing-separator@1.1.0:
+    resolution: {integrity: sha512-/hS+Y0u3aOfIETiaiirUFwDBDzmXPvO+jAfKTitUngIPzdKc6Z0LoFjM/CK5PL4C+eKwHohlHAb6H0VFfmmUsw==}
+
   require-directory@2.1.1:
     resolution: {integrity: sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==}
     engines: {node: '>=0.10.0'}
@@ -3421,6 +3446,9 @@ packages:
   ts-interface-checker@0.1.13:
     resolution: {integrity: sha512-Y/arvbn+rrz3JCKl9C4kVNfTfSm2/mEp5FSz5EsZSANGPSlQrpRI5M4PKF+mJnE52jOO90PnPSc3Ur3bTQw0gA==}
 
+  tslib@1.14.1:
+    resolution: {integrity: sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg==}
+
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
@@ -3494,6 +3522,10 @@ packages:
   universalify@2.0.1:
     resolution: {integrity: sha512-gptHNQghINnc/vTGIk0SOFGFNXw7JVrlRUtConJRlvaw6DuX0wO5Jeko9sWrMBhh+PsYAZ7oXAiOnf/UKogyiw==}
     engines: {node: '>= 10.0.0'}
+
+  unixify@1.0.0:
+    resolution: {integrity: sha512-6bc58dPYhCMHHuwxldQxO3RRNZ4eCogZ/st++0+fcC1nr0jiGUtAdBJ2qzmLQWSxbtz42pWt4QQMiZ9HvZf5cg==}
+    engines: {node: '>=0.10.0'}
 
   unpdf@0.12.1:
     resolution: {integrity: sha512-ktP8+TTLDBrlu/j8rQVNbHoMMpFXzkVAkb1rt/JdshFC3jOHdZjuGCNl/voPL0kraUrUOH7ZC88kVxMvlvDBzA==}
@@ -5041,6 +5073,12 @@ snapshots:
 
   emoji-regex@8.0.0: {}
 
+  emscripten-wasm-loader@3.0.3:
+    dependencies:
+      getroot: 1.0.0
+      nanoid: 2.1.11
+      unixify: 1.0.0
+
   encodeurl@2.0.0: {}
 
   end-of-stream@1.4.5:
@@ -5297,6 +5335,10 @@ snapshots:
       dunder-proto: 1.0.1
       es-object-atoms: 1.1.2
 
+  getroot@1.0.0:
+    dependencies:
+      tslib: 1.14.1
+
   giget@3.3.1: {}
 
   glob@7.2.3:
@@ -5383,6 +5425,11 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+
+  hunspell-asm@4.0.2:
+    dependencies:
+      emscripten-wasm-loader: 3.0.3
+      nanoid: 2.1.11
 
   hyperframes@0.9.31(@types/node@25.9.9):
     dependencies:
@@ -5683,6 +5730,8 @@ snapshots:
   nan@2.30.0:
     optional: true
 
+  nanoid@2.1.11: {}
+
   nanoid@3.3.20: {}
 
   negotiator@1.1.0:
@@ -5706,6 +5755,10 @@ snapshots:
     dependencies:
       abbrev: 1.1.1
     optional: true
+
+  normalize-path@2.1.1:
+    dependencies:
+      remove-trailing-separator: 1.1.0
 
   npmlog@5.0.1:
     dependencies:
@@ -6035,6 +6088,8 @@ snapshots:
   real-require@1.0.0: {}
 
   regenerator-runtime@0.13.11: {}
+
+  remove-trailing-separator@1.1.0: {}
 
   require-directory@2.1.1: {}
 
@@ -6420,6 +6475,8 @@ snapshots:
 
   ts-interface-checker@0.1.13: {}
 
+  tslib@1.14.1: {}
+
   tslib@2.8.1: {}
 
   tsup@8.5.1(postcss@8.5.31)(tsx@4.23.15)(typescript@5.9.3):
@@ -6503,6 +6560,10 @@ snapshots:
       tiny-inflate: 1.0.3
 
   universalify@2.0.1: {}
+
+  unixify@1.0.0:
+    dependencies:
+      normalize-path: 2.1.1
 
   unpdf@0.12.1:
     optionalDependencies:

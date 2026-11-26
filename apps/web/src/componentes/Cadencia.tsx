@@ -2,6 +2,7 @@ import { Badge, Button } from '@prospeccao/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, type ConfigCadencia, type DetalheFunil, type MensagemPronta, MODELOS_MENSAGEM } from '../api';
+import { CaixaComCorretor } from '../escrita/Corretor';
 import { fmtNome, formatarTelefone } from '../formatar';
 import { Drawer } from './Drawer';
 import { VersoesDoTexto } from './Escrever';
@@ -296,13 +297,11 @@ export function ConfigurarCadencia(props: { aoFechar: () => void }) {
                 <label htmlFor={`cad-${m.id}`}>
                   {m.rotulo} <span className="quieto">· {m.quando}</span>
                 </label>
-                <textarea
+                <CaixaComCorretor
                   id={`cad-${m.id}`}
                   rows={4}
-                  spellCheck
-                  lang="pt-BR"
                   value={f.modelos[m.id]}
-                  onChange={(e) => mudar('modelos', { ...f.modelos, [m.id]: e.target.value })}
+                  aoMudar={(texto) => mudar('modelos', { ...f.modelos, [m.id]: texto })}
                 />
                 <VersoesDoTexto
                   id={`cad-${m.id}`}

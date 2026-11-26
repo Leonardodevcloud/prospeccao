@@ -10,13 +10,14 @@ import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
+import { CaixaComCorretor } from '../escrita/Corretor';
 import { ErroDaApi, Mensagem } from './Formulario';
 
 /*
  * Ajudas da escrita: "Melhorar com IA" (corrigir, mais claro, mais cordial, mais curto, com a
  * diferença marcada antes de usar), o aviso da proteção do número enquanto escreve e as versões de
- * uma mensagem pronta (respostas rápidas, cadência, sequência). O corretor do navegador fica ligado
- * em português nas caixas de texto (spellCheck + lang="pt-BR").
+ * uma mensagem pronta (respostas rápidas, cadência, sequência). As caixas usam o corretor do
+ * sistema (escrita/Corretor), igual em qualquer navegador.
  */
 
 /* ───────────────────────────── Diferença palavra a palavra ───────────────────────────── */
@@ -316,17 +317,15 @@ export function VersoesDoTexto(props: {
           <label htmlFor={`${props.id}-v${i}`} className="pp-sr">
             Versão {i + 2}
           </label>
-          <textarea
+          <CaixaComCorretor
             id={`${props.id}-v${i}`}
             rows={3}
             maxLength={2000}
-            spellCheck
-            lang="pt-BR"
             placeholder={`Versão ${i + 2}: a mesma informação com outras palavras`}
             disabled={props.desligado}
             value={v}
             data-parecida={par && par[1] === i + 1 ? true : undefined}
-            onChange={(e) => set(i, e.target.value)}
+            aoMudar={(texto) => set(i, texto)}
           />
           {!props.desligado && (
             <button

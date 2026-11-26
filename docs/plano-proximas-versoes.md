@@ -224,5 +224,7 @@ Com o CNPJ (PROSPECT LTDA, v174), o app da Meta pode ser verificado e a Prospect
 - **v176**: menu reorganizado (Prospecção, Atendimento, Gestão, Configurações), identidade visual dos e-mails dentro de Marca e domínio, Argos discreto e discador no canto.
 - **v177**: atendimento com carteira (plano Escala): filas Minha carteira, Fila geral, Aguardando e Encerrados; protocolo; assumir, transferir, encerrar com motivo, etiquetas e pesquisa de 1 a 5; reabrir; nota interna; disponível/em pausa; painel do cliente; regras em Configurações › Atendimento; importar e passar carteira; painel do atendimento.
 - **v178**: proteção do número sempre ligada (rígida para contato frio, aviso para quem conversa, automáticos na fila), aviso enquanto escreve, versões das mensagens prontas e Melhorar com IA (todos os planos).
+- **v179**: CRM de demonstração nasce com o atendimento com carteira ligado (filas, encerrados, nota, VIP, pausa).
+- **v180**: corretor ortográfico do próprio sistema (dicionário pt-BR no navegador, sublinhado, "Você quis dizer", dicionário próprio) em todas as caixas de escrever mensagem.
 - **Depois**: fila geral por grupo do número (cada loja a sua), horário de atendimento nos tempos do painel, encerramento pelo Instagram com mensagem, WhatsApp oficial (seção acima).
 

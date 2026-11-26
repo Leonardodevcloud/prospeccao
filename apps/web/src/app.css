@@ -22376,3 +22376,89 @@ fieldset.filas__etiquetas {
   outline: none;
   box-shadow: var(--focus-ring);
 }
+
+/* ---------- Corretor ortográfico do sistema (v180) ---------- */
+.corretor {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+.corretor > textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+.corretor__camada {
+  position: absolute;
+  z-index: 1;
+  margin: 0;
+  overflow: hidden;
+  border-style: solid;
+  border-color: transparent;
+  color: transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+.corretor__erro {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: #dc2626;
+  text-decoration-thickness: 1.5px;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+.corretor__sugestoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  font-size: 12px;
+  line-height: 16px;
+}
+.corretor__palavra {
+  color: #b91c1c;
+  font-weight: 600;
+  text-decoration: line-through;
+}
+.corretor__opcao {
+  all: unset;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+  cursor: pointer;
+}
+.corretor__opcao:hover,
+.corretor__opcao:focus-visible {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.corretor__adicionar {
+  margin-left: auto;
+  font-size: 11px;
+}
+.compositor--nota .corretor__sugestoes {
+  grid-column: 1 / -1;
+}
+.inbox__dica {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  font-size: 12px;
+  line-height: 16px;
+}
+.atend-layout:not(:has(> .painel-cliente)) {
+  grid-template-columns: minmax(0, 1fr);
+}

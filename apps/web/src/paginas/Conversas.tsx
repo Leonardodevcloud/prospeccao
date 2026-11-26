@@ -51,6 +51,7 @@ import {
   useVeFilaSemDono,
 } from '../componentes/Sessao';
 import { FormTarefa } from '../componentes/Tarefas';
+import { CaixaComCorretor, useCorretor } from '../escrita/Corretor';
 import { fmtCidade, fmtCompromisso, fmtHoraSo, fmtNome, fmtQuando, formatarTelefone } from '../formatar';
 import { ListaNaoIdentificados, PainelNaoIdentificado, useNaoIdentificados } from './NaoIdentificados';
 
@@ -428,6 +429,9 @@ function Compositor(props: {
     },
   });
   const porteiro = doPorteiro(enviarTexto.error ?? enviarMidia.error);
+  // Corretor ortográfico do sistema (não depende do corretor do navegador).
+  const filtroBarra = texto.startsWith('/') && !texto.includes(' ');
+  const corretor = useCorretor({ alvo: campo, texto, aoMudar: setTexto, ligado: !gravando && !filtroBarra });
   const liberarPorteiro = useCallback(() => {
     enviarTexto.reset();
     enviarMidia.reset();
@@ -633,6 +637,7 @@ function Compositor(props: {
       )}
       <ErroDaApi erro={variar.error} />
       {erroLocal && <Mensagem tipo="erro">{erroLocal}</Mensagem>}
+      {corretor.sugestoes}
       {canal === 'whatsapp' && !porteiro && !gravando && filtro === null && (
         <AvisoAoEscrever
           empresaId={conversa.empresaId}
@@ -683,26 +688,29 @@ function Compositor(props: {
             <label className="pp-sr" htmlFor="compositor-texto">
               Mensagem
             </label>
-            <textarea
-              id="compositor-texto"
-              ref={campo}
-              rows={porEmail ? 4 : 1}
-              className="compositor__texto"
-              placeholder={
-                porEmail
-                  ? 'Escreva o e-mail… (Ctrl+Enter envia; a assinatura da sua identidade visual vai junto)'
-                  : 'Escreva… ( / para respostas rápidas, Shift+Enter quebra a linha)'
-              }
-              value={texto}
-              maxLength={4000}
-              spellCheck
-              lang="pt-BR"
-              onChange={(e) => {
-                setTexto(e.target.value);
-                setEscolhida(0);
-              }}
-              onKeyDown={tecla}
-            />
+            <div className="corretor">
+              <textarea
+                id="compositor-texto"
+                ref={campo}
+                rows={porEmail ? 4 : 1}
+                className="compositor__texto"
+                placeholder={
+                  porEmail
+                    ? 'Escreva o e-mail… (Ctrl+Enter envia; a assinatura da sua identidade visual vai junto)'
+                    : 'Escreva… ( / para respostas rápidas, Shift+Enter quebra a linha)'
+                }
+                value={texto}
+                maxLength={4000}
+                spellCheck={false}
+                lang="pt-BR"
+                onChange={(e) => {
+                  setTexto(e.target.value);
+                  setEscolhida(0);
+                }}
+                onKeyDown={tecla}
+              />
+              {corretor.camada}
+            </div>
           </>
         )}
         {(texto.trim() || porEmail || porDirect) && !gravando ? (
@@ -825,14 +833,12 @@ function RespostasRapidas(props: { aoFechar: () => void }) {
             </div>
             <div className="campo">
               <label htmlFor="rr-texto">Texto</label>
-              <textarea
+              <CaixaComCorretor
                 id="rr-texto"
                 rows={4}
                 maxLength={2000}
-                spellCheck
-                lang="pt-BR"
                 value={edit.texto}
-                onChange={(e) => setEdit({ ...edit, texto: e.target.value })}
+                aoMudar={(texto) => setEdit({ ...edit, texto })}
               />
             </div>
             <VersoesDoTexto
@@ -1174,12 +1180,14 @@ function Conversa(props: {
       )}
     </div>
   );
-  if (!props.atendimento || !atendimento.data) return chat;
+  if (!props.atendimento) return chat;
+  // A mesma estrutura antes e depois de o painel carregar: a caixa de escrever não é recriada
+  // (e não perde o que está sendo digitado) quando os dados do atendimento chegam.
   return (
     <div className="atend-layout">
       {chat}
-      <PainelDoCliente cliente={atendimento.data} aoAbrirFicha={props.aoAbrirFicha} />
-      {painelCliente && (
+      {atendimento.data && <PainelDoCliente cliente={atendimento.data} aoAbrirFicha={props.aoAbrirFicha} />}
+      {painelCliente && atendimento.data && (
         <Drawer titulo="Cliente" barra={fmtNome(c.nome)} aoFechar={() => setPainelCliente(false)}>
           <div className="drawer__corpo">
             <PainelDoCliente cliente={atendimento.data} aoAbrirFicha={props.aoAbrirFicha} />
@@ -1219,6 +1227,8 @@ export function Conversas() {
 
   // Atendimento com carteira: a lista vira as filas (Minha carteira, Fila geral, Aguardando, Encerrados).
   const ligado = useAtendimentoLigado();
+  const admin = useEhAdmin();
+  const temCarteira = useRecurso('carteira');
   const filaParam = params.get('fila') as FilaAtendimento | 'todas' | null;
   const fila: FilaAtendimento | null =
     ligado && filaParam !== 'todas' && !soltos ? ((filaParam as FilaAtendimento | null) ?? 'minha') : null;
@@ -1271,6 +1281,15 @@ export function Conversas() {
                 </button>
               )}
             </div>
+            {!ligado && admin && temCarteira && !soltos && (
+              <p className="inbox__dica">
+                <Icon name="inbox" size={13} /> Filas, protocolo, transferir e encerrar atendimento ficam no{' '}
+                <b>atendimento com carteira</b>, que está desligado.{' '}
+                <Link to="/atendimento" className="link-botao">
+                  Ligar
+                </Link>
+              </p>
+            )}
             {fila ? (
               <>
                 <AbasDasFilas

@@ -11,11 +11,12 @@ import {
 } from '@prospeccao/shared/carteira';
 import { Button, Icon } from '@prospeccao/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { api } from '../api';
 import { Modal } from '../componentes/Drawer';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { Dono, useEhAdmin, useSessao } from '../componentes/Sessao';
+import { useCorretor } from '../escrita/Corretor';
 import { fmtCidade, fmtHoraSo, fmtNome, fmtQuando } from '../formatar';
 import {
   COR_ETIQUETA,
@@ -710,6 +711,8 @@ function ModalTransferir(props: {
 /** Nota interna: só a equipe vê. Fica no lugar da caixa de escrever. */
 export function CompositorDeNota(props: { empresaId: number }) {
   const [texto, setTexto] = useState('');
+  const campo = useRef<HTMLTextAreaElement>(null);
+  const corretor = useCorretor({ alvo: campo, texto, aoMudar: setTexto });
   const atualizar = useAtualizarAtendimento();
   const salvar = useMutation({
     mutationFn: () =>
@@ -730,25 +733,30 @@ export function CompositorDeNota(props: { empresaId: number }) {
         if (texto.trim()) salvar.mutate();
       }}
     >
+      {corretor.sugestoes}
       <label className="pp-sr" htmlFor="nota-interna">
         Nota interna
       </label>
-      <textarea
-        id="nota-interna"
-        rows={2}
-        maxLength={2000}
-        spellCheck
-        lang="pt-BR"
-        value={texto}
-        placeholder="Só a equipe vê. Ex.: conferi o estoque, avisar o depósito."
-        onChange={(e) => setTexto(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            if (texto.trim()) salvar.mutate();
-          }
-        }}
-      />
+      <div className="corretor">
+        <textarea
+          ref={campo}
+          id="nota-interna"
+          rows={2}
+          maxLength={2000}
+          spellCheck={false}
+          lang="pt-BR"
+          value={texto}
+          placeholder="Só a equipe vê. Ex.: conferi o estoque, avisar o depósito."
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (texto.trim()) salvar.mutate();
+            }
+          }}
+        />
+        {corretor.camada}
+      </div>
       <Button type="submit" variant="primary" icon="sticky-note" disabled={!texto.trim() || salvar.isPending}>
         Salvar nota
       </Button>

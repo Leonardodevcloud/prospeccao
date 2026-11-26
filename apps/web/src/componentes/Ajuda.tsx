@@ -947,7 +947,7 @@ export const ARTIGOS: ArtigoAjuda[] = [
     resumo: 'Onde ficam as conversas do WhatsApp e o que acontece com quem não é lead.',
     onde: { rotulo: 'Conversas', para: '/conversas' },
     termos:
-      'whatsapp inbox sem lead não identificado número desconhecido corretor ortográfico corrigir melhorar com ia reescrever texto mais curto cordial claro',
+      'whatsapp inbox sem lead não identificado número desconhecido corretor ortográfico sublinhado vermelho você quis dizer dicionário palavra errada erro de digitação corrigir melhorar com ia reescrever texto mais curto cordial claro',
     corpo: (
       <>
         <p>
@@ -971,8 +971,19 @@ export const ARTIGOS: ArtigoAjuda[] = [
         <h3>Escrever melhor</h3>
         <ul>
           <li>
-            <b>Corretor:</b> a caixa de escrever usa o corretor do navegador em português (a palavra errada
-            fica sublinhada; clique com o botão direito para ver a correção).
+            <b>Corretor do sistema</b>, em português, igual em qualquer navegador e celular: a palavra que ele
+            não conhece fica com um <b>sublinhado vermelho ondulado</b>. Clique nela (ou pare o cursor em
+            cima) e aparece a barra <b>“Você quis dizer”</b> com as opções; um clique troca a palavra.
+          </li>
+          <li>
+            Se a palavra estiver certa (nome de cliente, de peça, de cidade, gíria do seu ramo), aperte{' '}
+            <b>Está certo</b>: ela entra no seu dicionário e não é mais marcada neste navegador. Abreviações
+            de conversa como “vc”, “pq”, “tb” e “blz”, links, e-mails, números e nomes com letra maiúscula não
+            são marcados.
+          </li>
+          <li>
+            Na primeira vez que você abre uma conversa, o sistema baixa o dicionário (cerca de 2 MB); depois
+            fica guardado. Vale também para a <b>nota interna</b> do atendimento.
           </li>
           <li>
             <b>Melhorar com IA</b> (a varinha ao lado do clipe), em todos os planos: <b>Corrigir</b> (só

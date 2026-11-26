@@ -26,6 +26,7 @@ import { VersoesDoTexto } from '../componentes/Escrever';
 import { FichaEmpresa } from '../componentes/FichaEmpresa';
 import { ErroDaApi, Mensagem } from '../componentes/Formulario';
 import { useEhAdmin, useEhMaster, useSessao } from '../componentes/Sessao';
+import { CaixaComCorretor } from '../escrita/Corretor';
 import { fmtCidade, fmtHora, fmtNome, fmtNumero, fmtPct, fmtQuando } from '../formatar';
 import { EscolherLead, fmtTamanho, JanelaEmail, lerBase64, PreviaCampanha, useMarcas } from './EmailMarca';
 
@@ -262,7 +263,7 @@ function EditorPassos(props: { passos: Passo[]; modelos: ModeloEmail[]; aoMudar:
                   <label className="pp-sr" htmlFor={`passo-texto-${i}`}>
                     {canal === 'whatsapp' ? 'Mensagem do WhatsApp' : 'Roteiro da ligação'}
                   </label>
-                  <textarea
+                  <CaixaComCorretor
                     id={`passo-texto-${i}`}
                     rows={3}
                     maxLength={2000}
@@ -270,9 +271,7 @@ function EditorPassos(props: { passos: Passo[]; modelos: ModeloEmail[]; aoMudar:
                       canal === 'whatsapp' ? 'Mensagem do WhatsApp' : 'Roteiro da ligação (opcional)'
                     }
                     value={p.texto ?? ''}
-                    spellCheck
-                    lang="pt-BR"
-                    onChange={(e) => mudar(i, { texto: e.target.value })}
+                    aoMudar={(texto) => mudar(i, { texto })}
                   />
                   <span className="campo__dica">
                     {canal === 'whatsapp'
