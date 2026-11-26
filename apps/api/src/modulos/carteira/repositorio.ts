@@ -485,11 +485,11 @@ export async function doCliente(db: Executor, empresaId: number): Promise<Client
   };
 }
 
-/** A pessoa é da equipe desta conta (e não o master de passagem). */
+/** Quem atende: alguém logado (o master e o gestor de passagem atendem como administrador). */
 function eu(): { id: number; admin: boolean; nome: string } {
   const u = usuarioAtual();
-  if (!u || u.contaPropria !== u.contaId)
-    throw AppError.proibido('Só quem é da equipe desta conta atende pelas filas.');
+  if (!u) throw AppError.proibido('Entre para atender pelas filas.');
+  if (u.papelOrganizacao === 'leitura') throw AppError.proibido('Acesso só de leitura: a equipe atende.');
   return { id: u.id, admin: u.papel === 'admin', nome: u.nome };
 }
 

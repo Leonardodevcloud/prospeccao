@@ -447,6 +447,87 @@ async function notasDeAtendimento(
   }
 }
 
+/**
+ * Atendimento com carteira na demonstração: os atendimentos já foram abertos pelo gatilho (cada
+ * cliente na carteira do dono). Aqui alguns vão para a Fila geral, outros são encerrados com motivo
+ * e nota do cliente, e entram etiquetas, uma nota interna e uma pessoa em pausa.
+ */
+async function atendimentosDaDemonstracao(
+  q: (sql: string, p?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>,
+  contaId: number,
+  equipe: number[],
+): Promise<void> {
+  const { rows } = await q(
+    `SELECT a.id::int, a.empresa_id::int AS empresa, o.etapa, o.responsavel_id AS dono
+       FROM comercial.atendimentos a
+       JOIN comercial.oportunidades o ON o.conta_id = a.conta_id AND o.empresa_id = a.empresa_id
+      WHERE a.conta_id = $1 ORDER BY a.id`,
+    [contaId],
+  );
+  const etiquetas = [['Orçamento'], ['Reunião'], [], ['Urgente'], ['Retorno'], []];
+  let encerrados = 0;
+  for (const [k, r] of rows.entries()) {
+    const id = r.id as number;
+    const dono = (r.dono as number | null) ?? equipe[k % equipe.length]!;
+    await q('UPDATE comercial.atendimentos SET etiquetas = $2, atendente_id = $3 WHERE id = $1', [
+      id,
+      etiquetas[k % etiquetas.length],
+      dono,
+    ]);
+    if (r.etapa === 'ganho' || k % 4 === 3) {
+      // Encerrados hoje e nos últimos dias, com o motivo e a nota que o cliente deu.
+      const venda = r.etapa === 'ganho';
+      // Os primeiros hoje cedo (o painel de "Hoje" mostra), os outros nos dias anteriores.
+      const horas = encerrados < 3 ? 1 + encerrados * 2 : 20 + encerrados * 6;
+      encerrados++;
+      await q(
+        `UPDATE comercial.atendimentos
+            SET situacao = 'encerrado', encerrado_em = now() - make_interval(hours => $2), encerrado_por = atendente_id,
+                motivo = $3, pesquisa_em = now() - make_interval(hours => $2),
+                nota_cliente = $4::smallint, nota_em = CASE WHEN $4::smallint IS NULL THEN NULL ELSE now() - make_interval(hours => $2) + interval '10 minutes' END
+          WHERE id = $1`,
+        [
+          id,
+          horas,
+          venda ? 'Venda fechada' : k % 2 ? 'Reunião marcada' : 'Orçamento enviado',
+          k % 5 === 4 ? null : venda ? 5 : 4,
+        ],
+      );
+      await q(
+        `INSERT INTO comercial.atendimento_eventos (conta_id, atendimento_id, empresa_id, tipo, usuario_id, texto, criado_em)
+         VALUES ($1, $2, $3, 'encerrou', $4, $5, now() - make_interval(hours => $6))`,
+        [contaId, id, r.empresa, dono, venda ? 'Venda fechada' : 'Orçamento enviado', horas],
+      );
+    } else if (k % 4 === 1) {
+      // Na Fila geral: o cliente escreveu e ninguém pegou ainda.
+      await q(
+        `UPDATE comercial.atendimentos SET atendente_id = NULL, situacao = 'aberto', origem = 'geral',
+                ultima_cliente_em = now() - make_interval(mins => $2)
+          WHERE id = $1`,
+        [id, 4 + k * 2],
+      );
+    }
+  }
+  // Uma nota interna (só a equipe vê) no primeiro atendimento em aberto.
+  const aberto = rows.find((_, k) => k % 4 !== 3 && k % 4 !== 1);
+  if (aberto)
+    await q(
+      `INSERT INTO comercial.atendimento_eventos (conta_id, atendimento_id, empresa_id, tipo, usuario_id, texto, criado_em)
+       VALUES ($1, $2, $3, 'nota', $4, 'Pediu desconto para fechar com duas unidades. Falar com a Paula antes de responder.', now() - interval '20 minutes')`,
+      [contaId, aberto.id, aberto.empresa, equipe[1]],
+    );
+  // Clientes VIP e uma pessoa em pausa (o painel mostra).
+  await q(
+    `UPDATE comercial.oportunidades SET etiquetas = array_append(etiquetas, 'Cliente VIP')
+      WHERE conta_id = $1 AND etapa = 'ganho'`,
+    [contaId],
+  );
+  await q(
+    "UPDATE cadastro.usuarios SET disponivel = false, pausa_desde = now() - interval '25 minutes' WHERE id = $1",
+    [equipe[4]],
+  );
+}
+
 export async function gerarDados(tx: Executor, contaId: number): Promise<void> {
   const s = sorteio(20261030);
   const q = (sql: string, p: unknown[] = []) => tx.query(sql, p);
@@ -461,6 +542,32 @@ export async function gerarDados(tx: Executor, contaId: number): Promise<void> {
   await q('UPDATE comercial.config_cadencia SET encerrar_sem_resposta = false WHERE conta_id = $1', [
     contaId,
   ]);
+  /*
+   * Atendimento com carteira (v177) ligado antes das conversas: o gatilho em comercial.mensagens
+   * abre os atendimentos com protocolo enquanto as mensagens fictícias entram.
+   */
+  await q(
+    `INSERT INTO comercial.config_atendimento (conta_id, ativo, motivos)
+     VALUES ($1, true, ARRAY['Venda fechada', 'Orçamento enviado', 'Reunião marcada', 'Dúvida resolvida',
+                             'Cliente não respondeu', 'Sem interesse agora'])
+     ON CONFLICT (conta_id) DO UPDATE SET ativo = true`,
+    [contaId],
+  );
+  for (const [i, [nome, cor]] of (
+    [
+      ['Orçamento', 'verde'],
+      ['Reunião', 'azul'],
+      ['Urgente', 'vermelho'],
+      ['Retorno', 'laranja'],
+      ['Cliente VIP', 'roxo'],
+    ] as const
+  ).entries())
+    await q('INSERT INTO comercial.etiquetas (conta_id, nome, cor, ordem) VALUES ($1, $2, $3, $4)', [
+      contaId,
+      nome,
+      cor,
+      i,
+    ]);
 
   /* Equipe fictícia (não consegue entrar: a senha não é válida). */
   const usuarios: number[] = [];
@@ -812,6 +919,8 @@ export async function gerarDados(tx: Executor, contaId: number): Promise<void> {
       );
     }
   }
+
+  await atendimentosDaDemonstracao(q, contaId, [paula, lucia, ana, diego, rafael]);
 
   /* Qualidade do atendimento: notas das últimas 4 semanas, para o painel do gestor. */
   await notasDeAtendimento(
